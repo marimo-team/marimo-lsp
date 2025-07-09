@@ -1,0 +1,105 @@
+"""Minimal session manager for LSP integration."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from uuid import uuid4
+
+from marimo._config.manager import (
+    get_default_config_manager,
+)
+from marimo._runtime.requests import AppMetadata
+from marimo._server.model import SessionMode
+from marimo._server.sessions import KernelManager, QueueManager, Session
+
+from marimo_lsp.app_file_manager import LspAppFileManager
+from marimo_lsp.loggers import get_logger
+from marimo_lsp.session_consumer import LspSessionConsumer
+
+if TYPE_CHECKING:
+    from pygls.lsp.server import LanguageServer
+
+
+logger = get_logger()
+
+
+class LspSessionManager:
+    """Minimal session manager that maps notebook URIs to marimo sessions.
+
+    This is a simplified session manager designed specifically for LSP integration.
+
+    Unlike marimo's standard SessionManager, this one:
+    - Uses notebook URIs as identifiers instead of session IDs
+    - Has no authentication, resumption, or persistence features
+    - Manages a simple dict of URI -> Session mappings
+    """
+
+    def __init__(self) -> None:
+        """Initialize the session manager with an empty session map."""
+        self._sessions: dict[str, Session] = {}
+
+    def get_session(self, notebook_uri: str) -> Session | None:
+        """Get a session by notebook URI."""
+        return self._sessions.get(notebook_uri)
+
+    def add_session(self, notebook_uri: str, session: Session) -> None:
+        """Add a session to the manager."""
+        logger.info(f"Adding session for {notebook_uri}")
+        self._sessions[notebook_uri] = session
+
+    def close_session(self, notebook_uri: str) -> None:
+        """Close and remove a session."""
+        session = self._sessions.pop(notebook_uri, None)
+        if session:
+            logger.info(f"Closing session for {notebook_uri}")
+            try:
+                session.close()
+            except Exception:
+                logger.exception(f"Error closing session for {notebook_uri}")
+
+    def create_session(self, *, server: LanguageServer, notebook_uri: str) -> Session:
+        """Create a new session for a notebook."""
+        if notebook_uri in self._sessions:
+            self.close_session(notebook_uri)
+
+        app_file_manager = LspAppFileManager(server=server, notebook_uri=notebook_uri)
+        config_manager = get_default_config_manager(current_path=app_file_manager.path)
+        queue_manager = QueueManager(use_multiprocessing=True)
+
+        kernel_manager = KernelManager(
+            queue_manager,
+            mode=SessionMode.EDIT,
+            configs=app_file_manager.app.cell_manager.config_map(),
+            app_metadata=AppMetadata(
+                query_params={},
+                filename=app_file_manager.path,
+                cli_args={},
+                argv=None,
+                app_config=app_file_manager.app.config,
+            ),
+            config_manager=config_manager,
+            virtual_files_supported=False,
+            redirect_console_to_browser=False,
+        )
+
+        logger.info(f"Creating new session for {notebook_uri}")
+
+        session = Session(
+            initialization_id=str(uuid4()),
+            session_consumer=LspSessionConsumer(server, notebook_uri),
+            queue_manager=queue_manager,
+            kernel_manager=kernel_manager,
+            app_file_manager=app_file_manager,
+            config_manager=config_manager,
+            ttl_seconds=0,  # No TTL for LSP
+        )
+
+        self.add_session(notebook_uri, session)
+        return session
+
+    def shutdown(self) -> None:
+        """Close all sessions during shutdown."""
+        logger.info("Shutting down all sessions")
+        uris = list(self._sessions.keys())
+        for uri in uris:
+            self.close_session(uri)
