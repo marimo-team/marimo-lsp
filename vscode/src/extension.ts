@@ -4,7 +4,7 @@ import * as lsp from "vscode-languageclient/node";
 import { MarimoNotebookSerializer } from "./notebookSerializer.ts";
 import { kernelManager } from "./kernelManager.ts";
 import { channel, Logger } from "./logging.ts";
-import { registerCommand } from "./commands.ts";
+import * as cmds from "./commands.ts";
 
 export async function activate(context: vscode.ExtensionContext) {
   Logger.info("Extension", "Activating marimo-lsp extension", {
@@ -102,7 +102,7 @@ export async function activate(context: vscode.ExtensionContext) {
       MarimoNotebookSerializer.notebookType,
       new MarimoNotebookSerializer(client),
     ),
-    registerCommand("marimo-lsp.newMarimoNotebook", async () => {
+    cmds.registerCommand("marimo-lsp.newMarimoNotebook", async () => {
       const doc = await vscode.workspace.openNotebookDocument(
         MarimoNotebookSerializer.notebookType,
         new vscode.NotebookData([

@@ -1,10 +1,14 @@
 import * as vscode from "vscode";
 import * as lsp from "vscode-languageclient";
-import * as z from "zod/v4";
+import { Data, Effect, ParseResult, Schema } from "effect";
 
-import { NotebookSerialization } from "./schemas.ts";
+import { NotebookSerializationSchema } from "./schemas.ts";
 import { Logger } from "./logging.ts";
-import * as commands from "./commands.ts";
+import * as cmds from "./commands.ts";
+
+class ExecuteCommandError extends Data.TaggedError("ExecuteCommandError")<{
+  source: unknown;
+}> {}
 
 export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
   static readonly notebookType = "marimo-lsp-notebook";
@@ -21,44 +25,60 @@ export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
     Logger.debug("MarimoNotebookSerializer", "serializeNotebook");
     Logger.trace("MarimoNotebookSerializer", "serializeNotebook", notebook);
 
+    const client = this.client;
     const { cells, metadata = {} } = notebook;
-    const result = NotebookSerialization.safeParse({
-      app: metadata.app ?? { options: {} },
-      header: metadata.header ?? null,
-      version: metadata.version ?? null,
-      violations: metadata.violations ?? [],
-      valid: metadata.valid ?? true,
-      cells: cells.map((cell) => ({
-        code: cell.value,
-        name: cell.metadata?.name ?? "_",
-        options: cell.metadata?.options ?? {},
-      })),
+
+    const program = Effect.gen(function* () {
+      const notebookData = yield* Schema.decodeUnknown(
+        NotebookSerializationSchema,
+      )({
+        app: metadata.app ?? { options: {} },
+        header: metadata.header ?? null,
+        version: metadata.version ?? null,
+        violations: metadata.violations ?? [],
+        valid: metadata.valid ?? true,
+        cells: cells.map((cell) => ({
+          code: cell.value,
+          name: cell.metadata?.name ?? "_",
+          options: cell.metadata?.options ?? {},
+        })),
+      }).pipe(
+        Effect.tapErrorTag("ParseError", (error) => {
+          Logger.error(
+            "MarimoNotebookSerializer",
+            "Failed to parse notebook data",
+            ParseResult.TreeFormatter.formatErrorSync(error),
+          );
+          return Effect.void;
+        }),
+      );
+
+      const { source } = yield* Effect.tryPromise({
+        try: () =>
+          cmds.executeCommand(client, {
+            command: "marimo.serialize",
+            params: { notebook: notebookData },
+            token: token,
+          }),
+        catch: (error) => new ExecuteCommandError({ source: error }),
+      }).pipe(
+        Effect.andThen(
+          Schema.decodeUnknown(Schema.Struct({ source: Schema.String })),
+        ),
+        Effect.tapError((error) => {
+          Logger.error(
+            "MarimoNotebookSerializer",
+            "marimo.serialize failed",
+            error,
+          );
+          return Effect.void;
+        }),
+      );
+
+      return new TextEncoder().encode(source);
     });
 
-    if (!result.success) {
-      Logger.error(
-        "MarimoNotebookSerializer",
-        "Failed to parse notebook data",
-        {
-          error: z.prettifyError(result.error),
-          metadata,
-        },
-      );
-      throw new Error(z.prettifyError(result.error));
-    }
-
-    try {
-      const response = await commands.executeCommand(this.client, {
-        command: "marimo.serialize",
-        params: { notebook: result.data },
-        token: token,
-      }).then((raw) => z.object({ source: z.string() }).parse(raw));
-
-      return new TextEncoder().encode(response.source);
-    } catch (error) {
-      Logger.error("NotebookSerializer", "Failed to serialize notebook", error);
-      throw error;
-    }
+    return Effect.runPromise(program);
   }
 
   async deserializeNotebook(
@@ -69,15 +89,31 @@ export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
     Logger.debug("MarimoNotebookSerializer", "deserializeNotebook");
     Logger.trace("MarimoNotebookSerializer", "deserializeNotebook", source);
 
-    try {
-      const notebookData = await commands.executeCommand(this.client, {
-        command: "marimo.deserialize",
-        params: { source },
-        token,
-      }).then((raw) => NotebookSerialization.parse(raw));
+    const client = this.client;
 
+    const program = Effect.gen(function* () {
+      const notebookData = yield* Effect.tryPromise({
+        try: () =>
+          cmds.executeCommand(client, {
+            command: "marimo.deserialize",
+            params: { source },
+            token,
+          }),
+        catch: (error) => new ExecuteCommandError({ source: error }),
+      }).pipe(
+        Effect.andThen(
+          Schema.decodeUnknown(NotebookSerializationSchema),
+        ),
+        Effect.tapError((error) => {
+          Logger.error(
+            "MarimoNotebookSerializer",
+            "marimo.deserialize failed",
+            error,
+          );
+          return Effect.void;
+        }),
+      );
       const { cells, ...metadata } = notebookData;
-
       return {
         metadata: metadata,
         cells: cells.map((cell) => ({
@@ -90,13 +126,8 @@ export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
           },
         })),
       };
-    } catch (error) {
-      Logger.error(
-        "MarimoNotebookSerializer",
-        "Failed to deserialize notebook",
-        error,
-      );
-      throw error;
-    }
+    });
+
+    return Effect.runPromise(program);
   }
 }

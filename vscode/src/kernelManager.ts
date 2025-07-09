@@ -3,8 +3,8 @@ import * as lsp from "vscode-languageclient";
 
 import { Logger } from "./logging.ts";
 import { MarimoNotebookSerializer } from "./notebookSerializer.ts";
-import { executeCommand } from "./commands.ts";
-import { MarimoOperation, OperationContext, route } from "./operations.ts";
+import * as cmds from "./commands.ts";
+import * as ops from "./operations.ts";
 
 export function kernelManager(
   client: lsp.BaseLanguageClient,
@@ -23,7 +23,7 @@ export function kernelManager(
         cells: cells.map((c) => c.document.uri.toString()),
         notebookDocument: notebookDocument.uri.toString(),
       });
-      await executeCommand(client, {
+      await cmds.executeCommand(client, {
         command: "marimo.run",
         params: {
           notebookUri: notebookDocument.uri.toString(),
@@ -34,23 +34,23 @@ export function kernelManager(
     },
   );
 
-  const executionContexts = new Map<string, OperationContext>();
+  const executionContexts = new Map<string, ops.OperationContext>();
   const operationListener = client.onNotification(
     "marimo/operation",
-    async (operation: MarimoOperation) => {
+    async (
+      { notebookUri, ...operation }:
+        & { notebookUri: string }
+        & ops.OperationMessage,
+    ) => {
       Logger.trace("KernelManager", `Received operation: ${operation.op}`);
 
-      let context = executionContexts.get(operation.notebookUri);
+      let context = executionContexts.get(notebookUri);
       if (!context) {
-        context = {
-          notebookUri: operation.notebookUri,
-          controller: controller,
-          executions: new Map(),
-        };
-        executionContexts.set(operation.notebookUri, context);
+        context = { notebookUri, controller, executions: new Map() };
+        executionContexts.set(notebookUri, context);
       }
 
-      await route(context, operation);
+      await ops.route(context, operation);
     },
   );
 

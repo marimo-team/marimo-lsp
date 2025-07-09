@@ -1,15 +1,24 @@
 import * as vscode from "vscode";
+import type * as mo from "@marimo-team/marimo-api/src/api";
+
 import { Logger } from "./logging.ts";
 import { assert } from "./assert.ts";
 
-/**
- * Types for marimo operations
- */
-export interface MarimoOperation {
-  notebookUri: string;
-  op: string;
-  data: any;
-}
+type OperationMessageType =
+  mo.components["schemas"]["MessageOperation"]["name"];
+type OperationMessageData<T extends OperationMessageType> = Omit<
+  Extract<mo.components["schemas"]["MessageOperation"], { name: T }>,
+  "name"
+>;
+export type OperationMessage = {
+  [Type in OperationMessageType]: {
+    op: Type;
+    data: Omit<
+      Extract<mo.components["schemas"]["MessageOperation"], { name: Type }>,
+      "name"
+    >;
+  };
+}[OperationMessageType];
 
 export interface OperationContext {
   notebookUri: string;
@@ -17,45 +26,15 @@ export interface OperationContext {
   executions: Map<string, vscode.NotebookCellExecution>;
 }
 
-interface CellOp {
-  cell_id: string;
-  output?: CellOutput;
-  console?: CellOutput | CellOutput[];
-  status?: "queued" | "running" | "idle";
-  stale_inputs?: boolean;
-  run_id?: string;
-  serialization?: string;
-  timestamp: number;
-}
-
-interface CellOutput {
-  channel: "output" | "console" | "stderr";
-  mimetype: string;
-  data: string;
-  timestamp: number;
-}
-
-interface VariableValues {
-  variables: Array<{
-    name: string;
-    type: string;
-    value: string;
-  }>;
-}
-
 export async function route(
   context: OperationContext,
-  operation: MarimoOperation,
+  operation: OperationMessage,
 ): Promise<void> {
   Logger.trace("OperationRouter", `Routing ${operation.op}`);
 
   switch (operation.op) {
     case "cell-op":
-      await handleCellOp(context, operation.data as CellOp);
-      break;
-
-    case "variables":
-      await handleVariables(context, operation.data as VariableValues);
+      await handleCellOperation(context, operation.data);
       break;
 
     default:
@@ -67,11 +46,11 @@ export async function route(
   }
 }
 
-async function handleCellOp(
+async function handleCellOperation(
   context: OperationContext,
-  cellOp: CellOp,
+  data: OperationMessageData<"cell-op">,
 ): Promise<void> {
-  const { cell_id, status, output, console, timestamp } = cellOp;
+  const { cell_id, status, output, console, timestamp } = data;
   Logger.debug("CellOp", `Processing ${status} for cell ${cell_id}`);
 
   const notebook = vscode.workspace.notebookDocuments.find(
@@ -136,11 +115,16 @@ async function handleCellOp(
     }
   }
 }
+
 function appendOutput(
   execution: vscode.NotebookCellExecution,
-  output: CellOutput,
+  output: OperationMessageData<"cell-op">["output"],
 ): void {
+  if (!output?.channel || !(typeof output?.data === "string")) {
+    return;
+  }
   Logger.trace("CellOp", `Appending ${output.channel} output`);
+
   execution.appendOutput(
     new vscode.NotebookCellOutput([
       vscode.NotebookCellOutputItem.text(
@@ -149,13 +133,4 @@ function appendOutput(
       ),
     ]),
   );
-}
-
-async function handleVariables(
-  context: OperationContext,
-  data: VariableValues,
-): Promise<void> {
-  Logger.debug("Variables", `Received ${data.variables.length} variables`);
-  // TODO: Implement variable view update
-  Logger.trace("Variables", "Variables:", data.variables);
 }

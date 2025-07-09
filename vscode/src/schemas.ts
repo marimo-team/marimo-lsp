@@ -1,32 +1,43 @@
-import * as z from "zod/v4";
+import { Schema } from "effect";
 
-const Header = z.object({
-  value: z.string().nullable(),
+const Header = Schema.Struct({
+  value: Schema.String.pipe(
+    Schema.optionalWith({ nullable: true }),
+  ),
 });
 
-const AppInstantiation = z.object({
-  options: z.record(z.string(), z.unknown()),
+const AppInstantiation = Schema.Struct({
+  options: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
 });
 
-const CellDef = z.object({
-  code: z.string(),
-  name: z.string().nullable().default("_"),
-  options: z.record(z.string(), z.unknown()),
+const CellDef = Schema.Struct({
+  code: Schema.String,
+  name: Schema.String.pipe(
+    Schema.optionalWith({ nullable: true }),
+    Schema.withDecodingDefault(() => "_"),
+  ),
+  options: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
 });
 
-const Violation = z.object({
-  description: z.string(),
-  lineno: z.number().int().nullable().default(0),
-  col_offset: z.number().int().nullable().default(0),
+const Violation = Schema.Struct({
+  description: Schema.String,
+  lineno: Schema.Int.pipe(
+    Schema.optionalWith({ nullable: true }),
+    Schema.withDecodingDefault(() => 0),
+  ),
+  col_offset: Schema.Int.pipe(
+    Schema.optionalWith({ nullable: true }),
+    Schema.withDecodingDefault(() => 0),
+  ),
 });
 
-export type NotebookSerialization = z.infer<typeof NotebookSerialization>;
-
-export const NotebookSerialization = z.object({
+export const NotebookSerializationSchema = Schema.Struct({
   app: AppInstantiation,
-  header: Header.nullable(),
-  version: z.string().nullable(),
-  cells: z.array(CellDef),
-  violations: z.array(Violation),
-  valid: z.boolean(),
+  header: Header.pipe(Schema.NullOr),
+  version: Schema.String.pipe(Schema.NullOr),
+  cells: Schema.Array(CellDef),
+  violations: Schema.Array(Violation),
+  valid: Schema.Boolean,
 });
+
+export type NotebookSerialization = typeof NotebookSerializationSchema.Type;
