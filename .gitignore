@@ -1,0 +1,6 @@
+__pycache__
+.venv
+__marimo__
+node_modules/
+dist/
+logs/
