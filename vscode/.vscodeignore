@@ -1,0 +1,7 @@
+.vscode/**
+.vscode-test/**
+src/**
+node_modules/**
+*.vsix
+pnpm-lock.yaml
+.tsbuildinfo
