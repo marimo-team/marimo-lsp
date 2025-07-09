@@ -4,112 +4,62 @@ import * as lsp from "vscode-languageclient";
 import { Logger } from "./logging.ts";
 import { MarimoNotebookSerializer } from "./notebookSerializer.ts";
 import { executeCommand } from "./commands.ts";
-import { assert } from "./assert.ts";
+import { MarimoOperation, OperationContext, route } from "./operations.ts";
 
-/**
- * Marimo Notebook Controller
- *
- * Provides kernel execution capabilities for marimo notebooks
- */
-export class KernelManager implements vscode.Disposable {
-  public readonly controller: vscode.NotebookController;
-  private executions: Map<string, Map<string, vscode.NotebookCellExecution>> =
-    new Map();
+export function kernelManager(
+  client: lsp.BaseLanguageClient,
+  options: { signal: AbortSignal },
+) {
+  const controller = vscode.notebooks.createNotebookController(
+    "marimo-lsp-controller",
+    MarimoNotebookSerializer.notebookType,
+    "marimo kernel",
+    async (
+      cells: vscode.NotebookCell[],
+      notebookDocument: vscode.NotebookDocument,
+    ) => {
+      Logger.debug("KernelManager", "executeHandler");
+      Logger.trace("KernelManager", "executeHandler", {
+        cells: cells.map((c) => c.document.uri.toString()),
+        notebookDocument: notebookDocument.uri.toString(),
+      });
+      await executeCommand(client, {
+        command: "marimo.run",
+        params: {
+          notebookUri: notebookDocument.uri.toString(),
+          cellIds: cells.map((cell) => cell.document.uri.toString()),
+          codes: cells.map((cell) => cell.document.getText()),
+        },
+      });
+    },
+  );
 
-  constructor(client: lsp.BaseLanguageClient) {
-    this.controller = vscode.notebooks.createNotebookController(
-      "marimo-lsp-controller",
-      MarimoNotebookSerializer.notebookType,
-      "marimo kernel",
-      async (cells, notebookDocument) => {
-        Logger.debug("KernelManager", "executeHandler");
-        Logger.trace("KernelManager", "executeHandler", {
-          cells,
-          notebookDocument,
-        });
-        await executeCommand(client, {
-          command: "marimo.run",
-          params: {
-            notebookUri: notebookDocument.uri.toString(),
-            cellIds: cells.map((cell) => cell.document.uri.toString()),
-            codes: cells.map((cell) => cell.document.getText()),
-          },
-        });
-      },
-    );
+  const executionContexts = new Map<string, OperationContext>();
+  const operationListener = client.onNotification(
+    "marimo/operation",
+    async (operation: MarimoOperation) => {
+      Logger.trace("KernelManager", `Received operation: ${operation.op}`);
 
-    client.onNotification("marimo/operation", (operation) => {
-      const { notebookUri, op, data } = operation;
-      const executions = this.executions.get(notebookUri) ??
-        new Map<string, vscode.NotebookCellExecution>();
-      this.executions.set(notebookUri, executions);
-
-      if (op === "cell-op") {
-        type CellOp = {
-          cell_id: string;
-          status: "queued" | "running" | "idle" | null;
-          timestamp: number;
-          output: null | {
-            channel: string;
-            mimetype: string;
-            data: string;
-            timestamp: number;
-          };
+      let context = executionContexts.get(operation.notebookUri);
+      if (!context) {
+        context = {
+          notebookUri: operation.notebookUri,
+          controller: controller,
+          executions: new Map(),
         };
-        const cellOp: CellOp = data;
-        const cellId = cellOp.cell_id;
-
-        const notebook = vscode.workspace.notebookDocuments.find(
-          (notebook) => notebook.uri.toString() === notebookUri,
-        );
-        assert(notebook, `No notebook ${notebookUri} in workspace.`);
-
-        const cell = notebook.getCells().find((cell) =>
-          cell.document.uri.toString() === cellId
-        );
-        assert(cell, `No cell id ${cellId} in notebook ${notebookUri}`);
-
-        if (cellOp.status === "queued") {
-          // create the new cell execution
-          Logger.error("cell-op", "Queued", cellId);
-          const execution = this.controller.createNotebookCellExecution(cell);
-          executions.set(cellId, execution);
-          return;
-        }
-
-        let execution = executions.get(cellOp.cell_id);
-
-        if (cellOp.status === "running") {
-          Logger.error("cell-op", "Running", cellId);
-          assert(execution);
-          execution.start(cellOp.timestamp);
-          execution.clearOutput();
-          return;
-        }
-
-        if (cellOp.output) {
-          Logger.error("cell-op", "Output", cellId);
-          assert(execution);
-          execution.appendOutput(
-            new vscode.NotebookCellOutput([
-              vscode.NotebookCellOutputItem.text(
-                cellOp.output.data,
-                cellOp.output.mimetype,
-              ),
-            ]),
-          );
-        }
-
-        if (cellOp.status === "idle") {
-          Logger.error("cell-op", "Idle", cellId);
-          assert(execution);
-          execution.end(true, cellOp.timestamp);
-        }
+        executionContexts.set(operation.notebookUri, context);
       }
-    });
-  }
 
-  public dispose() {
-    this.controller.dispose();
-  }
+      await route(context, operation);
+    },
+  );
+
+  options.signal.addEventListener("abort", () => {
+    controller.dispose();
+    operationListener.dispose();
+    executionContexts.clear();
+    Logger.info("KernelManager", "Disposed");
+  });
+
+  Logger.info("KernelManager", "Initialized");
 }

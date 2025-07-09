@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
 
 import { MarimoNotebookSerializer } from "./notebookSerializer.ts";
-import { KernelManager } from "./kernelManager.ts";
+import { kernelManager } from "./kernelManager.ts";
 import { channel, Logger } from "./logging.ts";
 import { registerCommand } from "./commands.ts";
 
@@ -90,9 +90,14 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   );
 
+  const controller = new AbortController();
+  kernelManager(client, { signal: controller.signal });
+
   context.subscriptions.push(
+    {
+      dispose: () => controller.abort(),
+    },
     client,
-    new KernelManager(client),
     vscode.workspace.registerNotebookSerializer(
       MarimoNotebookSerializer.notebookType,
       new MarimoNotebookSerializer(client),
