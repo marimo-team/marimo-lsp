@@ -116,12 +116,6 @@ export async function activate(context: vscode.ExtensionContext) {
   await client.start().then(() => {
     Logger.info("Extension", "LSP client started");
 
-    client.onNotification("marimo/operation", (operation) => {
-      Logger.debug("LSP.onNotification", "marimo/operation", operation.op);
-      Logger.trace("LSP.onNotification", "marimo/operation", operation);
-      // TODO: handle outputs
-    });
-
     // Forward logs from the LSP server
     client.onNotification(
       "window/logMessage",

@@ -102,20 +102,10 @@ def create_server() -> LanguageServer:  # noqa: C901
             logger.info(f"Closed {params.notebook_document.uri}")
 
     @server.command("marimo.run")
-    async def run(ls: LanguageServer, args: RunRequest):
+    async def run(ls: LanguageServer, args: RunRequest):  # noqa: ARG001
         logger.info("marimo.run")
-        notebook_uri = args.notebook_uri
-        session = manager.get_session(notebook_uri)
-        if not session:
-            logger.warning(f"No session found for {notebook_uri}")
-            ls.window_show_message(
-                lsp.ShowMessageParams(
-                    type=lsp.MessageType.Warning,
-                    message="No active session. Please reopen the notebook.",
-                )
-            )
-            return
-
+        session = manager.get_session(args.notebook_uri)
+        assert session, f"No session in workspace for {args.notebook_uri}"
         session.put_control_request(
             args.into_marimo().as_execution_request(), from_consumer_id=None
         )

@@ -29,7 +29,7 @@ export class AssertionError extends Error {
  */
 export function assert(
   expression: unknown,
-  msg: string,
+  msg?: string,
 ): asserts expression {
   if (!expression) {
     if (process.env.NODE_ENV === "development") {
