@@ -16,6 +16,7 @@ from marimo._schemas.serialization import (
 )
 from pygls.lsp.server import LanguageServer
 
+from marimo_lsp.app_file_manager import sync_app_with_workspace
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     DeserializeRequest,
@@ -55,21 +56,50 @@ def create_server() -> LanguageServer:  # noqa: C901
         logger.info(f"notebookDocument/didOpen {params.notebook_document.uri}")
         session = manager.get_session(notebook_uri=params.notebook_document.uri)
         if session is None:
-            manager.create_session(
+            session = manager.create_session(
                 server=server, notebook_uri=params.notebook_document.uri
             )
+            logger.info(f"Created and synced session {params.notebook_document.uri}")
+        else:
+            sync_app_with_workspace(
+                workspace=server.workspace,
+                notebook_uri=params.notebook_document.uri,
+                app=session.app_file_manager.app,
+            )
+            logger.info(f"Synced session {params.notebook_document.uri}")
 
     @server.feature(lsp.NOTEBOOK_DOCUMENT_DID_CHANGE)
     async def did_change(params: lsp.DidChangeNotebookDocumentParams) -> None:
         logger.info(f"notebookDocument/didChange {params.notebook_document.uri}")
+        session = manager.get_session(notebook_uri=params.notebook_document.uri)
+        assert session, f"No session in workspace for {params.notebook_document.uri}"
+        sync_app_with_workspace(
+            workspace=server.workspace,
+            notebook_uri=params.notebook_document.uri,
+            app=session.app_file_manager.app,
+        )
+        logger.info(f"Synced session {params.notebook_document.uri}")
 
     @server.feature(lsp.NOTEBOOK_DOCUMENT_DID_SAVE)
     async def did_save(params: lsp.DidSaveNotebookDocumentParams) -> None:
         logger.info(f"notebookDocument/didSave {params.notebook_document.uri}")
+        session = manager.get_session(notebook_uri=params.notebook_document.uri)
+        assert session, f"No session in workspace for {params.notebook_document.uri}"
+        sync_app_with_workspace(
+            workspace=server.workspace,
+            notebook_uri=params.notebook_document.uri,
+            app=session.app_file_manager.app,
+        )
+        logger.info(f"Synced session {params.notebook_document.uri}")
 
     @server.feature(lsp.NOTEBOOK_DOCUMENT_DID_CLOSE)
     async def did_close(params: lsp.DidCloseNotebookDocumentParams) -> None:
         logger.info(f"notebookDocument/didClose {params.notebook_document.uri}")
+        # Only close untitled sessions, when closing documents...
+        # Others can stay alive
+        if params.notebook_document.uri.startswith("untitled:"):
+            manager.close_session(params.notebook_document.uri)
+            logger.info(f"Closed {params.notebook_document.uri}")
 
     @server.command("marimo.run")
     async def run(ls: LanguageServer, args: RunRequest):
