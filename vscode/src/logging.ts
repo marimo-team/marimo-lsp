@@ -8,17 +8,19 @@ export const channel = vscode.window.createOutputChannel("marimo-lsp", {
   log: true,
 });
 
+// TODO: Make configurable. Assumes output is in ./dist, not true in prod.
+const devLogDir = path.join(__dirname, "../../logs");
+
 class FileLogger {
   private logStream: fs.WriteStream;
   private level: vscode.LogLevel;
 
   constructor(config: { level: vscode.LogLevel }) {
     this.level = config.level;
-    const dir = "/Users/manzt/demos/marimo-lsp/logs";
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(devLogDir)) {
+      fs.mkdirSync(devLogDir, { recursive: true });
     }
-    const logFilePath = path.join(dir, `marimo-lsp.log`);
+    const logFilePath = path.join(devLogDir, `marimo-lsp.log`);
     this.logStream = fs.createWriteStream(logFilePath, {
       flags: "w",
     });

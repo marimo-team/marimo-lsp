@@ -6,6 +6,7 @@ import { kernelManager } from "./kernelManager.ts";
 import { channel, Logger } from "./logging.ts";
 import * as cmds from "./commands.ts";
 
+
 export async function activate(context: vscode.ExtensionContext) {
   Logger.info("Extension", "Activating marimo-lsp extension", {
     extensionPath: context.extensionPath,
@@ -15,22 +16,19 @@ export async function activate(context: vscode.ExtensionContext) {
   const client = new lsp.LanguageClient(
     "marimo-lsp",
     "Marimo Language Server",
+    // NOTE: Dev-only config. We haven't solved LSP bundling yet. This setup
+    // allows us to run the dev version of the Python LSP within the project
+    // so we can iterate on both parts together. Must change before publishing.
     {
       run: {
         command: "uv",
-        args: ["run", "--offline", "marimo-lsp"],
+        args: ["run", "--offline", "--directory", __dirname, "marimo-lsp"],
         transport: lsp.TransportKind.stdio,
-        options: {
-          cwd: "/Users/manzt/demos/marimo-lsp",
-        },
       },
       debug: {
         command: "uv",
-        args: ["run", "--offline", "marimo-lsp"],
+        args: ["run", "--offline", "--directory", __dirname, "marimo-lsp"],
         transport: lsp.TransportKind.stdio,
-        options: {
-          cwd: "/Users/manzt/demos/marimo-lsp",
-        },
       },
     },
     {

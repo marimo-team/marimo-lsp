@@ -58,7 +58,7 @@
     "build": "esbuild --format=cjs --platform=node --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist"
   },
   "dependencies": {
-    "@marimo-team/marimo-api": "link:../../../github/marimo-team/marimo/openapi",
+    "@marimo-team/marimo-api": "link:../../../marimo-team/marimo/openapi",
     "effect": "^3.16.12",
     "vscode-languageclient": "^9.0.1",
     "zod": "^3.25.67"

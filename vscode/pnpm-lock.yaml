@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@marimo-team/marimo-api':
-        specifier: link:../../../github/marimo-team/marimo/openapi
-        version: link:../../../github/marimo-team/marimo/openapi
+        specifier: link:../../../marimo-team/marimo/openapi
+        version: link:../../marimo/openapi
       effect:
         specifier: ^3.16.12
         version: 3.16.12
