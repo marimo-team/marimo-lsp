@@ -131,6 +131,15 @@ function appendOutput(
         output.data,
         output.mimetype,
       ),
+      vscode.NotebookCellOutputItem.json(
+        {
+          type: "button",
+          objectId: "cell-123",
+          value: 0,
+          props: { label: "Click me" },
+        },
+        "application/vnd.marimo.ui+json",
+      ),
     ]),
   );
 }

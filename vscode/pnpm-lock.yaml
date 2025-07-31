@@ -7,32 +7,46 @@ settings:
 importers:
 
   .:
-    dependencies:
+    devDependencies:
       '@marimo-team/marimo-api':
-        specifier: link:../../../marimo-team/marimo/openapi
-        version: link:../../marimo/openapi
+        specifier: link:../../marimo/packages/openapi/
+        version: link:../../marimo/packages/openapi
+      '@types/node':
+        specifier: ^22.13.10
+        version: 22.16.0
+      '@types/react':
+        specifier: ^19.1.9
+        version: 19.1.9
+      '@types/react-dom':
+        specifier: ^19.1.7
+        version: 19.1.7(@types/react@19.1.9)
+      '@types/vscode':
+        specifier: ^1.86.0
+        version: 1.101.0
+      '@types/vscode-notebook-renderer':
+        specifier: ^1.72.3
+        version: 1.72.3
       effect:
         specifier: ^3.16.12
         version: 3.16.12
+      esbuild:
+        specifier: ^0.25.5
+        version: 0.25.5
+      react:
+        specifier: ^19.1.1
+        version: 19.1.1
+      react-dom:
+        specifier: ^19.1.1
+        version: 19.1.1(react@19.1.1)
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.2
       vscode-languageclient:
         specifier: ^9.0.1
         version: 9.0.1
       zod:
         specifier: ^3.25.67
         version: 3.25.67
-    devDependencies:
-      '@types/node':
-        specifier: ^22.13.10
-        version: 22.16.0
-      '@types/vscode':
-        specifier: ^1.86.0
-        version: 1.101.0
-      esbuild:
-        specifier: ^0.25.5
-        version: 0.25.5
-      typescript:
-        specifier: ^5.8.2
-        version: 5.8.3
 
 packages:
 
@@ -192,6 +206,17 @@ packages:
   '@types/node@22.16.0':
     resolution: {integrity: sha512-B2egV9wALML1JCpv3VQoQ+yesQKAmNMBIAY7OteVrikcOcAkWm+dGL6qpeCktPjAv6N1JLnhbNiqS35UpFyBsQ==}
 
+  '@types/react-dom@19.1.7':
+    resolution: {integrity: sha512-i5ZzwYpqjmrKenzkoLM2Ibzt6mAsM7pxB6BCIouEVVmgiqaMj1TjaK7hnA36hbW5aZv20kx7Lw6hWzPWg0Rurw==}
+    peerDependencies:
+      '@types/react': ^19.0.0
+
+  '@types/react@19.1.9':
+    resolution: {integrity: sha512-WmdoynAX8Stew/36uTSVMcLJJ1KRh6L3IZRx1PZ7qJtBqT3dYTgyDTx8H1qoRghErydW7xw9mSJ3wS//tCRpFA==}
+
+  '@types/vscode-notebook-renderer@1.72.3':
+    resolution: {integrity: sha512-MfmEI3A2McbUV2WaijoTgLOAs9chwHN4WmqOedl3jdtlbzJBWIQ9ZFmQdzPa3lYr5j8DJhRg3KB5AIM/BBfg9Q==}
+
   '@types/vscode@1.101.0':
     resolution: {integrity: sha512-ZWf0IWa+NGegdW3iU42AcDTFHWW7fApLdkdnBqwYEtHVIBGbTu0ZNQKP/kX3Ds/uMJXIMQNAojHR4vexCEEz5Q==}
 
@@ -200,6 +225,9 @@ packages:
 
   brace-expansion@2.0.2:
     resolution: {integrity: sha512-Jt0vHyM+jmUBqojB7E1NIYadt0vI0Qxjxd2TErW94wDz+E2LAm5vKMXXwg6ZZBTHPuUlDgQHKXvjGBdfcF1ZDQ==}
+
+  csstype@3.1.3:
+    resolution: {integrity: sha512-M1uQkMl8rQK/szD0LNhtqxIPLpimGm8sOBwU7lLnCpSbTyY3yeU1Vc7l4KT5zT4s/yOxHH5O7tIuuLOCnLADRw==}
 
   effect@3.16.12:
     resolution: {integrity: sha512-N39iBk0K71F9nb442TLbTkjl24FLUzuvx2i1I2RsEAQsdAdUTuUoW0vlfUXgkMTUOnYqKnWcFfqw4hK4Pw27hg==}
@@ -220,13 +248,25 @@ packages:
   pure-rand@6.1.0:
     resolution: {integrity: sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA==}
 
+  react-dom@19.1.1:
+    resolution: {integrity: sha512-Dlq/5LAZgF0Gaz6yiqZCf6VCcZs1ghAJyrsu84Q/GT0gV+mCxbfmKNoGRKBYMJ8IEdGPqu49YWXD02GCknEDkw==}
+    peerDependencies:
+      react: ^19.1.1
+
+  react@19.1.1:
+    resolution: {integrity: sha512-w8nqGImo45dmMIfljjMwOGtbmC/mk4CMYhWIicdSflH91J9TyCyczcPFXJzrZ/ZXcgGRFeP6BU0BEJTw6tZdfQ==}
+    engines: {node: '>=0.10.0'}
+
+  scheduler@0.26.0:
+    resolution: {integrity: sha512-NlHwttCI/l5gCPR3D1nNXtWABUmBwvZpEQiD4IXSbIDq8BzLIK/7Ir5gTFSGZDUu37K5cMNp0hFtzO38sC7gWA==}
+
   semver@7.7.2:
     resolution: {integrity: sha512-RF0Fw+rO5AMf9MAyaRXI4AV0Ulj5lMHqVxxdSgiVbixSCXoEmmX/jk0CuJw4+3SqroYO9VoUh+HcuJivvtJemA==}
     engines: {node: '>=10'}
     hasBin: true
 
-  typescript@5.8.3:
-    resolution: {integrity: sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ==}
+  typescript@5.9.2:
+    resolution: {integrity: sha512-CWBzXQrc/qOkhidw1OzBTQuYRbfyxDXJMVJ1XNwUHGROVmuaeiEm3OslpZ1RV96d7SKKjZKrSJu3+t/xlw3R9A==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -333,6 +373,16 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/react-dom@19.1.7(@types/react@19.1.9)':
+    dependencies:
+      '@types/react': 19.1.9
+
+  '@types/react@19.1.9':
+    dependencies:
+      csstype: 3.1.3
+
+  '@types/vscode-notebook-renderer@1.72.3': {}
+
   '@types/vscode@1.101.0': {}
 
   balanced-match@1.0.2: {}
@@ -340,6 +390,8 @@ snapshots:
   brace-expansion@2.0.2:
     dependencies:
       balanced-match: 1.0.2
+
+  csstype@3.1.3: {}
 
   effect@3.16.12:
     dependencies:
@@ -384,9 +436,18 @@ snapshots:
 
   pure-rand@6.1.0: {}
 
+  react-dom@19.1.1(react@19.1.1):
+    dependencies:
+      react: 19.1.1
+      scheduler: 0.26.0
+
+  react@19.1.1: {}
+
+  scheduler@0.26.0: {}
+
   semver@7.7.2: {}
 
-  typescript@5.8.3: {}
+  typescript@5.9.2: {}
 
   undici-types@6.21.0: {}
 

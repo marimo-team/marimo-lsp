@@ -32,6 +32,17 @@
         ]
       }
     ],
+    "notebookRenderer": [
+      {
+        "id": "marimo-renderer",
+        "displayName": "Marimo Output Renderer",
+        "entrypoint": "./dist/renderer.js",
+        "mimeTypes": [
+          "application/vnd.marimo.ui+json"
+        ],
+        "requiresMessaging": "always"
+      }
+    ],
     "commands": [
       {
         "command": "marimo-lsp.newMarimoNotebook",
@@ -55,18 +66,23 @@
     }
   },
   "scripts": {
-    "build": "esbuild --format=cjs --platform=node --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist"
-  },
-  "dependencies": {
-    "@marimo-team/marimo-api": "link:../../../marimo-team/marimo/openapi",
-    "effect": "^3.16.12",
-    "vscode-languageclient": "^9.0.1",
-    "zod": "^3.25.67"
+    "build": "pnpm build-extension && pnpm build-renderer",
+    "build-extension": "esbuild --format=cjs --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
+    "build-renderer": "esbuild --format=esm --bundle --minify --sourcemap src/renderer.tsx --outdir=dist"
   },
   "devDependencies": {
+    "@marimo-team/marimo-api": "link:../../marimo/packages/openapi/",
     "@types/node": "^22.13.10",
+    "@types/react": "^19.1.9",
+    "@types/react-dom": "^19.1.7",
     "@types/vscode": "^1.86.0",
+    "@types/vscode-notebook-renderer": "^1.72.3",
+    "effect": "^3.16.12",
     "esbuild": "^0.25.5",
-    "typescript": "^5.8.2"
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "typescript": "^5.9.2",
+    "vscode-languageclient": "^9.0.1",
+    "zod": "^3.25.67"
   }
 }

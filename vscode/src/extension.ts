@@ -6,7 +6,6 @@ import { kernelManager } from "./kernelManager.ts";
 import { channel, Logger } from "./logging.ts";
 import * as cmds from "./commands.ts";
 
-
 export async function activate(context: vscode.ExtensionContext) {
   Logger.info("Extension", "Activating marimo-lsp extension", {
     extensionPath: context.extensionPath,
