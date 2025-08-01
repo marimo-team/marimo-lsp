@@ -10,6 +10,7 @@ export function kernelManager(
   client: lsp.BaseLanguageClient,
   options: { signal: AbortSignal },
 ) {
+  const channel = vscode.notebooks.createRendererMessaging("marimo-renderer");
   const controller = vscode.notebooks.createNotebookController(
     "marimo-lsp-controller",
     MarimoNotebookSerializer.notebookType,
@@ -33,6 +34,13 @@ export function kernelManager(
       });
     },
   );
+
+  channel.onDidReceiveMessage(({ editor, message }) => {
+    Logger.trace("KernelManager", "channel", {
+      uri: editor.notebook.uri,
+      message,
+    });
+  });
 
   const executionContexts = new Map<string, ops.OperationContext>();
   const operationListener = client.onNotification(

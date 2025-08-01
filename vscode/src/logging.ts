@@ -57,7 +57,7 @@ const fileLogger = new FileLogger({ level: vscode.LogLevel.Debug });
 
 export const Logger = {
   trace(category: string, message: string, ...messages: unknown[]) {
-    channel.trace(util.format(`[${category}]`, ...messages));
+    channel.trace(util.format(`[${category}]`, message, ...messages));
     fileLogger.log(vscode.LogLevel.Trace, category, message, messages[0]);
   },
   debug(category: string, message: string, ...messages: unknown[]) {

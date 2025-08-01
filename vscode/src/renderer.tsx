@@ -1,10 +1,8 @@
-/// <reference lib="dom" />
-/// <reference types="vscode-notebook-renderer" />
-
 import * as React from "react";
 import * as ReactDOM from "react-dom/client";
 import type { ActivationFunction } from "vscode-notebook-renderer";
 
+import { RendererContext } from "./hooks/useRendererContext.ts";
 import { OutputItem } from "./components/Output.tsx";
 import { assert } from "./assert.ts";
 
@@ -20,7 +18,11 @@ export const activate: ActivationFunction<unknown> = async (context) => {
   return {
     renderOutputItem(data, element, signal) {
       let root = ReactDOM.createRoot(element);
-      root.render(<OutputItem data={data} />);
+      root.render(
+        <RendererContext value={context}>
+          <OutputItem data={data} />
+        </RendererContext>,
+      );
       registry.set(data.id, root);
       signal.addEventListener("abort", () => {
         root.unmount();

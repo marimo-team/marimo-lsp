@@ -30,7 +30,7 @@ export async function route(
   context: OperationContext,
   operation: OperationMessage,
 ): Promise<void> {
-  Logger.trace("OperationRouter", `Routing ${operation.op}`);
+  Logger.trace("OperationRouter", `${operation.op}`, operation.data);
 
   switch (operation.op) {
     case "cell-op":
@@ -125,21 +125,23 @@ function appendOutput(
   }
   Logger.trace("CellOp", `Appending ${output.channel} output`);
 
-  execution.appendOutput(
-    new vscode.NotebookCellOutput([
-      vscode.NotebookCellOutputItem.text(
-        output.data,
-        output.mimetype,
-      ),
-      vscode.NotebookCellOutputItem.json(
-        {
-          type: "button",
-          objectId: "cell-123",
-          value: 0,
-          props: { label: "Click me" },
-        },
-        "application/vnd.marimo.ui+json",
-      ),
-    ]),
-  );
+  if (output.mimetype === "text/html") {
+    execution.appendOutput(
+      new vscode.NotebookCellOutput([
+        vscode.NotebookCellOutputItem.json(
+          output.data,
+          "application/vnd.marimo.ui+json",
+        ),
+      ]),
+    );
+  } else {
+    execution.appendOutput(
+      new vscode.NotebookCellOutput([
+        vscode.NotebookCellOutputItem.text(
+          output.data,
+          output.mimetype,
+        ),
+      ]),
+    );
+  }
 }
