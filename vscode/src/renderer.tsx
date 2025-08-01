@@ -1,27 +1,17 @@
-import * as React from "react";
 import * as ReactDOM from "react-dom/client";
 import type { ActivationFunction } from "vscode-notebook-renderer";
 
-import { RendererContext } from "./hooks/useRendererContext.ts";
-import { OutputItem } from "./components/Output.tsx";
-import { assert } from "./assert.ts";
+import { initializeMarimoComponents } from "./marimo-components.ts";
 
-export const activate: ActivationFunction<unknown> = async (context) => {
-  assert(
-    context.postMessage && context.onDidReceiveMessage,
-    "Messaging is required.",
-  );
-  const registry = new Map<string, ReactDOM.Root>();
-  context.onDidReceiveMessage((e) => {
-    console.log(e);
-  });
+let { registry: uiRegistry, renderHTML } = initializeMarimoComponents();
+
+export const activate: ActivationFunction<unknown> = async () => {
+  let registry = new Map<string, ReactDOM.Root>();
   return {
     renderOutputItem(data, element, signal) {
       let root = ReactDOM.createRoot(element);
       root.render(
-        <RendererContext value={context}>
-          <OutputItem data={data} />
-        </RendererContext>,
+        renderHTML({ html: data.text() }),
       );
       registry.set(data.id, root);
       signal.addEventListener("abort", () => {

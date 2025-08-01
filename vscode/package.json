@@ -68,7 +68,7 @@
   "scripts": {
     "build": "pnpm build-extension && pnpm build-renderer",
     "build-extension": "esbuild --format=cjs --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
-    "build-renderer": "esbuild --format=esm --bundle --minify --sourcemap src/renderer.tsx --outdir=dist"
+    "build-renderer": "esbuild --define:import.meta.env.VITE_MARIMO_ISLANDS=false --define:import.meta.env.PROD=true --define:import.meta.env.DEV=false --define:import.meta.env.MODE=\\\"test\\\" --format=esm --bundle --minify --sourcemap --loader:.svg=dataurl --loader:.png=dataurl --alias:react=./node_modules/react --alias:react-dom=./node_modules/react-dom src/renderer.tsx --outdir=dist --splitting"
   },
   "devDependencies": {
     "@marimo-team/marimo-api": "link:../../marimo/packages/openapi/",

@@ -128,7 +128,7 @@ function appendOutput(
   if (output.mimetype === "text/html") {
     execution.appendOutput(
       new vscode.NotebookCellOutput([
-        vscode.NotebookCellOutputItem.json(
+        vscode.NotebookCellOutputItem.text(
           output.data,
           "application/vnd.marimo.ui+json",
         ),

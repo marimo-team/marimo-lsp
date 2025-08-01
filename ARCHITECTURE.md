@@ -63,13 +63,13 @@ The notebook document is kept in sync via LSP notifications
 (`notebookDocument/didChange`) and remains accessible on the LSP server even
 after it's closed or saved — provided the same VS Code session.
 
-The custom `LspAppFileManager` adapts VS Code's notebook documents into
-marimo's App structure. Unlike marimo's standard file-based loading, it reads
-directly from the LSP's in-memory document state, tracking which cells have
-changed between reloads.
+The custom `LspAppFileManager` adapts VS Code's notebook documents into marimo's
+App structure. Unlike marimo's standard file-based loading, it reads directly
+from the LSP's in-memory document state, tracking which cells have changed
+between reloads.
 
-For kernel communication, the `LspSessionConsumer` "consumes"kernel messages
-and forward them as LSP notifications.
+For kernel communication, the `LspSessionConsumer` "consumes"kernel messages and
+forward them as LSP notifications.
 
 ## Current Implementation Status
 
