@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@marimo-team/frontend':
+        specifier: link:../../marimo/frontend/
+        version: link:../../marimo/frontend
       '@marimo-team/marimo-api':
         specifier: link:../../marimo/packages/openapi/
         version: link:../../marimo/packages/openapi
