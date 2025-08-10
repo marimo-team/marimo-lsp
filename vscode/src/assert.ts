@@ -1,3 +1,5 @@
+import * as process from "node:process";
+
 export class AssertionError extends Error {
   override name = "AssertionError";
 }
@@ -30,10 +32,10 @@ export function assert(
   msg?: string,
 ): asserts expression {
   if (!expression) {
-    // if (process.env.NODE_ENV === "development") {
-    //   // Triggers a breakpoint in development; stripped out in production builds.
-    //   debugger;
-    // }
+    if (process.env.NODE_ENV === "development") {
+      // Triggers a breakpoint in development; stripped out in production builds.
+      debugger;
+    }
     throw new AssertionError(msg);
   }
 }

@@ -1,9 +1,16 @@
+/// <reference lib="dom" />
+import * as React from "react";
 import * as ReactDOM from "react-dom/client";
 import type { ActivationFunction } from "vscode-notebook-renderer";
 
+import styleText from "virtual:injected-styles";
 import { initializeMarimoComponents } from "./marimo-components.ts";
 
-let { registry: uiRegistry, renderHTML } = initializeMarimoComponents();
+let { renderHTML } = initializeMarimoComponents();
+
+const style = document.createElement("style");
+style.textContent = styleText;
+document.head.appendChild(style);
 
 export const activate: ActivationFunction<unknown> = async () => {
   let registry = new Map<string, ReactDOM.Root>();
@@ -11,9 +18,12 @@ export const activate: ActivationFunction<unknown> = async () => {
     renderOutputItem(data, element, signal) {
       let root = ReactDOM.createRoot(element);
       root.render(
-        renderHTML({ html: data.text() }),
+        <div className="marimo">
+          {renderHTML({ html: data.text() })}
+        </div>,
       );
       registry.set(data.id, root);
+
       signal.addEventListener("abort", () => {
         root.unmount();
         registry.delete(data.id);

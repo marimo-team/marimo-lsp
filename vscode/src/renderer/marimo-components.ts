@@ -3,6 +3,15 @@ import { initializeUIElement } from "@marimo-team/frontend/core/dom/ui-element.t
 import { UI_ELEMENT_REGISTRY } from "@marimo-team/frontend/core/dom/uiregistry.ts";
 import { renderHTML } from "@marimo-team/frontend/plugins/core/RenderHTML.tsx";
 
+import "@marimo-team/frontend/css/common.css";
+import "@marimo-team/frontend/css/globals.css";
+import "@marimo-team/frontend/css/codehilite.css";
+import "@marimo-team/frontend/css/katex.min.css";
+import "@marimo-team/frontend/css/md.css";
+import "@marimo-team/frontend/css/admonition.css";
+import "@marimo-team/frontend/css/md-tooltip.css";
+import "@marimo-team/frontend/css/table.css";
+
 /**
  * Initialize marimo UI components in the VS Code renderer environment.
  * This provides a minimal setup to hydrate web components without the full kernel.

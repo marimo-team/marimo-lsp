@@ -36,7 +36,7 @@
       {
         "id": "marimo-renderer",
         "displayName": "Marimo Output Renderer",
-        "entrypoint": "./dist/renderer.js",
+        "entrypoint": "./dist/renderer.mjs",
         "mimeTypes": [
           "application/vnd.marimo.ui+json"
         ],
@@ -66,24 +66,25 @@
     }
   },
   "scripts": {
-    "build": "pnpm build-extension && pnpm build-renderer",
+    "build": "pnpm build-renderer && pnpm build-extension",
     "build-extension": "esbuild --format=cjs --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
-    "build-renderer": "esbuild --define:import.meta.env.VITE_MARIMO_ISLANDS=false --define:import.meta.env.PROD=true --define:import.meta.env.DEV=false --define:import.meta.env.MODE=\\\"test\\\" --format=esm --bundle --minify --sourcemap --loader:.svg=dataurl --loader:.png=dataurl --alias:react=./node_modules/react --alias:react-dom=./node_modules/react-dom src/renderer.tsx --outdir=dist --splitting"
+    "build-renderer": "vite build"
   },
   "devDependencies": {
-    "@marimo-team/marimo-api": "link:../../marimo/packages/openapi/",
     "@marimo-team/frontend": "link:../../marimo/frontend/",
+    "@marimo-team/marimo-api": "link:../../marimo/packages/openapi/",
+    "@tailwindcss/vite": "^4.1.11",
     "@types/node": "^22.13.10",
-    "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7",
-    "@types/vscode": "^1.86.0",
+    "@types/react": "^19.1.9",
     "@types/vscode-notebook-renderer": "^1.72.3",
+    "@types/vscode": "^1.86.0",
     "effect": "^3.16.12",
     "esbuild": "^0.25.5",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
+    "react-dom": "19.1.0",
+    "react": "19.1.0",
     "typescript": "^5.9.2",
-    "vscode-languageclient": "^9.0.1",
-    "zod": "^3.25.67"
+    "vite": "npm:rolldown-vite@latest",
+    "vscode-languageclient": "^9.0.1"
   }
 }
