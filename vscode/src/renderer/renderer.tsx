@@ -9,6 +9,8 @@ import { initializeMarimoComponents } from "./marimo-components.ts";
 let { renderHTML } = initializeMarimoComponents();
 
 const style = document.createElement("style");
+// Hack to get styles copied into ShadowDOM by marimo's custom elements
+style.dataset.viteDevId = "marimo-lsp-styles"
 style.textContent = styleText;
 document.head.appendChild(style);
 
@@ -18,7 +20,7 @@ export const activate: ActivationFunction<unknown> = async () => {
     renderOutputItem(data, element, signal) {
       let root = ReactDOM.createRoot(element);
       root.render(
-        <div className="marimo">
+        <div className="p-4">
           {renderHTML({ html: data.text() })}
         </div>,
       );
