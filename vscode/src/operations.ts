@@ -30,18 +30,22 @@ export async function route(
   context: OperationContext,
   operation: OperationMessage,
 ): Promise<void> {
-  Logger.trace("OperationRouter", `${operation.op}`, operation.data);
-
+  Logger.trace("Operation.Router", `Received: ${operation.op}`, operation.data);
   switch (operation.op) {
     case "cell-op":
+      Logger.debug(
+        "Cell.Operation",
+        `Processing: ${operation.data.status}`,
+        { cellId: operation.data.cell_id, status: operation.data.status },
+      );
       await handleCellOperation(context, operation.data);
       break;
 
     default:
-      Logger.debug(
-        "OperationRouter",
+      Logger.warn(
+        "Operation.Router",
         `Unknown operation: ${operation.op}`,
-        operation.data,
+        operation,
       );
   }
 }
@@ -51,27 +55,12 @@ async function handleCellOperation(
   data: OperationMessageData<"cell-op">,
 ): Promise<void> {
   const { cell_id, status, output, console, timestamp } = data;
-  Logger.debug("CellOp", `Processing ${status} for cell ${cell_id}`);
-
-  const notebook = vscode.workspace.notebookDocuments.find(
-    (nb) => nb.uri.toString() === context.notebookUri,
-  );
-  assert(notebook, `No notebook ${context.notebookUri} in workspace.`);
-
-  const cell = notebook.getCells().find(
-    (c) => c.document.uri.toString() === cell_id,
-  );
-  assert(
-    cell,
-    `No cell id ${cell_id} in notebook ${context.notebookUri} `,
-  );
+  const cell = getNotebookCell(context.notebookUri, cell_id);
 
   switch (status) {
     case "queued": {
-      Logger.debug("CellOp", `Cell ${cell_id} queued`);
-      const execution = context.controller.createNotebookCellExecution(
-        cell,
-      );
+      Logger.debug("Cell.State", `Queued: ${cell_id}`);
+      const execution = context.controller.createNotebookCellExecution(cell);
       context.executions.set(cell_id, execution);
       break;
     }
@@ -79,11 +68,11 @@ async function handleCellOperation(
     case "running": {
       const execution = context.executions.get(cell_id);
       if (execution) {
-        Logger.debug("CellOp", "Cell running");
+        Logger.debug("Cell.State", `Running: ${cell_id}`);
         execution.start(timestamp);
         execution.clearOutput();
       } else {
-        Logger.warn("CellOp", "No execution found for running cell");
+        Logger.warn("Cell.State", `No execution found for running cell: ${cell_id}`);
       }
       break;
     }
@@ -91,11 +80,11 @@ async function handleCellOperation(
     case "idle": {
       const execution = context.executions.get(cell_id);
       if (execution) {
-        Logger.debug("CellOp", `Cell ${cell_id} idle`);
+        Logger.debug("Cell.State", `Completed: ${cell_id}`);
         execution.end(true, timestamp);
         context.executions.delete(cell_id);
       } else {
-        Logger.warn("CellOp", "No execution found for idle cell");
+        Logger.warn("Cell.State", `No execution found for idle cell: ${cell_id}`);
       }
       break;
     }
@@ -123,7 +112,7 @@ function appendOutput(
   if (!output?.channel || !(typeof output?.data === "string")) {
     return;
   }
-  Logger.trace("CellOp", `Appending ${output.channel} output`);
+  Logger.trace("Cell.Output", `Appending ${output.channel} output`);
 
   if (output.mimetype === "text/html") {
     execution.appendOutput(
@@ -144,4 +133,24 @@ function appendOutput(
       ]),
     );
   }
+}
+
+function getNotebookDocument(notebookUri: string): vscode.NotebookDocument {
+  const notebook = vscode.workspace.notebookDocuments.find(
+    (nb) => nb.uri.toString() === notebookUri,
+  );
+  assert(notebook, `No notebook ${notebookUri} in workspace.`);
+  return notebook;
+}
+
+function getNotebookCell(
+  notebookUri: string,
+  cellId: string,
+): vscode.NotebookCell {
+  const notebook = getNotebookDocument(notebookUri);
+  const cell = notebook.getCells().find((c) =>
+    c.document.uri.toString() === cellId
+  );
+  assert(cell, `No cell id ${cellId} in notebook ${notebookUri} `);
+  return cell;
 }

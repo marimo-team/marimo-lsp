@@ -72,19 +72,22 @@
   },
   "devDependencies": {
     "@marimo-team/frontend": "link:../../marimo/frontend/",
-    "@marimo-team/marimo-api": "link:../../marimo/packages/openapi/",
+    "@marimo-team/openapi": "link:../../marimo/packages/openapi/",
     "@tailwindcss/vite": "^4.1.11",
     "@types/node": "^22.13.10",
-    "@types/react-dom": "^19.1.7",
     "@types/react": "^19.1.9",
-    "@types/vscode-notebook-renderer": "^1.72.3",
+    "@types/react-dom": "^19.1.7",
     "@types/vscode": "^1.86.0",
+    "@types/vscode-notebook-renderer": "^1.72.3",
     "effect": "^3.16.12",
     "esbuild": "^0.25.5",
-    "react-dom": "19.1.0",
     "react": "19.1.0",
+    "react-dom": "19.1.0",
     "typescript": "^5.9.2",
     "vite": "npm:rolldown-vite@latest",
     "vscode-languageclient": "^9.0.1"
+  },
+  "dependencies": {
+    "rpc-anywhere": "^1.7.0"
   }
 }

@@ -1,12 +1,12 @@
 /// <reference lib="dom" />
 import * as React from "react";
 import * as ReactDOM from "react-dom/client";
-import type { ActivationFunction } from "vscode-notebook-renderer";
-
+import type * as vscode from "vscode-notebook-renderer";
 import styleText from "virtual:injected-styles";
-import { initializeMarimoComponents } from "./marimo-components.ts";
 
-let { renderHTML } = initializeMarimoComponents();
+import { assert } from "../assert.ts";
+import { initialize, type RequestClient } from "./marimo-components.ts";
+import type { RequestMap } from "../commands.ts";
 
 // Inject the final compiled CSS from our Vite plugin
 // The title="marimo" tags these styles to be copied
@@ -18,30 +18,65 @@ let { renderHTML } = initializeMarimoComponents();
   document.head.appendChild(sheet);
 }
 
-export const activate: ActivationFunction<unknown> = async () => {
-  let registry = new Map<string, ReactDOM.Root>();
+export const activate = defineActivationFunction((context) => {
+  let renderHTML = initialize(createRequestClient(context));
   return {
     renderOutputItem(data, element, signal) {
+      let html = data.text();
       let root = ReactDOM.createRoot(element);
       root.render(
-        <div className="p-4">
-          {renderHTML({ html: data.text() })}
-        </div>,
+        <div className="p-4">{renderHTML({ html })}</div>,
       );
-      registry.set(data.id, root);
-
       signal.addEventListener("abort", () => {
         root.unmount();
-        registry.delete(data.id);
       });
     },
-    disposeOutputItem(id) {
-      // if undefined, all cells are being removed
-      let ids = id ? [id] : [...registry.keys()];
-      for (let id of ids) {
-        registry.get(id)?.unmount();
-        registry.delete(id);
-      }
-    },
   };
-};
+});
+
+function createRequestClient(context: TypedRequestContext): RequestClient {
+  const client = {
+    async sendComponentValues(request) {
+      context.postMessage({
+        command: "marmo.kernel.set_ui_element_value",
+        params: request,
+      });
+      return null;
+    },
+  } satisfies Partial<RequestClient>;
+  return new Proxy(client as RequestClient, {
+    get(target: RequestClient, p: string, receiver: unknown) {
+      const method = Reflect.get(target, p, receiver);
+      if (method === undefined) {
+        return () => {
+          throw new Error(`Not implemented: ${p}`);
+        }
+      }
+      return method;
+    },
+  })
+}
+
+type TypedRequestContext = Omit<vscode.RendererContext<unknown>, "postMessage" | "onDidReceiveMessage"> & {
+  postMessage<K extends keyof RequestMap>(options: { command: K, params: Omit<RequestMap[K], "notebookUri"> }): void;
+  onDidReceiveMessage(listener: (e: unknown) => any): { dispose(): void };
+}
+
+function defineActivationFunction(
+  activate: (context: TypedRequestContext) => vscode.RendererApi
+): vscode.ActivationFunction {
+  return (context) => {
+    assert(
+      isTypedRequestContext(context),
+      `Expected {"requiresMessaging": "always"} for marimo outputs.`,
+    );
+    return activate(context);
+  }
+}
+
+function isTypedRequestContext(context: vscode.RendererContext<unknown>): context is TypedRequestContext {
+  return (
+    typeof context.postMessage === "function" &&
+    typeof context.onDidReceiveMessage === "function"
+  )
+}

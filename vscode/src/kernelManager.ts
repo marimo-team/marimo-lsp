@@ -5,6 +5,7 @@ import { Logger } from "./logging.ts";
 import { MarimoNotebookSerializer } from "./notebookSerializer.ts";
 import * as cmds from "./commands.ts";
 import * as ops from "./operations.ts";
+import { assert } from "./assert.ts";
 
 export function kernelManager(
   client: lsp.BaseLanguageClient,
@@ -19,10 +20,12 @@ export function kernelManager(
       cells: vscode.NotebookCell[],
       notebookDocument: vscode.NotebookDocument,
     ) => {
-      Logger.debug("KernelManager", "executeHandler");
-      Logger.trace("KernelManager", "executeHandler", {
+      Logger.info("Kernel.Execute", "Running cells", {
+        cellCount: cells.length,
+        notebook: notebookDocument.uri.toString(),
+      });
+      Logger.trace("Kernel.Execute", "Cell URIs", {
         cells: cells.map((c) => c.document.uri.toString()),
-        notebookDocument: notebookDocument.uri.toString(),
       });
       await cmds.executeCommand(client, {
         command: "marimo.run",
@@ -35,29 +38,27 @@ export function kernelManager(
     },
   );
 
-  channel.onDidReceiveMessage(({ editor, message }) => {
-    Logger.trace("KernelManager", "channel", {
-      uri: editor.notebook.uri,
-      message,
-    });
+  channel.onDidReceiveMessage(async ({ editor, message }) => {
+    assert("command" in message, "unknown message")
+    await cmds.executeCommand(client, {
+      command: message.command,
+      params: {
+        notebookUri: editor.notebook.uri.toString(),
+        ...message.params,
+      }
+    })
   });
 
-  const executionContexts = new Map<string, ops.OperationContext>();
+  const contexts = new Map<string, ops.OperationContext>();
   const operationListener = client.onNotification(
     "marimo/operation",
-    async (
-      { notebookUri, ...operation }:
-        & { notebookUri: string }
-        & ops.OperationMessage,
-    ) => {
-      Logger.trace("KernelManager", `Received operation: ${operation.op}`);
-
-      let context = executionContexts.get(notebookUri);
+    async (message: { notebookUri: string } & ops.OperationMessage) => {
+      const { notebookUri, ...operation } = message;
+      let context = contexts.get(notebookUri);
       if (!context) {
         context = { notebookUri, controller, executions: new Map() };
-        executionContexts.set(notebookUri, context);
+        contexts.set(notebookUri, context);
       }
-
       await ops.route(context, operation);
     },
   );
@@ -65,9 +66,9 @@ export function kernelManager(
   options.signal.addEventListener("abort", () => {
     controller.dispose();
     operationListener.dispose();
-    executionContexts.clear();
-    Logger.info("KernelManager", "Disposed");
+    contexts.clear();
+    Logger.info("Kernel.Lifecycle", "Kernel manager disposed");
   });
 
-  Logger.info("KernelManager", "Initialized");
+  Logger.info("Kernel.Lifecycle", "Kernel manager initialized");
 }
