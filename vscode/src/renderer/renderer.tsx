@@ -8,11 +8,15 @@ import { initializeMarimoComponents } from "./marimo-components.ts";
 
 let { renderHTML } = initializeMarimoComponents();
 
-const style = document.createElement("style");
-// Hack to get styles copied into ShadowDOM by marimo's custom elements
-style.dataset.viteDevId = "marimo-lsp-styles"
-style.textContent = styleText;
-document.head.appendChild(style);
+// Inject the final compiled CSS from our Vite plugin
+// The title="marimo" tags these styles to be copied
+// into the ShadowDOM (for our UI elements).
+{
+  const sheet = document.createElement("style");
+  sheet.title = "marimo";
+  sheet.textContent = styleText;
+  document.head.appendChild(sheet);
+}
 
 export const activate: ActivationFunction<unknown> = async () => {
   let registry = new Map<string, ReactDOM.Root>();
