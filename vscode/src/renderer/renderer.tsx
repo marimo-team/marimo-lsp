@@ -37,7 +37,7 @@ function createRequestClient(context: TypedRequestContext): RequestClient {
   const client = {
     async sendComponentValues(request) {
       context.postMessage({
-        command: "marmo.kernel.set_ui_element_value",
+        command: "marimo.set_ui_element_value",
         // FIXME: The token is required by "set_ui_element_value" (but not needed)
         params: { ...request, token: "" },
       });

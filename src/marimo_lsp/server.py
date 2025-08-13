@@ -112,7 +112,7 @@ def create_server() -> LanguageServer:  # noqa: C901
         )
         logger.info(f"Execution request sent for {args.notebook_uri}")
 
-    @server.command("marmo.kernel.set_ui_element_value")
+    @server.command("marimo.set_ui_element_value")
     async def set_ui_element_value(ls: LanguageServer, args: SetUIElementValueRequest):  # noqa: ARG001
         logger.info("marimo.kernel.set_ui_element_value")
         session = manager.get_session(args.notebook_uri)

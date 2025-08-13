@@ -13,7 +13,7 @@ export type MessageOperationData<T extends MessageOperationType> = Omit<
 type WithNotebookUri<T> = T & { notebookUri: string };
 export type RequestMap = {
   "marimo.run": WithNotebookUri<Schemas["RunRequest"]>;
-  "marmo.kernel.set_ui_element_value": WithNotebookUri<
+  "marimo.set_ui_element_value": WithNotebookUri<
     Schemas["SetUIElementValueRequest"]
   >;
   "marimo.serialize": { notebook: NotebookSerialization };
