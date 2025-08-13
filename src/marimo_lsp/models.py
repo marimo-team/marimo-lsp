@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import attrs
 import marimo._server.models.models as core
+from marimo._runtime import requests
 from pygls.protocol import default_converter
 
 if TYPE_CHECKING:
@@ -40,6 +41,33 @@ class RunRequest(BaseRequest):
         return core.RunRequest(
             cell_ids=self.cell_ids,
             codes=self.codes,
+        )
+
+
+@attrs.define
+class SetUIElementValueRequest(BaseRequest):
+    """
+    A request to update ui elements in a marimo notebook.
+
+    Wraps `marimo._runtime.requests.SetUIElementValueRequest` with notebook context.
+    """
+
+    notebook_uri: str
+    """The URI of the notebook."""
+
+    object_ids: list[core.UIElementId]
+    """Identifiers for the UI elements"""
+
+    values: list[Any]
+    """Corresponding values for the UI elements"""
+
+    token: str
+    """Dummy token that is technically required"""
+
+    def into_marimo(self) -> requests.SetUIElementValueRequest:
+        """Convert to the marimo SetUIElementValueRequest."""
+        return requests.SetUIElementValueRequest(
+            object_ids=self.object_ids, values=self.values
         )
 
 

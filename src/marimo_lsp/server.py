@@ -22,6 +22,7 @@ from marimo_lsp.models import (
     DeserializeRequest,
     RunRequest,
     SerializeRequest,
+    SetUIElementValueRequest,
     converter_factory,
 )
 from marimo_lsp.session_manager import LspSessionManager
@@ -110,6 +111,13 @@ def create_server() -> LanguageServer:  # noqa: C901
             args.into_marimo().as_execution_request(), from_consumer_id=None
         )
         logger.info(f"Execution request sent for {args.notebook_uri}")
+
+    @server.command("marmo.kernel.set_ui_element_value")
+    async def set_ui_element_value(ls: LanguageServer, args: SetUIElementValueRequest):  # noqa: ARG001
+        logger.info("marimo.kernel.set_ui_element_value")
+        session = manager.get_session(args.notebook_uri)
+        assert session, f"No session in workspace for {args.notebook_uri}"
+        session.put_control_request(args.into_marimo(), from_consumer_id=None)
 
     @server.command("marimo.serialize")
     async def serialize(args: SerializeRequest):

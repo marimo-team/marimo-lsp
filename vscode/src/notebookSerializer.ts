@@ -22,8 +22,11 @@ export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
     notebook: vscode.NotebookData,
     token: vscode.CancellationToken,
   ): Promise<Uint8Array> {
-    Logger.debug("MarimoNotebookSerializer", "serializeNotebook");
-    Logger.trace("MarimoNotebookSerializer", "serializeNotebook", notebook);
+    const startTime = Date.now();
+    Logger.debug("Serializer", "Serializing notebook", {
+      cellCount: notebook.cells.length,
+    });
+    Logger.trace("Serializer.Data", "Notebook data", notebook);
 
     const client = this.client;
     const { cells, metadata = {} } = notebook;
@@ -45,7 +48,7 @@ export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
       }).pipe(
         Effect.tapErrorTag("ParseError", (error) => {
           Logger.error(
-            "MarimoNotebookSerializer",
+            "Serializer.Parse",
             "Failed to parse notebook data",
             ParseResult.TreeFormatter.formatErrorSync(error),
           );
@@ -67,15 +70,20 @@ export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
         ),
         Effect.tapError((error) => {
           Logger.error(
-            "MarimoNotebookSerializer",
-            "marimo.serialize failed",
+            "Serializer.Command",
+            "marimo.serialize command failed",
             error,
           );
           return Effect.void;
         }),
       );
 
-      return new TextEncoder().encode(source);
+      const result = new TextEncoder().encode(source);
+      Logger.debug("Serializer", "Serialization complete", {
+        duration: Date.now() - startTime,
+        bytes: result.length,
+      });
+      return result;
     });
 
     return Effect.runPromise(program);
@@ -86,8 +94,11 @@ export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
     token: vscode.CancellationToken,
   ): Promise<vscode.NotebookData> {
     const source = new TextDecoder().decode(data);
-    Logger.debug("MarimoNotebookSerializer", "deserializeNotebook");
-    Logger.trace("MarimoNotebookSerializer", "deserializeNotebook", source);
+    const startTime = Date.now();
+    Logger.debug("Serializer", "Deserializing notebook", {
+      bytes: data.length,
+    });
+    Logger.trace("Serializer.Data", "Source content", source);
 
     const client = this.client;
 
@@ -106,15 +117,15 @@ export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
         ),
         Effect.tapError((error) => {
           Logger.error(
-            "MarimoNotebookSerializer",
-            "marimo.deserialize failed",
+            "Serializer.Command",
+            "marimo.deserialize command failed",
             error,
           );
           return Effect.void;
         }),
       );
       const { cells, ...metadata } = notebookData;
-      return {
+      const result = {
         metadata: metadata,
         cells: cells.map((cell) => ({
           kind: vscode.NotebookCellKind.Code,
@@ -126,6 +137,11 @@ export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
           },
         })),
       };
+      Logger.debug("Serializer", "Deserialization complete", {
+        duration: Date.now() - startTime,
+        cellCount: result.cells.length,
+      });
+      return result;
     });
 
     return Effect.runPromise(program);

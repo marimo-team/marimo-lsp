@@ -160,7 +160,7 @@ wheels = [
 
 [[package]]
 name = "marimo"
-version = "0.14.16"
+version = "0.14.17"
 source = { editable = "../marimo" }
 dependencies = [
     { name = "click" },
