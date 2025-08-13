@@ -61,6 +61,9 @@ class SetUIElementValueRequest(BaseRequest):
     values: list[Any]
     """Corresponding values for the UI elements"""
 
+    token: str
+    """Dummy token that is technically required"""
+
     def into_marimo(self) -> requests.SetUIElementValueRequest:
         """Convert to the marimo SetUIElementValueRequest."""
         return requests.SetUIElementValueRequest(

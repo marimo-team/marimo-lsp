@@ -1,24 +1,19 @@
 import * as vscode from "vscode";
-import type * as mo from "@marimo-team/marimo-api/src/api";
 
 import { Logger } from "./logging.ts";
 import { assert } from "./assert.ts";
+import type {
+  MessageOperation,
+  MessageOperationData,
+  MessageOperationType,
+} from "./types.ts";
 
-type OperationMessageType =
-  mo.components["schemas"]["MessageOperation"]["name"];
-type OperationMessageData<T extends OperationMessageType> = Omit<
-  Extract<mo.components["schemas"]["MessageOperation"], { name: T }>,
-  "name"
->;
 export type OperationMessage = {
-  [Type in OperationMessageType]: {
+  [Type in MessageOperationType]: {
     op: Type;
-    data: Omit<
-      Extract<mo.components["schemas"]["MessageOperation"], { name: Type }>,
-      "name"
-    >;
+    data: Omit<Extract<MessageOperation, { name: Type }>, "name">;
   };
-}[OperationMessageType];
+}[MessageOperationType];
 
 export interface OperationContext {
   notebookUri: string;
@@ -52,7 +47,7 @@ export async function route(
 
 async function handleCellOperation(
   context: OperationContext,
-  data: OperationMessageData<"cell-op">,
+  data: MessageOperationData<"cell-op">,
 ): Promise<void> {
   const { cell_id, status, output, console, timestamp } = data;
   const cell = getNotebookCell(context.notebookUri, cell_id);
@@ -72,7 +67,10 @@ async function handleCellOperation(
         execution.start(timestamp);
         execution.clearOutput();
       } else {
-        Logger.warn("Cell.State", `No execution found for running cell: ${cell_id}`);
+        Logger.warn(
+          "Cell.State",
+          `No execution found for running cell: ${cell_id}`,
+        );
       }
       break;
     }
@@ -84,7 +82,10 @@ async function handleCellOperation(
         execution.end(true, timestamp);
         context.executions.delete(cell_id);
       } else {
-        Logger.warn("Cell.State", `No execution found for idle cell: ${cell_id}`);
+        Logger.warn(
+          "Cell.State",
+          `No execution found for idle cell: ${cell_id}`,
+        );
       }
       break;
     }
@@ -107,7 +108,7 @@ async function handleCellOperation(
 
 function appendOutput(
   execution: vscode.NotebookCellExecution,
-  output: OperationMessageData<"cell-op">["output"],
+  output: MessageOperationData<"cell-op">["output"],
 ): void {
   if (!output?.channel || !(typeof output?.data === "string")) {
     return;

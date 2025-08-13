@@ -9,8 +9,8 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "allowImportingTsExtensions": true,
-    "erasableSyntaxOnly": true,
+    "jsx": "react-jsx",
     "exactOptionalPropertyTypes": true,
-    "jsx": "react"
+    "erasableSyntaxOnly": true
   }
 }

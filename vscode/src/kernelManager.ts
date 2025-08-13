@@ -39,14 +39,14 @@ export function kernelManager(
   );
 
   channel.onDidReceiveMessage(async ({ editor, message }) => {
-    assert("command" in message, "unknown message")
+    assert("command" in message, "unknown message");
     await cmds.executeCommand(client, {
       command: message.command,
       params: {
         notebookUri: editor.notebook.uri.toString(),
         ...message.params,
-      }
-    })
+      },
+    });
   });
 
   const contexts = new Map<string, ops.OperationContext>();

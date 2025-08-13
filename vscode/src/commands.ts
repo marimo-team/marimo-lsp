@@ -1,10 +1,9 @@
 import * as lsp from "vscode-languageclient";
 import * as vscode from "vscode";
-import type { components as Api } from "@marimo-team/openapi";
 
 import { AssertionError } from "./assert.ts";
-import { NotebookSerialization } from "./schemas.ts";
 import { Logger } from "./logging.ts";
+import type { RequestMap } from "./types.ts";
 
 export function registerCommand(
   command: string,
@@ -27,15 +26,6 @@ export function registerCommand(
   });
 }
 
-type WithNotebookUri<T> = T & { notebookUri: string };
-
-export type RequestMap = {
-  "marimo.run": WithNotebookUri<Api["schemas"]["RunRequest"]>;
-  "marmo.kernel.set_ui_element_value": WithNotebookUri<Api["schemas"]["SetUIElementValueRequest"]>;
-  "marimo.serialize": { notebook: NotebookSerialization };
-  "marimo.deserialize": { source: string };
-};
-
 export function executeCommand<K extends keyof RequestMap>(
   client: lsp.BaseLanguageClient,
   options: {
@@ -46,8 +36,12 @@ export function executeCommand<K extends keyof RequestMap>(
 ): Promise<unknown> {
   const startTime = Date.now();
   Logger.debug("Command.LSP", `Executing LSP command: ${options.command}`);
-  Logger.trace("Command.LSP", `Parameters for ${options.command}`, options.params);
-  
+  Logger.trace(
+    "Command.LSP",
+    `Parameters for ${options.command}`,
+    options.params,
+  );
+
   return client.sendRequest<unknown>("workspace/executeCommand", {
     command: options.command,
     arguments: [options.params],

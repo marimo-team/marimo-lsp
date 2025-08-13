@@ -7,7 +7,6 @@ import { channel, Logger } from "./logging.ts";
 import * as cmds from "./commands.ts";
 
 export async function activate(context: vscode.ExtensionContext) {
-
   Logger.info("Extension.Lifecycle", "Activating marimo-lsp", {
     extensionPath: context.extensionPath,
     workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
