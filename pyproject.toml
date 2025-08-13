@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 authors = [{ name = "Trevor Manz", email = "trevor.j.manz@gmail.com" }]
 dependencies = [
   "lsprotocol>=2025.0.0rc1",
-  "marimo>=0.14.9",
+  "marimo>=0.14.17",
   "pygls>=2.0.0a4",
 ]
 
@@ -16,6 +16,9 @@ marimo-lsp = "marimo_lsp:main"
 
 [dependency-groups]
 dev = [
+  "dirty-equals>=0.9.0",
+  "inline-snapshot>=0.27.2",
+  "pytest-lsp==1.0.0b2",
   "pytest>=8.4.1",
   "ruff>=0.12.1",
 ]
@@ -50,6 +53,3 @@ ignore = [
   "PLC",
   "PLR",
 ]
-
-[tool.uv.sources]
-marimo = { path = "../marimo", editable = true }
