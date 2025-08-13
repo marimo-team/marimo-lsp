@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-declare module "virtual:injected-styles" {
+declare module "virtual:stylesheet" {
   const styles: string;
   export default styles;
 }
