@@ -11,18 +11,12 @@ on:
 jobs:
   Lint:
     runs-on: macos-14
-
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv run ruff check
-
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - run: deno fmt --check
-      - run: deno lint
+      - run: |
+          uv run ruff format --check
+          uv run ruff check
 
   Test:
     runs-on: macos-14
@@ -33,11 +27,6 @@ jobs:
 
   Typecheck:
     runs-on: macos-14
-
     steps:
       - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-      - run: deno check src/signals/widget.js
-
+      - uses: astral-sh/setup-uv@v6

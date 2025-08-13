@@ -1,10 +1,23 @@
-"""Basic tests for marimo-lsp server using pytest-lsp."""
+import asyncio
+from typing import Any
 
 import lsprotocol.types as lsp
 import pytest
 import pytest_lsp
+from dirty_equals import IsFloat, IsUUID
 from inline_snapshot import snapshot
 from pytest_lsp import ClientServerConfig, LanguageClient
+
+
+def to_dict(obj: Any) -> dict | list:  # noqa: ANN401
+    """Recursively convert namedtuple Objects to dicts."""
+    if hasattr(obj, "_asdict"):
+        return {k: to_dict(v) for k, v in obj._asdict().items()}
+    if isinstance(obj, list):
+        return [to_dict(item) for item in obj]
+    if isinstance(obj, dict):
+        return {k: to_dict(v) for k, v in obj.items()}
+    return obj
 
 
 @pytest_lsp.fixture(config=ClientServerConfig(server_command=["marimo-lsp"]))
@@ -12,12 +25,12 @@ async def client(lsp_client: LanguageClient):  # noqa: ANN201
     """Fixture to set up and tear down LSP client."""
     response = await lsp_client.initialize_session(
         lsp.InitializeParams(
+            root_uri="file:///test/workspace",
             capabilities=lsp.ClientCapabilities(
                 notebook_document=lsp.NotebookDocumentClientCapabilities(
                     synchronization=lsp.NotebookDocumentSyncClientCapabilities()
                 )
             ),
-            root_uri="file:///test/workspace",
         )
     )
     assert response is not None
@@ -41,20 +54,20 @@ async def test_notebook_did_open(client: LanguageClient) -> None:
             notebook_document=lsp.NotebookDocument(
                 uri="file:///test.py",
                 notebook_type="marimo-lsp-notebook",
-                version=1,
                 cells=[
                     lsp.NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
                         document="file:///test.py#cell1",
                     )
                 ],
+                version=1,
             ),
             cell_text_documents=[
                 lsp.TextDocumentItem(
                     uri="file:///test.py#cell1",
                     language_id="python",
-                    version=1,
                     text="print('hello')",
+                    version=1,
                 )
             ],
         ),
@@ -121,7 +134,8 @@ async def test_notebook_did_change(client: LanguageClient) -> None:
         ),
     )
 
-    # No exception means success
+    # TODO: Not a great test. No exception means success
+    # We should have some way of querying the graph state
 
 
 @pytest.mark.asyncio
@@ -145,6 +159,9 @@ async def test_notebook_did_save(client: LanguageClient) -> None:
         ),
     )
 
+    # TODO: Not a great test. No exception means success
+    # We should have some way of querying the graph state
+
 
 @pytest.mark.asyncio
 async def test_notebook_did_close(client: LanguageClient) -> None:
@@ -167,6 +184,8 @@ async def test_notebook_did_close(client: LanguageClient) -> None:
             cell_text_documents=[],
         ),
     )
+    # TODO: Not a great test. No exception means success
+    # We should have some way of querying the graph state
 
 
 @pytest.mark.asyncio
@@ -257,7 +276,7 @@ if __name__ == "__main__":
                 "end_col_offset": 0,
                 "value": "",
             },
-            "version": '0.14.17',
+            "version": "0.14.17",
             "cells": [
                 {
                     "lineno": 7,
@@ -277,44 +296,156 @@ if __name__ == "__main__":
 
 
 @pytest.mark.asyncio
-async def test_marimo_run_command(client: LanguageClient) -> None:
-    """Test the marimo.run command."""
+async def test_simple_marimo_run(client: LanguageClient) -> None:
+    """Test that we can collect marimo operations until cell reaches idle state."""
+
     client.notebook_document_did_open(
         lsp.DidOpenNotebookDocumentParams(
             notebook_document=lsp.NotebookDocument(
-                uri="file:///test_run.py",
+                uri="file:///exec_test.py",
                 notebook_type="marimo-lsp-notebook",
                 version=1,
                 cells=[
                     lsp.NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
-                        document="file:///test_run.py#cell1",
+                        document="file:///exec_test.py#cell1",
                     )
                 ],
             ),
             cell_text_documents=[
                 lsp.TextDocumentItem(
-                    uri="file:///test_run.py#cell1",
+                    uri="file:///exec_test.py#cell1",
                     language_id="python",
                     version=1,
-                    text="x = 1",
+                    text="x = 42",
                 )
             ],
         ),
     )
 
-    # Execute the run command
+    messages = []
+    completion_event = asyncio.Event()
+
+    @client.feature("marimo/operation")
+    def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
+        # pygls dynamically makes an `Object` named tuple which makes snapshotting hard
+        # we just convert to a regular dict here for snapshotting
+        messages.append(to_dict(params))
+        if params.op == "completed-run":
+            completion_event.set()
+
     await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
             command="marimo.run",
             arguments=[
                 {
-                    "notebook_uri": "file:///test_run.py",
+                    "notebook_uri": "file:///exec_test.py",
                     "cell_ids": ["cell1"],
-                    "codes": ["x = 1"],
+                    "codes": ["x = 42"],
                 }
             ],
         )
     )
 
-    # No exception means the command was accepted
+    await asyncio.wait_for(completion_event.wait(), timeout=5.0)
+    assert messages == snapshot(
+        [
+            {
+                "notebookUri": "file:///exec_test.py",
+                "op": "update-cell-codes",
+                "data": {
+                    "cell_ids": ["cell1"],
+                    "codes": ["x = 42"],
+                    "code_is_stale": False,
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "op": "focus-cell",
+                "data": {"cell_id": "cell1"},
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "op": "variables",
+                "data": {
+                    "variables": [
+                        {"name": "x", "declared_by": ["cell1"], "used_by": []}
+                    ]
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "op": "cell-op",
+                "data": {
+                    "cell_id": "cell1",
+                    "output": None,
+                    "console": None,
+                    "status": "queued",
+                    "stale_inputs": None,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "op": "remove-ui-elements",
+                "data": {"cell_id": "cell1"},
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "op": "cell-op",
+                "data": {
+                    "cell_id": "cell1",
+                    "output": None,
+                    "console": [],
+                    "status": "running",
+                    "stale_inputs": None,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "op": "variable-values",
+                "data": {
+                    "variables": [{"name": "x", "value": "42", "datatype": "int"}]
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "op": "cell-op",
+                "data": {
+                    "cell_id": "cell1",
+                    "output": {
+                        "channel": "output",
+                        "mimetype": "text/plain",
+                        "data": "",
+                        "timestamp": IsFloat(),
+                    },
+                    "console": None,
+                    "status": None,
+                    "stale_inputs": None,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "op": "cell-op",
+                "data": {
+                    "cell_id": "cell1",
+                    "output": None,
+                    "console": None,
+                    "status": "idle",
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {"notebookUri": "file:///exec_test.py", "op": "completed-run", "data": {}},
+        ]
+    )
