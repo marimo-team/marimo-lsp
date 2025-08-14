@@ -1,0 +1,36 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Install Dependencies",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["install", "--prefer-offline"],
+      "options": {
+        "cwd": "${workspaceFolder}/vscode"
+      },
+      "presentation": {
+        "reveal": "silent",
+        "revealProblems": "onProblem"
+      }
+    },
+    {
+      "label": "Build Extension",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["build"],
+      "options": {
+        "cwd": "${workspaceFolder}/vscode",
+        "env": {
+          "NODE_ENV": "development"
+        }
+      }
+    },
+    {
+      "label": "Build",
+      "dependsOn": ["Install Dependencies", "Build Extension"],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    }
+  ]
+}
