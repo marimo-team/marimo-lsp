@@ -1,7 +1,7 @@
 # marimo-lsp
 
-Language Server Protocol implementation and VS Code extension to run
-[marimo](https://github.com/marimo-team/marimo) notebooks natively in VS Code.
+A language server and VS Code extension for
+[marimo](https://github.com/marimo-team/marimo).
 
 ## Quick Start
 
