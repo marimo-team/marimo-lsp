@@ -18,6 +18,7 @@ from pygls.lsp.server import LanguageServer
 from pygls.uris import to_fs_path
 
 from marimo_lsp.app_file_manager import sync_app_with_workspace
+from marimo_lsp.completions import get_completions
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     ConvertRequest,
@@ -169,6 +170,19 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             )
 
         return actions
+
+    @server.feature(
+        lsp.TEXT_DOCUMENT_COMPLETION,
+        lsp.CompletionOptions(
+            trigger_characters=["@"],
+            resolve_provider=False,
+        ),
+    )
+    def completions(ls: LanguageServer, params: lsp.CompletionParams):
+        """Provide completions for marimo cells."""
+        logger.info(f"textDocument/completion {params.text_document.uri}")
+
+        return get_completions(ls, params)
 
     @server.command("marimo.convert")
     async def convert(ls: LanguageServer, args: ConvertRequest):
