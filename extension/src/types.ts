@@ -11,6 +11,7 @@ export type MessageOperationData<T extends MessageOperationType> = Omit<
 >;
 
 type WithNotebookUri<T> = T & { notebookUri: string };
+
 export type RequestMap = {
   "marimo.run": WithNotebookUri<Schemas["RunRequest"]>;
   "marimo.set_ui_element_value": WithNotebookUri<

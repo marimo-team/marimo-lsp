@@ -28,6 +28,10 @@
         "selector": [
           {
             "filenamePattern": "*_mo.py"
+          },
+          {
+
+            "filenamePattern": "*.mo.py"
           }
         ]
       }
