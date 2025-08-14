@@ -7,7 +7,7 @@
       "command": "pnpm",
       "args": ["install", "--prefer-offline"],
       "options": {
-        "cwd": "${workspaceFolder}/vscode"
+        "cwd": "${workspaceFolder}/extension"
       },
       "presentation": {
         "reveal": "silent",
@@ -20,7 +20,7 @@
       "command": "pnpm",
       "args": ["build"],
       "options": {
-        "cwd": "${workspaceFolder}/vscode",
+        "cwd": "${workspaceFolder}/extension",
         "env": {
           "NODE_ENV": "development"
         }

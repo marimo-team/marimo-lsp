@@ -35,7 +35,7 @@ uv run ruff format   # Format
 ```
 
 ```bash
-cd vscode
+cd extension
 pnpm install         # Install dependencies
 pnpm build           # Build extension and renderer
 ```
