@@ -131,7 +131,10 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             header=Header(**(raw.get("header") or {})),
             version=raw.get("version", None),
             cells=[CellDef(**cell) for cell in raw["cells"]],
-            violations=[Violation(**v) for v in raw["violations"]],
+            violations=[
+                Violation(description=v.pop("description"), **v)
+                for v in raw["violations"]
+            ],
             valid=raw["valid"],
         )
         return {"source": MarimoConvert.from_ir(ir).to_py()}
