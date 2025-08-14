@@ -15,10 +15,12 @@ from marimo._schemas.serialization import (
     Violation,
 )
 from pygls.lsp.server import LanguageServer
+from pygls.uris import to_fs_path
 
 from marimo_lsp.app_file_manager import sync_app_with_workspace
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
+    ConvertRequest,
     DeserializeRequest,
     RunRequest,
     SerializeRequest,
@@ -30,7 +32,7 @@ from marimo_lsp.session_manager import LspSessionManager
 logger = get_logger()
 
 
-def create_server() -> LanguageServer:  # noqa: C901
+def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     """Create the marimo LSP server."""
     server = LanguageServer(
         name="marimo-lsp",
@@ -138,6 +140,97 @@ def create_server() -> LanguageServer:  # noqa: C901
         logger.info("marimo.deserialize")
         converter = MarimoConvert.from_py(args.source)
         return dataclasses.asdict(converter.to_ir())
+
+    @server.feature(
+        lsp.TEXT_DOCUMENT_CODE_ACTION,
+        lsp.CodeActionOptions(
+            code_action_kinds=[lsp.CodeActionKind.RefactorRewrite],
+            resolve_provider=False,
+        ),
+    )
+    def code_actions(params: lsp.CodeActionParams):
+        """Provide code actions for Python files to convert to marimo."""
+        logger.info(f"textDocument/codeAction {params.text_document.uri}")
+
+        actions: list[lsp.CodeAction] = []
+
+        filename = to_fs_path(params.text_document.uri)
+        if filename and filename.endswith((".py", ".ipynb")):
+            actions.append(
+                lsp.CodeAction(
+                    title="Convert to marimo notebook",
+                    kind=lsp.CodeActionKind.RefactorRewrite,
+                    command=lsp.Command(
+                        title="Convert to marimo notebook",
+                        command="marimo.convert",
+                        arguments=[{"uri": params.text_document.uri}],
+                    ),
+                )
+            )
+
+        return actions
+
+    @server.command("marimo.convert")
+    async def convert(ls: LanguageServer, args: ConvertRequest):
+        """Convert a Python file to marimo format and create a new file."""
+        logger.info("marimo.convert")
+
+        text_document = ls.workspace.get_text_document(args.uri)
+        filename = text_document.filename
+
+        if filename is None:
+            return
+
+        if filename.endswith(".ipynb"):
+            ir = MarimoConvert.from_ipynb(text_document.source)
+            new_filename = filename.replace(".ipynb", "_mo.py")
+        else:
+            ir = MarimoConvert.from_non_marimo_python_script(text_document.source)
+            new_filename = filename.replace(".py", "_mo.py")
+
+        new_uri = text_document.uri.replace(filename, new_filename)
+        new_text = ir.to_py()
+        result = await ls.workspace_apply_edit_async(
+            lsp.ApplyWorkspaceEditParams(
+                label=f"converted {filename} → {new_filename}",
+                edit=lsp.WorkspaceEdit(
+                    document_changes=[
+                        lsp.CreateFile(
+                            kind="create",
+                            uri=new_uri,
+                            options=lsp.CreateFileOptions(
+                                overwrite=False,
+                                ignore_if_exists=True,
+                            ),
+                        ),
+                        lsp.TextDocumentEdit(
+                            text_document=lsp.OptionalVersionedTextDocumentIdentifier(
+                                uri=new_uri,
+                                version=None,
+                            ),
+                            edits=[
+                                lsp.TextEdit(
+                                    new_text=new_text,
+                                    range=lsp.Range(
+                                        start=lsp.Position(line=0, character=0),
+                                        end=lsp.Position(line=0, character=0),
+                                    ),
+                                )
+                            ],
+                        ),
+                    ],
+                ),
+            )
+        )
+        if result.applied:
+            await ls.window_show_document_async(
+                lsp.ShowDocumentParams(
+                    uri=new_uri,
+                    external=False,
+                    take_focus=True,
+                    selection=None,
+                )
+            )
 
     logger.info("All handlers registered successfully")
 

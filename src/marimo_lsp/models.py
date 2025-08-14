@@ -95,6 +95,14 @@ class DeserializeRequest(BaseRequest):
     """The Python source code to deserialize."""
 
 
+@attrs.define
+class ConvertRequest(BaseRequest):
+    """A request to convert a file source a marimo notebook."""
+
+    uri: str
+    """The identifier for the text document to convert"""
+
+
 def _camel_to_snake(name: str) -> str:
     s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
     return re.sub(r"([A-Z]+)([A-Z][a-z]*)", r"\1_\2", s1).lower()
