@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import typing
 from uuid import uuid4
 
 from marimo._config.manager import (
@@ -16,7 +16,8 @@ from marimo_lsp.app_file_manager import LspAppFileManager
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.session_consumer import LspSessionConsumer
 
-if TYPE_CHECKING:
+if typing.TYPE_CHECKING:
+    from marimo._server.file_manager import AppFileManager
     from pygls.lsp.server import LanguageServer
 
 
@@ -89,7 +90,7 @@ class LspSessionManager:
             session_consumer=LspSessionConsumer(server, notebook_uri),
             queue_manager=queue_manager,
             kernel_manager=kernel_manager,
-            app_file_manager=app_file_manager,
+            app_file_manager=typing.cast("AppFileManager", app_file_manager),
             config_manager=config_manager,
             ttl_seconds=0,  # No TTL for LSP
         )
