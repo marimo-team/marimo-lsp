@@ -32,7 +32,6 @@ class LspSessionConsumer(SessionConsumer):
         self.server = server
         self.notebook_uri = notebook_uri
         self._is_connected = True
-
         super().__init__(consumer_id=ConsumerId(notebook_uri))
         logger.debug(f"Created LSP consumer for {notebook_uri}")
 
@@ -62,18 +61,15 @@ class LspSessionConsumer(SessionConsumer):
         This is called by the Session for operations that don't come from
         the kernel message queue (e.g., initial state, UI updates).
         """
-        try:
-            self.server.protocol.notify(
-                "marimo/operation",
-                {
-                    "notebookUri": self.notebook_uri,
-                    "op": op.name,
-                    "data": serialize(op),
-                },
-            )
-            logger.debug(f"Sent {op.name} operation to {self.notebook_uri}")
-        except Exception:
-            logger.exception("Error sending operation")
+        self.server.protocol.notify(
+            "marimo/operation",
+            {
+                "notebookUri": self.notebook_uri,
+                "op": op.name,
+                "data": serialize(op),
+            },
+        )
+        logger.debug(f"Sent {op.name} operation to {self.notebook_uri}")
 
     def connection_state(self) -> ConnectionState:
         """Report our connection state."""

@@ -22,12 +22,12 @@ export async function activate(context: vscode.ExtensionContext) {
     {
       run: {
         command: "uv",
-        args: ["run", "--offline", "--directory", __dirname, "marimo-lsp"],
+        args: ["run", "--directory", __dirname, "marimo-lsp"],
         transport: lsp.TransportKind.stdio,
       },
       debug: {
         command: "uv",
-        args: ["run", "--offline", "--directory", __dirname, "marimo-lsp"],
+        args: ["run", "--directory", __dirname, "marimo-lsp"],
         transport: lsp.TransportKind.stdio,
       },
     },
