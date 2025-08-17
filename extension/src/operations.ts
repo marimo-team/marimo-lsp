@@ -18,6 +18,7 @@ export interface OperationContext {
   notebookUri: string;
   controller: vscode.NotebookController;
   executions: Map<string, vscode.NotebookCellExecution>;
+  channel: vscode.NotebookRendererMessaging;
 }
 
 export async function route(
@@ -47,13 +48,14 @@ async function handleCellOperation(
   context: OperationContext,
   data: MessageOperationData<"cell-op">,
 ): Promise<void> {
-  const { cell_id, status, output, console, timestamp } = data;
-  const cell = getNotebookCell(context.notebookUri, cell_id);
+  const { cell_id, status, timestamp } = data;
 
   switch (status) {
     case "queued": {
       Logger.debug("Cell.State", `Queued: ${cell_id}`);
-      const execution = context.controller.createNotebookCellExecution(cell);
+      const execution = context.controller.createNotebookCellExecution(
+        getNotebookCell(context.notebookUri, cell_id),
+      );
       context.executions.set(cell_id, execution);
       break;
     }
@@ -62,8 +64,15 @@ async function handleCellOperation(
       const execution = context.executions.get(cell_id);
       if (execution) {
         Logger.debug("Cell.State", `Running: ${cell_id}`);
-        execution.start(timestamp);
-        execution.clearOutput();
+        execution.start(timestamp * 1000);
+        execution.replaceOutput(
+          new vscode.NotebookCellOutput([
+            vscode.NotebookCellOutputItem.text(
+              cell_id,
+              "application/vnd.marimo.ui+json",
+            ),
+          ]),
+        );
       } else {
         Logger.warn(
           "Cell.State",
@@ -77,7 +86,7 @@ async function handleCellOperation(
       const execution = context.executions.get(cell_id);
       if (execution) {
         Logger.debug("Cell.State", `Completed: ${cell_id}`);
-        execution.end(true, timestamp);
+        execution.end(true, timestamp * 1000);
         context.executions.delete(cell_id);
       } else {
         Logger.warn(
@@ -89,46 +98,7 @@ async function handleCellOperation(
     }
   }
 
-  const execution = context.executions.get(cell_id);
-  if (execution) {
-    if (output) {
-      appendOutput(execution, output);
-    }
-
-    if (console) {
-      const consoleOutputs = Array.isArray(console) ? console : [console];
-      for (const consoleOutput of consoleOutputs) {
-        appendOutput(execution, consoleOutput);
-      }
-    }
-  }
-}
-
-function appendOutput(
-  execution: vscode.NotebookCellExecution,
-  output: MessageOperationData<"cell-op">["output"],
-): void {
-  if (!output?.channel || !(typeof output?.data === "string")) {
-    return;
-  }
-  Logger.trace("Cell.Output", `Appending ${output.channel} output`);
-
-  if (output.mimetype === "text/html") {
-    execution.appendOutput(
-      new vscode.NotebookCellOutput([
-        vscode.NotebookCellOutputItem.text(
-          output.data,
-          "application/vnd.marimo.ui+json",
-        ),
-      ]),
-    );
-  } else {
-    execution.appendOutput(
-      new vscode.NotebookCellOutput([
-        vscode.NotebookCellOutputItem.text(output.data, output.mimetype),
-      ]),
-    );
-  }
+  context.channel.postMessage({ type: "cell-op", data });
 }
 
 function getNotebookDocument(notebookUri: string): vscode.NotebookDocument {

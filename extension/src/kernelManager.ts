@@ -55,7 +55,12 @@ export function kernelManager(
       const { notebookUri, ...operation } = message;
       let context = contexts.get(notebookUri);
       if (!context) {
-        context = { notebookUri, controller, executions: new Map() };
+        context = {
+          notebookUri,
+          controller,
+          channel,
+          executions: new Map(),
+        };
         contexts.set(notebookUri, context);
       }
       await ops.route(context, operation);
