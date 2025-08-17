@@ -53,7 +53,7 @@ async def test_notebook_did_open(client: LanguageClient) -> None:
         lsp.DidOpenNotebookDocumentParams(
             notebook_document=lsp.NotebookDocument(
                 uri="file:///test.py",
-                notebook_type="marimo-lsp-notebook",
+                notebook_type="marimo-notebook",
                 cells=[
                     lsp.NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
@@ -81,7 +81,7 @@ async def test_notebook_did_change(client: LanguageClient) -> None:
         lsp.DidOpenNotebookDocumentParams(
             notebook_document=lsp.NotebookDocument(
                 uri="file:///test2.py",
-                notebook_type="marimo-lsp-notebook",
+                notebook_type="marimo-notebook",
                 version=1,
                 cells=[
                     lsp.NotebookCell(
@@ -145,7 +145,7 @@ async def test_notebook_did_save(client: LanguageClient) -> None:
         lsp.DidOpenNotebookDocumentParams(
             notebook_document=lsp.NotebookDocument(
                 uri="file:///test3.py",
-                notebook_type="marimo-lsp-notebook",
+                notebook_type="marimo-notebook",
                 version=1,
                 cells=[],
             ),
@@ -170,7 +170,7 @@ async def test_notebook_did_close(client: LanguageClient) -> None:
         lsp.DidOpenNotebookDocumentParams(
             notebook_document=lsp.NotebookDocument(
                 uri="untitled:Untitled-1",
-                notebook_type="marimo-lsp-notebook",
+                notebook_type="marimo-notebook",
                 version=1,
                 cells=[],
             ),
@@ -303,7 +303,7 @@ async def test_simple_marimo_run(client: LanguageClient) -> None:
         lsp.DidOpenNotebookDocumentParams(
             notebook_document=lsp.NotebookDocument(
                 uri="file:///exec_test.py",
-                notebook_type="marimo-lsp-notebook",
+                notebook_type="marimo-notebook",
                 version=1,
                 cells=[
                     lsp.NotebookCell(

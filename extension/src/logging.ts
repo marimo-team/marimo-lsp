@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as util from "node:util";
 import * as path from "node:path";
 
-export const channel = vscode.window.createOutputChannel("marimo-lsp", {
+export const channel = vscode.window.createOutputChannel("marimo", {
   log: true,
 });
 
@@ -20,7 +20,7 @@ class FileLogger {
     if (!fs.existsSync(devLogDir)) {
       fs.mkdirSync(devLogDir, { recursive: true });
     }
-    const logFilePath = path.join(devLogDir, `marimo-lsp.log`);
+    const logFilePath = path.join(devLogDir, `marimo.log`);
     this.logStream = fs.createWriteStream(logFilePath, {
       flags: "w",
     });

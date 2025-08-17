@@ -10,8 +10,21 @@ class ExecuteCommandError extends Data.TaggedError("ExecuteCommandError")<{
   source: unknown;
 }> {}
 
+export function notebookSerializer(
+  client: lsp.BaseLanguageClient,
+  options: { signal: AbortSignal },
+) {
+  const disposer = vscode.workspace.registerNotebookSerializer(
+    MarimoNotebookSerializer.notebookType,
+    new MarimoNotebookSerializer(client),
+  );
+  options.signal.addEventListener("aborted", () => {
+    disposer.dispose();
+  });
+}
+
 export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
-  static readonly notebookType = "marimo-lsp-notebook";
+  static readonly notebookType = "marimo-notebook";
   private client: lsp.BaseLanguageClient;
 
   constructor(client: lsp.BaseLanguageClient) {

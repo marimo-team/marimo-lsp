@@ -8,7 +8,7 @@
     "vscode": "^1.86.0"
   },
   "publisher": "manzt",
-  "repository": "https://github.com/manzt/marimo-lsp",
+  "repository": "https://github.com/marimo-team/marimo-lsp",
   "categories": [
     "Notebooks",
     "Data Science"
@@ -22,7 +22,7 @@
     },
     "notebooks": [
       {
-        "type": "marimo-lsp-notebook",
+        "type": "marimo-notebook",
         "displayName": "marimo Notebook",
         "priority": "default",
         "selector": [
@@ -30,7 +30,6 @@
             "filenamePattern": "*_mo.py"
           },
           {
-
             "filenamePattern": "*.mo.py"
           }
         ]
@@ -49,21 +48,16 @@
     ],
     "commands": [
       {
-        "command": "marimo-lsp.newMarimoNotebook",
+        "command": "marimo.newMarimoNotebook",
         "title": "New marimo notebook",
         "shortTitle": "Marimo notebook",
         "category": "Create"
-      },
-      {
-        "command": "marimo-lsp.showSessionInfo",
-        "title": "Show Session Info",
-        "category": "Marimo"
       }
     ],
     "menus": {
       "file/newFile": [
         {
-          "command": "marimo-lsp.newMarimoNotebook",
+          "command": "marimo.newMarimoNotebook",
           "group": "notebook"
         }
       ]

@@ -13,7 +13,7 @@ export function kernelManager(
 ) {
   const channel = vscode.notebooks.createRendererMessaging("marimo-renderer");
   const controller = vscode.notebooks.createNotebookController(
-    "marimo-lsp-controller",
+    "marimo-controller",
     MarimoNotebookSerializer.notebookType,
     "marimo kernel",
     async (

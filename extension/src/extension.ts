@@ -1,13 +1,16 @@
 import * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
 
-import { MarimoNotebookSerializer } from "./notebookSerializer.ts";
+import {
+  MarimoNotebookSerializer,
+  notebookSerializer,
+} from "./notebookSerializer.ts";
 import { kernelManager } from "./kernelManager.ts";
 import { channel, Logger } from "./logging.ts";
 import * as cmds from "./commands.ts";
 
 export async function activate(context: vscode.ExtensionContext) {
-  Logger.info("Extension.Lifecycle", "Activating marimo-lsp", {
+  Logger.info("Extension.Lifecycle", "Activating marimo", {
     extensionPath: context.extensionPath,
     workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
   });
@@ -113,16 +116,14 @@ export async function activate(context: vscode.ExtensionContext) {
       },
     },
   );
+
   kernelManager(client, { signal: controller.signal });
+  notebookSerializer(client, { signal: controller.signal });
 
   context.subscriptions.push(
     { dispose: () => controller.abort() },
     client,
-    vscode.workspace.registerNotebookSerializer(
-      MarimoNotebookSerializer.notebookType,
-      new MarimoNotebookSerializer(client),
-    ),
-    cmds.registerCommand("marimo-lsp.newMarimoNotebook", async () => {
+    cmds.registerCommand("marimo.newMarimoNotebook", async () => {
       const doc = await vscode.workspace.openNotebookDocument(
         MarimoNotebookSerializer.notebookType,
         new vscode.NotebookData([
@@ -167,6 +168,6 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export async function deactivate() {
-  Logger.info("Extension.Lifecycle", "Deactivating marimo-lsp");
+  Logger.info("Extension.Lifecycle", "Deactivating marimo");
   Logger.close();
 }
