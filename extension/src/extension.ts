@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
+
 import * as cmds from "./commands.ts";
+import { debugAdapter } from "./debugAdapter.ts";
 import { kernelManager } from "./kernelManager.ts";
 import { languageClient } from "./languageClient.ts";
 
@@ -16,6 +18,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const controller = new AbortController();
   const client = languageClient({ signal: controller.signal });
+  debugAdapter(client, { signal: controller.signal });
   kernelManager(client, { signal: controller.signal });
   notebookSerializer(client, { signal: controller.signal });
 

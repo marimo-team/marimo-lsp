@@ -22,6 +22,7 @@ from marimo_lsp.completions import get_completions
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     ConvertRequest,
+    DebugAdapterRequest,
     DeserializeRequest,
     RunRequest,
     SerializeRequest,
@@ -144,6 +145,21 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         logger.info("marimo.deserialize")
         converter = MarimoConvert.from_py(args.source)
         return dataclasses.asdict(converter.to_ir())
+
+    @server.command("marimo.dap")
+    async def dap(ls: LanguageServer, params: DebugAdapterRequest):
+        """Handle DAP messages forwarded from VS Code extension."""
+        from marimo_lsp.debug_adapter import (  # noqa: PLC0415
+            handle_debug_adapter_request,
+        )
+
+        return handle_debug_adapter_request(
+            ls=ls,
+            manager=manager,
+            session_id=params.session_id,
+            notebook_uri=params.notebook_uri,
+            message=params.message,
+        )
 
     @server.feature(
         lsp.TEXT_DOCUMENT_CODE_ACTION,

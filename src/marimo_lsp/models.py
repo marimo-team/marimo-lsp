@@ -103,6 +103,20 @@ class ConvertRequest(BaseRequest):
     """The identifier for the text document to convert"""
 
 
+@attrs.define
+class DebugAdapterRequest(BaseRequest):
+    """A forwarded DAP request."""
+
+    session_id: str
+    """A UUID for the debug session."""
+
+    notebook_uri: str
+    """The URI of the notebook."""
+
+    message: dict
+    """They DAP message."""
+
+
 def _camel_to_snake(name: str) -> str:
     s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
     return re.sub(r"([A-Z]+)([A-Z][a-z]*)", r"\1_\2", s1).lower()
