@@ -5,6 +5,7 @@ import { Data, Effect, ParseResult, Schema } from "effect";
 import { NotebookSerializationSchema } from "./schemas.ts";
 import { Logger } from "./logging.ts";
 import * as cmds from "./commands.ts";
+import { notebookType } from "./types.ts";
 
 class ExecuteCommandError extends Data.TaggedError("ExecuteCommandError")<{
   source: unknown;
@@ -15,7 +16,7 @@ export function notebookSerializer(
   options: { signal: AbortSignal },
 ) {
   const disposer = vscode.workspace.registerNotebookSerializer(
-    MarimoNotebookSerializer.notebookType,
+    notebookType,
     new MarimoNotebookSerializer(client),
   );
   options.signal.addEventListener("aborted", () => {
@@ -24,7 +25,6 @@ export function notebookSerializer(
 }
 
 export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
-  static readonly notebookType = "marimo-notebook";
   private client: lsp.BaseLanguageClient;
 
   constructor(client: lsp.BaseLanguageClient) {

@@ -20,3 +20,5 @@ export type RequestMap = {
   "marimo.serialize": { notebook: NotebookSerialization };
   "marimo.deserialize": { source: string };
 };
+
+export const notebookType = "marimo-notebook";

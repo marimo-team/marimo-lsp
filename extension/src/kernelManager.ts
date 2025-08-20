@@ -2,10 +2,10 @@ import * as vscode from "vscode";
 import * as lsp from "vscode-languageclient";
 
 import { Logger } from "./logging.ts";
-import { MarimoNotebookSerializer } from "./notebookSerializer.ts";
 import * as cmds from "./commands.ts";
 import * as ops from "./operations.ts";
 import { assert } from "./assert.ts";
+import { notebookType } from "./types.ts";
 
 export function kernelManager(
   client: lsp.BaseLanguageClient,
@@ -14,7 +14,7 @@ export function kernelManager(
   const channel = vscode.notebooks.createRendererMessaging("marimo-renderer");
   const controller = vscode.notebooks.createNotebookController(
     "marimo-controller",
-    MarimoNotebookSerializer.notebookType,
+    notebookType,
     "marimo kernel",
     async (
       cells: vscode.NotebookCell[],
