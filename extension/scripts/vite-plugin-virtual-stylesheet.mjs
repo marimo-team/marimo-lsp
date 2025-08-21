@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Inlines the compiled stylesheet as a string via virtual module.
  * Import with: `import styles from 'virtual:stylesheet'`
