@@ -64,9 +64,9 @@
     }
   },
   "scripts": {
-    "build": "pnpm build-renderer && pnpm build-extension",
-    "build-extension": "esbuild --format=cjs --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
-    "build-renderer": "vite build"
+    "build": "turbo run build:renderer build:extension",
+    "build:extension": "esbuild --format=cjs --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
+    "build:renderer": "vite build"
   },
   "devDependencies": {
     "@marimo-team/frontend": "link:../../marimo/frontend/",
@@ -81,8 +81,10 @@
     "esbuild": "^0.25.5",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "turbo": "^2.5.6",
+    "typescript": "^5.9.2",
     "vite": "npm:rolldown-vite@latest",
-    "vscode-languageclient": "^9.0.1",
-    "typescript": "^5.9.2"
-  }
+    "vscode-languageclient": "^9.0.1"
+  },
+  "packageManager": "pnpm@10.9.0"
 }

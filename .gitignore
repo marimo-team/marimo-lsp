@@ -1,5 +1,6 @@
 __pycache__
 .venv
+.turbo
 __marimo__
 node_modules/
 dist/
