@@ -14,9 +14,6 @@
  */
 
 // @ts-expect-error
-import { transitionCell as untypedTransitionCell } from "@marimo-team/frontend/unstable_internal/core/cells/cell.ts?nocheck";
-import type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-// @ts-expect-error
 import { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts?nocheck";
 // @ts-expect-error
 import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts?nocheck";
@@ -40,11 +37,13 @@ import "@marimo-team/frontend/unstable_internal/css/admonition.css";
 import "@marimo-team/frontend/unstable_internal/css/md-tooltip.css";
 import "@marimo-team/frontend/unstable_internal/css/table.css";
 
-export { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
+export {
+  type CellRuntimeState,
+  createCellRuntimeState,
+} from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 
 export type RequestClient = EditRequests & RunRequests;
 export type CellMessage = MessageOperationData<"cell-op">;
-export type { CellRuntimeState };
 
 /**
  * Initialize marimo UI components in the VS Code renderer environment.
@@ -59,14 +58,6 @@ export function initialize(
   // This connects the UI element events to the request client
   RuntimeState.INSTANCE.start(client.sendComponentValues);
   return renderHTML;
-}
-
-/* Type-safe wrapper around marimo's `transitionCell` we import above */
-export function transitionCell(
-  cell: CellRuntimeState,
-  message: CellMessage,
-): CellRuntimeState {
-  return untypedTransitionCell(cell, message);
 }
 
 /* Type-safe wrapper around marimo's `useTheme` we import above */
