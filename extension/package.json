@@ -95,7 +95,7 @@
     }
   },
   "scripts": {
-    "build": "turbo run build:renderer build:extension",
+    "build": "pnpm run build:renderer && pnpm run build:extension",
     "build:extension": "esbuild --format=cjs --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
     "build:renderer": "vite build",
     "fix": "biome check --write"

@@ -1,3 +1,18 @@
+/**
+ * @module
+ *
+ * Runtime imports from @marimo-team/frontend
+ *
+ * Since @marimo-team/frontend doesn't emit .d.ts files, TypeScript attempts to
+ * compile the entire frontend source when these modules are imported. There's no
+ * way to skipLibCheck for specific packages, which would require our TypeScript
+ * config to match marimo's exactly and type-check the entire frontend codebase.
+ *
+ * As a workaround, we use ?nocheck to disable type-checking for these specific
+ * runtime imports. This should be used sparingly - we keep the exports of this
+ * module minimal to maintain a clear, type-safe boundary.
+ */
+
 // @ts-expect-error
 import { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts?nocheck";
 // @ts-expect-error
@@ -18,18 +33,6 @@ import type {
 import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts?nocheck";
 // @ts-expect-error
 import { renderHTML } from "@marimo-team/frontend/unstable_internal/plugins/core/RenderHTML.tsx?nocheck";
-/**
- * Runtime imports from @marimo-team/frontend
- *
- * Since @marimo-team/frontend doesn't emit .d.ts files, TypeScript attempts to
- * compile the entire frontend source when these modules are imported. There's no
- * way to skipLibCheck for specific packages, which would require our TypeScript
- * config to match marimo's exactly and type-check the entire frontend codebase.
- *
- * As a workaround, we use ?nocheck to disable type-checking for these specific
- * runtime imports. This should be used sparingly - we keep the exports of this
- * module minimal to maintain a clear, type-safe boundary.
- */
 // @ts-expect-error
 import { initializePlugins } from "@marimo-team/frontend/unstable_internal/plugins/plugins.ts?nocheck";
 import type * as React from "react";
