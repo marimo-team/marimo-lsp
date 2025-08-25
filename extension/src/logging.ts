@@ -1,8 +1,7 @@
-import * as vscode from "vscode";
-
 import * as fs from "node:fs";
-import * as util from "node:util";
 import * as path from "node:path";
+import * as util from "node:util";
+import * as vscode from "vscode";
 
 export const channel = vscode.window.createOutputChannel("marimo", {
   log: true,

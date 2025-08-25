@@ -31,3 +31,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - run: uv run ty check
+
+  LintTypeScript:
+    name: Lint (TypeScript)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Biome
+        uses: biomejs/setup-biome@v2
+        with:
+          working-dir: "extension"

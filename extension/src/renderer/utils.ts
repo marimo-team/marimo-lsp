@@ -4,14 +4,16 @@ import { assert } from "../assert.ts";
 import type { RequestMap } from "../types.ts";
 import type { RequestClient } from "./marimo-frontend.ts";
 
-type TypedRequestContext =
-  & Omit<vscode.RendererContext<unknown>, "postMessage" | "onDidReceiveMessage">
-  & {
-    postMessage<K extends keyof RequestMap>(
-      options: { command: K; params: Omit<RequestMap[K], "notebookUri"> },
-    ): void;
-    onDidReceiveMessage(listener: (e: unknown) => any): { dispose(): void };
-  };
+type TypedRequestContext = Omit<
+  vscode.RendererContext<unknown>,
+  "postMessage" | "onDidReceiveMessage"
+> & {
+  postMessage<K extends keyof RequestMap>(options: {
+    command: K;
+    params: Omit<RequestMap[K], "notebookUri">;
+  }): void;
+  onDidReceiveMessage(listener: (e: unknown) => unknown): { dispose(): void };
+};
 
 function isTypedRequestContext(
   context: vscode.RendererContext<unknown>,

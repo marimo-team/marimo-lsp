@@ -5,7 +5,7 @@
  *
  * @returns {import("vite").Plugin}
  */
-export default function() {
+export default function () {
   const needle = "__INLINE_STYLES_PLACEHOLDER__";
   return {
     name: "virtual-stylesheet",

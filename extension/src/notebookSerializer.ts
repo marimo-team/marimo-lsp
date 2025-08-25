@@ -1,10 +1,9 @@
-import * as vscode from "vscode";
-import * as lsp from "vscode-languageclient";
 import { Data, Effect, ParseResult, Schema } from "effect";
-
-import { NotebookSerializationSchema } from "./schemas.ts";
-import { Logger } from "./logging.ts";
+import * as vscode from "vscode";
+import type * as lsp from "vscode-languageclient";
 import * as cmds from "./commands.ts";
+import { Logger } from "./logging.ts";
+import { NotebookSerializationSchema } from "./schemas.ts";
 import { notebookType } from "./types.ts";
 
 class ExecuteCommandError extends Data.TaggedError("ExecuteCommandError")<{
@@ -125,9 +124,7 @@ export class MarimoNotebookSerializer implements vscode.NotebookSerializer {
           }),
         catch: (error) => new ExecuteCommandError({ source: error }),
       }).pipe(
-        Effect.andThen(
-          Schema.decodeUnknown(NotebookSerializationSchema),
-        ),
+        Effect.andThen(Schema.decodeUnknown(NotebookSerializationSchema)),
         Effect.tapError((error) => {
           Logger.error(
             "Serializer.Command",

@@ -2,9 +2,9 @@ import * as lsp from "vscode-languageclient/node";
 
 import { channel, Logger } from "./logging.ts";
 
-export function languageClient(
-  opts: { signal: AbortSignal },
-): lsp.BaseLanguageClient {
+export function languageClient(opts: {
+  signal: AbortSignal;
+}): lsp.BaseLanguageClient {
   const client = new lsp.LanguageClient(
     "marimo-lsp",
     "Marimo Language Server",

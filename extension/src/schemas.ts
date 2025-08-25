@@ -1,9 +1,7 @@
 import { Schema } from "effect";
 
 const Header = Schema.Struct({
-  value: Schema.String.pipe(
-    Schema.optionalWith({ nullable: true }),
-  ),
+  value: Schema.String.pipe(Schema.optionalWith({ nullable: true })),
 });
 
 const AppInstantiation = Schema.Struct({
