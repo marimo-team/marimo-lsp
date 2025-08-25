@@ -37,7 +37,7 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Biome
-        uses: biomejs/setup-biome@v2
+      - uses: biomejs/setup-biome@v2
         with:
           working-dir: "extension"
+      - run: biome ci
