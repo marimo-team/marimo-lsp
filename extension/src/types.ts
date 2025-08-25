@@ -1,4 +1,6 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
+import type * as vscode from "vscode";
+
 import type { NotebookSerialization } from "./schemas.ts";
 
 type Schemas = Api["schemas"];
@@ -19,6 +21,11 @@ export type RequestMap = {
   >;
   "marimo.serialize": { notebook: NotebookSerialization };
   "marimo.deserialize": { source: string };
+  "marimo.dap": {
+    sessionId: string;
+    notebookUri: string;
+    message: vscode.DebugProtocolMessage;
+  };
 };
 
 export const notebookType = "marimo-notebook";
