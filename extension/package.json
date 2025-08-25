@@ -66,9 +66,11 @@
   "scripts": {
     "build": "turbo run build:renderer build:extension",
     "build:extension": "esbuild --format=cjs --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
-    "build:renderer": "vite build"
+    "build:renderer": "vite build",
+    "fix": "biome check --write"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.2.2",
     "@marimo-team/frontend": "link:../../marimo/frontend/",
     "@marimo-team/openapi": "link:../../marimo/packages/openapi/",
     "@tailwindcss/vite": "^4.1.11",

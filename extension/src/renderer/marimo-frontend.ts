@@ -1,5 +1,23 @@
-import * as React from "react";
-
+// @ts-expect-error
+import { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts?nocheck";
+// @ts-expect-error
+import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts?nocheck";
+/**
+ * Type imports from @marimo-team/frontend
+ *
+ * These network types are imported WITHOUT ?nocheck because they're the most
+ * likely to change as the API evolves. By keeping these type-checked, we ensure
+ * our RequestClient interface stays in sync with marimo's actual API contracts.
+ * Type errors here indicate breaking changes we need to handle.
+ */
+import type {
+  EditRequests,
+  RunRequests,
+} from "@marimo-team/frontend/unstable_internal/core/network/types.ts";
+// @ts-expect-error
+import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts?nocheck";
+// @ts-expect-error
+import { renderHTML } from "@marimo-team/frontend/unstable_internal/plugins/core/RenderHTML.tsx?nocheck";
 /**
  * Runtime imports from @marimo-team/frontend
  *
@@ -14,27 +32,7 @@ import * as React from "react";
  */
 // @ts-expect-error
 import { initializePlugins } from "@marimo-team/frontend/unstable_internal/plugins/plugins.ts?nocheck";
-// @ts-expect-error
-import { renderHTML } from "@marimo-team/frontend/unstable_internal/plugins/core/RenderHTML.tsx?nocheck";
-// @ts-expect-error
-import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts?nocheck";
-// @ts-expect-error
-import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts?nocheck";
-// @ts-expect-error
-import { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts?nocheck";
-
-/**
- * Type imports from @marimo-team/frontend
- *
- * These network types are imported WITHOUT ?nocheck because they're the most
- * likely to change as the API evolves. By keeping these type-checked, we ensure
- * our RequestClient interface stays in sync with marimo's actual API contracts.
- * Type errors here indicate breaking changes we need to handle.
- */
-import type {
-  EditRequests,
-  RunRequests,
-} from "@marimo-team/frontend/unstable_internal/core/network/types.ts";
+import type * as React from "react";
 
 import "@marimo-team/frontend/unstable_internal/css/common.css";
 import "@marimo-team/frontend/unstable_internal/css/globals.css";

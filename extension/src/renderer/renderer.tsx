@@ -1,7 +1,8 @@
 /// <reference lib="dom" />
+
+import styleText from "virtual:stylesheet";
 import * as ReactDOM from "react-dom/client";
 import type * as vscode from "vscode-notebook-renderer";
-import styleText from "virtual:stylesheet";
 
 import { initialize } from "./marimo-frontend.ts";
 import { createRequestClient } from "./utils.ts";
@@ -22,7 +23,7 @@ export const activate: vscode.ActivationFunction = (context) => {
 
   return {
     renderOutputItem(data, element, signal) {
-      let root = registry.get(element) ?? ReactDOM.createRoot(element);
+      const root = registry.get(element) ?? ReactDOM.createRoot(element);
       registry.set(element, root);
       root.render(
         <div className="p-4">{renderHTML({ html: data.text() })}</div>,

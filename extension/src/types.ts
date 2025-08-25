@@ -1,4 +1,4 @@
-import { components as Api } from "@marimo-team/openapi/src/api";
+import type { components as Api } from "@marimo-team/openapi/src/api";
 import type { NotebookSerialization } from "./schemas.ts";
 
 type Schemas = Api["schemas"];

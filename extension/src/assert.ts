@@ -27,15 +27,13 @@ export class AssertionError extends Error {
  * @param msg - The error message to throw if the assertion fails.
  * @throws {Error} If `expression` is falsy.
  */
-export function assert(
-  expression: unknown,
-  msg?: string,
-): asserts expression {
+export function assert(expression: unknown, msg?: string): asserts expression {
   if (!expression) {
     if (process.env.NODE_ENV === "development") {
-      // Triggers a breakpoint in development; stripped out in production builds.
+      // biome-ignore lint/suspicious/noDebugger: Triggers a breakpoint in development; stripped out in production builds.
       debugger;
     }
+
     throw new AssertionError(msg);
   }
 }

@@ -1,7 +1,6 @@
 import * as vscode from "vscode";
-
-import { Logger } from "./logging.ts";
 import { assert } from "./assert.ts";
+import { Logger } from "./logging.ts";
 import type {
   MessageOperation,
   MessageOperationData,
@@ -28,11 +27,10 @@ export async function route(
   Logger.trace("Operation.Router", `Received: ${operation.op}`, operation.data);
   switch (operation.op) {
     case "cell-op":
-      Logger.debug(
-        "Cell.Operation",
-        `Processing: ${operation.data.status}`,
-        { cellId: operation.data.cell_id, status: operation.data.status },
-      );
+      Logger.debug("Cell.Operation", `Processing: ${operation.data.status}`, {
+        cellId: operation.data.cell_id,
+        status: operation.data.status,
+      });
       await handleCellOperation(context, operation.data);
       break;
 
@@ -127,10 +125,7 @@ function appendOutput(
   } else {
     execution.appendOutput(
       new vscode.NotebookCellOutput([
-        vscode.NotebookCellOutputItem.text(
-          output.data,
-          output.mimetype,
-        ),
+        vscode.NotebookCellOutputItem.text(output.data, output.mimetype),
       ]),
     );
   }
@@ -149,9 +144,9 @@ function getNotebookCell(
   cellId: string,
 ): vscode.NotebookCell {
   const notebook = getNotebookDocument(notebookUri);
-  const cell = notebook.getCells().find((c) =>
-    c.document.uri.toString() === cellId
-  );
+  const cell = notebook
+    .getCells()
+    .find((c) => c.document.uri.toString() === cellId);
   assert(cell, `No cell id ${cellId} in notebook ${notebookUri} `);
   return cell;
 }

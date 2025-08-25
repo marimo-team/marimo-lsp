@@ -1,7 +1,7 @@
 // @ts-check
 import * as process from "node:process";
-import * as vite from "vite";
 import tailwindcss from "@tailwindcss/vite";
+import * as vite from "vite";
 import stylesheet from "./scripts/vite-plugin-virtual-stylesheet.mjs";
 
 export default vite.defineConfig({
@@ -13,10 +13,7 @@ export default vite.defineConfig({
       formats: ["es"],
     },
   },
-  plugins: [
-    tailwindcss(),
-    stylesheet(),
-  ],
+  plugins: [tailwindcss(), stylesheet()],
   resolve: {
     dedupe: ["react", "react-dom"],
     tsconfigPaths: true,

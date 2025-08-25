@@ -1,10 +1,9 @@
 import * as vscode from "vscode";
-import * as lsp from "vscode-languageclient";
-
-import { Logger } from "./logging.ts";
-import * as cmds from "./commands.ts";
-import * as ops from "./operations.ts";
+import type * as lsp from "vscode-languageclient";
 import { assert } from "./assert.ts";
+import * as cmds from "./commands.ts";
+import { Logger } from "./logging.ts";
+import * as ops from "./operations.ts";
 import { notebookType } from "./types.ts";
 
 export function kernelManager(

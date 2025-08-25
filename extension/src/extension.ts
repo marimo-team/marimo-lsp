@@ -1,12 +1,11 @@
 import * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
-
+import * as cmds from "./commands.ts";
 import { kernelManager } from "./kernelManager.ts";
 import { languageClient } from "./languageClient.ts";
-import { notebookSerializer } from "./notebookSerializer.ts";
 
 import { Logger } from "./logging.ts";
-import * as cmds from "./commands.ts";
+import { notebookSerializer } from "./notebookSerializer.ts";
 import { notebookType } from "./types.ts";
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -40,28 +39,31 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  await client.start().then(() => {
-    Logger.info("Extension.Lifecycle", "LSP client started successfully");
-    // Forward logs from the LSP server
-    client.onNotification(
-      "window/logMessage",
-      ({ type, message }: lsp.LogMessageParams) => {
-        const mapping = {
-          [lsp.MessageType.Error]: "error",
-          [lsp.MessageType.Warning]: "warn",
-          [lsp.MessageType.Info]: "info",
-          [lsp.MessageType.Log]: "info",
-          [lsp.MessageType.Debug]: "debug",
-        } as const;
-        Logger[mapping[type]]("LSP.Server", message);
-      },
-    );
-  }).catch((error) => {
-    Logger.error("Extension.Lifecycle", "Failed to start LSP client", error);
-    vscode.window.showErrorMessage(
-      `Marimo language server failed to start ${JSON.stringify(error.message)}`,
-    );
-  });
+  await client
+    .start()
+    .then(() => {
+      Logger.info("Extension.Lifecycle", "LSP client started successfully");
+      // Forward logs from the LSP server
+      client.onNotification(
+        "window/logMessage",
+        ({ type, message }: lsp.LogMessageParams) => {
+          const mapping = {
+            [lsp.MessageType.Error]: "error",
+            [lsp.MessageType.Warning]: "warn",
+            [lsp.MessageType.Info]: "info",
+            [lsp.MessageType.Log]: "info",
+            [lsp.MessageType.Debug]: "debug",
+          } as const;
+          Logger[mapping[type]]("LSP.Server", message);
+        },
+      );
+    })
+    .catch((error) => {
+      Logger.error("Extension.Lifecycle", "Failed to start LSP client", error);
+      vscode.window.showErrorMessage(
+        `Marimo language server failed to start ${JSON.stringify(error.message)}`,
+      );
+    });
   Logger.info("Extension.Lifecycle", "Activation complete");
 }
 

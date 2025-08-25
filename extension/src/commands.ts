@@ -1,28 +1,23 @@
-import * as lsp from "vscode-languageclient";
 import * as vscode from "vscode";
+import type * as lsp from "vscode-languageclient";
 
 import { AssertionError } from "./assert.ts";
 import { Logger } from "./logging.ts";
 import type { RequestMap } from "./types.ts";
 
-export function registerCommand(
-  command: string,
-  callback: () => unknown,
-) {
+export function registerCommand(command: string, callback: () => unknown) {
   return vscode.commands.registerCommand(command, () => {
     Logger.info("Command.Execute", `Running command: ${command}`);
-    return Promise
-      .resolve(callback())
-      .catch((error: unknown) => {
-        let message: string;
-        if (error instanceof AssertionError) {
-          message = error.message;
-        } else {
-          message = `Unknown error: ${JSON.stringify(error)}`;
-        }
-        Logger.error("Command.Execute", `Command failed: ${command}`, error);
-        vscode.window.showWarningMessage(message);
-      });
+    return Promise.resolve(callback()).catch((error: unknown) => {
+      let message: string;
+      if (error instanceof AssertionError) {
+        message = error.message;
+      } else {
+        message = `Unknown error: ${JSON.stringify(error)}`;
+      }
+      Logger.error("Command.Execute", `Command failed: ${command}`, error);
+      vscode.window.showWarningMessage(message);
+    });
   });
 }
 
@@ -42,10 +37,15 @@ export function executeCommand<K extends keyof RequestMap>(
     options.params,
   );
 
-  return client.sendRequest<unknown>("workspace/executeCommand", {
-    command: options.command,
-    arguments: [options.params],
-  }, options.token)
+  return client
+    .sendRequest<unknown>(
+      "workspace/executeCommand",
+      {
+        command: options.command,
+        arguments: [options.params],
+      },
+      options.token,
+    )
     .then((result) => {
       Logger.debug("Command.LSP", `Command completed: ${options.command}`, {
         duration: Date.now() - startTime,
