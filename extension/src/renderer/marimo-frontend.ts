@@ -14,9 +14,69 @@
  */
 
 // @ts-expect-error
+import { OutputRenderer as UntypedOutputRenderer } from "@marimo-team/frontend/unstable_internal/components/editor/Output.tsx?nocheck";
+// @ts-expect-error
+import { ConsoleOutput as UntypedConsoleOutput } from "@marimo-team/frontend/unstable_internal/components/editor/output/ConsoleOutput.tsx?nocheck";
+import type { CellId } from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
+// @ts-expect-error
 import { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts?nocheck";
 // @ts-expect-error
 import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts?nocheck";
+// @ts-expect-error
+import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts?nocheck";
+// @ts-expect-error
+import { initializePlugins } from "@marimo-team/frontend/unstable_internal/plugins/plugins.ts?nocheck";
+// @ts-expect-error
+import { useTheme as untypedUseTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts?nocheck";
+import type { MessageOperationData } from "../types.ts";
+
+import "@marimo-team/frontend/unstable_internal/css/common.css";
+import "@marimo-team/frontend/unstable_internal/css/globals.css";
+import "@marimo-team/frontend/unstable_internal/css/codehilite.css";
+import "@marimo-team/frontend/unstable_internal/css/katex.min.css";
+import "@marimo-team/frontend/unstable_internal/css/md.css";
+import "@marimo-team/frontend/unstable_internal/css/admonition.css";
+import "@marimo-team/frontend/unstable_internal/css/md-tooltip.css";
+import "@marimo-team/frontend/unstable_internal/css/table.css";
+
+import type { CellRuntimeState } from "../shared/cells.ts";
+export type RequestClient = EditRequests & RunRequests;
+export type CellMessage = MessageOperationData<"cell-op">;
+export type { CellRuntimeState, CellId };
+
+/**
+ * Initialize marimo UI components in the VS Code renderer environment.
+ * This provides a minimal setup to hydrate web components without the full kernel.
+ */
+export function initialize(client: RequestClient) {
+  store.set(requestClientAtom, client);
+  initializePlugins();
+  // Start the RuntimeState to listen for UI element value changes
+  // This connects the UI element events to the request client
+  RuntimeState.INSTANCE.start(client.sendComponentValues);
+}
+
+/* Type-safe wrapper around marimo's `useTheme` we import above */
+export function useTheme(): { theme: "light" | "dark" } {
+  return untypedUseTheme();
+}
+
+type OutputMessage = NonNullable<CellRuntimeState["output"]>;
+
+export const OutputRenderer: React.FC<{
+  message: OutputMessage;
+  cellId?: CellId;
+}> = UntypedOutputRenderer;
+
+export const ConsoleOutput: React.FC<{
+  cellId: CellId;
+  cellName: string;
+  consoleOutputs: Array<OutputMessage>;
+  stale: boolean;
+  debuggerActive: boolean;
+  onSubmitDebugger: (text: string, index: number) => void;
+}> = UntypedConsoleOutput;
+
 /**
  * Type imports from @marimo-team/frontend
  *
@@ -29,39 +89,3 @@ import type {
   EditRequests,
   RunRequests,
 } from "@marimo-team/frontend/unstable_internal/core/network/types.ts";
-// @ts-expect-error
-import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts?nocheck";
-// @ts-expect-error
-import { renderHTML } from "@marimo-team/frontend/unstable_internal/plugins/core/RenderHTML.tsx?nocheck";
-// @ts-expect-error
-import { initializePlugins } from "@marimo-team/frontend/unstable_internal/plugins/plugins.ts?nocheck";
-import type * as React from "react";
-
-import "@marimo-team/frontend/unstable_internal/css/common.css";
-import "@marimo-team/frontend/unstable_internal/css/globals.css";
-import "@marimo-team/frontend/unstable_internal/css/codehilite.css";
-import "@marimo-team/frontend/unstable_internal/css/katex.min.css";
-import "@marimo-team/frontend/unstable_internal/css/md.css";
-import "@marimo-team/frontend/unstable_internal/css/admonition.css";
-import "@marimo-team/frontend/unstable_internal/css/md-tooltip.css";
-import "@marimo-team/frontend/unstable_internal/css/table.css";
-
-export type RequestClient = EditRequests & RunRequests;
-
-/**
- * Initialize marimo UI components in the VS Code renderer environment.
- * This provides a minimal setup to hydrate web components without the full kernel.
- */
-export function initialize(
-  client: RequestClient,
-): (props: { html: string }) => React.ReactNode {
-  store.set(requestClientAtom, client);
-  initializePlugins();
-  // Start the RuntimeState to listen for UI element value changes
-  // This connects the UI element events to the request client
-  RuntimeState.INSTANCE.start(client.sendComponentValues);
-  return renderHTML;
-}
-
-// export { transitionCell } from "@marimo-team/frontend/unstable_internal/core/cells/cell.ts"
-// export { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts"
