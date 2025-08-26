@@ -9,49 +9,60 @@ A language server and VS Code extension for
 2. Press `F5` to launch a new VS Code window with the extension loaded
 3. Open any `*_mo.py` file to see it as a marimo notebook
 
+Here’s a tightened version that keeps your style but separates the conceptual
+explanation from the command references:
+
 ## Development
 
-Currently requires [uv](https://docs.astral.sh/uv/) and [pnpm](https://pnpm.io/).
+This project requires [uv](https://docs.astral.sh/uv/) and
+[pnpm](https://pnpm.io/).
 
-Right now, this project builds against the main version of marimo and requires
-both repositories to be cloned side-by-side:
+**Quickstart**
 
-```
-parent-folder/
-├── marimo/          # Main marimo codebase
-└── marimo-lsp/      # This project
-```
-
-Eventually, this codebase will be integrated into the main marimo repository,
-which will simplify the development setup.
-
-The **language server** is a pure Python program that implements the [Language
-Server Protocol](https://microsoft.github.io/language-server-protocol/),
-running over stdin/stdout
-
-```bash
-uv run marimo-lsp    # Run the server
-uv run pytest        # Run tests
-uv run ruff check    # Lint
-uv run ruff format   # Format
-uv run ty check      # Typecheck
+```sh
+cd marimo-lsp
+code .
+# Press `F5` in VS Code (or "Run and Debug" > "Run Extension" in the UI).
 ```
 
-The **VS Code extension** is a separate TypeScript project that sits on top of
-the language server: it wires VS Code's UI to the server by dispatching and
-receiving custom messages, and adds editor-specific pieces such as the custom
-notebook serializer and renderer.
+> [!NOTE]
+> The extension currently builds against the `main` branch of
+> [`@marimo-team/marimo`](https://github.com/marimo-team/marimo), so both
+> repositories must be cloned side-by-side:
+>
+> ```
+> parent-folder/
+> ├── marimo/          # Main marimo codebase
+> └── marimo-lsp/      # This project
+> ```
+>
+> Eventually this codebase will be merged into the main marimo repo, simplifying
+> setup.
 
-```bash
-cd extension
-pnpm install         # Install dependencies
-pnpm build           # Build extension and renderer
-pnpm biome check     # Lint
-pnpm tsc             # Typecheck
-```
+### Language Server (Python)
 
-Or just press `F5` in VS Code - it handles everything automatically.
+All commands are run from the project root:
+
+| Command              | Action                  |
+| -------------------- | ----------------------- |
+| `uv run marimo-lsp`  | Run the language server |
+| `uv run pytest`      | Run unit tests          |
+| `uv run ruff check`  | Lint code               |
+| `uv run ruff format` | Format code             |
+| `uv run ty check`    | Typecheck               |
+
+### VS Code Extension (JavaScript/TypeScript)
+
+Run these from the `extension/` directory:
+
+| Command            | Action                           |
+| ------------------ | -------------------------------- |
+| `pnpm install`     | Install dependencies             |
+| `pnpm build`       | Build the extension and renderer |
+| `pnpm biome check` | Lint code                        |
+| `pnpm tsc`         | Typecheck TypeScript             |
 
 ## Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for details on how the LSP server and extension work together.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for details on how the LSP server and
+extension work together.
