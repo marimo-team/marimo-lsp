@@ -47,3 +47,6 @@ def lsp_handler(server: LanguageServer) -> LspLoggingHandler:
 def get_logger() -> logging.Logger:
     """Get the marimo-lsp logger."""
     return logging.getLogger("marimo-lsp")
+
+
+get_logger().setLevel(logging.DEBUG)
