@@ -10,6 +10,7 @@ on:
 
 jobs:
   Lint:
+    name: Lint (Python)
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +20,7 @@ jobs:
           uv run ruff check
 
   Test:
+    name: Test (Python)
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +28,7 @@ jobs:
       - run: uv run pytest
 
   Typecheck:
+    name: Typecheck (Python)
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -41,3 +44,40 @@ jobs:
         with:
           working-dir: "extension"
       - run: biome ci
+
+  TypecheckTypeScript:
+    name: Typecheck (TypeScript)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: marimo-lsp
+
+      - uses: actions/checkout@v4
+        with:
+          repository: marimo-team/marimo
+          ref: main
+          path: marimo
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: marimo-lsp/extension/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: |
+            marimo/pnpm-lock.yaml
+            marimo-lsp/extension/pnpm-lock.yaml
+
+      - name: Build marimo packages
+        run: |
+          cd marimo
+          pnpm --recursive --filter "./packages/*" build
+
+      - name: Install and typecheck extension
+        run: |
+          cd marimo-lsp/extension
+          pnpm install
+          pnpm tsc
