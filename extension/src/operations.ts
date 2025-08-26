@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { assert } from "./assert.ts";
 import { Logger } from "./logging.ts";
-import { CellStateManager } from "./shared/cells.ts";
+import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
 import type {
   MessageOperation,
   MessageOperationData,
@@ -18,10 +18,7 @@ export type OperationMessage = {
 export interface OperationContext {
   notebookUri: string;
   controller: vscode.NotebookController;
-  executions: Map<
-    string,
-    { exec: vscode.NotebookCellExecution; started: boolean }
-  >;
+  executions: Map<string, vscode.NotebookCellExecution>;
 }
 
 export async function route(
@@ -50,52 +47,62 @@ async function handleCellOperation(
   context: OperationContext,
   data: MessageOperationData<"cell-op">,
 ): Promise<void> {
-  const state = cellStateManager.handleCellOp(data);
   const { cell_id: cellId, status, timestamp } = data;
-
-  if (status === "queued") {
-    Logger.debug("Cell.State", `Queued: ${cellId}`);
-    context.executions.set(cellId, {
-      started: false,
-      exec: context.controller.createNotebookCellExecution(
-        getNotebookCell(context.notebookUri, cellId),
-      ),
-    });
-    Logger.debug("Cell.Operation.Complete", `status=queued cell_id=${cellId}`);
-  }
+  const state = cellStateManager.handleCellOp(data);
 
   switch (status) {
+    case "queued": {
+      const execution = context.controller.createNotebookCellExecution(
+        getNotebookCell(context.notebookUri, cellId),
+      );
+      context.executions.set(cellId, execution);
+      return;
+    }
+
     case "running": {
       const execution = context.executions.get(cellId);
       assert(execution, `Expected execution for ${cellId}`);
-      Logger.debug("Cell.State", `Running: ${cellId}`);
-      execution.exec.start(timestamp * 1000);
-      execution.started = true;
-      break;
+      execution.start(timestamp * 1000);
+      // MUST modify cell output after `NotebookCellExecution.start`
+      await updateOrCreateMarimoCellOutput(execution, { cellId, state });
+      return;
     }
 
     case "idle": {
       const execution = context.executions.get(cellId);
       assert(execution, `Expected execution for ${cellId}`);
-      Logger.debug("Cell.State", `Completed: ${cellId}`);
-      execution.exec.end(true, timestamp * 1000);
+      // MUST modify cell output before `NotebookCellExecution.end`
+      await updateOrCreateMarimoCellOutput(execution, { cellId, state });
+      execution.end(true, timestamp * 1000);
       context.executions.delete(cellId);
-      Logger.debug("Cell.Operation.Complete", `status=idle cell_id=${cellId}`);
-      break;
+      return;
+    }
+
+    default: {
+      const execution = context.executions.get(cellId);
+      if (execution) {
+        await updateOrCreateMarimoCellOutput(execution, { cellId, state });
+      }
+      return;
     }
   }
+}
 
-  const execution = context.executions.get(cellId);
-  if (execution?.started) {
-    await execution.exec.replaceOutput(
-      new vscode.NotebookCellOutput([
-        vscode.NotebookCellOutputItem.json(
-          { cellId, state },
-          "application/vnd.marimo.ui+json",
-        ),
-      ]),
-    );
-  }
+async function updateOrCreateMarimoCellOutput(
+  execution: vscode.NotebookCellExecution,
+  payload: {
+    cellId: string;
+    state: CellRuntimeState;
+  },
+) {
+  await execution.replaceOutput(
+    new vscode.NotebookCellOutput([
+      vscode.NotebookCellOutputItem.json(
+        payload,
+        "application/vnd.marimo.ui+json",
+      ),
+    ]),
+  );
 }
 
 function getNotebookDocument(notebookUri: string): vscode.NotebookDocument {
