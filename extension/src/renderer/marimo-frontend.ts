@@ -17,6 +17,8 @@
 import { OutputRenderer as UntypedOutputRenderer } from "@marimo-team/frontend/unstable_internal/components/editor/Output.tsx?nocheck";
 // @ts-expect-error
 import { ConsoleOutput as UntypedConsoleOutput } from "@marimo-team/frontend/unstable_internal/components/editor/output/ConsoleOutput.tsx?nocheck";
+// @ts-expect-error
+import { TooltipProvider as UntypedTooltipProvider } from "@marimo-team/frontend/unstable_internal/components/ui/tooltip.tsx?nocheck";
 import type { CellId } from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
 // @ts-expect-error
 import { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts?nocheck";
@@ -28,6 +30,7 @@ import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.
 import { initializePlugins } from "@marimo-team/frontend/unstable_internal/plugins/plugins.ts?nocheck";
 // @ts-expect-error
 import { useTheme as untypedUseTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts?nocheck";
+
 import type { MessageOperationData } from "../types.ts";
 
 import "@marimo-team/frontend/unstable_internal/css/common.css";
@@ -76,6 +79,9 @@ export const ConsoleOutput: React.FC<{
   debuggerActive: boolean;
   onSubmitDebugger: (text: string, index: number) => void;
 }> = UntypedConsoleOutput;
+
+export const TooltipProvider: React.FC<React.PropsWithChildren> =
+  UntypedTooltipProvider;
 
 /**
  * Type imports from @marimo-team/frontend
