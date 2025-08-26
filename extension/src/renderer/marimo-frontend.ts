@@ -14,13 +14,13 @@
  */
 
 // @ts-expect-error
+import { OutputRenderer as UntypedOutputRenderer } from "@marimo-team/frontend/unstable_internal/components/editor/Output.tsx?nocheck";
+// @ts-expect-error
 import { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts?nocheck";
 // @ts-expect-error
 import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts?nocheck";
 // @ts-expect-error
 import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts?nocheck";
-// @ts-expect-error
-import { renderHTML } from "@marimo-team/frontend/unstable_internal/plugins/core/RenderHTML.tsx?nocheck";
 // @ts-expect-error
 import { initializePlugins } from "@marimo-team/frontend/unstable_internal/plugins/plugins.ts?nocheck";
 // @ts-expect-error
@@ -37,33 +37,32 @@ import "@marimo-team/frontend/unstable_internal/css/admonition.css";
 import "@marimo-team/frontend/unstable_internal/css/md-tooltip.css";
 import "@marimo-team/frontend/unstable_internal/css/table.css";
 
-export {
-  type CellRuntimeState,
-  createCellRuntimeState,
-} from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-
+import type { CellRuntimeState } from "../shared/cells.ts";
 export type RequestClient = EditRequests & RunRequests;
 export type CellMessage = MessageOperationData<"cell-op">;
+export type { CellRuntimeState };
 
 /**
  * Initialize marimo UI components in the VS Code renderer environment.
  * This provides a minimal setup to hydrate web components without the full kernel.
  */
-export function initialize(
-  client: RequestClient,
-): (props: { html: string }) => React.ReactNode {
+export function initialize(client: RequestClient) {
   store.set(requestClientAtom, client);
   initializePlugins();
   // Start the RuntimeState to listen for UI element value changes
   // This connects the UI element events to the request client
   RuntimeState.INSTANCE.start(client.sendComponentValues);
-  return renderHTML;
 }
 
 /* Type-safe wrapper around marimo's `useTheme` we import above */
 export function useTheme(): { theme: "light" | "dark" } {
   return untypedUseTheme();
 }
+
+export const OutputRenderer: React.FC<{
+  message: NonNullable<CellRuntimeState["output"]>;
+  cellId?: string;
+}> = UntypedOutputRenderer;
 
 /**
  * Type imports from @marimo-team/frontend
