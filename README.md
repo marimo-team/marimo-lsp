@@ -25,19 +25,29 @@ parent-folder/
 Eventually, this codebase will be integrated into the main marimo repository,
 which will simplify the development setup.
 
-The LSP server is a pure Python program that communicates over stdin/stdout.
+The **language server** is a pure Python program that implements the [Language
+Server Protocol](https://microsoft.github.io/language-server-protocol/),
+running over stdin/stdout
 
 ```bash
 uv run marimo-lsp    # Run the server
 uv run pytest        # Run tests
 uv run ruff check    # Lint
 uv run ruff format   # Format
+uv run ty check      # Typecheck
 ```
+
+The **VS Code extension** is a separate TypeScript project that sits on top of
+the language server: it wires VS Code's UI to the server by dispatching and
+receiving custom messages, and adds editor-specific pieces such as the custom
+notebook serializer and renderer.
 
 ```bash
 cd extension
 pnpm install         # Install dependencies
 pnpm build           # Build extension and renderer
+pnpm biome check     # Lint
+pnpm tsc             # Typecheck
 ```
 
 Or just press `F5` in VS Code - it handles everything automatically.
