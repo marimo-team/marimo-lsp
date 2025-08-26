@@ -90,7 +90,7 @@ async function handleCellOperation(
     await execution.exec.replaceOutput(
       new vscode.NotebookCellOutput([
         vscode.NotebookCellOutputItem.json(
-          state,
+          { cellId, state },
           "application/vnd.marimo.ui+json",
         ),
       ]),

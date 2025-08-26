@@ -16,6 +16,9 @@
 // @ts-expect-error
 import { OutputRenderer as UntypedOutputRenderer } from "@marimo-team/frontend/unstable_internal/components/editor/Output.tsx?nocheck";
 // @ts-expect-error
+import { ConsoleOutput as UntypedConsoleOutput } from "@marimo-team/frontend/unstable_internal/components/editor/output/ConsoleOutput.tsx?nocheck";
+import type { CellId } from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
+// @ts-expect-error
 import { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts?nocheck";
 // @ts-expect-error
 import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts?nocheck";
@@ -25,7 +28,6 @@ import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.
 import { initializePlugins } from "@marimo-team/frontend/unstable_internal/plugins/plugins.ts?nocheck";
 // @ts-expect-error
 import { useTheme as untypedUseTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts?nocheck";
-
 import type { MessageOperationData } from "../types.ts";
 
 import "@marimo-team/frontend/unstable_internal/css/common.css";
@@ -40,7 +42,7 @@ import "@marimo-team/frontend/unstable_internal/css/table.css";
 import type { CellRuntimeState } from "../shared/cells.ts";
 export type RequestClient = EditRequests & RunRequests;
 export type CellMessage = MessageOperationData<"cell-op">;
-export type { CellRuntimeState };
+export type { CellRuntimeState, CellId };
 
 /**
  * Initialize marimo UI components in the VS Code renderer environment.
@@ -59,10 +61,21 @@ export function useTheme(): { theme: "light" | "dark" } {
   return untypedUseTheme();
 }
 
+type OutputMessage = NonNullable<CellRuntimeState["output"]>;
+
 export const OutputRenderer: React.FC<{
-  message: NonNullable<CellRuntimeState["output"]>;
-  cellId?: string;
+  message: OutputMessage;
+  cellId?: CellId;
 }> = UntypedOutputRenderer;
+
+export const ConsoleOutput: React.FC<{
+  cellId: CellId;
+  cellName: string;
+  consoleOutputs: Array<OutputMessage>;
+  stale: boolean;
+  debuggerActive: boolean;
+  onSubmitDebugger: (text: string, index: number) => void;
+}> = UntypedConsoleOutput;
 
 /**
  * Type imports from @marimo-team/frontend
