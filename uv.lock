@@ -324,7 +324,7 @@ dev = [
 requires-dist = [
     { name = "jupytext", specifier = ">=1.17.2" },
     { name = "lsprotocol", specifier = ">=2025.0.0rc1" },
-    { name = "marimo", specifier = ">=0.14.17" },
+    { name = "marimo", specifier = ">=0.15.0" },
     { name = "pygls", specifier = ">=2.0.0a4" },
 ]
 
