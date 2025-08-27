@@ -8,16 +8,16 @@ from uuid import uuid4
 from marimo._config.manager import (
     get_default_config_manager,
 )
-from marimo._runtime.requests import AppMetadata
-from marimo._server.model import SessionMode
 from marimo._server.sessions import KernelManager, QueueManager, Session
 
 from marimo_lsp.app_file_manager import LspAppFileManager
+from marimo_lsp.kernel_manager import LspKernelManager
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.session_consumer import LspSessionConsumer
 
 if typing.TYPE_CHECKING:
     from marimo._server.file_manager import AppFileManager
+    from marimo._server.sessions import KernelManager
     from pygls.lsp.server import LanguageServer
 
 
@@ -67,20 +67,12 @@ class LspSessionManager:
         config_manager = get_default_config_manager(current_path=app_file_manager.path)
         queue_manager = QueueManager(use_multiprocessing=True)
 
-        kernel_manager = KernelManager(
-            queue_manager,
-            mode=SessionMode.EDIT,
-            configs=app_file_manager.app.cell_manager.config_map(),
-            app_metadata=AppMetadata(
-                query_params={},
-                filename=app_file_manager.path,
-                cli_args={},
-                argv=None,
-                app_config=app_file_manager.app.config,
-            ),
+        kernel_manager = LspKernelManager(
+            # TODO: Get executable
+            executable="/Users/manzt/demos/marimo-lsp-test/.venv/bin/python",
+            queue_manager=queue_manager,
+            app_file_manager=app_file_manager,
             config_manager=config_manager,
-            virtual_files_supported=False,
-            redirect_console_to_browser=False,
         )
 
         logger.info(f"Creating new session for {notebook_uri}")
@@ -89,7 +81,7 @@ class LspSessionManager:
             initialization_id=str(uuid4()),
             session_consumer=LspSessionConsumer(server, notebook_uri),
             queue_manager=queue_manager,
-            kernel_manager=kernel_manager,
+            kernel_manager=typing.cast("KernelManager", kernel_manager),
             app_file_manager=typing.cast("AppFileManager", app_file_manager),
             config_manager=config_manager,
             ttl_seconds=0,  # No TTL for LSP
