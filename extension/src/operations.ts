@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { assert } from "./assert.ts";
 import { Logger } from "./logging.ts";
+import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
 import type {
   MessageOperation,
   MessageOperationData,
@@ -26,13 +27,10 @@ export async function route(
 ): Promise<void> {
   Logger.trace("Operation.Router", `Received: ${operation.op}`, operation.data);
   switch (operation.op) {
-    case "cell-op":
-      Logger.debug("Cell.Operation", `Processing: ${operation.data.status}`, {
-        cellId: operation.data.cell_id,
-        status: operation.data.status,
-      });
-      await handleCellOperation(context, operation.data);
+    case "cell-op": {
+      handleCellOperation(context, operation.data);
       break;
+    }
 
     default:
       Logger.warn(
@@ -43,92 +41,68 @@ export async function route(
   }
 }
 
+const cellStateManager = new CellStateManager();
+
 async function handleCellOperation(
   context: OperationContext,
   data: MessageOperationData<"cell-op">,
 ): Promise<void> {
-  const { cell_id, status, output, console, timestamp } = data;
-  const cell = getNotebookCell(context.notebookUri, cell_id);
+  const { cell_id: cellId, status, timestamp } = data;
+  const state = cellStateManager.handleCellOp(data);
 
   switch (status) {
     case "queued": {
-      Logger.debug("Cell.State", `Queued: ${cell_id}`);
-      const execution = context.controller.createNotebookCellExecution(cell);
-      context.executions.set(cell_id, execution);
-      break;
+      const execution = context.controller.createNotebookCellExecution(
+        getNotebookCell(context.notebookUri, cellId),
+      );
+      context.executions.set(cellId, execution);
+      return;
     }
 
     case "running": {
-      const execution = context.executions.get(cell_id);
-      if (execution) {
-        Logger.debug("Cell.State", `Running: ${cell_id}`);
-        execution.start(timestamp);
-        execution.clearOutput();
-      } else {
-        Logger.warn(
-          "Cell.State",
-          `No execution found for running cell: ${cell_id}`,
-        );
-      }
-      break;
+      const execution = context.executions.get(cellId);
+      assert(execution, `Expected execution for ${cellId}`);
+      execution.start(timestamp * 1000);
+      // MUST modify cell output after `NotebookCellExecution.start`
+      await updateOrCreateMarimoCellOutput(execution, { cellId, state });
+      return;
     }
 
     case "idle": {
-      const execution = context.executions.get(cell_id);
+      const execution = context.executions.get(cellId);
+      assert(execution, `Expected execution for ${cellId}`);
+      // MUST modify cell output before `NotebookCellExecution.end`
+      await updateOrCreateMarimoCellOutput(execution, { cellId, state });
+      execution.end(true, timestamp * 1000);
+      context.executions.delete(cellId);
+      return;
+    }
+
+    default: {
+      const execution = context.executions.get(cellId);
       if (execution) {
-        Logger.debug("Cell.State", `Completed: ${cell_id}`);
-        execution.end(true, timestamp);
-        context.executions.delete(cell_id);
-      } else {
-        Logger.warn(
-          "Cell.State",
-          `No execution found for idle cell: ${cell_id}`,
-        );
+        await updateOrCreateMarimoCellOutput(execution, { cellId, state });
       }
-      break;
-    }
-  }
-
-  const execution = context.executions.get(cell_id);
-  if (execution) {
-    if (output) {
-      appendOutput(execution, output);
-    }
-
-    if (console) {
-      const consoleOutputs = Array.isArray(console) ? console : [console];
-      for (const consoleOutput of consoleOutputs) {
-        appendOutput(execution, consoleOutput);
-      }
+      return;
     }
   }
 }
 
-function appendOutput(
+async function updateOrCreateMarimoCellOutput(
   execution: vscode.NotebookCellExecution,
-  output: MessageOperationData<"cell-op">["output"],
-): void {
-  if (!output?.channel || !(typeof output?.data === "string")) {
-    return;
-  }
-  Logger.trace("Cell.Output", `Appending ${output.channel} output`);
-
-  if (output.mimetype === "text/html") {
-    execution.appendOutput(
-      new vscode.NotebookCellOutput([
-        vscode.NotebookCellOutputItem.text(
-          output.data,
-          "application/vnd.marimo.ui+json",
-        ),
-      ]),
-    );
-  } else {
-    execution.appendOutput(
-      new vscode.NotebookCellOutput([
-        vscode.NotebookCellOutputItem.text(output.data, output.mimetype),
-      ]),
-    );
-  }
+  payload: {
+    cellId: string;
+    state: CellRuntimeState;
+  },
+) {
+  await execution.replaceOutput(
+    new vscode.NotebookCellOutput([
+      vscode.NotebookCellOutputItem.json(
+        payload,
+        "application/vnd.marimo.ui+json",
+      ),
+    ]),
+  );
 }
 
 function getNotebookDocument(notebookUri: string): vscode.NotebookDocument {

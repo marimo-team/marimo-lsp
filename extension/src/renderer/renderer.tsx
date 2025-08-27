@@ -3,13 +3,16 @@
 import styleText from "virtual:stylesheet";
 import * as ReactDOM from "react-dom/client";
 import type * as vscode from "vscode-notebook-renderer";
-
-import { initialize } from "./marimo-frontend.ts";
+import { CellOutput } from "./CellOutput.tsx";
+import {
+  type CellId,
+  type CellRuntimeState,
+  initialize,
+} from "./marimo-frontend.ts";
 import { createRequestClient } from "./utils.ts";
 
 export const activate: vscode.ActivationFunction = (context) => {
-  const registry: Map<HTMLElement, ReactDOM.Root> = new Map();
-  const renderHTML = initialize(createRequestClient(context));
+  initialize(createRequestClient(context));
 
   // Inject the final compiled CSS from our Vite plugin
   // The title="marimo" tags these styles to be copied
@@ -21,16 +24,17 @@ export const activate: vscode.ActivationFunction = (context) => {
     document.head.appendChild(style);
   }
 
+  const registry = new Map<HTMLElement, ReactDOM.Root>();
   return {
     renderOutputItem(data, element, signal) {
       const root = registry.get(element) ?? ReactDOM.createRoot(element);
+      const { cellId, state }: { cellId: CellId; state: CellRuntimeState } =
+        data.json();
+      root.render(<CellOutput cellId={cellId} state={state} />);
       registry.set(element, root);
-      root.render(
-        <div className="p-4">{renderHTML({ html: data.text() })}</div>,
-      );
       signal.addEventListener("abort", () => {
-        registry.delete(element);
         root.unmount();
+        registry.delete(element);
       });
     },
   };
