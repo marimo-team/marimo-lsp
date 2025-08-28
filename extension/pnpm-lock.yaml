@@ -17,6 +17,9 @@ importers:
       '@marimo-team/openapi':
         specifier: link:../../marimo/packages/openapi/
         version: link:../../marimo/packages/openapi
+      '@std/semver':
+        specifier: jsr:^1.0.5
+        version: '@jsr/std__semver@1.0.5'
       '@tailwindcss/vite':
         specifier: ^4.1.11
         version: 4.1.11(rolldown-vite@7.1.0(@types/node@22.16.0)(esbuild@0.25.5)(jiti@2.5.1))
@@ -297,6 +300,9 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.29':
     resolution: {integrity: sha512-uw6guiW/gcAGPDhLmd77/6lW8QLeiV5RUTsAX46Db6oLhGaVj4lhnPwb184s1bkc8kdVg/+h988dro8GRDpmYQ==}
+
+  '@jsr/std__semver@1.0.5':
+    resolution: {integrity: sha512-jPLb9UZN4H61JvQWZfUajE9BXCBHTnZ4G7zuNrSP07kSnsVNlIakZwvt2unEc6MkPSqGy91HinA1H0OKbFVGDw==, tarball: https://npm.jsr.io/~/11/@jsr/std__semver/1.0.5.tgz}
 
   '@napi-rs/wasm-runtime@1.0.3':
     resolution: {integrity: sha512-rZxtMsLwjdXkMUGC3WwsPwLNVqVqnTJT6MNIB6e+5fhMcSCPP0AOsNWuMQ5mdCq6HNjs/ZeWAEchpqeprqBD2Q==}
@@ -951,6 +957,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.4
+
+  '@jsr/std__semver@1.0.5': {}
 
   '@napi-rs/wasm-runtime@1.0.3':
     dependencies:

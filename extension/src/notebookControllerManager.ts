@@ -1,14 +1,19 @@
-import * as py from "@vscode/python-extension";
+import { execFile } from "node:child_process";
+import * as semver from "@std/semver";
+import type * as py from "@vscode/python-extension";
 import * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient";
+
 import * as cmds from "./commands.ts";
 import { Logger } from "./logging.ts";
+import { getPythonApi } from "./python.ts";
 import { notebookType } from "./types.ts";
 
 export function createNotebookControllerManager(
   client: lsp.BaseLanguageClient,
   options: { signal: AbortSignal },
 ) {
+  // Single map for both controller and environment
   const controllers = new Map<string, vscode.NotebookController>();
   const selectedControllers = new WeakMap<
     vscode.NotebookDocument,
@@ -28,9 +33,9 @@ export function createNotebookControllerManager(
 
     {
       // Just update the controller if it exists
-      const controller = controllers.get(controllerId);
-      if (controller) {
-        controller.label = controllerLabel;
+      const existing = controllers.get(controllerId);
+      if (existing) {
+        existing.label = controllerLabel;
         Logger.trace(
           "Controller.Update",
           "Updated controller:",
@@ -51,6 +56,37 @@ export function createNotebookControllerManager(
           cellCount: cells.length,
           notebook: notebook.uri.toString(),
         });
+
+        const version = await tryGetMarimoVersion(env, options);
+
+        if (!version) {
+          const envName = resolvePythonEnvironmentName(env);
+          const envLabel = envName
+            ? `"${envName}"`
+            : "the selected environment";
+          await vscode.window.showErrorMessage(
+            `Could not find marimo in ${envLabel}. Please ensure marimo is installed.`,
+            { modal: true },
+          );
+
+          return;
+        }
+
+        if (
+          !semver.greaterOrEqual(version, { major: 0, minor: 14, patch: 0 })
+        ) {
+          const envName = resolvePythonEnvironmentName(env);
+          const envLabel = envName
+            ? `"${envName}"`
+            : "the selected environment";
+          await vscode.window.showWarningMessage(
+            `marimo version in ${envLabel} is outdated (v${semver.format(version)}). Please update to v0.14.0 or later.`,
+            { modal: true },
+          );
+
+          return;
+        }
+
         await cmds.executeCommand(client, {
           command: "marimo.run",
           params: {
@@ -136,7 +172,7 @@ export function createNotebookControllerManager(
   }
 
   // TODO: await this somewhere?
-  py.PythonExtension.api()
+  getPythonApi()
     .then((api) => initialize(api))
     .catch((error) => {
       Logger.error(
@@ -156,18 +192,6 @@ export function createNotebookControllerManager(
       return selectedControllers.get(notebook);
     },
   };
-}
-
-function resolvePythonEnvironmentName(env: py.Environment): string | undefined {
-  if (env.environment?.name) {
-    return env.environment.name;
-  }
-  if (env.environment?.folderUri) {
-    return vscode.Uri.parse(env.environment.folderUri.toString())
-      .path.split("/")
-      .pop();
-  }
-  return undefined;
 }
 
 /**
@@ -197,4 +221,39 @@ function formatControllerLabel(env: py.Environment): string {
     return `${envName} (${formatted})`;
   }
   return formatted;
+}
+
+async function tryGetMarimoVersion(
+  env: py.Environment,
+  options: {
+    signal?: AbortSignal;
+  },
+): Promise<semver.SemVer | undefined> {
+  return new Promise((resolve) => {
+    execFile(
+      env.path,
+      ["-c", "import marimo; print(marimo.__version__)"],
+      { signal: options.signal },
+      (error, stdout) => {
+        resolve(error ? undefined : semver.tryParse(stdout.trim()));
+      },
+    );
+  });
+}
+
+/**
+ * A human readable name for a {@link py.Environment}
+ */
+export function resolvePythonEnvironmentName(
+  env: py.Environment,
+): string | undefined {
+  if (env.environment?.name) {
+    return env.environment.name;
+  }
+  if (env.environment?.folderUri) {
+    return vscode.Uri.parse(env.environment.folderUri.toString())
+      .path.split("/")
+      .pop();
+  }
+  return undefined;
 }
