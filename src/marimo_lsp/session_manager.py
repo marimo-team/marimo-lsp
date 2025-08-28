@@ -8,16 +8,17 @@ from uuid import uuid4
 from marimo._config.manager import (
     get_default_config_manager,
 )
-from marimo._server.sessions import KernelManager, QueueManager, Session
+from marimo._server.sessions import Session
 
 from marimo_lsp.app_file_manager import LspAppFileManager
 from marimo_lsp.kernel_manager import LspKernelManager
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.session_consumer import LspSessionConsumer
+from marimo_lsp.zeromq.queue_manager import ZeroMqQueueManager
 
 if typing.TYPE_CHECKING:
     from marimo._server.file_manager import AppFileManager
-    from marimo._server.sessions import KernelManager
+    from marimo._server.sessions import KernelManager, QueueManager
     from pygls.lsp.server import LanguageServer
 
 
@@ -65,7 +66,8 @@ class LspSessionManager:
 
         app_file_manager = LspAppFileManager(server=server, notebook_uri=notebook_uri)
         config_manager = get_default_config_manager(current_path=app_file_manager.path)
-        queue_manager = QueueManager(use_multiprocessing=True)
+
+        queue_manager, connection_info = ZeroMqQueueManager.create_host()
 
         kernel_manager = LspKernelManager(
             # TODO: Get executable
@@ -73,6 +75,7 @@ class LspSessionManager:
             queue_manager=queue_manager,
             app_file_manager=app_file_manager,
             config_manager=config_manager,
+            connection_info=connection_info,
         )
 
         logger.info(f"Creating new session for {notebook_uri}")
@@ -80,7 +83,7 @@ class LspSessionManager:
         session = Session(
             initialization_id=str(uuid4()),
             session_consumer=LspSessionConsumer(server, notebook_uri),
-            queue_manager=queue_manager,
+            queue_manager=typing.cast("QueueManager", queue_manager),
             kernel_manager=typing.cast("KernelManager", kernel_manager),
             app_file_manager=typing.cast("AppFileManager", app_file_manager),
             config_manager=config_manager,

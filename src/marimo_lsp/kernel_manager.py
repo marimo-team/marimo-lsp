@@ -2,51 +2,58 @@
 
 from __future__ import annotations
 
+import subprocess
 import typing
 
 from marimo._config.settings import GLOBAL_SETTINGS
-from marimo._messaging.types import KernelMessage
 from marimo._runtime.requests import AppMetadata
 from marimo._server.model import SessionMode
 from marimo._server.sessions import KernelManager
-from marimo._utils.typed_connection import TypedConnection
+
+from marimo_lsp.types import KernelArgs, encode_kernel_args
+from marimo_lsp.zeromq.queue_manager import encode_connection_info
 
 if typing.TYPE_CHECKING:
     from marimo._config.manager import MarimoConfigManager
-    from marimo._server.sessions import QueueManager
 
     from marimo_lsp.app_file_manager import LspAppFileManager
+    from marimo_lsp.zeromq.queue_manager import ConnectionInfo, ZeroMqQueueManager
 
 
-def launch_kernel(*args) -> None:  # noqa: ANN002
-    """Launch the marimo kernel with the correct Python environment.
-
-    Runs inside a `multiprocessing.Process` spawned with `ctx.set_executable()`.
-
-    However, multiprocessing reconstructs the parent's `sys.path`, overriding the
-    venv's paths. We fix this by querying sys.executable (which IS correctly set)
-    for its natural `sys.path` and replacing ours before importing marimo.
-    """
-    import json  # noqa: PLC0415
-    import subprocess  # noqa: PLC0415
-    import sys  # noqa: PLC0415
-
-    # Get the natural sys.path from the venv's Python interpreter
-    # sys.executable is correctly set to the venv's Python thanks to set_executable()
-    result = subprocess.run(  # noqa: S603
-        [sys.executable, "-c", "import sys, json; print(json.dumps(sys.path))"],
-        capture_output=True,
-        text=True,
-        check=True,
+def launch_kernel_subprocess(
+    executable: str,
+    connection_info: ConnectionInfo,
+    configs: dict,
+    app_metadata: AppMetadata,
+    config_manager: MarimoConfigManager,
+) -> subprocess.Popen:
+    """Launch kernel as a subprocess with ZeroMQ IPC."""
+    kernel_args = KernelArgs(
+        configs=configs,
+        app_metadata=app_metadata,
+        user_config=config_manager.get_config(hide_secrets=False),
+        log_level=GLOBAL_SETTINGS.LOG_LEVEL,
     )
 
-    # Replace the inherited (wrong) sys.path with the venv's natural paths
-    sys.path = json.loads(result.stdout)
+    process = subprocess.Popen(
+        [
+            executable,
+            "-m",
+            "marimo_lsp.zeromq.kernel_server",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
 
-    # Now we can import marimo from the correct environment
-    from marimo._runtime import runtime  # noqa: PLC0415
+    assert process.stdin, "Expected stdin"
+    process.stdin.write(encode_connection_info(connection_info) + "\n")
+    process.stdin.write(encode_kernel_args(kernel_args) + "\n")
+    process.stdin.flush()
+    process.stdin.close()
 
-    runtime.launch_kernel(*args)
+    return process
 
 
 class LspKernelManager(KernelManager):
@@ -56,7 +63,8 @@ class LspKernelManager(KernelManager):
         self,
         *,
         executable: str,
-        queue_manager: QueueManager,
+        connection_info: ConnectionInfo,
+        queue_manager: ZeroMqQueueManager,
         app_file_manager: LspAppFileManager,
         config_manager: MarimoConfigManager,
     ) -> None:
@@ -75,52 +83,20 @@ class LspKernelManager(KernelManager):
             redirect_console_to_browser=False,
             virtual_files_supported=False,
         )
+        self.kernel_process = None
         self.executable = executable
+        self.connection_info = connection_info
 
     def start_kernel(self) -> None:
-        """Start an instance of the marimo kernel."""
-        import multiprocessing as mp  # noqa: PLC0415
-        from multiprocessing import connection  # noqa: PLC0415
-
-        # We use a process in edit mode so that we can interrupt the app
-        # with a SIGINT; we don't mind the additional memory consumption,
-        # since there's only one client sess
-        is_edit_mode = self.mode == SessionMode.EDIT
-
-        # Need to use a socket for windows compatibility
-        listener = connection.Listener(family="AF_INET")
-
-        ctx = mp.get_context("spawn")
-        ctx.set_executable(self.executable)
-
-        kernel_task = ctx.Process(
-            target=launch_kernel,
-            args=(
-                self.queue_manager.control_queue,
-                self.queue_manager.set_ui_element_queue,
-                self.queue_manager.completion_queue,
-                self.queue_manager.input_queue,
-                # stream queue unused
-                None,
-                listener.address,
-                is_edit_mode,
-                self.configs,
-                self.app_metadata,
-                self.config_manager.get_config(hide_secrets=False),
-                self._virtual_files_supported,
-                self.redirect_console_to_browser,
-                self.queue_manager.win32_interrupt_queue,
-                self.profile_path,
-                GLOBAL_SETTINGS.LOG_LEVEL,
-            ),
-            # The process can't be a daemon, because daemonic processes
-            # can't create children
-            # https://docs.python.org/3/library/multiprocessing.html#multiprocessing.Process.daemon  # noqa: E501
-            daemon=False,
+        """Start an instance of the marimo kernel using ZeroMQ IPC."""
+        # Launch kernel subprocess with ZeroMQ
+        self.kernel_process = launch_kernel_subprocess(
+            executable=self.executable,
+            connection_info=self.connection_info,
+            configs=self.configs,
+            app_metadata=self.app_metadata,
+            config_manager=self.config_manager,
         )
 
-        kernel_task.start()
-
-        self.kernel_task = kernel_task
-        # First thing kernel does is connect to the socket, so it's safe to call accept
-        self._read_conn = TypedConnection[KernelMessage].of(listener.accept())
+        # Store process handle (compatible with mp.Process interface)
+        self.kernel_task = self.kernel_process

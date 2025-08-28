@@ -10,6 +10,7 @@ dependencies = [
   "lsprotocol>=2025.0.0rc1",
   "marimo>=0.15.0",
   "pygls>=2.0.0a4",
+  "pyzmq>=27.0.2",
 ]
 
 [project.scripts]
@@ -56,3 +57,6 @@ ignore = [
   "PLR",
   "FIX",
 ]
+
+[tool.uv.sources]
+marimo = { path = "../marimo", editable = true }
