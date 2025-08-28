@@ -36,7 +36,7 @@ class FileLogger {
     message: string,
     data?: unknown,
   ) {
-    if (level > this.level) return;
+    if (level < this.level) return;
     const levels = ["off", "trace", "debug", "info", "warn", "error"] as const;
     let dataStr = "";
     if (data !== undefined) {
