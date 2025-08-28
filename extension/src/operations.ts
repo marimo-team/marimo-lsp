@@ -16,7 +16,7 @@ export type OperationMessage = {
 }[MessageOperationType];
 
 export interface OperationContext {
-  notebookUri: string;
+  notebook: vscode.NotebookDocument;
   controller: vscode.NotebookController;
   executions: Map<string, vscode.NotebookCellExecution>;
 }
@@ -53,7 +53,7 @@ async function handleCellOperation(
   switch (status) {
     case "queued": {
       const execution = context.controller.createNotebookCellExecution(
-        getNotebookCell(context.notebookUri, cellId),
+        getNotebookCell(context.notebook, cellId),
       );
       context.executions.set(cellId, execution);
       return;
@@ -105,22 +105,13 @@ async function updateOrCreateMarimoCellOutput(
   );
 }
 
-function getNotebookDocument(notebookUri: string): vscode.NotebookDocument {
-  const notebook = vscode.workspace.notebookDocuments.find(
-    (nb) => nb.uri.toString() === notebookUri,
-  );
-  assert(notebook, `No notebook ${notebookUri} in workspace.`);
-  return notebook;
-}
-
 function getNotebookCell(
-  notebookUri: string,
+  notebook: vscode.NotebookDocument,
   cellId: string,
 ): vscode.NotebookCell {
-  const notebook = getNotebookDocument(notebookUri);
   const cell = notebook
     .getCells()
     .find((c) => c.document.uri.toString() === cellId);
-  assert(cell, `No cell id ${cellId} in notebook ${notebookUri} `);
+  assert(cell, `No cell id ${cellId} in notebook ${notebook.uri.toString()} `);
   return cell;
 }

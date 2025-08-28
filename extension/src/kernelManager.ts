@@ -1,41 +1,18 @@
 import * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient";
+
 import { assert } from "./assert.ts";
 import * as cmds from "./commands.ts";
 import { Logger } from "./logging.ts";
+import { createNotebookControllerManager } from "./notebookControllerManager.ts";
 import * as ops from "./operations.ts";
-import { notebookType } from "./types.ts";
 
 export function kernelManager(
   client: lsp.BaseLanguageClient,
   options: { signal: AbortSignal },
 ) {
+  const manager = createNotebookControllerManager(client, options);
   const channel = vscode.notebooks.createRendererMessaging("marimo-renderer");
-  const controller = vscode.notebooks.createNotebookController(
-    "marimo-controller",
-    notebookType,
-    "marimo kernel",
-    async (
-      cells: vscode.NotebookCell[],
-      notebookDocument: vscode.NotebookDocument,
-    ) => {
-      Logger.info("Kernel.Execute", "Running cells", {
-        cellCount: cells.length,
-        notebook: notebookDocument.uri.toString(),
-      });
-      Logger.trace("Kernel.Execute", "Cell URIs", {
-        cells: cells.map((c) => c.document.uri.toString()),
-      });
-      await cmds.executeCommand(client, {
-        command: "marimo.run",
-        params: {
-          notebookUri: notebookDocument.uri.toString(),
-          cellIds: cells.map((cell) => cell.document.uri.toString()),
-          codes: cells.map((cell) => cell.document.getText()),
-        },
-      });
-    },
-  );
 
   channel.onDidReceiveMessage(async ({ editor, message }) => {
     assert("command" in message, "unknown message");
@@ -48,22 +25,27 @@ export function kernelManager(
     });
   });
 
-  const contexts = new Map<string, ops.OperationContext>();
+  const contexts = new Map<string, Omit<ops.OperationContext, "controller">>();
   const operationListener = client.onNotification(
     "marimo/operation",
     async (message: { notebookUri: string } & ops.OperationMessage) => {
       const { notebookUri, ...operation } = message;
       let context = contexts.get(notebookUri);
       if (!context) {
-        context = { notebookUri, controller, executions: new Map() };
+        const notebook = vscode.workspace.notebookDocuments.find(
+          (doc) => doc.uri.toString() === notebookUri,
+        );
+        assert(notebook, `Expected notebook document for ${notebookUri}`);
+        context = { notebook, executions: new Map() };
         contexts.set(notebookUri, context);
       }
-      await ops.route(context, operation);
+      const controller = manager.getSelectedController(context.notebook);
+      assert(controller, `Expected notebook controller for ${notebookUri}`);
+      await ops.route({ ...context, controller }, operation);
     },
   );
 
   options.signal.addEventListener("abort", () => {
-    controller.dispose();
     operationListener.dispose();
     contexts.clear();
     Logger.info("Kernel.Lifecycle", "Kernel manager disposed");

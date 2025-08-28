@@ -5,7 +5,6 @@ import * as cmds from "./commands.ts";
 import { debugAdapter } from "./debugAdapter.ts";
 import { kernelManager } from "./kernelManager.ts";
 import { languageClient } from "./languageClient.ts";
-
 import { Logger } from "./logging.ts";
 import { notebookSerializer } from "./notebookSerializer.ts";
 import { notebookType } from "./types.ts";

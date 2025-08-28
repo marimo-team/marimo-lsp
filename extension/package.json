@@ -110,6 +110,7 @@
     "@types/react-dom": "^19.1.7",
     "@types/vscode": "^1.86.0",
     "@types/vscode-notebook-renderer": "^1.72.3",
+    "@vscode/python-extension": "^1.0.6",
     "effect": "^3.16.12",
     "esbuild": "^0.25.5",
     "react": "^19.1.1",
