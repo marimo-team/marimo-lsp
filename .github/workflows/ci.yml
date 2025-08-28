@@ -71,11 +71,6 @@ jobs:
             marimo/pnpm-lock.yaml
             marimo-lsp/extension/pnpm-lock.yaml
 
-      - name: Build marimo packages
-        run: |
-          cd marimo
-          pnpm --recursive --filter "./packages/*" build
-
       - name: Install and typecheck extension
         run: |
           cd marimo-lsp/extension

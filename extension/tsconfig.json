@@ -11,6 +11,9 @@
     "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "exactOptionalPropertyTypes": true,
-    "erasableSyntaxOnly": true
+    "erasableSyntaxOnly": true,
+    "paths": {
+      "@marimo-team/marimo-api": ["./node_modules/@marimo-team/openapi"]
+    }
   }
 }
