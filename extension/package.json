@@ -104,6 +104,7 @@
     "@biomejs/biome": "^2.2.2",
     "@marimo-team/frontend": "link:../../marimo/frontend/",
     "@marimo-team/openapi": "link:../../marimo/packages/openapi/",
+    "@std/semver": "jsr:^1.0.5",
     "@tailwindcss/vite": "^4.1.11",
     "@types/node": "^22.13.10",
     "@types/react": "^19.1.9",
