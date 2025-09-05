@@ -20,6 +20,29 @@ if typing.TYPE_CHECKING:
     from marimo_lsp.zeromq.queue_manager import ConnectionInfo, ZeroMqQueueManager
 
 
+@dataclasses.dataclass
+class PopenProcessLike(ProcessLike):
+    """Wraps `subprocess.Popen` as a `ProcessLike`.
+
+    Provides the `ProcessLike` protocol required by marimo's KernelManager.
+    """
+
+    inner: subprocess.Popen
+
+    @property
+    def pid(self) -> int | None:
+        """Get the process ID."""
+        return self.inner.pid
+
+    def is_alive(self) -> bool:
+        """Check if the process is still running."""
+        return self.inner.poll() is None
+
+    def terminate(self) -> None:
+        """Terminate the process."""
+        self.inner.terminate()
+
+
 def launch_kernel_subprocess(
     executable: str,
     connection_info: ConnectionInfo,
@@ -36,6 +59,7 @@ def launch_kernel_subprocess(
     )
 
     process = subprocess.Popen(
+    process = subprocess.Popen(  # noqa: S603
         [
             executable,
             "-m",
@@ -89,13 +113,14 @@ class LspKernelManager(KernelManager):
 
     def start_kernel(self) -> None:
         """Start an instance of the marimo kernel using ZeroMQ IPC."""
-        # Launch kernel subprocess with ZeroMQ
-        self.kernel_process = launch_kernel_subprocess(
-            executable=self.executable,
-            connection_info=self.connection_info,
-            configs=self.configs,
-            app_metadata=self.app_metadata,
-            config_manager=self.config_manager,
+        self.kernel_task = PopenProcessLike(
+            launch_kernel_subprocess(
+                executable=self.executable,
+                connection_info=self.connection_info,
+                configs=self.configs,
+                app_metadata=self.app_metadata,
+                config_manager=self.config_manager,
+            )
         )
 
         # Store process handle (compatible with mp.Process interface)
