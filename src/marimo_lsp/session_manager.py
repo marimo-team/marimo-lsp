@@ -64,10 +64,9 @@ class LspSessionManager:
         if notebook_uri in self._sessions:
             self.close_session(notebook_uri)
 
+        queue_manager, connection_info = ZeroMqQueueManager.create()
         app_file_manager = LspAppFileManager(server=server, notebook_uri=notebook_uri)
         config_manager = get_default_config_manager(current_path=app_file_manager.path)
-
-        queue_manager, connection_info = ZeroMqQueueManager.create_host()
 
         kernel_manager = LspKernelManager(
             # TODO: Get executable

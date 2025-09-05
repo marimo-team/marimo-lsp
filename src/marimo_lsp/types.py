@@ -2,30 +2,50 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import msgspec
-from marimo._messaging.msgspec_encoder import encode_json_str
-
-if TYPE_CHECKING:
-    from marimo._config.config import MarimoConfig
-    from marimo._runtime.requests import AppMetadata
-
-
-def encode_kernel_args(args: KernelArgs) -> str:
-    """Encode kernel args as JSON."""
-    return encode_json_str(args)
+import msgspec.json
+from marimo._ast.cell import CellConfig  # noqa: TC002
+from marimo._config.config import MarimoConfig  # noqa: TC002
+from marimo._messaging.msgspec_encoder import encode_json_bytes
+from marimo._runtime.requests import AppMetadata  # noqa: TC002
+from marimo._types.ids import CellId_t  # noqa: TC002
 
 
-def decode_kernel_args(json: str) -> KernelArgs:
-    """Encode kernel args as JSON."""
-    return msgspec.json.decode(json, type=KernelArgs)
-
-
-class KernelArgs(msgspec.Struct):
+class LaunchKernelArgs(msgspec.Struct):
     """Args to send to the kernel."""
 
-    configs: dict
+    configs: dict[CellId_t, CellConfig]
     app_metadata: AppMetadata
     user_config: MarimoConfig
     log_level: int
+    profile_path: str | None
+
+    def encode_json(self) -> bytes:
+        """Encode kernel args as JSON."""
+        return encode_json_bytes(self)
+
+    @classmethod
+    def decode_json(cls, buf: bytes | str) -> LaunchKernelArgs:
+        """Encode kernel args as JSON."""
+        return msgspec.json.decode(buf, type=cls)
+
+
+class ConnectionInfo(msgspec.Struct):
+    """Marimo socket connection info."""
+
+    control: int
+    ui_element: int
+    completion: int
+    win32_interrupt: int | None
+
+    input: int
+    stream: int
+
+    def encode_json(self) -> bytes:
+        """Encode ConnectionInfo as JSON."""
+        return encode_json_bytes(self)
+
+    @classmethod
+    def decode_json(cls, buf: bytes | str) -> ConnectionInfo:
+        """Decode JSON connection info."""
+        return msgspec.json.decode(buf, type=cls)

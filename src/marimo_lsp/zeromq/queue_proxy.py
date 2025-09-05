@@ -27,7 +27,7 @@ class PushQueue(QueueType[T]):
         self.socket = socket
         self.maxsize = maxsize
 
-    def put(self, obj: T, block: bool = True, timeout: float | None = None) -> None:  # noqa: FBT001, FBT002
+    def put(self, obj: T, block: bool = True, timeout: float | None = None) -> None:  # noqa: ARG002, FBT001, FBT002
         """Put an item into the queue."""
         self.socket.send(pickle.dumps(obj))
 
@@ -56,37 +56,41 @@ def start_queue_receiver_thread(
     stop_event: threading.Event,
 ) -> threading.Thread:
     """Start a thread to receive messages from ZeroMQ sockets and populate queues."""
+
+    def receive_loop(
+        mapping: dict[zmq.Socket, QueueType],
+        stop_event: threading.Event,
+    ) -> None:
+        """Receive messages from sockets and put them in queues using polling."""
+        poller = zmq.Poller()
+        # Register all sockets with the poller
+        for socket in mapping:
+            poller.register(socket, zmq.POLLIN)
+        
+        while not stop_event.is_set():
+            try:
+                # Poll with 100ms timeout
+                socks = dict(poller.poll(100))
+                for socket, event in socks.items():
+                    if event & zmq.POLLIN:
+                        msg = socket.recv(flags=zmq.NOBLOCK)
+                        obj = pickle.loads(msg)  # noqa: S301
+                        mapping[socket].put(obj)
+
+            except zmq.Again:  # noqa: PERF203
+                # No message ready, continue polling
+                continue
+            except zmq.ZMQError:
+                # Socket closed or other error
+                break
+            except Exception:  # noqa: BLE001, S112
+                # Log error but continue
+                continue
+
     thread = threading.Thread(
-        target=_receive_loop,
+        target=receive_loop,
         args=(mapping, stop_event),
         daemon=True,
     )
     thread.start()
     return thread
-
-
-def _receive_loop(
-    mapping: dict[zmq.Socket, QueueType],
-    stop_event: threading.Event,
-) -> None:
-    """Receive messages from sockets and put them in queues using polling."""
-    poller = zmq.Poller()
-    while not stop_event.is_set():
-        try:
-            # Poll with 100ms timeout
-            socks = dict(poller.poll(100))
-            for socket, event in socks.items():
-                if event & zmq.POLLIN:
-                    msg = socket.recv(flags=zmq.NOBLOCK)
-                    obj = pickle.loads(msg)
-                    mapping[socket].put(obj)
-
-        except zmq.Again:
-            # No message ready, continue polling
-            continue
-        except zmq.ZMQError:
-            # Socket closed or other error
-            break
-        except Exception:  # noqa: BLE001
-            # Log error but continue
-            continue
