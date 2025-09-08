@@ -66,7 +66,7 @@ def start_queue_receiver_thread(
         # Register all sockets with the poller
         for socket in mapping:
             poller.register(socket, zmq.POLLIN)
-        
+
         while not stop_event.is_set():
             try:
                 # Poll with 100ms timeout

@@ -88,6 +88,8 @@ class ZeroMqQueueManager:
 
         if isinstance(self.input_queue, queue.Queue):
             mapping[self.conn.input] = self.input_queue
+        if isinstance(self.stream_queue, queue.Queue):
+            mapping[self.conn.stream] = self.stream_queue
 
         self._receiver_thread = start_queue_receiver_thread(mapping, self._stop_event)
 

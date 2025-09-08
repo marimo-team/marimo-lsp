@@ -24,14 +24,12 @@ if typing.TYPE_CHECKING:
     from marimo_lsp.zeromq.queue_manager import ConnectionInfo, ZeroMqQueueManager
 
 
-def launch_kernel_subprocess(
+def launch_kernel(
     executable: str,
     connection_info: ConnectionInfo,
     kernel_args: LaunchKernelArgs,
-) -> subprocess.Popen[bytes]:
+) -> PopenProcessLike:
     """Launch kernel as a subprocess with ZeroMQ IPC."""
-    import threading
-    
     cmd = [executable, "-m", "marimo_lsp.zeromq.kernel_server"]
     logger.info(f"Launching kernel subprocess: {' '.join(cmd)}")
     logger.debug(f"Connection info: {connection_info}")
@@ -43,23 +41,13 @@ def launch_kernel_subprocess(
         stderr=subprocess.PIPE,
     )
 
-    def log_stderr():
-        """Log stderr output from kernel subprocess."""
-        if process.stderr:
-            for line in process.stderr:
-                logger.error(f"[Kernel stderr PID={process.pid}] {line.decode().rstrip()}")
-    
-    # Start thread to capture stderr
-    stderr_thread = threading.Thread(target=log_stderr, daemon=True)
-    stderr_thread.start()
-
     assert process.stdin, "Expected stdin"
     process.stdin.write(connection_info.encode_json() + b"\n")
     process.stdin.write(kernel_args.encode_json() + b"\n")
     process.stdin.flush()
     process.stdin.close()
     logger.info(f"Kernel subprocess started with PID: {process.pid}")
-    return process
+    return PopenProcessLike(inner=process)
 
 
 class LspKernelManager(KernelManager):
@@ -95,16 +83,14 @@ class LspKernelManager(KernelManager):
 
     def start_kernel(self) -> None:
         """Start an instance of the marimo kernel using ZeroMQ IPC."""
-        self.kernel_task = PopenProcessLike(
-            launch_kernel_subprocess(
-                executable=self.executable,
-                connection_info=self.connection_info,
-                kernel_args=LaunchKernelArgs(
-                    configs=self.configs,
-                    app_metadata=self.app_metadata,
-                    user_config=self.config_manager.get_config(hide_secrets=False),
-                    log_level=GLOBAL_SETTINGS.LOG_LEVEL,
-                    profile_path=self.profile_path,
-                ),
-            )
+        self.kernel_task = launch_kernel(
+            executable=self.executable,
+            connection_info=self.connection_info,
+            kernel_args=LaunchKernelArgs(
+                configs=self.configs,
+                app_metadata=self.app_metadata,
+                user_config=self.config_manager.get_config(hide_secrets=False),
+                log_level=GLOBAL_SETTINGS.LOG_LEVEL,
+                profile_path=self.profile_path,
+            ),
         )

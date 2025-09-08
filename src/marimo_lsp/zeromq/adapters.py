@@ -19,9 +19,9 @@ class PopenProcessLike(ProcessLike):
     Provides the `ProcessLike` protocol required by marimo's KernelManager.
     """
 
-    def __init__(self, process: subprocess.Popen) -> None:
+    def __init__(self, inner: subprocess.Popen) -> None:
         """Initialize with a subprocess.Popen instance."""
-        self.inner = process
+        self.inner = inner
 
     @property
     def pid(self) -> int | None:
