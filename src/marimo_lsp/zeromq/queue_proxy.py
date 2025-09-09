@@ -63,7 +63,6 @@ def start_queue_receiver_thread(
     ) -> None:
         """Receive messages from sockets and put them in queues using polling."""
         poller = zmq.Poller()
-        # Register all sockets with the poller
         for socket in mapping:
             poller.register(socket, zmq.POLLIN)
 

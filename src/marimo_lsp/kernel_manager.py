@@ -63,7 +63,15 @@ class LspKernelManager(KernelManager):
         config_manager: MarimoConfigManager,
     ) -> None:
         super().__init__(
-            # TODO: explain why run mode
+            # NB: Leaky abstraction. Mode affects internal behavior of
+            # `KernelManager` based on whether `stream_queue` or
+            # `socket_addr` is used.
+            #
+            # We use RUN even though VS Code is conceptually more like EDIT.
+            # In EDIT mode, the kernel creates a `multiprocessing.Connection`,
+            # which we'd need to proxy. RUN mode uses existing `stream_queue`
+            # for message distribution which aligns with our ZeroMQ
+            # architecture.
             mode=SessionMode.RUN,
             queue_manager=typing.cast("QueueManager", queue_manager),
             config_manager=config_manager,
@@ -75,7 +83,7 @@ class LspKernelManager(KernelManager):
                 argv=None,
                 app_config=app_file_manager.app.config,
             ),
-            redirect_console_to_browser=False,
+            redirect_console_to_browser=True,
             virtual_files_supported=False,
         )
         self.executable = executable

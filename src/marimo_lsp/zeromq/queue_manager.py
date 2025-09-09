@@ -37,18 +37,20 @@ class Connection:
     win32_interrupt: zmq.Socket | None
 
     input: zmq.Socket
-    stream: zmq.Socket  # For TypedConnection bi-directional communication
+    stream: zmq.Socket
 
     def close(self) -> None:
         """Close all sockets and connections."""
         self.control.close()
         self.ui_element.close()
         self.completion.close()
-        self.input.close()
-        self.stream.close()
         if self.win32_interrupt:
             self.win32_interrupt.close()
-        self.control.close()
+
+        self.input.close()
+        self.stream.close()
+
+        self.context.term()
 
 
 @dataclasses.dataclass

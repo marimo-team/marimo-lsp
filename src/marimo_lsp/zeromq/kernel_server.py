@@ -22,24 +22,28 @@ def main() -> None:
 
     queue_manager = ZeroMqQueueManager.connect(info)
     runtime.launch_kernel(
-        # Queues
         set_ui_element_queue=queue_manager.set_ui_element_queue,
         interrupt_queue=queue_manager.win32_interrupt_queue,
         completion_queue=queue_manager.completion_queue,
         control_queue=queue_manager.control_queue,
         input_queue=queue_manager.input_queue,
-        stream_queue=queue_manager.stream_queue,
-        # Forwarded args from parent
         app_metadata=args.app_metadata,
         log_level=args.log_level,
         user_config=args.user_config,
         configs=args.configs,
         profile_path=args.profile_path,
-        # Hardcoded
-        socket_addr=None,  # not needed because we have `stream_queue`
-        is_edit_mode=True,  # always edit mode
+        # Virtual files require a web server to serve file URLs. Since we're
+        # not running one, content must be embedded as data URLs instead.
         virtual_files_supported=False,
-        redirect_console_to_browser=False,
+        # NB: Unique parameter combination required for ZeroMQ. The `stream_queue`
+        # and `socket_addr` are mutually exclusive. Normally RUN mode doesn't
+        # redirect console, while EDIT mode does. Our ZeroMQ proxy needs both
+        # `stream_queue` AND console redirection, but also other behavior of
+        # EDIT, so we require this combination.
+        stream_queue=queue_manager.stream_queue,
+        socket_addr=None,
+        is_edit_mode=True,
+        redirect_console_to_browser=True,
     )
 
 
