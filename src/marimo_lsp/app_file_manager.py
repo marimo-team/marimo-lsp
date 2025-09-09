@@ -108,8 +108,7 @@ def sync_app_with_workspace(
     workspace: Workspace, notebook_uri: str, app: InternalApp | None
 ) -> InternalApp:
     """Sync workspace with InternalApp."""
-    notebook = workspace.notebook_documents.get(notebook_uri)
-    assert notebook, "No valid notebook found in workspace."
+    notebook = workspace.notebook_documents[notebook_uri]
 
     app_config = notebook.metadata or {}
     if app is None:
