@@ -4,19 +4,20 @@ from typing import Any
 import lsprotocol.types as lsp
 import pytest
 import pytest_lsp
-from dirty_equals import IsFloat, IsUUID
+from dirty_equals import IsFloat, IsList, IsUUID
 from inline_snapshot import snapshot
 from pytest_lsp import ClientServerConfig, LanguageClient
 
 
-def to_dict(obj: Any) -> dict | list:  # noqa: ANN401
+def asdict(obj: Any) -> dict[str, Any]:  # noqa: ANN401
     """Recursively convert namedtuple Objects to dicts."""
     if hasattr(obj, "_asdict"):
-        return {k: to_dict(v) for k, v in obj._asdict().items()}
+        return {k: asdict(v) for k, v in obj._asdict().items()}
     if isinstance(obj, list):
-        return [to_dict(item) for item in obj]
+        # Just used recursively
+        return [asdict(item) for item in obj]  # pyright: ignore[reportReturnType]
     if isinstance(obj, dict):
-        return {k: to_dict(v) for k, v in obj.items()}
+        return {k: asdict(v) for k, v in obj.items()}
     return obj
 
 
@@ -298,6 +299,13 @@ if __name__ == "__main__":
 @pytest.mark.asyncio
 async def test_simple_marimo_run(client: LanguageClient) -> None:
     """Test that we can collect marimo operations until cell reaches idle state."""
+    code = """\
+import sys
+
+print("hello, world")
+print("error message", file=sys.stderr)
+x = 42\
+"""
 
     client.notebook_document_did_open(
         lsp.DidOpenNotebookDocumentParams(
@@ -317,7 +325,7 @@ async def test_simple_marimo_run(client: LanguageClient) -> None:
                     uri="file:///exec_test.py#cell1",
                     language_id="python",
                     version=1,
-                    text="x = 42",
+                    text=code,
                 )
             ],
         ),
@@ -327,11 +335,14 @@ async def test_simple_marimo_run(client: LanguageClient) -> None:
     completion_event = asyncio.Event()
 
     @client.feature("marimo/operation")
-    def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
+    async def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
         # pygls dynamically makes an `Object` named tuple which makes snapshotting hard
         # we just convert to a regular dict here for snapshotting
-        messages.append(to_dict(params))
+        messages.append(asdict(params))
         if params.op == "completed-run":
+            # FIXME: stdin/stdout are flushed every 10ms, so wait 100ms to ensure
+            # all related events. The frontend uses the same workaround.
+            await asyncio.sleep(0.1)
             completion_event.set()
 
     await client.workspace_execute_command_async(
@@ -341,7 +352,7 @@ async def test_simple_marimo_run(client: LanguageClient) -> None:
                 {
                     "notebook_uri": "file:///exec_test.py",
                     "cell_ids": ["cell1"],
-                    "codes": ["x = 42"],
+                    "codes": [code],
                 }
             ],
         )
@@ -355,7 +366,15 @@ async def test_simple_marimo_run(client: LanguageClient) -> None:
                 "op": "update-cell-codes",
                 "data": {
                     "cell_ids": ["cell1"],
-                    "codes": ["x = 42"],
+                    "codes": [
+                        """\
+import sys
+
+print("hello, world")
+print("error message", file=sys.stderr)
+x = 42\
+"""
+                    ],
                     "code_is_stale": False,
                 },
             },
@@ -368,9 +387,11 @@ async def test_simple_marimo_run(client: LanguageClient) -> None:
                 "notebookUri": "file:///exec_test.py",
                 "op": "variables",
                 "data": {
-                    "variables": [
-                        {"name": "x", "declared_by": ["cell1"], "used_by": []}
-                    ]
+                    "variables": IsList(
+                        {"name": "sys", "declared_by": ["cell1"], "used_by": []},
+                        {"name": "x", "declared_by": ["cell1"], "used_by": []},
+                        check_order=False,
+                    )
                 },
             },
             {
@@ -410,7 +431,11 @@ async def test_simple_marimo_run(client: LanguageClient) -> None:
                 "notebookUri": "file:///exec_test.py",
                 "op": "variable-values",
                 "data": {
-                    "variables": [{"name": "x", "value": "42", "datatype": "int"}]
+                    "variables": IsList(
+                        {"name": "sys", "value": "sys", "datatype": "module"},
+                        {"name": "x", "value": "42", "datatype": "int"},
+                        check_order=False,
+                    )
                 },
             },
             {
@@ -446,6 +471,48 @@ async def test_simple_marimo_run(client: LanguageClient) -> None:
                     "timestamp": IsFloat(),
                 },
             },
-            {"notebookUri": "file:///exec_test.py", "op": "completed-run", "data": {}},
+            {
+                "notebookUri": "file:///exec_test.py",
+                "op": "completed-run",
+                "data": {},
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "op": "cell-op",
+                "data": {
+                    "cell_id": "cell1",
+                    "output": None,
+                    "console": {
+                        "channel": "stdout",
+                        "mimetype": "text/plain",
+                        "data": "hello, world\n",
+                        "timestamp": IsFloat(),
+                    },
+                    "status": None,
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "op": "cell-op",
+                "data": {
+                    "cell_id": "cell1",
+                    "output": None,
+                    "console": {
+                        "channel": "stderr",
+                        "mimetype": "text/plain",
+                        "data": "error message\n",
+                        "timestamp": IsFloat(),
+                    },
+                    "status": None,
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
         ]
     )

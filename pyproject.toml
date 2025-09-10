@@ -54,4 +54,5 @@ ignore = [
   "SLF001",
   "PLC",
   "PLR",
+  "FIX",
 ]
