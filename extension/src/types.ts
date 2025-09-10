@@ -5,8 +5,8 @@ import type { NotebookSerialization } from "./schemas.ts";
 
 type Schemas = Api["schemas"];
 
-export type MessageOperation = Schemas["MessageOperation"];
-export type MessageOperationType = MessageOperation["name"];
+export type MessageOperation = Schemas["KnownUnions"]["operation"];
+export type MessageOperationType = MessageOperation["op"];
 export type MessageOperationData<T extends MessageOperationType> = Omit<
   Extract<MessageOperation, { name: T }>,
   "name"
