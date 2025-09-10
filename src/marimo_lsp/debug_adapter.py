@@ -590,4 +590,4 @@ def handle_debug_adapter_request(
     )
 
     # Handle the message asynchronously
-    asyncio.create_task(adapter.handle_dap_message(session_id, notebook_uri, message))
+    # asyncio.create_task(adapter.handle_dap_message(session_id, notebook_uri, message))
