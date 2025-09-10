@@ -7,18 +7,17 @@ import typing
 from typing import TypeVar
 
 from marimo._config.settings import GLOBAL_SETTINGS
+from marimo._ipc.types import ConnectionInfo, LaunchKernelArgs
 from marimo._runtime.requests import AppMetadata
 from marimo._server.model import SessionMode
 from marimo._server.sessions import KernelManager
 from marimo._server.types import ProcessLike
-from marimo._zeromq.types import ConnectionInfo, LaunchKernelArgs
 
 from marimo_lsp.loggers import get_logger
 
 if typing.TYPE_CHECKING:
     from marimo._config.manager import MarimoConfigManager
-    from marimo._server.sessions import QueueManager
-    from marimo._zeromq.queue_manager import ZeroMqQueueManager
+    from marimo._ipc.queue_manager import QueueManager
 
     from marimo_lsp.app_file_manager import LspAppFileManager
 
@@ -31,8 +30,8 @@ def launch_kernel(
     connection_info: ConnectionInfo,
     kernel_args: LaunchKernelArgs,
 ) -> PopenProcessLike:
-    """Launch kernel as a subprocess with ZeroMQ IPC."""
-    cmd = [executable, "-m", "marimo._zeromq.launch_kernel"]
+    """Launch kernel as a subprocess."""
+    cmd = [executable, "-m", "marimo._ipc.launch_kernel"]
     logger.info(f"Launching kernel subprocess: {' '.join(cmd)}")
     logger.debug(f"Connection info: {connection_info}")
 
@@ -60,7 +59,7 @@ class LspKernelManager(KernelManager):
         *,
         executable: str,
         connection_info: ConnectionInfo,
-        queue_manager: ZeroMqQueueManager,
+        queue_manager: QueueManager,
         app_file_manager: LspAppFileManager,
         config_manager: MarimoConfigManager,
     ) -> None:
@@ -75,7 +74,7 @@ class LspKernelManager(KernelManager):
             # for message distribution which aligns with our ZeroMQ
             # architecture.
             mode=SessionMode.RUN,
-            queue_manager=typing.cast("QueueManager", queue_manager),
+            queue_manager=queue_manager,
             config_manager=config_manager,
             configs=app_file_manager.app.cell_manager.config_map(),
             app_metadata=AppMetadata(

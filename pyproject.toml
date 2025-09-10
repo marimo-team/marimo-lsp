@@ -59,4 +59,4 @@ ignore = [
 ]
 
 [tool.uv.sources]
-marimo = { git = "https://github.com/marimo-team/marimo", rev = "0e006cb4b8d3282b1754b59ed4315fb47d931a85" }
+marimo = { git = "https://github.com/marimo-team/marimo", rev = "1000818cf9073b7c7182125747d94d8c111cd0e3" }

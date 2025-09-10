@@ -9,8 +9,8 @@ from uuid import uuid4
 from marimo._config.manager import (
     get_default_config_manager,
 )
+from marimo._ipc.queue_manager import QueueManager as IpcQueueManager
 from marimo._server.sessions import Session
-from marimo._zeromq.queue_manager import ZeroMqQueueManager
 
 from marimo_lsp.app_file_manager import LspAppFileManager
 from marimo_lsp.kernel_manager import LspKernelManager
@@ -65,7 +65,7 @@ class LspSessionManager:
         if notebook_uri in self._sessions:
             self.close_session(notebook_uri)
 
-        queue_manager, connection_info = ZeroMqQueueManager.create()
+        queue_manager, connection_info = IpcQueueManager.create()
         app_file_manager = LspAppFileManager(server=server, notebook_uri=notebook_uri)
         config_manager = get_default_config_manager(current_path=app_file_manager.path)
 
