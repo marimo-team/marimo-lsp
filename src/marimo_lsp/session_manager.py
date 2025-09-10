@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import typing
 from uuid import uuid4
 
@@ -70,7 +71,7 @@ class LspSessionManager:
 
         kernel_manager = LspKernelManager(
             # TODO: Get executable
-            executable="/Users/manzt/demos/marimo-lsp-test/.venv/bin/python",
+            executable=sys.executable,
             queue_manager=queue_manager,
             app_file_manager=app_file_manager,
             config_manager=config_manager,
