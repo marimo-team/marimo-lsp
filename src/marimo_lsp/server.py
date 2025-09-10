@@ -5,6 +5,8 @@ from __future__ import annotations
 import dataclasses
 import importlib.metadata
 
+import asyncio
+
 import lsprotocol.types as lsp
 from marimo._convert.converters import MarimoConvert
 from marimo._schemas.serialization import (
@@ -153,13 +155,14 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             handle_debug_adapter_request,
         )
 
-        return handle_debug_adapter_request(
+        await handle_debug_adapter_request(
             ls=ls,
             manager=manager,
             session_id=params.session_id,
             notebook_uri=params.notebook_uri,
             message=params.message,
         )
+        return None
 
     @server.feature(
         lsp.TEXT_DOCUMENT_CODE_ACTION,
