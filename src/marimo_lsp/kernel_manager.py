@@ -4,24 +4,25 @@ from __future__ import annotations
 
 import subprocess
 import typing
+from typing import TypeVar
 
 from marimo._config.settings import GLOBAL_SETTINGS
+from marimo._ipc.types import ConnectionInfo, LaunchKernelArgs
 from marimo._runtime.requests import AppMetadata
 from marimo._server.model import SessionMode
 from marimo._server.sessions import KernelManager
+from marimo._server.types import ProcessLike
 
 from marimo_lsp.loggers import get_logger
-from marimo_lsp.zeromq.adapters import PopenProcessLike
-from marimo_lsp.zeromq.types import LaunchKernelArgs
-
-logger = get_logger()
 
 if typing.TYPE_CHECKING:
     from marimo._config.manager import MarimoConfigManager
-    from marimo._server.sessions import QueueManager
+    from marimo._ipc.queue_manager import QueueManager
 
     from marimo_lsp.app_file_manager import LspAppFileManager
-    from marimo_lsp.zeromq.queue_manager import ConnectionInfo, ZeroMqQueueManager
+
+
+logger = get_logger()
 
 
 def launch_kernel(
@@ -29,8 +30,8 @@ def launch_kernel(
     connection_info: ConnectionInfo,
     kernel_args: LaunchKernelArgs,
 ) -> PopenProcessLike:
-    """Launch kernel as a subprocess with ZeroMQ IPC."""
-    cmd = [executable, "-m", "marimo_lsp.zeromq.launch_kernel"]
+    """Launch kernel as a subprocess."""
+    cmd = [executable, "-m", "marimo._ipc.launch_kernel"]
     logger.info(f"Launching kernel subprocess: {' '.join(cmd)}")
     logger.debug(f"Connection info: {connection_info}")
 
@@ -58,7 +59,7 @@ class LspKernelManager(KernelManager):
         *,
         executable: str,
         connection_info: ConnectionInfo,
-        queue_manager: ZeroMqQueueManager,
+        queue_manager: QueueManager,
         app_file_manager: LspAppFileManager,
         config_manager: MarimoConfigManager,
     ) -> None:
@@ -73,7 +74,7 @@ class LspKernelManager(KernelManager):
             # for message distribution which aligns with our ZeroMQ
             # architecture.
             mode=SessionMode.RUN,
-            queue_manager=typing.cast("QueueManager", queue_manager),
+            queue_manager=queue_manager,
             config_manager=config_manager,
             configs=app_file_manager.app.cell_manager.config_map(),
             app_metadata=AppMetadata(
@@ -102,3 +103,30 @@ class LspKernelManager(KernelManager):
                 profile_path=self.profile_path,
             ),
         )
+
+
+T = TypeVar("T")
+
+
+class PopenProcessLike(ProcessLike):
+    """Wraps `subprocess.Popen` as a `ProcessLike`.
+
+    Provides the `ProcessLike` protocol required by marimo's KernelManager.
+    """
+
+    def __init__(self, inner: subprocess.Popen) -> None:
+        """Initialize with a subprocess.Popen instance."""
+        self.inner = inner
+
+    @property
+    def pid(self) -> int | None:
+        """Get the process ID."""
+        return self.inner.pid
+
+    def is_alive(self) -> bool:
+        """Check if the process is still running."""
+        return self.inner.poll() is None
+
+    def terminate(self) -> None:
+        """Terminate the process."""
+        self.inner.terminate()
