@@ -6,8 +6,8 @@ import sys
 
 from marimo._runtime import runtime
 
-from marimo_lsp.types import LaunchKernelArgs
 from marimo_lsp.zeromq.queue_manager import ConnectionInfo, ZeroMqQueueManager
+from marimo_lsp.zeromq.types import LaunchKernelArgs
 
 
 def main() -> None:

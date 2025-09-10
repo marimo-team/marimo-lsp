@@ -10,8 +10,8 @@ import typing
 
 import zmq
 
-from marimo_lsp.types import ConnectionInfo
 from marimo_lsp.zeromq.queue_proxy import PushQueue, start_queue_receiver_thread
+from marimo_lsp.zeromq.types import ConnectionInfo
 
 if typing.TYPE_CHECKING:
     from marimo._messaging.types import KernelMessage

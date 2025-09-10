@@ -11,8 +11,8 @@ from marimo._server.model import SessionMode
 from marimo._server.sessions import KernelManager
 
 from marimo_lsp.loggers import get_logger
-from marimo_lsp.types import LaunchKernelArgs
 from marimo_lsp.zeromq.adapters import PopenProcessLike
+from marimo_lsp.zeromq.types import LaunchKernelArgs
 
 logger = get_logger()
 
