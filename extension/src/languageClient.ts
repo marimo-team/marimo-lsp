@@ -13,12 +13,12 @@ export function languageClient(opts: {
     // so we can iterate on both parts together. Must change before publishing.
     {
       run: {
-        command: "uv",
+        command: "/nix/store/hxazvw40v90nic1yjx23cdkj6hqqlywa-uv-0.8.6/bin/uv",
         args: ["run", "--directory", __dirname, "marimo-lsp"],
         transport: lsp.TransportKind.stdio,
       },
       debug: {
-        command: "uv",
+        command: "/nix/store/hxazvw40v90nic1yjx23cdkj6hqqlywa-uv-0.8.6/bin/uv",
         args: ["run", "--directory", __dirname, "marimo-lsp"],
         transport: lsp.TransportKind.stdio,
       },

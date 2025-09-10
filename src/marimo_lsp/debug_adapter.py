@@ -70,7 +70,7 @@ class DebugpyAdapter:
             def start_server():
                 try:
                     # Configure debugpy
-                    debugpy.configure(subProcess=False)
+                    debugpy.configure(subProcess=True)
 
                     # Start listening on a random port
                     self.debugpy_port = debugpy.listen(("localhost", 0))
@@ -87,6 +87,7 @@ class DebugpyAdapter:
 
             self.debugpy_thread = threading.Thread(target=start_server, daemon=True)
             self.debugpy_thread.start()
+            logger.info("Debugpy server thread started (blocked)")
 
             # Wait a bit for the server to start
             await asyncio.sleep(0.1)
@@ -567,9 +568,6 @@ def handle_debug_adapter_request(
     # Get or create the debugpy adapter
     adapter = get_debugpy_adapter(ls, manager)
 
-    # Handle the message asynchronously
-    asyncio.create_task(adapter.handle_dap_message(session_id, notebook_uri, message))
-
     # """Handle DAP requests."""
     request = converter.structure(message, DapRequestMessage)
     # logger.debug(f"Debug.Send {session_id=}, {request=}")
@@ -590,3 +588,6 @@ def handle_debug_adapter_request(
             },
         },
     )
+
+    # Handle the message asynchronously
+    asyncio.create_task(adapter.handle_dap_message(session_id, notebook_uri, message))
