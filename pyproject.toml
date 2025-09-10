@@ -57,3 +57,6 @@ ignore = [
   "PLR",
   "FIX",
 ]
+
+[tool.uv.sources]
+marimo = { git = "https://github.com/marimo-team/marimo", branch = "main" }
