@@ -3,13 +3,14 @@ name = "marimo-lsp"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.9"
 authors = [{ name = "Trevor Manz", email = "trevor.j.manz@gmail.com" }]
 dependencies = [
   "jupytext>=1.17.2",
   "lsprotocol>=2025.0.0rc1",
-  "marimo>=0.14.17",
+  "marimo>=0.15.0",
   "pygls>=2.0.0a4",
+  "pyzmq>=27.0.2",
 ]
 
 [project.scripts]
@@ -56,3 +57,6 @@ ignore = [
   "PLR",
   "FIX",
 ]
+
+[tool.uv.sources]
+marimo = { git = "https://github.com/marimo-team/marimo", branch = "main" }

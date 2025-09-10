@@ -60,12 +60,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     async def did_open(params: lsp.DidOpenNotebookDocumentParams) -> None:
         logger.info(f"notebookDocument/didOpen {params.notebook_document.uri}")
         session = manager.get_session(notebook_uri=params.notebook_document.uri)
-        if session is None:
-            session = manager.create_session(
-                server=server, notebook_uri=params.notebook_document.uri
-            )
-            logger.info(f"Created and synced session {params.notebook_document.uri}")
-        else:
+        if session:
             sync_app_with_workspace(
                 workspace=server.workspace,
                 notebook_uri=params.notebook_document.uri,
@@ -77,24 +72,24 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     async def did_change(params: lsp.DidChangeNotebookDocumentParams) -> None:
         logger.info(f"notebookDocument/didChange {params.notebook_document.uri}")
         session = manager.get_session(notebook_uri=params.notebook_document.uri)
-        assert session, f"No session in workspace for {params.notebook_document.uri}"
-        sync_app_with_workspace(
-            workspace=server.workspace,
-            notebook_uri=params.notebook_document.uri,
-            app=session.app_file_manager.app,
-        )
+        if session:
+            sync_app_with_workspace(
+                workspace=server.workspace,
+                notebook_uri=params.notebook_document.uri,
+                app=session.app_file_manager.app,
+            )
         logger.info(f"Synced session {params.notebook_document.uri}")
 
     @server.feature(lsp.NOTEBOOK_DOCUMENT_DID_SAVE)
     async def did_save(params: lsp.DidSaveNotebookDocumentParams) -> None:
         logger.info(f"notebookDocument/didSave {params.notebook_document.uri}")
         session = manager.get_session(notebook_uri=params.notebook_document.uri)
-        assert session, f"No session in workspace for {params.notebook_document.uri}"
-        sync_app_with_workspace(
-            workspace=server.workspace,
-            notebook_uri=params.notebook_document.uri,
-            app=session.app_file_manager.app,
-        )
+        if session:
+            sync_app_with_workspace(
+                workspace=server.workspace,
+                notebook_uri=params.notebook_document.uri,
+                app=session.app_file_manager.app,
+            )
         logger.info(f"Synced session {params.notebook_document.uri}")
 
     @server.feature(lsp.NOTEBOOK_DOCUMENT_DID_CLOSE)
@@ -110,7 +105,11 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     async def run(ls: LanguageServer, args: RunRequest):  # noqa: ARG001
         logger.info("marimo.run")
         session = manager.get_session(args.notebook_uri)
-        assert session, f"No session in workspace for {args.notebook_uri}"
+        if session is None:
+            session = manager.create_session(
+                server=server, notebook_uri=args.notebook_uri
+            )
+            logger.info(f"Created and synced session {args.notebook_uri}")
         session.put_control_request(
             args.into_marimo().as_execution_request(), from_consumer_id=None
         )

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
-from marimo._messaging.ops import MessageOperation, serialize
+from marimo._messaging.msgspec_encoder import asdict
 from marimo._server.model import ConnectionState, SessionConsumer
 from marimo._types.ids import ConsumerId
 
@@ -13,6 +14,7 @@ from marimo_lsp.loggers import get_logger
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from marimo._messaging.ops import MessageOperation
     from marimo._messaging.types import KernelMessage
     from pygls.lsp.server import LanguageServer
 
@@ -41,11 +43,15 @@ class LspSessionConsumer(SessionConsumer):
         def handle_message(msg: KernelMessage) -> None:
             """Forward kernel message over LSP."""
             try:
-                op_name, data = msg
-
+                op_name, msg_bytes = msg
                 self.server.protocol.notify(
                     "marimo/operation",
-                    {"notebookUri": self.notebook_uri, "op": op_name, "data": data},
+                    {
+                        "notebookUri": self.notebook_uri,
+                        "op": op_name,
+                        # TODO: Just send bytes directly
+                        "data": json.loads(msg_bytes),
+                    },
                 )
 
                 logger.debug(f"Forwarded {op_name} to {self.notebook_uri}")
@@ -66,7 +72,7 @@ class LspSessionConsumer(SessionConsumer):
             {
                 "notebookUri": self.notebook_uri,
                 "op": op.name,
-                "data": serialize(op),
+                "data": asdict(op),
             },
         )
         logger.debug(f"Sent {op.name} operation to {self.notebook_uri}")

@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import asyncio
-from typing import Any
+import re
+from typing import Any, Callable
 
 import lsprotocol.types as lsp
 import pytest
@@ -19,6 +22,22 @@ def asdict(obj: Any) -> dict[str, Any]:  # noqa: ANN401
     if isinstance(obj, dict):
         return {k: asdict(v) for k, v in obj.items()}
     return obj
+
+
+def filter_output(source: str, *replacers: Callable[[str], str]) -> str:
+    """Apply one or more replacer functions to `source` in order."""
+    for replacer in replacers:
+        source = replacer(source)
+    return source
+
+
+def replace_generated_with(src: str) -> str:
+    return re.sub(
+        r'^(\s*__generated_with\s*=\s*)(["\'])(.*?)\2',
+        r'\1"<marimo-version>"',
+        src,
+        flags=re.MULTILINE,
+    )
 
 
 @pytest_lsp.fixture(config=ClientServerConfig(server_command=["marimo-lsp"]))
@@ -216,12 +235,12 @@ async def test_marimo_serialize_command(client: LanguageClient) -> None:
     )
 
     assert result is not None
-    assert result["source"] == snapshot("""\
+    assert filter_output(result["source"], replace_generated_with) == snapshot("""\
 marimo app
 
 import marimo
 
-__generated_with = "0.15.0"
+__generated_with = "<marimo-version>"
 app = marimo.App()
 
 
@@ -365,6 +384,7 @@ x = 42\
                 "notebookUri": "file:///exec_test.py",
                 "op": "update-cell-codes",
                 "data": {
+                    "op": "update-cell-codes",
                     "cell_ids": ["cell1"],
                     "codes": [
                         """\
@@ -381,23 +401,25 @@ x = 42\
             {
                 "notebookUri": "file:///exec_test.py",
                 "op": "focus-cell",
-                "data": {"cell_id": "cell1"},
+                "data": {"op": "focus-cell", "cell_id": "cell1"},
             },
             {
                 "notebookUri": "file:///exec_test.py",
                 "op": "variables",
                 "data": {
+                    "op": "variables",
                     "variables": IsList(
                         {"name": "sys", "declared_by": ["cell1"], "used_by": []},
                         {"name": "x", "declared_by": ["cell1"], "used_by": []},
                         check_order=False,
-                    )
+                    ),
                 },
             },
             {
                 "notebookUri": "file:///exec_test.py",
                 "op": "cell-op",
                 "data": {
+                    "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
                     "console": None,
@@ -411,12 +433,13 @@ x = 42\
             {
                 "notebookUri": "file:///exec_test.py",
                 "op": "remove-ui-elements",
-                "data": {"cell_id": "cell1"},
+                "data": {"op": "remove-ui-elements", "cell_id": "cell1"},
             },
             {
                 "notebookUri": "file:///exec_test.py",
                 "op": "cell-op",
                 "data": {
+                    "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
                     "console": [],
@@ -431,17 +454,19 @@ x = 42\
                 "notebookUri": "file:///exec_test.py",
                 "op": "variable-values",
                 "data": {
+                    "op": "variable-values",
                     "variables": IsList(
                         {"name": "sys", "value": "sys", "datatype": "module"},
                         {"name": "x", "value": "42", "datatype": "int"},
                         check_order=False,
-                    )
+                    ),
                 },
             },
             {
                 "notebookUri": "file:///exec_test.py",
                 "op": "cell-op",
                 "data": {
+                    "op": "cell-op",
                     "cell_id": "cell1",
                     "output": {
                         "channel": "output",
@@ -461,6 +486,7 @@ x = 42\
                 "notebookUri": "file:///exec_test.py",
                 "op": "cell-op",
                 "data": {
+                    "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
                     "console": None,
@@ -474,12 +500,13 @@ x = 42\
             {
                 "notebookUri": "file:///exec_test.py",
                 "op": "completed-run",
-                "data": {},
+                "data": {"op": "completed-run"},
             },
             {
                 "notebookUri": "file:///exec_test.py",
                 "op": "cell-op",
                 "data": {
+                    "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
                     "console": {
@@ -499,6 +526,7 @@ x = 42\
                 "notebookUri": "file:///exec_test.py",
                 "op": "cell-op",
                 "data": {
+                    "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
                     "console": {
