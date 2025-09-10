@@ -9,34 +9,8 @@ on:
       - main
 
 jobs:
-  Lint:
-    name: Lint (Python)
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: |
-          uv run ruff format --check
-          uv run ruff check
-
-  Test:
-    name: Test (Python)
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: uv run pytest
-
-  Typecheck:
-    name: Typecheck (Python)
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: uv run ty check
-
-  LintTypeScript:
-    name: Lint (TypeScript)
+  typescript-lint:
+    name: TypeScript / Lint
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -45,8 +19,8 @@ jobs:
           working-dir: "extension"
       - run: biome ci
 
-  TypecheckTypeScript:
-    name: Typecheck (TypeScript)
+  typescript-typecheck:
+    name: TypeScript / Typecheck
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -81,3 +55,29 @@ jobs:
           cd marimo-lsp/extension
           pnpm install
           pnpm tsc
+
+  python-lint:
+    name: Python / Lint
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: |
+          uv run ruff format --check
+          uv run ruff check
+
+  python-test:
+    name: Python / Test
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run pytest
+
+  python-typecheck:
+    name: Python / Typecheck
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run ty check
