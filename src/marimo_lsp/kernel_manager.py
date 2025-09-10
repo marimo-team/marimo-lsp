@@ -30,7 +30,7 @@ def launch_kernel(
     kernel_args: LaunchKernelArgs,
 ) -> PopenProcessLike:
     """Launch kernel as a subprocess with ZeroMQ IPC."""
-    cmd = [executable, "-m", "marimo_lsp.zeromq.kernel_server"]
+    cmd = [executable, "-m", "marimo_lsp.zeromq.launch_kernel"]
     logger.info(f"Launching kernel subprocess: {' '.join(cmd)}")
     logger.debug(f"Connection info: {connection_info}")
 

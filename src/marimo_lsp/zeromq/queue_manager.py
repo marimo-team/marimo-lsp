@@ -75,25 +75,26 @@ class ZeroMqQueueManager:
         """Start receiver thread."""
         assert self._receiver_thread is None, "Already started"
 
-        mapping: dict[zmq.Socket, QueueType] = {}
+        receivers: dict[zmq.Socket, QueueType] = {}
 
-        if isinstance(self.control_queue, queue.Queue):
-            mapping[self.conn.control] = self.control_queue
-        if isinstance(self.set_ui_element_queue, queue.Queue):
-            mapping[self.conn.ui_element] = self.set_ui_element_queue
-        if isinstance(self.completion_queue, queue.Queue):
-            mapping[self.conn.completion] = self.completion_queue
-        if (self.conn.win32_interrupt and self.win32_interrupt_queue) and isinstance(
-            self.win32_interrupt_queue, queue.Queue
+        if self.conn.control.getsockopt(zmq.TYPE) == zmq.PULL:
+            receivers[self.conn.control] = self.control_queue
+        if self.conn.ui_element.getsockopt(zmq.TYPE) == zmq.PULL:
+            receivers[self.conn.ui_element] = self.set_ui_element_queue
+        if (
+            self.conn.win32_interrupt
+            and self.conn.win32_interrupt.getsockopt(zmq.TYPE) == zmq.PULL
         ):
-            mapping[self.conn.win32_interrupt] = self.win32_interrupt_queue
+            assert self.win32_interrupt_queue, "Expected win32_interrupt_queue"
+            receivers[self.conn.win32_interrupt] = self.win32_interrupt_queue
+        if self.conn.completion.getsockopt(zmq.TYPE) == zmq.PULL:
+            receivers[self.conn.completion] = self.completion_queue
+        if self.conn.input.getsockopt(zmq.TYPE) == zmq.PULL:
+            receivers[self.conn.input] = self.input_queue
+        if self.conn.stream.getsockopt(zmq.TYPE) == zmq.PULL:
+            receivers[self.conn.stream] = self.stream_queue
 
-        if isinstance(self.input_queue, queue.Queue):
-            mapping[self.conn.input] = self.input_queue
-        if isinstance(self.stream_queue, queue.Queue):
-            mapping[self.conn.stream] = self.stream_queue
-
-        self._receiver_thread = start_queue_receiver_thread(mapping, self._stop_event)
+        self._receiver_thread = start_queue_receiver_thread(receivers, self._stop_event)
 
     def close_queues(self) -> None:
         """Close all queues and cleanup resources."""
@@ -121,6 +122,7 @@ class ZeroMqQueueManager:
             stream=context.socket(zmq.PULL),
         )
 
+        # Bind each socket to a port
         info = ConnectionInfo(
             control=conn.control.bind_to_random_port(ADDR),
             ui_element=conn.ui_element.bind_to_random_port(ADDR),
@@ -146,6 +148,7 @@ class ZeroMqQueueManager:
             stream_queue=queue.Queue(),
         )
         queue_manager.start()
+
         return queue_manager, info
 
     @classmethod
@@ -169,6 +172,7 @@ class ZeroMqQueueManager:
             stream=context.socket(zmq.PUSH),
         )
 
+        # Attach to existing ports
         conn.control.connect(f"{ADDR}:{connection_info.control}")
         conn.ui_element.connect(f"{ADDR}:{connection_info.ui_element}")
         conn.completion.connect(f"{ADDR}:{connection_info.completion}")
@@ -190,4 +194,5 @@ class ZeroMqQueueManager:
             stream_queue=PushQueue(conn.stream),
         )
         queue_manager.start()
+
         return queue_manager

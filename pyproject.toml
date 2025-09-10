@@ -57,6 +57,3 @@ ignore = [
   "PLR",
   "FIX",
 ]
-
-[tool.uv.sources]
-marimo = { path = "../marimo", editable = true }
