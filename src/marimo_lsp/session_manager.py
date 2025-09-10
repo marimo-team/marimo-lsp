@@ -10,12 +10,12 @@ from marimo._config.manager import (
     get_default_config_manager,
 )
 from marimo._server.sessions import Session
+from marimo._zeromq.queue_manager import ZeroMqQueueManager
 
 from marimo_lsp.app_file_manager import LspAppFileManager
 from marimo_lsp.kernel_manager import LspKernelManager
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.session_consumer import LspSessionConsumer
-from marimo_lsp.zeromq.queue_manager import ZeroMqQueueManager
 
 if typing.TYPE_CHECKING:
     from marimo._server.file_manager import AppFileManager
