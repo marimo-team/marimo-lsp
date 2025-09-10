@@ -1,210 +1,370 @@
-"""Handler for DAP messages with logging and debugpy forwarding."""
+"""Pure DAP server implementation without debugpy dependencies."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-import threading
-from typing import Any, Dict, Optional, TYPE_CHECKING, Literal
-
-import attrs
-import cattrs
-import debugpy
+import subprocess
+import tempfile
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from marimo_lsp.loggers import get_logger
 
 if TYPE_CHECKING:
     from pygls.lsp.server import LanguageServer
-
     from marimo_lsp.session_manager import LspSessionManager
 
 logger = get_logger()
-converter = cattrs.Converter()
 
 
-@attrs.define
-class DapRequestMessage:
-    """
-    A generic DAP (Debug Adapter Protocol) request message.
+class DAPMessageType(Enum):
+    REQUEST = "request"
+    RESPONSE = "response"
+    EVENT = "event"
 
-    DAP requests follow a standard structure where the command field
-    determines the action, and arguments contain command-specific parameters
-    that require further parsing based on the command type.
-    """
 
+class DAPRequestType(Enum):
+    INITIALIZE = "initialize"
+    ATTACH = "attach"
+    SET_BREAKPOINTS = "setBreakpoints"
+    SET_EXCEPTION_BREAKPOINTS = "setExceptionBreakpoints"
+    CONTINUE = "continue"
+    STACK_TRACE = "stackTrace"
+    VARIABLES = "variables"
+    EVALUATE = "evaluate"
+    THREADS = "threads"
+    CONFIGURATION_DONE = "configurationDone"
+    LAUNCH = "launch"
+    DISCONNECT = "disconnect"
+    PAUSE = "pause"
+    STEP_IN = "stepIn"
+    STEP_OUT = "stepOut"
+    STEP_OVER = "next"
+    SOURCES = "sources"
+    SCOPES = "scopes"
+    EXCEPTION_INFO = "exceptionInfo"
+
+
+class DAPEventType(Enum):
+    STOPPED = "stopped"
+    BREAKPOINT = "breakpoint"
+    INITIALIZED = "initialized"
+
+
+@dataclass
+class DAPMessage:
     seq: int
-    """Sequence number of the message."""
-
-    type: Literal["request"]
-    """Message type - always 'request' for DAP requests."""
-
-    command: str
-    """The command to execute (e.g., 'initialize', 'launch', 'setBreakpoints')."""
-
-    arguments: dict | None
-    """Command-specific arguments. Should be parsed further in ./debug_adapter.py"""
+    type: DAPMessageType
+    command: Optional[str] = None
+    arguments: Optional[Dict[str, Any]] = None
+    request_seq: Optional[int] = None
+    success: Optional[bool] = None
+    message: Optional[str] = None
+    body: Optional[Dict[str, Any]] = None
+    event: Optional[str] = None
 
 
-class DebugpyAdapter:
-    """Adapter that logs DAP messages and forwards them to debugpy."""
+@dataclass
+class Breakpoint:
+    line: int
+    verified: bool = True
+    message: Optional[str] = None
 
-    def __init__(self, ls: LanguageServer, manager: LspSessionManager):
+
+@dataclass
+class DebugSession:
+    session_id: str
+    notebook_uri: str
+    breakpoints: Dict[str, List[Breakpoint]] = None
+    pdb_debugger: Optional[PDBDebugger] = None
+
+    def __post_init__(self):
+        if self.breakpoints is None:
+            self.breakpoints = {}
+
+
+class PDBDebugger:
+    """Manages PDB subprocess for debugging marimo files."""
+    
+    def __init__(self, notebook_uri: str):
+        self.notebook_uri = notebook_uri
+        self.process: Optional[subprocess.Popen] = None
+        self.temp_dir = tempfile.mkdtemp()
+        self.breakpoints: Dict[int, bool] = {}
+        self.current_line = 1
+        self.is_running = False
+        self.command_file = f"{self.temp_dir}/pdb_commands.txt"
+        self.output_file = f"{self.temp_dir}/pdb_output.txt"
+        
+    async def start(self) -> bool:
+        """Start PDB debugging session."""
+        try:
+            # Convert file URI to local path
+            if self.notebook_uri.startswith("file://"):
+                file_path = self.notebook_uri[7:]  # Remove file:// prefix
+            else:
+                file_path = self.notebook_uri
+                
+            # Create a custom PDB script that communicates via files
+            debug_script = f"""
+import pdb
+import sys
+import os
+import traceback
+from io import StringIO
+
+class FilePdb(pdb.Pdb):
+    def __init__(self, command_file, output_file):
+        super().__init__(stdin=open(command_file, 'r'), stdout=open(output_file, 'w'))
+        self.command_file = command_file
+        self.output_file_path = output_file
+        
+    def do_continue(self, arg):
+        with open(self.output_file_path, 'a') as f:
+            f.write("CONTINUING\\n")
+        return super().do_continue(arg)
+        
+    def do_step(self, arg):
+        with open(self.output_file_path, 'a') as f:
+            f.write("STEPPING\\n")
+        return super().do_step(arg)
+        
+    def do_next(self, arg):
+        with open(self.output_file_path, 'a') as f:
+            f.write("NEXT\\n")
+        return super().do_next(arg)
+        
+    def do_list(self, arg):
+        with open(self.output_file_path, 'a') as f:
+            f.write(f"CURRENT_LINE: {{self.curframe.f_lineno}}\\n")
+        return super().do_list(arg)
+
+# Initialize command and output files
+with open("{self.command_file}", "w") as f:
+    f.write("list\\n")
+    
+with open("{self.output_file}", "w") as f:
+    f.write("PDB_STARTED\\n")
+
+try:
+    # Create custom debugger
+    debugger = FilePdb("{self.command_file}", "{self.output_file}")
+    
+    # Run the marimo file under PDB
+    debugger.run('exec(open("{file_path}").read())', globals(), locals())
+    
+except Exception as e:
+    with open("{self.output_file}", "a") as f:
+        f.write(f"ERROR: {{str(e)}}\\n")
+        f.write(f"TRACEBACK: {{traceback.format_exc()}}\\n")
+"""
+            
+            script_path = f"{self.temp_dir}/debug_session.py"
+            with open(script_path, "w") as f:
+                f.write(debug_script)
+                
+            # Initialize communication files
+            with open(self.command_file, "w") as f:
+                f.write("")
+            with open(self.output_file, "w") as f:
+                f.write("")
+                
+            # Start PDB process
+            self.process = subprocess.Popen(
+                ["/usr/bin/python3", script_path],
+                cwd=self.temp_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            self.is_running = True
+            logger.info(f"Started PDB debugger for {file_path}")
+            
+            # Wait briefly for startup
+            await asyncio.sleep(0.1)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to start PDB: {e}")
+            return False
+    
+    async def stop(self):
+        """Stop PDB debugging session."""
+        self.is_running = False
+        if self.process:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+            self.process = None
+            
+        # Clean up temp files
+        try:
+            import shutil
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+            
+        logger.info("PDB session stopped")
+    
+    async def set_breakpoint(self, line: int) -> bool:
+        """Set a breakpoint at the given line."""
+        if not self.is_running:
+            return False
+            
+        try:
+            with open(self.command_file, "a") as f:
+                f.write(f"break {line}\\n")
+            self.breakpoints[line] = True
+            logger.info(f"Set breakpoint at line {line}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set breakpoint: {e}")
+            return False
+    
+    async def clear_breakpoint(self, line: int) -> bool:
+        """Clear a breakpoint at the given line."""
+        if not self.is_running:
+            return False
+            
+        try:
+            with open(self.command_file, "a") as f:
+                f.write(f"clear {line}\\n")
+            self.breakpoints.pop(line, None)
+            logger.info(f"Cleared breakpoint at line {line}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to clear breakpoint: {e}")
+            return False
+    
+    async def continue_execution(self) -> bool:
+        """Continue execution."""
+        if not self.is_running:
+            return False
+            
+        try:
+            with open(self.command_file, "a") as f:
+                f.write("continue\\n")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to continue: {e}")
+            return False
+    
+    async def step_over(self) -> bool:
+        """Step over the current line."""
+        if not self.is_running:
+            return False
+            
+        try:
+            with open(self.command_file, "a") as f:
+                f.write("next\\n")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to step over: {e}")
+            return False
+    
+    async def step_into(self) -> bool:
+        """Step into the current line."""
+        if not self.is_running:
+            return False
+            
+        try:
+            with open(self.command_file, "a") as f:
+                f.write("step\\n")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to step into: {e}")
+            return False
+    
+    async def get_current_line(self) -> int:
+        """Get the current line number."""
+        if not self.is_running:
+            return 1
+            
+        try:
+            # Request current location
+            with open(self.command_file, "a") as f:
+                f.write("list\\n")
+            
+            # Read output (simplified for now)
+            if os.path.exists(self.output_file):
+                with open(self.output_file, "r") as f:
+                    content = f.read()
+                    # Look for CURRENT_LINE marker
+                    for line in content.split("\\n"):
+                        if line.startswith("CURRENT_LINE:"):
+                            return int(line.split(":")[1].strip())
+                            
+        except Exception as e:
+            logger.error(f"Failed to get current line: {e}")
+            
+        return self.current_line
+    
+    async def evaluate_expression(self, expression: str) -> str:
+        """Evaluate an expression in the current context."""
+        if not self.is_running:
+            return f"Error: Debugger not running"
+            
+        try:
+            with open(self.command_file, "a") as f:
+                f.write(f"p {expression}\\n")
+            
+            # For now return a placeholder
+            return f"Evaluated: {expression} (placeholder)"
+            
+        except Exception as e:
+            logger.error(f"Failed to evaluate expression: {e}")
+            return f"Error: {str(e)}"
+
+
+class DAPServer:
+    """Pure DAP server without debugpy dependencies."""
+    
+    def __init__(self, ls: LanguageServer, manager):
         self.ls = ls
         self.manager = manager
-        self.debugpy_server = None
-        self.debugpy_thread = None
-        self.debugpy_port = None
-        self._lock = threading.Lock()
-        self._debugpy_ready = False
-
-    async def start_debugpy_server(self, notebook_uri: str) -> int:
-        """Start debugpy server for a notebook session."""
-        with self._lock:
-            if self.debugpy_server is not None:
-                return self.debugpy_port
-
-            logger.info(f"Starting debugpy server for notebook: {notebook_uri}")
-
-            # Start debugpy server in a separate thread
-            def start_server():
-                try:
-                    # Configure debugpy
-                    debugpy.configure(subProcess=True)
-
-                    # Start listening on a random port
-                    self.debugpy_port = debugpy.listen(("localhost", 0))
-                    logger.info(f"Debugpy server started on port {self.debugpy_port}")
-
-                    # Mark as ready
-                    self._debugpy_ready = True
-
-                    # Keep the server running
-                    debugpy.wait_for_client()
-                except Exception as e:
-                    logger.error(f"Error in debugpy server: {e}")
-                    self._debugpy_ready = False
-
-            self.debugpy_thread = threading.Thread(target=start_server, daemon=True)
-            self.debugpy_thread.start()
-            logger.info("Debugpy server thread started (blocked)")
-
-            # Wait a bit for the server to start
-            await asyncio.sleep(0.1)
-
-            return self.debugpy_port
-
-    async def stop_debugpy_server(self):
-        """Stop the debugpy server."""
-        with self._lock:
-            if self.debugpy_server is not None:
-                logger.info("Stopping debugpy server")
-                debugpy.stop_server()
-                self.debugpy_server = None
-                self.debugpy_port = None
-                self._debugpy_ready = False
+        self.debug_sessions: Dict[str, DebugSession] = {}
+        self.message_seq = 0
+        logger.info("Pure DAP server initialized")
 
     async def handle_dap_message(
         self, session_id: str, notebook_uri: str, message: Dict[str, Any]
     ) -> None:
-        """Handle a DAP message with comprehensive logging and debugpy forwarding."""
+        """Handle a DAP message."""
         logger.info(f"=== DAP REQUEST RECEIVED ===")
         logger.info(f"Session ID: {session_id}")
         logger.info(f"Notebook URI: {notebook_uri}")
         logger.info(f"Raw message: {message}")
 
         try:
-            request = converter.structure(message, DapRequestMessage)
-            logger.info(f"Parsed request: {request}")
-            logger.info(f"Command: {request.command}")
-            logger.info(f"Sequence: {request.seq}")
-            logger.info(f"Arguments: {request.arguments}")
+            # Convert dict to DAPMessage
+            msg_type = DAPMessageType(message.get("type", "request"))
+            dap_message = DAPMessage(
+                seq=message.get("seq", 0),
+                type=msg_type,
+                command=message.get("command"),
+                arguments=message.get("arguments")
+            )
+            
+            logger.info(f"Parsed request: {dap_message}")
 
-            session = self.manager.get_session(notebook_uri)
-            if not session:
-                logger.error(f"No session found for notebook {notebook_uri}")
-                return
-            logger.info(f"Session found: {session}")
+            # Get or create debug session
+            if session_id not in self.debug_sessions:
+                self.debug_sessions[session_id] = DebugSession(
+                    session_id=session_id,
+                    notebook_uri=notebook_uri
+                )
+            
+            session = self.debug_sessions[session_id]
+            logger.info(f"Debug session: {session}")
 
-            # Start debugpy server if not already running
-            if not self._debugpy_ready:
-                logger.info("So. Starting debugpy server...")
-                port = await self.start_debugpy_server(notebook_uri)
-                logger.info(f"Debugpy server ready on port {port}")
-
-            logger.info("Forwarding request to debugpy...")
-            logger.info(f"=== FORWARDING TO DEBUGPY ===")
-            logger.info(f"Request: {request}")
-            logger.info(f"Command: {request.command}")
-            # Handle specific commands with detailed logging
-            if request.command == "initialize":
-                logger.info("Handling initialize request - DAP handshake")
-                response = await self._handle_initialize_with_debugpy(
-                    session_id, request
-                )
-            elif request.command == "launch":
-                logger.info("Handling launch request")
-                response = await self._handle_launch_with_debugpy(session_id, request)
-            elif request.command == "attach":
-                logger.info("Handling attach request")
-                response = await self._handle_attach_with_debugpy(session_id, request)
-            elif request.command == "setBreakpoints":
-                logger.info("Handling setBreakpoints request")
-                response = await self._handle_set_breakpoints_with_debugpy(
-                    session_id, request
-                )
-            elif request.command == "configurationDone":
-                logger.info("Handling configurationDone request")
-                response = await self._handle_configuration_done_with_debugpy(
-                    session_id, request
-                )
-            elif request.command == "threads":
-                logger.info("Handling threads request")
-                response = await self._handle_threads_with_debugpy(session_id, request)
-            elif request.command == "stackTrace":
-                logger.info("Handling stackTrace request")
-                response = await self._handle_stack_trace_with_debugpy(
-                    session_id, request
-                )
-            elif request.command == "scopes":
-                logger.info("Handling scopes request")
-                response = await self._handle_scopes_with_debugpy(session_id, request)
-            elif request.command == "variables":
-                logger.info("Handling variables request")
-                response = await self._handle_variables_with_debugpy(
-                    session_id, request
-                )
-            elif request.command == "continue":
-                logger.info("Handling continue request")
-                response = await self._handle_continue_with_debugpy(session_id, request)
-            elif request.command == "next":
-                logger.info("Handling next (step over) request")
-                response = await self._handle_next_with_debugpy(session_id, request)
-            elif request.command == "stepIn":
-                logger.info("Handling stepIn request")
-                response = await self._handle_step_in_with_debugpy(session_id, request)
-            elif request.command == "stepOut":
-                logger.info("Handling stepOut request")
-                response = await self._handle_step_out_with_debugpy(session_id, request)
-            elif request.command == "evaluate":
-                logger.info("Handling evaluate request")
-                response = await self._handle_evaluate_with_debugpy(session_id, request)
-            elif request.command == "disconnect":
-                logger.info("Handling disconnect request")
-                response = await self._handle_disconnect_with_debugpy(
-                    session_id, request
-                )
-            else:
-                logger.warning(f"Unknown DAP command: {request.command}")
-                response = await self._handle_unknown_command_with_debugpy(
-                    session_id, request
-                )
-
-            logger.info(f"=== SENDING DAP RESPONSE ===")
-            logger.info(f"Response: {response}")
-
-            await self._send_dap_response(session_id, response)
-            logger.info("=== DAP RESPONSE SENT ===")
+            # Handle the request
+            await self._handle_request(session_id, dap_message)
 
         except Exception as e:
             logger.error(f"Error handling DAP request: {e}", exc_info=True)
@@ -218,18 +378,65 @@ class DebugpyAdapter:
             }
             await self._send_dap_response(session_id, error_response)
 
-    async def _handle_initialize_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle initialize with debugpy integration."""
-        logger.info("Creating initialize response with capabilities")
+    async def _handle_request(self, session_id: str, message: DAPMessage) -> None:
+        """Handle DAP requests."""
+        command = message.command
+        if not command:
+            logger.warning("Received request with no command")
+            await self._send_error_response(session_id, message, "No command specified")
+            return
 
-        # Send initialize response
+        logger.info(f"Handling DAP request: {command} (seq={message.seq})")
+        
+        try:
+            if command == DAPRequestType.INITIALIZE.value:
+                await self._handle_initialize(session_id, message)
+            elif command == DAPRequestType.LAUNCH.value:
+                await self._handle_launch(session_id, message)
+            elif command == DAPRequestType.ATTACH.value:
+                await self._handle_attach(session_id, message)
+            elif command == DAPRequestType.SET_BREAKPOINTS.value:
+                await self._handle_set_breakpoints(session_id, message)
+            elif command == DAPRequestType.SET_EXCEPTION_BREAKPOINTS.value:
+                await self._handle_set_exception_breakpoints(session_id, message)
+            elif command == DAPRequestType.CONFIGURATION_DONE.value:
+                await self._handle_configuration_done(session_id, message)
+            elif command == DAPRequestType.THREADS.value:
+                await self._handle_threads(session_id, message)
+            elif command == DAPRequestType.STACK_TRACE.value:
+                await self._handle_stack_trace(session_id, message)
+            elif command == DAPRequestType.SCOPES.value:
+                await self._handle_scopes(session_id, message)
+            elif command == DAPRequestType.VARIABLES.value:
+                await self._handle_variables(session_id, message)
+            elif command == DAPRequestType.CONTINUE.value:
+                await self._handle_continue(session_id, message)
+            elif command == DAPRequestType.STEP_IN.value:
+                await self._handle_step_in(session_id, message)
+            elif command == DAPRequestType.STEP_OUT.value:
+                await self._handle_step_out(session_id, message)
+            elif command == DAPRequestType.STEP_OVER.value:
+                await self._handle_step_over(session_id, message)
+            elif command == DAPRequestType.EVALUATE.value:
+                await self._handle_evaluate(session_id, message)
+            elif command == DAPRequestType.DISCONNECT.value:
+                await self._handle_disconnect(session_id, message)
+            else:
+                logger.warning(f"Unhandled DAP command: {command}")
+                await self._send_error_response(session_id, message, f"Unknown command: {command}")
+                
+        except Exception as e:
+            logger.error(f"Error handling DAP request {command}: {e}")
+            await self._send_error_response(session_id, message, str(e))
+
+    async def _handle_initialize(self, session_id: str, message: DAPMessage) -> None:
+        """Handle initialize request."""
+        logger.info("Handling initialize request")
         response = {
             "type": "response",
-            "request_seq": request.seq,
+            "request_seq": message.seq,
             "success": True,
-            "command": "initialize",
+            "command": message.command,
             "body": {
                 "supportsConfigurationDoneRequest": True,
                 "supportsEvaluateForHovers": True,
@@ -251,14 +458,10 @@ class DebugpyAdapter:
                 "supportsStepInTargetsRequest": True,
                 "supportsCompletionsRequest": True,
                 "completionTriggerCharacters": [".", "["],
-                "supportsModulesRequest": True,
                 "supportsRestartFrame": True,
-                "supportsStepInTargetsRequest": True,
                 "supportsDelayedStackTraceLoading": True,
                 "supportsLoadedSourcesRequest": True,
-                "supportsLogPoints": True,
                 "supportsTerminateThreadsRequest": True,
-                "supportsSetExpression": True,
                 "supportsTerminateRequest": True,
                 "supportsDataBreakpoints": True,
                 "supportsReadMemoryRequest": True,
@@ -269,102 +472,129 @@ class DebugpyAdapter:
                 "supportsClipboardContext": True,
                 "supportsSteppingGranularity": True,
                 "supportsInstructionBreakpoints": True,
-                "supportsExceptionFilterOptions": True,
                 "supportsSingleThreadExecutionRequests": True,
             },
         }
+        await self._send_dap_response(session_id, response)
+        
+        # Send initialized event
+        await self._send_dap_event(session_id, {
+            "type": "event",
+            "event": "initialized"
+        })
 
-        # Send initialized event after response
-        await self._send_dap_event(
-            session_id, {"type": "event", "event": "initialized"}
-        )
-
-        return response
-
-    async def _handle_launch_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle launch with debugpy integration."""
-        logger.info("Launch request - debugpy server should be ready")
-        return {
+    async def _handle_launch(self, session_id: str, message: DAPMessage) -> None:
+        """Handle launch request."""
+        logger.info("Handling launch request")
+        
+        session = self.debug_sessions[session_id]
+        
+        # Start PDB debugger
+        session.pdb_debugger = PDBDebugger(session.notebook_uri)
+        success = await session.pdb_debugger.start()
+        
+        response = {
             "type": "response",
-            "request_seq": request.seq,
-            "success": True,
-            "command": "launch",
-            "request": {},
+            "request_seq": message.seq,
+            "success": success,
+            "command": message.command,
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_attach_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle attach with debugpy integration."""
-        logger.info("Attach request - debugpy server should be ready")
-        return {
+    async def _handle_attach(self, session_id: str, message: DAPMessage) -> None:
+        """Handle attach request."""
+        logger.info("Handling attach request")
+        response = {
             "type": "response",
-            "request_seq": request.seq,
+            "request_seq": message.seq,
             "success": True,
-            "command": "attach",
-            "body": {},
+            "command": message.command,
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_set_breakpoints_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle setBreakpoints with debugpy integration."""
-        args = request.arguments or {}
+    async def _handle_set_breakpoints(self, session_id: str, message: DAPMessage) -> None:
+        """Handle setBreakpoints request."""
+        logger.info("Handling setBreakpoints request")
+        args = message.arguments or {}
+        source = args.get("source", {})
+        path = source.get("path", "")
         breakpoints = args.get("breakpoints", [])
 
-        logger.info(f"Setting {len(breakpoints)} breakpoints via debugpy")
+        # Store breakpoints for this file
+        session = self.debug_sessions[session_id]
+        session.breakpoints[path] = []
+        verified_breakpoints = []
+        
+        for i, bp in enumerate(breakpoints):
+            line = bp.get("line", 0)
+            session.breakpoints[path].append(Breakpoint(line=line))
+            
+            # Set breakpoint in PDB if debugger is running
+            success = True
+            if session.pdb_debugger and session.pdb_debugger.is_running:
+                success = await session.pdb_debugger.set_breakpoint(line)
+            
+            verified_breakpoints.append({
+                "id": i, 
+                "verified": success, 
+                "line": line
+            })
 
-        return {
+        response = {
             "type": "response",
-            "request_seq": request.seq,
+            "request_seq": message.seq,
             "success": True,
-            "command": "setBreakpoints",
+            "command": message.command,
             "body": {
-                "breakpoints": [
-                    {"id": i, "verified": True, "line": bp.get("line", 0)}
-                    for i, bp in enumerate(breakpoints)
-                ]
+                "breakpoints": verified_breakpoints
             },
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_configuration_done_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle configurationDone with debugpy integration."""
-        logger.info("Configuration done - debugpy ready for debugging")
-        return {
+    async def _handle_set_exception_breakpoints(self, session_id: str, message: DAPMessage) -> None:
+        """Handle setExceptionBreakpoints request."""
+        logger.info("Handling setExceptionBreakpoints request")
+        response = {
             "type": "response",
-            "request_seq": request.seq,
+            "request_seq": message.seq,
             "success": True,
-            "command": "configurationDone",
+            "command": message.command,
             "body": {},
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_threads_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle threads with debugpy integration."""
-        logger.info("Threads request - debugpy should provide real thread info")
-        return {
+    async def _handle_configuration_done(self, session_id: str, message: DAPMessage) -> None:
+        """Handle configurationDone request."""
+        logger.info("Handling configurationDone request")
+        response = {
             "type": "response",
-            "request_seq": request.seq,
+            "request_seq": message.seq,
             "success": True,
-            "command": "threads",
+            "command": message.command,
+        }
+        await self._send_dap_response(session_id, response)
+
+    async def _handle_threads(self, session_id: str, message: DAPMessage) -> None:
+        """Handle threads request."""
+        logger.info("Handling threads request")
+        response = {
+            "type": "response",
+            "request_seq": message.seq,
+            "success": True,
+            "command": message.command,
             "body": {"threads": [{"id": 1, "name": "MainThread"}]},
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_stack_trace_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle stackTrace with debugpy integration."""
-        logger.info("Stack trace request - debugpy should provide real stack info")
-        return {
+    async def _handle_stack_trace(self, session_id: str, message: DAPMessage) -> None:
+        """Handle stackTrace request."""
+        logger.info("Handling stackTrace request")
+        session = self.debug_sessions[session_id]
+        response = {
             "type": "response",
-            "request_seq": request.seq,
+            "request_seq": message.seq,
             "success": True,
-            "command": "stackTrace",
+            "command": message.command,
             "body": {
                 "stackFrames": [
                     {
@@ -373,25 +603,24 @@ class DebugpyAdapter:
                         "line": 1,
                         "column": 1,
                         "source": {
-                            "name": "main.py",
-                            "path": "/path/to/main.py",
+                            "name": session.notebook_uri.split("/")[-1],
+                            "path": session.notebook_uri,
                         },
                     }
                 ],
                 "totalFrames": 1,
             },
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_scopes_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle scopes with debugpy integration."""
-        logger.info("Scopes request - debugpy should provide real scope info")
-        return {
+    async def _handle_scopes(self, session_id: str, message: DAPMessage) -> None:
+        """Handle scopes request."""
+        logger.info("Handling scopes request")
+        response = {
             "type": "response",
-            "request_seq": request.seq,
+            "request_seq": message.seq,
             "success": True,
-            "command": "scopes",
+            "command": message.command,
             "body": {
                 "scopes": [
                     {
@@ -402,124 +631,150 @@ class DebugpyAdapter:
                 ]
             },
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_variables_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle variables with debugpy integration."""
-        logger.info("Variables request - debugpy should provide real variable info")
-        return {
+    async def _handle_variables(self, session_id: str, message: DAPMessage) -> None:
+        """Handle variables request."""
+        logger.info("Handling variables request")
+        response = {
             "type": "response",
-            "request_seq": request.seq,
+            "request_seq": message.seq,
             "success": True,
-            "command": "variables",
+            "command": message.command,
             "body": {"variables": []},
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_continue_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle continue with debugpy integration."""
-        logger.info("Continue request - debugpy should handle execution")
-        return {
+    async def _handle_continue(self, session_id: str, message: DAPMessage) -> None:
+        """Handle continue request."""
+        logger.info("Handling continue request")
+        
+        session = self.debug_sessions[session_id]
+        success = True
+        
+        if session.pdb_debugger and session.pdb_debugger.is_running:
+            success = await session.pdb_debugger.continue_execution()
+        
+        response = {
             "type": "response",
-            "request_seq": request.seq,
-            "success": True,
-            "command": "continue",
+            "request_seq": message.seq,
+            "success": success,
+            "command": message.command,
             "body": {"allThreadsContinued": True},
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_next_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle next (step over) with debugpy integration."""
-        logger.info("Next request - debugpy should handle step over")
-        return {
+    async def _handle_step_in(self, session_id: str, message: DAPMessage) -> None:
+        """Handle stepIn request."""
+        logger.info("Handling stepIn request")
+        
+        session = self.debug_sessions[session_id]
+        success = True
+        
+        if session.pdb_debugger and session.pdb_debugger.is_running:
+            success = await session.pdb_debugger.step_into()
+        
+        response = {
             "type": "response",
-            "request_seq": request.seq,
-            "success": True,
-            "command": "next",
-            "body": {},
+            "request_seq": message.seq,
+            "success": success,
+            "command": message.command,
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_step_in_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle stepIn with debugpy integration."""
-        logger.info("Step in request - debugpy should handle step in")
-        return {
+    async def _handle_step_out(self, session_id: str, message: DAPMessage) -> None:
+        """Handle stepOut request."""
+        logger.info("Handling stepOut request")
+        
+        # Step out is not directly supported by PDB, so we'll just continue
+        session = self.debug_sessions[session_id]
+        success = True
+        
+        if session.pdb_debugger and session.pdb_debugger.is_running:
+            success = await session.pdb_debugger.continue_execution()
+        
+        response = {
             "type": "response",
-            "request_seq": request.seq,
-            "success": True,
-            "command": "stepIn",
-            "body": {},
+            "request_seq": message.seq,
+            "success": success,
+            "command": message.command,
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_step_out_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle stepOut with debugpy integration."""
-        logger.info("Step out request - debugpy should handle step out")
-        return {
+    async def _handle_step_over(self, session_id: str, message: DAPMessage) -> None:
+        """Handle stepOver request."""
+        logger.info("Handling stepOver request")
+        
+        session = self.debug_sessions[session_id]
+        success = True
+        
+        if session.pdb_debugger and session.pdb_debugger.is_running:
+            success = await session.pdb_debugger.step_over()
+        
+        response = {
             "type": "response",
-            "request_seq": request.seq,
-            "success": True,
-            "command": "stepOut",
-            "body": {},
+            "request_seq": message.seq,
+            "success": success,
+            "command": message.command,
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_evaluate_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle evaluate with debugpy integration."""
-        args = request.arguments or {}
+    async def _handle_evaluate(self, session_id: str, message: DAPMessage) -> None:
+        """Handle evaluate request."""
+        logger.info("Handling evaluate request")
+        args = message.arguments or {}
         expression = args.get("expression", "")
 
-        logger.info(f"Evaluate request - debugpy should evaluate: {expression}")
+        session = self.debug_sessions[session_id]
+        result = f"Evaluated: {expression}"
+        
+        if session.pdb_debugger and session.pdb_debugger.is_running:
+            result = await session.pdb_debugger.evaluate_expression(expression)
 
-        return {
+        response = {
             "type": "response",
-            "request_seq": request.seq,
+            "request_seq": message.seq,
             "success": True,
-            "command": "evaluate",
+            "command": message.command,
             "body": {
-                "result": f"Evaluated: {expression}",
+                "result": result,
                 "type": "string",
                 "variablesReference": 0,
             },
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_disconnect_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle disconnect with debugpy integration."""
-        logger.info("Disconnect request - stopping debugpy server")
-        await self.stop_debugpy_server()
+    async def _handle_disconnect(self, session_id: str, message: DAPMessage) -> None:
+        """Handle disconnect request."""
+        logger.info("Handling disconnect request")
+        
+        # Clean up debug session
+        if session_id in self.debug_sessions:
+            session = self.debug_sessions[session_id]
+            if hasattr(session, 'pdb_process') and session.pdb_process:
+                session.pdb_process.terminate()
+            del self.debug_sessions[session_id]
 
-        return {
+        response = {
             "type": "response",
-            "request_seq": request.seq,
+            "request_seq": message.seq,
             "success": True,
-            "command": "disconnect",
-            "body": {},
+            "command": message.command,
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _handle_unknown_command_with_debugpy(
-        self, session_id: str, request: DapRequestMessage
-    ) -> dict:
-        """Handle unknown commands with debugpy integration."""
-        logger.warning(f"Unknown DAP command: {request.command}")
-        return {
+    async def _send_error_response(self, session_id: str, message: DAPMessage, error_message: str) -> None:
+        """Send an error response."""
+        response = {
             "type": "response",
-            "request_seq": request.seq,
+            "request_seq": message.seq,
             "success": False,
-            "command": request.command,
-            "message": f"Unknown command: {request.command}",
+            "command": message.command,
+            "message": error_message,
         }
+        await self._send_dap_response(session_id, response)
 
-    async def _send_dap_response(
-        self, session_id: str, response: Dict[str, Any]
-    ) -> None:
+    async def _send_dap_response(self, session_id: str, response: Dict[str, Any]) -> None:
         """Send a DAP response back to VS Code."""
         self.ls.protocol.notify(
             "marimo/dap",
@@ -540,54 +795,31 @@ class DebugpyAdapter:
         )
 
 
-# Global debugpy adapter instance
-_debugpy_adapter: Optional[DebugpyAdapter] = None
+# Global DAP server instance
+_dap_server: Optional[DAPServer] = None
 
 
-def get_debugpy_adapter(
-    ls: LanguageServer, manager: LspSessionManager
-) -> DebugpyAdapter:
-    """Get the global debugpy adapter instance."""
-    global _debugpy_adapter
-    if _debugpy_adapter is None:
-        _debugpy_adapter = DebugpyAdapter(ls, manager)
-    return _debugpy_adapter
+def get_dap_server(ls: "LanguageServer", manager: "LspSessionManager") -> DAPServer:
+    """Get the global DAP server instance."""
+    global _dap_server
+    if _dap_server is None:
+        _dap_server = DAPServer(ls, manager)
+    return _dap_server
 
 
-def handle_debug_adapter_request(
-    ls: LanguageServer,
-    manager: LspSessionManager,
+async def handle_debug_adapter_request(
+    ls: "LanguageServer",
+    manager: "LspSessionManager",
     *,
     notebook_uri: str,
     session_id: str,
     message: dict,
 ) -> None:
-    """Handle DAP requests with logging and debugpy forwarding."""
+    """Handle DAP requests using the pure DAP server."""
     logger.debug(f"Debug.Send {session_id=}, {message=}")
 
-    # Get or create the debugpy adapter
-    adapter = get_debugpy_adapter(ls, manager)
+    # Get or create the DAP server
+    dap_server = get_dap_server(ls, manager)
 
-    # """Handle DAP requests."""
-    request = converter.structure(message, DapRequestMessage)
-    # logger.debug(f"Debug.Send {session_id=}, {request=}")
-
-    session = manager.get_session(notebook_uri)
-    assert session, f"No session in workspace for {notebook_uri}"
-
-    ls.protocol.notify(
-        "marimo/dap",
-        {
-            "sessionId": session_id,
-            "message": {
-                "type": "response",
-                "request_seq": request.seq,
-                "success": True,
-                "command": request.command,
-                "request": {},
-            },
-        },
-    )
-
-    # Handle the message asynchronously
-    # asyncio.create_task(adapter.handle_dap_message(session_id, notebook_uri, message))
+    # Handle the message
+    await dap_server.handle_dap_message(session_id, notebook_uri, message)
