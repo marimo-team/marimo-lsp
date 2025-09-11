@@ -148,17 +148,24 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     @server.command("marimo.dap")
     async def dap(ls: LanguageServer, params: DebugAdapterRequest):
         """Handle DAP messages forwarded from VS Code extension."""
+        logger.info("=== MARIMO.DAP COMMAND RECEIVED ===")
+        logger.info(f"Session ID: {params.session_id}")
+        logger.info(f"Notebook URI: {params.notebook_uri}")
+        logger.info(f"Message: {params.message}")
+
         from marimo_lsp.debug_adapter import (  # noqa: PLC0415
             handle_debug_adapter_request,
         )
 
-        return handle_debug_adapter_request(
+        result = await handle_debug_adapter_request(
             ls=ls,
             manager=manager,
             session_id=params.session_id,
             notebook_uri=params.notebook_uri,
             message=params.message,
         )
+        logger.info("=== MARIMO.DAP COMMAND COMPLETED ===")
+        return result
 
     @server.feature(
         lsp.TEXT_DOCUMENT_CODE_ACTION,
