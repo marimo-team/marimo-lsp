@@ -6,8 +6,8 @@ import subprocess
 import typing
 from typing import TypeVar
 
+import marimo._ipc as ipc
 from marimo._config.settings import GLOBAL_SETTINGS
-from marimo._ipc.types import ConnectionInfo, LaunchKernelArgs
 from marimo._runtime.requests import AppMetadata
 from marimo._server.model import SessionMode
 from marimo._server.sessions import KernelManager
@@ -17,7 +17,8 @@ from marimo_lsp.loggers import get_logger
 
 if typing.TYPE_CHECKING:
     from marimo._config.manager import MarimoConfigManager
-    from marimo._ipc.queue_manager import QueueManager
+    from marimo._ipc.types import ConnectionInfo
+    from marimo._server.sessions import QueueManager
 
     from marimo_lsp.app_file_manager import LspAppFileManager
 
@@ -27,13 +28,12 @@ logger = get_logger()
 
 def launch_kernel(
     executable: str,
-    connection_info: ConnectionInfo,
-    kernel_args: LaunchKernelArgs,
+    args: ipc.KernelArgs,
 ) -> PopenProcessLike:
     """Launch kernel as a subprocess."""
     cmd = [executable, "-m", "marimo._ipc.launch_kernel"]
     logger.info(f"Launching kernel subprocess: {' '.join(cmd)}")
-    logger.debug(f"Connection info: {connection_info}")
+    logger.debug(f"Connection info: {args.connection_info}")
 
     process = subprocess.Popen(  # noqa: S603
         cmd,
@@ -42,12 +42,37 @@ def launch_kernel(
         stderr=subprocess.PIPE,
     )
 
-    assert process.stdin, "Expected stdin"
-    process.stdin.write(connection_info.encode_json() + b"\n")
-    process.stdin.write(kernel_args.encode_json() + b"\n")
+    assert process.stdin, "Expect subprocess stdin pipe"
+    assert process.stdout, "Expect subprocess stdout pipe"
+    assert process.stderr, "Expect subprocess stderr pipe"
+
+    # Send over stdin
+    process.stdin.write(args.encode_json())
     process.stdin.flush()
     process.stdin.close()
-    logger.info(f"Kernel subprocess started with PID: {process.pid}")
+
+    logger.debug("Waiting for KERNEL_READY signal from kernel subprocess")
+
+    # Wait for "KERNEL_READY" message
+    ready_line = process.stdout.readline().decode("utf-8").strip()
+    if ready_line != "KERNEL_READY":
+        exit_code = process.poll()
+        stderr = process.stderr.read().decode("utf-8", errors="replace")
+
+        if exit_code is not None and exit_code != 0:
+            msg = f"Kernel failed to start (exit code {exit_code}): {stderr}"
+            logger.exception(msg)
+            raise RuntimeError(msg)
+
+        msg = (
+            f"Invalid kernel response. Expected 'KERNEL_READY', got: '{ready_line}'. "
+            f"Stderr: {stderr}"
+        )
+        logger.exception(msg)
+        process.terminate()
+        raise RuntimeError(msg)
+
+    logger.info(f"Kernel subprocess started successfully with PID: {process.pid}")
     return PopenProcessLike(inner=process)
 
 
@@ -58,10 +83,10 @@ class LspKernelManager(KernelManager):
         self,
         *,
         executable: str,
-        connection_info: ConnectionInfo,
-        queue_manager: QueueManager,
+        queue_manager: ipc.QueueManager,
         app_file_manager: LspAppFileManager,
         config_manager: MarimoConfigManager,
+        connection_info: ConnectionInfo,
     ) -> None:
         super().__init__(
             # NB: Leaky abstraction. Mode affects internal behavior of
@@ -74,9 +99,9 @@ class LspKernelManager(KernelManager):
             # for message distribution which aligns with our ZeroMQ
             # architecture.
             mode=SessionMode.RUN,
-            queue_manager=queue_manager,
             config_manager=config_manager,
             configs=app_file_manager.app.cell_manager.config_map(),
+            queue_manager=typing.cast("QueueManager", queue_manager),
             app_metadata=AppMetadata(
                 query_params={},
                 filename=app_file_manager.path,
@@ -94,8 +119,8 @@ class LspKernelManager(KernelManager):
         """Start an instance of the marimo kernel using ZeroMQ IPC."""
         self.kernel_task = launch_kernel(
             executable=self.executable,
-            connection_info=self.connection_info,
-            kernel_args=LaunchKernelArgs(
+            args=ipc.KernelArgs(
+                connection_info=self.connection_info,
                 configs=self.configs,
                 app_metadata=self.app_metadata,
                 user_config=self.config_manager.get_config(hide_secrets=False),
