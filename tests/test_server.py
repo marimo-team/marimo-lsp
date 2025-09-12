@@ -369,9 +369,11 @@ x = 42\
             command="marimo.run",
             arguments=[
                 {
-                    "notebook_uri": "file:///exec_test.py",
-                    "cell_ids": ["cell1"],
-                    "codes": [code],
+                    "notebookUri": "file:///exec_test.py",
+                    "inner": {
+                        "cellIds": ["cell1"],
+                        "codes": [code],
+                    },
                 }
             ],
         )
