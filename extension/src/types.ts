@@ -6,26 +6,67 @@ import type { NotebookSerialization } from "./schemas.ts";
 type Schemas = Api["schemas"];
 
 export type MessageOperation = Schemas["KnownUnions"]["operation"];
-export type MessageOperationType = MessageOperation["op"];
-export type MessageOperationData<T extends MessageOperationType> = Omit<
-  Extract<MessageOperation, { name: T }>,
-  "name"
+type MessageOperationOf<T extends MessageOperation["op"]> = Extract<
+  MessageOperation,
+  { op: T }
 >;
+export type CellMessage = MessageOperationOf<"cell-op">;
 
-type WithNotebookUri<T> = T & { notebookUri: string };
+export interface NotebookScoped<T> {
+  notebookUri: string;
+  inner: T;
+}
 
-export type RequestMap = {
-  "marimo.run": WithNotebookUri<Schemas["RunRequest"]>;
-  "marimo.set_ui_element_value": WithNotebookUri<
-    Schemas["SetUIElementValueRequest"]
-  >;
-  "marimo.serialize": { notebook: NotebookSerialization };
-  "marimo.deserialize": { source: string };
-  "marimo.dap": {
-    sessionId: string;
-    notebookUri: string;
-    message: vscode.DebugProtocolMessage;
-  };
+type RunRequest = Schemas["RunRequest"];
+type SetUIElementValueRequest = Schemas["SetUIElementValueRequest"];
+interface DeserializeRequest {
+  source: string;
+}
+interface SerializeRequest {
+  notebook: NotebookSerialization;
+}
+interface DebugAdapterRequest {
+  sessionId: string;
+  message: vscode.DebugProtocolMessage;
+}
+
+// client -> language server
+type MarimoCommandMap = {
+  "marimo.run": NotebookScoped<RunRequest>;
+  "marimo.set_ui_element_value": NotebookScoped<SetUIElementValueRequest>;
+  "marimo.dap": NotebookScoped<DebugAdapterRequest>;
+  "marimo.serialize": SerializeRequest;
+  "marimo.deserialize": DeserializeRequest;
 };
+type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {
+  [C in keyof MarimoCommandMap]: {
+    command: C;
+    params: MarimoCommandMap[C];
+  };
+}[K];
 
+/** Subset of commands allowed to be dispatched by the renderer */
+type RendererCommandMap = {
+  [K in "marimo.set_ui_element_value"]: MarimoCommandMap[K]["inner"];
+};
+type RendererCommandMessageOf<K extends keyof RendererCommandMap> = {
+  [C in keyof RendererCommandMap]: {
+    command: C;
+    params: RendererCommandMap[C];
+  };
+}[K];
+
+export type MarimoCommand = MarimoCommandMessageOf<keyof MarimoCommandMap>;
+export type RendererCommand = RendererCommandMessageOf<
+  keyof RendererCommandMap
+>;
 export const notebookType = "marimo-notebook";
+
+// Language server -> client
+type MarimoNotificationMap = {
+  "marimo/operation": { notebookUri: string; operation: MessageOperation };
+};
+export type MarimoNotification = keyof MarimoNotificationMap;
+export type MarimoNotificationOf<K extends MarimoNotification> = {
+  [C in MarimoNotification]: MarimoNotificationMap[C];
+}[K];

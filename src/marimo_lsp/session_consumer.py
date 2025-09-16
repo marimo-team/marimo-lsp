@@ -48,9 +48,7 @@ class LspSessionConsumer(SessionConsumer):
                     "marimo/operation",
                     {
                         "notebookUri": self.notebook_uri,
-                        "op": op_name,
-                        # TODO: Just send bytes directly
-                        "data": json.loads(msg_bytes),
+                        "operation": json.loads(msg_bytes),
                     },
                 )
 
@@ -71,8 +69,7 @@ class LspSessionConsumer(SessionConsumer):
             "marimo/operation",
             {
                 "notebookUri": self.notebook_uri,
-                "op": op.name,
-                "data": asdict(op),
+                "operation": asdict(op),
             },
         )
         logger.debug(f"Sent {op.name} operation to {self.notebook_uri}")

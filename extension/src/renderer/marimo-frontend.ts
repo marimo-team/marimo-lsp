@@ -31,8 +31,6 @@ import { initializePlugins } from "@marimo-team/frontend/unstable_internal/plugi
 // @ts-expect-error
 import { useTheme as untypedUseTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts?nocheck";
 
-import type { MessageOperationData } from "../types.ts";
-
 import "@marimo-team/frontend/unstable_internal/css/common.css";
 import "@marimo-team/frontend/unstable_internal/css/globals.css";
 import "@marimo-team/frontend/unstable_internal/css/codehilite.css";
@@ -44,7 +42,6 @@ import "@marimo-team/frontend/unstable_internal/css/table.css";
 
 import type { CellRuntimeState } from "../shared/cells.ts";
 export type RequestClient = EditRequests & RunRequests;
-export type CellMessage = MessageOperationData<"cell-op">;
 export type { CellRuntimeState, CellId };
 
 /**

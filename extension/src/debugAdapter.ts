@@ -91,9 +91,11 @@ function createDebugAdapterDescriptor(
       executeCommand(client, {
         command: "marimo.dap",
         params: {
-          sessionId: session.id,
           notebookUri: session.configuration.notebookUri,
-          message,
+          inner: {
+            sessionId: session.id,
+            message,
+          },
         },
       });
     },

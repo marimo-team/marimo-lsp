@@ -1,17 +1,14 @@
 import type * as vscode from "vscode-notebook-renderer";
 
 import { assert } from "../assert.ts";
-import type { RequestMap } from "../types.ts";
+import type { RendererCommand } from "../types.ts";
 import type { RequestClient } from "./marimo-frontend.ts";
 
 type TypedRequestContext = Omit<
   vscode.RendererContext<unknown>,
   "postMessage" | "onDidReceiveMessage"
 > & {
-  postMessage<K extends keyof RequestMap>(options: {
-    command: K;
-    params: Omit<RequestMap[K], "notebookUri">;
-  }): void;
+  postMessage(options: RendererCommand): void;
   onDidReceiveMessage(listener: (e: unknown) => unknown): { dispose(): void };
 };
 
