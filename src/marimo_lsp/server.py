@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import importlib.metadata
+import inspect
+from functools import wraps
+from typing import Any, Callable, TypeVar
 
 import lsprotocol.types as lsp
+import msgspec
 from marimo._convert.converters import MarimoConvert
 from marimo._schemas.serialization import (
     AppInstantiation,
@@ -24,10 +29,10 @@ from marimo_lsp.models import (
     ConvertRequest,
     DebugAdapterRequest,
     DeserializeRequest,
+    NotebookCommand,
     RunRequest,
     SerializeRequest,
     SetUIElementValueRequest,
-    converter_factory,
 )
 from marimo_lsp.session_manager import LspSessionManager
 
@@ -48,10 +53,10 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             ],
             save=True,
         ),
-        converter_factory=converter_factory,
     )
     manager = LspSessionManager()
 
+    # Lsp Features
     @server.feature(lsp.SHUTDOWN)
     def shutdown(params: None) -> None:  # noqa: ARG001
         manager.shutdown()
@@ -101,65 +106,6 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             manager.close_session(params.notebook_document.uri)
             logger.info(f"Closed {params.notebook_document.uri}")
 
-    @server.command("marimo.run")
-    async def run(ls: LanguageServer, args: RunRequest):  # noqa: ARG001
-        logger.info("marimo.run")
-        session = manager.get_session(args.notebook_uri)
-        if session is None:
-            session = manager.create_session(
-                server=server, notebook_uri=args.notebook_uri
-            )
-            logger.info(f"Created and synced session {args.notebook_uri}")
-        session.put_control_request(
-            args.into_marimo().as_execution_request(), from_consumer_id=None
-        )
-        logger.info(f"Execution request sent for {args.notebook_uri}")
-
-    @server.command("marimo.set_ui_element_value")
-    async def set_ui_element_value(ls: LanguageServer, args: SetUIElementValueRequest):  # noqa: ARG001
-        logger.info("marimo.kernel.set_ui_element_value")
-        session = manager.get_session(args.notebook_uri)
-        assert session, f"No session in workspace for {args.notebook_uri}"
-        session.put_control_request(args.into_marimo(), from_consumer_id=None)
-
-    @server.command("marimo.serialize")
-    async def serialize(args: SerializeRequest):
-        logger.info("marimo.serialize")
-        raw = args.notebook
-        ir = NotebookSerialization(
-            app=AppInstantiation(**raw["app"]),
-            header=Header(**(raw.get("header") or {})),
-            version=raw.get("version", None),
-            cells=[CellDef(**cell) for cell in raw["cells"]],
-            violations=[
-                Violation(description=v.pop("description"), **v)
-                for v in raw["violations"]
-            ],
-            valid=raw["valid"],
-        )
-        return {"source": MarimoConvert.from_ir(ir).to_py()}
-
-    @server.command("marimo.deserialize")
-    async def deserialize(args: DeserializeRequest):
-        logger.info("marimo.deserialize")
-        converter = MarimoConvert.from_py(args.source)
-        return dataclasses.asdict(converter.to_ir())
-
-    @server.command("marimo.dap")
-    async def dap(ls: LanguageServer, params: DebugAdapterRequest):
-        """Handle DAP messages forwarded from VS Code extension."""
-        from marimo_lsp.debug_adapter import (  # noqa: PLC0415
-            handle_debug_adapter_request,
-        )
-
-        return handle_debug_adapter_request(
-            ls=ls,
-            manager=manager,
-            session_id=params.session_id,
-            notebook_uri=params.notebook_uri,
-            message=params.message,
-        )
-
     @server.feature(
         lsp.TEXT_DOCUMENT_CODE_ACTION,
         lsp.CodeActionOptions(
@@ -202,7 +148,72 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
 
         return get_completions(ls, params)
 
-    @server.command("marimo.convert")
+    # Commands
+    @command(server, "marimo.run", NotebookCommand[RunRequest])
+    async def run(ls: LanguageServer, args: NotebookCommand[RunRequest]):  # noqa: ARG001
+        logger.info("marimo.run")
+        session = manager.get_session(args.notebook_uri)
+        if session is None:
+            session = manager.create_session(
+                server=server, notebook_uri=args.notebook_uri
+            )
+            logger.info(f"Created and synced session {args.notebook_uri}")
+        session.put_control_request(
+            args.inner.as_execution_request(), from_consumer_id=None
+        )
+        logger.info(f"Execution request sent for {args.notebook_uri}")
+
+    @command(
+        server, "marimo.set_ui_element_value", NotebookCommand[SetUIElementValueRequest]
+    )
+    async def set_ui_element_value(
+        ls: LanguageServer,  # noqa: ARG001
+        args: NotebookCommand[SetUIElementValueRequest],
+    ):
+        logger.info("marimo.kernel.set_ui_element_value")
+        session = manager.get_session(args.notebook_uri)
+        assert session, f"No session in workspace for {args.notebook_uri}"
+        session.put_control_request(args.inner, from_consumer_id=None)
+
+    @command(server, "marimo.serialize", SerializeRequest)
+    async def serialize(ls: LanguageServer, args: SerializeRequest):  # noqa: ARG001
+        logger.info("marimo.serialize")
+        raw = args.notebook
+        ir = NotebookSerialization(
+            app=AppInstantiation(**raw["app"]),
+            header=Header(**(raw.get("header") or {})),
+            version=raw.get("version", None),
+            cells=[CellDef(**cell) for cell in raw["cells"]],
+            violations=[
+                Violation(description=v.pop("description"), **v)
+                for v in raw["violations"]
+            ],
+            valid=raw["valid"],
+        )
+        return {"source": MarimoConvert.from_ir(ir).to_py()}
+
+    @command(server, "marimo.deserialize", DeserializeRequest)
+    async def deserialize(ls: LanguageServer, args: DeserializeRequest):  # noqa: ARG001
+        logger.info("marimo.deserialize")
+        converter = MarimoConvert.from_py(args.source)
+        return dataclasses.asdict(converter.to_ir())
+
+    @command(server, "marimo.dap", NotebookCommand[DebugAdapterRequest])
+    async def dap(ls: LanguageServer, args: NotebookCommand[DebugAdapterRequest]):
+        """Handle DAP messages forwarded from VS Code extension."""
+        from marimo_lsp.debug_adapter import (  # noqa: PLC0415
+            handle_debug_adapter_request,
+        )
+
+        return handle_debug_adapter_request(
+            ls=ls,
+            manager=manager,
+            notebook_uri=args.notebook_uri,
+            session_id=args.inner.session_id,
+            message=args.inner.message,
+        )
+
+    @command(server, "marimo.convert", ConvertRequest)
     async def convert(ls: LanguageServer, args: ConvertRequest):
         """Convert a Python file to marimo format and create a new file."""
         logger.info("marimo.convert")
@@ -267,3 +278,49 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     logger.info("All handlers registered successfully")
 
     return server
+
+
+T = TypeVar("T", bound=msgspec.Struct)
+
+
+def command(server: LanguageServer, name: str, type: type[T]) -> Callable:  # noqa: A002
+    """Register LSP commands that use msgspec structs.
+
+    Wraps pygls @server.command to automatically convert dict args to msgspec structs.
+    The decorated function must have exactly 2 parameters:
+
+    1. ls: LanguageServer
+    2. params: msgspec.Struct subclass
+    """
+
+    def decorator(func: Callable[[LanguageServer, T], None]) -> Callable:
+        params = list(inspect.signature(func).parameters.values())
+
+        if len(params) != 2:  # noqa: PLR2004
+            msg = (
+                f"Command handler {func.__name__} must have exactly 2 parameters: "  # ty: ignore[unresolved-attribute]
+                f"(ls: LanguageServer, params: msgspec.Struct)"
+            )
+            raise ValueError(msg)
+
+        if asyncio.iscoroutinefunction(func):
+
+            @server.command(name)
+            @wraps(func)
+            async def wrapper(ls: LanguageServer, args: dict[str, Any]) -> Any:  # noqa: ANN401
+                return await func(ls, msgspec.convert(args, type=type))  # ty: ignore[invalid-await]
+
+            # Override annotations to prevent cattrs from inspecting
+            wrapper.__annotations__ = {}
+        else:
+
+            @server.command(name)
+            @wraps(func)
+            def wrapper(ls: LanguageServer, args: dict[str, Any]) -> Any:  # noqa: ANN401
+                return func(ls, msgspec.convert(args, type=type))
+
+            # Override annotations to prevent cattrs from inspecting
+            wrapper.__annotations__ = {}
+        return wrapper
+
+    return decorator
