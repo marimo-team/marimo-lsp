@@ -3,7 +3,7 @@ import type * as lsp from "vscode-languageclient";
 
 import { AssertionError } from "./assert.ts";
 import { Logger } from "./logging.ts";
-import type { RequestMap } from "./types.ts";
+import type { MarimoCommand } from "./types.ts";
 
 export function registerCommand(command: string, callback: () => unknown) {
   return vscode.commands.registerCommand(command, () => {
@@ -21,11 +21,9 @@ export function registerCommand(command: string, callback: () => unknown) {
   });
 }
 
-export function executeCommand<K extends keyof RequestMap>(
+export function executeCommand(
   client: lsp.BaseLanguageClient,
-  options: {
-    command: K;
-    params: RequestMap[K];
+  options: MarimoCommand & {
     token?: vscode.CancellationToken;
   },
 ): Promise<unknown> {

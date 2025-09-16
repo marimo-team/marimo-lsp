@@ -358,7 +358,7 @@ x = 42\
         # pygls dynamically makes an `Object` named tuple which makes snapshotting hard
         # we just convert to a regular dict here for snapshotting
         messages.append(asdict(params))
-        if params.op == "completed-run":
+        if params.operation.op == "completed-run":
             # FIXME: stdin/stdout are flushed every 10ms, so wait 100ms to ensure
             # all related events. The frontend uses the same workaround.
             await asyncio.sleep(0.1)
@@ -384,8 +384,7 @@ x = 42\
         [
             {
                 "notebookUri": "file:///exec_test.py",
-                "op": "update-cell-codes",
-                "data": {
+                "operation": {
                     "op": "update-cell-codes",
                     "cell_ids": ["cell1"],
                     "codes": [
@@ -402,13 +401,11 @@ x = 42\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "op": "focus-cell",
-                "data": {"op": "focus-cell", "cell_id": "cell1"},
+                "operation": {"op": "focus-cell", "cell_id": "cell1"},
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "op": "variables",
-                "data": {
+                "operation": {
                     "op": "variables",
                     "variables": IsList(
                         {"name": "sys", "declared_by": ["cell1"], "used_by": []},
@@ -419,8 +416,7 @@ x = 42\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "op": "cell-op",
-                "data": {
+                "operation": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -434,13 +430,11 @@ x = 42\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "op": "remove-ui-elements",
-                "data": {"op": "remove-ui-elements", "cell_id": "cell1"},
+                "operation": {"op": "remove-ui-elements", "cell_id": "cell1"},
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "op": "cell-op",
-                "data": {
+                "operation": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -454,8 +448,7 @@ x = 42\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "op": "variable-values",
-                "data": {
+                "operation": {
                     "op": "variable-values",
                     "variables": IsList(
                         {"name": "sys", "value": "sys", "datatype": "module"},
@@ -466,8 +459,7 @@ x = 42\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "op": "cell-op",
-                "data": {
+                "operation": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": {
@@ -486,8 +478,7 @@ x = 42\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "op": "cell-op",
-                "data": {
+                "operation": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -501,13 +492,11 @@ x = 42\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "op": "completed-run",
-                "data": {"op": "completed-run"},
+                "operation": {"op": "completed-run"},
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "op": "cell-op",
-                "data": {
+                "operation": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -526,8 +515,7 @@ x = 42\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "op": "cell-op",
-                "data": {
+                "operation": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,

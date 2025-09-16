@@ -2,9 +2,8 @@
 import { transitionCell as untypedTransitionCell } from "@marimo-team/frontend/unstable_internal/core/cells/cell.ts?nocheck";
 import type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import type { MessageOperationData } from "../types.ts";
+import type { CellMessage } from "../types.ts";
 
-export type CellMessage = MessageOperationData<"cell-op">;
 export type { CellRuntimeState };
 
 /* Type-safe wrapper around marimo's `transitionCell` we import above */

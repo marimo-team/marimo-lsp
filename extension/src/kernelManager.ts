@@ -3,8 +3,9 @@ import type * as lsp from "vscode-languageclient";
 import { assert } from "./assert.ts";
 import * as cmds from "./commands.ts";
 import { Logger } from "./logging.ts";
+import { registerNotificationHandler } from "./notifications.ts";
 import * as ops from "./operations.ts";
-import { notebookType } from "./types.ts";
+import { notebookType, type RendererCommand } from "./types.ts";
 
 export function kernelManager(
   client: lsp.BaseLanguageClient,
@@ -30,29 +31,39 @@ export function kernelManager(
         command: "marimo.run",
         params: {
           notebookUri: notebookDocument.uri.toString(),
-          cellIds: cells.map((cell) => cell.document.uri.toString()),
-          codes: cells.map((cell) => cell.document.getText()),
+          inner: {
+            cellIds: cells.map((cell) => cell.document.uri.toString()),
+            codes: cells.map((cell) => cell.document.getText()),
+          },
         },
       });
     },
   );
 
-  channel.onDidReceiveMessage(async ({ editor, message }) => {
-    assert("command" in message, "unknown message");
-    await cmds.executeCommand(client, {
-      command: message.command,
-      params: {
-        notebookUri: editor.notebook.uri.toString(),
-        ...message.params,
-      },
-    });
-  });
+  channel.onDidReceiveMessage(
+    async (data: {
+      editor: vscode.NotebookEditor;
+      message: RendererCommand;
+    }) => {
+      const { editor, message } = data;
+      assert("command" in message && "params" in message, "unknown message");
+      // route renderer command with notebook_uri
+      await cmds.executeCommand(client, {
+        command: message.command,
+        params: {
+          notebookUri: editor.notebook.uri.toString(),
+          inner: message.params,
+        },
+      });
+    },
+  );
 
   const contexts = new Map<string, ops.OperationContext>();
-  const operationListener = client.onNotification(
-    "marimo/operation",
-    async (message: { notebookUri: string } & ops.OperationMessage) => {
-      const { notebookUri, ...operation } = message;
+
+  registerNotificationHandler(client, {
+    method: "marimo/operation",
+    callback: async (message) => {
+      const { notebookUri, operation } = message;
       let context = contexts.get(notebookUri);
       if (!context) {
         context = { notebookUri, controller, executions: new Map() };
@@ -60,11 +71,11 @@ export function kernelManager(
       }
       await ops.route(context, operation);
     },
-  );
+    signal: options.signal,
+  });
 
   options.signal.addEventListener("abort", () => {
     controller.dispose();
-    operationListener.dispose();
     contexts.clear();
     Logger.info("Kernel.Lifecycle", "Kernel manager disposed");
   });

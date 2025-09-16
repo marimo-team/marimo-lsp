@@ -2,18 +2,7 @@ import * as vscode from "vscode";
 import { assert } from "./assert.ts";
 import { Logger } from "./logging.ts";
 import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
-import type {
-  MessageOperation,
-  MessageOperationData,
-  MessageOperationType,
-} from "./types.ts";
-
-export type OperationMessage = {
-  [Type in MessageOperationType]: {
-    op: Type;
-    data: Omit<Extract<MessageOperation, { name: Type }>, "name">;
-  };
-}[MessageOperationType];
+import type { CellMessage, MessageOperation } from "./types.ts";
 
 export interface OperationContext {
   notebookUri: string;
@@ -23,12 +12,12 @@ export interface OperationContext {
 
 export async function route(
   context: OperationContext,
-  operation: OperationMessage,
+  operation: MessageOperation,
 ): Promise<void> {
-  Logger.trace("Operation.Router", `Received: ${operation.op}`, operation.data);
+  Logger.trace("Operation.Router", `Received: ${operation.op}`, operation);
   switch (operation.op) {
     case "cell-op": {
-      handleCellOperation(context, operation.data);
+      handleCellOperation(context, operation);
       break;
     }
 
@@ -45,9 +34,9 @@ const cellStateManager = new CellStateManager();
 
 async function handleCellOperation(
   context: OperationContext,
-  data: MessageOperationData<"cell-op">,
+  data: CellMessage,
 ): Promise<void> {
-  const { cell_id: cellId, status, timestamp } = data;
+  const { cell_id: cellId, status, timestamp = 0 } = data;
   const state = cellStateManager.handleCellOp(data);
 
   switch (status) {
