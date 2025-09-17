@@ -12,13 +12,8 @@ from typing import Any, Callable, TypeVar
 import lsprotocol.types as lsp
 import msgspec
 from marimo._convert.converters import MarimoConvert
-from marimo._schemas.serialization import (
-    AppInstantiation,
-    CellDef,
-    Header,
-    NotebookSerialization,
-    Violation,
-)
+from marimo._schemas.serialization import NotebookSerialization
+from marimo._utils.parse_dataclass import parse_raw
 from pygls.lsp.server import LanguageServer
 from pygls.uris import to_fs_path
 
@@ -178,18 +173,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     @command(server, "marimo.serialize", SerializeRequest)
     async def serialize(ls: LanguageServer, args: SerializeRequest):  # noqa: ARG001
         logger.info("marimo.serialize")
-        raw = args.notebook
-        ir = NotebookSerialization(
-            app=AppInstantiation(**raw["app"]),
-            header=Header(**(raw.get("header") or {})),
-            version=raw.get("version", None),
-            cells=[CellDef(**cell) for cell in raw["cells"]],
-            violations=[
-                Violation(description=v.pop("description"), **v)
-                for v in raw["violations"]
-            ],
-            valid=raw["valid"],
-        )
+        ir = parse_raw(args.notebook, cls=NotebookSerialization)
         return {"source": MarimoConvert.from_ir(ir).to_py()}
 
     @command(server, "marimo.deserialize", DeserializeRequest)
