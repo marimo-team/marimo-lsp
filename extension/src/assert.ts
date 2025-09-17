@@ -37,3 +37,33 @@ export function assert(expression: unknown, msg?: string): asserts expression {
     throw new AssertionError(msg);
   }
 }
+
+/**
+ * Marks a code path as unreachable.
+ *
+ * This function should be used in places that are logically impossible
+ * to execute (e.g. exhaustive `switch` statements over discriminated unions).
+ *
+ * If it is ever reached at runtime, an error is thrown.
+ *
+ * @example
+ * ```ts
+ * type Direction = "north" | "south" | "east" | "west";
+ *
+ * function turn(dir: Direction): number {
+ *   switch (dir) {
+ *     case "north": return 0;
+ *     case "east": return 90;
+ *     case "south": return 180;
+ *     case "west": return 270;
+ *   }
+ *   unreachable("Unhandled direction");
+ * }
+ * ```
+ *
+ * @param msg - Optional error message. Defaults to `"Entered unreachable code"`.
+ * @throws {Error} Always throws if executed.
+ */
+export function unreachable(msg?: string): never {
+  assert(false, msg ?? "Entered unreachable code");
+}

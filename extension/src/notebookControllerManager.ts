@@ -1,12 +1,15 @@
-import { execFile } from "node:child_process";
+import * as childProcess from "node:child_process";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
+import { type Cause, Data, Effect, Schema } from "effect";
 import * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient";
 
+import { unreachable } from "./assert.ts";
 import * as cmds from "./commands.ts";
 import { Logger } from "./logging.ts";
 import { getPythonApi } from "./python.ts";
+import { SemVerFromString } from "./schemas.ts";
 import { notebookType } from "./types.ts";
 
 const MINIMUM_MARIMO_VERSION = {
@@ -19,7 +22,6 @@ export function createNotebookControllerManager(
   client: lsp.BaseLanguageClient,
   options: { signal: AbortSignal },
 ) {
-  // Single map for both controller and environment
   const controllers = new Map<string, vscode.NotebookController>();
   const selectedControllers = new WeakMap<
     vscode.NotebookDocument,
@@ -32,7 +34,6 @@ export function createNotebookControllerManager(
     );
   }
 
-  // Create or update controller for Python environment
   function createOrUpdateController(env: py.Environment) {
     const controllerId = `marimo-${env.id}`;
     const controllerLabel = formatControllerLabel(env);
@@ -63,64 +64,104 @@ export function createNotebookControllerManager(
           notebook: notebook.uri.toString(),
         });
 
-        const version = await tryGetMarimoVersion(env, options);
-
-        if (!version) {
-          const envName = resolvePythonEnvironmentName(env);
-          const envLabel = envName
-            ? `"${envName}"`
-            : "the selected environment";
-          await vscode.window.showErrorMessage(
-            `Could not find marimo in ${envLabel}. Please ensure marimo is installed.`,
-            { modal: true },
-          );
-
-          return;
-        }
-
-        if (!semver.greaterOrEqual(version, MINIMUM_MARIMO_VERSION)) {
-          const envName = resolvePythonEnvironmentName(env);
-          const envLabel = envName
-            ? `"${envName}"`
-            : "the selected environment";
-          await vscode.window.showWarningMessage(
-            `marimo version in ${envLabel} is outdated (v${semver.format(version)}). ` +
-              `Please update to v${semver.format(MINIMUM_MARIMO_VERSION)} or later.`,
-            { modal: true },
-          );
-
-          return;
-        }
-
-        await cmds.executeCommand(client, {
-          command: "marimo.run",
-          params: {
-            notebookUri: notebook.uri.toString(),
-            inner: {
-              cellIds: cells.map((cell) => cell.document.uri.toString()),
-              codes: cells.map((cell) => cell.document.getText()),
+        const program = checkEnvironmentRequirements(env).pipe(
+          Effect.andThen(() =>
+            cmds.executeCommandEffect(client, {
+              command: "marimo.run",
+              params: {
+                notebookUri: notebook.uri.toString(),
+                inner: {
+                  cellIds: cells.map((cell) => cell.document.uri.toString()),
+                  codes: cells.map((cell) => cell.document.getText()),
+                },
+              },
+            }),
+          ),
+          Effect.catchTags({
+            ExecuteCommandError: (error) => {
+              Logger.error(
+                "Controller.Execute",
+                "Failed to execute command",
+                error,
+              );
+              return Effect.tryPromise(() =>
+                vscode.window.showErrorMessage(
+                  "Failed to execute marimo command. Please check the logs for details.",
+                  { modal: true },
+                ),
+              );
             },
-          },
-        });
+            PythonExecutionError: (error) => {
+              Logger.error("Controller.Execute", "Python check failed", {
+                path: error.env.path,
+                stderr: error.stderr,
+              });
+              return Effect.tryPromise(() =>
+                vscode.window.showErrorMessage(
+                  `Failed to check dependencies in ${formatControllerLabel(env)}.\n\n` +
+                    `Python path: ${error.env.path}`,
+                  { modal: true },
+                ),
+              );
+            },
+            EnvironmentRequirementError: (error) => {
+              Logger.warn(
+                "Controller.Execute",
+                "Environment requirements not met",
+                {
+                  env: error.env.path,
+                  diagnostics: error.diagnostics,
+                },
+              );
+              const messages = error.diagnostics.map((d) => {
+                switch (d.kind) {
+                  case "missing":
+                    return `• ${d.package}: not installed`;
+                  case "outdated":
+                    return `• ${d.package}: v${semver.format(d.currentVersion)} (requires >=v${semver.format(d.requiredVersion)})`;
+                  case "unknown":
+                    return `• ${d.package}: unable to detect`;
+                  default:
+                    return unreachable();
+                }
+              });
+
+              const msg =
+                `${formatControllerLabel(env)} cannot run the marimo kernel:\n\n` +
+                messages.join("\n") +
+                `\n\nPlease install or update the missing packages.`;
+
+              return Effect.tryPromise(() =>
+                vscode.window.showErrorMessage(msg, { modal: true }),
+              );
+            },
+          }),
+        );
+
+        return Effect.runPromise<void, Cause.UnknownException>(program);
       },
     );
 
     controller.supportedLanguages = ["python"];
     controller.description = env.path;
 
-    // Track selection changes
-    controller.onDidChangeSelectedNotebooks((e) => {
+    const selectionDisposer = controller.onDidChangeSelectedNotebooks((e) => {
       if (e.selected) {
         selectedControllers.set(e.notebook, controller);
         Logger.trace(
           "Controller.Selection",
           `Controller ${controllerId} selected for notebook ${e.notebook.uri.toString()}`,
         );
-      } else {
-        // NB: We don't delete from selectedControllers when deselected
-        // because another controller will overwrite it when selected
       }
+      // NB: We don't delete from selectedControllers when deselected
+      // because another controller will overwrite it when selected
     });
+
+    const originalDispose = controller.dispose.bind(controller);
+    controller.dispose = () => {
+      selectionDisposer.dispose();
+      originalDispose();
+    };
 
     controllers.set(controllerId, controller);
     Logger.trace("Controller.Create", "Created controller:", controllerId);
@@ -231,24 +272,6 @@ function formatControllerLabel(env: py.Environment): string {
   return formatted;
 }
 
-async function tryGetMarimoVersion(
-  env: py.Environment,
-  options: {
-    signal?: AbortSignal;
-  },
-): Promise<semver.SemVer | undefined> {
-  return new Promise((resolve) => {
-    execFile(
-      env.path,
-      ["-c", "import marimo; print(marimo.__version__)"],
-      { signal: options.signal },
-      (error, stdout) => {
-        resolve(error ? undefined : semver.tryParse(stdout.trim()));
-      },
-    );
-  });
-}
-
 /**
  * A human readable name for a {@link py.Environment}
  */
@@ -265,3 +288,116 @@ export function resolvePythonEnvironmentName(
   }
   return undefined;
 }
+
+function checkEnvironmentRequirements(env: py.Environment) {
+  const EnvCheck = Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      version: Schema.NullOr(SemVerFromString),
+    }),
+  );
+  return Effect.gen(function* () {
+    const stdout = yield* Effect.async<string, PythonExecutionError>(
+      (resume) => {
+        childProcess.execFile(
+          env.path,
+          [
+            "-c",
+            `\
+import sys
+import json
+
+packages = []
+
+try:
+    import marimo
+    packages.append({"name":"marimo","version":marimo.__version__})
+except ImportError:
+    packages.append({"name":"marimo","version":None})
+    pass
+
+try:
+    import zmq
+    packages.append({"name":"pyzmq","version":zmq.__version__})
+except ImportError:
+    packages.append({"name":"pyzmq","version":None})
+    pass
+
+print(json.dumps(packages))`,
+          ],
+          (error, stdout, stderr) => {
+            if (!error) {
+              resume(Effect.succeed(stdout));
+            } else {
+              resume(
+                Effect.fail(new PythonExecutionError({ env, error, stderr })),
+              );
+            }
+          },
+        );
+      },
+    );
+
+    const packages = yield* Schema.decode(Schema.parseJson(EnvCheck))(
+      stdout.trim(),
+    ).pipe(
+      Effect.mapError(
+        () =>
+          new EnvironmentRequirementError({
+            env,
+            diagnostics: [
+              { kind: "unknown", package: "marimo" },
+              { kind: "unknown", package: "pyzmq" },
+            ],
+          }),
+      ),
+    );
+
+    const diagnostics: Array<RequirementDiagnostic> = [];
+
+    for (const pkg of packages) {
+      if (pkg.version == null) {
+        diagnostics.push({ kind: "missing", package: pkg.name });
+      } else if (
+        pkg.name === "marimo" &&
+        !semver.greaterOrEqual(pkg.version, MINIMUM_MARIMO_VERSION)
+      ) {
+        diagnostics.push({
+          kind: "outdated",
+          package: "marimo",
+          currentVersion: pkg.version,
+          requiredVersion: MINIMUM_MARIMO_VERSION,
+        });
+      }
+    }
+
+    if (diagnostics.length > 0) {
+      return yield* new EnvironmentRequirementError({ env, diagnostics });
+    }
+
+    return;
+  });
+}
+
+class PythonExecutionError extends Data.TaggedError("PythonExecutionError")<{
+  readonly env: py.Environment;
+  readonly error: childProcess.ExecFileException;
+  readonly stderr: string;
+}> {}
+
+type RequirementDiagnostic =
+  | { kind: "unknown"; package: string }
+  | { kind: "missing"; package: string }
+  | {
+      kind: "outdated";
+      package: string;
+      currentVersion: semver.SemVer;
+      requiredVersion: semver.SemVer;
+    };
+
+class EnvironmentRequirementError extends Data.TaggedError(
+  "EnvironmentRequirementError",
+)<{
+  readonly env: py.Environment;
+  readonly diagnostics: ReadonlyArray<RequirementDiagnostic>;
+}> {}
