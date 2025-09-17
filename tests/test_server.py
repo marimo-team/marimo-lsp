@@ -19,7 +19,7 @@ def asdict(obj: Any) -> dict[str, Any]:  # noqa: ANN401
         return {k: asdict(v) for k, v in obj._asdict().items()}
     if isinstance(obj, list):
         # Just used recursively
-        return [asdict(item) for item in obj]  # pyright: ignore[reportReturnType]
+        return [asdict(item) for item in obj]  # ty: ignore[invalid-return-type]
     if isinstance(obj, dict):
         return {k: asdict(v) for k, v in obj.items()}
     return obj
@@ -312,6 +312,7 @@ if __name__ == "__main__":
             ],
             "violations": [],
             "valid": True,
+            "filename": "<marimo>",
         }
     )
 

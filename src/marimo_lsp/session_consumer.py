@@ -43,16 +43,16 @@ class LspSessionConsumer(SessionConsumer):
         def handle_message(msg: KernelMessage) -> None:
             """Forward kernel message over LSP."""
             try:
-                op_name, msg_bytes = msg
+                operation = json.loads(msg)
+
                 self.server.protocol.notify(
                     "marimo/operation",
-                    {
-                        "notebookUri": self.notebook_uri,
-                        "operation": json.loads(msg_bytes),
-                    },
+                    {"notebookUri": self.notebook_uri, "operation": operation},
                 )
 
-                logger.debug(f"Forwarded {op_name} to {self.notebook_uri}")
+                logger.debug(
+                    f"Forwarded {operation.get('op', 'unknown')} to {self.notebook_uri}"
+                )
 
             except Exception:
                 logger.exception("Error forwarding kernel message")
