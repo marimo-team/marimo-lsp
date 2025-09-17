@@ -16,10 +16,12 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
   const controller = new AbortController();
-  const client = languageClient({ signal: controller.signal });
-  debugAdapter(client, { signal: controller.signal });
-  kernelManager(client, { signal: controller.signal });
-  notebookSerializer(client, { signal: controller.signal });
+  const signal = controller.signal;
+
+  const client = languageClient({ signal });
+  debugAdapter(client, { signal });
+  kernelManager(client, { signal });
+  notebookSerializer(client, { signal });
 
   context.subscriptions.push(
     { dispose: () => controller.abort() },

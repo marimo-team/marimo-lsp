@@ -1,7 +1,7 @@
 import * as childProcess from "node:child_process";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { type Cause, Data, Effect, Schema } from "effect";
+import { Data, Effect, Schema } from "effect";
 import * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient";
 
@@ -77,6 +77,7 @@ export function createNotebookControllerManager(
               },
             }),
           ),
+          // Known exceptions
           Effect.catchTags({
             ExecuteCommandError: (error) => {
               Logger.error(
@@ -136,9 +137,20 @@ export function createNotebookControllerManager(
               );
             },
           }),
+          // Unknown exceptions
+          Effect.catchTag("UnknownException", (error) => {
+            Logger.warn("Controller.Execute", "Unexpected error", error);
+            return Effect.async<void, never>((resume) => {
+              vscode.window
+                .showWarningMessage(
+                  "An unexpected error occurred while running the marimo kernel. Check the logs for details.",
+                )
+                .then(() => resume(Effect.void));
+            });
+          }),
         );
 
-        return Effect.runPromise<void, Cause.UnknownException>(program);
+        return Effect.runPromise<void, never>(program);
       },
     );
 
@@ -289,7 +301,13 @@ export function resolvePythonEnvironmentName(
   return undefined;
 }
 
-function checkEnvironmentRequirements(env: py.Environment) {
+function checkEnvironmentRequirements(
+  env: py.Environment,
+): Effect.Effect<
+  void,
+  PythonExecutionError | EnvironmentRequirementError,
+  never
+> {
   const EnvCheck = Schema.Array(
     Schema.Struct({
       name: Schema.String,
@@ -304,7 +322,6 @@ function checkEnvironmentRequirements(env: py.Environment) {
           [
             "-c",
             `\
-import sys
 import json
 
 packages = []
@@ -374,8 +391,6 @@ print(json.dumps(packages))`,
     if (diagnostics.length > 0) {
       return yield* new EnvironmentRequirementError({ env, diagnostics });
     }
-
-    return;
   });
 }
 
