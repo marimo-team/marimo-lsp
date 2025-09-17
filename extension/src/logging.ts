@@ -33,11 +33,15 @@ class FileLogger {
   log(
     level: vscode.LogLevel,
     category: string,
-    message: string,
+    message?: string,
     data?: unknown,
   ) {
     if (level < this.level) return;
     const levels = ["off", "trace", "debug", "info", "warn", "error"] as const;
+    if (!message) {
+      this.logStream.write(`${timestamp()} [${levels[level]}] ${category}\n`);
+      return;
+    }
     let dataStr = "";
     if (data !== undefined) {
       dataStr = ` | ${JSON.stringify(data)}`;
@@ -45,6 +49,10 @@ class FileLogger {
     this.logStream.write(
       `${timestamp()} [${levels[level]}] [${category}] ${message}${dataStr}\n`,
     );
+  }
+
+  writeLine(str: string) {
+    this.logStream.write(`${str}\n`);
   }
 
   close() {
@@ -55,24 +63,44 @@ class FileLogger {
 const fileLogger = new FileLogger({ level: vscode.LogLevel.Debug });
 
 export const Logger = {
-  trace(category: string, message: string, ...messages: unknown[]) {
-    channel.trace(util.format(`[${category}]`, message, ...messages));
+  trace(category: string, message?: string, ...messages: unknown[]) {
+    if (!message) {
+      channel.trace(category);
+    } else {
+      channel.trace(util.format(`[${category}]`, message, ...messages));
+    }
     fileLogger.log(vscode.LogLevel.Trace, category, message, messages[0]);
   },
-  debug(category: string, message: string, ...messages: unknown[]) {
-    channel.debug(util.format(`[${category}]`, message, ...messages));
+  debug(category: string, message?: string, ...messages: unknown[]) {
+    if (!message) {
+      channel.debug(category);
+    } else {
+      channel.debug(util.format(`[${category}]`, message, ...messages));
+    }
     fileLogger.log(vscode.LogLevel.Debug, category, message, messages[0]);
   },
-  info(category: string, message: string, ...messages: unknown[]) {
-    channel.info(util.format(`[${category}]`, message, ...messages));
+  info(category: string, message?: string, ...messages: unknown[]) {
+    if (!message) {
+      channel.info(category);
+    } else {
+      channel.info(util.format(`[${category}]`, message, ...messages));
+    }
     fileLogger.log(vscode.LogLevel.Info, category, message, messages[0]);
   },
-  warn(category: string, message: string, ...messages: unknown[]) {
-    channel.warn(util.format(`[${category}]`, message, ...messages));
+  warn(category: string, message?: string, ...messages: unknown[]) {
+    if (!message) {
+      channel.warn(category);
+    } else {
+      channel.warn(util.format(`[${category}]`, message, ...messages));
+    }
     fileLogger.log(vscode.LogLevel.Warning, category, message, messages[0]);
   },
-  error(category: string, message: string, ...errors: unknown[]) {
-    channel.error(util.format(`[${category}]`, message, ...errors));
+  error(category: string, message?: string, ...errors: unknown[]) {
+    if (!message) {
+      channel.error(category);
+    } else {
+      channel.error(util.format(`[${category}]`, message, ...errors));
+    }
     const error = errors[0];
     fileLogger.log(
       vscode.LogLevel.Error,

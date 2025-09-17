@@ -8,7 +8,11 @@ import { kernelManager } from "./kernelManager.ts";
 import { languageClient } from "./languageClient.ts";
 import { Logger } from "./logging.ts";
 import { notebookSerializer } from "./notebookSerializer.ts";
-import { MarimoLanguageClient, RawLanguageClient } from "./services.ts";
+import {
+  LoggerLive,
+  MarimoLanguageClient,
+  RawLanguageClient,
+} from "./services.ts";
 import { notebookType } from "./types.ts";
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -22,14 +26,28 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const client = languageClient({ signal });
 
-  const layer = Layer.provide(
-    MarimoLanguageClient.Default,
-    RawLanguageClient.layer(client),
+  const MainLive = Layer.provideMerge(
+    LoggerLive,
+    Layer.provide(
+      MarimoLanguageClient.Default,
+      RawLanguageClient.layer(client),
+    ),
   );
 
   debugAdapter(client, { signal });
-  kernelManager(layer, { signal });
-  notebookSerializer(layer, { signal });
+
+  kernelManager(MainLive, { signal }).catch((error) => {
+    Logger.error(
+      "Extension.Lifecycle",
+      "Failed to start kernel manager",
+      error,
+    );
+    vscode.window.showErrorMessage(
+      `Marimo kernel manager failed to start: ${error.message || JSON.stringify(error)}`,
+    );
+  });
+
+  notebookSerializer(MainLive, { signal });
 
   context.subscriptions.push(
     { dispose: () => controller.abort() },

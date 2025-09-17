@@ -1,8 +1,21 @@
-import { Context, Data, Effect, Layer } from "effect";
+import {
+  Context,
+  Data,
+  Effect,
+  Layer,
+  Logger,
+  type LogLevel,
+  Stream,
+} from "effect";
 import type * as lsp from "vscode-languageclient";
 import { executeCommand } from "./commands.ts";
+import { Logger as VsCodeLogger } from "./logging.ts";
 
-import type { MarimoCommand } from "./types.ts";
+import type {
+  MarimoCommand,
+  MarimoNotification,
+  MarimoNotificationOf,
+} from "./types.ts";
 
 type ParamsFor<Command extends MarimoCommand["command"]> = Extract<
   MarimoCommand,
@@ -49,7 +62,44 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
         deserialize(params: ParamsFor<"marimo.deserialize">) {
           return exec({ command: "marimo.deserialize", params });
         },
+        streamOf<Notification extends MarimoNotification>(
+          notification: Notification,
+        ): Stream.Stream<MarimoNotificationOf<Notification>, never, never> {
+          return Stream.async<MarimoNotificationOf<Notification>>((emit) => {
+            const disposer = client.onNotification(
+              notification,
+              emit.single.bind(emit),
+            );
+            return Effect.sync(() => {
+              disposer.dispose();
+            });
+          });
+        },
       };
     }),
   },
 ) {}
+
+// Map effect's formatted messages to our logging system
+export const LoggerLive = Logger.replace(
+  Logger.defaultLogger,
+  Logger.map(Logger.logfmtLogger, (formatted) => {
+    const match = formatted.match(/level=(\w+)\s*(.*)/);
+    const [level, message] = match
+      ? [match[1], match[2].trim()]
+      : ["INFO", formatted];
+
+    const mapping = {
+      TRACE: VsCodeLogger.trace,
+      DEBUG: VsCodeLogger.debug,
+      INFO: VsCodeLogger.info,
+      WARN: VsCodeLogger.warn,
+      ERROR: VsCodeLogger.error,
+      FATAL: VsCodeLogger.error,
+    } satisfies Partial<Record<LogLevel.LogLevel["label"], unknown>>;
+
+    // @ts-expect-error - We have a fallback
+    const log = mapping[level] || VsCodeLogger.info;
+    log(message);
+  }),
+);
