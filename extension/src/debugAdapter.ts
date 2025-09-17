@@ -3,6 +3,7 @@ import type * as lsp from "vscode-languageclient";
 import type { BaseLanguageClient } from "vscode-languageclient";
 import { executeCommand } from "./commands.ts";
 import { Logger } from "./logging.ts";
+import { registerNotificationHandler } from "./notifications.ts";
 import { notebookType } from "./types.ts";
 
 export function debugAdapter(
@@ -14,10 +15,10 @@ export function debugAdapter(
   const disposeFactory = vscode.debug.registerDebugAdapterDescriptorFactory(
     "marimo",
     {
-      createDebugAdapterDescriptor: createDebugAdapterDescriptor.bind(
-        null,
+      createDebugAdapterDescriptor: createDebugAdapterDescriptor.bind(null, {
         client,
-      ),
+        signal: options.signal,
+      }),
     },
   );
 
@@ -57,7 +58,10 @@ export function debugAdapter(
 }
 
 function createDebugAdapterDescriptor(
-  client: lsp.BaseLanguageClient,
+  ctx: {
+    client: lsp.BaseLanguageClient;
+    signal: AbortSignal;
+  },
   session: vscode.DebugSession,
 ): vscode.DebugAdapterDescriptor {
   Logger.info("Debug.Factory", "Creating debug adapter", {
@@ -68,9 +72,10 @@ function createDebugAdapterDescriptor(
   });
 
   const sendMessage = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
-  const disposer = client.onNotification(
-    "marimo/dap",
-    ({ sessionId, message }) => {
+
+  registerNotificationHandler(ctx.client, {
+    method: "marimo/dap",
+    callback: ({ sessionId, message }) => {
       Logger.debug("Debug.Receive", "Received DAP response from LSP", {
         sessionId,
         message,
@@ -79,7 +84,8 @@ function createDebugAdapterDescriptor(
         sendMessage.fire(message);
       }
     },
-  );
+    signal: ctx.signal,
+  });
 
   return new vscode.DebugAdapterInlineImplementation({
     onDidSendMessage: sendMessage.event,
@@ -88,7 +94,7 @@ function createDebugAdapterDescriptor(
         sessionId: session.id,
         message,
       });
-      executeCommand(client, {
+      executeCommand(ctx.client, {
         command: "marimo.dap",
         params: {
           notebookUri: session.configuration.notebookUri,
@@ -99,8 +105,6 @@ function createDebugAdapterDescriptor(
         },
       });
     },
-    dispose() {
-      disposer.dispose();
-    },
+    dispose() {},
   });
 }

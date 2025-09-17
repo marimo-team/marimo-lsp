@@ -65,6 +65,7 @@ export const notebookType = "marimo-notebook";
 // Language server -> client
 type MarimoNotificationMap = {
   "marimo/operation": { notebookUri: string; operation: MessageOperation };
+  "marimo/dap": { sessionId: string; message: vscode.DebugProtocolMessage };
 };
 export type MarimoNotification = keyof MarimoNotificationMap;
 export type MarimoNotificationOf<K extends MarimoNotification> = {
