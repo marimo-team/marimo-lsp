@@ -7,18 +7,13 @@ import dataclasses
 import importlib.metadata
 import inspect
 from functools import wraps
-from typing import Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, TypeVar, cast
 
 import lsprotocol.types as lsp
 import msgspec
 from marimo._convert.converters import MarimoConvert
-from marimo._schemas.serialization import (
-    AppInstantiation,
-    CellDef,
-    Header,
-    NotebookSerialization,
-    Violation,
-)
+from marimo._schemas.serialization import NotebookSerialization
+from marimo._utils.parse_dataclass import parse_raw
 from pygls.lsp.server import LanguageServer
 from pygls.uris import to_fs_path
 
@@ -32,9 +27,13 @@ from marimo_lsp.models import (
     NotebookCommand,
     RunRequest,
     SerializeRequest,
+    SessionCommand,
     SetUIElementValueRequest,
 )
 from marimo_lsp.session_manager import LspSessionManager
+
+if TYPE_CHECKING:
+    from marimo_lsp.kernel_manager import LspKernelManager
 
 logger = get_logger()
 
@@ -149,13 +148,19 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         return get_completions(ls, params)
 
     # Commands
-    @command(server, "marimo.run", NotebookCommand[RunRequest])
-    async def run(ls: LanguageServer, args: NotebookCommand[RunRequest]):  # noqa: ARG001
+    @command(server, "marimo.run", SessionCommand[RunRequest])
+    async def run(ls: LanguageServer, args: SessionCommand[RunRequest]):  # noqa: ARG001
         logger.info("marimo.run")
         session = manager.get_session(args.notebook_uri)
-        if session is None:
+        if (
+            session is None
+            or cast("LspKernelManager", session.kernel_manager).executable
+            != args.executable
+        ):
             session = manager.create_session(
-                server=server, notebook_uri=args.notebook_uri
+                server=server,
+                executable=args.executable,
+                notebook_uri=args.notebook_uri,
             )
             logger.info(f"Created and synced session {args.notebook_uri}")
         session.put_control_request(
@@ -178,18 +183,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     @command(server, "marimo.serialize", SerializeRequest)
     async def serialize(ls: LanguageServer, args: SerializeRequest):  # noqa: ARG001
         logger.info("marimo.serialize")
-        raw = args.notebook
-        ir = NotebookSerialization(
-            app=AppInstantiation(**raw["app"]),
-            header=Header(**(raw.get("header") or {})),
-            version=raw.get("version", None),
-            cells=[CellDef(**cell) for cell in raw["cells"]],
-            violations=[
-                Violation(description=v.pop("description"), **v)
-                for v in raw["violations"]
-            ],
-            valid=raw["valid"],
-        )
+        ir = parse_raw(args.notebook, cls=NotebookSerialization)
         return {"source": MarimoConvert.from_ir(ir).to_py()}
 
     @command(server, "marimo.deserialize", DeserializeRequest)

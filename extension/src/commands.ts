@@ -1,6 +1,6 @@
+import { Data, Effect } from "effect";
 import * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient";
-
 import { AssertionError } from "./assert.ts";
 import { Logger } from "./logging.ts";
 import type { MarimoCommand } from "./types.ts";
@@ -58,4 +58,19 @@ export function executeCommand(
       });
       throw error;
     });
+}
+
+class ExecuteCommandError extends Data.TaggedError("ExecuteCommandError")<{
+  readonly command: MarimoCommand;
+  readonly error: unknown;
+}> {}
+
+export function executeCommandEffect(
+  client: lsp.BaseLanguageClient,
+  command: MarimoCommand,
+) {
+  return Effect.tryPromise({
+    try: () => executeCommand(client, command),
+    catch: (error) => new ExecuteCommandError({ command, error }),
+  });
 }

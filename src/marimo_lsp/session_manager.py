@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 import typing
 from uuid import uuid4
 
@@ -60,8 +59,17 @@ class LspSessionManager:
             except Exception:
                 logger.exception(f"Error closing session for {notebook_uri}")
 
-    def create_session(self, *, server: LanguageServer, notebook_uri: str) -> Session:
-        """Create a new session for a notebook."""
+    def create_session(
+        self, *, server: LanguageServer, notebook_uri: str, executable: str
+    ) -> Session:
+        """Create a new session for a notebook.
+
+        Note: Sessions are created with (notebook_uri, executable) but only
+        currently tracked by notebook_uri. This means changing Python interpreters
+        won't automatically close the old session - it continues with the old
+        interpreter until explicitly closed. We always close any existing
+        session for the notebook_uri before creating a new one.
+        """
         if notebook_uri in self._sessions:
             self.close_session(notebook_uri)
 
@@ -70,8 +78,7 @@ class LspSessionManager:
         config_manager = get_default_config_manager(current_path=app_file_manager.path)
 
         kernel_manager = LspKernelManager(
-            # TODO: Get executable
-            executable=sys.executable,
+            executable=executable,
             queue_manager=queue_manager,
             app_file_manager=app_file_manager,
             config_manager=config_manager,

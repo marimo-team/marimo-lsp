@@ -1,45 +1,21 @@
 import * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient";
+
 import { assert } from "./assert.ts";
 import * as cmds from "./commands.ts";
 import { Logger } from "./logging.ts";
+import { createNotebookControllerManager } from "./notebookControllerManager.ts";
 import { registerNotificationHandler } from "./notifications.ts";
 import * as ops from "./operations.ts";
-import { notebookType, type RendererCommand } from "./types.ts";
+import type { RendererCommand } from "./types.ts";
 
 export function kernelManager(
   client: lsp.BaseLanguageClient,
   options: { signal: AbortSignal },
 ) {
-  const channel = vscode.notebooks.createRendererMessaging("marimo-renderer");
-  const controller = vscode.notebooks.createNotebookController(
-    "marimo-controller",
-    notebookType,
-    "marimo kernel",
-    async (
-      cells: vscode.NotebookCell[],
-      notebookDocument: vscode.NotebookDocument,
-    ) => {
-      Logger.info("Kernel.Execute", "Running cells", {
-        cellCount: cells.length,
-        notebook: notebookDocument.uri.toString(),
-      });
-      Logger.trace("Kernel.Execute", "Cell URIs", {
-        cells: cells.map((c) => c.document.uri.toString()),
-      });
-      await cmds.executeCommand(client, {
-        command: "marimo.run",
-        params: {
-          notebookUri: notebookDocument.uri.toString(),
-          inner: {
-            cellIds: cells.map((cell) => cell.document.uri.toString()),
-            codes: cells.map((cell) => cell.document.getText()),
-          },
-        },
-      });
-    },
-  );
+  const manager = createNotebookControllerManager(client, options);
 
+  const channel = vscode.notebooks.createRendererMessaging("marimo-renderer");
   channel.onDidReceiveMessage(
     async (data: {
       editor: vscode.NotebookEditor;
@@ -58,7 +34,7 @@ export function kernelManager(
     },
   );
 
-  const contexts = new Map<string, ops.OperationContext>();
+  const contexts = new Map<string, Omit<ops.OperationContext, "controller">>();
 
   registerNotificationHandler(client, {
     method: "marimo/operation",
@@ -66,16 +42,21 @@ export function kernelManager(
       const { notebookUri, operation } = message;
       let context = contexts.get(notebookUri);
       if (!context) {
-        context = { notebookUri, controller, executions: new Map() };
+        const notebook = vscode.workspace.notebookDocuments.find(
+          (doc) => doc.uri.toString() === notebookUri,
+        );
+        assert(notebook, `Expected notebook document for ${notebookUri}`);
+        context = { notebook, executions: new Map() };
         contexts.set(notebookUri, context);
       }
-      await ops.route(context, operation);
+      const controller = manager.getSelectedController(context.notebook);
+      assert(controller, `Expected notebook controller for ${notebookUri}`);
+      await ops.route({ ...context, controller }, operation);
     },
     signal: options.signal,
   });
 
   options.signal.addEventListener("abort", () => {
-    controller.dispose();
     contexts.clear();
     Logger.info("Kernel.Lifecycle", "Kernel manager disposed");
   });

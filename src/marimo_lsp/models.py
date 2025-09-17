@@ -26,6 +26,13 @@ class NotebookCommand(msgspec.Struct, typing.Generic[T], rename="camel"):
     """The wrapped marimo command to execute."""
 
 
+class SessionCommand(NotebookCommand[T]):
+    """A notebook command that is further routed to a specific runtime/session."""
+
+    executable: str
+    """The target environment Python executable."""
+
+
 class SerializeRequest(msgspec.Struct, rename="camel"):
     """
     A request to serialize a notebook to Python source.

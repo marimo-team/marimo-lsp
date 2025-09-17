@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import sys
 from typing import Any, Callable
 
 import lsprotocol.types as lsp
@@ -370,6 +371,7 @@ x = 42\
             arguments=[
                 {
                     "notebookUri": "file:///exec_test.py",
+                    "executable": sys.executable,
                     "inner": {
                         "cellIds": ["cell1"],
                         "codes": [code],

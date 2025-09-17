@@ -1,4 +1,5 @@
-import { Schema } from "effect";
+import * as semver from "@std/semver";
+import { ParseResult, Schema } from "effect";
 
 const Header = Schema.Struct({
   value: Schema.String.pipe(Schema.optionalWith({ nullable: true })),
@@ -39,3 +40,28 @@ export const NotebookSerializationSchema = Schema.Struct({
 });
 
 export type NotebookSerialization = typeof NotebookSerializationSchema.Type;
+
+export const SemVerFromString = Schema.transformOrFail(
+  Schema.String,
+  Schema.Struct({
+    major: Schema.Number,
+    minor: Schema.Number,
+    patch: Schema.Number,
+  }),
+  {
+    decode: (from) => {
+      const parsed = semver.tryParse(from);
+      if (!parsed) {
+        return ParseResult.fail(
+          new ParseResult.Type(
+            Schema.String.ast,
+            from,
+            `Invalid semver string: ${from}`,
+          ),
+        );
+      }
+      return ParseResult.succeed(parsed);
+    },
+    encode: (to) => ParseResult.succeed(semver.format(to)),
+  },
+);
