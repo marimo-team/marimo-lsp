@@ -65,11 +65,12 @@ export function createNotebookControllerManager(
         });
 
         const program = checkEnvironmentRequirements(env).pipe(
-          Effect.andThen(() =>
+          Effect.andThen((env) =>
             cmds.executeCommandEffect(client, {
               command: "marimo.run",
               params: {
                 notebookUri: notebook.uri.toString(),
+                executable: env.executable,
                 inner: {
                   cellIds: cells.map((cell) => cell.document.uri.toString()),
                   codes: cells.map((cell) => cell.document.getText()),
@@ -304,7 +305,7 @@ export function resolvePythonEnvironmentName(
 function checkEnvironmentRequirements(
   env: py.Environment,
 ): Effect.Effect<
-  void,
+  ValidPythonEnvironemnt,
   PythonExecutionError | EnvironmentRequirementError,
   never
 > {
@@ -391,7 +392,19 @@ print(json.dumps(packages))`,
     if (diagnostics.length > 0) {
       return yield* new EnvironmentRequirementError({ env, diagnostics });
     }
+
+    return new ValidPythonEnvironemnt({ env });
   });
+}
+
+class ValidPythonEnvironemnt extends Data.TaggedClass(
+  "ValidPythonEnvironment",
+)<{
+  env: py.Environment;
+}> {
+  get executable(): string {
+    return this.env.path;
+  }
 }
 
 class PythonExecutionError extends Data.TaggedError("PythonExecutionError")<{
