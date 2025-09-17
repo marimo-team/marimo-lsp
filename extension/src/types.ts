@@ -42,6 +42,7 @@ type MarimoCommandMap = {
   "marimo.serialize": SerializeRequest;
   "marimo.deserialize": DeserializeRequest;
 };
+
 type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {
   [C in keyof MarimoCommandMap]: {
     command: C;

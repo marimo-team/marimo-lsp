@@ -1,15 +1,14 @@
 import * as childProcess from "node:child_process";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Data, Effect, Schema } from "effect";
+import { Data, Effect, type Layer, pipe, Schema } from "effect";
 import * as vscode from "vscode";
-import type * as lsp from "vscode-languageclient";
 
 import { unreachable } from "./assert.ts";
-import * as cmds from "./commands.ts";
 import { Logger } from "./logging.ts";
 import { getPythonApi } from "./python.ts";
 import { SemVerFromString } from "./schemas.ts";
+import { MarimoLanguageClient } from "./services.ts";
 import { notebookType } from "./types.ts";
 
 const MINIMUM_MARIMO_VERSION = {
@@ -19,7 +18,7 @@ const MINIMUM_MARIMO_VERSION = {
 } satisfies semver.SemVer;
 
 export function createNotebookControllerManager(
-  client: lsp.BaseLanguageClient,
+  layer: Layer.Layer<MarimoLanguageClient>,
   options: { signal: AbortSignal },
 ) {
   const controllers = new Map<string, vscode.NotebookController>();
@@ -64,20 +63,19 @@ export function createNotebookControllerManager(
           notebook: notebook.uri.toString(),
         });
 
-        const program = checkEnvironmentRequirements(env).pipe(
-          Effect.andThen((env) =>
-            cmds.executeCommandEffect(client, {
-              command: "marimo.run",
-              params: {
-                notebookUri: notebook.uri.toString(),
-                executable: env.executable,
-                inner: {
-                  cellIds: cells.map((cell) => cell.document.uri.toString()),
-                  codes: cells.map((cell) => cell.document.getText()),
-                },
+        const program = pipe(
+          Effect.gen(function* () {
+            const marimo = yield* MarimoLanguageClient;
+            const validEnv = yield* validatePythonEnvironment(env);
+            return yield* marimo.run({
+              notebookUri: notebook.uri.toString(),
+              executable: validEnv.executable,
+              inner: {
+                cellIds: cells.map((cell) => cell.document.uri.toString()),
+                codes: cells.map((cell) => cell.document.getText()),
               },
-            }),
-          ),
+            });
+          }),
           // Known exceptions
           Effect.catchTags({
             ExecuteCommandError: (error) => {
@@ -149,6 +147,7 @@ export function createNotebookControllerManager(
                 .then(() => resume(Effect.void));
             });
           }),
+          Effect.provide(layer),
         );
 
         return Effect.runPromise<void, never>(program);
@@ -302,7 +301,7 @@ export function resolvePythonEnvironmentName(
   return undefined;
 }
 
-function checkEnvironmentRequirements(
+function validatePythonEnvironment(
   env: py.Environment,
 ): Effect.Effect<
   ValidPythonEnvironemnt,

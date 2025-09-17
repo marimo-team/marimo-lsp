@@ -1,3 +1,4 @@
+import { Layer } from "effect";
 import * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
 
@@ -7,6 +8,7 @@ import { kernelManager } from "./kernelManager.ts";
 import { languageClient } from "./languageClient.ts";
 import { Logger } from "./logging.ts";
 import { notebookSerializer } from "./notebookSerializer.ts";
+import { MarimoLanguageClient, RawLanguageClient } from "./services.ts";
 import { notebookType } from "./types.ts";
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -19,9 +21,15 @@ export async function activate(context: vscode.ExtensionContext) {
   const signal = controller.signal;
 
   const client = languageClient({ signal });
+
+  const layer = Layer.provide(
+    MarimoLanguageClient.Default,
+    RawLanguageClient.layer(client),
+  );
+
   debugAdapter(client, { signal });
-  kernelManager(client, { signal });
-  notebookSerializer(client, { signal });
+  kernelManager(layer, { signal });
+  notebookSerializer(layer, { signal });
 
   context.subscriptions.push(
     { dispose: () => controller.abort() },
