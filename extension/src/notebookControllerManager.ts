@@ -13,7 +13,7 @@ import { notebookType } from "./types.ts";
 
 const MINIMUM_MARIMO_VERSION = {
   major: 0,
-  minor: 15,
+  minor: 16,
   patch: 0,
 } satisfies semver.SemVer;
 
