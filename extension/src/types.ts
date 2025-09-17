@@ -12,9 +12,13 @@ type MessageOperationOf<T extends MessageOperation["op"]> = Extract<
 >;
 export type CellMessage = MessageOperationOf<"cell-op">;
 
-export interface NotebookScoped<T> {
+interface NotebookScoped<T> {
   notebookUri: string;
   inner: T;
+}
+
+interface SessionScoped<T> extends NotebookScoped<T> {
+  executable: string;
 }
 
 type RunRequest = Schemas["RunRequest"];
@@ -32,7 +36,7 @@ interface DebugAdapterRequest {
 
 // client -> language server
 type MarimoCommandMap = {
-  "marimo.run": NotebookScoped<RunRequest>;
+  "marimo.run": SessionScoped<RunRequest>;
   "marimo.set_ui_element_value": NotebookScoped<SetUIElementValueRequest>;
   "marimo.dap": NotebookScoped<DebugAdapterRequest>;
   "marimo.serialize": SerializeRequest;

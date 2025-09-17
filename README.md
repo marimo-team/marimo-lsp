@@ -27,7 +27,7 @@ code .
 
 > [!NOTE]
 > The extension currently builds against the `main` branch of
-> [`@marimo-team/marimo`](https://github.com/marimo-team/marimo), so both
+> [`marimo-team/marimo`](https://github.com/marimo-team/marimo), so both
 > repositories must be cloned side-by-side:
 >
 > ```
