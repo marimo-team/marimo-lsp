@@ -1,45 +1,40 @@
-import {
-  Effect,
-  Fiber,
-  Logger,
-  LogLevel,
-  type Layer,
-  pipe,
-  Stream,
-} from "effect";
+import { Effect, type Layer, Logger, LogLevel, pipe, Stream } from "effect";
 import * as vscode from "vscode";
 
 import { assert } from "./assert.ts";
 import { createNotebookControllerManager } from "./notebookControllerManager.ts";
 import * as ops from "./operations.ts";
-import { MarimoLanguageClient } from "./services.ts";
-import type { RendererCommand } from "./types.ts";
+import { MarimoLanguageClient, MarimoNotebookRenderer } from "./services.ts";
 
 export function kernelManager(
-  layer: Layer.Layer<MarimoLanguageClient>,
+  layer: Layer.Layer<
+    MarimoLanguageClient | MarimoNotebookRenderer,
+    never,
+    never
+  >,
   options: { signal: AbortSignal },
 ) {
   const program = Effect.gen(function* () {
     const marimo = yield* MarimoLanguageClient;
+    const renderer = yield* MarimoNotebookRenderer;
 
     const manager = createNotebookControllerManager(layer, options);
-    const channel = vscode.notebooks.createRendererMessaging("marimo-renderer");
 
-    const rendererFiber = yield* pipe(
-      streamOfRenderingChannel(channel),
+    // renderer (i.e., front end) -> kernel
+    yield* pipe(
+      renderer.messages(),
       Stream.mapEffect(({ editor, message }) =>
-        pipe(
-          Effect.logTrace(message.command),
+        Effect.gen(function* () {
+          yield* Effect.logTrace(message.command);
+          yield* marimo.setUiElementValue({
+            notebookUri: editor.notebook.uri.toString(),
+            inner: message.params,
+          });
+        }).pipe(
           Effect.annotateLogs({
             notebookUri: editor.notebook.uri.toString(),
             params: message.params,
           }),
-          Effect.andThen(
-            marimo.setUiElementValue({
-              notebookUri: editor.notebook.uri.toString(),
-              inner: message.params,
-            }),
-          ),
         ),
       ),
       Stream.runDrain,
@@ -47,7 +42,7 @@ export function kernelManager(
         Effect.logError("Renderer command failed", cause),
       ),
       Effect.annotateLogs("stream", "renderer"),
-      Effect.forkDaemon,
+      Effect.fork,
     );
 
     const contexts = new Map<
@@ -55,7 +50,8 @@ export function kernelManager(
       Omit<ops.OperationContext, "controller">
     >();
 
-    const operationFiber = yield* pipe(
+    // kernel -> renderer
+    yield* pipe(
       marimo.streamOf("marimo/operation"),
       Stream.mapEffect(({ notebookUri, operation }) =>
         Effect.gen(function* () {
@@ -98,41 +94,20 @@ export function kernelManager(
       ),
       Stream.runDrain,
       Effect.annotateLogs("stream", "operations"),
-      Effect.forkDaemon,
-    );
-
-    yield* Effect.addFinalizer(() =>
-      Effect.gen(function* () {
-        yield* Effect.logDebug("Shutting down fibers");
-        yield* Fiber.interrupt(rendererFiber);
-        yield* Fiber.interrupt(operationFiber);
-      }),
+      Effect.fork,
     );
 
     // Keep effect alive until interrupted
-    yield* Effect.never;
+    return yield* Effect.never;
   });
 
-  return Effect.runPromise(
+  return Effect.runPromise<void, never>(
     pipe(
       program,
       Effect.annotateLogs("componenet", "kernel-manager"),
       Logger.withMinimumLogLevel(LogLevel.All),
-      Effect.scoped,
       Effect.provide(layer),
     ),
     { signal: options.signal },
   );
-}
-
-function streamOfRenderingChannel(channel: vscode.NotebookRendererMessaging) {
-  return Stream.async<{
-    editor: vscode.NotebookEditor;
-    message: RendererCommand;
-  }>((emit) => {
-    const disposer = channel.onDidReceiveMessage(emit.single.bind(emit));
-    return Effect.sync(() => {
-      disposer.dispose();
-    });
-  });
 }

@@ -7,6 +7,7 @@ import {
   type LogLevel,
   Stream,
 } from "effect";
+import * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient";
 import { executeCommand } from "./commands.ts";
 import { Logger as VsCodeLogger } from "./logging.ts";
@@ -15,6 +16,7 @@ import type {
   MarimoCommand,
   MarimoNotification,
   MarimoNotificationOf,
+  RendererCommand,
 } from "./types.ts";
 
 type ParamsFor<Command extends MarimoCommand["command"]> = Extract<
@@ -77,6 +79,39 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
         },
       };
     }),
+  },
+) {}
+
+export class MarimoNotebookRenderer extends Effect.Service<MarimoNotebookRenderer>()(
+  "MarimoNotebookRenderer",
+  {
+    sync: () => {
+      const channel =
+        vscode.notebooks.createRendererMessaging("marimo-renderer");
+      return {
+        postMessage(
+          _message: never,
+          _editor?: vscode.NotebookEditor,
+        ): Effect.Effect<void, never, never> {
+          // TODO: Create type-safe publisher for anything we need to send to front end
+          // channel.postMessage(_message, _editor)
+          return Effect.void;
+        },
+        messages() {
+          return Stream.async<{
+            editor: vscode.NotebookEditor;
+            message: RendererCommand;
+          }>((emit) => {
+            const disposer = channel.onDidReceiveMessage(
+              emit.single.bind(emit),
+            );
+            return Effect.sync(() => {
+              disposer.dispose();
+            });
+          });
+        },
+      };
+    },
   },
 ) {}
 

@@ -84,7 +84,7 @@ export function createNotebookControllerManager(
                 "Failed to execute command",
                 error,
               );
-              return Effect.tryPromise(() =>
+              return Effect.promise(() =>
                 vscode.window.showErrorMessage(
                   "Failed to execute marimo command. Please check the logs for details.",
                   { modal: true },
@@ -96,7 +96,7 @@ export function createNotebookControllerManager(
                 path: error.env.path,
                 stderr: error.stderr,
               });
-              return Effect.tryPromise(() =>
+              return Effect.promise(() =>
                 vscode.window.showErrorMessage(
                   `Failed to check dependencies in ${formatControllerLabel(env)}.\n\n` +
                     `Python path: ${error.env.path}`,
@@ -131,26 +131,14 @@ export function createNotebookControllerManager(
                 messages.join("\n") +
                 `\n\nPlease install or update the missing packages.`;
 
-              return Effect.tryPromise(() =>
+              return Effect.promise(() =>
                 vscode.window.showErrorMessage(msg, { modal: true }),
               );
             },
           }),
-          // Unknown exceptions
-          Effect.catchTag("UnknownException", (error) => {
-            Logger.warn("Controller.Execute", "Unexpected error", error);
-            return Effect.async<void, never>((resume) => {
-              vscode.window
-                .showWarningMessage(
-                  "An unexpected error occurred while running the marimo kernel. Check the logs for details.",
-                )
-                .then(() => resume(Effect.void));
-            });
-          }),
-          Effect.provide(layer),
         );
 
-        return Effect.runPromise<void, never>(program);
+        return Effect.runPromise<void, never>(Effect.provide(program, layer));
       },
     );
 
