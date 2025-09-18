@@ -1,7 +1,7 @@
 import type * as vscode from "vscode-notebook-renderer";
 
 import { assert } from "../assert.ts";
-import type { RendererCommand } from "../types.ts";
+import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 import type { RequestClient } from "./marimo-frontend.ts";
 
 type TypedRequestContext = Omit<
@@ -9,10 +9,12 @@ type TypedRequestContext = Omit<
   "postMessage" | "onDidReceiveMessage"
 > & {
   postMessage(options: RendererCommand): void;
-  onDidReceiveMessage(listener: (e: unknown) => unknown): { dispose(): void };
+  onDidReceiveMessage(listener: (e: RendererReceiveMessage) => unknown): {
+    dispose(): void;
+  };
 };
 
-function isTypedRequestContext(
+export function isTypedRequestContext(
   context: vscode.RendererContext<unknown>,
 ): context is TypedRequestContext {
   return (
@@ -22,7 +24,7 @@ function isTypedRequestContext(
 }
 
 export function createRequestClient(
-  context: vscode.RendererContext<unknown>,
+  context: TypedRequestContext,
 ): RequestClient {
   assert(
     isTypedRequestContext(context),

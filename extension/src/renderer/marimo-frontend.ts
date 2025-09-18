@@ -21,11 +21,19 @@ import { ConsoleOutput as UntypedConsoleOutput } from "@marimo-team/frontend/uns
 import { TooltipProvider as UntypedTooltipProvider } from "@marimo-team/frontend/unstable_internal/components/ui/tooltip.tsx?nocheck";
 import type { CellId } from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
 // @ts-expect-error
+import { UI_ELEMENT_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/dom/uiregistry.ts?nocheck";
+// @ts-expect-error
 import { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts?nocheck";
 // @ts-expect-error
 import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts?nocheck";
 // @ts-expect-error
 import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts?nocheck";
+import {
+  handleWidgetMessage,
+  isMessageWidgetState,
+  MODEL_MANAGER,
+  // @ts-expect-error
+} from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts?nocheck";
 // @ts-expect-error
 import { initializePlugins } from "@marimo-team/frontend/unstable_internal/plugins/plugins.ts?nocheck";
 // @ts-expect-error
@@ -54,6 +62,39 @@ export function initialize(client: RequestClient) {
   // Start the RuntimeState to listen for UI element value changes
   // This connects the UI element events to the request client
   RuntimeState.INSTANCE.start(client.sendComponentValues);
+}
+
+// vendored from https://github.com/marimo-team/marimo/blob/111b24f/frontend/src/core/websocket/useMarimoWebSocket.tsx#L110-L134
+export function handleSendUiElementMessage(
+  msg: MessageOperationOf<"send-ui-element-message">,
+) {
+  const modelId = msg.model_id;
+  const uiElement = msg.ui_element;
+  const message = msg.message;
+  const buffers = msg.buffers ?? [];
+
+  if (modelId && isMessageWidgetState(message)) {
+    handleWidgetMessage({
+      modelId,
+      msg: message,
+      buffers,
+      modelManager: MODEL_MANAGER,
+    });
+  }
+
+  if (uiElement) {
+    UI_ELEMENT_REGISTRY.broadcastMessage(uiElement, message, buffers);
+  }
+}
+
+export function handleRemoveUIElements(
+  msg: MessageOperationOf<"remove-ui-elements">,
+) {
+  // This removes the element from the registry to (1) clean-up
+  // memory and (2) make sure that the old value doesn't get re-used
+  // if the same cell-id is later reused for another element.
+  const cellId = msg.cell_id as CellId;
+  UI_ELEMENT_REGISTRY.removeElementsByCell(cellId);
 }
 
 /* Type-safe wrapper around marimo's `useTheme` we import above */
@@ -92,3 +133,5 @@ import type {
   EditRequests,
   RunRequests,
 } from "@marimo-team/frontend/unstable_internal/core/network/types.ts";
+
+import type { MessageOperationOf } from "../types.ts";

@@ -1,13 +1,12 @@
 import * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient";
-import type { BaseLanguageClient } from "vscode-languageclient";
 import { executeCommand } from "./commands.ts";
 import { Logger } from "./logging.ts";
 import { registerNotificationHandler } from "./notifications.ts";
 import { notebookType } from "./types.ts";
 
 export function debugAdapter(
-  client: BaseLanguageClient,
+  client: lsp.BaseLanguageClient,
   options: { signal: AbortSignal },
 ) {
   Logger.info("Debug.Init", "Registering debug adapter");

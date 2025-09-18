@@ -102,6 +102,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.2",
+    "@effect/language-service": "^0.40.0",
     "@marimo-team/frontend": "link:../../marimo/frontend/",
     "@marimo-team/openapi": "link:../../marimo/packages/openapi/",
     "@std/semver": "jsr:^1.0.5",

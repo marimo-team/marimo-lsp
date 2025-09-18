@@ -6,7 +6,7 @@ import type { NotebookSerialization } from "./schemas.ts";
 type Schemas = Api["schemas"];
 
 export type MessageOperation = Schemas["KnownUnions"]["operation"];
-type MessageOperationOf<T extends MessageOperation["op"]> = Extract<
+export type MessageOperationOf<T extends MessageOperation["op"]> = Extract<
   MessageOperation,
   { op: T }
 >;
@@ -42,6 +42,7 @@ type MarimoCommandMap = {
   "marimo.serialize": SerializeRequest;
   "marimo.deserialize": DeserializeRequest;
 };
+
 type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {
   [C in keyof MarimoCommandMap]: {
     command: C;
@@ -61,9 +62,17 @@ type RendererCommandMessageOf<K extends keyof RendererCommandMap> = {
 }[K];
 
 export type MarimoCommand = MarimoCommandMessageOf<keyof MarimoCommandMap>;
+
+// renderer -> extension
 export type RendererCommand = RendererCommandMessageOf<
   keyof RendererCommandMap
 >;
+
+// extension -> renderer
+export type RendererReceiveMessage =
+  | MessageOperationOf<"remove-ui-elements">
+  | MessageOperationOf<"send-ui-element-message">;
+
 export const notebookType = "marimo-notebook";
 
 // Language server -> client
