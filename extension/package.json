@@ -95,13 +95,14 @@
     }
   },
   "scripts": {
-    "build": "pnpm run build:extension",
+    "build": "pnpm run build:renderer && pnpm run build:extension",
     "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
     "build:renderer": "vite build",
     "fix": "biome check --write"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.2",
+    "@effect/language-service": "^0.40.0",
     "@marimo-team/frontend": "link:../../marimo/frontend/",
     "@marimo-team/openapi": "link:../../marimo/packages/openapi/",
     "@std/semver": "jsr:^1.0.5",

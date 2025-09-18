@@ -122,7 +122,7 @@ export function createNotebookControllerManager(
                   case "unknown":
                     return `• ${d.package}: unable to detect`;
                   default:
-                    return unreachable();
+                    return unreachable(d);
                 }
               });
 

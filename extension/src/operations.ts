@@ -1,6 +1,8 @@
+import { Effect } from "effect";
 import * as vscode from "vscode";
+
 import { assert } from "./assert.ts";
-import { Logger } from "./logging.ts";
+import { MarimoNotebookRenderer } from "./services.ts";
 import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
 import type { CellMessage, MessageOperation } from "./types.ts";
 
@@ -10,87 +12,103 @@ export interface OperationContext {
   executions: Map<string, vscode.NotebookCellExecution>;
 }
 
-export async function route(
+export function routeOperation(
   context: OperationContext,
   operation: MessageOperation,
-): Promise<void> {
-  Logger.trace("Operation.Router", `Received: ${operation.op}`, operation);
-  switch (operation.op) {
-    case "cell-op": {
-      handleCellOperation(context, operation);
-      break;
-    }
+): Effect.Effect<void, never, MarimoNotebookRenderer> {
+  return Effect.gen(function* () {
+    const renderer = yield* MarimoNotebookRenderer;
 
-    default:
-      Logger.warn(
-        "Operation.Router",
-        `Unknown operation: ${operation.op}`,
-        operation,
-      );
-  }
+    switch (operation.op) {
+      case "cell-op": {
+        return yield* handleCellOperation(context, operation);
+      }
+      // Forward to renderer (front end)
+      case "remove-ui-elements":
+      case "send-ui-element-message": {
+        return yield* renderer.postMessage(operation);
+      }
+      case "completed-run": {
+        // TODO: Do something to clear out existing context?
+        return yield* Effect.void;
+      }
+      default:
+        return yield* Effect.logWarning("Unknown operation");
+    }
+  }).pipe(Effect.annotateLogs({ op: operation.op }));
 }
 
 const cellStateManager = new CellStateManager();
 
-async function handleCellOperation(
+function handleCellOperation(
   context: OperationContext,
   data: CellMessage,
-): Promise<void> {
-  const { cell_id: cellId, status, timestamp = 0 } = data;
-  const state = cellStateManager.handleCellOp(data);
+): Effect.Effect<void, never, never> {
+  return Effect.gen(function* () {
+    const { cell_id: cellId, status, timestamp = 0 } = data;
+    const state = cellStateManager.handleCellOp(data);
 
-  switch (status) {
-    case "queued": {
-      const execution = context.controller.createNotebookCellExecution(
-        getNotebookCell(context.notebook, cellId),
-      );
-      context.executions.set(cellId, execution);
-      return;
-    }
-
-    case "running": {
-      const execution = context.executions.get(cellId);
-      assert(execution, `Expected execution for ${cellId}`);
-      execution.start(timestamp * 1000);
-      // MUST modify cell output after `NotebookCellExecution.start`
-      await updateOrCreateMarimoCellOutput(execution, { cellId, state });
-      return;
-    }
-
-    case "idle": {
-      const execution = context.executions.get(cellId);
-      assert(execution, `Expected execution for ${cellId}`);
-      // MUST modify cell output before `NotebookCellExecution.end`
-      await updateOrCreateMarimoCellOutput(execution, { cellId, state });
-      execution.end(true, timestamp * 1000);
-      context.executions.delete(cellId);
-      return;
-    }
-
-    default: {
-      const execution = context.executions.get(cellId);
-      if (execution) {
-        await updateOrCreateMarimoCellOutput(execution, { cellId, state });
+    switch (status) {
+      case "queued": {
+        const execution = context.controller.createNotebookCellExecution(
+          getNotebookCell(context.notebook, cellId),
+        );
+        context.executions.set(cellId, execution);
+        return yield* Effect.void;
       }
-      return;
+
+      case "running": {
+        const execution = context.executions.get(cellId);
+        assert(execution, `Expected execution for ${cellId}`);
+        execution.start(timestamp * 1000);
+        // MUST modify cell output after `NotebookCellExecution.start`
+        yield* updateOrCreateMarimoCellOutput(execution, { cellId, state });
+        return;
+      }
+
+      case "idle": {
+        const execution = context.executions.get(cellId);
+        assert(execution, `Expected execution for ${cellId}`);
+        // MUST modify cell output before `NotebookCellExecution.end`
+        yield* updateOrCreateMarimoCellOutput(execution, { cellId, state });
+        execution.end(true, timestamp * 1000);
+        context.executions.delete(cellId);
+        return;
+      }
+
+      default: {
+        const execution = context.executions.get(cellId);
+        if (execution) {
+          yield* updateOrCreateMarimoCellOutput(execution, { cellId, state });
+        }
+        return;
+      }
     }
-  }
+  });
 }
 
-async function updateOrCreateMarimoCellOutput(
+function updateOrCreateMarimoCellOutput(
   execution: vscode.NotebookCellExecution,
   payload: {
     cellId: string;
     state: CellRuntimeState;
   },
-) {
-  await execution.replaceOutput(
-    new vscode.NotebookCellOutput([
-      vscode.NotebookCellOutputItem.json(
-        payload,
-        "application/vnd.marimo.ui+json",
+): Effect.Effect<void, never, never> {
+  return Effect.tryPromise(() =>
+    execution.replaceOutput(
+      new vscode.NotebookCellOutput([
+        vscode.NotebookCellOutputItem.json(
+          payload,
+          "application/vnd.marimo.ui+json",
+        ),
+      ]),
+    ),
+  ).pipe(
+    Effect.catchAllCause((cause) =>
+      Effect.logError("Failed to update cell output", cause).pipe(
+        Effect.annotateLogs({ cellId: payload.cellId }),
       ),
-    ]),
+    ),
   );
 }
 

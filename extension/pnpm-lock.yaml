@@ -11,6 +11,9 @@ importers:
       '@biomejs/biome':
         specifier: ^2.2.2
         version: 2.2.2
+      '@effect/language-service':
+        specifier: ^0.40.0
+        version: 0.40.0
       '@marimo-team/frontend':
         specifier: link:../../marimo/frontend/
         version: link:../../marimo/frontend
@@ -124,6 +127,10 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
+
+  '@effect/language-service@0.40.0':
+    resolution: {integrity: sha512-VHikOhYXm+ECy+mLSszHgCfP9YyKQyB9GLFGBKY2nbnru9xwgCnar8pBLA0AkSUjAgn3hc/mdcFdb/XL9uywLQ==}
+    hasBin: true
 
   '@emnapi/core@1.4.5':
     resolution: {integrity: sha512-XsLw1dEOpkSX/WucdqUhPWP7hDxSvZiY+fsUC14h+FtQ2Ifni4znbBt8punRX+Uj2JG/uDb8nEHVKvrVlvdZ5Q==}
@@ -848,6 +855,8 @@ snapshots:
 
   '@biomejs/cli-win32-x64@2.2.2':
     optional: true
+
+  '@effect/language-service@0.40.0': {}
 
   '@emnapi/core@1.4.5':
     dependencies:

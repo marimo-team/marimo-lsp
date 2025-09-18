@@ -57,13 +57,13 @@ export function assert(expression: unknown, msg?: string): asserts expression {
  *     case "south": return 180;
  *     case "west": return 270;
  *   }
- *   unreachable("Unhandled direction");
+ *   unreachable(dir, "Unhandled direction");
  * }
  * ```
  *
  * @param msg - Optional error message. Defaults to `"Entered unreachable code"`.
  * @throws {Error} Always throws if executed.
  */
-export function unreachable(msg?: string): never {
+export function unreachable(_: never, msg?: string): never {
   assert(false, msg ?? "Entered unreachable code");
 }

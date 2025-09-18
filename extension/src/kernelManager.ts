@@ -47,7 +47,7 @@ export function kernelManager(
 
     const contexts = new Map<
       string,
-      Omit<ops.OperationContext, "controller">
+      Omit<ops.OperationContext, "controller" | "renderer">
     >();
 
     // kernel -> renderer
@@ -76,26 +76,27 @@ export function kernelManager(
             Effect.annotateLogs({ notebookUri, op: operation.op }),
           );
 
-          return yield* pipe(
-            Effect.tryPromise(() =>
-              ops.route({ ...context, controller }, operation),
-            ),
-            Effect.withSpan(`op:${operation.op}`, {
-              attributes: { notebookUri },
-            }),
-            Effect.catchAllCause((cause) =>
-              pipe(
-                Effect.logError("Operation routing failed", cause),
-                Effect.annotateLogs({ notebookUri, op: operation.op }),
+          return yield* ops
+            .routeOperation({ ...context, controller }, operation)
+            .pipe(
+              Effect.withSpan(`op:${operation.op}`, {
+                attributes: { notebookUri },
+              }),
+              Effect.catchAllCause((cause) =>
+                pipe(
+                  Effect.logError("Operation routing failed", cause),
+                  Effect.annotateLogs({ notebookUri, op: operation.op }),
+                ),
               ),
-            ),
-          );
+            );
         }),
       ),
       Stream.runDrain,
       Effect.annotateLogs("stream", "operations"),
       Effect.fork,
     );
+
+    yield* Effect.addFinalizer(() => Effect.sync(() => contexts.clear()));
 
     // Keep effect alive until interrupted
     return yield* Effect.never;
@@ -104,6 +105,7 @@ export function kernelManager(
   return Effect.runPromise<void, never>(
     pipe(
       program,
+      Effect.scoped,
       Effect.annotateLogs("componenet", "kernel-manager"),
       Logger.withMinimumLogLevel(LogLevel.All),
       Effect.provide(layer),

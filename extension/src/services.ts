@@ -17,6 +17,7 @@ import type {
   MarimoNotification,
   MarimoNotificationOf,
   RendererCommand,
+  RendererReceiveMessage,
 } from "./types.ts";
 
 type ParamsFor<Command extends MarimoCommand["command"]> = Extract<
@@ -90,12 +91,10 @@ export class MarimoNotebookRenderer extends Effect.Service<MarimoNotebookRendere
         vscode.notebooks.createRendererMessaging("marimo-renderer");
       return {
         postMessage(
-          _message: never,
-          _editor?: vscode.NotebookEditor,
-        ): Effect.Effect<void, never, never> {
-          // TODO: Create type-safe publisher for anything we need to send to front end
-          // channel.postMessage(_message, _editor)
-          return Effect.void;
+          message: RendererReceiveMessage,
+          editor?: vscode.NotebookEditor,
+        ): Effect.Effect<boolean, never, never> {
+          return Effect.promise(() => channel.postMessage(message, editor));
         },
         messages() {
           return Stream.async<{
