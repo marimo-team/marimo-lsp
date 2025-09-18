@@ -1,0 +1,23 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    devDependencies:
+      '@effect/language-service':
+        specifier: ^0.40.0
+        version: 0.40.0
+
+packages:
+
+  '@effect/language-service@0.40.0':
+    resolution: {integrity: sha512-VHikOhYXm+ECy+mLSszHgCfP9YyKQyB9GLFGBKY2nbnru9xwgCnar8pBLA0AkSUjAgn3hc/mdcFdb/XL9uywLQ==}
+    hasBin: true
+
+snapshots:
+
+  '@effect/language-service@0.40.0': {}

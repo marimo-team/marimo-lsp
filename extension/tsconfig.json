@@ -11,6 +11,7 @@
     "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "exactOptionalPropertyTypes": true,
-    "erasableSyntaxOnly": true
+    "erasableSyntaxOnly": true,
+    "plugins": [{ "name": "@effect/language-service" }]
   }
 }
