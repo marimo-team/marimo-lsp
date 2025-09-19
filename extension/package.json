@@ -98,7 +98,8 @@
     "build": "pnpm run build:renderer && pnpm run build:extension",
     "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
     "build:renderer": "vite build",
-    "fix": "biome check --write"
+    "fix": "biome check --write",
+    "typecheck": "tsgo"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.2",

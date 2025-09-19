@@ -33,12 +33,15 @@ interface DebugAdapterRequest {
   sessionId: string;
   message: vscode.DebugProtocolMessage;
 }
+// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
+type InterruptRequest = {};
 
 // client -> language server
 type MarimoCommandMap = {
   "marimo.run": SessionScoped<RunRequest>;
   "marimo.set_ui_element_value": NotebookScoped<SetUIElementValueRequest>;
   "marimo.dap": NotebookScoped<DebugAdapterRequest>;
+  "marimo.interrupt": NotebookScoped<InterruptRequest>;
   "marimo.serialize": SerializeRequest;
   "marimo.deserialize": DeserializeRequest;
 };

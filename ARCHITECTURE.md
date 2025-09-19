@@ -98,6 +98,17 @@ Updates UI element values from frontend interactions.
 }
 ```
 
+<a name="marimo.interrupt" href="#marimo.interrupt">#</a>
+**marimo.interrupt** · [Source](src/marimo_lsp/server.py#L184)
+
+Interrupts kernel execution for the specified notebook, stopping all running cells.
+
+```typescript
+{
+  notebookUri: string;
+}
+```
+
 <a name="marimo.dap" href="#marimo.dap">#</a> **marimo.dap** ·
 [Source](src/marimo_lsp/server.py#L149)
 
@@ -207,6 +218,7 @@ Cell execution follows this lifecycle:
 1. **Queued**: `NotebookCellExecution` created when cell is submitted
 2. **Running**: Execution started with timestamp, outputs begin streaming
 3. **Idle**: Execution completed, final outputs rendered, execution disposed
+4. **Interrupted**: Execution can be stopped via VS Code's interrupt button, which sends a SIGINT signal to the kernel
 
 ### Frontend Integration
 

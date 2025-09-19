@@ -24,6 +24,7 @@ from marimo_lsp.models import (
     ConvertRequest,
     DebugAdapterRequest,
     DeserializeRequest,
+    InterruptRequest,
     NotebookCommand,
     RunRequest,
     SerializeRequest,
@@ -179,6 +180,19 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         session = manager.get_session(args.notebook_uri)
         assert session, f"No session in workspace for {args.notebook_uri}"
         session.put_control_request(args.inner, from_consumer_id=None)
+
+    @command(server, "marimo.interrupt", NotebookCommand[InterruptRequest])
+    async def interrupt(
+        ls: LanguageServer,  # noqa: ARG001
+        args: NotebookCommand[InterruptRequest],
+    ):
+        logger.info(f"marimo.interrupt for {args.notebook_uri}")
+        session = manager.get_session(args.notebook_uri)
+        if session:
+            session.try_interrupt()
+            logger.info(f"Interrupt request sent for {args.notebook_uri}")
+        else:
+            logger.warning(f"No session found for {args.notebook_uri}")
 
     @command(server, "marimo.serialize", SerializeRequest)
     async def serialize(ls: LanguageServer, args: SerializeRequest):  # noqa: ARG001

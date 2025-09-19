@@ -1,14 +1,14 @@
 import * as childProcess from "node:child_process";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Data, Effect, type Layer, pipe, Schema } from "effect";
+import { Data, Effect, type Layer, Schema } from "effect";
 import * as vscode from "vscode";
 
 import { unreachable } from "./assert.ts";
 import { Logger } from "./logging.ts";
 import { getPythonApi } from "./python.ts";
 import { SemVerFromString } from "./schemas.ts";
-import { MarimoLanguageClient } from "./services.ts";
+import { MarimoLanguageClient, runPromise } from "./services.ts";
 import { notebookType } from "./types.ts";
 
 const MINIMUM_MARIMO_VERSION = {
@@ -56,25 +56,25 @@ export function createNotebookControllerManager(
       controllerId,
       notebookType,
       controllerLabel,
-      async (cells, notebook, controller) => {
-        Logger.info("Controller.Execute", "Running cells", {
-          controllerId: controller.id,
-          cellCount: cells.length,
-          notebook: notebook.uri.toString(),
-        });
-
-        const program = pipe(
-          Effect.gen(function* () {
-            const marimo = yield* MarimoLanguageClient;
-            const validEnv = yield* validatePythonEnvironment(env);
-            return yield* marimo.run({
-              notebookUri: notebook.uri.toString(),
-              executable: validEnv.executable,
-              inner: {
-                cellIds: cells.map((cell) => cell.document.uri.toString()),
-                codes: cells.map((cell) => cell.document.getText()),
-              },
-            });
+      (cells, notebook, controller) =>
+        Effect.gen(function* () {
+          yield* Effect.logInfo("Running cells");
+          yield* Effect.logTrace("Running cells", cells);
+          const marimo = yield* MarimoLanguageClient;
+          const validEnv = yield* validatePythonEnvironment(env);
+          return yield* marimo.run({
+            notebookUri: notebook.uri.toString(),
+            executable: validEnv.executable,
+            inner: {
+              cellIds: cells.map((cell) => cell.document.uri.toString()),
+              codes: cells.map((cell) => cell.document.getText()),
+            },
+          });
+        }).pipe(
+          Effect.annotateLogs({
+            controller: controller.id,
+            cellCount: cells.length,
+            notebook: notebook.uri.toString(),
           }),
           // Known exceptions
           Effect.catchTags({
@@ -136,14 +136,40 @@ export function createNotebookControllerManager(
               );
             },
           }),
-        );
-
-        return Effect.runPromise<void, never>(Effect.provide(program, layer));
-      },
+          Effect.provide(layer),
+          runPromise<void, never>,
+        ),
     );
 
     controller.supportedLanguages = ["python"];
     controller.description = env.path;
+
+    controller.interruptHandler = (notebook) =>
+      Effect.gen(function* () {
+        yield* Effect.annotateCurrentSpan({
+          controllerId: controller.id,
+          notebook: notebook.uri.toString(),
+        });
+        yield* Effect.logInfo("Interrupting execution");
+        const marimo = yield* MarimoLanguageClient;
+        return yield* marimo.interrupt({
+          notebookUri: notebook.uri.toString(),
+          inner: {},
+        });
+      }).pipe(
+        Effect.catchAllCause((cause) =>
+          Effect.gen(function* () {
+            yield* Effect.logError(cause);
+            yield* Effect.promise(() =>
+              vscode.window.showErrorMessage(
+                "Failed to interrupt execution. Please check the logs for details.",
+              ),
+            );
+          }),
+        ),
+        Effect.provide(layer),
+        runPromise<void, never>,
+      );
 
     const selectionDisposer = controller.onDidChangeSelectedNotebooks((e) => {
       if (e.selected) {
