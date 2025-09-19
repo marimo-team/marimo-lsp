@@ -25,7 +25,7 @@ export class AssertionError extends Error {
  *
  * @param expression - The condition to check.
  * @param msg - The error message to throw if the assertion fails.
- * @throws {Error} If `expression` is falsy.
+ * @throws {@link AssertionError} If `expression` is falsy.
  */
 export function assert(expression: unknown, msg?: string): asserts expression {
   if (!expression) {
@@ -61,9 +61,28 @@ export function assert(expression: unknown, msg?: string): asserts expression {
  * }
  * ```
  *
- * @param msg - Optional error message. Defaults to `"Entered unreachable code"`.
- * @throws {Error} Always throws if executed.
+ * @param neverValue - A `never`-typed value used to enforce exhaustiveness
+ *   in TypeScript. If ever passed at runtime, assumptions about control
+ *   flow are incorrect.
+ * @param context - Optional context for the error.
+ * @throws {@link AssertionError} Always throws if executed.
  */
-export function unreachable(_: never, msg?: string): never {
-  assert(false, msg ?? "Entered unreachable code");
+export function unreachable(neverValue: never, context?: string): never {
+  assert(
+    false,
+    `Entered unreachable code` +
+      (context ? ` [${context}]` : "") +
+      `: ${safeRepr(neverValue)}`,
+  );
+}
+
+function safeRepr(x: unknown): string {
+  try {
+    if (typeof x === "string") {
+      return x;
+    }
+    return JSON.stringify(x);
+  } catch {
+    return String(x);
+  }
 }
