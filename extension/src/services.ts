@@ -68,15 +68,17 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
         streamOf<Notification extends MarimoNotification>(
           notification: Notification,
         ): Stream.Stream<MarimoNotificationOf<Notification>, never, never> {
-          return Stream.async<MarimoNotificationOf<Notification>>((emit) => {
-            const disposer = client.onNotification(
-              notification,
-              emit.single.bind(emit),
-            );
-            return Effect.sync(() => {
-              disposer.dispose();
-            });
-          });
+          return Stream.asyncPush<MarimoNotificationOf<Notification>>(
+            Effect.fnUntraced(function* (emit) {
+              const disposer = client.onNotification(
+                notification,
+                emit.single.bind(emit),
+              );
+              yield* Effect.addFinalizer(() =>
+                Effect.sync(() => disposer.dispose()),
+              );
+            }),
+          );
         },
       };
     }),
@@ -97,17 +99,19 @@ export class MarimoNotebookRenderer extends Effect.Service<MarimoNotebookRendere
           return Effect.promise(() => channel.postMessage(message, editor));
         },
         messages() {
-          return Stream.async<{
+          return Stream.asyncPush<{
             editor: vscode.NotebookEditor;
             message: RendererCommand;
-          }>((emit) => {
-            const disposer = channel.onDidReceiveMessage(
-              emit.single.bind(emit),
-            );
-            return Effect.sync(() => {
-              disposer.dispose();
-            });
-          });
+          }>(
+            Effect.fnUntraced(function* (emit) {
+              const disposer = channel.onDidReceiveMessage((msg) =>
+                emit.single(msg),
+              );
+              yield* Effect.addFinalizer(() =>
+                Effect.sync(() => disposer.dispose()),
+              );
+            }),
+          );
         },
       };
     },

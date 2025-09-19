@@ -1,4 +1,12 @@
-import { Effect, type Layer, Logger, LogLevel, pipe, Stream } from "effect";
+import {
+  Effect,
+  Fiber,
+  type Layer,
+  Logger,
+  LogLevel,
+  pipe,
+  Stream,
+} from "effect";
 import * as vscode from "vscode";
 
 import { assert } from "./assert.ts";
@@ -102,7 +110,7 @@ export function kernelManager(
     return yield* Effect.never;
   });
 
-  return Effect.runPromise<void, never>(
+  const fiber = Effect.runFork<void, never>(
     pipe(
       program,
       Effect.scoped,
@@ -110,6 +118,10 @@ export function kernelManager(
       Logger.withMinimumLogLevel(LogLevel.All),
       Effect.provide(layer),
     ),
-    { signal: options.signal },
+  );
+
+  options.signal.addEventListener("abort", () =>
+    // kill the fiber
+    Effect.runPromise(Fiber.interrupt(fiber)),
   );
 }
