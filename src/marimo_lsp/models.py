@@ -72,5 +72,9 @@ class DebugAdapterRequest(msgspec.Struct, rename="camel"):
     """They DAP message."""
 
 
+class InterruptRequest(msgspec.Struct, rename="camel"):
+    """A request to interrupt the kernel execution."""
+
+
 RunRequest = core.RunRequest
 SetUIElementValueRequest = requests.SetUIElementValueRequest

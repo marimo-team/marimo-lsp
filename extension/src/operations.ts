@@ -28,8 +28,13 @@ export function routeOperation(
       case "send-ui-element-message": {
         return yield* renderer.postMessage(operation);
       }
+      case "interrupted":
       case "completed-run": {
-        // TODO: Do something to clear out existing context?
+        // Clear all pending executions when run is completed/interrupted
+        for (const [_cellId, execution] of context.executions) {
+          execution.end(false, Date.now());
+        }
+        context.executions.clear();
         return yield* Effect.void;
       }
       default:
