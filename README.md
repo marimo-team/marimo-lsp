@@ -60,7 +60,7 @@ Run these from the `extension/` directory:
 | `pnpm install`     | Install dependencies             |
 | `pnpm build`       | Build the extension and renderer |
 | `pnpm biome check` | Lint code                        |
-| `pnpm tsc`         | Typecheck TypeScript             |
+| `pnpm typecheck`   | Typecheck TypeScript             |
 
 ## Architecture
 
