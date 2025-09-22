@@ -54,7 +54,7 @@ jobs:
         run: |
           cd marimo-lsp/extension
           pnpm install
-          pnpm tsgo
+          pnpm typecheck
 
   python-lint:
     name: Python / Lint
