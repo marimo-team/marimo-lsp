@@ -2,7 +2,7 @@
   "name": "vscode-marimo",
   "displayName": "marimo",
   "description": "A marimo notebook extension for VS Code.",
-  "version": "0.1.0",
+  "version": "0.6.9",
   "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.86.0"
