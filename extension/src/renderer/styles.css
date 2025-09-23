@@ -1,0 +1,52 @@
+/**
+ * VSCode theme variable mappings to marimo's CSS variables
+ * Maps VSCode's theme colors to the CSS variables used by marimo
+ */
+:root {
+  /** Fonts */
+  --monospace-font: var(--vscode-editor-font-family);
+  --text-font: var(--vscode-font-family);
+  --heading-font: var(--marimo-heading-font, "Lora", var(--vscode-font-family));
+
+  /* Core colors */
+  --background: var(--vscode-editor-background);
+  --foreground: var(--vscode-editor-foreground);
+
+  /* Muted colors */
+  --muted: var(--vscode-input-background);
+  --muted-foreground: var(--vscode-disabledForeground);
+
+  /* Borders */
+  --border: var(--vscode-editorWidget-border);
+  --input: var(--vscode-input-background);
+
+  /* Primary colors (buttons) */
+  --primary: var(--vscode-button-background);
+  --primary-foreground: var(--vscode-button-foreground);
+
+  /* Secondary colors */
+  --secondary: var(--vscode-button-secondaryBackground);
+  --secondary-foreground: var(--vscode-button-secondaryForeground);
+
+  /* Accent (selections) */
+  --accent: var(--vscode-list-activeSelectionBackground);
+  --accent-foreground: var(--vscode-list-activeSelectionForeground);
+
+  /* Focus ring */
+  --ring: var(--vscode-focusBorder);
+
+  /* Semantic colors */
+  --destructive: var(--vscode-errorForeground);
+  --destructive-foreground: var(--vscode-editor-foreground);
+  --error: var(--vscode-errorForeground);
+  --error-foreground: var(--vscode-editor-foreground);
+  --success: var(--vscode-charts-green);
+  --success-foreground: var(--vscode-editor-foreground);
+  --action: var(--vscode-editorWarning-foreground);
+  --action-hover: var(--vscode-list-hoverBackground);
+  --action-foreground: var(--vscode-editorWarning-foreground);
+
+  /* Links */
+  --link: var(--vscode-textLink-foreground);
+  --link-visited: var(--vscode-textLink-activeForeground);
+}
