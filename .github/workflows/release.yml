@@ -1,0 +1,31 @@
+name: 🚀 Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  Publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          cache: 'pnpm'
+          node-version: "latest"
+
+      - run: pnpm install
+
+      - name: Package the extension
+        run: npx vsce package
+
+      - name: Publish to marketplace
+        run: npx vsce publish --pre-release
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      # - name: Create GitHub release
+      #   run: |
+      #     gh release create v$(cat package.json | jq -r '.version') --generate-notes *.vsix
+      #   env:
+      #     GH_TOKEN: ${{ github.token }}
