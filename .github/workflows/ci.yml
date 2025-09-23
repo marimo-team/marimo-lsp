@@ -56,7 +56,6 @@ jobs:
           cd marimo-lsp/extension
           pnpm install
           pnpm typecheck
-          pnpm test
 
   typescript-test:
     name: TypeScript / Test
@@ -97,6 +96,7 @@ jobs:
           pnpm install
           pnpm vscode:prepublish
           pnpm test
+          pnpm test:extension
 
   python-lint:
     name: Python / Lint
