@@ -36,7 +36,7 @@ importers:
         specifier: ^19.1.9
         version: 19.1.9(@types/react@19.1.13)
       '@types/vscode':
-        specifier: ^1.104.0
+        specifier: ^1.86.0
         version: 1.104.0
       '@types/vscode-notebook-renderer':
         specifier: ^1.72.4

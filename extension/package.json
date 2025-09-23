@@ -112,7 +112,7 @@
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
-    "@types/vscode": "^1.104.0",
+    "@types/vscode": "^1.86.0",
     "@types/vscode-notebook-renderer": "^1.72.4",
     "@typescript/native-preview": "7.0.0-dev.20250919.1",
     "@vscode/python-extension": "^1.0.6",
