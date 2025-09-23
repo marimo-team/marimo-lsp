@@ -57,19 +57,19 @@ suite("marimo Extension Hello World Tests", () => {
 
     const packageJSON = extension.packageJSON;
 
-    assert.strictEqual(packageJSON.name, "marimo");
+    assert.strictEqual(packageJSON.name, "vscode-marimo");
     assert.strictEqual(packageJSON.displayName, "marimo");
     assert.strictEqual(
       packageJSON.description,
       "A marimo notebook extension for VS Code.",
     );
-    assert.strictEqual(packageJSON.publisher, "manzt");
+    assert.strictEqual(packageJSON.publisher, "marimo-team");
 
     console.log("✓ Extension metadata is correct");
   });
 
   test("Should contribute notebook types", async () => {
-    const packageJSON = getExtension().packageJSON!;
+    const packageJSON = getExtension().packageJSON;
 
     assert.ok(packageJSON.contributes, "Should have contributes section");
     assert.ok(packageJSON.contributes.notebooks, "Should contribute notebooks");
