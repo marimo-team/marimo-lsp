@@ -1,28 +1,64 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
 
 import { channel, Logger } from "./logging.ts";
 
-export function languageClient(
+async function getLspExecutable(): Promise<lsp.Executable> {
+  const config = vscode.workspace.getConfiguration("marimo.lsp");
+  const customPath = config.get<string[]>("path", []);
+
+  if (customPath.length > 0) {
+    const [command, ...args] = customPath;
+    return {
+      command,
+      args,
+      transport: lsp.TransportKind.stdio,
+    };
+  }
+
+  // Look for bundled wheel matching marimo_lsp*.whl pattern
+  // The wheel is built during the vscode:prepublish step and copied to the dist directory
+  const wheelFile = fs
+    .readdirSync(__dirname)
+    .find((f) => f.startsWith("marimo_lsp") && f.endsWith(".whl"));
+  if (wheelFile) {
+    const wheelPath = path.join(__dirname, wheelFile);
+    Logger.info("LSP", `Using bundled wheel: ${wheelFile}`);
+    return {
+      command: "uvx",
+      args: ["--from", wheelPath, "marimo-lsp"],
+      transport: lsp.TransportKind.stdio,
+    };
+  }
+
+  // Fallback to development mode if no wheel found
+  Logger.warn(
+    "LSP",
+    `No marimo_lsp*.whl found in ${__dirname}, falling back to development mode`,
+  );
+
+  return {
+    command: "uv",
+    args: ["run", "--directory", __dirname, "marimo-lsp"],
+    transport: lsp.TransportKind.stdio,
+  };
+}
+
+export async function languageClient(
   opts: { signal?: AbortSignal } = {},
-): lsp.BaseLanguageClient {
+): Promise<lsp.BaseLanguageClient> {
+  const exec = await getLspExecutable();
+  Logger.info(
+    "LSP",
+    `Starting language server with command: ${exec.command} ${(exec.args ?? []).join(" ")}`,
+  );
+
   const client = new lsp.LanguageClient(
     "marimo-lsp",
     "Marimo Language Server",
-    // NOTE: Dev-only config. We haven't solved LSP bundling yet. This setup
-    // allows us to run the dev version of the Python LSP within the project
-    // so we can iterate on both parts together. Must change before publishing.
-    {
-      run: {
-        command: "uv",
-        args: ["run", "--directory", __dirname, "marimo-lsp"],
-        transport: lsp.TransportKind.stdio,
-      },
-      debug: {
-        command: "uv",
-        args: ["run", "--directory", __dirname, "marimo-lsp"],
-        transport: lsp.TransportKind.stdio,
-      },
-    },
+    { run: exec, debug: exec },
     {
       outputChannel: channel,
       revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,

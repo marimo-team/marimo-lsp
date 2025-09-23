@@ -18,7 +18,17 @@
   "contributes": {
     "configuration": {
       "title": "Marimo",
-      "properties": {}
+      "properties": {
+        "marimo.lsp.path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Path to a custom `marimo-lsp` executable, e.g., `[\"/path/to/marimo-lsp\"]`. Leave empty to use the bundled version via uvx.",
+          "scope": "resource"
+        }
+      }
     },
     "debuggers": [
       {
@@ -97,10 +107,11 @@
   "scripts": {
     "prepare": "effect-language-service patch",
     "build": "pnpm run build:renderer && pnpm run build:extension",
-    "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
+    "build:extension": "esbuild --format=cjs --define:import.meta.env.MARIMO_LSP_ENV=\\\"$MARIMO_LSP_ENV\\\" --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
     "build:renderer": "vite build",
     "fix": "biome check --write",
-    "typecheck": "tsgo && tsc"
+    "typecheck": "tsgo && tsc",
+    "vscode:prepublish": "pnpm build && uv build --directory=.. --out-dir=extension/dist --wheel"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
