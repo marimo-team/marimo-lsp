@@ -27,7 +27,7 @@ importers:
         specifier: ^4.1.13
         version: 4.1.13(rolldown-vite@7.1.12(@types/node@24.5.2)(esbuild@0.25.10)(jiti@2.6.0))
       '@types/mocha':
-        specifier: ^10.0.6
+        specifier: ^10.0.10
         version: 10.0.10
       '@types/node':
         specifier: ^24.5.2

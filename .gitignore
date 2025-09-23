@@ -8,3 +8,4 @@ logs/
 tests/out/
 extension/.vscode-test/
 *.vsix
+.vscode-test/

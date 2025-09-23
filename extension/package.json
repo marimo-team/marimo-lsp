@@ -112,8 +112,7 @@
     "fix": "biome check --write",
     "typecheck": "tsgo && tsc",
     "test": "vitest",
-    "test:run": "vitest run",
-    "test:extension": "npx tsx tests/extension/run-tests.ts",
+    "test:extension": "vscode-test",
     "vscode:prepublish": "pnpm build && uv build --directory=.. --out-dir=extension/dist --wheel"
   },
   "devDependencies": {
@@ -123,7 +122,7 @@
     "@marimo-team/openapi": "link:../../marimo/packages/openapi",
     "@std/semver": "jsr:^1.0.5",
     "@tailwindcss/vite": "^4.1.13",
-    "@types/mocha": "^10.0.6",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
@@ -131,6 +130,7 @@
     "@types/vscode-notebook-renderer": "^1.72.4",
     "@typescript/native-preview": "7.0.0-dev.20250919.1",
     "@vscode/python-extension": "^1.0.6",
+    "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
     "effect": "^3.17.14",
     "esbuild": "^0.25.10",
@@ -144,7 +144,6 @@
     "typescript": "^5.9.2",
     "vite": "npm:rolldown-vite@^7.1.12",
     "vitest": "^2.1.5",
-    "@vscode/test-cli": "^0.0.11",
     "vscode-languageclient": "^9.0.1"
   },
   "packageManager": "pnpm@10.9.0"
