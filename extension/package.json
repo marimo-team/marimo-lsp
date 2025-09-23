@@ -103,7 +103,8 @@
     "typecheck": "tsgo && tsc",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:extension": "npx tsx tests/extension/run-tests.ts"
+    "test:extension": "npx tsx tests/extension/run-tests.ts",
+    "vscode:prepublish": "pnpm run build"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
