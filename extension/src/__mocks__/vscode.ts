@@ -111,11 +111,13 @@ export async function createVSCodeMock(vi: VitestUtils) {
       return mockNotebookController;
     });
 
-    vscode.debug.registerDebugConfigurationProvider = vi.fn();
+  vscode.debug.registerDebugConfigurationProvider = vi.fn();
 
   return vscode;
 }
 
 afterAll(() => {
-  openProcesses.forEach((proc) => proc.kill());
+  for (const proc of openProcesses) {
+    proc.kill();
+  }
 });

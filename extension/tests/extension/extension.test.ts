@@ -69,8 +69,7 @@ suite("marimo Extension Hello World Tests", () => {
   });
 
   test("Should contribute notebook types", async () => {
-    const packageJSON =
-      getExtension().packageJSON!;
+    const packageJSON = getExtension().packageJSON!;
 
     assert.ok(packageJSON.contributes, "Should have contributes section");
     assert.ok(packageJSON.contributes.notebooks, "Should contribute notebooks");
@@ -89,8 +88,7 @@ suite("marimo Extension Hello World Tests", () => {
   });
 
   test("Should register notebook renderer", async () => {
-    const packageJSON =
-      getExtension().packageJSON;
+    const packageJSON = getExtension().packageJSON;
 
     assert.ok(
       packageJSON.contributes.notebookRenderer,
