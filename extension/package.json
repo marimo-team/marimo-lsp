@@ -1,5 +1,5 @@
 {
-  "name": "marimo",
+  "name": "vscode-marimo",
   "displayName": "marimo",
   "description": "A marimo notebook extension for VS Code.",
   "version": "0.1.0",
@@ -7,7 +7,7 @@
   "engines": {
     "vscode": "^1.86.0"
   },
-  "publisher": "manzt",
+  "publisher": "marimo-team",
   "repository": "https://github.com/marimo-team/marimo-lsp",
   "categories": [
     "Notebooks",
@@ -100,7 +100,10 @@
     "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
     "build:renderer": "vite build",
     "fix": "biome check --write",
-    "typecheck": "tsgo && tsc"
+    "typecheck": "tsgo && tsc",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:extension": "npx tsx tests/extension/run-tests.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
@@ -109,6 +112,7 @@
     "@marimo-team/openapi": "link:../../marimo/packages/openapi",
     "@std/semver": "jsr:^1.0.5",
     "@tailwindcss/vite": "^4.1.13",
+    "@types/mocha": "^10.0.6",
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
@@ -116,14 +120,20 @@
     "@types/vscode-notebook-renderer": "^1.72.4",
     "@typescript/native-preview": "7.0.0-dev.20250919.1",
     "@vscode/python-extension": "^1.0.6",
+    "@vscode/test-electron": "^2.5.2",
     "effect": "^3.17.14",
     "esbuild": "^0.25.10",
+    "glob": "^11.0.0",
+    "jest-mock-vscode": "^4.7.0",
+    "mocha": "^10.2.0",
     "native-preview@latest": "link:typescript/native-preview@latest",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "turbo": "^2.5.6",
     "typescript": "^5.9.2",
     "vite": "npm:rolldown-vite@^7.1.12",
+    "vitest": "^2.1.5",
+    "@vscode/test-cli": "^0.0.11",
     "vscode-languageclient": "^9.0.1"
   },
   "packageManager": "pnpm@10.9.0"

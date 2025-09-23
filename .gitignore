@@ -5,3 +5,5 @@ __marimo__
 node_modules/
 dist/
 logs/
+tests/out/
+extension/.vscode-test/
