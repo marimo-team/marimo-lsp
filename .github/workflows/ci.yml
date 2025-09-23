@@ -9,6 +9,7 @@ on:
       - main
 
 jobs:
+
   typescript-lint:
     name: TypeScript / Lint
     runs-on: macos-14
@@ -55,6 +56,46 @@ jobs:
           cd marimo-lsp/extension
           pnpm install
           pnpm typecheck
+
+  typescript-test:
+    name: TypeScript / Test
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: marimo-lsp
+
+      - uses: actions/checkout@v4
+        with:
+          repository: marimo-team/marimo
+          ref: main
+          path: marimo
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: marimo-lsp/extension/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: |
+            marimo/pnpm-lock.yaml
+            marimo-lsp/extension/pnpm-lock.yaml
+
+      - name: Build marimo packages
+        run: |
+          cd marimo
+          pnpm --recursive --filter "./packages/*" build
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build and test the extension
+        run: |
+          cd marimo-lsp/extension
+          pnpm install
+          pnpm vscode:prepublish
+          pnpm test
 
   python-lint:
     name: Python / Lint

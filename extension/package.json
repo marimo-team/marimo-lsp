@@ -1,13 +1,13 @@
 {
-  "name": "marimo",
+  "name": "vscode-marimo",
   "displayName": "marimo",
   "description": "A marimo notebook extension for VS Code.",
-  "version": "0.1.0",
+  "version": "0.6.9",
   "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.86.0"
   },
-  "publisher": "manzt",
+  "publisher": "marimo-team",
   "repository": "https://github.com/marimo-team/marimo-lsp",
   "categories": [
     "Notebooks",
@@ -111,6 +111,7 @@
     "build:renderer": "vite build",
     "fix": "biome check --write",
     "typecheck": "tsgo && tsc",
+    "test": "vscode-test",
     "vscode:prepublish": "pnpm build && uv build --directory=.. --out-dir=extension/dist --wheel"
   },
   "devDependencies": {
@@ -120,6 +121,7 @@
     "@marimo-team/openapi": "link:../../marimo/packages/openapi",
     "@std/semver": "jsr:^1.0.5",
     "@tailwindcss/vite": "^4.1.13",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
@@ -127,6 +129,8 @@
     "@types/vscode-notebook-renderer": "^1.72.4",
     "@typescript/native-preview": "7.0.0-dev.20250919.1",
     "@vscode/python-extension": "^1.0.6",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2",
     "effect": "^3.17.14",
     "esbuild": "^0.25.10",
     "native-preview@latest": "link:typescript/native-preview@latest",
