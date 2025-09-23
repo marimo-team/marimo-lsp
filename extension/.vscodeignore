@@ -9,3 +9,4 @@ tsconfig.json
 turbo.json
 vite.config.mjs
 .tsbuildinfo
+.vscode-test
