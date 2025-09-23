@@ -4,8 +4,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  Publish:
+  publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -16,13 +18,27 @@ jobs:
 
       - run: pnpm install
 
+      - name: Configure git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
       - name: Package the extension
         run: npx vsce package
 
       - name: Publish to marketplace
-        run: npx vsce publish --pre-release
+        run: npx vsce publish --pre-release --skip-duplicate
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Version bump
+        run: |
+          cd extension
+          npm version prerelease --no-git-tag-version
+          cd ..
+          git add extension/package.json
+          git commit -m "Bump version to $(cd extension && node -p "require('./package.json').version")"
+          git push
 
       # - name: Create GitHub release
       #   run: |
