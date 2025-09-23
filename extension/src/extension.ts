@@ -25,7 +25,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const controller = new AbortController();
   const signal = controller.signal;
 
-  const client = languageClient({ signal });
+  const client = await languageClient({ signal });
 
   const MainLive = Layer.mergeAll(
     LoggerLive,
