@@ -2,6 +2,10 @@
 .vscode-test/**
 src/**
 node_modules/**
+scripts/**
 *.vsix
 pnpm-lock.yaml
+tsconfig.json
+turbo.json
+vite.config.mjs
 .tsbuildinfo

@@ -5,3 +5,4 @@ __marimo__
 node_modules/
 dist/
 logs/
+*.vsix
