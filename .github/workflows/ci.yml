@@ -72,9 +72,6 @@ jobs:
           path: marimo
 
       - uses: astral-sh/setup-uv@v6
-        with:
-          # setup-uv doesn't seem to be working with relative paths inside nested dir
-          version-file: /Users/runner/work/marimo-lsp/marimo-lsp/pyproject.toml
 
       - uses: pnpm/action-setup@v4
         with:
