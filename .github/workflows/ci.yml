@@ -88,6 +88,7 @@ jobs:
       - name: Build marimo packages
         run: |
           cd marimo
+          pnpm --recursive --filter "./packages/*" codegen
           pnpm --recursive --filter "./packages/*" build
 
       - name: Build and test the extension
