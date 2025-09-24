@@ -1,4 +1,6 @@
 // @ts-check
+
+import path from "node:path";
 import * as process from "node:process";
 import tailwindcss from "@tailwindcss/vite";
 import * as vite from "vite";
@@ -17,6 +19,36 @@ export default vite.defineConfig({
   resolve: {
     dedupe: ["react", "react-dom"],
     tsconfigPaths: true,
+    alias: {
+      "@marimo-team/frontend/unstable_internal/":
+        path.join(
+          import.meta.dirname,
+          "..",
+          "..",
+          "marimo",
+          "frontend",
+          "src",
+        ) + path.sep,
+      "@/":
+        path.join(
+          import.meta.dirname,
+          "..",
+          "..",
+          "marimo",
+          "frontend",
+          "src",
+        ) + path.sep,
+      "@marimo-team/openapi/unstable_internal/":
+        path.join(
+          import.meta.dirname,
+          "..",
+          "..",
+          "marimo",
+          "packages",
+          "openapi",
+          "src",
+        ) + path.sep,
+    },
   },
   define: {
     "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV),
@@ -24,5 +56,13 @@ export default vite.defineConfig({
   },
   experimental: {
     enableNativePlugin: true,
+  },
+  test: {
+    globals: true,
+    environment: "node",
+    // Unit tests live in src/
+    include: ["src/**/*.test.ts"],
+    // Extension tests live in tests/extension/
+    exclude: ["tests/extension/**/*.test.ts"],
   },
 });

@@ -97,6 +97,7 @@ jobs:
           pnpm install
           pnpm vscode:prepublish
           pnpm test
+          pnpm test:extension
 
   python-lint:
     name: Python / Lint
