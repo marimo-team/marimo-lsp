@@ -1,6 +1,6 @@
+/// <reference types="vitest" />
 // @ts-check
 
-import path from "node:path";
 import * as process from "node:process";
 import tailwindcss from "@tailwindcss/vite";
 import * as vite from "vite";
@@ -20,34 +20,7 @@ export default vite.defineConfig({
     dedupe: ["react", "react-dom"],
     tsconfigPaths: true,
     alias: {
-      "@marimo-team/frontend/unstable_internal/":
-        path.join(
-          import.meta.dirname,
-          "..",
-          "..",
-          "marimo",
-          "frontend",
-          "src",
-        ) + path.sep,
-      "@/":
-        path.join(
-          import.meta.dirname,
-          "..",
-          "..",
-          "marimo",
-          "frontend",
-          "src",
-        ) + path.sep,
-      "@marimo-team/openapi/unstable_internal/":
-        path.join(
-          import.meta.dirname,
-          "..",
-          "..",
-          "marimo",
-          "packages",
-          "openapi",
-          "src",
-        ) + path.sep,
+      "@/": "@marimo-team/frontend/unstable_internal/",
     },
   },
   define: {
