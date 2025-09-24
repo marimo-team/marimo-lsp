@@ -1,13 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
-
+import { Config } from "./config.ts";
 import { channel, Logger } from "./logging.ts";
 
 async function getLspExecutable(): Promise<lsp.Executable> {
-  const config = vscode.workspace.getConfiguration("marimo.lsp");
-  const customPath = config.get<string[]>("path", []);
+  const customPath = Config.lspPath;
 
   if (customPath.length > 0) {
     const [command, ...args] = customPath;
