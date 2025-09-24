@@ -71,6 +71,8 @@ jobs:
           ref: main
           path: marimo
 
+      - uses: astral-sh/setup-uv@v6
+
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: marimo-lsp/extension/package.json
@@ -86,9 +88,8 @@ jobs:
       - name: Build marimo packages
         run: |
           cd marimo
+          pnpm --recursive --filter "./packages/*" codegen
           pnpm --recursive --filter "./packages/*" build
-
-      - uses: astral-sh/setup-uv@v6
 
       - name: Build and test the extension
         run: |
