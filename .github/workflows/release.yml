@@ -59,16 +59,16 @@ jobs:
 
       - name: Authorize Git
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "$GITHUB_TOKEN" | gh auth login --with-token
+          gh auth login --with-token
           gh auth setup-git
 
       - name: Commit and push version bump
         working-directory: marimo-lsp/extension
         run: |
           git add package.json
-          git commit -m "Bump version to $(cat package.json | jq -r '.version')"
+          git commit -m "Release v$(cat package.json | jq -r '.version')"
           git pull --rebase origin main
           git push origin HEAD:main
 
