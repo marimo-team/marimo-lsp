@@ -112,8 +112,7 @@
     "fix": "biome check --write",
     "typecheck": "tsgo && tsc",
     "test": "vitest",
-    "test:extension": "vscode-test",
-    "vscode:prepublish": "pnpm build && uv build --directory=.. --out-dir=extension/dist --wheel"
+    "test:extension": "vscode-test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",

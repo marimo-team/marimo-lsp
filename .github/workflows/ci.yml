@@ -104,7 +104,9 @@ jobs:
         working-directory: marimo-lsp/extension
         run: |
           pnpm install
-          pnpm vscode:prepublish
+          pnpm build
+          # Include a built Python wheel for marimo-lsp inside the dist/
+          uv build --directory=.. --out-dir=extension/dist --wheel
 
       - name: vitest
         run: pnpm test

@@ -1,4 +1,4 @@
-name: 🚀 Release
+name: Release
 
 on:
   workflow_dispatch:
@@ -12,7 +12,6 @@ jobs:
     permissions:
       contents: write
     steps:
-
       - uses: actions/checkout@v4
         with:
           path: marimo-lsp
@@ -43,9 +42,23 @@ jobs:
           pnpm --recursive --filter "./packages/*" codegen
           pnpm --recursive --filter "./packages/*" build
 
-      - name: Install
+      - name: Bump version, commit & push
         working-directory: marimo-lsp/extension
-        run: pnpm install
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          pnpm version prerelease --no-git-tag-version
+          git add package.json
+          git commit -m "v$(cat package.json | jq '.version')"
+          git push origin HEAD:main
+
+      - name: Install packages and build extension
+        working-directory: marimo-lsp/extension
+        run: |
+          pnpm install
+          pnpm build
+          # Include a built Python wheel for marimo-lsp inside the dist/
+          uv build --directory=.. --out-dir=extension/dist --wheel
 
       - name: Package the extension
         working-directory: marimo-lsp/extension
@@ -56,21 +69,6 @@ jobs:
         run: npx vsce publish --pre-release --skip-duplicate
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-
-      - name: Authorize Git
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh auth login --with-token
-          gh auth setup-git
-
-      - name: Commit and push version bump
-        working-directory: marimo-lsp/extension
-        run: |
-          git add package.json
-          git commit -m "Release v$(cat package.json | jq -r '.version')"
-          git pull --rebase origin main
-          git push origin HEAD:main
 
       # - name: Create GitHub release
       #   working-directory: marimo-lsp/extension
