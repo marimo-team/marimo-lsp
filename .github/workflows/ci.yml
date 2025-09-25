@@ -12,7 +12,7 @@ jobs:
 
   typescript-lint:
     name: TypeScript / Lint
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: biomejs/setup-biome@v2
@@ -22,7 +22,7 @@ jobs:
 
   typescript-typecheck:
     name: TypeScript / Typecheck
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,8 +58,12 @@ jobs:
           pnpm typecheck
 
   typescript-test:
-    name: TypeScript / Test
-    runs-on: macos-14
+    name: TypeScript / Test / ${{ matrix.os }}
+    strategy:
+      matrix:
+        # TODO: more platforms
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -91,17 +95,28 @@ jobs:
           pnpm --recursive --filter "./packages/*" codegen
           pnpm --recursive --filter "./packages/*" build
 
-      - name: Build and test the extension
+      - name: Install and build the extension
+        working-directory: marimo-lsp/extension
         run: |
-          cd marimo-lsp/extension
           pnpm install
           pnpm vscode:prepublish
-          pnpm test
-          pnpm test:extension
+
+      - name: vitest
+        run: pnpm test
+        working-directory: marimo-lsp/extension
+
+      - name: vscode-test (Linux)
+        run: xvfb-run -a pnpm test:extension
+        working-directory: marimo-lsp/extension
+        if: runner.os == 'Linux'
+      - name: vscode-test (Non-Linux)
+        run: pnpm test:extension
+        working-directory: marimo-lsp/extension
+        if: runner.os != 'Linux'
 
   python-lint:
     name: Python / Lint
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -111,7 +126,7 @@ jobs:
 
   python-test:
     name: Python / Test
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -119,7 +134,7 @@ jobs:
 
   python-typecheck:
     name: Python / Typecheck
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
