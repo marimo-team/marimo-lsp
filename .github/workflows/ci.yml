@@ -18,7 +18,12 @@ jobs:
       - uses: biomejs/setup-biome@v2
         with:
           working-dir: "extension"
-      - run: biome ci
+
+      - name: Run Biome
+        run: biome ci
+
+      - name: Validate marimo CSS variable overrides
+        run: node extension/scripts/check-css-variables.mjs
 
   typescript-typecheck:
     name: TypeScript / Typecheck
