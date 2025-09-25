@@ -112,7 +112,8 @@
     "fix": "biome check --write",
     "typecheck": "tsgo && tsc",
     "test": "vitest",
-    "test:extension": "vscode-test"
+    "test:extension": "vscode-test",
+    "embed-sdist": "uv build --directory=.. --out-dir=extension/dist --sdist && cd dist/ && tar xzf marimo_lsp-*.tar.gz && rm marimo_lsp-*.tar.gz"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",

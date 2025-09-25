@@ -10,3 +10,5 @@ turbo.json
 vite.config.mjs
 .tsbuildinfo
 .vscode-test
+.claude
+tests
