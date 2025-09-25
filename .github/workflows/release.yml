@@ -43,9 +43,13 @@ jobs:
           pnpm --recursive --filter "./packages/*" codegen
           pnpm --recursive --filter "./packages/*" build
 
-      - name: Install
+      - name: Install packages and build extension
         working-directory: marimo-lsp/extension
-        run: pnpm install
+        run: |
+          pnpm install
+          pnpm build
+          # Include a built Python wheel for marimo-lsp inside the dist/
+          uv build --directory=.. --out-dir=extension/dist --wheel
 
       - name: Package the extension
         working-directory: marimo-lsp/extension
