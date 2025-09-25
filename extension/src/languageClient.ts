@@ -16,17 +16,17 @@ async function getLspExecutable(): Promise<lsp.Executable> {
     };
   }
 
-  // Look for bundled wheel matching marimo_lsp*.whl pattern
+  // Look for bundled wheel matching marimo_lsp-* pattern
   // The wheel is built during the vscode:prepublish step and copied to the dist directory
-  const wheelFile = fs
+  const sdistDir = fs
     .readdirSync(__dirname)
-    .find((f) => f.startsWith("marimo_lsp") && f.endsWith(".whl"));
-  if (wheelFile) {
-    const wheelPath = path.join(__dirname, wheelFile);
-    Logger.info("LSP", `Using bundled wheel: ${wheelFile}`);
+    .find((f) => f.startsWith("marimo_lsp-"));
+  if (sdistDir) {
+    const sdist = path.join(__dirname, sdistDir);
+    Logger.info("LSP", `Using bundled marimo-lsp: ${sdist}`);
     return {
       command: "uvx",
-      args: ["--from", wheelPath, "marimo-lsp"],
+      args: ["--from", sdist, "marimo-lsp"],
       transport: lsp.TransportKind.stdio,
     };
   }

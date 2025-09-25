@@ -105,8 +105,7 @@ jobs:
         run: |
           pnpm install
           pnpm build
-          # Include a built Python wheel for marimo-lsp inside the dist/
-          uv build --directory=.. --out-dir=extension/dist --wheel
+          pnpm embed-sdist
 
       - name: vitest
         run: pnpm test
