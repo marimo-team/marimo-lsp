@@ -3,45 +3,78 @@ name: 🚀 Release
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+
       - uses: actions/checkout@v4
+        with:
+          path: marimo-lsp
+
+      - uses: actions/checkout@v4
+        with:
+          repository: marimo-team/marimo
+          ref: main
+          path: marimo
+
+      - uses: astral-sh/setup-uv@v6
+
       - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: marimo-lsp/extension/package.json
+
       - uses: actions/setup-node@v4
         with:
+          node-version: 24
           cache: 'pnpm'
-          node-version: "latest"
+          cache-dependency-path: |
+            marimo/pnpm-lock.yaml
+            marimo-lsp/extension/pnpm-lock.yaml
 
-      - run: pnpm install
-
-      - name: Configure git
+      - name: Build marimo packages
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          cd marimo
+          pnpm --recursive --filter "./packages/*" codegen
+          pnpm --recursive --filter "./packages/*" build
+
+      - name: Install
+        working-directory: marimo-lsp/extension
+        run: pnpm install
 
       - name: Package the extension
+        working-directory: marimo-lsp/extension
         run: npx vsce package
 
       - name: Publish to marketplace
+        working-directory: marimo-lsp/extension
         run: npx vsce publish --pre-release --skip-duplicate
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
-      - name: Version bump
+      - name: Authorize Git
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          cd extension
-          npm version prerelease --no-git-tag-version
-          cd ..
-          git add extension/package.json
-          git commit -m "Bump version to $(cd extension && node -p "require('./package.json').version")"
-          git push
+          echo "$GITHUB_TOKEN" | gh auth login --with-token
+          gh auth setup-git
+
+      - name: Commit and push version bump
+        working-directory: marimo-lsp/extension
+        run: |
+          git add package.json
+          git commit -m "Bump version to $(cat package.json | jq -r '.version')"
+          git pull --rebase origin main
+          git push origin HEAD:main
 
       # - name: Create GitHub release
+      #   working-directory: marimo-lsp/extension
       #   run: |
-      #     gh release create v$(cat package.json | jq -r '.version') --generate-notes *.vsix
+      #     gh release create $(cat package.json | jq -r '.version') --generate-notes *.vsix --latest=false
       #   env:
       #     GH_TOKEN: ${{ github.token }}
