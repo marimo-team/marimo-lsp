@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: marimo
+
 jobs:
 
   typescript-lint:
@@ -54,13 +58,13 @@ jobs:
       - name: Build marimo packages
         run: |
           cd marimo
-          pnpm --recursive --filter "./packages/*" build
+          pnpm turbo run build --filter="./packages/*"
 
       - name: Install and typecheck extension
         run: |
           cd marimo-lsp/extension
           pnpm install
-          pnpm typecheck
+          pnpm turbo typecheck
 
   typescript-test:
     name: TypeScript / Test / ${{ matrix.os }}
