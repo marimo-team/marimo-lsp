@@ -47,7 +47,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          pnpm version prerelease --no-git-tag-version
+          pnpm version patch --no-git-tag-version
           git add package.json
           git commit -m "v$(cat package.json | jq '.version')"
           git push origin HEAD:main
