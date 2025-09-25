@@ -1,6 +1,8 @@
 /// <reference lib="dom" />
 
+import "./styles.css";
 import styleText from "virtual:stylesheet";
+
 import * as ReactDOM from "react-dom/client";
 import type * as vscode from "vscode-notebook-renderer";
 import { assert, unreachable } from "../assert.ts";
