@@ -114,7 +114,7 @@ export function kernelManager(
     pipe(
       program,
       Effect.scoped,
-      Effect.annotateLogs("componenet", "kernel-manager"),
+      Effect.annotateLogs("component", "kernel-manager"),
       Logger.withMinimumLogLevel(LogLevel.All),
       Effect.provide(layer),
     ),

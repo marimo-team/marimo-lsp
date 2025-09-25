@@ -2,6 +2,7 @@ import {
   Context,
   Data,
   Effect,
+  FiberSet,
   Layer,
   Logger,
   LogLevel,
@@ -10,16 +11,19 @@ import {
   Stream,
 } from "effect";
 import * as vscode from "vscode";
-import type * as lsp from "vscode-languageclient";
-import { executeCommand } from "./commands.ts";
-import { Logger as VsCodeLogger } from "./logging.ts";
+import * as lsp from "vscode-languageclient/node";
+import { executeCommand, registerCommand } from "./commands.ts";
+import { DebugAdapterLive } from "./debugAdapter.ts";
+import { getLspExecutable } from "./languageClient.ts";
+import { channel, Logger as VsCodeLogger } from "./logging.ts";
 import { NotebookSerializationSchema } from "./schemas.ts";
-import type {
-  MarimoCommand,
-  MarimoNotification,
-  MarimoNotificationOf,
-  RendererCommand,
-  RendererReceiveMessage,
+import {
+  type MarimoCommand,
+  type MarimoNotification,
+  type MarimoNotificationOf,
+  notebookType,
+  type RendererCommand,
+  type RendererReceiveMessage,
 } from "./types.ts";
 
 type ParamsFor<Command extends MarimoCommand["command"]> = Extract<
@@ -27,12 +31,12 @@ type ParamsFor<Command extends MarimoCommand["command"]> = Extract<
   { command: Command }
 >["params"];
 
-export class RawLanguageClient extends Context.Tag("LanguageClient")<
-  RawLanguageClient,
-  lsp.BaseLanguageClient
+export class OutputChannel extends Context.Tag("OutputChannel")<
+  OutputChannel,
+  vscode.OutputChannel
 >() {
-  static layer = (client: lsp.BaseLanguageClient) =>
-    Layer.succeed(this, client);
+  static layer = (channel: vscode.OutputChannel) =>
+    Layer.succeed(this, channel);
 }
 
 class ExecuteCommandError extends Data.TaggedError("ExecuteCommandError")<{
@@ -44,14 +48,16 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
   "MarimoLanguageClient",
   {
     effect: Effect.gen(function* () {
-      const client = yield* RawLanguageClient;
+      const client = yield* BaseLanguageClient;
 
       function exec(command: MarimoCommand) {
         return Effect.withSpan(command.command)(
           Effect.tryPromise({
             try: (signal) => {
               const source = new vscode.CancellationTokenSource();
-              if (signal.aborted) source.cancel();
+              if (signal.aborted) {
+                source.cancel();
+              }
               signal.addEventListener("abort", () => {
                 source.cancel();
               });
@@ -77,6 +83,9 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
         },
         interrupt(params: ParamsFor<"marimo.interrupt">) {
           return exec({ command: "marimo.interrupt", params });
+        },
+        dap(params: ParamsFor<"marimo.dap">) {
+          return exec({ command: "marimo.dap", params });
         },
         serialize(
           params: vscode.NotebookData,
@@ -141,16 +150,13 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
         streamOf<Notification extends MarimoNotification>(
           notification: Notification,
         ): Stream.Stream<MarimoNotificationOf<Notification>, never, never> {
-          return Stream.asyncPush<MarimoNotificationOf<Notification>>(
-            Effect.fnUntraced(function* (emit) {
-              const disposer = client.onNotification(
-                notification,
-                emit.single.bind(emit),
-              );
-              yield* Effect.addFinalizer(() =>
-                Effect.sync(() => disposer.dispose()),
-              );
-            }),
+          return Stream.asyncPush((emit) =>
+            Effect.acquireRelease(
+              Effect.sync(() =>
+                client.onNotification(notification, emit.single.bind(emit)),
+              ),
+              (disposable) => Effect.sync(() => disposable.dispose()),
+            ),
           );
         },
       };
@@ -191,6 +197,28 @@ export class MarimoNotebookRenderer extends Effect.Service<MarimoNotebookRendere
   },
 ) {}
 
+export class MarimoConfig extends Effect.Service<MarimoConfig>()(
+  "MarimoConfig",
+  {
+    sync: () => ({
+      get lsp() {
+        return {
+          get executable(): undefined | { command: string; args: string[] } {
+            const lspPath = vscode.workspace
+              .getConfiguration("marimo.lsp")
+              .get<string[]>("path", []);
+            if (!lspPath || lspPath.length === 0) {
+              return undefined;
+            }
+            const [command, ...args] = lspPath;
+            return { command, args };
+          },
+        };
+      },
+    }),
+  },
+) {}
+
 // Map effect's formatted messages to our logging system
 export const LoggerLive = Logger.replace(
   Logger.defaultLogger,
@@ -225,3 +253,100 @@ export function runPromise<A, E>(
     options,
   );
 }
+
+export class BaseLanguageClient extends Effect.Service<BaseLanguageClient>()(
+  "BaseLanguageClient",
+  {
+    effect: Effect.gen(function* () {
+      const channel = yield* OutputChannel;
+      const exec = yield* getLspExecutable();
+      yield* Effect.logInfo(
+        `Starting language server with command: ${exec.command} ${(exec.args ?? []).join(" ")}`,
+      );
+      return new lsp.LanguageClient(
+        "marimo-lsp",
+        "Marimo Language Server",
+        { run: exec, debug: exec },
+        {
+          outputChannel: channel,
+          revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
+        },
+      );
+    }),
+  },
+) {}
+
+const LspLogForwardingLive = Layer.scopedDiscard(
+  Effect.gen(function* () {
+    const client = yield* BaseLanguageClient;
+    const runFork = yield* FiberSet.makeRuntime();
+
+    const mapping = {
+      [lsp.MessageType.Error]: Effect.logError,
+      [lsp.MessageType.Warning]: Effect.logWarning,
+      [lsp.MessageType.Info]: Effect.logInfo,
+      [lsp.MessageType.Log]: Effect.log,
+      [lsp.MessageType.Debug]: Effect.logDebug,
+    } as const;
+
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        client.onNotification(
+          "window/logMessage",
+          ({ type, message }: lsp.LogMessageParams) =>
+            runFork(mapping[type](message)),
+        ),
+      ),
+      (disposable) => Effect.sync(() => disposable.dispose()),
+    );
+  }),
+);
+
+const CommandsLive = Layer.scopedDiscard(
+  Effect.gen(function* () {
+    const runForkPromise = yield* FiberSet.makeRuntimePromise();
+
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        registerCommand("marimo.newMarimoNotebook", () =>
+          runForkPromise(
+            Effect.gen(function* () {
+              const doc = yield* Effect.tryPromise(() =>
+                vscode.workspace.openNotebookDocument(
+                  notebookType,
+                  new vscode.NotebookData([
+                    new vscode.NotebookCellData(
+                      vscode.NotebookCellKind.Code,
+                      "",
+                      "python",
+                    ),
+                  ]),
+                ),
+              );
+              yield* Effect.tryPromise(() =>
+                vscode.window.showNotebookDocument(doc),
+              );
+              yield* Effect.logInfo("Created new marimo notebook").pipe(
+                Effect.annotateLogs({
+                  uri: doc.uri.toString(),
+                }),
+              );
+            }),
+          ),
+        ),
+      ),
+      (disposable) => Effect.sync(() => disposable.dispose()),
+    );
+  }),
+);
+
+export const MainLive = LoggerLive.pipe(
+  Layer.merge(CommandsLive),
+  Layer.merge(DebugAdapterLive),
+  Layer.merge(LspLogForwardingLive),
+  Layer.merge(MarimoNotebookRenderer.Default),
+  Layer.provide(MarimoLanguageClient.Default),
+  Layer.provideMerge(BaseLanguageClient.Default),
+  Layer.provide(MarimoConfig.Default),
+  Layer.provide(OutputChannel.layer(channel)),
+);

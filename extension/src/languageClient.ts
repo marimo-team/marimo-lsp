@@ -1,148 +1,50 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Effect } from "effect";
 import * as lsp from "vscode-languageclient/node";
-import { Config } from "./config.ts";
-import { channel, Logger } from "./logging.ts";
+import { MarimoConfig } from "./services.ts";
 
-async function getLspExecutable(): Promise<lsp.Executable> {
-  const customPath = Config.lspPath;
+export function getLspExecutable(): Effect.Effect<
+  lsp.Executable,
+  never,
+  MarimoConfig
+> {
+  return Effect.gen(function* () {
+    const config = yield* MarimoConfig;
 
-  if (customPath.length > 0) {
-    const [command, ...args] = customPath;
+    if (config.lsp.executable) {
+      const { command, args } = config.lsp.executable;
+      return {
+        command,
+        args,
+        transport: lsp.TransportKind.stdio,
+      };
+    }
+
+    // Look for bundled wheel matching marimo_lsp-* pattern
+    const sdistDir = fs
+      .readdirSync(__dirname)
+      .find((f) => f.startsWith("marimo_lsp-"));
+
+    if (sdistDir) {
+      const sdist = path.join(__dirname, sdistDir);
+      yield* Effect.logInfo(`Using bundled marimo-lsp: ${sdist}`);
+      return {
+        command: "uvx",
+        args: ["--from", sdist, "marimo-lsp"],
+        transport: lsp.TransportKind.stdio,
+      };
+    }
+
+    // Fallback to development mode if no wheel found
+    yield* Effect.logWarning(
+      `No marimo_lsp*.whl found in ${__dirname}, falling back to development mode`,
+    );
+
     return {
-      command,
-      args,
+      command: "uv",
+      args: ["run", "--directory", __dirname, "marimo-lsp"],
       transport: lsp.TransportKind.stdio,
     };
-  }
-
-  // Look for bundled wheel matching marimo_lsp-* pattern
-  // The wheel is built during the vscode:prepublish step and copied to the dist directory
-  const sdistDir = fs
-    .readdirSync(__dirname)
-    .find((f) => f.startsWith("marimo_lsp-"));
-  if (sdistDir) {
-    const sdist = path.join(__dirname, sdistDir);
-    Logger.info("LSP", `Using bundled marimo-lsp: ${sdist}`);
-    return {
-      command: "uvx",
-      args: ["--from", sdist, "marimo-lsp"],
-      transport: lsp.TransportKind.stdio,
-    };
-  }
-
-  // Fallback to development mode if no wheel found
-  Logger.warn(
-    "LSP",
-    `No marimo_lsp*.whl found in ${__dirname}, falling back to development mode`,
-  );
-
-  return {
-    command: "uv",
-    args: ["run", "--directory", __dirname, "marimo-lsp"],
-    transport: lsp.TransportKind.stdio,
-  };
-}
-
-export async function languageClient(
-  opts: { signal?: AbortSignal } = {},
-): Promise<lsp.BaseLanguageClient> {
-  const exec = await getLspExecutable();
-  Logger.info(
-    "LSP",
-    `Starting language server with command: ${exec.command} ${(exec.args ?? []).join(" ")}`,
-  );
-
-  const client = new lsp.LanguageClient(
-    "marimo-lsp",
-    "Marimo Language Server",
-    { run: exec, debug: exec },
-    {
-      outputChannel: channel,
-      revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
-      middleware: {
-        notebooks: {
-          didOpen(notebookDocument, cells, next) {
-            Logger.trace(
-              "Notebook.Middleware",
-              `didOpen: ${notebookDocument.uri.toString()}`,
-              { cellCount: cells.length },
-            );
-            return next(notebookDocument, cells);
-          },
-          /**
-           * Filters notebook change events before sending to the LSP server.
-           * VS Code fires this on every change including UI updates (outputs, execution state),
-           * but the marimo LSP only needs to update its dataflow graph when actual code changes.
-           * We filter out UI-only events to reduce unnecessary LSP traffic.
-           *
-           * TODO: Could add debouncing to reduce per-keystroke updates in the future.
-           */
-          didChange(event, next) {
-            const hasContentChanges =
-              // Text content changed
-              !!event.cells?.textContent ||
-              // Structure changed (cells added/removed/reordered)
-              !!event.cells?.structure;
-
-            if (!hasContentChanges) {
-              // Skip UI-only changes (outputs, execution state, metadata)
-              Logger.trace(
-                "Notebook.Middleware",
-                `didChange: Filtered UI-only change for ${event.notebook.uri.toString()}`,
-              );
-              return Promise.resolve();
-            }
-
-            Logger.debug(
-              "Notebook.Middleware",
-              `didChange: Forwarding content change for ${event.notebook.uri.toString()}`,
-              {
-                hasTextContent: !!event.cells?.textContent,
-                hasStructure: !!event.cells?.structure,
-              },
-            );
-            return next(event);
-          },
-          didClose(notebookDocument, cells, next) {
-            Logger.trace(
-              "Notebook.Middleware",
-              `didClose: ${notebookDocument.uri.toString()}`,
-              { cellCount: cells.length },
-            );
-            return next(notebookDocument, cells);
-          },
-          didSave(notebookDocument, next) {
-            Logger.debug(
-              "Notebook.Middleware",
-              `didSave: ${notebookDocument.uri.toString()}`,
-            );
-            return next(notebookDocument);
-          },
-        },
-        sendRequest(type, param, token, next) {
-          const method = typeof type === "string" ? type : type.method;
-          // Only log non-notebook requests at trace level to reduce noise
-          if (!method.startsWith("notebookDocument/")) {
-            Logger.trace("LSP.Request", method, param);
-          }
-          return next(type, param, token);
-        },
-        sendNotification(type, next, params) {
-          const method = typeof type === "string" ? type : type.method;
-          // Only log non-notebook notifications at trace level to reduce noise
-          if (!method.startsWith("notebookDocument/")) {
-            Logger.trace("LSP.Notification", method, params);
-          }
-          return next(type, params);
-        },
-      },
-    },
-  );
-
-  opts.signal?.addEventListener("abort", () => {
-    client.dispose();
   });
-
-  return client;
 }

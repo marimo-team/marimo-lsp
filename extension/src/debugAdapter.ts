@@ -1,109 +1,106 @@
+import { Effect, Fiber, FiberSet, Layer, Stream } from "effect";
 import * as vscode from "vscode";
-import type * as lsp from "vscode-languageclient";
-import { executeCommand } from "./commands.ts";
-import { Logger } from "./logging.ts";
-import { registerNotificationHandler } from "./notifications.ts";
+
+import { MarimoLanguageClient } from "./services.ts";
 import { notebookType } from "./types.ts";
 
-export function debugAdapter(
-  client: lsp.BaseLanguageClient,
-  options: { signal: AbortSignal },
-) {
-  Logger.info("Debug.Init", "Registering debug adapter");
+export const DebugAdapterLive = Layer.scopedDiscard(
+  Effect.gen(function* () {
+    const marimo = yield* MarimoLanguageClient;
+    const runFork = yield* FiberSet.makeRuntime();
 
-  const disposeFactory = vscode.debug.registerDebugAdapterDescriptorFactory(
-    "marimo",
-    {
-      createDebugAdapterDescriptor: createDebugAdapterDescriptor.bind(null, {
-        client,
-        signal: options.signal,
-      }),
-    },
-  );
+    const emitters = new Map<
+      string,
+      vscode.EventEmitter<vscode.DebugProtocolMessage>
+    >();
 
-  const disposeProvider = vscode.debug.registerDebugConfigurationProvider(
-    "marimo",
-    {
-      resolveDebugConfiguration(_folder, config) {
-        Logger.info("Debug.Config", "Resolving debug configuration", {
-          config,
-        });
+    // no need to handle because FiberSet/Scoped takes care of cleanup
+    const _fiber = marimo.streamOf("marimo/dap").pipe(
+      Stream.mapEffect(
+        Effect.fnUntraced(function* ({ sessionId, message }) {
+          yield* Effect.logDebug("Received DAP message from LSP").pipe(
+            Effect.annotateLogs({ sessionId, message }),
+          );
+          emitters.get(sessionId)?.fire(message);
+        }),
+      ),
+      Stream.runDrain,
+      runFork,
+    );
 
-        const notebook = vscode.window.activeNotebookEditor?.notebook;
-        if (!notebook || notebook.notebookType !== notebookType) {
-          Logger.warn("Debug.Config", "No active marimo notebook found");
-          return undefined;
-        }
-        config.type = "marimo";
-        config.name = config.name ?? "Debug Marimo";
-        config.request = config.request ?? "launch";
-        config.notebookUri = notebook.uri.toString();
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        vscode.debug.registerDebugAdapterDescriptorFactory("marimo", {
+          createDebugAdapterDescriptor(session) {
+            const emitter =
+              emitters.get(session.id) ?? new vscode.EventEmitter();
+            emitters.set(session.id, emitter);
 
-        Logger.info("Debug.Config", "Configuration resolved", {
-          notebookUri: config.notebookUri,
-          type: config.type,
-          request: config.request,
-        });
-        return config;
-      },
-    },
-  );
-
-  options.signal.addEventListener("abort", () => {
-    Logger.info("Debug.Cleanup", "Disposing debug adapter");
-    disposeFactory.dispose();
-    disposeProvider.dispose();
-  });
-}
-
-function createDebugAdapterDescriptor(
-  ctx: {
-    client: lsp.BaseLanguageClient;
-    signal: AbortSignal;
-  },
-  session: vscode.DebugSession,
-): vscode.DebugAdapterDescriptor {
-  Logger.info("Debug.Factory", "Creating debug adapter", {
-    sessionId: session.id,
-    name: session.name,
-    type: session.type,
-    configuration: session.configuration,
-  });
-
-  const sendMessage = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
-
-  registerNotificationHandler(ctx.client, {
-    method: "marimo/dap",
-    callback: ({ sessionId, message }) => {
-      Logger.debug("Debug.Receive", "Received DAP response from LSP", {
-        sessionId,
-        message,
-      });
-      if (sessionId === session.id) {
-        sendMessage.fire(message);
-      }
-    },
-    signal: ctx.signal,
-  });
-
-  return new vscode.DebugAdapterInlineImplementation({
-    onDidSendMessage: sendMessage.event,
-    handleMessage(message) {
-      Logger.debug("Debug.Send", "Sending DAP message to LSP", {
-        sessionId: session.id,
-        message,
-      });
-      executeCommand(ctx.client, {
-        command: "marimo.dap",
-        params: {
-          notebookUri: session.configuration.notebookUri,
-          inner: {
-            sessionId: session.id,
-            message,
+            return new vscode.DebugAdapterInlineImplementation({
+              onDidSendMessage: emitter.event,
+              handleMessage(message) {
+                runFork<never, void>(
+                  Effect.gen(function* () {
+                    yield* Effect.logDebug("Sending DAP message to LSP").pipe(
+                      Effect.annotateLogs({ sessionId: session.id, message }),
+                    );
+                    yield* marimo.dap({
+                      notebookUri: session.configuration.notebookUri,
+                      inner: {
+                        sessionId: session.id,
+                        message,
+                      },
+                    });
+                  }).pipe(
+                    Effect.catchTags({
+                      ExecuteCommandError: Effect.logError,
+                    }),
+                  ),
+                );
+              },
+              dispose() {
+                emitters.get(session.id)?.dispose();
+                emitters.delete(session.id);
+              },
+            });
           },
-        },
-      });
-    },
-    dispose() {},
-  });
-}
+        }),
+      ),
+      (disposer) => Effect.sync(() => disposer.dispose()),
+    );
+
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        vscode.debug.registerDebugConfigurationProvider("marimo", {
+          resolveDebugConfiguration(_workspaceFolder, config) {
+            return runFork<never, vscode.DebugConfiguration | undefined>(
+              Effect.gen(function* () {
+                yield* Effect.logInfo("Resolving debug configuration").pipe(
+                  Effect.annotateLogs("config", config),
+                );
+                const notebook = vscode.window.activeNotebookEditor?.notebook;
+                if (!notebook || notebook.notebookType !== notebookType) {
+                  yield* Effect.logWarning("No active marimo notebook found");
+                  return undefined;
+                }
+                config.type = "marimo";
+                config.name = config.name ?? "Debug Marimo";
+                config.request = config.request ?? "launch";
+                config.notebookUri = notebook.uri.toString();
+                yield* Effect.logInfo("Configuration resolved").pipe(
+                  Effect.annotateLogs({
+                    notebookUri: config.notebookUri,
+                    type: config.type,
+                    request: config.request,
+                  }),
+                );
+                return config;
+              }),
+            ).pipe(Fiber.join, Effect.runPromise);
+          },
+        }),
+      ),
+      (disposer) => Effect.sync(() => disposer.dispose()),
+    );
+  }),
+);
