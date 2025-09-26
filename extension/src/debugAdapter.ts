@@ -1,11 +1,12 @@
 import { Effect, Fiber, FiberSet, Layer, Stream } from "effect";
 import * as vscode from "vscode";
 
-import { MarimoLanguageClient } from "./services.ts";
+import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
 import { notebookType } from "./types.ts";
 
 export const DebugAdapterLive = Layer.scopedDiscard(
   Effect.gen(function* () {
+    yield* Effect.logInfo("Setting up debug adapter");
     const marimo = yield* MarimoLanguageClient;
     const runFork = yield* FiberSet.makeRuntime();
 
@@ -101,6 +102,11 @@ export const DebugAdapterLive = Layer.scopedDiscard(
         }),
       ),
       (disposer) => Effect.sync(() => disposer.dispose()),
+    );
+
+    yield* Effect.logInfo("Debug adapter initialized");
+    yield* Effect.addFinalizer(() =>
+      Effect.logInfo("Tearing down debug adapter"),
     );
   }),
 );

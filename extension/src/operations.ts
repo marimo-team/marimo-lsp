@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import * as vscode from "vscode";
 
 import { assert } from "./assert.ts";
-import { MarimoNotebookRenderer } from "./services.ts";
+import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
 import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
 import type { CellMessage, MessageOperation } from "./types.ts";
 

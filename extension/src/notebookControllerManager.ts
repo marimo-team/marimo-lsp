@@ -3,11 +3,11 @@ import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
 import { Data, Effect, FiberSet, Schema } from "effect";
 import * as vscode from "vscode";
-
 import { unreachable } from "./assert.ts";
 import { Logger } from "./logging.ts";
 import { SemVerFromString } from "./schemas.ts";
-import { MarimoLanguageClient, PythonExtension } from "./services.ts";
+import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
+import { PythonExtension } from "./services/PythonExtension.ts";
 import { notebookType } from "./types.ts";
 
 const MINIMUM_MARIMO_VERSION = {
@@ -20,6 +20,7 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
   "NotebookControllerManager",
   {
     scoped: Effect.gen(function* () {
+      yield* Effect.logInfo("Setting up notebook controller manager");
       const runPromise = yield* FiberSet.makeRuntimePromise<
         MarimoLanguageClient,
         void,
@@ -198,7 +199,7 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
         Logger.trace("Controller.Create", "Created controller:", controllerId);
       }
 
-      function refreshControllers(api: py.PythonExtension) {
+      function refreshControllers(api: PythonExtension) {
         const environments = api.environments.known;
         const currentEnvIds = new Set(
           environments.map((e) => `marimo-${e.id}`),
@@ -243,13 +244,17 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
       );
 
       yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
+          yield* Effect.logInfo("Tearing down notebook controller manager");
           for (const controller of controllers.values()) {
             controller.dispose();
           }
           controllers.clear();
+          yield* Effect.logInfo("All controllers disposed");
         }),
       );
+
+      yield* Effect.logInfo("Notebook controller manager initialized");
 
       return {
         /**

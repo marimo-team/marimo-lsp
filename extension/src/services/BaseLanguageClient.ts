@@ -2,9 +2,34 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Effect } from "effect";
 import * as lsp from "vscode-languageclient/node";
-import { MarimoConfig } from "./services.ts";
+import { MarimoConfig } from "./MarimoConfig.ts";
+import { OutputChannel } from "./OutputChannel.ts";
 
-export function getLspExecutable(): Effect.Effect<
+export class BaseLanguageClient extends Effect.Service<BaseLanguageClient>()(
+  "BaseLanguageClient",
+  {
+    effect: Effect.gen(function* () {
+      yield* Effect.logInfo("Setting up BaseLanguageClient");
+      const channel = yield* OutputChannel;
+      const exec = yield* getLspExecutable();
+      yield* Effect.logInfo(
+        `Starting language server with command: ${exec.command} ${(exec.args ?? []).join(" ")}`,
+      );
+      const client = new lsp.LanguageClient(
+        "marimo-lsp",
+        "Marimo Language Server",
+        { run: exec, debug: exec },
+        {
+          outputChannel: channel,
+          revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
+        },
+      );
+      return client;
+    }),
+  },
+) {}
+
+function getLspExecutable(): Effect.Effect<
   lsp.Executable,
   never,
   MarimoConfig
