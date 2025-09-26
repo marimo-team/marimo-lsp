@@ -1,36 +1,24 @@
-import {
-  Effect,
-  Fiber,
-  type Layer,
-  Logger,
-  LogLevel,
-  pipe,
-  Stream,
-} from "effect";
+import { Effect, Layer, pipe, Stream } from "effect";
 import * as vscode from "vscode";
 
 import { assert } from "./assert.ts";
-import { createNotebookControllerManager } from "./notebookControllerManager.ts";
+import { NotebookControllerManager } from "./notebookControllerManager.ts";
 import * as ops from "./operations.ts";
 import { MarimoLanguageClient, MarimoNotebookRenderer } from "./services.ts";
 
-export function kernelManager(
-  layer: Layer.Layer<
-    MarimoLanguageClient | MarimoNotebookRenderer,
-    never,
-    never
-  >,
-  options: { signal: AbortSignal },
-) {
-  const program = Effect.gen(function* () {
+export const KernelManagerLive = Layer.scopedDiscard(
+  Effect.gen(function* () {
     const marimo = yield* MarimoLanguageClient;
     const renderer = yield* MarimoNotebookRenderer;
+    const manager = yield* NotebookControllerManager;
 
-    const manager = createNotebookControllerManager(layer, options);
+    const contexts = new Map<
+      string,
+      Omit<ops.OperationContext, "controller" | "renderer">
+    >();
 
     // renderer (i.e., front end) -> kernel
-    yield* pipe(
-      renderer.messages(),
+    const _fiber = yield* renderer.messages().pipe(
       Stream.mapEffect(({ editor, message }) =>
         Effect.gen(function* () {
           yield* Effect.logTrace(message.command);
@@ -52,11 +40,6 @@ export function kernelManager(
       Effect.annotateLogs("stream", "renderer"),
       Effect.fork,
     );
-
-    const contexts = new Map<
-      string,
-      Omit<ops.OperationContext, "controller" | "renderer">
-    >();
 
     // kernel -> renderer
     yield* pipe(
@@ -104,24 +87,13 @@ export function kernelManager(
       Effect.fork,
     );
 
-    yield* Effect.addFinalizer(() => Effect.sync(() => contexts.clear()));
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        yield* Effect.logInfo("Teardown");
+        contexts.clear();
+      }),
+    );
 
-    // Keep effect alive until interrupted
-    return yield* Effect.never;
-  });
-
-  const fiber = Effect.runFork<void, never>(
-    pipe(
-      program,
-      Effect.scoped,
-      Effect.annotateLogs("component", "kernel-manager"),
-      Logger.withMinimumLogLevel(LogLevel.All),
-      Effect.provide(layer),
-    ),
-  );
-
-  options.signal.addEventListener("abort", () =>
-    // kill the fiber
-    Effect.runPromise(Fiber.interrupt(fiber)),
-  );
-}
+    yield* Effect.logInfo("Intialized");
+  }).pipe(Effect.annotateLogs("component", "kernel-manager")),
+);

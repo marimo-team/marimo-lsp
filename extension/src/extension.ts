@@ -1,12 +1,39 @@
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Layer, Logger, LogLevel } from "effect";
 import * as vscode from "vscode";
-import { kernelManager } from "./kernelManager.ts";
-import { Logger } from "./logging.ts";
-import { notebookSerializer } from "./notebookSerializer.ts";
-import { BaseLanguageClient, MainLive } from "./services.ts";
+import { DebugAdapterLive } from "./debugAdapter.ts";
+import { KernelManagerLive } from "./kernelManager.ts";
+import { channel, Logger as VsCodeLogger } from "./logging.ts";
+import { NotebookControllerManager } from "./notebookControllerManager.ts";
+import {
+  BaseLanguageClient,
+  CommandsLive,
+  LoggerLive,
+  LspLogForwardingLive,
+  MarimoConfig,
+  MarimoLanguageClient,
+  MarimoNotebookRenderer,
+  MarimoNotebookSerializerLive,
+  OutputChannel,
+  PythonExtension,
+} from "./services.ts";
+
+const MainLive = LoggerLive.pipe(
+  Layer.merge(CommandsLive),
+  Layer.merge(DebugAdapterLive),
+  Layer.merge(LspLogForwardingLive),
+  Layer.merge(MarimoNotebookSerializerLive),
+  Layer.merge(KernelManagerLive),
+  Layer.provide(MarimoNotebookRenderer.Default),
+  Layer.provide(NotebookControllerManager.Default),
+  Layer.provide(PythonExtension.Default),
+  Layer.provide(MarimoLanguageClient.Default),
+  Layer.provideMerge(BaseLanguageClient.Default),
+  Layer.provide(MarimoConfig.Default),
+  Layer.provide(OutputChannel.layer(channel)),
+);
 
 export async function activate(context: vscode.ExtensionContext) {
-  Logger.info("Extension.Lifecycle", "Activating marimo", {
+  VsCodeLogger.info("Extension.Lifecycle", "Activating marimo", {
     extensionPath: context.extensionPath,
     workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
   });
@@ -31,13 +58,11 @@ export async function activate(context: vscode.ExtensionContext) {
         );
       }),
     ),
+    Logger.withMinimumLogLevel(LogLevel.All),
     Effect.scoped,
     Effect.provide(MainLive),
     Effect.runFork,
   );
-
-  kernelManager(MainLive, { signal });
-  notebookSerializer(MainLive, { signal });
 
   context.subscriptions.push({
     dispose: () => Effect.runFork(Fiber.interrupt(fiber)),
@@ -45,6 +70,6 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export async function deactivate() {
-  Logger.info("Extension.Lifecycle", "Deactivating marimo");
-  Logger.close();
+  VsCodeLogger.info("Extension.Lifecycle", "Deactivating marimo");
+  VsCodeLogger.close();
 }

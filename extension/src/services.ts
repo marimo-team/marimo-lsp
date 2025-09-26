@@ -1,3 +1,4 @@
+import * as py from "@vscode/python-extension";
 import {
   Context,
   Data,
@@ -5,7 +6,7 @@ import {
   FiberSet,
   Layer,
   Logger,
-  LogLevel,
+  type LogLevel,
   type ParseResult,
   Schema,
   Stream,
@@ -13,9 +14,8 @@ import {
 import * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
 import { executeCommand, registerCommand } from "./commands.ts";
-import { DebugAdapterLive } from "./debugAdapter.ts";
 import { getLspExecutable } from "./languageClient.ts";
-import { channel, Logger as VsCodeLogger } from "./logging.ts";
+import { Logger as VsCodeLogger } from "./logging.ts";
 import { NotebookSerializationSchema } from "./schemas.ts";
 import {
   type MarimoCommand,
@@ -243,17 +243,6 @@ export const LoggerLive = Logger.replace(
   }),
 );
 
-export function runPromise<A, E>(
-  e: Effect.Effect<A, E>,
-  options: { readonly signal?: AbortSignal } = {},
-): Promise<A> {
-  // We just forward everything since the VsCodeLogger automatically filters
-  return Effect.runPromise(
-    e.pipe(Logger.withMinimumLogLevel(LogLevel.All)),
-    options,
-  );
-}
-
 export class BaseLanguageClient extends Effect.Service<BaseLanguageClient>()(
   "BaseLanguageClient",
   {
@@ -276,7 +265,7 @@ export class BaseLanguageClient extends Effect.Service<BaseLanguageClient>()(
   },
 ) {}
 
-const LspLogForwardingLive = Layer.scopedDiscard(
+export const LspLogForwardingLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const client = yield* BaseLanguageClient;
     const runFork = yield* FiberSet.makeRuntime();
@@ -302,7 +291,7 @@ const LspLogForwardingLive = Layer.scopedDiscard(
   }),
 );
 
-const CommandsLive = Layer.scopedDiscard(
+export const CommandsLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const runForkPromise = yield* FiberSet.makeRuntimePromise();
 
@@ -340,7 +329,7 @@ const CommandsLive = Layer.scopedDiscard(
   }),
 );
 
-const MarimoNotebookSerializerLive = Layer.scopedDiscard(
+export const MarimoNotebookSerializerLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const marimo = yield* MarimoLanguageClient;
     const runPromise = yield* FiberSet.makeRuntimePromise();
@@ -404,14 +393,9 @@ const MarimoNotebookSerializerLive = Layer.scopedDiscard(
   }),
 );
 
-export const MainLive = LoggerLive.pipe(
-  Layer.merge(CommandsLive),
-  Layer.merge(DebugAdapterLive),
-  Layer.merge(LspLogForwardingLive),
-  Layer.merge(MarimoNotebookSerializerLive),
-  Layer.merge(MarimoNotebookRenderer.Default),
-  Layer.provide(MarimoLanguageClient.Default),
-  Layer.provideMerge(BaseLanguageClient.Default),
-  Layer.provide(MarimoConfig.Default),
-  Layer.provide(OutputChannel.layer(channel)),
-);
+export class PythonExtension extends Effect.Service<PythonExtension>()(
+  "PythonExtension",
+  {
+    effect: Effect.promise(() => py.PythonExtension.api()),
+  },
+) {}

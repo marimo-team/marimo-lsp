@@ -1,14 +1,13 @@
 import * as childProcess from "node:child_process";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Data, Effect, type Layer, Schema } from "effect";
+import { Data, Effect, FiberSet, Schema } from "effect";
 import * as vscode from "vscode";
 
 import { unreachable } from "./assert.ts";
 import { Logger } from "./logging.ts";
-import { getPythonApi } from "./python.ts";
 import { SemVerFromString } from "./schemas.ts";
-import { MarimoLanguageClient, runPromise } from "./services.ts";
+import { MarimoLanguageClient, PythonExtension } from "./services.ts";
 import { notebookType } from "./types.ts";
 
 const MINIMUM_MARIMO_VERSION = {
@@ -17,257 +16,254 @@ const MINIMUM_MARIMO_VERSION = {
   patch: 0,
 } satisfies semver.SemVer;
 
-export function createNotebookControllerManager(
-  layer: Layer.Layer<MarimoLanguageClient>,
-  options: { signal: AbortSignal },
-) {
-  const controllers = new Map<string, vscode.NotebookController>();
-  const selectedControllers = new WeakMap<
-    vscode.NotebookDocument,
-    vscode.NotebookController
-  >();
+export class NotebookControllerManager extends Effect.Service<NotebookControllerManager>()(
+  "NotebookControllerManager",
+  {
+    scoped: Effect.gen(function* () {
+      const runPromise = yield* FiberSet.makeRuntimePromise<
+        MarimoLanguageClient,
+        void,
+        never
+      >();
 
-  function isControllerInUse(controllerId: string): boolean {
-    return vscode.workspace.notebookDocuments.some(
-      (doc) => selectedControllers.get(doc)?.id === controllerId,
-    );
-  }
+      const controllers = new Map<string, vscode.NotebookController>();
+      const selectedControllers = new WeakMap<
+        vscode.NotebookDocument,
+        vscode.NotebookController
+      >();
 
-  function createOrUpdateController(env: py.Environment) {
-    const controllerId = `marimo-${env.id}`;
-    const controllerLabel = formatControllerLabel(env);
-
-    {
-      // Just update the controller if it exists
-      const existing = controllers.get(controllerId);
-      if (existing) {
-        existing.label = controllerLabel;
-        Logger.trace(
-          "Controller.Update",
-          "Updated controller:",
-          controllerId,
-          controllerLabel,
+      function isControllerInUse(controllerId: string): boolean {
+        return vscode.workspace.notebookDocuments.some(
+          (doc) => selectedControllers.get(doc)?.id === controllerId,
         );
-        return;
       }
-    }
 
-    const controller = vscode.notebooks.createNotebookController(
-      controllerId,
-      notebookType,
-      controllerLabel,
-      (cells, notebook, controller) =>
-        Effect.gen(function* () {
-          yield* Effect.logInfo("Running cells");
-          yield* Effect.logTrace("Running cells", cells);
-          const marimo = yield* MarimoLanguageClient;
-          const validEnv = yield* validatePythonEnvironment(env);
-          return yield* marimo.run({
-            notebookUri: notebook.uri.toString(),
-            executable: validEnv.executable,
-            inner: {
-              cellIds: cells.map((cell) => cell.document.uri.toString()),
-              codes: cells.map((cell) => cell.document.getText()),
-            },
-          });
-        }).pipe(
-          Effect.annotateLogs({
-            controller: controller.id,
-            cellCount: cells.length,
-            notebook: notebook.uri.toString(),
-          }),
-          // Known exceptions
-          Effect.catchTags({
-            ExecuteCommandError: (error) => {
-              Logger.error(
-                "Controller.Execute",
-                "Failed to execute command",
-                error,
-              );
-              return Effect.promise(() =>
-                vscode.window.showErrorMessage(
-                  "Failed to execute marimo command. Please check the logs for details.",
-                  { modal: true },
-                ),
-              );
-            },
-            PythonExecutionError: (error) => {
-              Logger.error("Controller.Execute", "Python check failed", {
-                path: error.env.path,
-                stderr: error.stderr,
-              });
-              return Effect.promise(() =>
-                vscode.window.showErrorMessage(
-                  `Failed to check dependencies in ${formatControllerLabel(env)}.\n\n` +
-                    `Python path: ${error.env.path}`,
-                  { modal: true },
-                ),
-              );
-            },
-            EnvironmentRequirementError: (error) => {
-              Logger.warn(
-                "Controller.Execute",
-                "Environment requirements not met",
-                {
-                  env: error.env.path,
-                  diagnostics: error.diagnostics,
-                },
-              );
-              const messages = error.diagnostics.map((d) => {
-                switch (d.kind) {
-                  case "missing":
-                    return `• ${d.package}: not installed`;
-                  case "outdated":
-                    return `• ${d.package}: v${semver.format(d.currentVersion)} (requires >=v${semver.format(d.requiredVersion)})`;
-                  case "unknown":
-                    return `• ${d.package}: unable to detect`;
-                  default:
-                    return unreachable(d);
-                }
-              });
+      function createOrUpdateController(env: py.Environment) {
+        const controllerId = `marimo-${env.id}`;
+        const controllerLabel = formatControllerLabel(env);
 
-              const msg =
-                `${formatControllerLabel(env)} cannot run the marimo kernel:\n\n` +
-                messages.join("\n") +
-                `\n\nPlease install or update the missing packages.`;
-
-              return Effect.promise(() =>
-                vscode.window.showErrorMessage(msg, { modal: true }),
-              );
-            },
-          }),
-          Effect.provide(layer),
-          runPromise<void, never>,
-        ),
-    );
-
-    controller.supportedLanguages = ["python"];
-    controller.description = env.path;
-
-    controller.interruptHandler = (notebook) =>
-      Effect.gen(function* () {
-        yield* Effect.annotateCurrentSpan({
-          controllerId: controller.id,
-          notebook: notebook.uri.toString(),
-        });
-        yield* Effect.logInfo("Interrupting execution");
-        const marimo = yield* MarimoLanguageClient;
-        return yield* marimo.interrupt({
-          notebookUri: notebook.uri.toString(),
-          inner: {},
-        });
-      }).pipe(
-        Effect.catchAllCause((cause) =>
-          Effect.gen(function* () {
-            yield* Effect.logError(cause);
-            yield* Effect.promise(() =>
-              vscode.window.showErrorMessage(
-                "Failed to interrupt execution. Please check the logs for details.",
-              ),
+        {
+          // Just update the controller if it exists
+          const existing = controllers.get(controllerId);
+          if (existing) {
+            existing.label = controllerLabel;
+            Logger.trace(
+              "Controller.Update",
+              "Updated controller:",
+              controllerId,
+              controllerLabel,
             );
-          }),
-        ),
-        Effect.provide(layer),
-        runPromise<void, never>,
-      );
+            return;
+          }
+        }
 
-    const selectionDisposer = controller.onDidChangeSelectedNotebooks((e) => {
-      if (e.selected) {
-        selectedControllers.set(e.notebook, controller);
-        Logger.trace(
-          "Controller.Selection",
-          `Controller ${controllerId} selected for notebook ${e.notebook.uri.toString()}`,
+        const controller = vscode.notebooks.createNotebookController(
+          controllerId,
+          notebookType,
+          controllerLabel,
+          (cells, notebook, controller) =>
+            Effect.gen(function* () {
+              yield* Effect.logInfo("Running cells");
+              yield* Effect.logTrace("Running cells", cells);
+              const validEnv = yield* validatePythonEnvironment(env);
+              const marimo = yield* MarimoLanguageClient;
+              return yield* marimo.run({
+                notebookUri: notebook.uri.toString(),
+                executable: validEnv.executable,
+                inner: {
+                  cellIds: cells.map((cell) => cell.document.uri.toString()),
+                  codes: cells.map((cell) => cell.document.getText()),
+                },
+              });
+            }).pipe(
+              Effect.annotateLogs({
+                controller: controller.id,
+                cellCount: cells.length,
+                notebook: notebook.uri.toString(),
+              }),
+              // Known exceptions
+              Effect.catchTags({
+                ExecuteCommandError: (error) => {
+                  Logger.error(
+                    "Controller.Execute",
+                    "Failed to execute command",
+                    error,
+                  );
+                  return Effect.promise(() =>
+                    vscode.window.showErrorMessage(
+                      "Failed to execute marimo command. Please check the logs for details.",
+                      { modal: true },
+                    ),
+                  );
+                },
+                PythonExecutionError: (error) => {
+                  Logger.error("Controller.Execute", "Python check failed", {
+                    path: error.env.path,
+                    stderr: error.stderr,
+                  });
+                  return Effect.promise(() =>
+                    vscode.window.showErrorMessage(
+                      `Failed to check dependencies in ${formatControllerLabel(env)}.\n\n` +
+                        `Python path: ${error.env.path}`,
+                      { modal: true },
+                    ),
+                  );
+                },
+                EnvironmentRequirementError: (error) => {
+                  Logger.warn(
+                    "Controller.Execute",
+                    "Environment requirements not met",
+                    {
+                      env: error.env.path,
+                      diagnostics: error.diagnostics,
+                    },
+                  );
+                  const messages = error.diagnostics.map((d) => {
+                    switch (d.kind) {
+                      case "missing":
+                        return `• ${d.package}: not installed`;
+                      case "outdated":
+                        return `• ${d.package}: v${semver.format(d.currentVersion)} (requires >=v${semver.format(d.requiredVersion)})`;
+                      case "unknown":
+                        return `• ${d.package}: unable to detect`;
+                      default:
+                        return unreachable(d);
+                    }
+                  });
+
+                  const msg =
+                    `${formatControllerLabel(env)} cannot run the marimo kernel:\n\n` +
+                    messages.join("\n") +
+                    `\n\nPlease install or update the missing packages.`;
+
+                  return Effect.promise(() =>
+                    vscode.window.showErrorMessage(msg, { modal: true }),
+                  );
+                },
+              }),
+              runPromise,
+            ),
         );
-      }
-      // NB: We don't delete from selectedControllers when deselected
-      // because another controller will overwrite it when selected
-    });
 
-    const originalDispose = controller.dispose.bind(controller);
-    controller.dispose = () => {
-      selectionDisposer.dispose();
-      originalDispose();
-    };
+        controller.supportedLanguages = ["python"];
+        controller.description = env.path;
 
-    controllers.set(controllerId, controller);
-    Logger.trace("Controller.Create", "Created controller:", controllerId);
-  }
-
-  function refreshControllers(api: py.PythonExtension) {
-    const environments = api.environments.known;
-    const currentEnvIds = new Set(environments.map((e) => `marimo-${e.id}`));
-
-    Logger.trace(
-      "Controller.Refresh",
-      `Refreshing controllers. Found ${environments.length} environments`,
-    );
-
-    // Remove controllers for deleted environments (if not in use)
-    for (const [id, controller] of controllers) {
-      if (!currentEnvIds.has(id)) {
-        if (isControllerInUse(id)) {
-          Logger.trace(
-            "Controller.Skip",
-            `Skipping disposal of ${id} - currently in use`,
+        controller.interruptHandler = (notebook) =>
+          Effect.gen(function* () {
+            yield* Effect.annotateCurrentSpan({
+              controllerId: controller.id,
+              notebook: notebook.uri.toString(),
+            });
+            yield* Effect.logInfo("Interrupting execution");
+            const marimo = yield* MarimoLanguageClient;
+            return yield* marimo.interrupt({
+              notebookUri: notebook.uri.toString(),
+              inner: {},
+            });
+          }).pipe(
+            Effect.catchAllCause((cause) =>
+              Effect.gen(function* () {
+                yield* Effect.logError(cause);
+                yield* Effect.promise(() =>
+                  vscode.window.showErrorMessage(
+                    "Failed to interrupt execution. Please check the logs for details.",
+                  ),
+                );
+              }),
+            ),
+            runPromise,
           );
-        } else {
-          Logger.trace("Controller.Dispose", `Disposing controller ${id}`);
-          controller.dispose();
-          controllers.delete(id);
+
+        const selectionDisposer = controller.onDidChangeSelectedNotebooks(
+          (e) => {
+            if (e.selected) {
+              selectedControllers.set(e.notebook, controller);
+              Logger.trace(
+                "Controller.Selection",
+                `Controller ${controllerId} selected for notebook ${e.notebook.uri.toString()}`,
+              );
+            }
+            // NB: We don't delete from selectedControllers when deselected
+            // because another controller will overwrite it when selected
+          },
+        );
+
+        const originalDispose = controller.dispose.bind(controller);
+        controller.dispose = () => {
+          selectionDisposer.dispose();
+          originalDispose();
+        };
+
+        controllers.set(controllerId, controller);
+        Logger.trace("Controller.Create", "Created controller:", controllerId);
+      }
+
+      function refreshControllers(api: py.PythonExtension) {
+        const environments = api.environments.known;
+        const currentEnvIds = new Set(
+          environments.map((e) => `marimo-${e.id}`),
+        );
+
+        Logger.trace(
+          "Controller.Refresh",
+          `Refreshing controllers. Found ${environments.length} environments`,
+        );
+
+        // Remove controllers for deleted environments (if not in use)
+        for (const [id, controller] of controllers) {
+          if (!currentEnvIds.has(id)) {
+            if (isControllerInUse(id)) {
+              Logger.trace(
+                "Controller.Skip",
+                `Skipping disposal of ${id} - currently in use`,
+              );
+            } else {
+              Logger.trace("Controller.Dispose", `Disposing controller ${id}`);
+              controller.dispose();
+              controllers.delete(id);
+            }
+          }
+        }
+
+        for (const env of environments) {
+          createOrUpdateController(env);
         }
       }
-    }
 
-    for (const env of environments) {
-      createOrUpdateController(env);
-    }
-  }
-
-  function initialize(api: py.PythonExtension) {
-    refreshControllers(api);
-
-    const envChangeListener = api.environments.onDidChangeEnvironments(() => {
-      Logger.trace("Controller.EnvChange", "Python environments changed");
-      refreshControllers(api);
-    });
-
-    options.signal.addEventListener("abort", () => {
-      Logger.info("Controller.Lifecycle", "Disposing controller manager");
-      envChangeListener.dispose();
-      for (const controller of controllers.values()) {
-        controller.dispose();
-      }
-      controllers.clear();
-    });
-
-    Logger.info(
-      "Controller.Lifecycle",
-      `Controller manager initialized with ${controllers.size} controllers`,
-    );
-  }
-
-  // TODO: await this somewhere?
-  getPythonApi()
-    .then((api) => initialize(api))
-    .catch((error) => {
-      Logger.error(
-        "Controller.Error",
-        "Failed to initialize controller manager",
-        error,
+      yield* Effect.acquireRelease(
+        Effect.gen(function* () {
+          const api = yield* PythonExtension;
+          refreshControllers(api);
+          return api.environments.onDidChangeEnvironments(() => {
+            Logger.trace("Controller.EnvChange", "Python environments changed");
+            refreshControllers(api);
+          });
+        }),
+        (disposable) => Effect.sync(() => disposable.dispose()),
       );
-    });
 
-  return {
-    /**
-     * Get the currently selected controller for a notebook document
-     */
-    getSelectedController(
-      notebook: vscode.NotebookDocument,
-    ): vscode.NotebookController | undefined {
-      return selectedControllers.get(notebook);
-    },
-  };
-}
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const controller of controllers.values()) {
+            controller.dispose();
+          }
+          controllers.clear();
+        }),
+      );
+
+      return {
+        /**
+         * Get the currently selected controller for a notebook document
+         */
+        getSelectedController(
+          notebook: vscode.NotebookDocument,
+        ): vscode.NotebookController | undefined {
+          return selectedControllers.get(notebook);
+        },
+      };
+    }),
+  },
+) {}
 
 /**
  * Format a {@link py.Environment} similar to vscode-jupyter
