@@ -18,7 +18,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
     >();
 
     // renderer (i.e., front end) -> kernel
-    const _fiber = yield* renderer.messages().pipe(
+    yield* renderer.messages().pipe(
       Stream.mapEffect(({ editor, message }) =>
         Effect.gen(function* () {
           yield* Effect.logTrace(message.command);
@@ -38,12 +38,13 @@ export const KernelManagerLive = Layer.scopedDiscard(
         Effect.logError("Renderer command failed", cause),
       ),
       Effect.annotateLogs("stream", "renderer"),
-      Effect.fork,
+      Effect.forkDaemon,
     );
 
     // kernel -> renderer
     yield* pipe(
       marimo.streamOf("marimo/operation"),
+      Stream.tap((msg) => Effect.logTrace(msg)),
       Stream.mapEffect(({ notebookUri, operation }) =>
         Effect.gen(function* () {
           let context = contexts.get(notebookUri);
@@ -84,7 +85,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
       ),
       Stream.runDrain,
       Effect.annotateLogs("stream", "operations"),
-      Effect.fork,
+      Effect.forkDaemon,
     );
 
     yield* Effect.addFinalizer(() =>

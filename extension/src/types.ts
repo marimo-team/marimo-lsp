@@ -1,5 +1,6 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
 import type * as vscode from "vscode";
+import type * as lsp from "vscode-languageclient/node";
 
 import type { NotebookSerialization } from "./schemas.ts";
 
@@ -82,6 +83,7 @@ export const notebookType = "marimo-notebook";
 type MarimoNotificationMap = {
   "marimo/operation": { notebookUri: string; operation: MessageOperation };
   "marimo/dap": { sessionId: string; message: vscode.DebugProtocolMessage };
+  "window/logMessage": lsp.LogMessageParams;
 };
 export type MarimoNotification = keyof MarimoNotificationMap;
 export type MarimoNotificationOf<K extends MarimoNotification> = {

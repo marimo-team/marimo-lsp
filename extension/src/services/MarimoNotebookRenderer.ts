@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { Effect, type Scope, Stream } from "effect";
 import * as vscode from "vscode";
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 
@@ -15,19 +15,18 @@ export class MarimoNotebookRenderer extends Effect.Service<MarimoNotebookRendere
         ): Effect.Effect<boolean, never, never> {
           return Effect.promise(() => channel.postMessage(message, editor));
         },
-        messages() {
-          return Stream.asyncPush<{
-            editor: vscode.NotebookEditor;
-            message: RendererCommand;
-          }>(
-            Effect.fnUntraced(function* (emit) {
-              const disposer = channel.onDidReceiveMessage((msg) =>
-                emit.single(msg),
-              );
-              yield* Effect.addFinalizer(() =>
-                Effect.sync(() => disposer.dispose()),
-              );
-            }),
+        messages(): Stream.Stream<
+          { editor: vscode.NotebookEditor; message: RendererCommand },
+          never,
+          Scope.Scope
+        > {
+          return Stream.async((emit) =>
+            Effect.acquireRelease(
+              Effect.sync(() =>
+                channel.onDidReceiveMessage((msg) => emit.single(msg)),
+              ),
+              (disposable) => Effect.sync(() => disposable.dispose()),
+            ),
           );
         },
       };

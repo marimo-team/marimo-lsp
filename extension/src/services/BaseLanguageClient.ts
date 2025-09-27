@@ -1,9 +1,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Data, Effect } from "effect";
+import { Data, Effect, type Scope, Stream } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
-import type { MarimoCommand } from "../types.ts";
+import type {
+  MarimoCommand,
+  MarimoNotification,
+  MarimoNotificationOf,
+} from "../types.ts";
 import { MarimoConfig } from "./MarimoConfig.ts";
 import { OutputChannel } from "./OutputChannel.ts";
 
@@ -24,7 +28,6 @@ export class BaseLanguageClient extends Effect.Service<BaseLanguageClient>()(
   "BaseLanguageClient",
   {
     effect: Effect.gen(function* () {
-      yield* Effect.logInfo("Setting up BaseLanguageClient");
       const channel = yield* OutputChannel;
       const exec = yield* getLspExecutable();
       yield* Effect.logInfo(
@@ -40,7 +43,7 @@ export class BaseLanguageClient extends Effect.Service<BaseLanguageClient>()(
         },
       );
       return {
-        executeCommand(options: MarimoCommand) {
+        execute(options: MarimoCommand) {
           return Effect.tryPromise({
             try: (signal) =>
               client.sendRequest<unknown>(
@@ -55,11 +58,22 @@ export class BaseLanguageClient extends Effect.Service<BaseLanguageClient>()(
               new ExecuteCommandError({ command: options, cause }),
           });
         },
-        sendRequest: (...args: Parameters<(typeof client)["sendRequest"]>) =>
-          client.sendRequest(...args),
-        onNotification: (
-          ...args: Parameters<(typeof client)["onNotification"]>
-        ) => client.onNotification(...args),
+        streamOf<Notification extends MarimoNotification>(
+          notification: Notification,
+        ): Stream.Stream<
+          MarimoNotificationOf<Notification>,
+          never,
+          Scope.Scope
+        > {
+          return Stream.async((emit) =>
+            Effect.acquireRelease(
+              Effect.sync(() =>
+                client.onNotification(notification, emit.single.bind(emit)),
+              ),
+              (disposable) => Effect.sync(() => disposable.dispose()),
+            ),
+          );
+        },
         manage: () =>
           Effect.acquireRelease(
             Effect.tryPromise({

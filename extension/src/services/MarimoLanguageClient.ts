@@ -1,11 +1,7 @@
-import { Effect, type ParseResult, Schema, Stream } from "effect";
+import { Effect, type ParseResult, Schema } from "effect";
 import * as vscode from "vscode";
 import { NotebookSerializationSchema } from "../schemas.ts";
-import type {
-  MarimoCommand,
-  MarimoNotification,
-  MarimoNotificationOf,
-} from "../types.ts";
+import type { MarimoCommand } from "../types.ts";
 import {
   BaseLanguageClient,
   type ExecuteCommandError,
@@ -20,19 +16,19 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
       return {
         client,
         run(params: ParamsFor<"marimo.run">) {
-          return client.executeCommand({ command: "marimo.run", params });
+          return client.execute({ command: "marimo.run", params });
         },
         setUiElementValue(params: ParamsFor<"marimo.set_ui_element_value">) {
-          return client.executeCommand({
+          return client.execute({
             command: "marimo.set_ui_element_value",
             params,
           });
         },
         interrupt(params: ParamsFor<"marimo.interrupt">) {
-          return client.executeCommand({ command: "marimo.interrupt", params });
+          return client.execute({ command: "marimo.interrupt", params });
         },
         dap(params: ParamsFor<"marimo.dap">) {
-          return client.executeCommand({ command: "marimo.dap", params });
+          return client.execute({ command: "marimo.dap", params });
         },
         serialize(
           params: vscode.NotebookData,
@@ -58,7 +54,7 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
               })),
             });
             return yield* client
-              .executeCommand({
+              .execute({
                 command: "marimo.serialize",
                 params: { notebook },
               })
@@ -82,7 +78,7 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
           never
         > {
           return client
-            .executeCommand({
+            .execute({
               command: "marimo.deserialize",
               params: { source: new TextDecoder().decode(buf) },
             })
@@ -102,17 +98,8 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
               })),
             );
         },
-        streamOf<Notification extends MarimoNotification>(
-          notification: Notification,
-        ): Stream.Stream<MarimoNotificationOf<Notification>, never, never> {
-          return Stream.asyncPush((emit) =>
-            Effect.acquireRelease(
-              Effect.sync(() =>
-                client.onNotification(notification, emit.single.bind(emit)),
-              ),
-              (disposable) => Effect.sync(() => disposable.dispose()),
-            ),
-          );
+        get streamOf() {
+          return client.streamOf;
         },
       };
     }),

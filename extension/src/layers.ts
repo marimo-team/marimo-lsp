@@ -1,6 +1,5 @@
 import { Effect, FiberSet, Layer, Logger, type LogLevel } from "effect";
 import * as vscode from "vscode";
-import * as lsp from "vscode-languageclient/node";
 import { registerCommand } from "./commands.ts";
 import { DebugAdapterLive } from "./debugAdapter.ts";
 import { KernelManagerLive } from "./kernelManager.ts";
@@ -35,34 +34,6 @@ const LoggerLive = Logger.replace(
     // @ts-expect-error - We have a fallback
     const log = mapping[level] || VsCodeLogger.info;
     log(message);
-  }),
-);
-
-const LspLogForwardingLive = Layer.scopedDiscard(
-  Effect.gen(function* () {
-    const client = yield* BaseLanguageClient;
-    const runFork = yield* FiberSet.makeRuntime();
-
-    const mapping = {
-      [lsp.MessageType.Error]: Effect.logError,
-      [lsp.MessageType.Warning]: Effect.logWarning,
-      [lsp.MessageType.Info]: Effect.logInfo,
-      [lsp.MessageType.Log]: Effect.log,
-      [lsp.MessageType.Debug]: Effect.logDebug,
-    } as const;
-
-    yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        client.onNotification(
-          "window/logMessage",
-          ({ type, message }: lsp.LogMessageParams) =>
-            runFork(
-              mapping[type]("marimo-lsp\n", message.split("\n").join("\n  ")),
-            ),
-        ),
-      ),
-      (disposable) => Effect.sync(() => disposable.dispose()),
-    );
   }),
 );
 
@@ -192,10 +163,8 @@ const ServerLive = Layer.scopedDiscard(
 export const MainLive = ServerLive.pipe(
   Layer.merge(CommandsLive),
   Layer.merge(DebugAdapterLive),
-  Layer.merge(LspLogForwardingLive),
   Layer.merge(MarimoNotebookSerializerLive),
   Layer.merge(KernelManagerLive),
-  Layer.provide(LoggerLive),
   Layer.provide(MarimoNotebookRenderer.Default),
   Layer.provide(NotebookControllerManager.Default),
   Layer.provide(PythonExtension.Default),
@@ -203,4 +172,5 @@ export const MainLive = ServerLive.pipe(
   Layer.provide(BaseLanguageClient.Default),
   Layer.provide(MarimoConfig.Default),
   Layer.provide(OutputChannel.layer(channel)),
+  Layer.provide(LoggerLive),
 );
