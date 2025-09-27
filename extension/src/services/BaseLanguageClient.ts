@@ -1,9 +1,15 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 import * as lsp from "vscode-languageclient/node";
 import { MarimoConfig } from "./MarimoConfig.ts";
 import { OutputChannel } from "./OutputChannel.ts";
+
+export class LanguageClientStartError extends Data.TaggedError(
+  "LanguageClientStartError",
+)<{
+  cause: unknown;
+}> {}
 
 export class BaseLanguageClient extends Effect.Service<BaseLanguageClient>()(
   "BaseLanguageClient",
@@ -24,7 +30,18 @@ export class BaseLanguageClient extends Effect.Service<BaseLanguageClient>()(
           revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
         },
       );
-      return client;
+      return {
+        sendRequest: client.sendRequest.bind(client),
+        onNotification: client.onNotification.bind(client),
+        manage: () =>
+          Effect.acquireRelease(
+            Effect.tryPromise({
+              try: () => client.start(),
+              catch: (cause) => new LanguageClientStartError({ cause }),
+            }),
+            () => Effect.sync(() => client.dispose()),
+          ),
+      };
     }),
   },
 ) {}

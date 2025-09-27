@@ -87,8 +87,11 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
                 ExecuteCommandError: (error) => {
                   Logger.error(
                     "Controller.Execute",
-                    "Failed to execute command",
-                    error,
+                    `Failed to execute command`,
+                    {
+                      command: error.command.command,
+                      params: error.command.params,
+                    },
                   );
                   return Effect.promise(() =>
                     vscode.window.showErrorMessage(

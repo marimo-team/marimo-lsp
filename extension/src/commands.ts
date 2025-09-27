@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
-import type * as lsp from "vscode-languageclient";
 import { AssertionError } from "./assert.ts";
 import { Logger } from "./logging.ts";
+import type { BaseLanguageClient } from "./services/BaseLanguageClient.ts";
 import type { MarimoCommand } from "./types.ts";
 
 export function registerCommand(command: string, callback: () => unknown) {
@@ -21,7 +21,7 @@ export function registerCommand(command: string, callback: () => unknown) {
 }
 
 export function executeCommand(
-  client: lsp.BaseLanguageClient,
+  client: BaseLanguageClient,
   options: MarimoCommand & {
     token?: vscode.CancellationToken;
   },

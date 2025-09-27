@@ -56,7 +56,9 @@ const LspLogForwardingLive = Layer.scopedDiscard(
         client.onNotification(
           "window/logMessage",
           ({ type, message }: lsp.LogMessageParams) =>
-            runFork(mapping[type](message)),
+            runFork(
+              mapping[type]("marimo-lsp\n", message.split("\n").join("\n  ")),
+            ),
         ),
       ),
       (disposable) => Effect.sync(() => disposable.dispose()),
@@ -170,20 +172,11 @@ const ServerLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const client = yield* BaseLanguageClient;
     yield* Effect.logInfo("Starting LSP client");
-    yield* Effect.tryPromise(() => client.start());
-    yield* Effect.logInfo("LSP client started successfully");
-    yield* Effect.addFinalizer(() =>
-      Effect.gen(function* () {
-        yield* Effect.logInfo("Extension finalizer: stopping LSP client");
-        yield* Effect.tryPromise(() => client.dispose()).pipe(
-          Effect.catchTags({ UnknownException: Effect.logError }),
-        );
-        yield* Effect.logInfo("Extension finalizer: LSP client stopped");
-      }),
-    );
+    yield* client.manage();
+    yield* Effect.logInfo("Started LSP client");
     yield* Effect.logInfo("Extension main fiber running");
   }).pipe(
-    Effect.catchTag("UnknownException", (error) =>
+    Effect.catchTag("LanguageClientStartError", (error) =>
       Effect.gen(function* () {
         yield* Effect.logError("Failed to start extension", error);
         yield* Effect.promise(() =>
@@ -197,12 +190,12 @@ const ServerLive = Layer.scopedDiscard(
 );
 
 export const MainLive = ServerLive.pipe(
-  Layer.merge(LoggerLive),
   Layer.merge(CommandsLive),
   Layer.merge(DebugAdapterLive),
   Layer.merge(LspLogForwardingLive),
   Layer.merge(MarimoNotebookSerializerLive),
   Layer.merge(KernelManagerLive),
+  Layer.provide(LoggerLive),
   Layer.provide(MarimoNotebookRenderer.Default),
   Layer.provide(NotebookControllerManager.Default),
   Layer.provide(PythonExtension.Default),
