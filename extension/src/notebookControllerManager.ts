@@ -4,7 +4,6 @@ import type * as py from "@vscode/python-extension";
 import { Data, Effect, FiberSet, Schema } from "effect";
 import * as vscode from "vscode";
 import { unreachable } from "./assert.ts";
-import { Logger } from "./logging.ts";
 import { SemVerFromString } from "./schemas.ts";
 import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
 import { PythonExtension } from "./services/PythonExtension.ts";
@@ -20,7 +19,9 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
   "NotebookControllerManager",
   {
     scoped: Effect.gen(function* () {
-      yield* Effect.logInfo("Setting up notebook controller manager");
+      yield* Effect.logInfo("Setting up notebook controller manager").pipe(
+        Effect.annotateLogs({ component: "notebook-controller" }),
+      );
       const runPromise = yield* FiberSet.makeRuntimePromise<
         MarimoLanguageClient,
         void,
@@ -48,11 +49,9 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
           const existing = controllers.get(controllerId);
           if (existing) {
             existing.label = controllerLabel;
-            Logger.trace(
-              "Controller.Update",
-              "Updated controller:",
-              controllerId,
-              controllerLabel,
+            Effect.logTrace("Updated controller").pipe(
+              Effect.annotateLogs({ controllerId, controllerLabel }),
+              Effect.runSync,
             );
             return;
           }
@@ -84,66 +83,71 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
               }),
               // Known exceptions
               Effect.catchTags({
-                ExecuteCommandError: (error) => {
-                  Logger.error(
-                    "Controller.Execute",
-                    `Failed to execute command`,
-                    {
-                      command: error.command.command,
-                      params: error.command.params,
-                    },
-                  );
-                  return Effect.promise(() =>
-                    vscode.window.showErrorMessage(
-                      "Failed to execute marimo command. Please check the logs for details.",
-                      { modal: true },
-                    ),
-                  );
-                },
-                PythonExecutionError: (error) => {
-                  Logger.error("Controller.Execute", "Python check failed", {
-                    path: error.env.path,
-                    stderr: error.stderr,
-                  });
-                  return Effect.promise(() =>
-                    vscode.window.showErrorMessage(
-                      `Failed to check dependencies in ${formatControllerLabel(env)}.\n\n` +
-                        `Python path: ${error.env.path}`,
-                      { modal: true },
-                    ),
-                  );
-                },
-                EnvironmentRequirementError: (error) => {
-                  Logger.warn(
-                    "Controller.Execute",
-                    "Environment requirements not met",
-                    {
-                      env: error.env.path,
-                      diagnostics: error.diagnostics,
-                    },
-                  );
-                  const messages = error.diagnostics.map((d) => {
-                    switch (d.kind) {
-                      case "missing":
-                        return `• ${d.package}: not installed`;
-                      case "outdated":
-                        return `• ${d.package}: v${semver.format(d.currentVersion)} (requires >=v${semver.format(d.requiredVersion)})`;
-                      case "unknown":
-                        return `• ${d.package}: unable to detect`;
-                      default:
-                        return unreachable(d);
-                    }
-                  });
+                ExecuteCommandError: (error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logError(
+                      "Failed to execute command",
+                      error,
+                    ).pipe(
+                      Effect.annotateLogs({
+                        command: error.command.command,
+                      }),
+                    );
+                    return yield* Effect.promise(() =>
+                      vscode.window.showErrorMessage(
+                        "Failed to execute marimo command. Please check the logs for details.",
+                        { modal: true },
+                      ),
+                    );
+                  }),
+                PythonExecutionError: (error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logError("Python check failed", error).pipe(
+                      Effect.annotateLogs({
+                        pythonPath: error.env.path,
+                        stderr: error.stderr,
+                      }),
+                    );
+                    return yield* Effect.promise(() =>
+                      vscode.window.showErrorMessage(
+                        `Failed to check dependencies in ${formatControllerLabel(env)}.\n\n` +
+                          `Python path: ${error.env.path}`,
+                        { modal: true },
+                      ),
+                    );
+                  }),
+                EnvironmentRequirementError: (error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logWarning(
+                      "Environment requirements not met",
+                    ).pipe(
+                      Effect.annotateLogs({
+                        pythonPath: error.env.path,
+                        diagnostics: error.diagnostics,
+                      }),
+                    );
+                    const messages = error.diagnostics.map((d) => {
+                      switch (d.kind) {
+                        case "missing":
+                          return `• ${d.package}: not installed`;
+                        case "outdated":
+                          return `• ${d.package}: v${semver.format(d.currentVersion)} (requires >=v${semver.format(d.requiredVersion)})`;
+                        case "unknown":
+                          return `• ${d.package}: unable to detect`;
+                        default:
+                          return unreachable(d);
+                      }
+                    });
 
-                  const msg =
-                    `${formatControllerLabel(env)} cannot run the marimo kernel:\n\n` +
-                    messages.join("\n") +
-                    `\n\nPlease install or update the missing packages.`;
+                    const msg =
+                      `${formatControllerLabel(env)} cannot run the marimo kernel:\n\n` +
+                      messages.join("\n") +
+                      `\n\nPlease install or update the missing packages.`;
 
-                  return Effect.promise(() =>
-                    vscode.window.showErrorMessage(msg, { modal: true }),
-                  );
-                },
+                    return yield* Effect.promise(() =>
+                      vscode.window.showErrorMessage(msg, { modal: true }),
+                    );
+                  }),
               }),
               runPromise,
             ),
@@ -154,11 +158,12 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
 
         controller.interruptHandler = (notebook) =>
           Effect.gen(function* () {
-            yield* Effect.annotateCurrentSpan({
-              controllerId: controller.id,
-              notebook: notebook.uri.toString(),
-            });
-            yield* Effect.logInfo("Interrupting execution");
+            yield* Effect.logInfo("Interrupting execution").pipe(
+              Effect.annotateLogs({
+                controllerId: controller.id,
+                notebook: notebook.uri.toString(),
+              }),
+            );
             const marimo = yield* MarimoLanguageClient;
             return yield* marimo.interrupt({
               notebookUri: notebook.uri.toString(),
@@ -182,9 +187,12 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
           (e) => {
             if (e.selected) {
               selectedControllers.set(e.notebook, controller);
-              Logger.trace(
-                "Controller.Selection",
-                `Controller ${controllerId} selected for notebook ${e.notebook.uri.toString()}`,
+              Effect.logTrace("Controller selected for notebook").pipe(
+                Effect.annotateLogs({
+                  controllerId,
+                  notebookUri: e.notebook.uri.toString(),
+                }),
+                Effect.runSync,
               );
             }
             // NB: We don't delete from selectedControllers when deselected
@@ -194,12 +202,19 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
 
         const originalDispose = controller.dispose.bind(controller);
         controller.dispose = () => {
+          Effect.logTrace("Disposing controller").pipe(
+            Effect.annotateLogs({ controllerId }),
+            Effect.runSync,
+          );
           selectionDisposer.dispose();
           originalDispose();
         };
 
         controllers.set(controllerId, controller);
-        Logger.trace("Controller.Create", "Created controller:", controllerId);
+        Effect.logTrace("Created controller").pipe(
+          Effect.annotateLogs({ controllerId }),
+          Effect.runSync,
+        );
       }
 
       function refreshControllers(api: PythonExtension) {
@@ -208,21 +223,24 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
           environments.map((e) => `marimo-${e.id}`),
         );
 
-        Logger.trace(
-          "Controller.Refresh",
-          `Refreshing controllers. Found ${environments.length} environments`,
+        Effect.logTrace("Refreshing controllers").pipe(
+          Effect.annotateLogs({ environmentCount: environments.length }),
+          Effect.runSync,
         );
 
         // Remove controllers for deleted environments (if not in use)
         for (const [id, controller] of controllers) {
           if (!currentEnvIds.has(id)) {
             if (isControllerInUse(id)) {
-              Logger.trace(
-                "Controller.Skip",
-                `Skipping disposal of ${id} - currently in use`,
+              Effect.logTrace("Skipping disposal - controller in use").pipe(
+                Effect.annotateLogs({ controllerId: id }),
+                Effect.runSync,
               );
             } else {
-              Logger.trace("Controller.Dispose", `Disposing controller ${id}`);
+              Effect.logTrace("Disposing controller").pipe(
+                Effect.annotateLogs({ controllerId: id }),
+                Effect.runSync,
+              );
               controller.dispose();
               controllers.delete(id);
             }
@@ -239,7 +257,10 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
           const api = yield* PythonExtension;
           refreshControllers(api);
           return api.environments.onDidChangeEnvironments(() => {
-            Logger.trace("Controller.EnvChange", "Python environments changed");
+            Effect.logTrace("Python environments changed").pipe(
+              Effect.annotateLogs({ component: "notebook-controller" }),
+              Effect.runSync,
+            );
             refreshControllers(api);
           });
         }),

@@ -6,7 +6,9 @@ import { notebookType } from "./types.ts";
 
 export const DebugAdapterLive = Layer.scopedDiscard(
   Effect.gen(function* () {
-    yield* Effect.logInfo("Setting up debug adapter");
+    yield* Effect.logInfo("Setting up debug adapter").pipe(
+      Effect.annotateLogs({ component: "debug-adapter" }),
+    );
     const marimo = yield* MarimoLanguageClient;
     const runFork = yield* FiberSet.makeRuntime();
 
@@ -20,7 +22,12 @@ export const DebugAdapterLive = Layer.scopedDiscard(
       Stream.mapEffect(
         Effect.fnUntraced(function* ({ sessionId, message }) {
           yield* Effect.logDebug("Received DAP message from LSP").pipe(
-            Effect.annotateLogs({ sessionId, message }),
+            Effect.annotateLogs({
+              component: "debug-adapter",
+              sessionId,
+              // @ts-expect-error - type is not include in vscode types
+              type: message.type,
+            }),
           );
           emitters.get(sessionId)?.fire(message);
         }),
@@ -43,7 +50,12 @@ export const DebugAdapterLive = Layer.scopedDiscard(
                 runFork<never, void>(
                   Effect.gen(function* () {
                     yield* Effect.logDebug("Sending DAP message to LSP").pipe(
-                      Effect.annotateLogs({ sessionId: session.id, message }),
+                      Effect.annotateLogs({
+                        component: "debug-adapter",
+                        sessionId: session.id,
+                        // @ts-expect-error - type is not include in vscode types
+                        type: message.type,
+                      }),
                     );
                     yield* marimo.dap({
                       notebookUri: session.configuration.notebookUri,
@@ -77,11 +89,16 @@ export const DebugAdapterLive = Layer.scopedDiscard(
             return runFork<never, vscode.DebugConfiguration | undefined>(
               Effect.gen(function* () {
                 yield* Effect.logInfo("Resolving debug configuration").pipe(
-                  Effect.annotateLogs("config", config),
+                  Effect.annotateLogs({
+                    component: "debug-adapter",
+                    config,
+                  }),
                 );
                 const notebook = vscode.window.activeNotebookEditor?.notebook;
                 if (!notebook || notebook.notebookType !== notebookType) {
-                  yield* Effect.logWarning("No active marimo notebook found");
+                  yield* Effect.logWarning(
+                    "No active marimo notebook found",
+                  ).pipe(Effect.annotateLogs({ component: "debug-adapter" }));
                   return undefined;
                 }
                 config.type = "marimo";
@@ -90,6 +107,7 @@ export const DebugAdapterLive = Layer.scopedDiscard(
                 config.notebookUri = notebook.uri.toString();
                 yield* Effect.logInfo("Configuration resolved").pipe(
                   Effect.annotateLogs({
+                    component: "debug-adapter",
                     notebookUri: config.notebookUri,
                     type: config.type,
                     request: config.request,
@@ -104,9 +122,13 @@ export const DebugAdapterLive = Layer.scopedDiscard(
       (disposer) => Effect.sync(() => disposer.dispose()),
     );
 
-    yield* Effect.logInfo("Debug adapter initialized");
+    yield* Effect.logInfo("Debug adapter initialized").pipe(
+      Effect.annotateLogs({ component: "debug-adapter" }),
+    );
     yield* Effect.addFinalizer(() =>
-      Effect.logInfo("Tearing down debug adapter"),
+      Effect.logInfo("Tearing down debug adapter").pipe(
+        Effect.annotateLogs({ component: "debug-adapter" }),
+      ),
     );
   }),
 );

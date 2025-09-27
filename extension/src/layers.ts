@@ -38,6 +38,9 @@ const LoggerLive = Logger.replace(
 
 const CommandsLive = Layer.scopedDiscard(
   Effect.gen(function* () {
+    yield* Effect.logInfo("Setting up commands").pipe(
+      Effect.annotateLogs({ component: "commands" }),
+    );
     const runForkPromise = yield* FiberSet.makeRuntimePromise();
 
     yield* Effect.acquireRelease(
@@ -62,6 +65,7 @@ const CommandsLive = Layer.scopedDiscard(
               );
               yield* Effect.logInfo("Created new marimo notebook").pipe(
                 Effect.annotateLogs({
+                  component: "commands",
                   uri: doc.uri.toString(),
                 }),
               );
@@ -76,6 +80,9 @@ const CommandsLive = Layer.scopedDiscard(
 
 const MarimoNotebookSerializerLive = Layer.scopedDiscard(
   Effect.gen(function* () {
+    yield* Effect.logInfo("Setting up notebook serializer").pipe(
+      Effect.annotateLogs({ component: "notebook-serializer" }),
+    );
     const marimo = yield* MarimoLanguageClient;
     const runPromise = yield* FiberSet.makeRuntimePromise();
     yield* Effect.acquireRelease(
@@ -141,14 +148,22 @@ const MarimoNotebookSerializerLive = Layer.scopedDiscard(
 const ServerLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const client = yield* MarimoLanguageClient;
-    yield* Effect.logInfo("Starting LSP client");
+    yield* Effect.logInfo("Starting LSP client").pipe(
+      Effect.annotateLogs({ component: "server" }),
+    );
     yield* client.manage();
-    yield* Effect.logInfo("Started LSP client");
-    yield* Effect.logInfo("Extension main fiber running");
+    yield* Effect.logInfo("LSP client started").pipe(
+      Effect.annotateLogs({ component: "server" }),
+    );
+    yield* Effect.logInfo("Extension main fiber running").pipe(
+      Effect.annotateLogs({ component: "server" }),
+    );
   }).pipe(
     Effect.catchTag("LanguageClientStartError", (error) =>
       Effect.gen(function* () {
-        yield* Effect.logError("Failed to start extension", error);
+        yield* Effect.logError("Failed to start extension", error).pipe(
+          Effect.annotateLogs({ component: "server" }),
+        );
         yield* Effect.promise(() =>
           vscode.window.showErrorMessage(
             `Marimo language server failed to start. See marimo logs for more info.`,

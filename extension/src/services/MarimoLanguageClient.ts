@@ -38,8 +38,12 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
     effect: Effect.gen(function* () {
       const channel = yield* OutputChannel;
       const exec = yield* getLspExecutable();
-      yield* Effect.logInfo(
-        `Starting language server with command: ${exec.command} ${(exec.args ?? []).join(" ")}`,
+      yield* Effect.logInfo("Starting language server").pipe(
+        Effect.annotateLogs({
+          component: "language-client",
+          command: exec.command,
+          args: (exec.args ?? []).join(" "),
+        }),
       );
       const client = new lsp.LanguageClient(
         "marimo-lsp",
@@ -104,6 +108,9 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
         > {
           const { cells, metadata = {} } = params;
           return Effect.gen(function* () {
+            yield* Effect.logDebug("Serializing notebook").pipe(
+              Effect.annotateLogs({ cellCount: cells.length }),
+            );
             const notebook = yield* Schema.decodeUnknown(
               NotebookSerializationSchema,
             )({
@@ -118,7 +125,7 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
                 options: cell.metadata?.options ?? {},
               })),
             });
-            return yield* executeCommand(client, {
+            const result = yield* executeCommand(client, {
               command: "marimo.serialize",
               params: { notebook },
             }).pipe(
@@ -127,7 +134,15 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
               ),
               Effect.andThen(({ source }) => new TextEncoder().encode(source)),
             );
-          });
+            yield* Effect.logDebug("Serialization complete").pipe(
+              Effect.annotateLogs({ bytes: result.length }),
+            );
+            return result;
+          }).pipe(
+            Effect.withSpan("serialize-notebook", {
+              attributes: { cellCount: cells.length },
+            }),
+          );
         },
         deserialize(
           buf: Uint8Array,
@@ -136,23 +151,36 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
           ExecuteCommandError | ParseResult.ParseError,
           never
         > {
-          return executeCommand(client, {
-            command: "marimo.deserialize",
-            params: { source: new TextDecoder().decode(buf) },
-          }).pipe(
-            Effect.andThen(Schema.decodeUnknown(NotebookSerializationSchema)),
-            Effect.andThen(({ cells, ...metadata }) => ({
-              metadata: metadata,
-              cells: cells.map((cell) => ({
-                kind: vscode.NotebookCellKind.Code,
-                value: cell.code,
-                languageId: "python",
-                metadata: {
-                  name: cell.name,
-                  options: cell.options,
-                },
+          return Effect.gen(function* () {
+            yield* Effect.logDebug("Deserializing notebook").pipe(
+              Effect.annotateLogs({ bytes: buf.length }),
+            );
+            const result = yield* executeCommand(client, {
+              command: "marimo.deserialize",
+              params: { source: new TextDecoder().decode(buf) },
+            }).pipe(
+              Effect.andThen(Schema.decodeUnknown(NotebookSerializationSchema)),
+              Effect.andThen(({ cells, ...metadata }) => ({
+                metadata: metadata,
+                cells: cells.map((cell) => ({
+                  kind: vscode.NotebookCellKind.Code,
+                  value: cell.code,
+                  languageId: "python",
+                  metadata: {
+                    name: cell.name,
+                    options: cell.options,
+                  },
+                })),
               })),
-            })),
+            );
+            yield* Effect.logDebug("Deserialization complete").pipe(
+              Effect.annotateLogs({ cellCount: result.cells.length }),
+            );
+            return result;
+          }).pipe(
+            Effect.withSpan("deserialize-notebook", {
+              attributes: { bytes: buf.length },
+            }),
           );
         },
       };
@@ -189,7 +217,9 @@ function getLspExecutable(): Effect.Effect<
 
     if (sdistDir) {
       const sdist = path.join(__dirname, sdistDir);
-      yield* Effect.logInfo(`Using bundled marimo-lsp: ${sdist}`);
+      yield* Effect.logInfo("Using bundled marimo-lsp").pipe(
+        Effect.annotateLogs({ sdist }),
+      );
       return {
         command: "uvx",
         args: ["--from", sdist, "marimo-lsp"],
@@ -199,8 +229,8 @@ function getLspExecutable(): Effect.Effect<
 
     // Fallback to development mode if no wheel found
     yield* Effect.logWarning(
-      `No marimo_lsp*.whl found in ${__dirname}, falling back to development mode`,
-    );
+      "No bundled wheel found, using development mode",
+    ).pipe(Effect.annotateLogs({ directory: __dirname }));
 
     return {
       command: "uv",

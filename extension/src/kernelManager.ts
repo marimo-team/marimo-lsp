@@ -8,6 +8,9 @@ import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
 
 export const KernelManagerLive = Layer.scopedDiscard(
   Effect.gen(function* () {
+    yield* Effect.logInfo("Setting up kernel manager").pipe(
+      Effect.annotateLogs({ component: "kernel-manager" }),
+    );
     const marimo = yield* MarimoLanguageClient;
     const renderer = yield* MarimoNotebookRenderer;
     const manager = yield* NotebookControllerManager;
@@ -21,30 +24,37 @@ export const KernelManagerLive = Layer.scopedDiscard(
     yield* renderer.messages().pipe(
       Stream.mapEffect(({ editor, message }) =>
         Effect.gen(function* () {
-          yield* Effect.logTrace(message.command);
+          yield* Effect.logTrace("Renderer command").pipe(
+            Effect.annotateLogs({
+              command: message.command,
+              notebookUri: editor.notebook.uri.toString(),
+            }),
+          );
           yield* marimo.setUiElementValue({
             notebookUri: editor.notebook.uri.toString(),
             inner: message.params,
           });
-        }).pipe(
-          Effect.annotateLogs({
-            notebookUri: editor.notebook.uri.toString(),
-            params: message.params,
-          }),
-        ),
+        }),
       ),
       Stream.runDrain,
       Effect.catchAllCause((cause) =>
         Effect.logError("Renderer command failed", cause),
       ),
-      Effect.annotateLogs("stream", "renderer"),
+      Effect.annotateLogs({ stream: "renderer" }),
       Effect.forkDaemon,
     );
 
     // kernel -> renderer
     yield* pipe(
       marimo.streamOf("marimo/operation"),
-      Stream.tap((msg) => Effect.logTrace(msg)),
+      Stream.tap((msg) =>
+        Effect.logTrace("Received operation").pipe(
+          Effect.annotateLogs({
+            op: msg.operation.op,
+            notebookUri: msg.notebookUri,
+          }),
+        ),
+      ),
       Stream.mapEffect(({ notebookUri, operation }) =>
         Effect.gen(function* () {
           let context = contexts.get(notebookUri);
@@ -57,16 +67,12 @@ export const KernelManagerLive = Layer.scopedDiscard(
             context = { notebook, executions: new Map() };
             contexts.set(notebookUri, context);
             yield* Effect.logInfo("Created new context for notebook").pipe(
-              Effect.annotateLogs("notebookUri", notebookUri),
+              Effect.annotateLogs({ notebookUri }),
             );
           }
 
           const controller = manager.getSelectedController(context.notebook);
           assert(controller, `Expected notebook controller for ${notebookUri}`);
-
-          yield* Effect.logTrace("Routing operation").pipe(
-            Effect.annotateLogs({ notebookUri, op: operation.op }),
-          );
 
           return yield* ops
             .routeOperation({ ...context, controller }, operation)
@@ -75,8 +81,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
                 attributes: { notebookUri },
               }),
               Effect.catchAllCause((cause) =>
-                pipe(
-                  Effect.logError("Operation routing failed", cause),
+                Effect.logError("Operation routing failed", cause).pipe(
                   Effect.annotateLogs({ notebookUri, op: operation.op }),
                 ),
               ),
@@ -84,17 +89,21 @@ export const KernelManagerLive = Layer.scopedDiscard(
         }),
       ),
       Stream.runDrain,
-      Effect.annotateLogs("stream", "operations"),
+      Effect.annotateLogs({ stream: "operations" }),
       Effect.forkDaemon,
     );
 
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
-        yield* Effect.logInfo("Teardown");
+        yield* Effect.logInfo("Tearing down kernel manager").pipe(
+          Effect.annotateLogs({ component: "kernel-manager" }),
+        );
         contexts.clear();
       }),
     );
 
-    yield* Effect.logInfo("Intialized");
-  }).pipe(Effect.annotateLogs("component", "kernel-manager")),
+    yield* Effect.logInfo("Kernel manager initialized").pipe(
+      Effect.annotateLogs({ component: "kernel-manager" }),
+    );
+  }),
 );
