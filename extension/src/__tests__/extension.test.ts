@@ -11,7 +11,13 @@ import { createVSCodeLanguageClientMock } from "../__mocks__/vscode-languageclie
 import { activate } from "../extension";
 
 describe("extension", () => {
-  it("should be defined", () => {
-    expect(activate(createMockContext())).toBeDefined();
+  it("should be defined", async () => {
+    try {
+      const result = await activate(createMockContext());
+      expect(result).toBeDefined();
+    } catch (error) {
+      console.error("Full error:", JSON.stringify(error, null, 2));
+      throw error;
+    }
   });
 });

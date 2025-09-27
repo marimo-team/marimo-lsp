@@ -12,6 +12,10 @@ export async function createVSCodeMock(vi: VitestUtils) {
   vscode.workspace = vscode.workspace || {};
   let configMap: Record<string, unknown> = {};
 
+  vscode.workspace.registerNotebookSerializer = vi.fn().mockReturnValue({
+    dispose: vi.fn(),
+  });
+
   // Add createTerminal mock
   vscode.window.createTerminal = vi.fn().mockImplementation(() => {
     let proc: ChildProcess | undefined;
@@ -63,8 +67,11 @@ export async function createVSCodeMock(vi: VitestUtils) {
     };
   });
 
+  vscode.window.showErrorMessage = vi.fn().mockResolvedValue(undefined);
+
   vscode.window.createOutputChannel.mockImplementation(() => {
     return {
+      trace: vi.fn().mockImplementation((...args) => console.log(...args)),
       debug: vi.fn().mockImplementation((...args) => console.log(...args)),
       info: vi.fn().mockImplementation((...args) => console.log(...args)),
       error: vi.fn().mockImplementation((...args) => console.error(...args)),
@@ -110,6 +117,13 @@ export async function createVSCodeMock(vi: VitestUtils) {
       };
       return mockNotebookController;
     });
+
+  vscode.notebooks.createRendererMessaging = vi.fn().mockReturnValue({
+    postMessage: vi.fn().mockResolvedValue(true),
+    onDidReceiveMessage: vi.fn().mockReturnValue({
+      dispose: vi.fn(),
+    }),
+  });
 
   vscode.debug.registerDebugConfigurationProvider = vi.fn();
 
