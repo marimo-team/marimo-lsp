@@ -10,7 +10,7 @@ import {
 } from "effect";
 import * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
-import { NotebookSerializationSchema } from "../schemas.ts";
+import { MarimoNotebook } from "../schemas.ts";
 import type {
   MarimoCommand,
   MarimoNotification,
@@ -55,7 +55,6 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
           revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
         },
       );
-
       return {
         manage() {
           return Effect.acquireRelease(
@@ -82,22 +81,30 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
             ),
           );
         },
-        run(params: ParamsFor<"marimo.run">) {
+        run(
+          params: ParamsFor<"marimo.run">,
+        ): Effect.Effect<void, ExecuteCommandError, never> {
           return executeCommand(client, { command: "marimo.run", params });
         },
-        setUiElementValue(params: ParamsFor<"marimo.set_ui_element_value">) {
+        setUiElementValue(
+          params: ParamsFor<"marimo.set_ui_element_value">,
+        ): Effect.Effect<void, ExecuteCommandError, never> {
           return executeCommand(client, {
             command: "marimo.set_ui_element_value",
             params,
           });
         },
-        interrupt(params: ParamsFor<"marimo.interrupt">) {
+        interrupt(
+          params: ParamsFor<"marimo.interrupt">,
+        ): Effect.Effect<void, ExecuteCommandError, never> {
           return executeCommand(client, {
             command: "marimo.interrupt",
             params,
           });
         },
-        dap(params: ParamsFor<"marimo.dap">) {
+        dap(
+          params: ParamsFor<"marimo.dap">,
+        ): Effect.Effect<void, ExecuteCommandError, never> {
           return executeCommand(client, { command: "marimo.dap", params });
         },
         serialize(
@@ -107,43 +114,15 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
           ExecuteCommandError | ParseResult.ParseError,
           never
         > {
-          const { cells, metadata = {} } = params;
           return Effect.gen(function* () {
-            yield* Effect.logDebug("Serializing notebook").pipe(
-              Effect.annotateLogs({ cellCount: cells.length }),
-            );
-            const notebook = yield* Schema.decodeUnknown(
-              NotebookSerializationSchema,
-            )({
-              app: metadata.app ?? { options: {} },
-              header: metadata.header ?? null,
-              version: metadata.version ?? null,
-              violations: metadata.violations ?? [],
-              valid: metadata.valid ?? true,
-              cells: cells.map((cell) => ({
-                code: cell.value,
-                name: cell.metadata?.name ?? "_",
-                options: cell.metadata?.options ?? {},
-              })),
-            });
-            const result = yield* executeCommand(client, {
+            const notebook = yield* notebookDataToMarimoNotebook(params);
+            const resp = yield* executeCommand(client, {
               command: "marimo.serialize",
               params: { notebook },
-            }).pipe(
-              Effect.andThen(
-                Schema.decodeUnknown(Schema.Struct({ source: Schema.String })),
-              ),
-              Effect.andThen(({ source }) => new TextEncoder().encode(source)),
-            );
-            yield* Effect.logDebug("Serialization complete").pipe(
-              Effect.annotateLogs({ bytes: result.length }),
-            );
-            return result;
-          }).pipe(
-            Effect.withSpan("serialize-notebook", {
-              attributes: { cellCount: cells.length },
-            }),
-          );
+            });
+            const result = yield* decodeSerializeResponse(resp);
+            return new TextEncoder().encode(result.source);
+          });
         },
         deserialize(
           buf: Uint8Array,
@@ -153,36 +132,25 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
           never
         > {
           return Effect.gen(function* () {
-            yield* Effect.logDebug("Deserializing notebook").pipe(
-              Effect.annotateLogs({ bytes: buf.length }),
-            );
-            const result = yield* executeCommand(client, {
+            const resp = yield* executeCommand(client, {
               command: "marimo.deserialize",
               params: { source: new TextDecoder().decode(buf) },
-            }).pipe(
-              Effect.andThen(Schema.decodeUnknown(NotebookSerializationSchema)),
-              Effect.andThen(({ cells, ...metadata }) => ({
-                metadata: metadata,
-                cells: cells.map((cell) => ({
-                  kind: vscode.NotebookCellKind.Code,
-                  value: cell.code,
-                  languageId: "python",
-                  metadata: {
-                    name: cell.name,
-                    options: cell.options,
-                  },
-                })),
+            });
+            const { cells, ...metadata } =
+              yield* decodeDeserializeResponse(resp);
+            return {
+              metadata: metadata,
+              cells: cells.map((cell) => ({
+                kind: vscode.NotebookCellKind.Code,
+                value: cell.code,
+                languageId: "python",
+                metadata: {
+                  name: cell.name,
+                  options: cell.options,
+                },
               })),
-            );
-            yield* Effect.logDebug("Deserialization complete").pipe(
-              Effect.annotateLogs({ cellCount: result.cells.length }),
-            );
-            return result;
-          }).pipe(
-            Effect.withSpan("deserialize-notebook", {
-              attributes: { bytes: buf.length },
-            }),
-          );
+            };
+          });
         },
       };
     }),
@@ -243,19 +211,19 @@ function getLspExecutable(): Effect.Effect<
 
 function executeCommand(
   client: lsp.BaseLanguageClient,
-  options: MarimoCommand,
-) {
+  cmd: MarimoCommand,
+): Effect.Effect<unknown, ExecuteCommandError, never> {
   return Effect.tryPromise({
     try: (signal) =>
       client.sendRequest<unknown>(
         "workspace/executeCommand",
         {
-          command: options.command,
-          arguments: [options.params],
+          command: cmd.command,
+          arguments: [cmd.params],
         },
         cancellationTokenFor(signal),
       ),
-    catch: (cause) => new ExecuteCommandError({ command: options, cause }),
+    catch: (cause) => new ExecuteCommandError({ command: cmd, cause }),
   });
 }
 
@@ -276,4 +244,28 @@ function cancellationTokenFor(signal: AbortSignal): vscode.CancellationToken {
       return disposable;
     },
   };
+}
+
+const decodeDeserializeResponse = Schema.decodeUnknown(MarimoNotebook);
+const decodeSerializeResponse = Schema.decodeUnknown(
+  Schema.Struct({ source: Schema.String }),
+);
+
+function notebookDataToMarimoNotebook(
+  notebook: vscode.NotebookData,
+): Effect.Effect<typeof MarimoNotebook.Type, ParseResult.ParseError, never> {
+  const { cells, metadata = {} } = notebook;
+  // Deserialize response is just the IR for our notebook
+  return decodeDeserializeResponse({
+    app: metadata.app ?? { options: {} },
+    header: metadata.header ?? null,
+    version: metadata.version ?? null,
+    violations: metadata.violations ?? [],
+    valid: metadata.valid ?? true,
+    cells: cells.map((cell) => ({
+      code: cell.value,
+      name: cell.metadata?.name ?? "_",
+      options: cell.metadata?.options ?? {},
+    })),
+  });
 }

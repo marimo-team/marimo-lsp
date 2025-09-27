@@ -30,7 +30,10 @@ const Violation = Schema.Struct({
   ),
 });
 
-export const NotebookSerializationSchema = Schema.Struct({
+/**
+ * Our internal IR for a marimo notebook used to send over the wire
+ */
+export const MarimoNotebook = Schema.Struct({
   app: AppInstantiation,
   header: Header.pipe(Schema.NullOr),
   version: Schema.String.pipe(Schema.NullOr),
@@ -38,8 +41,6 @@ export const NotebookSerializationSchema = Schema.Struct({
   violations: Schema.Array(Violation),
   valid: Schema.Boolean,
 });
-
-export type NotebookSerialization = typeof NotebookSerializationSchema.Type;
 
 export const SemVerFromString = Schema.transformOrFail(
   Schema.String,

@@ -1,7 +1,6 @@
 import { Effect, Exit, Layer, Logger, LogLevel, pipe, Scope } from "effect";
 import * as vscode from "vscode";
 import { MainLive } from "./layers.ts";
-import { Logger as VsCodeLogger } from "./logging.ts";
 
 export async function activate(
   context: vscode.ExtensionContext,
@@ -27,7 +26,6 @@ export async function activate(
             Effect.gen(function* () {
               yield* Effect.logInfo("Deactivating marimo extension");
               yield* Scope.close(scope, Exit.void);
-              VsCodeLogger.close();
             }),
           ),
       };

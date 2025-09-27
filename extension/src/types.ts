@@ -2,7 +2,7 @@ import type { components as Api } from "@marimo-team/openapi/src/api";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
 
-import type { NotebookSerialization } from "./schemas.ts";
+import type { MarimoNotebook } from "./schemas.ts";
 
 type Schemas = Api["schemas"];
 
@@ -28,7 +28,7 @@ interface DeserializeRequest {
   source: string;
 }
 interface SerializeRequest {
-  notebook: NotebookSerialization;
+  notebook: typeof MarimoNotebook.Type;
 }
 interface DebugAdapterRequest {
   sessionId: string;

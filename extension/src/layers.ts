@@ -90,57 +90,58 @@ const MarimoNotebookSerializerLive = Layer.scopedDiscard(
     );
     const marimo = yield* MarimoLanguageClient;
     const runPromise = yield* FiberSet.makeRuntimePromise();
+
     yield* Effect.acquireRelease(
       Effect.sync(() =>
         vscode.workspace.registerNotebookSerializer(notebookType, {
           serializeNotebook(
             notebook: vscode.NotebookData,
-            _token: vscode.CancellationToken,
           ): Promise<Uint8Array> {
-            return Effect.gen(function* () {
-              yield* Effect.logDebug("Serializing notebook").pipe(
-                Effect.annotateLogs({ cellCount: notebook.cells.length }),
-              );
-              const bytes = yield* marimo.serialize(notebook);
-              yield* Effect.logDebug("Serialization complete").pipe(
-                Effect.annotateLogs({ bytes: bytes.length }),
-              );
-              return bytes;
-            }).pipe(
-              Effect.tapError((error) =>
-                Effect.logError(`Notebook serialize failed.`, error),
+            return runPromise(
+              Effect.gen(function* () {
+                yield* Effect.logDebug("Serializing notebook").pipe(
+                  Effect.annotateLogs({ cellCount: notebook.cells.length }),
+                );
+                const bytes = yield* marimo.serialize(notebook);
+                yield* Effect.logDebug("Serialization complete").pipe(
+                  Effect.annotateLogs({ bytes: bytes.length }),
+                );
+                return bytes;
+              }).pipe(
+                Effect.tapError((error) =>
+                  Effect.logError(`Notebook serialize failed.`, error),
+                ),
+                Effect.mapError(
+                  () =>
+                    new Error(
+                      `Notebook serialize failed. See logs for details.`,
+                    ),
+                ),
               ),
-              Effect.mapError(
-                () =>
-                  new Error(`Notebook serialize failed. See logs for details.`),
-              ),
-              runPromise,
             );
           },
-          deserializeNotebook(
-            bytes: Uint8Array,
-            _token: vscode.CancellationToken,
-          ): Promise<vscode.NotebookData> {
-            return Effect.gen(function* () {
-              yield* Effect.logDebug("Deserializing notebook").pipe(
-                Effect.annotateLogs({ bytes: bytes.length }),
-              );
-              const notebook = yield* marimo.deserialize(bytes);
-              yield* Effect.logDebug("Deserialization complete").pipe(
-                Effect.annotateLogs({ cellCount: notebook.cells.length }),
-              );
-              return notebook;
-            }).pipe(
-              Effect.tapError((error) =>
-                Effect.logError(`Notebook deserialize failed.`, error),
+          deserializeNotebook(bytes: Uint8Array): Promise<vscode.NotebookData> {
+            return runPromise(
+              Effect.gen(function* () {
+                yield* Effect.logDebug("Deserializing notebook").pipe(
+                  Effect.annotateLogs({ bytes: bytes.length }),
+                );
+                const notebook = yield* marimo.deserialize(bytes);
+                yield* Effect.logDebug("Deserialization complete").pipe(
+                  Effect.annotateLogs({ cellCount: notebook.cells.length }),
+                );
+                return notebook;
+              }).pipe(
+                Effect.tapError((error) =>
+                  Effect.logError(`Notebook deserialize failed.`, error),
+                ),
+                Effect.mapError(
+                  () =>
+                    new Error(
+                      `Notebook deserialize failed. See logs for details.`,
+                    ),
+                ),
               ),
-              Effect.mapError(
-                () =>
-                  new Error(
-                    `Notebook deserialize failed. See logs for details.`,
-                  ),
-              ),
-              runPromise,
             );
           },
         }),
