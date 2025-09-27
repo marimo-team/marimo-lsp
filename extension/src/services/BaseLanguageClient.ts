@@ -31,8 +31,11 @@ export class BaseLanguageClient extends Effect.Service<BaseLanguageClient>()(
         },
       );
       return {
-        sendRequest: client.sendRequest.bind(client),
-        onNotification: client.onNotification.bind(client),
+        sendRequest: (...args: Parameters<(typeof client)["sendRequest"]>) =>
+          client.sendRequest(...args),
+        onNotification: (
+          ...args: Parameters<(typeof client)["onNotification"]>
+        ) => client.onNotification(...args),
         manage: () =>
           Effect.acquireRelease(
             Effect.tryPromise({
