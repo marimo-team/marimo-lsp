@@ -1,7 +1,9 @@
+import * as path from "node:path";
 import { Effect, FiberSet, Layer, Logger, type LogLevel } from "effect";
 import * as vscode from "vscode";
 import { registerCommand } from "./commands.ts";
 import { DebugAdapterLive } from "./debugAdapter.ts";
+import { makeFileLogger } from "./FileLogger.ts";
 import { KernelManagerLive } from "./kernelManager.ts";
 import { Logger as VsCodeLogger } from "./logging.ts";
 import { NotebookControllerManager } from "./notebookControllerManager.ts";
@@ -11,8 +13,12 @@ import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
 import { PythonExtension } from "./services/PythonExtension.ts";
 import { notebookType } from "./types.ts";
 
+const LoggerLive = makeFileLogger(
+  path.join(__dirname, "../../logs/marimo.log"),
+);
+
 // Map effect's formatted messages to our logging system
-const LoggerLive = Logger.replace(
+const _LoggerLive = Logger.replace(
   Logger.defaultLogger,
   Logger.map(Logger.logfmtLogger, (formatted) => {
     const match = formatted.match(/level=(\w+)\s*(.*)/);
