@@ -6,7 +6,7 @@ import { Logger as VsCodeLogger } from "./logging.ts";
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<vscode.Disposable> {
-  return await pipe(
+  return pipe(
     Effect.gen(function* () {
       yield* Effect.logInfo("Activating marimo extension").pipe(
         Effect.annotateLogs({
@@ -23,11 +23,13 @@ export async function activate(
       yield* Layer.buildWithScope(MainLive, scope);
       return {
         dispose: () =>
-          Effect.gen(function* () {
-            yield* Effect.logInfo("Deactivating marimo extension");
-            yield* Scope.close(scope, Exit.void);
-            VsCodeLogger.close();
-          }).pipe(Effect.runPromise),
+          Effect.runPromise(
+            Effect.gen(function* () {
+              yield* Effect.logInfo("Deactivating marimo extension");
+              yield* Scope.close(scope, Exit.void);
+              VsCodeLogger.close();
+            }),
+          ),
       };
     }),
     Logger.withMinimumLogLevel(LogLevel.All),

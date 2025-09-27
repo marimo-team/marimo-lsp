@@ -3,12 +3,11 @@ import * as vscode from "vscode";
 import { registerCommand } from "./commands.ts";
 import { DebugAdapterLive } from "./debugAdapter.ts";
 import { KernelManagerLive } from "./kernelManager.ts";
-import { channel, Logger as VsCodeLogger } from "./logging.ts";
+import { Logger as VsCodeLogger } from "./logging.ts";
 import { NotebookControllerManager } from "./notebookControllerManager.ts";
 import { MarimoConfig } from "./services/MarimoConfig.ts";
 import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
 import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
-import { OutputChannel } from "./services/OutputChannel.ts";
 import { PythonExtension } from "./services/PythonExtension.ts";
 import { notebookType } from "./types.ts";
 
@@ -184,6 +183,5 @@ export const MainLive = ServerLive.pipe(
   Layer.provide(PythonExtension.Default),
   Layer.provide(MarimoLanguageClient.Default),
   Layer.provide(MarimoConfig.Default),
-  Layer.provide(OutputChannel.layer(channel)),
   Layer.provide(LoggerLive),
 );
