@@ -26,7 +26,7 @@ export const DebugAdapterLive = Layer.scopedDiscard(
         }),
       ),
       Stream.runDrain,
-      runFork,
+      Effect.forkDaemon,
     );
 
     yield* Effect.acquireRelease(

@@ -5,7 +5,6 @@ import { DebugAdapterLive } from "./debugAdapter.ts";
 import { KernelManagerLive } from "./kernelManager.ts";
 import { channel, Logger as VsCodeLogger } from "./logging.ts";
 import { NotebookControllerManager } from "./notebookControllerManager.ts";
-import { BaseLanguageClient } from "./services/BaseLanguageClient.ts";
 import { MarimoConfig } from "./services/MarimoConfig.ts";
 import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
 import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
@@ -141,7 +140,7 @@ const MarimoNotebookSerializerLive = Layer.scopedDiscard(
 
 const ServerLive = Layer.scopedDiscard(
   Effect.gen(function* () {
-    const client = yield* BaseLanguageClient;
+    const client = yield* MarimoLanguageClient;
     yield* Effect.logInfo("Starting LSP client");
     yield* client.manage();
     yield* Effect.logInfo("Started LSP client");
@@ -169,7 +168,6 @@ export const MainLive = ServerLive.pipe(
   Layer.provide(NotebookControllerManager.Default),
   Layer.provide(PythonExtension.Default),
   Layer.provide(MarimoLanguageClient.Default),
-  Layer.provide(BaseLanguageClient.Default),
   Layer.provide(MarimoConfig.Default),
   Layer.provide(OutputChannel.layer(channel)),
   Layer.provide(LoggerLive),
