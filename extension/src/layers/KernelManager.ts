@@ -1,10 +1,10 @@
 import { Effect, Layer, pipe, Stream } from "effect";
 import * as vscode from "vscode";
-import { assert } from "./assert.ts";
-import * as ops from "./operations.ts";
-import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
-import { MarimoNotebookControllerManager } from "./services/MarimoNotebookControllerManager.ts";
-import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
+import { assert } from "../assert.ts";
+import * as ops from "../operations.ts";
+import { MarimoLanguageClient } from "../services/MarimoLanguageClient.ts";
+import { MarimoNotebookControllerManager } from "../services/MarimoNotebookControllerManager.ts";
+import { MarimoNotebookRenderer } from "../services/MarimoNotebookRenderer.ts";
 
 export const KernelManagerLive = Layer.scopedDiscard(
   Effect.gen(function* () {

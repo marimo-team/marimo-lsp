@@ -1,6 +1,7 @@
 import { Effect, Exit, Layer, Logger, LogLevel, pipe, Scope } from "effect";
 import * as vscode from "vscode";
-import { MainLive } from "./layers.ts";
+
+import { MainLive } from "./layers/Main.ts";
 
 export async function activate(
   context: vscode.ExtensionContext,
