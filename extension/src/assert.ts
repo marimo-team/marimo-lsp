@@ -1,8 +1,9 @@
 import * as process from "node:process";
+import { Data } from "effect";
 
-export class AssertionError extends Error {
-  override name = "AssertionError";
-}
+export class AssertionError extends Data.TaggedError("AssertionError")<{
+  message: unknown;
+}> {}
 
 /**
  * Make an assertion.
@@ -27,14 +28,17 @@ export class AssertionError extends Error {
  * @param msg - The error message to throw if the assertion fails.
  * @throws {@link AssertionError} If `expression` is falsy.
  */
-export function assert(expression: unknown, msg?: string): asserts expression {
+export function assert(
+  expression: unknown,
+  message?: string,
+): asserts expression {
   if (!expression) {
     if (process.env.NODE_ENV === "development") {
       // biome-ignore lint/suspicious/noDebugger: Triggers a breakpoint in development; stripped out in production builds.
       debugger;
     }
 
-    throw new AssertionError(msg);
+    throw new AssertionError({ message });
   }
 }
 

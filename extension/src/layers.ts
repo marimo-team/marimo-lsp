@@ -2,53 +2,69 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Effect, FiberSet, Layer, Logger, type LogLevel } from "effect";
 import * as vscode from "vscode";
-import { registerCommand } from "./commands.ts";
 import { DebugAdapterLive } from "./debugAdapter.ts";
 import { KernelManagerLive } from "./kernelManager.ts";
-import { Logger as VsCodeLogger } from "./logging.ts";
 import { NotebookControllerManager } from "./notebookControllerManager.ts";
 import { MarimoConfig } from "./services/MarimoConfig.ts";
 import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
 import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
 import { PythonExtension } from "./services/PythonExtension.ts";
+import { VscodeCommands } from "./services/VsCodeCommands.ts";
 import { notebookType } from "./types.ts";
+
+const makeFileLogger = (logFilePath: string) =>
+  Effect.gen(function* () {
+    yield* Effect.sync(() =>
+      fs.mkdirSync(path.dirname(logFilePath), { recursive: true }),
+    );
+    const logFile = yield* Effect.acquireRelease(
+      Effect.sync(() => fs.openSync(logFilePath, "a", 0o666)),
+      (fd) => Effect.sync(() => fs.closeSync(fd)),
+    );
+    return Logger.map(Logger.logfmtLogger, (str) => {
+      fs.writeSync(logFile, `${str}\n`);
+    });
+  });
+
+const makeVsCodeLogger = (name: string) =>
+  Effect.gen(function* () {
+    type Level = Exclude<LogLevel.LogLevel["label"], "OFF" | "ALL">;
+
+    const channel = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        vscode.window.createOutputChannel(name, {
+          log: true,
+        }),
+      ),
+      (disposable) => Effect.sync(() => disposable.dispose()),
+    );
+
+    const mapping = {
+      INFO: channel.info,
+      TRACE: channel.trace,
+      DEBUG: channel.debug,
+      WARN: channel.warn,
+      ERROR: channel.error,
+      FATAL: channel.error,
+    } as const;
+
+    return Logger.map(Logger.logfmtLogger, (str) => {
+      // parse out the level from the default formatter
+      const match = str.match(/level=(\w+)\s*(.*)/);
+      const [level, message] = match
+        ? [match[1] as Level, match[2].trim()]
+        : ["INFO" as Level, str];
+      const log = mapping[level] ?? channel.info;
+      log(message);
+    });
+  });
 
 const LoggerLive = Layer.unwrapScoped(
   Effect.gen(function* () {
-    const logFilePath = path.join(__dirname, "../../logs/marimo.log");
-    const fileLogger = yield* Effect.gen(function* () {
-      yield* Effect.sync(() =>
-        fs.mkdirSync(path.dirname(logFilePath), { recursive: true }),
-      );
-      const logFile = yield* Effect.acquireRelease(
-        Effect.sync(() => fs.openSync(logFilePath, "a", 0o666)),
-        (fd) => Effect.sync(() => fs.closeSync(fd)),
-      );
-      return Logger.map(Logger.logfmtLogger, (str) => {
-        fs.writeSync(logFile, `${str}\n`);
-      });
-    });
-
-    // Map the formatted message to vscode method
-    const vscodeLogger = Logger.map(Logger.logfmtLogger, (str) => {
-      const match = str.match(/level=(\w+)\s*(.*)/);
-      const [level, message] = match
-        ? [match[1], match[2].trim()]
-        : ["INFO", str];
-      const mapping = {
-        TRACE: VsCodeLogger.trace,
-        DEBUG: VsCodeLogger.debug,
-        INFO: VsCodeLogger.info,
-        WARN: VsCodeLogger.warn,
-        ERROR: VsCodeLogger.error,
-        FATAL: VsCodeLogger.error,
-      } satisfies Partial<Record<LogLevel.LogLevel["label"], unknown>>;
-
-      // @ts-expect-error - We have a fallback
-      const log = mapping[level] || VsCodeLogger.info;
-      log(message);
-    });
-
+    const fileLogger = yield* makeFileLogger(
+      path.join(__dirname, "../../logs/marimo.log"),
+    );
+    const vscodeLogger = yield* makeVsCodeLogger("marimo");
     return Logger.replace(
       Logger.defaultLogger,
       Logger.zip(fileLogger, vscodeLogger),
@@ -58,42 +74,34 @@ const LoggerLive = Layer.unwrapScoped(
 
 const CommandsLive = Layer.scopedDiscard(
   Effect.gen(function* () {
+    const cmds = yield* VscodeCommands;
     yield* Effect.logInfo("Setting up commands").pipe(
       Effect.annotateLogs({ component: "commands" }),
     );
-    const runForkPromise = yield* FiberSet.makeRuntimePromise();
 
-    yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        registerCommand("marimo.newMarimoNotebook", () =>
-          runForkPromise(
-            Effect.gen(function* () {
-              const doc = yield* Effect.tryPromise(() =>
-                vscode.workspace.openNotebookDocument(
-                  notebookType,
-                  new vscode.NotebookData([
-                    new vscode.NotebookCellData(
-                      vscode.NotebookCellKind.Code,
-                      "",
-                      "python",
-                    ),
-                  ]),
-                ),
-              );
-              yield* Effect.tryPromise(() =>
-                vscode.window.showNotebookDocument(doc),
-              );
-              yield* Effect.logInfo("Created new marimo notebook").pipe(
-                Effect.annotateLogs({
-                  component: "commands",
-                  uri: doc.uri.toString(),
-                }),
-              );
-            }),
+    yield* cmds.registerCommand(
+      "marimo.newMarimoNotebook",
+      Effect.gen(function* () {
+        const doc = yield* Effect.tryPromise(() =>
+          vscode.workspace.openNotebookDocument(
+            notebookType,
+            new vscode.NotebookData([
+              new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                "",
+                "python",
+              ),
+            ]),
           ),
-        ),
-      ),
-      (disposable) => Effect.sync(() => disposable.dispose()),
+        );
+        yield* Effect.tryPromise(() => vscode.window.showNotebookDocument(doc));
+        yield* Effect.logInfo("Created new marimo notebook").pipe(
+          Effect.annotateLogs({
+            component: "commands",
+            uri: doc.uri.toString(),
+          }),
+        );
+      }),
     );
   }),
 );
@@ -200,6 +208,7 @@ export const MainLive = ServerLive.pipe(
   Layer.merge(DebugAdapterLive),
   Layer.merge(MarimoNotebookSerializerLive),
   Layer.merge(KernelManagerLive),
+  Layer.provide(VscodeCommands.Default),
   Layer.provide(MarimoNotebookRenderer.Default),
   Layer.provide(NotebookControllerManager.Default),
   Layer.provide(PythonExtension.Default),
