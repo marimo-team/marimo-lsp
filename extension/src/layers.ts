@@ -9,9 +9,7 @@ import { MarimoConfig } from "./services/MarimoConfig.ts";
 import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
 import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
 import { PythonExtension } from "./services/PythonExtension.ts";
-import { VsCodeCommands } from "./services/VsCodeCommands.ts";
-import { VsCodeWindow } from "./services/VsCodeWindow.ts";
-import { VsCodeWorkspace } from "./services/VsCodeWorkspace.ts";
+import { VsCode } from "./services/VsCode.ts";
 import { notebookType } from "./types.ts";
 
 const makeFileLogger = (logFilePath: string) =>
@@ -32,8 +30,8 @@ const makeVsCodeLogger = (name: string) =>
   Effect.gen(function* () {
     type Level = Exclude<LogLevel.LogLevel["label"], "OFF" | "ALL">;
 
-    const win = yield* VsCodeWindow;
-    const channel = yield* win.createOutputChannel(name);
+    const code = yield* VsCode;
+    const channel = yield* code.window.createOutputChannel(name);
 
     const mapping = {
       INFO: channel.info,
@@ -70,17 +68,15 @@ const LoggerLive = Layer.unwrapScoped(
 
 const CommandsLive = Layer.scopedDiscard(
   Effect.gen(function* () {
-    const win = yield* VsCodeWindow;
-    const cmds = yield* VsCodeCommands;
-    const workspace = yield* VsCodeWorkspace;
+    const code = yield* VsCode;
     yield* Effect.logInfo("Setting up commands").pipe(
       Effect.annotateLogs({ component: "commands" }),
     );
-    yield* cmds.registerCommand(
+    yield* code.commands.registerCommand(
       "marimo.newMarimoNotebook",
       Effect.gen(function* () {
-        const doc = yield* workspace.createEmptyMarimoNotebook();
-        yield* win.use((api) => api.showNotebookDocument(doc));
+        const doc = yield* code.workspace.createEmptyMarimoNotebook();
+        yield* code.window.use((api) => api.showNotebookDocument(doc));
         yield* Effect.logInfo("Created new marimo notebook").pipe(
           Effect.annotateLogs({
             component: "commands",
@@ -176,11 +172,11 @@ const ServerLive = Layer.scopedDiscard(
   }).pipe(
     Effect.catchTag("LanguageClientStartError", (error) =>
       Effect.gen(function* () {
-        const win = yield* VsCodeWindow;
+        const code = yield* VsCode;
         yield* Effect.logError("Failed to start extension", error).pipe(
           Effect.annotateLogs({ component: "server" }),
         );
-        yield* win.useInfallable((api) =>
+        yield* code.window.useInfallable((api) =>
           api.showErrorMessage(
             `Marimo language server failed to start. See marimo logs for more info.`,
           ),
@@ -200,10 +196,6 @@ export const MainLive = ServerLive.pipe(
   Layer.provide(PythonExtension.Default),
   Layer.provide(MarimoLanguageClient.Default),
   Layer.provide(MarimoConfig.Default),
-  // Logging
   Layer.provide(LoggerLive),
-  // VsCode
-  Layer.provide(VsCodeWindow.Default),
-  Layer.provide(VsCodeCommands.Default),
-  Layer.provide(VsCodeWorkspace.Default),
+  Layer.provide(VsCode.Default),
 );

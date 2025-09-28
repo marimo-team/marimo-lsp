@@ -17,6 +17,7 @@ import type {
   MarimoNotificationOf,
 } from "../types.ts";
 import { MarimoConfig } from "./MarimoConfig.ts";
+import { VsCode } from "./VsCode.ts";
 
 export class LanguageClientStartError extends Data.TaggedError(
   "LanguageClientStartError",
@@ -34,7 +35,8 @@ export class ExecuteCommandError extends Data.TaggedError(
 export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()(
   "MarimoLanguageClient",
   {
-    effect: Effect.gen(function* () {
+    scoped: Effect.gen(function* () {
+      const code = yield* VsCode;
       const exec = yield* getLspExecutable();
       yield* Effect.logInfo("Starting language server").pipe(
         Effect.annotateLogs({
@@ -49,9 +51,7 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
         { run: exec, debug: exec },
         {
           // create a dedicated output channel for marimo-lsp messages
-          outputChannel: vscode.window.createOutputChannel("marimo-lsp", {
-            log: true,
-          }),
+          outputChannel: yield* code.window.createOutputChannel("marimo-lsp"),
           revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
         },
       );
