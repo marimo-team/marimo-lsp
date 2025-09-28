@@ -1,8 +1,8 @@
 import { Effect, Fiber, FiberSet, Layer, Stream } from "effect";
 import * as vscode from "vscode";
 
-import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
-import { MarimoNotebookSerializer } from "./services/MarimoNotebookSerializer.ts";
+import { MarimoLanguageClient } from "../services/MarimoLanguageClient.ts";
+import { MarimoNotebookSerializer } from "../services/MarimoNotebookSerializer.ts";
 
 export const DebugAdapterLive = Layer.scopedDiscard(
   Effect.gen(function* () {

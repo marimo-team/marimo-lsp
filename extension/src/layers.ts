@@ -1,9 +1,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Effect, Layer, Logger, type LogLevel } from "effect";
-import { DebugAdapterLive } from "./debugAdapter.ts";
 import { KernelManagerLive } from "./kernelManager.ts";
 import { NotebookControllerManager } from "./notebookControllerManager.ts";
+import { MarimoDebugAdapter } from "./services/DebugAdapter.ts";
 import { MarimoConfig } from "./services/MarimoConfig.ts";
 import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
 import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
@@ -122,8 +122,8 @@ const ServerLive = Layer.scopedDiscard(
 
 export const MainLive = ServerLive.pipe(
   Layer.merge(CommandsLive),
-  Layer.merge(DebugAdapterLive),
   Layer.merge(KernelManagerLive),
+  Layer.provide(MarimoDebugAdapter.Default),
   Layer.provide(MarimoNotebookRenderer.Default),
   Layer.provide(NotebookControllerManager.Default),
   Layer.provide(MarimoNotebookSerializer.Default),
