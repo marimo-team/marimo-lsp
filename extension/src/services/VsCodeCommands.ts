@@ -1,9 +1,11 @@
 import { type Cause, Effect, FiberSet } from "effect";
 import * as vscode from "vscode";
 import type { AssertionError } from "../assert.ts";
+import type { VsCodeWindowError } from "./VsCodeWindow.ts";
+import type { VsCodeWorkspaceError } from "./VsCodeWorkspace.ts";
 
-export class VscodeCommands extends Effect.Service<VscodeCommands>()(
-  "VscodeCommands",
+export class VsCodeCommands extends Effect.Service<VsCodeCommands>()(
+  "VsCodeCommands",
   {
     scoped: Effect.gen(function* () {
       const runPromise = yield* FiberSet.makeRuntimePromise();
@@ -12,7 +14,10 @@ export class VscodeCommands extends Effect.Service<VscodeCommands>()(
           command: string,
           effect: Effect.Effect<
             void,
-            AssertionError | Cause.UnknownException,
+            | AssertionError
+            | Cause.UnknownException
+            | VsCodeWorkspaceError
+            | VsCodeWindowError,
             never
           >,
         ) {

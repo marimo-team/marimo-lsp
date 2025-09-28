@@ -9,7 +9,9 @@ import { MarimoConfig } from "./services/MarimoConfig.ts";
 import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
 import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
 import { PythonExtension } from "./services/PythonExtension.ts";
-import { VscodeCommands } from "./services/VsCodeCommands.ts";
+import { VsCodeCommands } from "./services/VsCodeCommands.ts";
+import { VsCodeWindow } from "./services/VsCodeWindow.ts";
+import { VsCodeWorkspace } from "./services/VsCodeWorkspace.ts";
 import { notebookType } from "./types.ts";
 
 const makeFileLogger = (logFilePath: string) =>
@@ -30,14 +32,8 @@ const makeVsCodeLogger = (name: string) =>
   Effect.gen(function* () {
     type Level = Exclude<LogLevel.LogLevel["label"], "OFF" | "ALL">;
 
-    const channel = yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        vscode.window.createOutputChannel(name, {
-          log: true,
-        }),
-      ),
-      (disposable) => Effect.sync(() => disposable.dispose()),
-    );
+    const win = yield* VsCodeWindow;
+    const channel = yield* win.createOutputChannel(name);
 
     const mapping = {
       INFO: channel.info,
@@ -74,27 +70,17 @@ const LoggerLive = Layer.unwrapScoped(
 
 const CommandsLive = Layer.scopedDiscard(
   Effect.gen(function* () {
-    const cmds = yield* VscodeCommands;
+    const win = yield* VsCodeWindow;
+    const cmds = yield* VsCodeCommands;
+    const workspace = yield* VsCodeWorkspace;
     yield* Effect.logInfo("Setting up commands").pipe(
       Effect.annotateLogs({ component: "commands" }),
     );
-
     yield* cmds.registerCommand(
       "marimo.newMarimoNotebook",
       Effect.gen(function* () {
-        const doc = yield* Effect.tryPromise(() =>
-          vscode.workspace.openNotebookDocument(
-            notebookType,
-            new vscode.NotebookData([
-              new vscode.NotebookCellData(
-                vscode.NotebookCellKind.Code,
-                "",
-                "python",
-              ),
-            ]),
-          ),
-        );
-        yield* Effect.tryPromise(() => vscode.window.showNotebookDocument(doc));
+        const doc = yield* workspace.createEmptyMarimoNotebook();
+        yield* win.use((api) => api.showNotebookDocument(doc));
         yield* Effect.logInfo("Created new marimo notebook").pipe(
           Effect.annotateLogs({
             component: "commands",
@@ -190,11 +176,12 @@ const ServerLive = Layer.scopedDiscard(
   }).pipe(
     Effect.catchTag("LanguageClientStartError", (error) =>
       Effect.gen(function* () {
+        const win = yield* VsCodeWindow;
         yield* Effect.logError("Failed to start extension", error).pipe(
           Effect.annotateLogs({ component: "server" }),
         );
-        yield* Effect.promise(() =>
-          vscode.window.showErrorMessage(
+        yield* win.useInfallable((api) =>
+          api.showErrorMessage(
             `Marimo language server failed to start. See marimo logs for more info.`,
           ),
         );
@@ -208,11 +195,15 @@ export const MainLive = ServerLive.pipe(
   Layer.merge(DebugAdapterLive),
   Layer.merge(MarimoNotebookSerializerLive),
   Layer.merge(KernelManagerLive),
-  Layer.provide(VscodeCommands.Default),
   Layer.provide(MarimoNotebookRenderer.Default),
   Layer.provide(NotebookControllerManager.Default),
   Layer.provide(PythonExtension.Default),
   Layer.provide(MarimoLanguageClient.Default),
   Layer.provide(MarimoConfig.Default),
+  // Logging
   Layer.provide(LoggerLive),
+  // VsCode
+  Layer.provide(VsCodeWindow.Default),
+  Layer.provide(VsCodeCommands.Default),
+  Layer.provide(VsCodeWorkspace.Default),
 );
