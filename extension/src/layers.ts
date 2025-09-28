@@ -1,9 +1,9 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { Effect, FiberSet, Layer, Logger, type LogLevel } from "effect";
 import * as vscode from "vscode";
 import { registerCommand } from "./commands.ts";
 import { DebugAdapterLive } from "./debugAdapter.ts";
-import { makeFileLogger } from "./FileLogger.ts";
 import { KernelManagerLive } from "./kernelManager.ts";
 import { Logger as VsCodeLogger } from "./logging.ts";
 import { NotebookControllerManager } from "./notebookControllerManager.ts";
@@ -13,31 +13,46 @@ import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
 import { PythonExtension } from "./services/PythonExtension.ts";
 import { notebookType } from "./types.ts";
 
-const LoggerLive = makeFileLogger(
-  path.join(__dirname, "../../logs/marimo.log"),
-);
+const LoggerLive = Layer.unwrapScoped(
+  Effect.gen(function* () {
+    const logFilePath = path.join(__dirname, "../../logs/marimo.log");
+    const fileLogger = yield* Effect.gen(function* () {
+      yield* Effect.sync(() =>
+        fs.mkdirSync(path.dirname(logFilePath), { recursive: true }),
+      );
+      const logFile = yield* Effect.acquireRelease(
+        Effect.sync(() => fs.openSync(logFilePath, "a", 0o666)),
+        (fd) => Effect.sync(() => fs.closeSync(fd)),
+      );
+      return Logger.map(Logger.logfmtLogger, (str) => {
+        fs.writeSync(logFile, `${str}\n`);
+      });
+    });
 
-// Map effect's formatted messages to our logging system
-const _LoggerLive = Logger.replace(
-  Logger.defaultLogger,
-  Logger.map(Logger.logfmtLogger, (formatted) => {
-    const match = formatted.match(/level=(\w+)\s*(.*)/);
-    const [level, message] = match
-      ? [match[1], match[2].trim()]
-      : ["INFO", formatted];
+    // Map the formatted message to vscode method
+    const vscodeLogger = Logger.map(Logger.logfmtLogger, (str) => {
+      const match = str.match(/level=(\w+)\s*(.*)/);
+      const [level, message] = match
+        ? [match[1], match[2].trim()]
+        : ["INFO", str];
+      const mapping = {
+        TRACE: VsCodeLogger.trace,
+        DEBUG: VsCodeLogger.debug,
+        INFO: VsCodeLogger.info,
+        WARN: VsCodeLogger.warn,
+        ERROR: VsCodeLogger.error,
+        FATAL: VsCodeLogger.error,
+      } satisfies Partial<Record<LogLevel.LogLevel["label"], unknown>>;
 
-    const mapping = {
-      TRACE: VsCodeLogger.trace,
-      DEBUG: VsCodeLogger.debug,
-      INFO: VsCodeLogger.info,
-      WARN: VsCodeLogger.warn,
-      ERROR: VsCodeLogger.error,
-      FATAL: VsCodeLogger.error,
-    } satisfies Partial<Record<LogLevel.LogLevel["label"], unknown>>;
+      // @ts-expect-error - We have a fallback
+      const log = mapping[level] || VsCodeLogger.info;
+      log(message);
+    });
 
-    // @ts-expect-error - We have a fallback
-    const log = mapping[level] || VsCodeLogger.info;
-    log(message);
+    return Logger.replace(
+      Logger.defaultLogger,
+      Logger.zip(fileLogger, vscodeLogger),
+    );
   }),
 );
 
