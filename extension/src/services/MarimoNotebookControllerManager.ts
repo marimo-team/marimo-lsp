@@ -3,11 +3,11 @@ import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
 import { Data, Effect, FiberSet, Schema } from "effect";
 import * as vscode from "vscode";
-import { unreachable } from "./assert.ts";
-import { SemVerFromString } from "./schemas.ts";
-import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
-import { PythonExtension } from "./services/PythonExtension.ts";
-import { MarimoNotebookSerializer } from "./services/MarimoNotebookSerializer.ts";
+import { unreachable } from "../assert.ts";
+import { SemVerFromString } from "../schemas.ts";
+import { MarimoLanguageClient } from "./MarimoLanguageClient.ts";
+import { MarimoNotebookSerializer } from "./MarimoNotebookSerializer.ts";
+import { PythonExtension } from "./PythonExtension.ts";
 
 const MINIMUM_MARIMO_VERSION = {
   major: 0,
@@ -15,8 +15,8 @@ const MINIMUM_MARIMO_VERSION = {
   patch: 0,
 } satisfies semver.SemVer;
 
-export class NotebookControllerManager extends Effect.Service<NotebookControllerManager>()(
-  "NotebookControllerManager",
+export class MarimoNotebookControllerManager extends Effect.Service<MarimoNotebookControllerManager>()(
+  "MarimoNotebookControllerManager",
   {
     scoped: Effect.gen(function* () {
       const serializer = yield* MarimoNotebookSerializer;

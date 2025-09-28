@@ -1,9 +1,9 @@
 import { Effect, Layer, pipe, Stream } from "effect";
 import * as vscode from "vscode";
 import { assert } from "./assert.ts";
-import { NotebookControllerManager } from "./notebookControllerManager.ts";
 import * as ops from "./operations.ts";
 import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
+import { MarimoNotebookControllerManager } from "./services/MarimoNotebookControllerManager.ts";
 import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
 
 export const KernelManagerLive = Layer.scopedDiscard(
@@ -13,7 +13,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
     );
     const marimo = yield* MarimoLanguageClient;
     const renderer = yield* MarimoNotebookRenderer;
-    const manager = yield* NotebookControllerManager;
+    const manager = yield* MarimoNotebookControllerManager;
 
     const contexts = new Map<
       string,

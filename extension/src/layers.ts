@@ -1,15 +1,15 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Effect, Layer, Logger, type LogLevel } from "effect";
-import { KernelManagerLive } from "./kernelManager.ts";
-import { NotebookControllerManager } from "./notebookControllerManager.ts";
 import { MarimoDebugAdapter } from "./services/DebugAdapter.ts";
 import { MarimoConfig } from "./services/MarimoConfig.ts";
 import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
+import { MarimoNotebookControllerManager } from "./services/MarimoNotebookControllerManager.ts";
 import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
 import { MarimoNotebookSerializer } from "./services/MarimoNotebookSerializer.ts";
 import { PythonExtension } from "./services/PythonExtension.ts";
 import { VsCode } from "./services/VsCode.ts";
+import { KernelManagerLive } from "./kernelManager.ts";
 
 const makeFileLogger = (logFilePath: string) =>
   Effect.gen(function* () {
@@ -125,7 +125,7 @@ export const MainLive = ServerLive.pipe(
   Layer.merge(KernelManagerLive),
   Layer.provide(MarimoDebugAdapter.Default),
   Layer.provide(MarimoNotebookRenderer.Default),
-  Layer.provide(NotebookControllerManager.Default),
+  Layer.provide(MarimoNotebookControllerManager.Default),
   Layer.provide(MarimoNotebookSerializer.Default),
   Layer.provide(PythonExtension.Default),
   Layer.provide(MarimoLanguageClient.Default),
