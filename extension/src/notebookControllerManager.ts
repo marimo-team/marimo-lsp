@@ -7,7 +7,7 @@ import { unreachable } from "./assert.ts";
 import { SemVerFromString } from "./schemas.ts";
 import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
 import { PythonExtension } from "./services/PythonExtension.ts";
-import { notebookType } from "./types.ts";
+import { MarimoNotebookSerializer } from "./services/MarimoNotebookSerializer.ts";
 
 const MINIMUM_MARIMO_VERSION = {
   major: 0,
@@ -19,6 +19,7 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
   "NotebookControllerManager",
   {
     scoped: Effect.gen(function* () {
+      const serializer = yield* MarimoNotebookSerializer;
       yield* Effect.logInfo("Setting up notebook controller manager").pipe(
         Effect.annotateLogs({ component: "notebook-controller" }),
       );
@@ -59,7 +60,7 @@ export class NotebookControllerManager extends Effect.Service<NotebookController
 
         const controller = vscode.notebooks.createNotebookController(
           controllerId,
-          notebookType,
+          serializer.notebookType,
           controllerLabel,
           (cells, notebook, controller) =>
             Effect.gen(function* () {

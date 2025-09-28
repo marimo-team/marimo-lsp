@@ -1,7 +1,6 @@
 import { Data, Effect, FiberSet } from "effect";
 import * as vscode from "vscode";
 import type { AssertionError } from "../assert.ts";
-import { notebookType } from "../types.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
   cause: unknown;
@@ -11,6 +10,7 @@ class VsCodeCommands extends Effect.Service<VsCodeCommands>()(
   "VsCodeCommands",
   {
     scoped: Effect.gen(function* () {
+      const api = vscode.commands;
       const runPromise = yield* FiberSet.makeRuntimePromise();
       return {
         registerCommand(
@@ -19,7 +19,7 @@ class VsCodeCommands extends Effect.Service<VsCodeCommands>()(
         ) {
           return Effect.acquireRelease(
             Effect.sync(() =>
-              vscode.commands.registerCommand(command, () =>
+              api.registerCommand(command, () =>
                 runPromise<never, void>(
                   effect.pipe(
                     Effect.catchAllCause((cause) =>
@@ -45,7 +45,7 @@ class VsCodeCommands extends Effect.Service<VsCodeCommands>()(
 ) {}
 
 class VsCodeWindow extends Effect.Service<VsCodeWindow>()("VsCodeWindow", {
-  scoped: Effect.gen(function* () {
+  effect: Effect.gen(function* () {
     const api = vscode.window;
     type VsCodeWindowApi = typeof api;
     return {
@@ -74,7 +74,18 @@ class VsCodeWorkspace extends Effect.Service<VsCodeWorkspace>()(
     sync: () => {
       const api = vscode.workspace;
       return {
-        createEmptyMarimoNotebook() {
+        registerNotebookSerializer(
+          notebookType: string,
+          impl: vscode.NotebookSerializer,
+        ) {
+          return Effect.acquireRelease(
+            Effect.sync(() =>
+              api.registerNotebookSerializer(notebookType, impl),
+            ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          );
+        },
+        createEmptyPythonNotebook(notebookType: string) {
           return Effect.tryPromise({
             try: () =>
               api.openNotebookDocument(

@@ -2,10 +2,11 @@ import { Effect, Fiber, FiberSet, Layer, Stream } from "effect";
 import * as vscode from "vscode";
 
 import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
-import { notebookType } from "./types.ts";
+import { MarimoNotebookSerializer } from "./services/MarimoNotebookSerializer.ts";
 
 export const DebugAdapterLive = Layer.scopedDiscard(
   Effect.gen(function* () {
+    const serializer = yield* MarimoNotebookSerializer;
     yield* Effect.logInfo("Setting up debug adapter").pipe(
       Effect.annotateLogs({ component: "debug-adapter" }),
     );
@@ -95,7 +96,7 @@ export const DebugAdapterLive = Layer.scopedDiscard(
                   }),
                 );
                 const notebook = vscode.window.activeNotebookEditor?.notebook;
-                if (!notebook || notebook.notebookType !== notebookType) {
+                if (notebook?.notebookType !== serializer.notebookType) {
                   yield* Effect.logWarning(
                     "No active marimo notebook found",
                   ).pipe(Effect.annotateLogs({ component: "debug-adapter" }));

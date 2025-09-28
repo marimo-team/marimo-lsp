@@ -77,8 +77,6 @@ export type RendererReceiveMessage =
   | MessageOperationOf<"remove-ui-elements">
   | MessageOperationOf<"send-ui-element-message">;
 
-export const notebookType = "marimo-notebook";
-
 // Language server -> client
 type MarimoNotificationMap = {
   "marimo/operation": { notebookUri: string; operation: MessageOperation };

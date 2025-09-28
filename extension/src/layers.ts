@@ -1,16 +1,15 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Effect, FiberSet, Layer, Logger, type LogLevel } from "effect";
-import * as vscode from "vscode";
+import { Effect, Layer, Logger, type LogLevel } from "effect";
 import { DebugAdapterLive } from "./debugAdapter.ts";
 import { KernelManagerLive } from "./kernelManager.ts";
 import { NotebookControllerManager } from "./notebookControllerManager.ts";
 import { MarimoConfig } from "./services/MarimoConfig.ts";
 import { MarimoLanguageClient } from "./services/MarimoLanguageClient.ts";
 import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
+import { MarimoNotebookSerializer } from "./services/MarimoNotebookSerializer.ts";
 import { PythonExtension } from "./services/PythonExtension.ts";
 import { VsCode } from "./services/VsCode.ts";
-import { notebookType } from "./types.ts";
 
 const makeFileLogger = (logFilePath: string) =>
   Effect.gen(function* () {
@@ -69,13 +68,16 @@ const LoggerLive = Layer.unwrapScoped(
 const CommandsLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
+    const serializer = yield* MarimoNotebookSerializer;
     yield* Effect.logInfo("Setting up commands").pipe(
       Effect.annotateLogs({ component: "commands" }),
     );
     yield* code.commands.registerCommand(
       "marimo.newMarimoNotebook",
       Effect.gen(function* () {
-        const doc = yield* code.workspace.createEmptyMarimoNotebook();
+        const doc = yield* code.workspace.createEmptyPythonNotebook(
+          serializer.notebookType,
+        );
         yield* code.window.use((api) => api.showNotebookDocument(doc));
         yield* Effect.logInfo("Created new marimo notebook").pipe(
           Effect.annotateLogs({
@@ -84,74 +86,6 @@ const CommandsLive = Layer.scopedDiscard(
           }),
         );
       }),
-    );
-  }),
-);
-
-const MarimoNotebookSerializerLive = Layer.scopedDiscard(
-  Effect.gen(function* () {
-    yield* Effect.logInfo("Setting up notebook serializer").pipe(
-      Effect.annotateLogs({ component: "notebook-serializer" }),
-    );
-    const marimo = yield* MarimoLanguageClient;
-    const runPromise = yield* FiberSet.makeRuntimePromise();
-
-    yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        vscode.workspace.registerNotebookSerializer(notebookType, {
-          serializeNotebook(
-            notebook: vscode.NotebookData,
-          ): Promise<Uint8Array> {
-            return runPromise(
-              Effect.gen(function* () {
-                yield* Effect.logDebug("Serializing notebook").pipe(
-                  Effect.annotateLogs({ cellCount: notebook.cells.length }),
-                );
-                const bytes = yield* marimo.serialize(notebook);
-                yield* Effect.logDebug("Serialization complete").pipe(
-                  Effect.annotateLogs({ bytes: bytes.length }),
-                );
-                return bytes;
-              }).pipe(
-                Effect.tapError((error) =>
-                  Effect.logError(`Notebook serialize failed.`, error),
-                ),
-                Effect.mapError(
-                  () =>
-                    new Error(
-                      `Notebook serialize failed. See logs for details.`,
-                    ),
-                ),
-              ),
-            );
-          },
-          deserializeNotebook(bytes: Uint8Array): Promise<vscode.NotebookData> {
-            return runPromise(
-              Effect.gen(function* () {
-                yield* Effect.logDebug("Deserializing notebook").pipe(
-                  Effect.annotateLogs({ bytes: bytes.length }),
-                );
-                const notebook = yield* marimo.deserialize(bytes);
-                yield* Effect.logDebug("Deserialization complete").pipe(
-                  Effect.annotateLogs({ cellCount: notebook.cells.length }),
-                );
-                return notebook;
-              }).pipe(
-                Effect.tapError((error) =>
-                  Effect.logError(`Notebook deserialize failed.`, error),
-                ),
-                Effect.mapError(
-                  () =>
-                    new Error(
-                      `Notebook deserialize failed. See logs for details.`,
-                    ),
-                ),
-              ),
-            );
-          },
-        }),
-      ),
-      (disposable) => Effect.sync(() => disposable.dispose()),
     );
   }),
 );
@@ -189,10 +123,10 @@ const ServerLive = Layer.scopedDiscard(
 export const MainLive = ServerLive.pipe(
   Layer.merge(CommandsLive),
   Layer.merge(DebugAdapterLive),
-  Layer.merge(MarimoNotebookSerializerLive),
   Layer.merge(KernelManagerLive),
   Layer.provide(MarimoNotebookRenderer.Default),
   Layer.provide(NotebookControllerManager.Default),
+  Layer.provide(MarimoNotebookSerializer.Default),
   Layer.provide(PythonExtension.Default),
   Layer.provide(MarimoLanguageClient.Default),
   Layer.provide(MarimoConfig.Default),
