@@ -1,4 +1,4 @@
-import { Effect, Layer, pipe, Stream } from "effect";
+import { Effect, FiberSet, Layer } from "effect";
 import * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import * as ops from "../operations.ts";
@@ -20,43 +20,12 @@ export const KernelManagerLive = Layer.scopedDiscard(
       Omit<ops.OperationContext, "controller" | "renderer">
     >();
 
-    // renderer (i.e., front end) -> kernel
-    yield* renderer.messages().pipe(
-      Stream.mapEffect(({ editor, message }) =>
-        Effect.gen(function* () {
-          yield* Effect.logTrace("Renderer command").pipe(
-            Effect.annotateLogs({
-              command: message.command,
-              notebookUri: editor.notebook.uri.toString(),
-            }),
-          );
-          yield* marimo.setUiElementValue({
-            notebookUri: editor.notebook.uri.toString(),
-            inner: message.params,
-          });
-        }),
-      ),
-      Stream.runDrain,
-      Effect.catchAllCause((cause) =>
-        Effect.logError("Renderer command failed", cause),
-      ),
-      Effect.annotateLogs({ stream: "renderer" }),
-      Effect.forkDaemon,
-    );
+    const runFork = yield* FiberSet.makeRuntime<MarimoNotebookRenderer>();
 
-    // kernel -> renderer
-    yield* pipe(
-      marimo.streamOf("marimo/operation"),
-      Stream.tap((msg) =>
-        Effect.logTrace("Received operation").pipe(
-          Effect.annotateLogs({
-            op: msg.operation.op,
-            notebookUri: msg.notebookUri,
-          }),
-        ),
-      ),
-      Stream.mapEffect(({ notebookUri, operation }) =>
+    yield* marimo.onNotification("marimo/operation", (msg) =>
+      runFork(
         Effect.gen(function* () {
+          const { notebookUri, operation } = msg;
           let context = contexts.get(notebookUri);
 
           if (!context) {
@@ -88,9 +57,24 @@ export const KernelManagerLive = Layer.scopedDiscard(
             );
         }),
       ),
-      Stream.runDrain,
-      Effect.annotateLogs({ stream: "operations" }),
-      Effect.forkDaemon,
+    );
+
+    // renderer (i.e., front end) -> kernel
+    yield* renderer.onDidReceiveMessage(({ editor, message }) =>
+      runFork(
+        Effect.gen(function* () {
+          yield* Effect.logTrace("Renderer command").pipe(
+            Effect.annotateLogs({
+              command: message.command,
+              notebookUri: editor.notebook.uri.toString(),
+            }),
+          );
+          yield* marimo.setUiElementValue({
+            notebookUri: editor.notebook.uri.toString(),
+            inner: message.params,
+          });
+        }),
+      ),
     );
 
     yield* Effect.addFinalizer(() =>

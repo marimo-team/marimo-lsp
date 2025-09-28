@@ -1,4 +1,4 @@
-import { Effect, Fiber, FiberSet, Stream } from "effect";
+import { Effect, Fiber, FiberSet } from "effect";
 import * as vscode from "vscode";
 
 import { MarimoLanguageClient } from "./MarimoLanguageClient.ts";
@@ -22,10 +22,9 @@ export class MarimoDebugAdapter extends Effect.Service<MarimoDebugAdapter>()(
         vscode.EventEmitter<vscode.DebugProtocolMessage>
       >();
 
-      // no need to handle because FiberSet/Scoped takes care of cleanup
-      const _fiber = marimo.streamOf("marimo/dap").pipe(
-        Stream.mapEffect(
-          Effect.fnUntraced(function* ({ sessionId, message }) {
+      yield* marimo.onNotification("marimo/dap", ({ sessionId, message }) =>
+        runFork(
+          Effect.gen(function* () {
             yield* Effect.logDebug("Received DAP message from LSP").pipe(
               Effect.annotateLogs({
                 component: "debug-adapter",
@@ -37,8 +36,6 @@ export class MarimoDebugAdapter extends Effect.Service<MarimoDebugAdapter>()(
             emitters.get(sessionId)?.fire(message);
           }),
         ),
-        Stream.runDrain,
-        Effect.forkDaemon,
       );
 
       yield* Effect.acquireRelease(

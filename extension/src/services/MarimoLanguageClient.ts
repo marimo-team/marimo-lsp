@@ -1,13 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import {
-  Data,
-  Effect,
-  type ParseResult,
-  Schema,
-  type Scope,
-  Stream,
-} from "effect";
+import { Data, Effect, type ParseResult, Schema } from "effect";
 import * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
 import { MarimoNotebook } from "../schemas.ts";
@@ -65,20 +58,15 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
             () => Effect.sync(() => client.dispose()),
           );
         },
-        streamOf<Notification extends MarimoNotification>(
+        onNotification<Notification extends MarimoNotification>(
           notification: Notification,
-        ): Stream.Stream<
-          MarimoNotificationOf<Notification>,
-          never,
-          Scope.Scope
-        > {
-          return Stream.async((emit) =>
-            Effect.acquireRelease(
-              Effect.sync(() =>
-                client.onNotification(notification, emit.single.bind(emit)),
-              ),
-              (disposable) => Effect.sync(() => disposable.dispose()),
+          cb: (msg: MarimoNotificationOf<Notification>) => void,
+        ) {
+          return Effect.acquireRelease(
+            Effect.sync(() =>
+              client.onNotification(notification, (msg) => cb(msg)),
             ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
           );
         },
         run(
