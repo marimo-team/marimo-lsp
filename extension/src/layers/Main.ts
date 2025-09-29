@@ -32,7 +32,7 @@ const ServerLive = Layer.scopedDiscard(
         yield* Effect.logError("Failed to start extension", error).pipe(
           Effect.annotateLogs({ component: "server" }),
         );
-        yield* code.window.useInfallable((api) =>
+        yield* code.window.useInfallible((api) =>
           api.showErrorMessage(
             `Marimo language server failed to start. See marimo logs for more info.`,
           ),

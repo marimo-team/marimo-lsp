@@ -356,7 +356,7 @@ const createNewMarimoNotebookController = Effect.fnUntraced(
                   command: error.command.command,
                 }),
               );
-              yield* options.deps.code.window.useInfallable((api) =>
+              yield* options.deps.code.window.useInfallible((api) =>
                 api.showErrorMessage(
                   "Failed to execute marimo command. Please check the logs for details.",
                   { modal: true },
@@ -373,14 +373,14 @@ const createNewMarimoNotebookController = Effect.fnUntraced(
 
               // Check if Python executable still exists
               if (!NodeFs.existsSync(error.env.path)) {
-                yield* code.window.useInfallable((api) =>
+                yield* code.window.useInfallible((api) =>
                   api.showErrorMessage(
                     `Python executable does not exist for env: ${error.env.path}.`,
                     { modal: true },
                   ),
                 );
               } else {
-                yield* code.window.useInfallable((api) =>
+                yield* code.window.useInfallible((api) =>
                   api.showErrorMessage(
                     `Failed to check dependencies in ${formatControllerLabel(options.env)}.\n\n` +
                       `Python path: ${error.env.path}`,
@@ -414,7 +414,7 @@ const createNewMarimoNotebookController = Effect.fnUntraced(
                 messages.join("\n") +
                 `\n\nPlease install or update the missing packages.`;
 
-              yield* code.window.useInfallable((api) =>
+              yield* code.window.useInfallible((api) =>
                 api.showErrorMessage(msg, { modal: true }),
               );
             }),
@@ -440,7 +440,7 @@ const createNewMarimoNotebookController = Effect.fnUntraced(
           Effect.catchAllCause((cause) =>
             Effect.gen(function* () {
               yield* Effect.logError(cause);
-              yield* code.window.useInfallable((api) =>
+              yield* code.window.useInfallible((api) =>
                 api.showErrorMessage(
                   "Failed to interrupt execution. Please check the logs for details.",
                 ),

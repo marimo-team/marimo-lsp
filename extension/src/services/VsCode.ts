@@ -55,7 +55,7 @@ class VsCodeWindow extends Effect.Service<VsCodeWindow>()("VsCodeWindow", {
           catch: (cause) => new VsCodeError({ cause }),
         });
       },
-      useInfallable<T>(cb: (win: VsCodeWindowApi) => Thenable<T>) {
+      useInfallible<T>(cb: (win: VsCodeWindowApi) => Thenable<T>) {
         return Effect.promise(() => cb(api));
       },
       createOutputChannel(name: string) {
