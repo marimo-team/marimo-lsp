@@ -2,25 +2,33 @@ import { Effect, FiberSet, Layer, Option } from "effect";
 import * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import * as ops from "../operations.ts";
-import { MarimoLanguageClient } from "../services/MarimoLanguageClient.ts";
-import { MarimoNotebookControllers } from "../services/MarimoNotebookControllers.ts";
-import { MarimoNotebookRenderer } from "../services/MarimoNotebookRenderer.ts";
+import { LanguageClient } from "../services/LanguageClient.ts";
+import { NotebookControllers } from "../services/NotebookControllers.ts";
+import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 
+/**
+ * Orchestrates kernel operations for marimo notebooks by composing
+ * MarimoLanguageClient, MarimoNotebookRenderer, and MarimoNotebookControllers.
+ *
+ * Receives `marimo/operations` from marimo-lsp and prepares cell executions.
+ *
+ * Receives messages from front end (renderer), and sends back to kernel.
+ */
 export const KernelManagerLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     yield* Effect.logInfo("Setting up kernel manager").pipe(
       Effect.annotateLogs({ component: "kernel-manager" }),
     );
-    const marimo = yield* MarimoLanguageClient;
-    const renderer = yield* MarimoNotebookRenderer;
-    const controllers = yield* MarimoNotebookControllers;
+    const marimo = yield* LanguageClient;
+    const renderer = yield* NotebookRenderer;
+    const controllers = yield* NotebookControllers;
 
     const contexts = new Map<
       string,
       Omit<ops.OperationContext, "controller" | "renderer">
     >();
 
-    const runFork = yield* FiberSet.makeRuntime<MarimoNotebookRenderer>();
+    const runFork = yield* FiberSet.makeRuntime<NotebookRenderer>();
 
     yield* marimo.onNotification("marimo/operation", (msg) =>
       runFork(

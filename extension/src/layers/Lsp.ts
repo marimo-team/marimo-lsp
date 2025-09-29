@@ -1,12 +1,17 @@
 import * as NodeChildProcess from "node:child_process";
 import { Effect, Either, Layer } from "effect";
 
-import { MarimoLanguageClient } from "../services/MarimoLanguageClient.ts";
+import { LanguageClient } from "../services/LanguageClient.ts";
 import { VsCode } from "../services/VsCode.ts";
 
-export const MarimoLspLive = Layer.scopedDiscard(
+/**
+ * Manages the marimo LSP client lifecycle.
+ *
+ * Actually starts marimo-lsp and checks dependencies.
+ */
+export const LspLive = Layer.scopedDiscard(
   Effect.gen(function* () {
-    const client = yield* MarimoLanguageClient;
+    const client = yield* LanguageClient;
     yield* Effect.logInfo("Starting LSP client").pipe(
       Effect.annotateLogs({ component: "server" }),
     );
@@ -54,7 +59,7 @@ export const MarimoLspLive = Layer.scopedDiscard(
         } else {
           yield* code.window.useInfallible((api) =>
             api.showErrorMessage(
-              `Marimo language server failed to start. See marimo logs for more info.`,
+              ` language server failed to start. See marimo logs for more info.`,
             ),
           );
         }

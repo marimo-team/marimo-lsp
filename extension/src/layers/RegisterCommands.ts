@@ -1,11 +1,14 @@
 import { Effect, Layer } from "effect";
-import { MarimoNotebookSerializer } from "../services/MarimoNotebookSerializer.ts";
+import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { VsCode } from "../services/VsCode.ts";
 
+/**
+ * Registers VS Code commands for the marimo extension.
+ */
 export const RegisterCommandsLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const serializer = yield* MarimoNotebookSerializer;
+    const serializer = yield* NotebookSerializer;
     yield* Effect.logInfo("Setting up commands").pipe(
       Effect.annotateLogs({ component: "commands" }),
     );

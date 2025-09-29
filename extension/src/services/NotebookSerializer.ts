@@ -1,16 +1,20 @@
 import { Effect, FiberSet } from "effect";
-import { MarimoLanguageClient } from "./MarimoLanguageClient.ts";
+import { LanguageClient } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
 
-export class MarimoNotebookSerializer extends Effect.Service<MarimoNotebookSerializer>()(
-  "MarimoNotebookSerializer",
+/**
+ * Handles serialization and deserialization of marimo notebooks,
+ * converting between VS Code's notebook format and marimo's Python format.
+ */
+export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
+  "NotebookSerializer",
   {
-    dependencies: [VsCode.Default, MarimoLanguageClient.Default],
+    dependencies: [VsCode.Default, LanguageClient.Default],
     scoped: Effect.gen(function* () {
       const notebookType = "marimo-notebook";
 
       const code = yield* VsCode;
-      const marimo = yield* MarimoLanguageClient;
+      const marimo = yield* LanguageClient;
       const runPromise = yield* FiberSet.makeRuntimePromise();
 
       yield* Effect.logInfo("Setting up notebook serializer").pipe(

@@ -2,13 +2,18 @@ import { Effect } from "effect";
 import * as vscode from "vscode";
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 
-export class MarimoNotebookRenderer extends Effect.Service<MarimoNotebookRenderer>()(
-  "MarimoNotebookRenderer",
+/**
+ * Manages communication with the marimo notebook renderer.
+ */
+export class NotebookRenderer extends Effect.Service<NotebookRenderer>()(
+  "NotebookRenderer",
   {
     sync: () => {
-      const channel =
-        vscode.notebooks.createRendererMessaging("marimo-renderer");
+      // Defined in package.json
+      const rendererId = "marimo-renderer";
+      const channel = vscode.notebooks.createRendererMessaging(rendererId);
       return {
+        rendererId,
         postMessage(
           message: RendererReceiveMessage,
           editor?: vscode.NotebookEditor,
