@@ -35,8 +35,9 @@ export function routeOperation(
       case "completed-run": {
         // Clear all pending executions when run is completed/interrupted
         const executionCount = context.executions.size;
+        const success = operation.op === "completed-run";
         for (const [_cellId, execution] of context.executions) {
-          execution.end(false, Date.now());
+          execution.end(success, Date.now());
         }
         context.executions.clear();
         yield* Effect.logInfo("Run completed").pipe(
