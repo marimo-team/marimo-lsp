@@ -1,9 +1,9 @@
-import { Effect, FiberSet, Layer } from "effect";
+import { Effect, FiberSet, Layer, Option } from "effect";
 import * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import * as ops from "../operations.ts";
 import { MarimoLanguageClient } from "../services/MarimoLanguageClient.ts";
-import { MarimoNotebookControllerManager } from "../services/MarimoNotebookControllerManager.ts";
+import { MarimoNotebookControllers } from "../services/MarimoNotebookControllers.ts";
 import { MarimoNotebookRenderer } from "../services/MarimoNotebookRenderer.ts";
 
 export const KernelManagerLive = Layer.scopedDiscard(
@@ -13,7 +13,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
     );
     const marimo = yield* MarimoLanguageClient;
     const renderer = yield* MarimoNotebookRenderer;
-    const manager = yield* MarimoNotebookControllerManager;
+    const controllers = yield* MarimoNotebookControllers;
 
     const contexts = new Map<
       string,
@@ -40,11 +40,19 @@ export const KernelManagerLive = Layer.scopedDiscard(
             );
           }
 
-          const controller = manager.getSelectedController(context.notebook);
-          assert(controller, `Expected notebook controller for ${notebookUri}`);
+          const controller = yield* controllers.getActiveController(
+            context.notebook,
+          );
+          assert(
+            Option.isSome(controller),
+            `Expected notebook controller for ${notebookUri}`,
+          );
 
           return yield* ops
-            .routeOperation({ ...context, controller }, operation)
+            .routeOperation(
+              { ...context, controller: controller.value },
+              operation,
+            )
             .pipe(
               Effect.withSpan(`op:${operation.op}`, {
                 attributes: { notebookUri },
