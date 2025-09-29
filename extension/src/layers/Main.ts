@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Layer } from "effect";
 import { MarimoDebugAdapter } from "../services/DebugAdapter.ts";
 import { MarimoConfig } from "../services/MarimoConfig.ts";
 import { MarimoLanguageClient } from "../services/MarimoLanguageClient.ts";
@@ -10,39 +10,10 @@ import { VsCode } from "../services/VsCode.ts";
 
 import { KernelManagerLive } from "./KernelManager.ts";
 import { LoggerLive } from "./Logger.ts";
+import { MarimoLspLive } from "./MarimoLsp.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
 
-const ServerLive = Layer.scopedDiscard(
-  Effect.gen(function* () {
-    const client = yield* MarimoLanguageClient;
-    yield* Effect.logInfo("Starting LSP client").pipe(
-      Effect.annotateLogs({ component: "server" }),
-    );
-    yield* client.manage();
-    yield* Effect.logInfo("LSP client started").pipe(
-      Effect.annotateLogs({ component: "server" }),
-    );
-    yield* Effect.logInfo("Extension main fiber running").pipe(
-      Effect.annotateLogs({ component: "server" }),
-    );
-  }).pipe(
-    Effect.catchTag("LanguageClientStartError", (error) =>
-      Effect.gen(function* () {
-        const code = yield* VsCode;
-        yield* Effect.logError("Failed to start extension", error).pipe(
-          Effect.annotateLogs({ component: "server" }),
-        );
-        yield* code.window.useInfallible((api) =>
-          api.showErrorMessage(
-            `Marimo language server failed to start. See marimo logs for more info.`,
-          ),
-        );
-      }),
-    ),
-  ),
-);
-
-export const MainLive = ServerLive.pipe(
+export const MainLive = MarimoLspLive.pipe(
   Layer.merge(RegisterCommandsLive),
   Layer.merge(KernelManagerLive),
   Layer.provide(MarimoDebugAdapter.Default),
