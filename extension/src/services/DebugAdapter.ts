@@ -7,6 +7,10 @@ import { MarimoNotebookSerializer } from "./MarimoNotebookSerializer.ts";
 export class MarimoDebugAdapter extends Effect.Service<MarimoDebugAdapter>()(
   "MarimoDebugAdapter",
   {
+    dependencies: [
+      MarimoNotebookSerializer.Default,
+      MarimoLanguageClient.Default,
+    ],
     scoped: Effect.gen(function* () {
       const debugType = "marimo";
       const serializer = yield* MarimoNotebookSerializer;

@@ -28,6 +28,7 @@ export class ExecuteCommandError extends Data.TaggedError(
 export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()(
   "MarimoLanguageClient",
   {
+    dependencies: [VsCode.Default, MarimoConfig.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const exec = yield* getLspExecutable();

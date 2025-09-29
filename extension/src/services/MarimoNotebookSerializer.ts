@@ -5,6 +5,7 @@ import { VsCode } from "./VsCode.ts";
 export class MarimoNotebookSerializer extends Effect.Service<MarimoNotebookSerializer>()(
   "MarimoNotebookSerializer",
   {
+    dependencies: [VsCode.Default, MarimoLanguageClient.Default],
     scoped: Effect.gen(function* () {
       const notebookType = "marimo-notebook";
 

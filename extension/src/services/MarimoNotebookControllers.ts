@@ -30,7 +30,12 @@ const idFor = (env: py.Environment) => `marimo-${env.path}` as ControllerId;
 export class NotebookControllerPool extends Effect.Service<NotebookControllerPool>()(
   "NotebookControllerPool",
   {
-    dependencies: [MarimoEnvironmentValidator.Default],
+    dependencies: [
+      VsCode.Default,
+      MarimoLanguageClient.Default,
+      MarimoEnvironmentValidator.Default,
+      MarimoNotebookSerializer.Default,
+    ],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const marimo = yield* MarimoLanguageClient;
@@ -170,7 +175,7 @@ export class NotebookControllerPool extends Effect.Service<NotebookControllerPoo
 export class MarimoNotebookControllers extends Effect.Service<MarimoNotebookControllers>()(
   "MarimoNotebookControllers",
   {
-    dependencies: [NotebookControllerPool.Default],
+    dependencies: [NotebookControllerPool.Default, PythonExtension.Default],
     scoped: Effect.gen(function* () {
       const pool = yield* NotebookControllerPool;
 
