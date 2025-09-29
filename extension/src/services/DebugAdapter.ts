@@ -1,20 +1,20 @@
 import { Effect, Fiber, FiberSet } from "effect";
 import * as vscode from "vscode";
 
-import { MarimoLanguageClient } from "./MarimoLanguageClient.ts";
-import { MarimoNotebookSerializer } from "./MarimoNotebookSerializer.ts";
+import { LanguageClient } from "./LanguageClient.ts";
+import { NotebookSerializer } from "./NotebookSerializer.ts";
 
-export class MarimoDebugAdapter extends Effect.Service<MarimoDebugAdapter>()(
-  "MarimoDebugAdapter",
+/**
+ * Provides Debug Adapter Protocol (DAP) bridge for marimo notebooks.
+ */
+export class DebugAdapter extends Effect.Service<DebugAdapter>()(
+  "DebugAdapter",
   {
-    dependencies: [
-      MarimoNotebookSerializer.Default,
-      MarimoLanguageClient.Default,
-    ],
+    dependencies: [NotebookSerializer.Default, LanguageClient.Default],
     scoped: Effect.gen(function* () {
       const debugType = "marimo";
-      const serializer = yield* MarimoNotebookSerializer;
-      const marimo = yield* MarimoLanguageClient;
+      const serializer = yield* NotebookSerializer;
+      const marimo = yield* LanguageClient;
       const runFork = yield* FiberSet.makeRuntime();
 
       yield* Effect.logInfo("Setting up debug adapter").pipe(

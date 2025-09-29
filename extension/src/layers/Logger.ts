@@ -43,6 +43,9 @@ const makeVsCodeLogger = (name: string) =>
     });
   });
 
+/**
+ * Configures logging for the extension (both within VS Code and to the file system)
+ */
 export const LoggerLive = Layer.unwrapScoped(
   Effect.gen(function* () {
     const fileLogger = yield* makeFileLogger(

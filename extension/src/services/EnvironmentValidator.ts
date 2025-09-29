@@ -22,8 +22,18 @@ class EnvironmentRequirementError extends Data.TaggedError(
   readonly diagnostics: ReadonlyArray<RequirementDiagnostic>;
 }> {}
 
-export class MarimoEnvironmentValidator extends Effect.Service<MarimoEnvironmentValidator>()(
-  "MarimoEnvironmentValidator",
+/**
+ * Validates Python environments for marimo extension compatibility.
+ *
+ * Checks for:
+ *
+ *   - marimo (with version requirement)
+ *   - pyzmq
+ *
+ * using `env.executable`.
+ */
+export class EnvironmentValidator extends Effect.Service<EnvironmentValidator>()(
+  "EnvironmentValidator",
   {
     succeed: {
       validate(

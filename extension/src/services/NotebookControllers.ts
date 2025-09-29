@@ -13,9 +13,9 @@ import {
 } from "effect";
 import * as vscode from "vscode";
 import { unreachable } from "../assert.ts";
-import { MarimoEnvironmentValidator } from "./MarimoEnvironmentValidator.ts";
-import { MarimoLanguageClient } from "./MarimoLanguageClient.ts";
-import { MarimoNotebookSerializer } from "./MarimoNotebookSerializer.ts";
+import { EnvironmentValidator } from "./EnvironmentValidator.ts";
+import { LanguageClient } from "./LanguageClient.ts";
+import { NotebookSerializer } from "./NotebookSerializer.ts";
 import { PythonExtension } from "./PythonExtension.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -26,20 +26,24 @@ interface ControllerEntry {
   readonly scope: Scope.CloseableScope;
 }
 
+/**
+ * Manages notebook execution controllers for marimo notebooks,
+ * handling controller registration, selection, and execution lifecycle.
+ */
 export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
   "ControllerRegistry",
   {
     dependencies: [
       VsCode.Default,
-      MarimoLanguageClient.Default,
-      MarimoEnvironmentValidator.Default,
-      MarimoNotebookSerializer.Default,
+      LanguageClient.Default,
+      EnvironmentValidator.Default,
+      NotebookSerializer.Default,
     ],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
-      const marimo = yield* MarimoLanguageClient;
-      const validator = yield* MarimoEnvironmentValidator;
-      const serializer = yield* MarimoNotebookSerializer;
+      const marimo = yield* LanguageClient;
+      const validator = yield* EnvironmentValidator;
+      const serializer = yield* NotebookSerializer;
 
       const controllersRef = yield* Ref.make(
         HashMap.empty<ControllerId, ControllerEntry>(),
@@ -189,8 +193,8 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
   },
 ) {}
 
-export class MarimoNotebookControllers extends Effect.Service<MarimoNotebookControllers>()(
-  "MarimoNotebookControllers",
+export class NotebookControllers extends Effect.Service<NotebookControllers>()(
+  "NotebookControllers",
   {
     dependencies: [ControllerRegistry.Default, PythonExtension.Default],
     scoped: Effect.gen(function* () {
@@ -304,9 +308,9 @@ const createNewMarimoNotebookController = Effect.fnUntraced(
     ) => Effect.Effect<void, never, never>;
     deps: {
       code: VsCode;
-      marimo: MarimoLanguageClient;
-      validator: MarimoEnvironmentValidator;
-      serializer: MarimoNotebookSerializer;
+      marimo: LanguageClient;
+      validator: EnvironmentValidator;
+      serializer: NotebookSerializer;
     };
   }) {
     const { code, marimo, validator, serializer } = options.deps;

@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import * as vscode from "vscode";
 
 import { assert } from "./assert.ts";
-import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
+import { NotebookRenderer } from "./services/NotebookRenderer.ts";
 import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
 import type { CellMessage, MessageOperation } from "./types.ts";
 
@@ -15,9 +15,9 @@ export interface OperationContext {
 export function routeOperation(
   context: OperationContext,
   operation: MessageOperation,
-): Effect.Effect<void, never, MarimoNotebookRenderer> {
+): Effect.Effect<void, never, NotebookRenderer> {
   return Effect.gen(function* () {
-    const renderer = yield* MarimoNotebookRenderer;
+    const renderer = yield* NotebookRenderer;
 
     switch (operation.op) {
       case "cell-op": {

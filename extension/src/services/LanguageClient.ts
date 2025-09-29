@@ -9,7 +9,7 @@ import type {
   MarimoNotification,
   MarimoNotificationOf,
 } from "../types.ts";
-import { MarimoConfig } from "./MarimoConfig.ts";
+import { Config } from "./Config.ts";
 import { VsCode } from "./VsCode.ts";
 
 export class LanguageClientStartError extends Data.TaggedError(
@@ -26,13 +26,19 @@ export class ExecuteCommandError extends Data.TaggedError(
   readonly cause: unknown;
 }> {}
 
-export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()(
-  "MarimoLanguageClient",
+/**
+ * Manages the marimo LSP client lifecycle and provides
+ * methods to interact with the language server (execute commands,
+ * send/receive notifications, serialize/deserialize notebooks).
+ */
+export class LanguageClient extends Effect.Service<LanguageClient>()(
+  "LanguageClient",
   {
-    dependencies: [VsCode.Default, MarimoConfig.Default],
+    dependencies: [VsCode.Default, Config.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
-      const exec = yield* getLspExecutable();
+      const config = yield* Config;
+      const exec = yield* getLspExecutable(config);
       yield* Effect.logInfo("Starting language server").pipe(
         Effect.annotateLogs({
           component: "language-client",
@@ -152,52 +158,44 @@ type ParamsFor<Command extends MarimoCommand["command"]> = Extract<
   { command: Command }
 >["params"];
 
-function getLspExecutable(): Effect.Effect<
-  lsp.Executable,
-  never,
-  MarimoConfig
-> {
-  return Effect.gen(function* () {
-    const config = yield* MarimoConfig;
-
-    if (config.lsp.executable) {
-      const { command, args } = config.lsp.executable;
-      return {
-        command,
-        args,
-        transport: lsp.TransportKind.stdio,
-      };
-    }
-
-    // Look for bundled wheel matching marimo_lsp-* pattern
-    const sdistDir = fs
-      .readdirSync(__dirname)
-      .find((f) => f.startsWith("marimo_lsp-"));
-
-    if (sdistDir) {
-      const sdist = path.join(__dirname, sdistDir);
-      yield* Effect.logInfo("Using bundled marimo-lsp").pipe(
-        Effect.annotateLogs({ sdist }),
-      );
-      return {
-        command: "uv",
-        args: ["tool", "run", "--from", sdist, "marimo-lsp"],
-        transport: lsp.TransportKind.stdio,
-      };
-    }
-
-    // Fallback to development mode if no wheel found
-    yield* Effect.logWarning(
-      "No bundled wheel found, using development mode",
-    ).pipe(Effect.annotateLogs({ directory: __dirname }));
-
+const getLspExecutable = Effect.fnUntraced(function* (config: Config) {
+  if (config.lsp.executable) {
+    const { command, args } = config.lsp.executable;
     return {
-      command: "uv",
-      args: ["run", "--directory", __dirname, "marimo-lsp"],
+      command,
+      args,
       transport: lsp.TransportKind.stdio,
     };
-  });
-}
+  }
+
+  // Look for bundled wheel matching marimo_lsp-* pattern
+  const sdistDir = fs
+    .readdirSync(__dirname)
+    .find((f) => f.startsWith("marimo_lsp-"));
+
+  if (sdistDir) {
+    const sdist = path.join(__dirname, sdistDir);
+    yield* Effect.logInfo("Using bundled marimo-lsp").pipe(
+      Effect.annotateLogs({ sdist }),
+    );
+    return {
+      command: "uv",
+      args: ["tool", "run", "--from", sdist, "marimo-lsp"],
+      transport: lsp.TransportKind.stdio,
+    };
+  }
+
+  // Fallback to development mode if no wheel found
+  yield* Effect.logWarning(
+    "No bundled wheel found, using development mode",
+  ).pipe(Effect.annotateLogs({ directory: __dirname }));
+
+  return {
+    command: "uv",
+    args: ["run", "--directory", __dirname, "marimo-lsp"],
+    transport: lsp.TransportKind.stdio,
+  };
+});
 
 function executeCommand(
   client: lsp.BaseLanguageClient,

@@ -125,6 +125,9 @@ class ParseUriError extends Data.TaggedError("ParseUriError")<{
   cause: unknown;
 }> {}
 
+/**
+ * Wraps VS Code API functionality in Effect services
+ */
 export class VsCode extends Effect.Service<VsCode>()("VsCode", {
   effect: Effect.gen(function* () {
     return {
