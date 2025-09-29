@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createVSCodeMock } from "../__mocks__/vscode";
+import { createVSCodeMock } from "../__mocks__/vscode.ts";
 
 vi.mock("vscode", () => createVSCodeMock(vi));
 vi.mock("vscode-languageclient/node", () => createVSCodeLanguageClientMock(vi));
