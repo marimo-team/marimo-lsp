@@ -9,6 +9,19 @@ const MINIMUM_MARIMO_VERSION = {
   patch: 0,
 } satisfies semver.SemVer;
 
+class PythonExecutionError extends Data.TaggedError("PythonExecutionError")<{
+  readonly env: py.Environment;
+  readonly error: NodeChildProcess.ExecFileException;
+  readonly stderr: string;
+}> {}
+
+class EnvironmentRequirementError extends Data.TaggedError(
+  "EnvironmentRequirementError",
+)<{
+  readonly env: py.Environment;
+  readonly diagnostics: ReadonlyArray<RequirementDiagnostic>;
+}> {}
+
 export class MarimoEnvironmentValidator extends Effect.Service<MarimoEnvironmentValidator>()(
   "MarimoEnvironmentValidator",
   {
@@ -123,12 +136,6 @@ class ValidPythonEnvironemnt extends Data.TaggedClass(
   }
 }
 
-class PythonExecutionError extends Data.TaggedError("PythonExecutionError")<{
-  readonly env: py.Environment;
-  readonly error: NodeChildProcess.ExecFileException;
-  readonly stderr: string;
-}> {}
-
 type RequirementDiagnostic =
   | { kind: "unknown"; package: string }
   | { kind: "missing"; package: string }
@@ -138,13 +145,6 @@ type RequirementDiagnostic =
       currentVersion: semver.SemVer;
       requiredVersion: semver.SemVer;
     };
-
-class EnvironmentRequirementError extends Data.TaggedError(
-  "EnvironmentRequirementError",
-)<{
-  readonly env: py.Environment;
-  readonly diagnostics: ReadonlyArray<RequirementDiagnostic>;
-}> {}
 
 const SemVerFromString = Schema.transformOrFail(
   Schema.String,

@@ -1,3 +1,4 @@
+import * as NodeFs from "node:fs";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
 import {
@@ -369,13 +370,24 @@ const createNewMarimoNotebookController = Effect.fnUntraced(
                   stderr: error.stderr,
                 }),
               );
-              yield* code.window.useInfallable((api) =>
-                api.showErrorMessage(
-                  `Failed to check dependencies in ${formatControllerLabel(options.env)}.\n\n` +
-                    `Python path: ${error.env.path}`,
-                  { modal: true },
-                ),
-              );
+
+              // Check if Python executable still exists
+              if (!NodeFs.existsSync(error.env.path)) {
+                yield* code.window.useInfallable((api) =>
+                  api.showErrorMessage(
+                    `Python executable does not exist for env: ${error.env.path}.`,
+                    { modal: true },
+                  ),
+                );
+              } else {
+                yield* code.window.useInfallable((api) =>
+                  api.showErrorMessage(
+                    `Failed to check dependencies in ${formatControllerLabel(options.env)}.\n\n` +
+                      `Python path: ${error.env.path}`,
+                    { modal: true },
+                  ),
+                );
+              }
             }),
             EnvironmentRequirementError: Effect.fnUntraced(function* (error) {
               yield* Effect.logWarning("Environment requirements not met").pipe(
