@@ -20,15 +20,13 @@ import { VsCode } from "./VsCode.ts";
 
 type ControllerId = string & Brand.Brand<"ControllerId">;
 
-type ControllerEntry = {
-  controller: vscode.NotebookController;
-  scope: Scope.CloseableScope;
-};
+interface ControllerEntry {
+  readonly controller: vscode.NotebookController;
+  readonly scope: Scope.CloseableScope;
+}
 
-const idFor = (env: py.Environment) => `marimo-${env.path}` as ControllerId;
-
-export class NotebookControllerPool extends Effect.Service<NotebookControllerPool>()(
-  "NotebookControllerPool",
+export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
+  "ControllerRegistry",
   {
     dependencies: [
       VsCode.Default,
@@ -49,7 +47,10 @@ export class NotebookControllerPool extends Effect.Service<NotebookControllerPoo
         HashMap.empty<vscode.NotebookDocument, vscode.NotebookController>(),
       );
 
-      const updateController = Effect.fnUntraced(function* (
+      const idFor = (env: py.Environment) =>
+        `marimo-${env.path}` as ControllerId;
+
+      const updateControllerEntry = Effect.fnUntraced(function* (
         id: ControllerId,
         label: string,
       ) {
@@ -63,7 +64,7 @@ export class NotebookControllerPool extends Effect.Service<NotebookControllerPoo
         return false;
       });
 
-      const addController = (id: ControllerId, entry: ControllerEntry) =>
+      const addControllerEntry = (id: ControllerId, entry: ControllerEntry) =>
         Ref.update(controllersRef, (controllers) =>
           HashMap.set(controllers, id, entry),
         );
@@ -85,13 +86,21 @@ export class NotebookControllerPool extends Effect.Service<NotebookControllerPoo
           const controllerId = idFor(env);
           const controllerLabel = formatControllerLabel(env);
 
-          const updated = yield* updateController(
+          yield* Effect.logDebug("Creating or updating controller").pipe(
+            Effect.annotateLogs({
+              controllerId,
+              pythonPath: env.path,
+            }),
+          );
+
+          const updated = yield* updateControllerEntry(
             controllerId,
             controllerLabel,
           );
 
           if (updated) {
             // We updated an existing controller and don't need to recreate
+            yield* Effect.logTrace("Controller already exists, updated label");
             return;
           }
 
@@ -115,7 +124,8 @@ export class NotebookControllerPool extends Effect.Service<NotebookControllerPoo
             }),
             scope,
           );
-          yield* addController(controllerId, { controller, scope });
+          yield* addControllerEntry(controllerId, { controller, scope });
+          yield* Effect.logInfo("Successfully created new controller");
         }),
         getActiveController: Effect.fnUntraced(function* (
           notebook: vscode.NotebookDocument,
@@ -126,6 +136,7 @@ export class NotebookControllerPool extends Effect.Service<NotebookControllerPoo
         removeStale: Effect.fnUntraced(function* (
           envs: ReadonlyArray<py.Environment>,
         ) {
+          yield* Effect.logDebug("Checking for stale controllers");
           const validIds = new Set(envs.map((env) => idFor(env)));
           const controllers = yield* Ref.get(controllersRef);
           const selections = yield* Ref.get(selectionsRef);
@@ -144,11 +155,13 @@ export class NotebookControllerPool extends Effect.Service<NotebookControllerPoo
 
               if (!isInUse) {
                 toRemove.push({ id, entry });
-                yield* Effect.logDebug(`Disposing stale controller ${id}`);
+                yield* Effect.logInfo("Marking controller for removal").pipe(
+                  Effect.annotateLogs({ controllerId: id }),
+                );
               } else {
                 yield* Effect.logTrace(
-                  `Keeping controller ${id} - still in use`,
-                );
+                  "Keeping controller - still in use",
+                ).pipe(Effect.annotateLogs({ controllerId: id }));
               }
             }
           }
@@ -165,33 +178,55 @@ export class NotebookControllerPool extends Effect.Service<NotebookControllerPoo
             yield* Ref.update(controllersRef, (map) =>
               toRemove.reduce((acc, { id }) => HashMap.remove(acc, id), map),
             );
+            yield* Effect.logInfo("Completed stale controller removal").pipe(
+              Effect.annotateLogs({ removedCount: toRemove.length }),
+            );
           }
         }),
       };
-    }),
+    }).pipe(Effect.annotateLogs({ component: "notebook-controller" })),
   },
 ) {}
 
 export class MarimoNotebookControllers extends Effect.Service<MarimoNotebookControllers>()(
   "MarimoNotebookControllers",
   {
-    dependencies: [NotebookControllerPool.Default, PythonExtension.Default],
+    dependencies: [ControllerRegistry.Default, PythonExtension.Default],
     scoped: Effect.gen(function* () {
-      const pool = yield* NotebookControllerPool;
+      const pyExt = yield* PythonExtension;
+      const registry = yield* ControllerRegistry;
 
       const runPromise = yield* FiberSet.makeRuntimePromise();
 
-      yield* Effect.logInfo("Setting up notebook controller manager").pipe(
-        Effect.annotateLogs({ component: "notebook-controller" }),
-      );
+      yield* Effect.logInfo("Setting up notebook controller manager");
+
+      const refreshControllers = Effect.fnUntraced(function* () {
+        const environments = pyExt.environments.known;
+
+        yield* Effect.logDebug("Refreshing controllers").pipe(
+          Effect.annotateLogs({ environmentCount: environments.length }),
+        );
+
+        // Create or update all current environments
+        yield* Effect.forEach(
+          environments,
+          (env) => registry.createOrUpdate(env),
+          {
+            discard: true,
+          },
+        );
+
+        // Let the state handle disposal logic internally
+        yield* registry.removeStale(environments);
+      });
 
       // Set up environment monitoring
       yield* Effect.acquireRelease(
         Effect.gen(function* () {
           const api = yield* PythonExtension;
-          yield* refreshControllers(api, pool);
+          yield* refreshControllers();
           return api.environments.onDidChangeEnvironments(() =>
-            runPromise(refreshControllers(api, pool)),
+            runPromise(refreshControllers()),
           );
         }),
         (disposable) => Effect.sync(() => disposable.dispose()),
@@ -202,7 +237,7 @@ export class MarimoNotebookControllers extends Effect.Service<MarimoNotebookCont
          * Get the currently selected controller for a notebook document
          */
         getActiveController(notebook: vscode.NotebookDocument) {
-          return pool.getActiveController(notebook);
+          return registry.getActiveController(notebook);
         },
       };
     }),
@@ -254,21 +289,6 @@ export function resolvePythonEnvironmentName(
   }
   return undefined;
 }
-
-const refreshControllers = Effect.fnUntraced(function* (
-  api: PythonExtension,
-  pool: NotebookControllerPool,
-) {
-  const environments = api.environments.known;
-
-  // Create or update all current environments
-  yield* Effect.forEach(environments, (env) => pool.createOrUpdate(env), {
-    discard: true,
-  });
-
-  // Let the state handle disposal logic internally
-  yield* pool.removeStale(environments);
-});
 
 const createNewMarimoNotebookController = Effect.fnUntraced(
   function* (options: {
