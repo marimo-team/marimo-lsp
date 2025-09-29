@@ -1,7 +1,8 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
 import type * as vscode from "vscode";
+import type * as lsp from "vscode-languageclient/node";
 
-import type { NotebookSerialization } from "./schemas.ts";
+import type { MarimoNotebook } from "./schemas.ts";
 
 type Schemas = Api["schemas"];
 
@@ -27,7 +28,7 @@ interface DeserializeRequest {
   source: string;
 }
 interface SerializeRequest {
-  notebook: NotebookSerialization;
+  notebook: typeof MarimoNotebook.Type;
 }
 interface DebugAdapterRequest {
   sessionId: string;
@@ -76,12 +77,11 @@ export type RendererReceiveMessage =
   | MessageOperationOf<"remove-ui-elements">
   | MessageOperationOf<"send-ui-element-message">;
 
-export const notebookType = "marimo-notebook";
-
 // Language server -> client
 type MarimoNotificationMap = {
   "marimo/operation": { notebookUri: string; operation: MessageOperation };
   "marimo/dap": { sessionId: string; message: vscode.DebugProtocolMessage };
+  "window/logMessage": lsp.LogMessageParams;
 };
 export type MarimoNotification = keyof MarimoNotificationMap;
 export type MarimoNotificationOf<K extends MarimoNotification> = {

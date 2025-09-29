@@ -6,6 +6,7 @@ module.exports = defineConfig([
     files: "tests/*.test.cjs",
     version: "insiders",
     workspaceFolder: "./sampleWorkspace",
+    installExtensions: ["ms-python.python"],
     mocha: {
       ui: "tdd",
       timeout: 20000,

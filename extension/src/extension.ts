@@ -1,94 +1,42 @@
-import { Layer } from "effect";
+import { Effect, Exit, Layer, Logger, LogLevel, pipe, Scope } from "effect";
 import * as vscode from "vscode";
-import * as lsp from "vscode-languageclient/node";
 
-import * as cmds from "./commands.ts";
-import { debugAdapter } from "./debugAdapter.ts";
-import { kernelManager } from "./kernelManager.ts";
-import { languageClient } from "./languageClient.ts";
-import { Logger } from "./logging.ts";
-import { notebookSerializer } from "./notebookSerializer.ts";
-import {
-  LoggerLive,
-  MarimoLanguageClient,
-  MarimoNotebookRenderer,
-  RawLanguageClient,
-} from "./services.ts";
-import { notebookType } from "./types.ts";
+import { MainLive } from "./layers/Main.ts";
 
-export async function activate(context: vscode.ExtensionContext) {
-  Logger.info("Extension.Lifecycle", "Activating marimo", {
-    extensionPath: context.extensionPath,
-    workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-  });
-
-  const controller = new AbortController();
-  const signal = controller.signal;
-
-  const client = await languageClient({ signal });
-
-  const MainLive = Layer.mergeAll(
-    LoggerLive,
-    MarimoNotebookRenderer.Default,
-    Layer.provide(
-      MarimoLanguageClient.Default,
-      RawLanguageClient.layer(client),
-    ),
-  );
-
-  debugAdapter(client, { signal });
-  kernelManager(MainLive, { signal });
-  notebookSerializer(MainLive, { signal });
-
-  context.subscriptions.push(
-    { dispose: () => controller.abort() },
-    cmds.registerCommand("marimo.newMarimoNotebook", async () => {
-      const doc = await vscode.workspace.openNotebookDocument(
-        notebookType,
-        new vscode.NotebookData([
-          new vscode.NotebookCellData(
-            vscode.NotebookCellKind.Code,
-            "",
-            "python",
+export async function activate(
+  context: vscode.ExtensionContext,
+): Promise<vscode.Disposable> {
+  return pipe(
+    Effect.gen(function* () {
+      yield* Effect.logInfo("Activating marimo extension").pipe(
+        Effect.annotateLogs({
+          extensionPath: context.extensionPath,
+          workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        }),
+      );
+      // Create a scope and build layers with it. Layer.buildWithScope completes
+      // once all layer initialization finishes (commands registered, serializer
+      // registered, LSP client started), but keeps resources alive by extending
+      // their lifetime to the manually-managed scope. Resources are only released
+      // when we explicitly close the scope on deactivation.
+      const scope = yield* Scope.make();
+      yield* Layer.buildWithScope(MainLive, scope);
+      return {
+        dispose: () =>
+          Effect.runPromise(
+            Effect.gen(function* () {
+              yield* Effect.logInfo("Deactivating marimo extension");
+              yield* Scope.close(scope, Exit.void);
+            }),
           ),
-        ]),
-      );
-      await vscode.window.showNotebookDocument(doc);
-      Logger.info("Command", "Created new marimo notebook", {
-        uri: doc.uri.toString(),
-      });
+      };
     }),
+    Logger.withMinimumLogLevel(LogLevel.All),
+    Effect.runPromise,
   );
-
-  await client
-    .start()
-    .then(() => {
-      Logger.info("Extension.Lifecycle", "LSP client started successfully");
-      // Forward logs from the LSP server
-      client.onNotification(
-        "window/logMessage",
-        ({ type, message }: lsp.LogMessageParams) => {
-          const mapping = {
-            [lsp.MessageType.Error]: "error",
-            [lsp.MessageType.Warning]: "warn",
-            [lsp.MessageType.Info]: "info",
-            [lsp.MessageType.Log]: "info",
-            [lsp.MessageType.Debug]: "debug",
-          } as const;
-          Logger[mapping[type]]("LSP.Server", message);
-        },
-      );
-    })
-    .catch((error) => {
-      Logger.error("Extension.Lifecycle", "Failed to start LSP client", error);
-      vscode.window.showErrorMessage(
-        `Marimo language server failed to start ${JSON.stringify(error.message)}`,
-      );
-    });
-  Logger.info("Extension.Lifecycle", "Activation complete");
 }
 
 export async function deactivate() {
-  Logger.info("Extension.Lifecycle", "Deactivating marimo");
-  Logger.close();
+  // No-op: VSCode will call `dispose()` on the returned `Disposable`
+  // from `activate()`, which closes the scope and releases all resources.
 }

@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import * as vscode from "vscode";
 
 import { assert } from "./assert.ts";
-import { MarimoNotebookRenderer } from "./services.ts";
+import { MarimoNotebookRenderer } from "./services/MarimoNotebookRenderer.ts";
 import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
 import type { CellMessage, MessageOperation } from "./types.ts";
 
@@ -26,21 +26,33 @@ export function routeOperation(
       // Forward to renderer (front end)
       case "remove-ui-elements":
       case "send-ui-element-message": {
+        yield* Effect.logTrace("Forwarding message to renderer").pipe(
+          Effect.annotateLogs({ op: operation.op }),
+        );
         return yield* renderer.postMessage(operation);
       }
       case "interrupted":
       case "completed-run": {
         // Clear all pending executions when run is completed/interrupted
+        const executionCount = context.executions.size;
         for (const [_cellId, execution] of context.executions) {
           execution.end(false, Date.now());
         }
         context.executions.clear();
+        yield* Effect.logInfo("Run completed").pipe(
+          Effect.annotateLogs({
+            op: operation.op,
+            clearedExecutions: executionCount,
+          }),
+        );
         return yield* Effect.void;
       }
       default:
-        return yield* Effect.logWarning("Unknown operation");
+        return yield* Effect.logWarning("Unknown operation").pipe(
+          Effect.annotateLogs({ op: operation.op }),
+        );
     }
-  }).pipe(Effect.annotateLogs({ op: operation.op }));
+  }).pipe(Effect.annotateLogs({ component: "operations" }));
 }
 
 const cellStateManager = new CellStateManager();
@@ -51,6 +63,9 @@ function handleCellOperation(
 ): Effect.Effect<void, never, never> {
   return Effect.gen(function* () {
     const { cell_id: cellId, status, timestamp = 0 } = data;
+    yield* Effect.logTrace("Handling cell operation").pipe(
+      Effect.annotateLogs({ cellId, status }),
+    );
     const state = cellStateManager.handleCellOp(data);
 
     switch (status) {
@@ -59,6 +74,9 @@ function handleCellOperation(
           getNotebookCell(context.notebook, cellId),
         );
         context.executions.set(cellId, execution);
+        yield* Effect.logDebug("Cell queued for execution").pipe(
+          Effect.annotateLogs({ cellId }),
+        );
         return yield* Effect.void;
       }
 
@@ -66,6 +84,9 @@ function handleCellOperation(
         const execution = context.executions.get(cellId);
         assert(execution, `Expected execution for ${cellId}`);
         execution.start(timestamp * 1000);
+        yield* Effect.logDebug("Cell execution started").pipe(
+          Effect.annotateLogs({ cellId }),
+        );
         // MUST modify cell output after `NotebookCellExecution.start`
         yield* updateOrCreateMarimoCellOutput(execution, { cellId, state });
         return;
@@ -78,6 +99,9 @@ function handleCellOperation(
         yield* updateOrCreateMarimoCellOutput(execution, { cellId, state });
         execution.end(true, timestamp * 1000);
         context.executions.delete(cellId);
+        yield* Effect.logDebug("Cell execution completed").pipe(
+          Effect.annotateLogs({ cellId }),
+        );
         return;
       }
 
