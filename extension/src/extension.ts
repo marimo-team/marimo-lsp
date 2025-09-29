@@ -1,5 +1,5 @@
 import { Effect, Exit, Layer, Logger, LogLevel, pipe, Scope } from "effect";
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 
 import { MainLive } from "./layers/Main.ts";
 
@@ -9,10 +9,7 @@ export async function activate(
   return pipe(
     Effect.gen(function* () {
       yield* Effect.logInfo("Activating marimo extension").pipe(
-        Effect.annotateLogs({
-          extensionPath: context.extensionPath,
-          workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-        }),
+        Effect.annotateLogs({ extensionPath: context.extensionPath }),
       );
       // Create a scope and build layers with it. Layer.buildWithScope completes
       // once all layer initialization finishes (commands registered, serializer

@@ -4,6 +4,7 @@ import type * as py from "@vscode/python-extension";
 import {
   type Brand,
   Effect,
+  Either,
   Exit,
   FiberSet,
   HashMap,
@@ -11,7 +12,7 @@ import {
   Ref,
   Scope,
 } from "effect";
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 import { unreachable } from "../assert.ts";
 import { EnvironmentValidator } from "./EnvironmentValidator.ts";
 import { LanguageClient } from "./LanguageClient.ts";
@@ -89,7 +90,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       return {
         createOrUpdate: Effect.fnUntraced(function* (env: py.Environment) {
           const controllerId = idFor(env);
-          const controllerLabel = formatControllerLabel(env);
+          const controllerLabel = formatControllerLabel(code, env);
 
           yield* Effect.logDebug("Creating or updating controller").pipe(
             Effect.annotateLogs({
@@ -254,7 +255,7 @@ export class NotebookControllers extends Effect.Service<NotebookControllers>()(
  *
  * E.g. "EnvName (Python 3.10.2)" or just "Python 3.10.2"
  */
-function formatControllerLabel(env: py.Environment): string {
+function formatControllerLabel(code: VsCode, env: py.Environment): string {
   const versionParts: Array<number> = [];
   if (env.version) {
     if (typeof env.version.major === "number") {
@@ -271,7 +272,7 @@ function formatControllerLabel(env: py.Environment): string {
     versionParts.length > 0 ? `Python ${versionParts.join(".")}` : "Python";
 
   // Format similar to vscode-jupyter: "EnvName (Python 3.10.2)" or just "Python 3.10.2"
-  const envName = resolvePythonEnvironmentName(env);
+  const envName = resolvePythonEnvironmentName(code, env);
   if (envName) {
     return `${envName} (${formatted})`;
   }
@@ -282,13 +283,16 @@ function formatControllerLabel(env: py.Environment): string {
  * A human readable name for a {@link py.Environment}
  */
 export function resolvePythonEnvironmentName(
+  code: VsCode,
   env: py.Environment,
 ): string | undefined {
   if (env.environment?.name) {
     return env.environment.name;
   }
   if (env.environment?.folderUri) {
-    return vscode.Uri.parse(env.environment.folderUri.toString())
+    return code.utils
+      .parseUri(env.environment.folderUri.toString())
+      .pipe(Either.getOrThrow)
       .path.split("/")
       .pop();
   }
@@ -316,15 +320,10 @@ const createNewMarimoNotebookController = Effect.fnUntraced(
     const { code, marimo, validator, serializer } = options.deps;
     const runPromise = yield* FiberSet.makeRuntimePromise();
 
-    const controller = yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        vscode.notebooks.createNotebookController(
-          options.controller.id,
-          serializer.notebookType,
-          options.controller.label,
-        ),
-      ),
-      (disposable) => Effect.sync(() => disposable.dispose()),
+    const controller = yield* code.notebooks.createNotebookController(
+      options.controller.id,
+      serializer.notebookType,
+      options.controller.label,
     );
 
     // Add metadata
@@ -386,7 +385,7 @@ const createNewMarimoNotebookController = Effect.fnUntraced(
               } else {
                 yield* code.window.useInfallible((api) =>
                   api.showErrorMessage(
-                    `Failed to check dependencies in ${formatControllerLabel(options.env)}.\n\n` +
+                    `Failed to check dependencies in ${formatControllerLabel(code, options.env)}.\n\n` +
                       `Python path: ${error.env.path}`,
                     { modal: true },
                   ),
@@ -414,7 +413,7 @@ const createNewMarimoNotebookController = Effect.fnUntraced(
               });
 
               const msg =
-                `${formatControllerLabel(options.env)} cannot run the marimo kernel:\n\n` +
+                `${formatControllerLabel(code, options.env)} cannot run the marimo kernel:\n\n` +
                 messages.join("\n") +
                 `\n\nPlease install or update the missing packages.`;
 

@@ -5,6 +5,7 @@
     "clientKind": "git",
     "useIgnoreFile": true
   },
+  "plugins": ["./extension/lint/vscode-type-only.grit"],
   "files": {
     "ignoreUnknown": false
   },
@@ -18,6 +19,9 @@
       "recommended": true,
       "correctness": {
         "useHookAtTopLevel": "off"
+      },
+      "style": {
+        "useImportType": "error"
       }
     }
   },

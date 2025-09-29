@@ -15,8 +15,17 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     yield* code.commands.registerCommand(
       "marimo.newMarimoNotebook",
       Effect.gen(function* () {
-        const doc = yield* code.workspace.createEmptyPythonNotebook(
-          serializer.notebookType,
+        const doc = yield* code.workspace.use((api) =>
+          api.openNotebookDocument(
+            serializer.notebookType,
+            new code.NotebookData([
+              new code.NotebookCellData(
+                code.NotebookCellKind.Code,
+                "",
+                "python",
+              ),
+            ]),
+          ),
         );
         yield* code.window.use((api) => api.showNotebookDocument(doc));
         yield* Effect.logInfo("Created new marimo notebook").pipe(

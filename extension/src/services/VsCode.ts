@@ -1,4 +1,9 @@
 import { Data, Effect, Either, FiberSet } from "effect";
+// VsCode.ts is the centralized service that wraps the VS Code API.
+//
+// All other modules should use type-only imports and access the API through this service.
+//
+// biome-ignore lint: See above
 import * as vscode from "vscode";
 import type { AssertionError } from "../assert.ts";
 
@@ -66,6 +71,9 @@ class Window extends Effect.Service<Window>()("Window", {
           (disposable) => Effect.sync(() => disposable.dispose()),
         );
       },
+      get activeNotebookEditor() {
+        return api.activeNotebookEditor;
+      },
     };
   }),
 }) {}
@@ -73,7 +81,17 @@ class Window extends Effect.Service<Window>()("Window", {
 class Workspace extends Effect.Service<Workspace>()("Workspace", {
   sync: () => {
     const api = vscode.workspace;
+    type WorkspaceApi = typeof api;
     return {
+      getConfiguration(section: string) {
+        return api.getConfiguration(section);
+      },
+      get notebookDocuments() {
+        return api.notebookDocuments;
+      },
+      get workspaceFolders() {
+        return api.workspaceFolders;
+      },
       registerNotebookSerializer(
         notebookType: string,
         impl: vscode.NotebookSerializer,
@@ -83,19 +101,9 @@ class Workspace extends Effect.Service<Workspace>()("Workspace", {
           (disposable) => Effect.sync(() => disposable.dispose()),
         );
       },
-      createEmptyPythonNotebook(notebookType: string) {
+      use<T>(cb: (workspace: WorkspaceApi) => Thenable<T>) {
         return Effect.tryPromise({
-          try: () =>
-            api.openNotebookDocument(
-              notebookType,
-              new vscode.NotebookData([
-                new vscode.NotebookCellData(
-                  vscode.NotebookCellKind.Code,
-                  "",
-                  "python",
-                ),
-              ]),
-            ),
+          try: () => cb(api),
           catch: (cause) => new VsCodeError({ cause }),
         });
       },
@@ -121,6 +129,57 @@ class Env extends Effect.Service<Env>()("Env", {
   },
 }) {}
 
+class Debug extends Effect.Service<Debug>()("Debug", {
+  scoped: Effect.gen(function* () {
+    const api = vscode.debug;
+    return {
+      registerDebugConfigurationProvider(
+        debugType: string,
+        factory: vscode.DebugConfigurationProvider,
+      ) {
+        return Effect.acquireRelease(
+          Effect.sync(() =>
+            api.registerDebugConfigurationProvider(debugType, factory),
+          ),
+          (disposable) => Effect.sync(() => disposable.dispose()),
+        );
+      },
+      registerDebugAdapterDescriptorFactory(
+        debugType: string,
+        factory: vscode.DebugAdapterDescriptorFactory,
+      ) {
+        return Effect.acquireRelease(
+          Effect.sync(() =>
+            api.registerDebugAdapterDescriptorFactory(debugType, factory),
+          ),
+          (disposable) => Effect.sync(() => disposable.dispose()),
+        );
+      },
+    };
+  }),
+}) {}
+
+class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
+  sync: () => {
+    const api = vscode.notebooks;
+    return {
+      createRendererMessaging: api.createRendererMessaging,
+      createNotebookController(
+        id: string,
+        notebookType: string,
+        label: string,
+      ) {
+        return Effect.acquireRelease(
+          Effect.sync(() =>
+            api.createNotebookController(id, notebookType, label),
+          ),
+          (disposable) => Effect.sync(() => disposable.dispose()),
+        );
+      },
+    };
+  },
+}) {}
+
 class ParseUriError extends Data.TaggedError("ParseUriError")<{
   cause: unknown;
 }> {}
@@ -131,10 +190,22 @@ class ParseUriError extends Data.TaggedError("ParseUriError")<{
 export class VsCode extends Effect.Service<VsCode>()("VsCode", {
   effect: Effect.gen(function* () {
     return {
+      // namespaces
       window: yield* Window,
       workspace: yield* Workspace,
       commands: yield* Commands,
       env: yield* Env,
+      debug: yield* Debug,
+      notebooks: yield* Notebooks,
+      // data types
+      NotebookData: vscode.NotebookData,
+      NotebookCellData: vscode.NotebookCellData,
+      NotebookCellKind: vscode.NotebookCellKind,
+      NotebookCellOutput: vscode.NotebookCellOutput,
+      NotebookCellOutputItem: vscode.NotebookCellOutputItem,
+      EventEmitter: vscode.EventEmitter,
+      DebugAdapterInlineImplementation: vscode.DebugAdapterInlineImplementation,
+      // helper
       utils: {
         parseUri(value: string) {
           return Either.try({
@@ -150,5 +221,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
     Workspace.Default,
     Commands.Default,
     Env.Default,
+    Debug.Default,
+    Notebooks.Default,
   ],
 }) {}

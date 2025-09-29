@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Data, Effect, type ParseResult, Schema } from "effect";
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
 import { MarimoNotebook } from "../schemas.ts";
 import type {
@@ -137,7 +137,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
             return {
               metadata: metadata,
               cells: cells.map((cell) => ({
-                kind: vscode.NotebookCellKind.Code,
+                kind: code.NotebookCellKind.Code,
                 value: cell.code,
                 languageId: "python",
                 metadata: {
