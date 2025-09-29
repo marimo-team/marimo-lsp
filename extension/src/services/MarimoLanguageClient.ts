@@ -15,6 +15,7 @@ import { VsCode } from "./VsCode.ts";
 export class LanguageClientStartError extends Data.TaggedError(
   "LanguageClientStartError",
 )<{
+  exec: lsp.Executable;
   cause: unknown;
 }> {}
 
@@ -54,7 +55,7 @@ export class MarimoLanguageClient extends Effect.Service<MarimoLanguageClient>()
           return Effect.acquireRelease(
             Effect.tryPromise({
               try: () => client.start(),
-              catch: (cause) => new LanguageClientStartError({ cause }),
+              catch: (cause) => new LanguageClientStartError({ exec, cause }),
             }),
             () => Effect.sync(() => client.dispose()),
           );
@@ -179,8 +180,8 @@ function getLspExecutable(): Effect.Effect<
         Effect.annotateLogs({ sdist }),
       );
       return {
-        command: "uvx",
-        args: ["--from", sdist, "marimo-lsp"],
+        command: "uv",
+        args: ["tool", "run", "--from", sdist, "marimo-lsp"],
         transport: lsp.TransportKind.stdio,
       };
     }
