@@ -1,8 +1,9 @@
 import { Effect } from "effect";
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 
 import { assert } from "./assert.ts";
 import { NotebookRenderer } from "./services/NotebookRenderer.ts";
+import { VsCode } from "./services/VsCode.ts";
 import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
 import type { CellMessage, MessageOperation } from "./types.ts";
 
@@ -15,13 +16,14 @@ export interface OperationContext {
 export function routeOperation(
   context: OperationContext,
   operation: MessageOperation,
-): Effect.Effect<void, never, NotebookRenderer> {
+): Effect.Effect<void, never, NotebookRenderer | VsCode> {
   return Effect.gen(function* () {
     const renderer = yield* NotebookRenderer;
+    const code = yield* VsCode;
 
     switch (operation.op) {
       case "cell-op": {
-        return yield* handleCellOperation(context, operation);
+        return yield* handleCellOperation(code, context, operation);
       }
       // Forward to renderer (front end)
       case "remove-ui-elements":
@@ -59,6 +61,7 @@ export function routeOperation(
 const cellStateManager = new CellStateManager();
 
 function handleCellOperation(
+  code: VsCode,
   context: OperationContext,
   data: CellMessage,
 ): Effect.Effect<void, never, never> {
@@ -89,7 +92,10 @@ function handleCellOperation(
           Effect.annotateLogs({ cellId }),
         );
         // MUST modify cell output after `NotebookCellExecution.start`
-        yield* updateOrCreateMarimoCellOutput(execution, { cellId, state });
+        yield* updateOrCreateMarimoCellOutput(code, execution, {
+          cellId,
+          state,
+        });
         return;
       }
 
@@ -97,7 +103,10 @@ function handleCellOperation(
         const execution = context.executions.get(cellId);
         assert(execution, `Expected execution for ${cellId}`);
         // MUST modify cell output before `NotebookCellExecution.end`
-        yield* updateOrCreateMarimoCellOutput(execution, { cellId, state });
+        yield* updateOrCreateMarimoCellOutput(code, execution, {
+          cellId,
+          state,
+        });
         execution.end(true, timestamp * 1000);
         context.executions.delete(cellId);
         yield* Effect.logDebug("Cell execution completed").pipe(
@@ -109,7 +118,10 @@ function handleCellOperation(
       default: {
         const execution = context.executions.get(cellId);
         if (execution) {
-          yield* updateOrCreateMarimoCellOutput(execution, { cellId, state });
+          yield* updateOrCreateMarimoCellOutput(code, execution, {
+            cellId,
+            state,
+          });
         }
         return;
       }
@@ -118,6 +130,7 @@ function handleCellOperation(
 }
 
 function updateOrCreateMarimoCellOutput(
+  code: VsCode,
   execution: vscode.NotebookCellExecution,
   payload: {
     cellId: string;
@@ -126,8 +139,8 @@ function updateOrCreateMarimoCellOutput(
 ): Effect.Effect<void, never, never> {
   return Effect.tryPromise(() =>
     execution.replaceOutput(
-      new vscode.NotebookCellOutput([
-        vscode.NotebookCellOutputItem.json(
+      new code.NotebookCellOutput([
+        code.NotebookCellOutputItem.json(
           payload,
           "application/vnd.marimo.ui+json",
         ),
