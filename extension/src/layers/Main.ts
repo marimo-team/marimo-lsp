@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect";
 import { MarimoDebugAdapter } from "../services/DebugAdapter.ts";
 import { MarimoConfig } from "../services/MarimoConfig.ts";
 import { MarimoLanguageClient } from "../services/MarimoLanguageClient.ts";
-import { MarimoNotebookControllerManager } from "../services/MarimoNotebookControllerManager.ts";
+import { MarimoNotebookControllers } from "../services/MarimoNotebookControllers.ts";
 import { MarimoNotebookRenderer } from "../services/MarimoNotebookRenderer.ts";
 import { MarimoNotebookSerializer } from "../services/MarimoNotebookSerializer.ts";
 import { PythonExtension } from "../services/PythonExtension.ts";
@@ -47,7 +47,7 @@ export const MainLive = ServerLive.pipe(
   Layer.merge(KernelManagerLive),
   Layer.provide(MarimoDebugAdapter.Default),
   Layer.provide(MarimoNotebookRenderer.Default),
-  Layer.provide(MarimoNotebookControllerManager.Default),
+  Layer.provide(MarimoNotebookControllers.Default),
   Layer.provide(MarimoNotebookSerializer.Default),
   Layer.provide(PythonExtension.Default),
   Layer.provide(MarimoLanguageClient.Default),
