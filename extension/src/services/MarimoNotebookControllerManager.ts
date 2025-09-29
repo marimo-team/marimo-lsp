@@ -1,25 +1,21 @@
-import * as childProcess from "node:child_process";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Data, Effect, FiberSet, Schema } from "effect";
+import { Effect, FiberSet } from "effect";
 import * as vscode from "vscode";
 import { unreachable } from "../assert.ts";
-import { SemVerFromString } from "../schemas.ts";
+import { MarimoEnvironmentValidator } from "./MarimoEnvironmentValidator.ts";
 import { MarimoLanguageClient } from "./MarimoLanguageClient.ts";
 import { MarimoNotebookSerializer } from "./MarimoNotebookSerializer.ts";
 import { PythonExtension } from "./PythonExtension.ts";
 
-const MINIMUM_MARIMO_VERSION = {
-  major: 0,
-  minor: 16,
-  patch: 0,
-} satisfies semver.SemVer;
-
 export class MarimoNotebookControllerManager extends Effect.Service<MarimoNotebookControllerManager>()(
   "MarimoNotebookControllerManager",
   {
+    dependencies: [MarimoEnvironmentValidator.Default],
     scoped: Effect.gen(function* () {
       const serializer = yield* MarimoNotebookSerializer;
+      const validator = yield* MarimoEnvironmentValidator;
+
       yield* Effect.logInfo("Setting up notebook controller manager").pipe(
         Effect.annotateLogs({ component: "notebook-controller" }),
       );
@@ -66,7 +62,7 @@ export class MarimoNotebookControllerManager extends Effect.Service<MarimoNotebo
             Effect.gen(function* () {
               yield* Effect.logInfo("Running cells");
               yield* Effect.logTrace("Running cells", cells);
-              const validEnv = yield* validatePythonEnvironment(env);
+              const validEnv = yield* validator.validate(env);
               const marimo = yield* MarimoLanguageClient;
               return yield* marimo.run({
                 notebookUri: notebook.uri.toString(),
@@ -340,131 +336,3 @@ export function resolvePythonEnvironmentName(
   }
   return undefined;
 }
-
-function validatePythonEnvironment(
-  env: py.Environment,
-): Effect.Effect<
-  ValidPythonEnvironemnt,
-  PythonExecutionError | EnvironmentRequirementError,
-  never
-> {
-  const EnvCheck = Schema.Array(
-    Schema.Struct({
-      name: Schema.String,
-      version: Schema.NullOr(SemVerFromString),
-    }),
-  );
-  return Effect.gen(function* () {
-    const stdout = yield* Effect.async<string, PythonExecutionError>(
-      (resume) => {
-        childProcess.execFile(
-          env.path,
-          [
-            "-c",
-            `\
-import json
-
-packages = []
-
-try:
-    import marimo
-    packages.append({"name":"marimo","version":marimo.__version__})
-except ImportError:
-    packages.append({"name":"marimo","version":None})
-    pass
-
-try:
-    import zmq
-    packages.append({"name":"pyzmq","version":zmq.__version__})
-except ImportError:
-    packages.append({"name":"pyzmq","version":None})
-    pass
-
-print(json.dumps(packages))`,
-          ],
-          (error, stdout, stderr) => {
-            if (!error) {
-              resume(Effect.succeed(stdout));
-            } else {
-              resume(
-                Effect.fail(new PythonExecutionError({ env, error, stderr })),
-              );
-            }
-          },
-        );
-      },
-    );
-
-    const packages = yield* Schema.decode(Schema.parseJson(EnvCheck))(
-      stdout.trim(),
-    ).pipe(
-      Effect.mapError(
-        () =>
-          new EnvironmentRequirementError({
-            env,
-            diagnostics: [
-              { kind: "unknown", package: "marimo" },
-              { kind: "unknown", package: "pyzmq" },
-            ],
-          }),
-      ),
-    );
-
-    const diagnostics: Array<RequirementDiagnostic> = [];
-
-    for (const pkg of packages) {
-      if (pkg.version == null) {
-        diagnostics.push({ kind: "missing", package: pkg.name });
-      } else if (
-        pkg.name === "marimo" &&
-        !semver.greaterOrEqual(pkg.version, MINIMUM_MARIMO_VERSION)
-      ) {
-        diagnostics.push({
-          kind: "outdated",
-          package: "marimo",
-          currentVersion: pkg.version,
-          requiredVersion: MINIMUM_MARIMO_VERSION,
-        });
-      }
-    }
-
-    if (diagnostics.length > 0) {
-      return yield* new EnvironmentRequirementError({ env, diagnostics });
-    }
-
-    return new ValidPythonEnvironemnt({ env });
-  });
-}
-
-class ValidPythonEnvironemnt extends Data.TaggedClass(
-  "ValidPythonEnvironment",
-)<{
-  env: py.Environment;
-}> {
-  get executable(): string {
-    return this.env.path;
-  }
-}
-
-class PythonExecutionError extends Data.TaggedError("PythonExecutionError")<{
-  readonly env: py.Environment;
-  readonly error: childProcess.ExecFileException;
-  readonly stderr: string;
-}> {}
-
-type RequirementDiagnostic =
-  | { kind: "unknown"; package: string }
-  | { kind: "missing"; package: string }
-  | {
-      kind: "outdated";
-      package: string;
-      currentVersion: semver.SemVer;
-      requiredVersion: semver.SemVer;
-    };
-
-class EnvironmentRequirementError extends Data.TaggedError(
-  "EnvironmentRequirementError",
-)<{
-  readonly env: py.Environment;
-  readonly diagnostics: ReadonlyArray<RequirementDiagnostic>;
-}> {}
