@@ -5,19 +5,19 @@ vi.mock("vscode", () => createVSCodeMock(vi));
 vi.mock("vscode-languageclient/node", () => createVSCodeLanguageClientMock(vi));
 vi.mock("@vscode/python-extension", () => createPythonExtensionMock(vi));
 
-import { createMockContext } from "../__mocks__/context";
-import { createPythonExtensionMock } from "../__mocks__/python-extension";
-import { createVSCodeLanguageClientMock } from "../__mocks__/vscode-languageclient";
-import { activate } from "../extension";
+import { createMockContext } from "../__mocks__/context.ts";
+import { createPythonExtensionMock } from "../__mocks__/python-extension.ts";
+import { createVSCodeLanguageClientMock } from "../__mocks__/vscode-languageclient.ts";
+
+import { activate } from "../extension.ts";
 
 describe("extension", () => {
-  it("should be defined", async () => {
-    try {
-      const result = await activate(createMockContext());
-      expect(result).toBeDefined();
-    } catch (error) {
-      console.error("Full error:", JSON.stringify(error, null, 2));
-      throw error;
-    }
+  it("activation returns expected interface", async () => {
+    const result = await activate(createMockContext());
+    expect(result).toMatchInlineSnapshot(`
+      {
+        "dispose": [Function],
+      }
+    `);
   });
 });
