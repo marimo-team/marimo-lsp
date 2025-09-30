@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { VsCode } from "./VsCode.ts";
 
 /**
@@ -9,19 +9,21 @@ export class Config extends Effect.Service<Config>()("Config", {
   effect: Effect.gen(function* () {
     const code = yield* VsCode;
     return {
-      get lsp() {
-        return {
-          get executable(): undefined | { command: string; args: string[] } {
-            const lspPath = code.workspace
-              .getConfiguration("marimo.lsp")
-              .get<string[]>("path", []);
-            if (!lspPath || lspPath.length === 0) {
-              return undefined;
-            }
-            const [command, ...args] = lspPath;
-            return { command, args };
-          },
-        };
+      lsp: {
+        get executable(): Option.Option<{
+          command: string;
+          args: Array<string>;
+        }> {
+          return Option.fromNullable(
+            code.workspace.getConfiguration("marimo.lsp").get<string[]>("path"),
+          ).pipe(
+            Option.filter((path) => path.length > 0),
+            Option.map(([command, ...args]) => ({
+              command,
+              args,
+            })),
+          );
+        },
       },
     };
   }),

@@ -1,6 +1,6 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { Data, Effect, type ParseResult, Schema } from "effect";
+import * as NodeFs from "node:fs";
+import * as NodePath from "node:path";
+import { Data, Effect, Option, type ParseResult, Schema } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
 import { MarimoNotebook } from "../schemas.ts";
@@ -38,7 +38,12 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const config = yield* Config;
-      const exec = yield* getLspExecutable(config);
+
+      const exec = yield* Option.match(config.lsp.executable, {
+        onSome: Effect.succeed,
+        onNone: findLspExecutable,
+      });
+
       yield* Effect.logInfo("Starting language server").pipe(
         Effect.annotateLogs({
           component: "language-client",
@@ -158,42 +163,29 @@ type ParamsFor<Command extends MarimoCommand["command"]> = Extract<
   { command: Command }
 >["params"];
 
-const getLspExecutable = Effect.fnUntraced(function* (config: Config) {
-  if (config.lsp.executable) {
-    const { command, args } = config.lsp.executable;
-    return {
-      command,
-      args,
-      transport: lsp.TransportKind.stdio,
-    };
-  }
-
+const findLspExecutable = Effect.fnUntraced(function* () {
   // Look for bundled wheel matching marimo_lsp-* pattern
-  const sdistDir = fs
-    .readdirSync(__dirname)
-    .find((f) => f.startsWith("marimo_lsp-"));
+  const sdistDir = NodeFs.readdirSync(__dirname).find((f) =>
+    f.startsWith("marimo_lsp-"),
+  );
 
   if (sdistDir) {
-    const sdist = path.join(__dirname, sdistDir);
+    const sdist = NodePath.join(__dirname, sdistDir);
     yield* Effect.logInfo("Using bundled marimo-lsp").pipe(
       Effect.annotateLogs({ sdist }),
     );
     return {
       command: "uv",
       args: ["tool", "run", "--from", sdist, "marimo-lsp"],
-      transport: lsp.TransportKind.stdio,
     };
   }
 
   // Fallback to development mode if no wheel found
-  yield* Effect.logWarning(
-    "No bundled wheel found, using development mode",
-  ).pipe(Effect.annotateLogs({ directory: __dirname }));
+  yield* Effect.logWarning("No bundled wheel found, using development mode");
 
   return {
     command: "uv",
     args: ["run", "--directory", __dirname, "marimo-lsp"],
-    transport: lsp.TransportKind.stdio,
   };
 });
 
