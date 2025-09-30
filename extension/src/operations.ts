@@ -23,7 +23,8 @@ export function routeOperation(
 
     switch (operation.op) {
       case "cell-op": {
-        return yield* handleCellOperation(code, context, operation);
+        yield* handleCellOperation(code, context, operation);
+        return;
       }
       // Forward to renderer (front end)
       case "remove-ui-elements":
@@ -31,15 +32,14 @@ export function routeOperation(
         yield* Effect.logTrace("Forwarding message to renderer").pipe(
           Effect.annotateLogs({ op: operation.op }),
         );
-        return yield* renderer.postMessage(operation);
+        yield* renderer.postMessage(operation);
+        return;
       }
-      case "interrupted":
-      case "completed-run": {
-        // Clear all pending executions when run is completed/interrupted
+      case "interrupted": {
+        // Clear all pending executions when run is interrupted
         const executionCount = context.executions.size;
-        const success = operation.op === "completed-run";
-        for (const [_cellId, execution] of context.executions) {
-          execution.end(success, Date.now());
+        for (const execution of context.executions.values()) {
+          execution.end(false, Date.now());
         }
         context.executions.clear();
         yield* Effect.logInfo("Run completed").pipe(
@@ -48,12 +48,17 @@ export function routeOperation(
             clearedExecutions: executionCount,
           }),
         );
-        return yield* Effect.void;
+        return;
       }
-      default:
-        return yield* Effect.logWarning("Unknown operation").pipe(
+      case "completed-run": {
+        return;
+      }
+      default: {
+        yield* Effect.logWarning("Unknown operation").pipe(
           Effect.annotateLogs({ op: operation.op }),
         );
+        return;
+      }
     }
   }).pipe(Effect.annotateLogs({ component: "operations" }));
 }
