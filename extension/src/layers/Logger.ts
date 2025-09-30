@@ -1,19 +1,19 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
+import * as NodeFs from "node:fs";
+import * as NodePath from "node:path";
 import { Effect, Layer, Logger, type LogLevel } from "effect";
 import { VsCode } from "../services/VsCode.ts";
 
 const makeFileLogger = (logFilePath: string) =>
   Effect.gen(function* () {
     yield* Effect.sync(() =>
-      fs.mkdirSync(path.dirname(logFilePath), { recursive: true }),
+      NodeFs.mkdirSync(NodePath.dirname(logFilePath), { recursive: true }),
     );
     const logFile = yield* Effect.acquireRelease(
-      Effect.sync(() => fs.openSync(logFilePath, "a", 0o666)),
-      (fd) => Effect.sync(() => fs.closeSync(fd)),
+      Effect.sync(() => NodeFs.openSync(logFilePath, "a", 0o666)),
+      (fd) => Effect.sync(() => NodeFs.closeSync(fd)),
     );
     return Logger.map(Logger.logfmtLogger, (str) => {
-      fs.writeSync(logFile, `${str}\n`);
+      NodeFs.writeSync(logFile, `${str}\n`);
     });
   });
 
@@ -49,7 +49,7 @@ const makeVsCodeLogger = (name: string) =>
 export const LoggerLive = Layer.unwrapScoped(
   Effect.gen(function* () {
     const fileLogger = yield* makeFileLogger(
-      path.join(__dirname, "../../logs/marimo.log"),
+      NodePath.join(__dirname, "../../logs/marimo.log"),
     );
     const vscodeLogger = yield* makeVsCodeLogger("marimo");
     return Logger.replace(
