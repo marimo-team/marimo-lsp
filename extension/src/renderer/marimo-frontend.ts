@@ -1,43 +1,29 @@
 /**
  * @module
  *
- * Runtime imports from @marimo-team/frontend
+ * Type-safe imports from @marimo-team/frontend
  *
- * Since @marimo-team/frontend doesn't emit .d.ts files, TypeScript attempts to
- * compile the entire frontend source when these modules are imported. There's no
- * way to skipLibCheck for specific packages, which would require our TypeScript
- * config to match marimo's exactly and type-check the entire frontend codebase.
- *
- * As a workaround, we use ?nocheck to disable type-checking for these specific
- * runtime imports. This should be used sparingly - we keep the exports of this
- * module minimal to maintain a clear, type-safe boundary.
+ * See marimo-frontend-untyped.js for details on why this split exists.
  */
+// @ts-expect-error - Untyped imports that would fail type-checking. See marimo-frontend-untyped.js.
 
-// @ts-expect-error
-import { OutputRenderer as UntypedOutputRenderer } from "@marimo-team/frontend/unstable_internal/components/editor/Output.tsx?nocheck";
-// @ts-expect-error
-import { ConsoleOutput as UntypedConsoleOutput } from "@marimo-team/frontend/unstable_internal/components/editor/output/ConsoleOutput.tsx?nocheck";
-// @ts-expect-error
-import { TooltipProvider as UntypedTooltipProvider } from "@marimo-team/frontend/unstable_internal/components/ui/tooltip.tsx?nocheck";
-import type { CellId } from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
-// @ts-expect-error
-import { UI_ELEMENT_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/dom/uiregistry.ts?nocheck";
-// @ts-expect-error
-import { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts?nocheck";
-// @ts-expect-error
-import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts?nocheck";
-// @ts-expect-error
-import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts?nocheck";
+// biome-ignore assist/source/organizeImports: Keep untyped imports at the top
+import * as untyped from "./marimo-frontend-untyped.js";
+
+import type {
+  CellId,
+  UIElementId,
+} from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
+import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts";
+import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts";
 import {
   handleWidgetMessage,
   isMessageWidgetState,
   MODEL_MANAGER,
-  // @ts-expect-error
-} from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts?nocheck";
-// @ts-expect-error
-import { initializePlugins } from "@marimo-team/frontend/unstable_internal/plugins/plugins.ts?nocheck";
-// @ts-expect-error
-import { useTheme as untypedUseTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts?nocheck";
+} from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts";
+import { safeExtractSetUIElementMessageBuffers } from "@marimo-team/frontend/unstable_internal/utils/json/base64.ts";
+
+export { useTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";
 
 import "@marimo-team/frontend/unstable_internal/css/common.css";
 import "@marimo-team/frontend/unstable_internal/css/globals.css";
@@ -49,6 +35,8 @@ import "@marimo-team/frontend/unstable_internal/css/md-tooltip.css";
 import "@marimo-team/frontend/unstable_internal/css/table.css";
 
 import type { CellRuntimeState } from "../shared/cells.ts";
+import type { MessageOperationOf } from "../types.ts";
+
 export type RequestClient = EditRequests & RunRequests;
 export type { CellRuntimeState, CellId };
 
@@ -58,10 +46,10 @@ export type { CellRuntimeState, CellId };
  */
 export function initialize(client: RequestClient) {
   store.set(requestClientAtom, client);
-  initializePlugins();
+  untyped.initializePlugins();
   // Start the RuntimeState to listen for UI element value changes
   // This connects the UI element events to the request client
-  RuntimeState.INSTANCE.start(client.sendComponentValues);
+  untyped.RuntimeState.INSTANCE.start(client.sendComponentValues);
 }
 
 // vendored from https://github.com/marimo-team/marimo/blob/111b24f/frontend/src/core/websocket/useMarimoWebSocket.tsx#L110-L134
@@ -69,9 +57,9 @@ export function handleSendUiElementMessage(
   msg: MessageOperationOf<"send-ui-element-message">,
 ) {
   const modelId = msg.model_id;
-  const uiElement = msg.ui_element;
+  const uiElement = msg.ui_element as UIElementId;
   const message = msg.message;
-  const buffers = msg.buffers ?? [];
+  const buffers = safeExtractSetUIElementMessageBuffers(msg);
 
   if (modelId && isMessageWidgetState(message)) {
     handleWidgetMessage({
@@ -83,7 +71,7 @@ export function handleSendUiElementMessage(
   }
 
   if (uiElement) {
-    UI_ELEMENT_REGISTRY.broadcastMessage(uiElement, message, buffers);
+    untyped.UI_ELEMENT_REGISTRY.broadcastMessage(uiElement, message, buffers);
   }
 }
 
@@ -94,12 +82,7 @@ export function handleRemoveUIElements(
   // memory and (2) make sure that the old value doesn't get re-used
   // if the same cell-id is later reused for another element.
   const cellId = msg.cell_id as CellId;
-  UI_ELEMENT_REGISTRY.removeElementsByCell(cellId);
-}
-
-/* Type-safe wrapper around marimo's `useTheme` we import above */
-export function useTheme(): { theme: "light" | "dark" } {
-  return untypedUseTheme();
+  untyped.UI_ELEMENT_REGISTRY.removeElementsByCell(cellId);
 }
 
 type OutputMessage = NonNullable<CellRuntimeState["output"]>;
@@ -107,7 +90,7 @@ type OutputMessage = NonNullable<CellRuntimeState["output"]>;
 export const OutputRenderer: React.FC<{
   message: OutputMessage;
   cellId?: CellId;
-}> = UntypedOutputRenderer;
+}> = untyped.OutputRenderer;
 
 export const ConsoleOutput: React.FC<{
   cellId: CellId;
@@ -116,10 +99,10 @@ export const ConsoleOutput: React.FC<{
   stale: boolean;
   debuggerActive: boolean;
   onSubmitDebugger: (text: string, index: number) => void;
-}> = UntypedConsoleOutput;
+}> = untyped.ConsoleOutput;
 
 export const TooltipProvider: React.FC<React.PropsWithChildren> =
-  UntypedTooltipProvider;
+  untyped.TooltipProvider;
 
 /**
  * Type imports from @marimo-team/frontend
@@ -133,5 +116,3 @@ import type {
   EditRequests,
   RunRequests,
 } from "@marimo-team/frontend/unstable_internal/core/network/types.ts";
-
-import type { MessageOperationOf } from "../types.ts";
