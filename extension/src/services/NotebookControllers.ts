@@ -246,7 +246,7 @@ export class NotebookControllers extends Effect.Service<NotebookControllers>()(
           return registry.getActiveController(notebook);
         },
       };
-    }),
+    }).pipe(Effect.annotateLogs("service", "NotebookControllers")),
   },
 ) {}
 

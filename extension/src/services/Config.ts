@@ -26,5 +26,5 @@ export class Config extends Effect.Service<Config>()("Config", {
         },
       },
     };
-  }),
+  }).pipe(Effect.annotateLogs("service", "Config")),
 }) {}

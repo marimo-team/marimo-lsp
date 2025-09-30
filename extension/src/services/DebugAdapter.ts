@@ -1,4 +1,4 @@
-import { Effect, Fiber, FiberSet } from "effect";
+import { Effect, Fiber, FiberSet, Option } from "effect";
 import type * as vscode from "vscode";
 
 import { LanguageClient } from "./LanguageClient.ts";
@@ -25,10 +25,6 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
 
       const runFork = yield* FiberSet.makeRuntime();
 
-      yield* Effect.logInfo("Setting up debug adapter").pipe(
-        Effect.annotateLogs({ component: "debug-adapter" }),
-      );
-
       const emitters = new Map<
         string,
         vscode.EventEmitter<vscode.DebugProtocolMessage>
@@ -39,7 +35,6 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
           Effect.gen(function* () {
             yield* Effect.logDebug("Received DAP message from LSP").pipe(
               Effect.annotateLogs({
-                component: "debug-adapter",
                 sessionId,
                 // @ts-expect-error - type is not include in vscode types
                 type: message.type,
@@ -62,7 +57,6 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
                 Effect.gen(function* () {
                   yield* Effect.logDebug("Sending DAP message to LSP").pipe(
                     Effect.annotateLogs({
-                      component: "debug-adapter",
                       sessionId: session.id,
                       // @ts-expect-error - type is not include in vscode types
                       type: message.type,
@@ -95,22 +89,25 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
           return runFork<never, vscode.DebugConfiguration | undefined>(
             Effect.gen(function* () {
               yield* Effect.logInfo("Resolving debug configuration").pipe(
-                Effect.annotateLogs({
-                  component: "debug-adapter",
-                  config,
-                }),
+                Effect.annotateLogs({ config }),
               );
-              const notebook = code.window.activeNotebookEditor?.notebook;
-              if (notebook?.notebookType !== serializer.notebookType) {
-                yield* Effect.logWarning(
-                  "No active marimo notebook found",
-                ).pipe(Effect.annotateLogs({ component: "debug-adapter" }));
+              const notebook = code.window
+                .getActiveNotebookEditor()
+                .pipe(
+                  Option.flatMap((editor) =>
+                    serializer.isMarimoNotebookDocument(editor.notebook)
+                      ? Option.some(editor.notebook)
+                      : Option.none(),
+                  ),
+                );
+              if (Option.isNone(notebook)) {
+                yield* Effect.logWarning("No active marimo notebook found");
                 return undefined;
               }
               config.type = "marimo";
               config.name = config.name ?? "Debug Marimo";
               config.request = config.request ?? "launch";
-              config.notebookUri = notebook.uri.toString();
+              config.notebookUri = notebook.value.uri.toString();
               yield* Effect.logInfo("Configuration resolved").pipe(
                 Effect.annotateLogs({
                   component: "debug-adapter",
@@ -125,16 +122,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
         },
       });
 
-      yield* Effect.logInfo("Debug adapter initialized").pipe(
-        Effect.annotateLogs({ component: "debug-adapter" }),
-      );
-      yield* Effect.addFinalizer(() =>
-        Effect.logInfo("Tearing down debug adapter").pipe(
-          Effect.annotateLogs({ component: "debug-adapter" }),
-        ),
-      );
-
       return { debugType };
-    }),
+    }).pipe(Effect.annotateLogs("service", "DebugAdapter")),
   },
 ) {}

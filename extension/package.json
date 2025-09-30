@@ -93,6 +93,12 @@
         "title": "New marimo notebook",
         "shortTitle": "Marimo notebook",
         "category": "Create"
+      },
+      {
+        "command": "marimo.createGist",
+        "title": "Create marimo notebook Gist",
+        "shortTitle": "Create Gist",
+        "category": "marimo"
       }
     ],
     "menus": {
@@ -118,6 +124,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
     "@effect/language-service": "^0.40.0",
+    "@effect/platform": "^0.92.0",
     "@marimo-team/frontend": "link:../../marimo/frontend",
     "@marimo-team/openapi": "link:../../marimo/packages/openapi",
     "@std/semver": "jsr:^1.0.5",
@@ -132,7 +139,7 @@
     "@vscode/python-extension": "^1.0.6",
     "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
-    "effect": "^3.17.14",
+    "effect": "^3.18.0",
     "esbuild": "^0.25.10",
     "glob": "^11.0.0",
     "jest-mock-vscode": "^4.7.0",

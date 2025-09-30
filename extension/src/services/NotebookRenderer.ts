@@ -35,6 +35,6 @@ export class NotebookRenderer extends Effect.Service<NotebookRenderer>()(
           );
         },
       };
-    }),
+    }).pipe(Effect.annotateLogs("service", "NotebookRenderer")),
   },
 ) {}

@@ -1,12 +1,10 @@
 import { Effect, FiberSet, Layer, Option } from "effect";
-// biome-ignore lint: For some reason mocking VsCode.workspace.* accessors aren't working
-import * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import * as ops from "../operations.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookControllers } from "../services/NotebookControllers.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
-import type { VsCode } from "../services/VsCode.ts";
+import { VsCode } from "../services/VsCode.ts";
 
 /**
  * Orchestrates kernel operations for marimo notebooks by composing
@@ -21,6 +19,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
     yield* Effect.logInfo("Setting up kernel manager").pipe(
       Effect.annotateLogs({ component: "kernel-manager" }),
     );
+    const code = yield* VsCode;
     const marimo = yield* LanguageClient;
     const renderer = yield* NotebookRenderer;
     const controllers = yield* NotebookControllers;
@@ -39,9 +38,9 @@ export const KernelManagerLive = Layer.scopedDiscard(
           let context = contexts.get(notebookUri);
 
           if (!context) {
-            const notebook = vscode.workspace.notebookDocuments.find(
-              (doc) => doc.uri.toString() === notebookUri,
-            );
+            const notebook = code.workspace
+              .getNotebookDocuments()
+              .find((doc) => doc.uri.toString() === notebookUri);
             assert(notebook, `Expected notebook document for ${notebookUri}`);
             context = { notebook, executions: new Map() };
             contexts.set(notebookUri, context);

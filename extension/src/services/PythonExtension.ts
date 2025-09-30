@@ -15,6 +15,6 @@ export class PythonExtension extends Effect.Service<PythonExtension>()(
           return api.environments;
         },
       };
-    }),
+    }).pipe(Effect.annotateLogs("service", "PythonExtension")),
   },
 ) {}

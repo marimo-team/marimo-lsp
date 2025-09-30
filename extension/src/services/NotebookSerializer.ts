@@ -1,6 +1,10 @@
-import { Effect, FiberSet } from "effect";
+import { type Brand, Effect, FiberSet } from "effect";
+import type * as vscode from "vscode";
 import { LanguageClient } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
+
+export type MarimoNotebookDocument = vscode.NotebookDocument &
+  Brand.Brand<"MarimoNotebookDocument">;
 
 /**
  * Handles serialization and deserialization of marimo notebooks,
@@ -17,9 +21,8 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       const marimo = yield* LanguageClient;
       const runPromise = yield* FiberSet.makeRuntimePromise();
 
-      yield* Effect.logInfo("Setting up notebook serializer").pipe(
-        Effect.annotateLogs({ component: "notebook-serializer" }),
-      );
+      yield* Effect.annotateLogsScoped("service", "NotebookSerializer");
+      yield* Effect.logInfo("Setting up notebook serializer");
 
       yield* code.workspace.registerNotebookSerializer(notebookType, {
         serializeNotebook(notebook) {
@@ -39,8 +42,11 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               ),
               Effect.mapError(
                 () =>
-                  new Error(`Notebook serialize failed. See logs for details.`),
+                  new Error(
+                    `Failed to serialize notebook. See marimo logs for details.`,
+                  ),
               ),
+              Effect.annotateLogs("service", "NotebookSerializer"),
             ),
           );
         },
@@ -62,15 +68,23 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               Effect.mapError(
                 () =>
                   new Error(
-                    `Notebook deserialize failed. See logs for details.`,
+                    `Failed to deserialize notebook. See marimo logs for details.`,
                   ),
               ),
+              Effect.annotateLogs("service", "NotebookSerializer"),
             ),
           );
         },
       });
 
-      return { notebookType };
+      return {
+        notebookType,
+        isMarimoNotebookDocument(
+          notebook: vscode.NotebookDocument,
+        ): notebook is MarimoNotebookDocument {
+          return notebook.notebookType === notebookType;
+        },
+      };
     }),
   },
 ) {}
