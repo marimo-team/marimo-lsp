@@ -36,6 +36,7 @@ suite("marimo Extension Hello World Tests", () => {
     marimoCommands.sort();
     assert.deepEqual(marimoCommands, [
       "marimo.convert",
+      "marimo.createGist",
       "marimo.dap",
       "marimo.deserialize",
       "marimo.interrupt",

@@ -95,9 +95,9 @@
         "category": "Create"
       },
       {
-        "command": "marimo.publishNotebookAsGist",
-        "title": "Publish marimo notebook Gist",
-        "shortTitle": "Publish Gist",
+        "command": "marimo.createGist",
+        "title": "Create marimo notebook Gist",
+        "shortTitle": "Create Gist",
         "category": "marimo"
       }
     ],
