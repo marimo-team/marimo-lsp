@@ -1,17 +1,14 @@
 /**
  * @module
  *
- * Runtime imports from @marimo-team/frontend
+ * Type-safe imports from @marimo-team/frontend
  *
- * Since @marimo-team/frontend doesn't emit .d.ts files, TypeScript attempts to
- * compile the entire frontend source when these modules are imported. There's no
- * way to skipLibCheck for specific packages, which would require our TypeScript
- * config to match marimo's exactly and type-check the entire frontend codebase.
- *
- * As a workaround, we use ?nocheck to disable type-checking for these specific
- * runtime imports. This should be used sparingly - we keep the exports of this
- * module minimal to maintain a clear, type-safe boundary.
+ * See marimo-frontend-untyped.js for details on why this split exists.
  */
+// @ts-expect-error - Untyped imports that would fail type-checking. See marimo-frontend-untyped.js.
+
+// biome-ignore assist/source/organizeImports: Keep untyped imports at the top
+import * as untyped from "./marimo-frontend-untyped.js";
 
 import type {
   CellId,
@@ -25,8 +22,6 @@ import {
   MODEL_MANAGER,
 } from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts";
 import { safeExtractSetUIElementMessageBuffers } from "@marimo-team/frontend/unstable_internal/utils/json/base64.ts";
-// @ts-expect-error
-import * as untyped from "./marimo-frontend-untyped.js";
 
 export { useTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";
 
