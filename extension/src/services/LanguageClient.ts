@@ -44,9 +44,8 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
         onNone: findLspExecutable,
       });
 
-      yield* Effect.logInfo("Starting language server").pipe(
+      yield* Effect.logInfo("Got marimo-lsp executable").pipe(
         Effect.annotateLogs({
-          component: "language-client",
           command: exec.command,
           args: (exec.args ?? []).join(" "),
         }),
@@ -154,7 +153,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
           });
         },
       };
-    }),
+    }).pipe(Effect.annotateLogs("service", "LanguageClient")),
   },
 ) {}
 
