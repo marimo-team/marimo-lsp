@@ -12,28 +12,18 @@ import { VsCode } from "../services/VsCode.ts";
 export const LspLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const client = yield* LanguageClient;
-    yield* Effect.logInfo("Starting LSP client").pipe(
-      Effect.annotateLogs({ component: "server" }),
-    );
+    yield* Effect.logInfo("Starting marimo-lsp client");
     yield* client.manage();
-    yield* Effect.logInfo("LSP client started").pipe(
-      Effect.annotateLogs({ component: "server" }),
-    );
-    yield* Effect.logInfo("Extension main fiber running").pipe(
-      Effect.annotateLogs({ component: "server" }),
-    );
+    yield* Effect.logInfo("marimo-lsp client started");
   }).pipe(
-    Effect.catchTag("LanguageClientStartError", (error) =>
-      Effect.gen(function* () {
+    Effect.catchTag(
+      "LanguageClientStartError",
+      Effect.fnUntraced(function* (error) {
         const code = yield* VsCode;
-        yield* Effect.logError("Failed to start extension", error).pipe(
-          Effect.annotateLogs({ component: "server" }),
-        );
+        yield* Effect.logError("Failed to start marimo-lsp", error);
 
         if (error.exec.command === "uv" && !isUvInstalled()) {
-          yield* Effect.logError("uv is not installed in PATH").pipe(
-            Effect.annotateLogs({ component: "server" }),
-          );
+          yield* Effect.logError("uv is not installed in PATH");
 
           const result = yield* code.window.useInfallible((api) =>
             api.showErrorMessage(
@@ -59,12 +49,13 @@ export const LspLive = Layer.scopedDiscard(
         } else {
           yield* code.window.useInfallible((api) =>
             api.showErrorMessage(
-              ` language server failed to start. See marimo logs for more info.`,
+              `marimo-lsp failed to start. See marimo logs for more info.`,
             ),
           );
         }
       }),
     ),
+    Effect.annotateLogs({ component: "server" }),
   ),
 );
 

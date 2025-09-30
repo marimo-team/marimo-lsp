@@ -4,13 +4,10 @@ import type * as vscode from "vscode";
 import { MainLive } from "./layers/Main.ts";
 
 export async function activate(
-  context: vscode.ExtensionContext,
+  _context: vscode.ExtensionContext,
 ): Promise<vscode.Disposable> {
   return pipe(
     Effect.gen(function* () {
-      yield* Effect.logInfo("Activating marimo extension").pipe(
-        Effect.annotateLogs({ extensionPath: context.extensionPath }),
-      );
       // Create a scope and build layers with it. Layer.buildWithScope completes
       // once all layer initialization finishes (commands registered, serializer
       // registered, LSP client started), but keeps resources alive by extending
@@ -19,13 +16,7 @@ export async function activate(
       const scope = yield* Scope.make();
       yield* Layer.buildWithScope(MainLive, scope);
       return {
-        dispose: () =>
-          Effect.runPromise(
-            Effect.gen(function* () {
-              yield* Effect.logInfo("Deactivating marimo extension");
-              yield* Scope.close(scope, Exit.void);
-            }),
-          ),
+        dispose: () => Effect.runPromise(Scope.close(scope, Exit.void)),
       };
     }),
     Logger.withMinimumLogLevel(LogLevel.All),
