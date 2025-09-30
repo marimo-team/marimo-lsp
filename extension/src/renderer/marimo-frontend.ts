@@ -13,31 +13,21 @@
  * module minimal to maintain a clear, type-safe boundary.
  */
 
-// @ts-expect-error
-import { OutputRenderer as UntypedOutputRenderer } from "@marimo-team/frontend/unstable_internal/components/editor/Output.tsx?nocheck";
-// @ts-expect-error
-import { ConsoleOutput as UntypedConsoleOutput } from "@marimo-team/frontend/unstable_internal/components/editor/output/ConsoleOutput.tsx?nocheck";
-// @ts-expect-error
-import { TooltipProvider as UntypedTooltipProvider } from "@marimo-team/frontend/unstable_internal/components/ui/tooltip.tsx?nocheck";
+import { OutputRenderer as UntypedOutputRenderer } from "@marimo-team/frontend/unstable_internal/components/editor/Output.tsx";
+import { ConsoleOutput as UntypedConsoleOutput } from "@marimo-team/frontend/unstable_internal/components/editor/output/ConsoleOutput.tsx";
+import { TooltipProvider as UntypedTooltipProvider } from "@marimo-team/frontend/unstable_internal/components/ui/tooltip.tsx";
 import type { CellId } from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
-// @ts-expect-error
-import { UI_ELEMENT_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/dom/uiregistry.ts?nocheck";
-// @ts-expect-error
-import { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts?nocheck";
-// @ts-expect-error
-import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts?nocheck";
-// @ts-expect-error
-import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts?nocheck";
+import { UI_ELEMENT_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/dom/uiregistry.ts";
+import { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts";
+import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts";
+import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts";
 import {
   handleWidgetMessage,
   isMessageWidgetState,
   MODEL_MANAGER,
-  // @ts-expect-error
-} from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts?nocheck";
-// @ts-expect-error
-import { initializePlugins } from "@marimo-team/frontend/unstable_internal/plugins/plugins.ts?nocheck";
-// @ts-expect-error
-import { useTheme as untypedUseTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts?nocheck";
+} from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts";
+import { initializePlugins } from "@marimo-team/frontend/unstable_internal/plugins/plugins.ts";
+import { useTheme as untypedUseTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";
 
 import "@marimo-team/frontend/unstable_internal/css/common.css";
 import "@marimo-team/frontend/unstable_internal/css/globals.css";
