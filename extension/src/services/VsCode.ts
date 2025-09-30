@@ -15,11 +15,10 @@ type Command = "workbench.action.reloadWindow";
 
 class Commands extends Effect.Service<Commands>()("Commands", {
   scoped: Effect.gen(function* () {
-    const api = vscode.commands;
     const runPromise = yield* FiberSet.makeRuntimePromise();
     return {
       executeCommand(command: Command) {
-        return Effect.promise(() => api.executeCommand(command));
+        return Effect.promise(() => vscode.commands.executeCommand(command));
       },
       registerCommand(
         command: string,
@@ -27,7 +26,7 @@ class Commands extends Effect.Service<Commands>()("Commands", {
       ) {
         return Effect.acquireRelease(
           Effect.sync(() =>
-            api.registerCommand(command, () =>
+            vscode.commands.registerCommand(command, () =>
               runPromise<never, void>(
                 effect.pipe(
                   Effect.catchAllCause((cause) =>
@@ -53,26 +52,27 @@ class Commands extends Effect.Service<Commands>()("Commands", {
 
 class Window extends Effect.Service<Window>()("Window", {
   effect: Effect.gen(function* () {
-    const api = vscode.window;
-    type WindowApi = typeof api;
+    type WindowApi = typeof vscode.window;
     return {
       use<T>(cb: (win: WindowApi) => Thenable<T>) {
         return Effect.tryPromise({
-          try: () => cb(api),
+          try: () => cb(vscode.window),
           catch: (cause) => new VsCodeError({ cause }),
         });
       },
       useInfallible<T>(cb: (win: WindowApi) => Thenable<T>) {
-        return Effect.promise(() => cb(api));
+        return Effect.promise(() => cb(vscode.window));
       },
       createOutputChannel(name: string) {
         return Effect.acquireRelease(
-          Effect.sync(() => api.createOutputChannel(name, { log: true })),
+          Effect.sync(() =>
+            vscode.window.createOutputChannel(name, { log: true }),
+          ),
           (disposable) => Effect.sync(() => disposable.dispose()),
         );
       },
       get activeNotebookEditor() {
-        return api.activeNotebookEditor;
+        return vscode.window.activeNotebookEditor;
       },
     };
   }),
@@ -80,30 +80,25 @@ class Window extends Effect.Service<Window>()("Window", {
 
 class Workspace extends Effect.Service<Workspace>()("Workspace", {
   sync: () => {
-    const api = vscode.workspace;
-    type WorkspaceApi = typeof api;
+    type WorkspaceApi = typeof vscode.workspace;
     return {
       getConfiguration(section: string) {
-        return api.getConfiguration(section);
-      },
-      get notebookDocuments() {
-        return api.notebookDocuments;
-      },
-      get workspaceFolders() {
-        return api.workspaceFolders;
+        return vscode.workspace.getConfiguration(section);
       },
       registerNotebookSerializer(
         notebookType: string,
         impl: vscode.NotebookSerializer,
       ) {
         return Effect.acquireRelease(
-          Effect.sync(() => api.registerNotebookSerializer(notebookType, impl)),
+          Effect.sync(() =>
+            vscode.workspace.registerNotebookSerializer(notebookType, impl),
+          ),
           (disposable) => Effect.sync(() => disposable.dispose()),
         );
       },
       use<T>(cb: (workspace: WorkspaceApi) => Thenable<T>) {
         return Effect.tryPromise({
-          try: () => cb(api),
+          try: () => cb(vscode.workspace),
           catch: (cause) => new VsCodeError({ cause }),
         });
       },
