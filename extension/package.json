@@ -93,6 +93,12 @@
         "title": "New marimo notebook",
         "shortTitle": "Marimo notebook",
         "category": "Create"
+      },
+      {
+        "command": "marimo.publishNotebookAsGist",
+        "title": "Publish marimo notebook Gist",
+        "shortTitle": "Publish Gist",
+        "category": "marimo"
       }
     ],
     "menus": {

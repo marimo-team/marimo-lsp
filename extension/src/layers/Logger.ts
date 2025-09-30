@@ -1,7 +1,7 @@
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 import { Effect, Layer, Logger, type LogLevel } from "effect";
-import { VsCode } from "../services/VsCode.ts";
+import { OutputChannel } from "../services/OutputChannel.ts";
 
 const makeFileLogger = (logFilePath: string) =>
   Effect.gen(function* () {
@@ -17,12 +17,9 @@ const makeFileLogger = (logFilePath: string) =>
     });
   });
 
-const makeVsCodeLogger = (name: string) =>
+const makeVsCodeLogger = (channel: OutputChannel) =>
   Effect.gen(function* () {
     type Level = Exclude<LogLevel.LogLevel["label"], "OFF" | "ALL">;
-    const code = yield* VsCode;
-    const channel = yield* code.window.createOutputChannel(name);
-
     const mapping = {
       INFO: channel.info,
       TRACE: channel.trace,
@@ -31,7 +28,6 @@ const makeVsCodeLogger = (name: string) =>
       ERROR: channel.error,
       FATAL: channel.error,
     } as const;
-
     return Logger.map(Logger.logfmtLogger, (str) => {
       // parse out the level from the default formatter
       const match = str.match(/level=(\w+)\s*(.*)/);
@@ -51,7 +47,7 @@ export const LoggerLive = Layer.unwrapScoped(
     const fileLogger = yield* makeFileLogger(
       NodePath.join(__dirname, "../../logs/marimo.log"),
     );
-    const vscodeLogger = yield* makeVsCodeLogger("marimo");
+    const vscodeLogger = yield* makeVsCodeLogger(yield* OutputChannel);
     return Logger.replace(
       Logger.defaultLogger,
       Logger.zip(fileLogger, vscodeLogger),

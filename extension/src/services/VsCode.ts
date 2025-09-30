@@ -1,4 +1,5 @@
-import { Data, Effect, Either, FiberSet } from "effect";
+import { Data, Effect, Either, FiberSet, Option } from "effect";
+
 // VsCode.ts is the centralized service that wraps the VS Code API.
 //
 // All other modules should use type-only imports and access the API through this service.
@@ -11,14 +12,44 @@ export class VsCodeError extends Data.TaggedError("VsCodeError")<{
   cause: unknown;
 }> {}
 
+export class Window extends Effect.Service<Window>()("Window", {
+  effect: Effect.gen(function* () {
+    const api = vscode.window;
+    type WindowApi = typeof api;
+    return {
+      use<T>(cb: (win: WindowApi) => Thenable<T>) {
+        return Effect.tryPromise({
+          try: () => cb(api),
+          catch: (cause) => new VsCodeError({ cause }),
+        });
+      },
+      useInfallible<T>(cb: (win: WindowApi) => Thenable<T>) {
+        return Effect.promise(() => cb(api));
+      },
+      createOutputChannel(name: string) {
+        return Effect.acquireRelease(
+          Effect.sync(() => api.createOutputChannel(name, { log: true })),
+          (disposable) => Effect.sync(() => disposable.dispose()),
+        );
+      },
+      getActiveNotebookEditor() {
+        return Option.fromNullable(api.activeNotebookEditor);
+      },
+    };
+  }),
+}) {}
+
 type Command = "workbench.action.reloadWindow";
 
 class Commands extends Effect.Service<Commands>()("Commands", {
+  dependencies: [Window.Default],
   scoped: Effect.gen(function* () {
+    const win = yield* Window;
+    const api = vscode.commands;
     const runPromise = yield* FiberSet.makeRuntimePromise();
     return {
       executeCommand(command: Command) {
-        return Effect.promise(() => vscode.commands.executeCommand(command));
+        return Effect.promise(() => api.executeCommand(command));
       },
       registerCommand(
         command: string,
@@ -26,14 +57,14 @@ class Commands extends Effect.Service<Commands>()("Commands", {
       ) {
         return Effect.acquireRelease(
           Effect.sync(() =>
-            vscode.commands.registerCommand(command, () =>
+            api.registerCommand(command, () =>
               runPromise<never, void>(
                 effect.pipe(
                   Effect.catchAllCause((cause) =>
                     Effect.gen(function* () {
                       yield* Effect.logError(cause);
-                      yield* Effect.promise(() =>
-                        vscode.window.showWarningMessage(
+                      yield* win.useInfallible((api) =>
+                        api.showWarningMessage(
                           `Something went wrong in ${JSON.stringify(command)}. See marimo logs for more info.`,
                         ),
                       );
@@ -50,57 +81,34 @@ class Commands extends Effect.Service<Commands>()("Commands", {
   }),
 }) {}
 
-class Window extends Effect.Service<Window>()("Window", {
-  effect: Effect.gen(function* () {
-    type WindowApi = typeof vscode.window;
-    return {
-      use<T>(cb: (win: WindowApi) => Thenable<T>) {
-        return Effect.tryPromise({
-          try: () => cb(vscode.window),
-          catch: (cause) => new VsCodeError({ cause }),
-        });
-      },
-      useInfallible<T>(cb: (win: WindowApi) => Thenable<T>) {
-        return Effect.promise(() => cb(vscode.window));
-      },
-      createOutputChannel(name: string) {
-        return Effect.acquireRelease(
-          Effect.sync(() =>
-            vscode.window.createOutputChannel(name, { log: true }),
-          ),
-          (disposable) => Effect.sync(() => disposable.dispose()),
-        );
-      },
-      get activeNotebookEditor() {
-        return vscode.window.activeNotebookEditor;
-      },
-    };
-  }),
-}) {}
-
 class Workspace extends Effect.Service<Workspace>()("Workspace", {
   sync: () => {
-    type WorkspaceApi = typeof vscode.workspace;
+    const api = vscode.workspace;
+    type WorkspaceApi = typeof api;
     return {
+      getNotebookDocuments() {
+        return api.notebookDocuments;
+      },
       getConfiguration(section: string) {
-        return vscode.workspace.getConfiguration(section);
+        return api.getConfiguration(section);
       },
       registerNotebookSerializer(
         notebookType: string,
         impl: vscode.NotebookSerializer,
       ) {
         return Effect.acquireRelease(
-          Effect.sync(() =>
-            vscode.workspace.registerNotebookSerializer(notebookType, impl),
-          ),
+          Effect.sync(() => api.registerNotebookSerializer(notebookType, impl)),
           (disposable) => Effect.sync(() => disposable.dispose()),
         );
       },
       use<T>(cb: (workspace: WorkspaceApi) => Thenable<T>) {
         return Effect.tryPromise({
-          try: () => cb(vscode.workspace),
+          try: () => cb(api),
           catch: (cause) => new VsCodeError({ cause }),
         });
+      },
+      useInfallible<T>(cb: (win: WorkspaceApi) => Thenable<T>) {
+        return Effect.promise(() => cb(api));
       },
     };
   },
@@ -175,6 +183,28 @@ class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
   },
 }) {}
 
+class AuthError extends Data.TaggedError("AuthError")<{
+  cause: unknown;
+}> {}
+
+class Auth extends Effect.Service<Auth>()("Auth", {
+  effect: Effect.gen(function* () {
+    return {
+      getSession(
+        providerId: "github" | "microsoft", // could be custom but these are default
+        scopes: ReadonlyArray<string>,
+        options: vscode.AuthenticationGetSessionOptions,
+      ) {
+        return Effect.tryPromise({
+          try: () =>
+            vscode.authentication.getSession(providerId, scopes, options),
+          catch: (cause) => new AuthError({ cause }),
+        }).pipe(Effect.map(Option.fromNullable));
+      },
+    };
+  }),
+}) {}
+
 class ParseUriError extends Data.TaggedError("ParseUriError")<{
   cause: unknown;
 }> {}
@@ -187,11 +217,12 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
     return {
       // namespaces
       window: yield* Window,
-      workspace: yield* Workspace,
       commands: yield* Commands,
+      workspace: yield* Workspace,
       env: yield* Env,
       debug: yield* Debug,
       notebooks: yield* Notebooks,
+      auth: yield* Auth,
       // data types
       NotebookData: vscode.NotebookData,
       NotebookCellData: vscode.NotebookCellData,
@@ -218,5 +249,6 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
     Env.Default,
     Debug.Default,
     Notebooks.Default,
+    Auth.Default,
   ],
 }) {}

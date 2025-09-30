@@ -46,6 +46,16 @@ suite("marimo Extension Hello World Tests", () => {
     ]);
   });
 
+  test("Commands match package.json", async () => {
+    const extension = getExtension();
+    const packageJSON = extension.packageJSON;
+    const commands = await vscode.commands.getCommands();
+    const marimoCommands = commands.filter((cmd) => cmd.startsWith("marimo."));
+    for (const { command } of packageJSON.contributes.commands) {
+      assert.ok(marimoCommands.includes(command));
+    }
+  });
+
   test("Should have proper extension metadata", async () => {
     const extension = getExtension();
     const packageJSON = extension.packageJSON;
