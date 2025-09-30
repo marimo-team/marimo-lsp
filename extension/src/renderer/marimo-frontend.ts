@@ -10,10 +10,23 @@
 // biome-ignore assist/source/organizeImports: Keep untyped imports at the top
 import * as untyped from "./marimo-frontend-untyped.js";
 
+/**
+ * Type imports from @marimo-team/frontend
+ *
+ * These network types are imported WITHOUT ?nocheck because they're the most
+ * likely to change as the API evolves. By keeping these type-checked, we ensure
+ * our RequestClient interface stays in sync with marimo's actual API contracts.
+ * Type errors here indicate breaking changes we need to handle.
+ */
+import type {
+  EditRequests,
+  RunRequests,
+} from "@marimo-team/frontend/unstable_internal/core/network/types.ts";
 import type {
   CellId,
   UIElementId,
 } from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
+import type { RequestId } from "../../../../marimo/frontend/src/core/network/DeferredRequestRegistry.ts";
 import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts";
 import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts";
 import {
@@ -21,9 +34,8 @@ import {
   isMessageWidgetState,
   MODEL_MANAGER,
 } from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts";
+import { FUNCTIONS_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/functions/FunctionRegistry.ts";
 import { safeExtractSetUIElementMessageBuffers } from "@marimo-team/frontend/unstable_internal/utils/json/base64.ts";
-
-export { useTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";
 
 import "@marimo-team/frontend/unstable_internal/css/common.css";
 import "@marimo-team/frontend/unstable_internal/css/globals.css";
@@ -36,6 +48,8 @@ import "@marimo-team/frontend/unstable_internal/css/table.css";
 
 import type { CellRuntimeState } from "../shared/cells.ts";
 import type { MessageOperationOf } from "../types.ts";
+
+export { useTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";
 
 export type RequestClient = EditRequests & RunRequests;
 export type { CellRuntimeState, CellId };
@@ -75,6 +89,13 @@ export function handleSendUiElementMessage(
   }
 }
 
+export function handleFunctionCallResult(
+  msg: MessageOperationOf<"function-call-result">,
+) {
+  FUNCTIONS_REGISTRY.resolve(msg.function_call_id as RequestId, msg);
+  return;
+}
+
 export function handleRemoveUIElements(
   msg: MessageOperationOf<"remove-ui-elements">,
 ) {
@@ -103,16 +124,3 @@ export const ConsoleOutput: React.FC<{
 
 export const TooltipProvider: React.FC<React.PropsWithChildren> =
   untyped.TooltipProvider;
-
-/**
- * Type imports from @marimo-team/frontend
- *
- * These network types are imported WITHOUT ?nocheck because they're the most
- * likely to change as the API evolves. By keeping these type-checked, we ensure
- * our RequestClient interface stays in sync with marimo's actual API contracts.
- * Type errors here indicate breaking changes we need to handle.
- */
-import type {
-  EditRequests,
-  RunRequests,
-} from "@marimo-team/frontend/unstable_internal/core/network/types.ts";

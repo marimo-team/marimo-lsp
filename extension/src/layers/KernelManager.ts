@@ -1,5 +1,5 @@
 import { Effect, FiberSet, Layer, Option } from "effect";
-import { assert } from "../assert.ts";
+import { assert, unreachable } from "../assert.ts";
 import * as ops from "../operations.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookControllers } from "../services/NotebookControllers.ts";
@@ -38,11 +38,11 @@ export const KernelManagerLive = Layer.scopedDiscard(
           let context = contexts.get(notebookUri);
 
           if (!context) {
-            const notebook = code.workspace
-              .getNotebookDocuments()
-              .find((doc) => doc.uri.toString() === notebookUri);
-            assert(notebook, `Expected notebook document for ${notebookUri}`);
-            context = { notebook, executions: new Map() };
+            const editor = code.window
+              .getVisibleNotebookEditors()
+              .find((editor) => editor.notebook.uri.toString() === notebookUri);
+            assert(editor, `Expected notebook document for ${notebookUri}`);
+            context = { editor, executions: new Map() };
             contexts.set(notebookUri, context);
             yield* Effect.logInfo("Created new context for notebook").pipe(
               Effect.annotateLogs({ notebookUri }),
@@ -50,7 +50,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
           }
 
           const controller = yield* controllers.getActiveController(
-            context.notebook,
+            context.editor.notebook,
           );
 
           assert(
@@ -87,10 +87,25 @@ export const KernelManagerLive = Layer.scopedDiscard(
               notebookUri: editor.notebook.uri.toString(),
             }),
           );
-          yield* marimo.setUiElementValue({
-            notebookUri: editor.notebook.uri.toString(),
-            inner: message.params,
-          });
+          switch (message.command) {
+            case "marimo.set_ui_element_value": {
+              yield* marimo.setUiElementValue({
+                notebookUri: editor.notebook.uri.toString(),
+                inner: message.params,
+              });
+              return;
+            }
+            case "marimo.function_call_request": {
+              yield* marimo.functionCallRequest({
+                notebookUri: editor.notebook.uri.toString(),
+                inner: message.params,
+              });
+              return;
+            }
+            default: {
+              unreachable(message, "Unknown message from frontend");
+            }
+          }
         }),
       ),
     );

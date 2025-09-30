@@ -8,7 +8,7 @@ import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
 import type { CellMessage, MessageOperation } from "./types.ts";
 
 export interface OperationContext {
-  notebook: vscode.NotebookDocument;
+  editor: vscode.NotebookEditor;
   controller: vscode.NotebookController;
   executions: Map<string, vscode.NotebookCellExecution>;
 }
@@ -28,11 +28,12 @@ export function routeOperation(
       }
       // Forward to renderer (front end)
       case "remove-ui-elements":
+      case "function-call-result":
       case "send-ui-element-message": {
         yield* Effect.logTrace("Forwarding message to renderer").pipe(
           Effect.annotateLogs({ op: operation.op }),
         );
-        yield* renderer.postMessage(operation);
+        yield* renderer.postMessage(operation, context.editor);
         return;
       }
       case "interrupted": {
@@ -80,7 +81,7 @@ function handleCellOperation(
     switch (status) {
       case "queued": {
         const execution = context.controller.createNotebookCellExecution(
-          getNotebookCell(context.notebook, cellId),
+          getNotebookCell(context.editor.notebook, cellId),
         );
         context.executions.set(cellId, execution);
         yield* Effect.logDebug("Cell queued for execution").pipe(

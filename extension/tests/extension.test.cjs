@@ -39,6 +39,7 @@ suite("marimo Extension Hello World Tests", () => {
       "marimo.createGist",
       "marimo.dap",
       "marimo.deserialize",
+      "marimo.function_call_request",
       "marimo.interrupt",
       "marimo.newMarimoNotebook",
       "marimo.run",

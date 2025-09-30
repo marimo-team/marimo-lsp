@@ -32,6 +32,13 @@ export function createRequestClient(
   );
 
   const client = {
+    async sendFunctionRequest(request) {
+      context.postMessage({
+        command: "marimo.function_call_request",
+        params: request,
+      });
+      return null;
+    },
     async sendComponentValues(request) {
       context.postMessage({
         command: "marimo.set_ui_element_value",

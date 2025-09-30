@@ -24,6 +24,7 @@ interface SessionScoped<T> extends NotebookScoped<T> {
 
 type RunRequest = Schemas["RunRequest"];
 type SetUIElementValueRequest = Schemas["SetUIElementValueRequest"];
+type FunctionCallRequest = Schemas["FunctionCallRequest"];
 interface DeserializeRequest {
   source: string;
 }
@@ -41,6 +42,7 @@ type InterruptRequest = {};
 type MarimoCommandMap = {
   "marimo.run": SessionScoped<RunRequest>;
   "marimo.set_ui_element_value": NotebookScoped<SetUIElementValueRequest>;
+  "marimo.function_call_request": NotebookScoped<FunctionCallRequest>;
   "marimo.dap": NotebookScoped<DebugAdapterRequest>;
   "marimo.interrupt": NotebookScoped<InterruptRequest>;
   "marimo.serialize": SerializeRequest;
@@ -56,7 +58,9 @@ type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {
 
 /** Subset of commands allowed to be dispatched by the renderer */
 type RendererCommandMap = {
-  [K in "marimo.set_ui_element_value"]: MarimoCommandMap[K]["inner"];
+  [K in
+    | "marimo.set_ui_element_value"
+    | "marimo.function_call_request"]: MarimoCommandMap[K]["inner"];
 };
 type RendererCommandMessageOf<K extends keyof RendererCommandMap> = {
   [C in keyof RendererCommandMap]: {
@@ -75,7 +79,8 @@ export type RendererCommand = RendererCommandMessageOf<
 // extension -> renderer
 export type RendererReceiveMessage =
   | MessageOperationOf<"remove-ui-elements">
-  | MessageOperationOf<"send-ui-element-message">;
+  | MessageOperationOf<"send-ui-element-message">
+  | MessageOperationOf<"function-call-result">;
 
 // Language server -> client
 type MarimoNotificationMap = {
