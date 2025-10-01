@@ -94,6 +94,14 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
             params,
           });
         },
+        functionCallRequest(
+          params: ParamsFor<"marimo.function_call_request">,
+        ): Effect.Effect<void, ExecuteCommandError, never> {
+          return executeCommand(client, {
+            command: "marimo.function_call_request",
+            params,
+          });
+        },
         interrupt(
           params: ParamsFor<"marimo.interrupt">,
         ): Effect.Effect<void, ExecuteCommandError, never> {

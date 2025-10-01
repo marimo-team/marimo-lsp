@@ -35,6 +35,9 @@ export class Window extends Effect.Service<Window>()("Window", {
       getActiveNotebookEditor() {
         return Option.fromNullable(api.activeNotebookEditor);
       },
+      getVisibleNotebookEditors() {
+        return api.visibleNotebookEditors;
+      },
     };
   }),
 }) {}

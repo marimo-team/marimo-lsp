@@ -10,6 +10,7 @@ import { CellOutput } from "./CellOutput.tsx";
 import {
   type CellId,
   type CellRuntimeState,
+  handleFunctionCallResult,
   handleRemoveUIElements,
   handleSendUiElementMessage,
   initialize,
@@ -32,6 +33,10 @@ export const activate: vscode.ActivationFunction = (context) => {
       }
       case "remove-ui-elements": {
         handleRemoveUIElements(msg);
+        return;
+      }
+      case "function-call-result": {
+        handleFunctionCallResult(msg);
         return;
       }
       default: {
