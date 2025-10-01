@@ -1,7 +1,8 @@
 import * as NodeChildProcess from "node:child_process";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Data, Effect, ParseResult, Schema } from "effect";
+import { Data, Effect, Schema } from "effect";
+import { SemVerFromString } from "../schemas.ts";
 
 const MINIMUM_MARIMO_VERSION = {
   major: 0,
@@ -13,14 +14,16 @@ class PythonExecutionError extends Data.TaggedError("PythonExecutionError")<{
   readonly env: py.Environment;
   readonly error: NodeChildProcess.ExecFileException;
   readonly stderr: string;
-}> {}
+}> {
+}
 
 class EnvironmentRequirementError extends Data.TaggedError(
   "EnvironmentRequirementError",
 )<{
   readonly env: py.Environment;
   readonly diagnostics: ReadonlyArray<RequirementDiagnostic>;
-}> {}
+}> {
+}
 
 /**
  * Validates Python environments for marimo extension compatibility.
@@ -49,7 +52,7 @@ export class EnvironmentValidator extends Effect.Service<EnvironmentValidator>()
             version: Schema.NullOr(SemVerFromString),
           }),
         );
-        return Effect.gen(function* () {
+        return Effect.gen(function*() {
           const stdout = yield* Effect.async<string, PythonExecutionError>(
             (resume) => {
               NodeChildProcess.execFile(
@@ -134,7 +137,8 @@ print(json.dumps(packages))`,
       },
     },
   },
-) {}
+) {
+}
 
 class ValidPythonEnvironemnt extends Data.TaggedClass(
   "ValidPythonEnvironment",
@@ -150,33 +154,8 @@ type RequirementDiagnostic =
   | { kind: "unknown"; package: string }
   | { kind: "missing"; package: string }
   | {
-      kind: "outdated";
-      package: string;
-      currentVersion: semver.SemVer;
-      requiredVersion: semver.SemVer;
-    };
-
-const SemVerFromString = Schema.transformOrFail(
-  Schema.String,
-  Schema.Struct({
-    major: Schema.Number,
-    minor: Schema.Number,
-    patch: Schema.Number,
-  }),
-  {
-    decode: (from) => {
-      const parsed = semver.tryParse(from);
-      if (!parsed) {
-        return ParseResult.fail(
-          new ParseResult.Type(
-            Schema.String.ast,
-            from,
-            `Invalid semver string: ${from}`,
-          ),
-        );
-      }
-      return ParseResult.succeed(parsed);
-    },
-    encode: (to) => ParseResult.succeed(semver.format(to)),
-  },
-);
+    kind: "outdated";
+    package: string;
+    currentVersion: semver.SemVer;
+    requiredVersion: semver.SemVer;
+  };

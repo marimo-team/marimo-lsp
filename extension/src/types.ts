@@ -3,6 +3,7 @@ import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
 
 import type { MarimoNotebook } from "./schemas.ts";
+import { InstallMissingPackagesRequest } from "../../../marimo/frontend/src/core/network/types.ts";
 
 type Schemas = Api["schemas"];
 
@@ -43,6 +44,7 @@ type MarimoCommandMap = {
   "marimo.run": SessionScoped<RunRequest>;
   "marimo.set_ui_element_value": NotebookScoped<SetUIElementValueRequest>;
   "marimo.function_call_request": NotebookScoped<FunctionCallRequest>;
+  "marimo.install_missing_packages": NotebookScoped<InstallMissingPackagesRequest>;
   "marimo.dap": NotebookScoped<DebugAdapterRequest>;
   "marimo.interrupt": NotebookScoped<InterruptRequest>;
   "marimo.serialize": SerializeRequest;

@@ -5,6 +5,7 @@ import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookControllers } from "../services/NotebookControllers.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { VsCode } from "../services/VsCode.ts";
+import { PyPiClient } from "../services/PyPIClient.ts";
 
 /**
  * Orchestrates kernel operations for marimo notebooks by composing
@@ -23,13 +24,14 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const marimo = yield* LanguageClient;
     const renderer = yield* NotebookRenderer;
     const controllers = yield* NotebookControllers;
+    const pypi = yield* PyPiClient;
 
     const contexts = new Map<
       string,
       Omit<ops.OperationContext, "controller" | "renderer">
     >();
 
-    const runFork = yield* FiberSet.makeRuntime<NotebookRenderer | VsCode>();
+    const runFork = yield* FiberSet.makeRuntime();
 
     yield* marimo.onNotification("marimo/operation", (msg) =>
       runFork(
@@ -59,10 +61,16 @@ export const KernelManagerLive = Layer.scopedDiscard(
           );
 
           return yield* ops
-            .routeOperation(
-              { ...context, controller: controller.value },
-              operation,
-            )
+            .routeOperation(operation, {
+              context: {
+                ...context,
+                controller: controller.value,
+              },
+              marimo,
+              code,
+              renderer,
+              pypi,
+            })
             .pipe(
               Effect.withSpan(`op:${operation.op}`, {
                 attributes: { notebookUri },

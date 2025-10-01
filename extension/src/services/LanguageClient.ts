@@ -102,6 +102,12 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
             params,
           });
         },
+        installPackages(params: ParamsFor<"marimo.install_missing_packages">) {
+          return executeCommand(client, {
+            command: "marimo.install_missing_packages",
+            params,
+          });
+        },
         interrupt(
           params: ParamsFor<"marimo.interrupt">,
         ): Effect.Effect<void, ExecuteCommandError, never> {

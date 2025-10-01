@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar, cast
 import lsprotocol.types as lsp
 import msgspec
 from marimo._convert.converters import MarimoConvert
-from marimo._runtime.requests import FunctionCallRequest
+from marimo._runtime.requests import FunctionCallRequest, InstallMissingPackagesRequest
 from marimo._schemas.serialization import NotebookSerialization
 from marimo._utils.parse_dataclass import parse_raw
 from pygls.lsp.server import LanguageServer
@@ -177,7 +177,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         ls: LanguageServer,  # noqa: ARG001
         args: NotebookCommand[SetUIElementValueRequest],
     ):
-        logger.info("marimo.kernel.set_ui_element_value")
+        logger.info("marimo.set_ui_element_value")
         session = manager.get_session(args.notebook_uri)
         assert session, f"No session in workspace for {args.notebook_uri}"
         session.put_control_request(args.inner, from_consumer_id=None)
@@ -189,7 +189,21 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         ls: LanguageServer,  # noqa: ARG001
         args: NotebookCommand[FunctionCallRequest],
     ):
-        logger.info("marimo.kernel.function_call_request")
+        logger.info("marimo.function_call_request")
+        session = manager.get_session(args.notebook_uri)
+        assert session, f"No session in workspace for {args.notebook_uri}"
+        session.put_control_request(args.inner, from_consumer_id=None)
+
+    @command(
+        server,
+        "marimo.install_missing_packages",
+        NotebookCommand[InstallMissingPackagesRequest],
+    )
+    async def install_missing_packages(
+        ls: LanguageServer,  # noqa: ARG001
+        args: NotebookCommand[InstallMissingPackagesRequest],
+    ):
+        logger.info("marimo.install_missing_packages")
         session = manager.get_session(args.notebook_uri)
         assert session, f"No session in workspace for {args.notebook_uri}"
         session.put_control_request(args.inner, from_consumer_id=None)

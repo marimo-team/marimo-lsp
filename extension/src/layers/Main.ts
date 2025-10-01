@@ -7,6 +7,7 @@ import { NotebookControllers } from "../services/NotebookControllers.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
+import { PyPiClient } from "../services/PyPIClient.ts";
 import { PythonExtension } from "../services/PythonExtension.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
@@ -21,6 +22,7 @@ import { RegisterCommandsLive } from "./RegisterCommands.ts";
 export const MainLive = LspLive.pipe(
   Layer.merge(RegisterCommandsLive),
   Layer.merge(KernelManagerLive),
+  Layer.provide(PyPiClient.Default),
   Layer.provide(GitHubClient.Default),
   Layer.provide(DebugAdapter.Default),
   Layer.provide(NotebookRenderer.Default),
