@@ -1,11 +1,15 @@
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 
 import { assert } from "./assert.ts";
 import { NotebookRenderer } from "./services/NotebookRenderer.ts";
 import { VsCode } from "./services/VsCode.ts";
 import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
-import type { CellMessage, MessageOperation } from "./types.ts";
+import type {
+  CellMessage,
+  MessageOperation,
+  MessageOperationOf,
+} from "./types.ts";
 
 export interface OperationContext {
   editor: vscode.NotebookEditor;
@@ -23,7 +27,11 @@ export function routeOperation(
 
     switch (operation.op) {
       case "cell-op": {
-        yield* handleCellOperation(code, context, operation);
+        yield* handleCellOperation({ code, context, operation });
+        return;
+      }
+      case "missing-package-alert": {
+        yield* handleMissingPackageAlert({ code, operation });
         return;
       }
       // Forward to renderer (front end)
@@ -66,17 +74,18 @@ export function routeOperation(
 
 const cellStateManager = new CellStateManager();
 
-function handleCellOperation(
-  code: VsCode,
-  context: OperationContext,
-  data: CellMessage,
-): Effect.Effect<void, never, never> {
+function handleCellOperation(options: {
+  code: VsCode;
+  context: OperationContext;
+  operation: CellMessage;
+}): Effect.Effect<void, never, never> {
+  const { code, operation, context } = options;
   return Effect.gen(function* () {
-    const { cell_id: cellId, status, timestamp = 0 } = data;
+    const { cell_id: cellId, status, timestamp = 0 } = operation;
     yield* Effect.logTrace("Handling cell operation").pipe(
       Effect.annotateLogs({ cellId, status }),
     );
-    const state = cellStateManager.handleCellOp(data);
+    const state = cellStateManager.handleCellOp(operation);
 
     switch (status) {
       case "queued": {
@@ -170,4 +179,58 @@ function getNotebookCell(
     .find((c) => c.document.uri.toString() === cellId);
   assert(cell, `No cell id ${cellId} in notebook ${notebook.uri.toString()} `);
   return cell;
+}
+
+function handleMissingPackageAlert(options: {
+  code: VsCode;
+  operation: MessageOperationOf<"missing-package-alert">;
+}): Effect.Effect<void, never, never> {
+  const { code, operation } = options;
+  return Effect.gen(function* () {
+    const packages = operation.packages.join(" ");
+
+    const choice = yield* code.window
+      .useInfallible((api) =>
+        api.showInformationMessage(
+          `Missing packages: ${operation.packages.join(", ")}`,
+          "Install All",
+          "Customize...",
+        ),
+      )
+      .pipe(Effect.map(Option.fromNullable));
+
+    if (Option.isNone(choice)) {
+      return;
+    }
+
+    if (choice.value === "Install All") {
+      yield* Effect.logInfo("Install packages").pipe(
+        Effect.annotateLogs("packages", operation.packages),
+      );
+      // TODO
+    } else if (choice.value === "Customize...") {
+      const response = yield* code.window
+        .useInfallible((api) =>
+          api.showInputBox({
+            prompt: "Add packages",
+            value: packages,
+            placeHolder: "package1 package2 package3",
+          }),
+        )
+        .pipe(Effect.map(Option.fromNullable));
+
+      if (Option.isNone(response)) {
+        return;
+      }
+
+      yield* Effect.logInfo("Install packages").pipe(
+        Effect.annotateLogs("packages", response.value.split(" ")),
+      );
+
+      // Install edited package list
+      // TODO: run installation command with edited.split(' ')
+    }
+
+    // Cancel - do nothing
+  });
 }
