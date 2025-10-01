@@ -1,5 +1,5 @@
 import * as semver from "@std/semver";
-import { type Brand, Effect, HashMap, Either, Option } from "effect";
+import { type Brand, Effect, Either, HashMap, Option } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "./assert.ts";
 import type { LanguageClient } from "./services/LanguageClient.ts";
@@ -19,7 +19,7 @@ export interface OperationContext {
   executions: Map<string, vscode.NotebookCellExecution>;
 }
 
-export function routeOperation(
+export const routeOperation = Effect.fn("routeOperation")(function* (
   operation: MessageOperation,
   deps: {
     context: OperationContext;
@@ -28,58 +28,56 @@ export function routeOperation(
     marimo: LanguageClient;
     pypi: PyPiClient;
   },
-): Effect.Effect<void, never, never> {
-  return Effect.gen(function* () {
-    switch (operation.op) {
-      case "cell-op": {
-        yield* handleCellOperation(operation, deps);
-        return;
-      }
-      case "installing-package-alert": {
-        yield* handleInstallingPackageAlert(operation, deps);
-        return;
-      }
-      case "missing-package-alert": {
-        yield* handleMissingPackageAlert(operation, deps);
-        return;
-      }
-      // Forward to renderer (front end)
-      case "remove-ui-elements":
-      case "function-call-result":
-      case "send-ui-element-message": {
-        yield* Effect.logTrace("Forwarding message to renderer").pipe(
-          Effect.annotateLogs({ op: operation.op }),
-        );
-        yield* deps.renderer.postMessage(operation, deps.context.editor);
-        return;
-      }
-      case "interrupted": {
-        // Clear all pending executions when run is interrupted
-        const executionCount = deps.context.executions.size;
-        for (const execution of deps.context.executions.values()) {
-          execution.end(false, Date.now());
-        }
-        deps.context.executions.clear();
-        yield* Effect.logInfo("Run completed").pipe(
-          Effect.annotateLogs({
-            op: operation.op,
-            clearedExecutions: executionCount,
-          }),
-        );
-        return;
-      }
-      case "completed-run": {
-        return;
-      }
-      default: {
-        yield* Effect.logWarning("Unknown operation").pipe(
-          Effect.annotateLogs({ op: operation.op }),
-        );
-        return;
-      }
+) {
+  switch (operation.op) {
+    case "cell-op": {
+      yield* handleCellOperation(operation, deps);
+      return;
     }
-  }).pipe(Effect.annotateLogs({ component: "operations" }));
-}
+    case "installing-package-alert": {
+      yield* handleInstallingPackageAlert(operation, deps);
+      return;
+    }
+    case "missing-package-alert": {
+      yield* handleMissingPackageAlert(operation, deps);
+      return;
+    }
+    // Forward to renderer (front end)
+    case "remove-ui-elements":
+    case "function-call-result":
+    case "send-ui-element-message": {
+      yield* Effect.logTrace("Forwarding message to renderer").pipe(
+        Effect.annotateLogs({ op: operation.op }),
+      );
+      yield* deps.renderer.postMessage(operation, deps.context.editor);
+      return;
+    }
+    case "interrupted": {
+      // Clear all pending executions when run is interrupted
+      const executionCount = deps.context.executions.size;
+      for (const execution of deps.context.executions.values()) {
+        execution.end(false, Date.now());
+      }
+      deps.context.executions.clear();
+      yield* Effect.logInfo("Run completed").pipe(
+        Effect.annotateLogs({
+          op: operation.op,
+          clearedExecutions: executionCount,
+        }),
+      );
+      return;
+    }
+    case "completed-run": {
+      return;
+    }
+    default: {
+      yield* Effect.logWarning("Unknown operation").pipe(
+        Effect.annotateLogs({ op: operation.op }),
+      );
+      return;
+    }
+  }
+});
 
 const cellStateManager = new CellStateManager();
 
@@ -93,9 +91,6 @@ function handleCellOperation(
   const { code, context } = deps;
   return Effect.gen(function* () {
     const { cell_id: cellId, status, timestamp = 0 } = operation;
-    yield* Effect.logTrace("Handling cell operation").pipe(
-      Effect.annotateLogs({ cellId, status }),
-    );
     const state = cellStateManager.handleCellOp(operation);
 
     switch (status) {
@@ -234,6 +229,10 @@ function handleInstallingPackageAlert(
     });
     return { progress, dispose: outer.resolve };
   });
+
+  return code.window.useInfallible((api) =>
+    api.showInformationMessage(JSON.stringify(operation)),
+  );
 
   return Effect.gen(function* () {
     for (const entry of Object.entries(operation.packages)) {
