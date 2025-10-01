@@ -3,6 +3,7 @@ import * as NodePath from "node:path";
 import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "./assert.ts";
+import type { Config } from "./services/Config.ts";
 import type { NotebookController } from "./services/NotebookControllers.ts";
 import type { NotebookRenderer } from "./services/NotebookRenderer.ts";
 import type { Uv } from "./services/Uv.ts";
@@ -28,6 +29,7 @@ export const routeOperation = Effect.fn("routeOperation")(function* (
     renderer: NotebookRenderer;
     code: VsCode;
     uv: Uv;
+    config: Config;
   },
 ) {
   yield* Effect.logDebug("Handling operation").pipe(
@@ -191,10 +193,10 @@ function handleMissingPackageAlert(
     context: OperationContext;
     code: VsCode;
     uv: Uv;
+    config: Config;
   },
 ): Effect.Effect<void, never, never> {
-  const { context, code, uv } = deps;
-
+  const { context, code, uv, config } = deps;
   const installPackages = (venvPath: string, packages: ReadonlyArray<string>) =>
     code.window.useInfallible((api) =>
       api.withProgress(
@@ -209,7 +211,7 @@ function handleMissingPackageAlert(
               progress.report({
                 message: `Installing ${packages.join(", ")}...`,
               });
-              yield* uv.pipInstall(packages, { target: venvPath });
+              yield* uv.pipInstall(packages, { venv: venvPath });
               progress.report({
                 message: `Successfully installed ${packages.join(", ")}`,
               });
@@ -226,7 +228,24 @@ function handleMissingPackageAlert(
           ),
       ),
     );
+
   return Effect.gen(function* () {
+    if (operation.packages.length === 0) {
+      // Nothing to do
+      return;
+    }
+
+    if (!config.uv.enabled) {
+      // Use has uv disabled
+      yield* Effect.logDebug("uv integration disabled. Skipping install.").pipe(
+        Effect.annotateLogs({
+          packages: operation.packages,
+        }),
+      );
+
+      return;
+    }
+
     const venv = findVenvPath(context.controller.env.path);
 
     if (Option.isNone(venv)) {
@@ -237,7 +256,9 @@ function handleMissingPackageAlert(
     const choice = yield* code.window
       .useInfallible((api) =>
         api.showInformationMessage(
-          `Missing packages: ${operation.packages.join(", ")}. Install with uv?`,
+          operation.packages.length === 1
+            ? `Missing package: ${operation.packages[0]}. Install with \`uv pip\`?`
+            : `Missing packages: ${operation.packages.join(", ")}. Install with \`uv pip\`?`,
           "Install All",
           "Customize...",
         ),
@@ -297,25 +318,20 @@ function handleMissingPackageAlert(
 function findVenvPath(target: string): Option.Option<string> {
   const basename = NodePath.basename(target);
 
-  const isPython =
+  const isPythonExecutable =
     basename === "python" ||
     basename.startsWith("python3") ||
     basename === "python.exe" ||
     basename.startsWith("python3.") ||
     basename === "python3.exe";
 
-  if (isPython) {
-    // Look two directories up (e.g., .venv/bin/python -> .venv)
-    const candidate = NodePath.resolve(target, "..", "..");
+  const candidate = isPythonExecutable
+    ? // Look two directories up (e.g., .venv/bin/python -> .venv)
+      NodePath.resolve(target, "..", "..")
+    : // Otherwise check the target itself
+      target;
 
-    // Check if the target itself has pyvenv.cfg
-    return NodeFs.existsSync(NodePath.join(candidate, "pyvenv.cfg"))
-      ? Option.some(candidate)
-      : Option.none();
-  }
-
-  // Check if the target itself has pyvenv.cfg
-  return NodeFs.existsSync(NodePath.join(target, "pyvenv.cfg"))
-    ? Option.some(target)
+  return NodeFs.existsSync(NodePath.join(candidate, "pyvenv.cfg"))
+    ? Option.some(candidate)
     : Option.none();
 }

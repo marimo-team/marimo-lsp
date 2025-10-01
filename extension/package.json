@@ -27,6 +27,12 @@
           "default": [],
           "markdownDescription": "Path to a custom `marimo-lsp` executable, e.g., `[\"/path/to/marimo-lsp\"]`. Leave empty to use the bundled version via uvx.",
           "scope": "resource"
+        },
+        "marimo.disableUvIntegration": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Disable uv integration features such as automatic package installation prompts.",
+          "scope": "resource"
         }
       }
     },

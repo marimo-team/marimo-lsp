@@ -1,6 +1,7 @@
 import { Effect, FiberSet, Layer, Option } from "effect";
 import { assert, unreachable } from "../assert.ts";
 import * as ops from "../operations.ts";
+import { Config } from "../services/Config.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookControllers } from "../services/NotebookControllers.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
@@ -22,6 +23,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
     );
     const uv = yield* Uv;
     const code = yield* VsCode;
+    const config = yield* Config;
     const marimo = yield* LanguageClient;
     const renderer = yield* NotebookRenderer;
     const controllers = yield* NotebookControllers;
@@ -66,6 +68,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
             renderer,
             uv,
             runPromise,
+            config,
           });
         }),
       ),

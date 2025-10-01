@@ -24,19 +24,29 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
     return {
       pipInstall(
         packages: ReadonlyArray<string>,
-        options: { readonly target: string },
+        options: { readonly venv: string },
       ) {
-        return uv("pip", "install", "--target", options.target, ...packages);
+        return uv({
+          args: ["pip", "install", ...packages],
+          venv: options.venv,
+        });
       },
     };
   }),
 }) {}
 
 function createUv(executor: CommandExecutor.CommandExecutor) {
-  return Effect.fn("uv")(function* (...args: Array<string>) {
-    const command = Command.make("uv", ...args);
+  return Effect.fn("uv")(function* (options: {
+    readonly args: ReadonlyArray<string>;
+    readonly venv: string;
+  }) {
+    const command = Command.make("uv", ...options.args).pipe(
+      Command.env({ NO_COLOR: "1", VIRTUAL_ENV: options.venv }),
+    );
+    yield* Effect.logDebug("Running command").pipe(
+      Effect.annotateLogs({ command }),
+    );
     const [exitCode, stdout, stderr] = yield* command.pipe(
-      Command.env({ NO_COLOR: "1" }),
       Command.start,
       Effect.provideService(CommandExecutor.CommandExecutor, executor),
       Effect.flatMap((process) =>
