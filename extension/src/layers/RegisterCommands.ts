@@ -11,7 +11,6 @@ import { VsCode } from "../services/VsCode.ts";
  */
 export const RegisterCommandsLive = Layer.scopedDiscard(
   Effect.gen(function* () {
-    yield* Effect.logError("Is this working?");
     const gh = yield* GitHubClient;
     const code = yield* VsCode;
     const marimo = yield* LanguageClient;

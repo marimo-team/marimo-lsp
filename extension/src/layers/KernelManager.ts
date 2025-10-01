@@ -4,8 +4,8 @@ import * as ops from "../operations.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookControllers } from "../services/NotebookControllers.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
+import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
-import { PyPiClient } from "../services/PyPIClient.ts";
 
 /**
  * Orchestrates kernel operations for marimo notebooks by composing
@@ -20,21 +20,21 @@ export const KernelManagerLive = Layer.scopedDiscard(
     yield* Effect.logInfo("Setting up kernel manager").pipe(
       Effect.annotateLogs({ component: "kernel-manager" }),
     );
+    const uv = yield* Uv;
     const code = yield* VsCode;
     const marimo = yield* LanguageClient;
     const renderer = yield* NotebookRenderer;
     const controllers = yield* NotebookControllers;
-    const pypi = yield* PyPiClient;
 
     const contexts = new Map<
       string,
-      Omit<ops.OperationContext, "controller" | "renderer">
+      Omit<ops.OperationContext, "controller">
     >();
 
-    const runFork = yield* FiberSet.makeRuntime();
+    const runPromise = yield* FiberSet.makeRuntimePromise();
 
     yield* marimo.onNotification("marimo/operation", (msg) =>
-      runFork(
+      runPromise(
         Effect.gen(function* () {
           const { notebookUri, operation } = msg;
           let context = contexts.get(notebookUri);
@@ -60,34 +60,20 @@ export const KernelManagerLive = Layer.scopedDiscard(
             `Expected notebook controller for ${notebookUri}`,
           );
 
-          return yield* ops
-            .routeOperation(operation, {
-              context: {
-                ...context,
-                controller: controller.value,
-              },
-              marimo,
-              code,
-              renderer,
-              pypi,
-            })
-            .pipe(
-              Effect.withSpan(`op:${operation.op}`, {
-                attributes: { notebookUri },
-              }),
-              Effect.catchAllCause((cause) =>
-                Effect.logError("Operation routing failed", cause).pipe(
-                  Effect.annotateLogs({ notebookUri, op: operation.op }),
-                ),
-              ),
-            );
+          return yield* ops.routeOperation(operation, {
+            context: { ...context, controller: controller.value },
+            code,
+            renderer,
+            uv,
+            runPromise,
+          });
         }),
       ),
     );
 
     // renderer (i.e., front end) -> kernel
     yield* renderer.onDidReceiveMessage(({ editor, message }) =>
-      runFork(
+      runPromise(
         Effect.gen(function* () {
           yield* Effect.logTrace("Renderer command").pipe(
             Effect.annotateLogs({

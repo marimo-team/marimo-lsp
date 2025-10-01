@@ -1,9 +1,8 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
-
+import type { InstallMissingPackagesRequest } from "../../../marimo/frontend/src/core/network/types.ts";
 import type { MarimoNotebook } from "./schemas.ts";
-import { InstallMissingPackagesRequest } from "../../../marimo/frontend/src/core/network/types.ts";
 
 type Schemas = Api["schemas"];
 

@@ -3,6 +3,7 @@ import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
 import {
   type Brand,
+  Data,
   Effect,
   Either,
   Exit,
@@ -22,8 +23,8 @@ import { VsCode } from "./VsCode.ts";
 
 type ControllerId = string & Brand.Brand<"ControllerId">;
 
-interface ControllerEntry {
-  readonly controller: vscode.NotebookController;
+interface NotebookControllerHandle {
+  readonly controller: NotebookController;
   readonly scope: Scope.CloseableScope;
 }
 
@@ -31,26 +32,17 @@ interface ControllerEntry {
  * Manages notebook execution controllers for marimo notebooks,
  * handling controller registration, selection, and execution lifecycle.
  */
-export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
+class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
   "ControllerRegistry",
   {
-    dependencies: [
-      VsCode.Default,
-      LanguageClient.Default,
-      EnvironmentValidator.Default,
-      NotebookSerializer.Default,
-    ],
+    dependencies: [VsCode.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
-      const marimo = yield* LanguageClient;
-      const validator = yield* EnvironmentValidator;
-      const serializer = yield* NotebookSerializer;
-
-      const controllersRef = yield* Ref.make(
-        HashMap.empty<ControllerId, ControllerEntry>(),
+      const handlesRef = yield* Ref.make(
+        HashMap.empty<ControllerId, NotebookControllerHandle>(),
       );
       const selectionsRef = yield* Ref.make(
-        HashMap.empty<vscode.NotebookDocument, vscode.NotebookController>(),
+        HashMap.empty<vscode.NotebookDocument, NotebookController>(),
       );
 
       const idFor = (env: py.Environment) =>
@@ -60,30 +52,25 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         id: ControllerId,
         label: string,
       ) {
-        const controllers = yield* Ref.get(controllersRef);
-        const maybeEntry = HashMap.get(controllers, id);
-        if (Option.isSome(maybeEntry)) {
+        const handles = yield* Ref.get(handlesRef);
+        const handle = HashMap.get(handles, id);
+        if (Option.isSome(handle)) {
           // Just update the controller if it exists
-          maybeEntry.value.controller.description = label;
+          handle.value.controller.inner.description = label;
           return true;
         }
         return false;
       });
 
-      const addControllerEntry = (id: ControllerId, entry: ControllerEntry) =>
-        Ref.update(controllersRef, (controllers) =>
-          HashMap.set(controllers, id, entry),
-        );
-
       yield* Effect.addFinalizer(
         Effect.fnUntraced(function* () {
-          const controllers = yield* Ref.get(controllersRef);
+          const controllers = yield* Ref.get(handlesRef);
           yield* Effect.forEach(
             HashMap.values(controllers),
             ({ scope }) => Scope.close(scope, Exit.void),
             { discard: true },
           );
-          yield* Ref.set(controllersRef, HashMap.empty());
+          yield* Ref.set(handlesRef, HashMap.empty());
         }),
       );
 
@@ -110,27 +97,48 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
             return;
           }
 
-          // Make a disposable scope
+          // Create a disposable scope
           const scope = yield* Scope.make();
           const controller = yield* Scope.extend(
-            createNewMarimoNotebookController({
-              deps: { marimo, code, validator, serializer },
-              env,
-              controller: {
+            Effect.gen(function* () {
+              const runFork = yield* FiberSet.makeRuntime();
+              const controller = yield* NotebookController.create({
+                env,
                 id: controllerId,
                 label: controllerLabel,
-              },
-              setActive: (
-                controller: vscode.NotebookController,
-                notebook: vscode.NotebookDocument,
-              ) =>
-                Ref.update(selectionsRef, (selections) =>
-                  HashMap.set(selections, notebook, controller),
-                ),
+              });
+
+              yield* controller.onDidChangeSelectedNotebooks((e) => {
+                if (!e.selected) {
+                  // NB: We don't delete from selections when deselected
+                  // because another controller will overwrite it when selected
+                  return;
+                }
+                runFork(
+                  Effect.gen(function* () {
+                    yield* Ref.update(selectionsRef, (selections) =>
+                      HashMap.set(selections, e.notebook, controller),
+                    );
+                    yield* Effect.logError(
+                      "Controller selected for notebook",
+                    ).pipe(
+                      Effect.annotateLogs({
+                        controllerId: controller.inner.id,
+                        notebookUri: e.notebook.uri.toString(),
+                      }),
+                    );
+                  }),
+                );
+              });
+
+              return controller;
             }),
             scope,
           );
-          yield* addControllerEntry(controllerId, { controller, scope });
+
+          yield* Ref.update(handlesRef, (handles) =>
+            HashMap.set(handles, controllerId, { controller, scope }),
+          );
           yield* Effect.logInfo("Successfully created new controller");
         }),
         getActiveController: Effect.fnUntraced(function* (
@@ -144,19 +152,21 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         ) {
           yield* Effect.logDebug("Checking for stale controllers");
           const validIds = new Set(envs.map((env) => idFor(env)));
-          const controllers = yield* Ref.get(controllersRef);
+          const controllers = yield* Ref.get(handlesRef);
           const selections = yield* Ref.get(selectionsRef);
 
           // Check which controllers can be disposed
-          const toRemove: Array<{ id: ControllerId; entry: ControllerEntry }> =
-            [];
+          const toRemove: Array<{
+            id: ControllerId;
+            entry: NotebookControllerHandle;
+          }> = [];
 
           for (const [id, entry] of controllers) {
             if (!validIds.has(id)) {
               // Check if controller is selected for any notebook
               const isInUse = HashMap.some(
                 selections,
-                (selected) => selected.id === entry.controller.id,
+                (selected) => selected.inner.id === entry.controller.inner.id,
               );
 
               if (!isInUse) {
@@ -181,7 +191,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
 
           // Remove all disposed controllers in one update
           if (toRemove.length > 0) {
-            yield* Ref.update(controllersRef, (map) =>
+            yield* Ref.update(handlesRef, (map) =>
               toRemove.reduce((acc, { id }) => HashMap.remove(acc, id), map),
             );
             yield* Effect.logInfo("Completed stale controller removal").pipe(
@@ -197,34 +207,49 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
 export class NotebookControllers extends Effect.Service<NotebookControllers>()(
   "NotebookControllers",
   {
-    dependencies: [ControllerRegistry.Default, PythonExtension.Default],
+    dependencies: [
+      ControllerRegistry.Default,
+      PythonExtension.Default,
+      EnvironmentValidator.Default,
+    ],
     scoped: Effect.gen(function* () {
+      const code = yield* VsCode;
       const pyExt = yield* PythonExtension;
+      const marimo = yield* LanguageClient;
       const registry = yield* ControllerRegistry;
+      const validator = yield* EnvironmentValidator;
+      const serializer = yield* NotebookSerializer;
 
       const runPromise = yield* FiberSet.makeRuntimePromise();
 
       yield* Effect.logInfo("Setting up notebook controller manager");
 
-      const refreshControllers = Effect.fnUntraced(function* () {
-        const environments = pyExt.environments.known;
+      const refreshControllers = () =>
+        Effect.gen(function* () {
+          const environments = pyExt.environments.known;
 
-        yield* Effect.logDebug("Refreshing controllers").pipe(
-          Effect.annotateLogs({ environmentCount: environments.length }),
+          yield* Effect.logDebug("Refreshing controllers").pipe(
+            Effect.annotateLogs({ environmentCount: environments.length }),
+          );
+
+          // Create or update all current environments
+          yield* Effect.forEach(
+            environments,
+            (env) => registry.createOrUpdate(env),
+            {
+              discard: true,
+            },
+          );
+
+          // Let the state handle disposal logic internally
+          yield* registry.removeStale(environments);
+        }).pipe(
+          Effect.provideService(VsCode, code),
+          Effect.provideService(PythonExtension, pyExt),
+          Effect.provideService(EnvironmentValidator, validator),
+          Effect.provideService(LanguageClient, marimo),
+          Effect.provideService(NotebookSerializer, serializer),
         );
-
-        // Create or update all current environments
-        yield* Effect.forEach(
-          environments,
-          (env) => registry.createOrUpdate(env),
-          {
-            discard: true,
-          },
-        );
-
-        // Let the state handle disposal logic internally
-        yield* registry.removeStale(environments);
-      });
 
       // Set up environment monitoring
       yield* Effect.acquireRelease(
@@ -299,31 +324,37 @@ export function resolvePythonEnvironmentName(
   return undefined;
 }
 
-const createNewMarimoNotebookController = Effect.fnUntraced(
-  function* (options: {
-    controller: {
-      id: string;
-      label: string;
-    };
+export class NotebookController extends Data.TaggedClass("NotebookController")<{
+  readonly inner: vscode.NotebookController;
+  readonly env: py.Environment;
+}> {
+  onDidChangeSelectedNotebooks(
+    listener: (options: {
+      readonly notebook: vscode.NotebookDocument;
+      readonly selected: boolean;
+    }) => unknown,
+  ) {
+    return Effect.acquireRelease(
+      Effect.sync(() => this.inner.onDidChangeSelectedNotebooks(listener)),
+      (disposable) => Effect.sync(() => disposable.dispose()),
+    );
+  }
+  static create = Effect.fnUntraced(function* (options: {
+    id: string;
+    label: string;
     env: py.Environment;
-    setActive: (
-      controller: vscode.NotebookController,
-      notebook: vscode.NotebookDocument,
-    ) => Effect.Effect<void, never, never>;
-    deps: {
-      code: VsCode;
-      marimo: LanguageClient;
-      validator: EnvironmentValidator;
-      serializer: NotebookSerializer;
-    };
   }) {
-    const { code, marimo, validator, serializer } = options.deps;
+    const code = yield* VsCode;
+    const marimo = yield* LanguageClient;
+    const validator = yield* EnvironmentValidator;
+    const serializer = yield* NotebookSerializer;
+
     const runPromise = yield* FiberSet.makeRuntimePromise();
 
     const controller = yield* code.notebooks.createNotebookController(
-      options.controller.id,
+      options.id,
       serializer.notebookType,
-      options.controller.label,
+      options.label,
     );
 
     // Add metadata
@@ -453,30 +484,11 @@ const createNewMarimoNotebookController = Effect.fnUntraced(
         ),
       );
 
-    // Set up selection tracking and add to scope
-    yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        controller.onDidChangeSelectedNotebooks((e) => {
-          if (e.selected) {
-            runPromise(
-              Effect.gen(function* () {
-                yield* options.setActive(controller, e.notebook);
-                yield* Effect.logTrace("Controller selected for notebook").pipe(
-                  Effect.annotateLogs({
-                    controllerId: options.controller.id,
-                    notebookUri: e.notebook.uri.toString(),
-                  }),
-                );
-              }),
-            );
-          }
-          // NB: We don't delete from selections when deselected
-          // because another controller will overwrite it when selected
-        }),
-      ),
-      (disposable) => Effect.sync(() => disposable.dispose()),
-    );
+    const thisController = new NotebookController({
+      inner: controller,
+      env: options.env,
+    });
 
-    return controller;
-  },
-);
+    return thisController;
+  });
+}

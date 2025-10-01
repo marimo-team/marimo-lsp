@@ -20,8 +20,8 @@
       "correctness": {
         "useHookAtTopLevel": "off"
       },
-      "style": {
-        "useImportType": "error"
+      "suspicious": {
+        "noShadowRestrictedNames": "off"
       }
     }
   },

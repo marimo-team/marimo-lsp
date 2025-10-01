@@ -44,10 +44,11 @@ const makeVsCodeLogger = (channel: OutputChannel) =>
  */
 export const LoggerLive = Layer.unwrapScoped(
   Effect.gen(function* () {
+    const outputChannel = yield* OutputChannel;
     const fileLogger = yield* makeFileLogger(
       NodePath.join(__dirname, "../../logs/marimo.log"),
     );
-    const vscodeLogger = yield* makeVsCodeLogger(yield* OutputChannel);
+    const vscodeLogger = yield* makeVsCodeLogger(outputChannel);
     return Logger.replace(
       Logger.defaultLogger,
       Logger.zip(fileLogger, vscodeLogger),

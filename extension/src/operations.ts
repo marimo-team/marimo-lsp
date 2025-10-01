@@ -1,10 +1,11 @@
-import * as semver from "@std/semver";
-import { type Brand, Effect, Either, HashMap, Option } from "effect";
+import * as NodeFs from "node:fs";
+import * as NodePath from "node:path";
+import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "./assert.ts";
-import type { LanguageClient } from "./services/LanguageClient.ts";
+import type { NotebookController } from "./services/NotebookControllers.ts";
 import type { NotebookRenderer } from "./services/NotebookRenderer.ts";
-import type { PyPiClient } from "./services/PyPIClient.ts";
+import type { Uv } from "./services/Uv.ts";
 import type { VsCode } from "./services/VsCode.ts";
 import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
 import type {
@@ -15,60 +16,53 @@ import type {
 
 export interface OperationContext {
   editor: vscode.NotebookEditor;
-  controller: vscode.NotebookController;
+  controller: NotebookController;
   executions: Map<string, vscode.NotebookCellExecution>;
 }
 
 export const routeOperation = Effect.fn("routeOperation")(function* (
   operation: MessageOperation,
   deps: {
+    runPromise: (e: Effect.Effect<void, never, never>) => Promise<void>;
     context: OperationContext;
     renderer: NotebookRenderer;
     code: VsCode;
-    marimo: LanguageClient;
-    pypi: PyPiClient;
+    uv: Uv;
   },
 ) {
+  yield* Effect.logDebug("Handling operation").pipe(
+    Effect.annotateLogs("op", "operation"),
+  );
+  yield* Effect.logTrace("Handling operation").pipe(
+    Effect.annotateLogs("operation", operation),
+  );
+
   switch (operation.op) {
     case "cell-op": {
       yield* handleCellOperation(operation, deps);
-      return;
-    }
-    case "installing-package-alert": {
-      yield* handleInstallingPackageAlert(operation, deps);
-      return;
+      break;
     }
     case "missing-package-alert": {
       yield* handleMissingPackageAlert(operation, deps);
-      return;
+      break;
     }
     // Forward to renderer (front end)
     case "remove-ui-elements":
     case "function-call-result":
     case "send-ui-element-message": {
-      yield* Effect.logTrace("Forwarding message to renderer").pipe(
-        Effect.annotateLogs({ op: operation.op }),
-      );
       yield* deps.renderer.postMessage(operation, deps.context.editor);
-      return;
+      break;
     }
     case "interrupted": {
       // Clear all pending executions when run is interrupted
-      const executionCount = deps.context.executions.size;
       for (const execution of deps.context.executions.values()) {
         execution.end(false, Date.now());
       }
       deps.context.executions.clear();
-      yield* Effect.logInfo("Run completed").pipe(
-        Effect.annotateLogs({
-          op: operation.op,
-          clearedExecutions: executionCount,
-        }),
-      );
-      return;
+      break;
     }
     case "completed-run": {
-      return;
+      break;
     }
     default: {
       yield* Effect.logWarning("Unknown operation").pipe(
@@ -77,6 +71,9 @@ export const routeOperation = Effect.fn("routeOperation")(function* (
       return;
     }
   }
+  yield* Effect.logDebug("Handled operation").pipe(
+    Effect.annotateLogs({ op: operation.op }),
+  );
 });
 
 const cellStateManager = new CellStateManager();
@@ -95,7 +92,7 @@ function handleCellOperation(
 
     switch (status) {
       case "queued": {
-        const execution = context.controller.createNotebookCellExecution(
+        const execution = context.controller.inner.createNotebookCellExecution(
           getNotebookCell(context.editor.notebook, cellId),
         );
         context.executions.set(cellId, execution);
@@ -187,177 +184,82 @@ function getNotebookCell(
   return cell;
 }
 
-type PackageName = string & Brand.Brand<"PackageName">;
-
-// TODO: Avoid global state
-const progressMap: HashMap.HashMap<
-  PackageName,
-  {
-    progress: vscode.Progress<{ message: string }>;
-    dispose: () => void;
-  }
-> = HashMap.empty();
-
-function handleInstallingPackageAlert(
-  operation: MessageOperationOf<"installing-package-alert">,
-  deps: {
-    code: VsCode;
-  },
-): Effect.Effect<void, never, never> {
-  const { code } = deps;
-
-  const newProgress = Effect.fnUntraced(function* (packageName: string) {
-    const outer = Promise.withResolvers<void>();
-    const inner = Promise.withResolvers<vscode.Progress<{ message: string }>>();
-    const progress = yield* code.window.useInfallible(async (api) => {
-      api.withProgress(
-        {
-          title: `Installing ${packageName}`,
-          location: code.ProcessLocation.Notification,
-          cancellable: true,
-        },
-        async (progress, token) => {
-          inner.resolve(progress);
-          token.onCancellationRequested(() => {
-            outer.resolve();
-            HashMap.remove(progressMap, packageName);
-          });
-          return outer.promise;
-        },
-      );
-      return inner.promise;
-    });
-    return { progress, dispose: outer.resolve };
-  });
-
-  return code.window.useInfallible((api) =>
-    api.showInformationMessage(JSON.stringify(operation)),
-  );
-
-  return Effect.gen(function* () {
-    for (const entry of Object.entries(operation.packages)) {
-      const packageName = entry[0] as PackageName;
-      const kind = entry[1];
-
-      switch (kind) {
-        case "queued": {
-          const existing = HashMap.get(progressMap, packageName);
-          if (Option.isSome(existing)) {
-            existing.value.dispose();
-          }
-          const progressState = yield* newProgress(packageName);
-          HashMap.set(progressMap, packageName, progressState);
-          progressState.progress.report({
-            message: `Queued`,
-          });
-          break;
-        }
-        case "installing": {
-          const existing = HashMap.get(progressMap, packageName);
-          if (Option.isSome(existing)) {
-            existing.value.progress.report({
-              message: `Installing...`,
-            });
-          }
-          break;
-        }
-        case "installed": {
-          const existing = HashMap.get(progressMap, packageName);
-          if (Option.isSome(existing)) {
-            existing.value.progress.report({
-              message: `${packageName} ✓`,
-            });
-            existing.value.dispose();
-            HashMap.remove(progressMap, packageName);
-          }
-          break;
-        }
-        case "failed": {
-          const existing = HashMap.get(progressMap, packageName);
-          if (Option.isSome(existing)) {
-            existing.value.progress.report({
-              message: `${packageName} ✗`,
-            });
-            existing.value.dispose();
-            HashMap.remove(progressMap, packageName);
-          }
-          break;
-        }
-      }
-    }
-  });
-}
-
 function handleMissingPackageAlert(
   operation: MessageOperationOf<"missing-package-alert">,
   deps: {
+    runPromise: (e: Effect.Effect<void, never, never>) => Promise<void>;
     context: OperationContext;
     code: VsCode;
-    marimo: LanguageClient;
-    pypi: PyPiClient;
+    uv: Uv;
   },
 ): Effect.Effect<void, never, never> {
-  const { context, code, marimo, pypi } = deps;
-  return Effect.gen(function* () {
-    const [choice, meta] = yield* Effect.all([
-      code.window
-        .useInfallible((api) =>
-          api.showInformationMessage(
-            `Missing packages: ${operation.packages.join(", ")}`,
-            "Install All",
-            "Customize...",
+  const { context, code, uv } = deps;
+
+  const installPackages = (venvPath: string, packages: ReadonlyArray<string>) =>
+    code.window.useInfallible((api) =>
+      api.withProgress(
+        {
+          location: code.ProcessLocation.Notification,
+          title: `Installing ${packages.length > 1 ? "packages" : "package"}`,
+          cancellable: true,
+        },
+        (progress) =>
+          deps.runPromise(
+            Effect.gen(function* () {
+              progress.report({
+                message: `Installing ${packages.join(", ")}...`,
+              });
+              yield* uv.pipInstall(packages, { target: venvPath });
+              progress.report({
+                message: `Successfully installed ${packages.join(", ")}`,
+              });
+            }).pipe(
+              Effect.tapError(Effect.logError),
+              Effect.catchAllCause((_) =>
+                code.window.useInfallible((api) =>
+                  api.showErrorMessage(
+                    `Failed to install ${packages.join(", ")}. See marimo logs for details.`,
+                  ),
+                ),
+              ),
+            ),
           ),
-        )
-        .pipe(Effect.map(Option.fromNullable)),
-      Effect.either(
-        Effect.forEach(
-          operation.packages,
-          (name) => pypi.getPackageMetadata(name),
-          { concurrency: 5 },
-        ),
       ),
-    ]);
+    );
+  return Effect.gen(function* () {
+    const venv = findVenvPath(context.controller.env.path);
+
+    if (Option.isNone(venv)) {
+      // no venv so can't do anything
+      return;
+    }
+
+    const choice = yield* code.window
+      .useInfallible((api) =>
+        api.showInformationMessage(
+          `Missing packages: ${operation.packages.join(", ")}. Install with uv?`,
+          "Install All",
+          "Customize...",
+        ),
+      )
+      .pipe(Effect.map(Option.fromNullable));
 
     if (Option.isNone(choice)) {
       // dismissed
       return;
     }
 
-    if (Either.isLeft(meta)) {
-      // failed to get package metadata
-      yield* Effect.logError("Packge install failed.", meta.left);
-      yield* code.window.useInfallible((api) =>
-        api.showErrorMessage(
-          "Installation failed. Failed to fetch latest package metadata from PyPI.",
-        ),
-      );
-      return;
-    }
-
-    const latestVersions = meta.right.map(({ versions }) => versions[0]);
-    const versions = Object.fromEntries(
-      operation.packages.map((k, i) => [k, latestVersions[i]]),
-    );
-
     if (choice.value === "Install All") {
       yield* Effect.logInfo("Install packages").pipe(
         Effect.annotateLogs("packages", operation.packages),
       );
-      yield* marimo.installPackages({
-        notebookUri: context.editor.notebook.uri.toString(),
-        inner: {
-          manager: "uv",
-          versions,
-        },
-      });
+      yield* installPackages(venv.value, operation.packages);
     } else if (choice.value === "Customize...") {
       const response = yield* code.window
         .useInfallible((api) =>
           api.showInputBox({
             prompt: "Add packages",
-            value: Object.entries(versions)
-              .map(([k, v]) => `${k}==${v}`)
-              .join(" "),
+            value: operation.packages.join(" "),
             placeHolder: "package1 package2 package3",
           }),
         )
@@ -368,28 +270,52 @@ function handleMissingPackageAlert(
       }
 
       const newPackages = response.value.split(" ");
-
       yield* Effect.logInfo("Install packages").pipe(
         Effect.annotateLogs("packages", newPackages),
       );
-
-      yield* marimo.installPackages({
-        notebookUri: context.editor.notebook.uri.toString(),
-        inner: {
-          manager: "uv",
-          versions: Object.fromEntries(
-            newPackages.map((packageString, i) => {
-              packageString = packageString.trim();
-              const [name, version] = packageString.includes("==")
-                ? packageString.split("==")
-                : [packageString, null];
-              return [name, version ?? latestVersions[i]];
-            }),
-          ),
-        },
-      });
+      yield* installPackages(venv.value, newPackages);
     }
 
     // Cancel - do nothing
   }).pipe(Effect.catchAllCause(Effect.logError));
+}
+
+/**
+ * Resolves a path to a virtual environment directory.
+ *
+ * VS Code typically represents Python environments by their executable path
+ * (e.g., `.venv/bin/python` or `.venv/Scripts/python.exe`), but we need the
+ * actual virtual environment directory (e.g., `.venv`) for package installation.
+ *
+ * If the target is a Python executable, looks two directories up for `pyvenv.cfg`
+ * to locate the venv root. Otherwise, checks if the target itself is a venv by
+ * looking for `pyvenv.cfg` in that directory.
+ *
+ * @param target - Path to check (either a Python executable or directory)
+ * @returns Some(venv_path) if a valid venv is found, None otherwise
+ */
+function findVenvPath(target: string): Option.Option<string> {
+  const basename = NodePath.basename(target);
+
+  const isPython =
+    basename === "python" ||
+    basename.startsWith("python3") ||
+    basename === "python.exe" ||
+    basename.startsWith("python3.") ||
+    basename === "python3.exe";
+
+  if (isPython) {
+    // Look two directories up (e.g., .venv/bin/python -> .venv)
+    const candidate = NodePath.resolve(target, "..", "..");
+
+    // Check if the target itself has pyvenv.cfg
+    return NodeFs.existsSync(NodePath.join(candidate, "pyvenv.cfg"))
+      ? Option.some(candidate)
+      : Option.none();
+  }
+
+  // Check if the target itself has pyvenv.cfg
+  return NodeFs.existsSync(NodePath.join(target, "pyvenv.cfg"))
+    ? Option.some(target)
+    : Option.none();
 }

@@ -10,11 +10,10 @@ import type { AssertionError } from "../assert.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
   cause: unknown;
-}> {
-}
+}> {}
 
 export class Window extends Effect.Service<Window>()("Window", {
-  effect: Effect.gen(function*() {
+  effect: Effect.gen(function* () {
     const api = vscode.window;
     type WindowApi = typeof api;
     return {
@@ -41,14 +40,13 @@ export class Window extends Effect.Service<Window>()("Window", {
       },
     };
   }),
-}) {
-}
+}) {}
 
 type Command = "workbench.action.reloadWindow";
 
 class Commands extends Effect.Service<Commands>()("Commands", {
   dependencies: [Window.Default],
-  scoped: Effect.gen(function*() {
+  scoped: Effect.gen(function* () {
     const win = yield* Window;
     const api = vscode.commands;
     const runPromise = yield* FiberSet.makeRuntimePromise();
@@ -66,7 +64,7 @@ class Commands extends Effect.Service<Commands>()("Commands", {
               runPromise<never, void>(
                 effect.pipe(
                   Effect.catchAllCause((cause) =>
-                    Effect.gen(function*() {
+                    Effect.gen(function* () {
                       yield* Effect.logError(cause);
                       yield* win.useInfallible((api) =>
                         api.showWarningMessage(
@@ -84,8 +82,7 @@ class Commands extends Effect.Service<Commands>()("Commands", {
       },
     };
   }),
-}) {
-}
+}) {}
 
 class Workspace extends Effect.Service<Workspace>()("Workspace", {
   sync: () => {
@@ -118,8 +115,7 @@ class Workspace extends Effect.Service<Workspace>()("Workspace", {
       },
     };
   },
-}) {
-}
+}) {}
 
 class Env extends Effect.Service<Env>()("Env", {
   sync: () => {
@@ -137,11 +133,10 @@ class Env extends Effect.Service<Env>()("Env", {
       },
     };
   },
-}) {
-}
+}) {}
 
 class Debug extends Effect.Service<Debug>()("Debug", {
-  scoped: Effect.gen(function*() {
+  scoped: Effect.gen(function* () {
     const api = vscode.debug;
     return {
       registerDebugConfigurationProvider(
@@ -168,8 +163,7 @@ class Debug extends Effect.Service<Debug>()("Debug", {
       },
     };
   }),
-}) {
-}
+}) {}
 
 class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
   sync: () => {
@@ -190,16 +184,14 @@ class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
       },
     };
   },
-}) {
-}
+}) {}
 
 class AuthError extends Data.TaggedError("AuthError")<{
   cause: unknown;
-}> {
-}
+}> {}
 
 class Auth extends Effect.Service<Auth>()("Auth", {
-  effect: Effect.gen(function*() {
+  effect: Effect.gen(function* () {
     return {
       getSession(
         providerId: "github" | "microsoft", // could be custom but these are default
@@ -214,19 +206,17 @@ class Auth extends Effect.Service<Auth>()("Auth", {
       },
     };
   }),
-}) {
-}
+}) {}
 
 class ParseUriError extends Data.TaggedError("ParseUriError")<{
   cause: unknown;
-}> {
-}
+}> {}
 
 /**
  * Wraps VS Code API functionality in Effect services
  */
 export class VsCode extends Effect.Service<VsCode>()("VsCode", {
-  effect: Effect.gen(function*() {
+  effect: Effect.gen(function* () {
     return {
       // namespaces
       window: yield* Window,
@@ -265,5 +255,4 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
     Notebooks.Default,
     Auth.Default,
   ],
-}) {
-}
+}) {}

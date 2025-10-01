@@ -9,6 +9,7 @@ import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { PyPiClient } from "../services/PyPIClient.ts";
 import { PythonExtension } from "../services/PythonExtension.ts";
+import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
 import { LoggerLive } from "./Logger.ts";
@@ -22,11 +23,12 @@ import { RegisterCommandsLive } from "./RegisterCommands.ts";
 export const MainLive = LspLive.pipe(
   Layer.merge(RegisterCommandsLive),
   Layer.merge(KernelManagerLive),
+  Layer.provide(NotebookControllers.Default),
+  Layer.provide(Uv.Default),
   Layer.provide(PyPiClient.Default),
   Layer.provide(GitHubClient.Default),
   Layer.provide(DebugAdapter.Default),
   Layer.provide(NotebookRenderer.Default),
-  Layer.provide(NotebookControllers.Default),
   Layer.provide(NotebookSerializer.Default),
   Layer.provide(PythonExtension.Default),
   Layer.provide(LanguageClient.Default),

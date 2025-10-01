@@ -14,16 +14,14 @@ class PythonExecutionError extends Data.TaggedError("PythonExecutionError")<{
   readonly env: py.Environment;
   readonly error: NodeChildProcess.ExecFileException;
   readonly stderr: string;
-}> {
-}
+}> {}
 
 class EnvironmentRequirementError extends Data.TaggedError(
   "EnvironmentRequirementError",
 )<{
   readonly env: py.Environment;
   readonly diagnostics: ReadonlyArray<RequirementDiagnostic>;
-}> {
-}
+}> {}
 
 /**
  * Validates Python environments for marimo extension compatibility.
@@ -52,7 +50,7 @@ export class EnvironmentValidator extends Effect.Service<EnvironmentValidator>()
             version: Schema.NullOr(SemVerFromString),
           }),
         );
-        return Effect.gen(function*() {
+        return Effect.gen(function* () {
           const stdout = yield* Effect.async<string, PythonExecutionError>(
             (resume) => {
               NodeChildProcess.execFile(
@@ -132,21 +130,20 @@ print(json.dumps(packages))`,
             return yield* new EnvironmentRequirementError({ env, diagnostics });
           }
 
-          return new ValidPythonEnvironemnt({ env });
+          return new ValidPythonEnvironemnt({ inner: env });
         });
       },
     },
   },
-) {
-}
+) {}
 
-class ValidPythonEnvironemnt extends Data.TaggedClass(
+export class ValidPythonEnvironemnt extends Data.TaggedClass(
   "ValidPythonEnvironment",
 )<{
-  env: py.Environment;
+  inner: py.Environment;
 }> {
   get executable(): string {
-    return this.env.path;
+    return this.inner.path;
   }
 }
 
@@ -154,8 +151,8 @@ type RequirementDiagnostic =
   | { kind: "unknown"; package: string }
   | { kind: "missing"; package: string }
   | {
-    kind: "outdated";
-    package: string;
-    currentVersion: semver.SemVer;
-    requiredVersion: semver.SemVer;
-  };
+      kind: "outdated";
+      package: string;
+      currentVersion: semver.SemVer;
+      requiredVersion: semver.SemVer;
+    };
