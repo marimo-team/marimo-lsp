@@ -197,7 +197,8 @@ function handleMissingPackageAlert(
   },
 ): Effect.Effect<void, never, never> {
   const { context, code, uv, config } = deps;
-  const installPackages = (venvPath: string, packages: ReadonlyArray<string>) =>
+
+  const installPackages = (venv: string, packages: ReadonlyArray<string>) =>
     code.window.useInfallible((api) =>
       api.withProgress(
         {
@@ -211,7 +212,20 @@ function handleMissingPackageAlert(
               progress.report({
                 message: `Installing ${packages.join(", ")}...`,
               });
-              yield* uv.pipInstall(packages, { venv: venvPath });
+              yield* Effect.logDebug("Attempting `uv add`.").pipe(
+                Effect.annotateLogs({ packages, directory: venv }),
+              );
+              yield* uv.add(packages, { directory: venv }).pipe(
+                Effect.catchTag(
+                  "MissingPyProjectError",
+                  Effect.fnUntraced(function* () {
+                    yield* Effect.logWarning(
+                      "Failed to `uv add`, attempting `uv pip install`.",
+                    );
+                    yield* uv.pipInstall(packages, { venv });
+                  }),
+                ),
+              );
               progress.report({
                 message: `Successfully installed ${packages.join(", ")}`,
               });
@@ -249,21 +263,21 @@ function handleMissingPackageAlert(
     const venv = findVenvPath(context.controller.env.path);
 
     if (Option.isNone(venv)) {
-      // no venv so can't do anything
+      yield* Effect.logWarning("Could not find venv.Skipping install.");
       return;
     }
 
-    const choice = yield* code.window
-      .useInfallible((api) =>
+    const choice = Option.fromNullable(
+      yield* code.window.useInfallible((api) =>
         api.showInformationMessage(
           operation.packages.length === 1
-            ? `Missing package: ${operation.packages[0]}. Install with \`uv pip\`?`
-            : `Missing packages: ${operation.packages.join(", ")}. Install with \`uv pip\`?`,
+            ? `Missing package: ${operation.packages[0]}. Install with uv?`
+            : `Missing packages: ${operation.packages.join(", ")}. Install with uv?`,
           "Install All",
           "Customize...",
         ),
-      )
-      .pipe(Effect.map(Option.fromNullable));
+      ),
+    );
 
     if (Option.isNone(choice)) {
       // dismissed
@@ -275,7 +289,9 @@ function handleMissingPackageAlert(
         Effect.annotateLogs("packages", operation.packages),
       );
       yield* installPackages(venv.value, operation.packages);
-    } else if (choice.value === "Customize...") {
+    }
+
+    if (choice.value === "Customize...") {
       const response = yield* code.window
         .useInfallible((api) =>
           api.showInputBox({
@@ -294,10 +310,9 @@ function handleMissingPackageAlert(
       yield* Effect.logInfo("Install packages").pipe(
         Effect.annotateLogs("packages", newPackages),
       );
+
       yield* installPackages(venv.value, newPackages);
     }
-
-    // Cancel - do nothing
   }).pipe(Effect.catchAllCause(Effect.logError));
 }
 

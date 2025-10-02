@@ -16,19 +16,49 @@ class UvError extends Data.TaggedError("UvError")<{
   stderr: string;
 }> {}
 
+class MissingPyProjectError extends Data.TaggedError("MissingPyProjectError")<{
+  directory: string;
+  cause: UvError;
+}> {}
+
 export class Uv extends Effect.Service<Uv>()("Uv", {
   dependencies: [NodeContext.layer, LoggerLive],
   scoped: Effect.gen(function* () {
     const executor = yield* CommandExecutor.CommandExecutor;
     const uv = createUv(executor);
     return {
+      add(
+        packages: ReadonlyArray<string>,
+        options: {
+          readonly directory: string;
+        },
+      ) {
+        const { directory } = options;
+        return uv({
+          args: ["add", "--directory", directory, ...packages],
+        }).pipe(
+          Effect.catchTag("UvError", (cause) =>
+            Effect.fail(
+              cause.stderr.includes(
+                "error: No `pyproject.toml` found in current directory or any parent directory",
+              )
+                ? new MissingPyProjectError({ directory, cause })
+                : cause,
+            ),
+          ),
+        );
+      },
       pipInstall(
         packages: ReadonlyArray<string>,
-        options: { readonly venv: string },
+        options: {
+          readonly venv: string;
+        },
       ) {
         return uv({
           args: ["pip", "install", ...packages],
-          venv: options.venv,
+          env: {
+            VIRTUAL_ENV: options.venv,
+          },
         });
       },
     };
@@ -38,10 +68,10 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
 function createUv(executor: CommandExecutor.CommandExecutor) {
   return Effect.fn("uv")(function* (options: {
     readonly args: ReadonlyArray<string>;
-    readonly venv: string;
+    readonly env?: Record<string, string>;
   }) {
     const command = Command.make("uv", ...options.args).pipe(
-      Command.env({ NO_COLOR: "1", VIRTUAL_ENV: options.venv }),
+      Command.env({ NO_COLOR: "1", ...options.env }),
     );
     yield* Effect.logDebug("Running command").pipe(
       Effect.annotateLogs({ command }),
