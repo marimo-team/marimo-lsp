@@ -125,7 +125,8 @@
     "typecheck": "tsgo && tsc",
     "test": "vitest",
     "test:extension": "vscode-test",
-    "embed-sdist": "uv build --directory=.. --out-dir=extension/dist --sdist && cd dist/ && tar xzf marimo_lsp-*.tar.gz && rm marimo_lsp-*.tar.gz"
+    "embed-sdist": "uv build --directory=.. --out-dir=extension/dist --sdist && cd dist/ && tar xzf marimo_lsp-*.tar.gz && rm marimo_lsp-*.tar.gz",
+    "lint": "biome ci && node ./scripts/check-css-variables.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
