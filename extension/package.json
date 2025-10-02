@@ -119,7 +119,7 @@
   "scripts": {
     "prepare": "effect-language-service patch",
     "build": "turbo build:renderer && turbo build:extension",
-    "build:extension": "esbuild --format=cjs --define:import.meta.env.MARIMO_LSP_ENV=\\\"$MARIMO_LSP_ENV\\\" --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
+    "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
     "build:renderer": "vite build",
     "fix": "biome check --write",
     "typecheck": "tsgo && tsc",

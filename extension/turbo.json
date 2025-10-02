@@ -4,12 +4,12 @@
     "build:renderer": {
       "outputs": ["dist/renderer.mjs", "dist/renderer.mjs.map"],
       "inputs": ["src/renderer/**", "vite.config.ts", "package.json"],
-      "env": ["NODE_ENV", "MARIMO_LSP_ENV", "MODE"]
+      "env": ["NODE_ENV", "MODE"]
     },
     "build:extension": {
       "outputs": ["dist/extension.js", "dist/extension.js.map"],
       "inputs": ["src/**/*.ts", "!src/renderer/**", "package.json"],
-      "env": ["NODE_ENV", "MARIMO_LSP_ENV", "MODE"]
+      "env": ["NODE_ENV", "MODE"]
     },
     "typecheck": {},
     "fix": {},
