@@ -9,6 +9,13 @@ export class Config extends Effect.Service<Config>()("Config", {
   effect: Effect.gen(function* () {
     const code = yield* VsCode;
     return {
+      uv: {
+        get enabled() {
+          return !code.workspace
+            .getConfiguration("marimo")
+            .get<boolean>("disableUvIntegration", false);
+        },
+      },
       lsp: {
         get executable(): Option.Option<{
           command: string;

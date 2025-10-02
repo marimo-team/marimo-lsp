@@ -177,7 +177,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         ls: LanguageServer,  # noqa: ARG001
         args: NotebookCommand[SetUIElementValueRequest],
     ):
-        logger.info("marimo.kernel.set_ui_element_value")
+        logger.info("marimo.set_ui_element_value")
         session = manager.get_session(args.notebook_uri)
         assert session, f"No session in workspace for {args.notebook_uri}"
         session.put_control_request(args.inner, from_consumer_id=None)
@@ -189,7 +189,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         ls: LanguageServer,  # noqa: ARG001
         args: NotebookCommand[FunctionCallRequest],
     ):
-        logger.info("marimo.kernel.function_call_request")
+        logger.info("marimo.function_call_request")
         session = manager.get_session(args.notebook_uri)
         assert session, f"No session in workspace for {args.notebook_uri}"
         session.put_control_request(args.inner, from_consumer_id=None)

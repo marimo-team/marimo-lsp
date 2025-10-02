@@ -1,7 +1,8 @@
 import * as NodeChildProcess from "node:child_process";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Data, Effect, ParseResult, Schema } from "effect";
+import { Data, Effect, Schema } from "effect";
+import { SemVerFromString } from "../schemas.ts";
 
 const MINIMUM_MARIMO_VERSION = {
   major: 0,
@@ -129,20 +130,20 @@ print(json.dumps(packages))`,
             return yield* new EnvironmentRequirementError({ env, diagnostics });
           }
 
-          return new ValidPythonEnvironemnt({ env });
+          return new ValidPythonEnvironemnt({ inner: env });
         });
       },
     },
   },
 ) {}
 
-class ValidPythonEnvironemnt extends Data.TaggedClass(
+export class ValidPythonEnvironemnt extends Data.TaggedClass(
   "ValidPythonEnvironment",
 )<{
-  env: py.Environment;
+  inner: py.Environment;
 }> {
   get executable(): string {
-    return this.env.path;
+    return this.inner.path;
   }
 }
 
@@ -155,28 +156,3 @@ type RequirementDiagnostic =
       currentVersion: semver.SemVer;
       requiredVersion: semver.SemVer;
     };
-
-const SemVerFromString = Schema.transformOrFail(
-  Schema.String,
-  Schema.Struct({
-    major: Schema.Number,
-    minor: Schema.Number,
-    patch: Schema.Number,
-  }),
-  {
-    decode: (from) => {
-      const parsed = semver.tryParse(from);
-      if (!parsed) {
-        return ParseResult.fail(
-          new ParseResult.Type(
-            Schema.String.ast,
-            from,
-            `Invalid semver string: ${from}`,
-          ),
-        );
-      }
-      return ParseResult.succeed(parsed);
-    },
-    encode: (to) => ParseResult.succeed(semver.format(to)),
-  },
-);

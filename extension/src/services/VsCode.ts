@@ -234,6 +234,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       NotebookCellOutputItem: vscode.NotebookCellOutputItem,
       EventEmitter: vscode.EventEmitter,
       DebugAdapterInlineImplementation: vscode.DebugAdapterInlineImplementation,
+      ProcessLocation: vscode.ProgressLocation,
       // helper
       utils: {
         parseUri(value: string) {

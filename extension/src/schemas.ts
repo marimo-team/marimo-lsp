@@ -52,16 +52,21 @@ export const SemVerFromString = Schema.transformOrFail(
   {
     decode: (from) => {
       const parsed = semver.tryParse(from);
-      if (!parsed) {
-        return ParseResult.fail(
-          new ParseResult.Type(
-            Schema.String.ast,
-            from,
-            `Invalid semver string: ${from}`,
-          ),
-        );
+      if (parsed) {
+        return ParseResult.succeed(parsed);
       }
-      return ParseResult.succeed(parsed);
+      // some PyPI versions aren't valid
+      const parsed2 = semver.tryParse(`${from}.0`);
+      if (parsed2) {
+        return ParseResult.succeed(parsed2);
+      }
+      return ParseResult.fail(
+        new ParseResult.Type(
+          Schema.String.ast,
+          from,
+          `Invalid semver string: ${from}`,
+        ),
+      );
     },
     encode: (to) => ParseResult.succeed(semver.format(to)),
   },

@@ -1,7 +1,6 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
-
 import type { MarimoNotebook } from "./schemas.ts";
 
 type Schemas = Api["schemas"];

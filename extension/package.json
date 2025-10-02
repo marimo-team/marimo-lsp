@@ -27,6 +27,12 @@
           "default": [],
           "markdownDescription": "Path to a custom `marimo-lsp` executable, e.g., `[\"/path/to/marimo-lsp\"]`. Leave empty to use the bundled version via uvx.",
           "scope": "resource"
+        },
+        "marimo.disableUvIntegration": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Disable uv integration features such as automatic package installation prompts.",
+          "scope": "resource"
         }
       }
     },
@@ -124,7 +130,8 @@
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
     "@effect/language-service": "^0.40.1",
-    "@effect/platform": "^0.92.0",
+    "@effect/platform": "^0.92.1",
+    "@effect/platform-node": "^0.98.2",
     "@marimo-team/frontend": "link:../../marimo/frontend",
     "@marimo-team/openapi": "link:../../marimo/packages/openapi",
     "@std/semver": "jsr:^1.0.5",
@@ -141,10 +148,8 @@
     "@vscode/test-electron": "^2.5.2",
     "effect": "^3.18.1",
     "esbuild": "^0.25.10",
-    "glob": "^11.0.3",
     "jest-mock-vscode": "^4.7.0",
     "mocha": "^10.8.2",
-    "native-preview@latest": "link:typescript/native-preview@latest",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "turbo": "^2.5.8",

@@ -1,86 +1,100 @@
-import { Effect } from "effect";
+import * as NodeFs from "node:fs";
+import * as NodePath from "node:path";
+import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
-
 import { assert } from "./assert.ts";
-import { NotebookRenderer } from "./services/NotebookRenderer.ts";
-import { VsCode } from "./services/VsCode.ts";
+import type { Config } from "./services/Config.ts";
+import type { NotebookController } from "./services/NotebookControllers.ts";
+import type { NotebookRenderer } from "./services/NotebookRenderer.ts";
+import type { Uv } from "./services/Uv.ts";
+import type { VsCode } from "./services/VsCode.ts";
 import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
-import type { CellMessage, MessageOperation } from "./types.ts";
+import type {
+  CellMessage,
+  MessageOperation,
+  MessageOperationOf,
+} from "./types.ts";
 
 export interface OperationContext {
   editor: vscode.NotebookEditor;
-  controller: vscode.NotebookController;
+  controller: NotebookController;
   executions: Map<string, vscode.NotebookCellExecution>;
 }
 
-export function routeOperation(
-  context: OperationContext,
+export const routeOperation = Effect.fn("routeOperation")(function* (
   operation: MessageOperation,
-): Effect.Effect<void, never, NotebookRenderer | VsCode> {
-  return Effect.gen(function* () {
-    const renderer = yield* NotebookRenderer;
-    const code = yield* VsCode;
+  deps: {
+    runPromise: (e: Effect.Effect<void, never, never>) => Promise<void>;
+    context: OperationContext;
+    renderer: NotebookRenderer;
+    code: VsCode;
+    uv: Uv;
+    config: Config;
+  },
+) {
+  yield* Effect.logDebug("Handling operation").pipe(
+    Effect.annotateLogs("op", "operation"),
+  );
+  yield* Effect.logTrace("Handling operation").pipe(
+    Effect.annotateLogs("operation", operation),
+  );
 
-    switch (operation.op) {
-      case "cell-op": {
-        yield* handleCellOperation(code, context, operation);
-        return;
-      }
-      // Forward to renderer (front end)
-      case "remove-ui-elements":
-      case "function-call-result":
-      case "send-ui-element-message": {
-        yield* Effect.logTrace("Forwarding message to renderer").pipe(
-          Effect.annotateLogs({ op: operation.op }),
-        );
-        yield* renderer.postMessage(operation, context.editor);
-        return;
-      }
-      case "interrupted": {
-        // Clear all pending executions when run is interrupted
-        const executionCount = context.executions.size;
-        for (const execution of context.executions.values()) {
-          execution.end(false, Date.now());
-        }
-        context.executions.clear();
-        yield* Effect.logInfo("Run completed").pipe(
-          Effect.annotateLogs({
-            op: operation.op,
-            clearedExecutions: executionCount,
-          }),
-        );
-        return;
-      }
-      case "completed-run": {
-        return;
-      }
-      default: {
-        yield* Effect.logWarning("Unknown operation").pipe(
-          Effect.annotateLogs({ op: operation.op }),
-        );
-        return;
-      }
+  switch (operation.op) {
+    case "cell-op": {
+      yield* handleCellOperation(operation, deps);
+      break;
     }
-  }).pipe(Effect.annotateLogs({ component: "operations" }));
-}
+    case "missing-package-alert": {
+      yield* handleMissingPackageAlert(operation, deps);
+      break;
+    }
+    // Forward to renderer (front end)
+    case "remove-ui-elements":
+    case "function-call-result":
+    case "send-ui-element-message": {
+      yield* deps.renderer.postMessage(operation, deps.context.editor);
+      break;
+    }
+    case "interrupted": {
+      // Clear all pending executions when run is interrupted
+      for (const execution of deps.context.executions.values()) {
+        execution.end(false, Date.now());
+      }
+      deps.context.executions.clear();
+      break;
+    }
+    case "completed-run": {
+      break;
+    }
+    default: {
+      yield* Effect.logWarning("Unknown operation").pipe(
+        Effect.annotateLogs({ op: operation.op }),
+      );
+      return;
+    }
+  }
+  yield* Effect.logDebug("Handled operation").pipe(
+    Effect.annotateLogs({ op: operation.op }),
+  );
+});
 
 const cellStateManager = new CellStateManager();
 
 function handleCellOperation(
-  code: VsCode,
-  context: OperationContext,
-  data: CellMessage,
+  operation: CellMessage,
+  deps: {
+    code: VsCode;
+    context: OperationContext;
+  },
 ): Effect.Effect<void, never, never> {
+  const { code, context } = deps;
   return Effect.gen(function* () {
-    const { cell_id: cellId, status, timestamp = 0 } = data;
-    yield* Effect.logTrace("Handling cell operation").pipe(
-      Effect.annotateLogs({ cellId, status }),
-    );
-    const state = cellStateManager.handleCellOp(data);
+    const { cell_id: cellId, status, timestamp = 0 } = operation;
+    const state = cellStateManager.handleCellOp(operation);
 
     switch (status) {
       case "queued": {
-        const execution = context.controller.createNotebookCellExecution(
+        const execution = context.controller.inner.createNotebookCellExecution(
           getNotebookCell(context.editor.notebook, cellId),
         );
         context.executions.set(cellId, execution);
@@ -170,4 +184,154 @@ function getNotebookCell(
     .find((c) => c.document.uri.toString() === cellId);
   assert(cell, `No cell id ${cellId} in notebook ${notebook.uri.toString()} `);
   return cell;
+}
+
+function handleMissingPackageAlert(
+  operation: MessageOperationOf<"missing-package-alert">,
+  deps: {
+    runPromise: (e: Effect.Effect<void, never, never>) => Promise<void>;
+    context: OperationContext;
+    code: VsCode;
+    uv: Uv;
+    config: Config;
+  },
+): Effect.Effect<void, never, never> {
+  const { context, code, uv, config } = deps;
+  const installPackages = (venvPath: string, packages: ReadonlyArray<string>) =>
+    code.window.useInfallible((api) =>
+      api.withProgress(
+        {
+          location: code.ProcessLocation.Notification,
+          title: `Installing ${packages.length > 1 ? "packages" : "package"}`,
+          cancellable: true,
+        },
+        (progress) =>
+          deps.runPromise(
+            Effect.gen(function* () {
+              progress.report({
+                message: `Installing ${packages.join(", ")}...`,
+              });
+              yield* uv.pipInstall(packages, { venv: venvPath });
+              progress.report({
+                message: `Successfully installed ${packages.join(", ")}`,
+              });
+            }).pipe(
+              Effect.tapError(Effect.logError),
+              Effect.catchAllCause((_) =>
+                code.window.useInfallible((api) =>
+                  api.showErrorMessage(
+                    `Failed to install ${packages.join(", ")}. See marimo logs for details.`,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ),
+    );
+
+  return Effect.gen(function* () {
+    if (operation.packages.length === 0) {
+      // Nothing to do
+      return;
+    }
+
+    if (!config.uv.enabled) {
+      // Use has uv disabled
+      yield* Effect.logDebug("uv integration disabled. Skipping install.").pipe(
+        Effect.annotateLogs({
+          packages: operation.packages,
+        }),
+      );
+
+      return;
+    }
+
+    const venv = findVenvPath(context.controller.env.path);
+
+    if (Option.isNone(venv)) {
+      // no venv so can't do anything
+      return;
+    }
+
+    const choice = yield* code.window
+      .useInfallible((api) =>
+        api.showInformationMessage(
+          operation.packages.length === 1
+            ? `Missing package: ${operation.packages[0]}. Install with \`uv pip\`?`
+            : `Missing packages: ${operation.packages.join(", ")}. Install with \`uv pip\`?`,
+          "Install All",
+          "Customize...",
+        ),
+      )
+      .pipe(Effect.map(Option.fromNullable));
+
+    if (Option.isNone(choice)) {
+      // dismissed
+      return;
+    }
+
+    if (choice.value === "Install All") {
+      yield* Effect.logInfo("Install packages").pipe(
+        Effect.annotateLogs("packages", operation.packages),
+      );
+      yield* installPackages(venv.value, operation.packages);
+    } else if (choice.value === "Customize...") {
+      const response = yield* code.window
+        .useInfallible((api) =>
+          api.showInputBox({
+            prompt: "Add packages",
+            value: operation.packages.join(" "),
+            placeHolder: "package1 package2 package3",
+          }),
+        )
+        .pipe(Effect.map(Option.fromNullable));
+
+      if (Option.isNone(response)) {
+        return;
+      }
+
+      const newPackages = response.value.split(" ");
+      yield* Effect.logInfo("Install packages").pipe(
+        Effect.annotateLogs("packages", newPackages),
+      );
+      yield* installPackages(venv.value, newPackages);
+    }
+
+    // Cancel - do nothing
+  }).pipe(Effect.catchAllCause(Effect.logError));
+}
+
+/**
+ * Resolves a path to a virtual environment directory.
+ *
+ * VS Code typically represents Python environments by their executable path
+ * (e.g., `.venv/bin/python` or `.venv/Scripts/python.exe`), but we need the
+ * actual virtual environment directory (e.g., `.venv`) for package installation.
+ *
+ * If the target is a Python executable, looks two directories up for `pyvenv.cfg`
+ * to locate the venv root. Otherwise, checks if the target itself is a venv by
+ * looking for `pyvenv.cfg` in that directory.
+ *
+ * @param target - Path to check (either a Python executable or directory)
+ * @returns Some(venv_path) if a valid venv is found, None otherwise
+ */
+function findVenvPath(target: string): Option.Option<string> {
+  const basename = NodePath.basename(target);
+
+  const isPythonExecutable =
+    basename === "python" ||
+    basename.startsWith("python3") ||
+    basename === "python.exe" ||
+    basename.startsWith("python3.") ||
+    basename === "python3.exe";
+
+  const candidate = isPythonExecutable
+    ? // Look two directories up (e.g., .venv/bin/python -> .venv)
+      NodePath.resolve(target, "..", "..")
+    : // Otherwise check the target itself
+      target;
+
+  return NodeFs.existsSync(NodePath.join(candidate, "pyvenv.cfg"))
+    ? Option.some(candidate)
+    : Option.none();
 }

@@ -1,14 +1,16 @@
 import { Effect } from "effect";
 
-import { Window as VsCodeWindow } from "./VsCode.ts";
+// biome-ignore lint: OK because this needs to get setup before everything else
+import * as vscode from "vscode";
 
 export class OutputChannel extends Effect.Service<OutputChannel>()(
   "OutputChannel",
   {
-    dependencies: [VsCodeWindow.Default],
-    scoped: Effect.gen(function* () {
-      const win = yield* VsCodeWindow;
-      return yield* win.createOutputChannel("marimo");
-    }),
+    scoped: Effect.acquireRelease(
+      Effect.sync(() =>
+        vscode.window.createOutputChannel("marimo", { log: true }),
+      ),
+      (disposable) => Effect.sync(() => disposable.dispose()),
+    ),
   },
 ) {}
