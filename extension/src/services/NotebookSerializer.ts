@@ -23,7 +23,6 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       const marimo = yield* LanguageClient;
       const runPromise = yield* FiberSet.makeRuntimePromise();
 
-      yield* Effect.annotateLogsScoped("service", "NotebookSerializer");
       yield* Effect.logInfo("Setting up notebook serializer");
 
       yield* code.workspace.registerNotebookSerializer(notebookType, {
