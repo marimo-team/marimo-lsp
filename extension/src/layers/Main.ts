@@ -1,6 +1,7 @@
 import { Layer } from "effect";
 import { Config } from "../services/Config.ts";
 import { DebugAdapter } from "../services/DebugAdapter.ts";
+import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookControllers } from "../services/NotebookControllers.ts";
@@ -28,6 +29,7 @@ export const MainLive = LspLive.pipe(
   Layer.provide(DebugAdapter.Default),
   Layer.provide(NotebookRenderer.Default),
   Layer.provide(NotebookSerializer.Default),
+  Layer.provide(ExecutionRegistry.Default),
   Layer.provide(PythonExtension.Default),
   Layer.provide(LanguageClient.Default),
   Layer.provide(Config.Default),
