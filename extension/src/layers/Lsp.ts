@@ -55,7 +55,6 @@ export const LspLive = Layer.scopedDiscard(
         }
       }),
     ),
-    Effect.annotateLogs({ component: "marmio-lsp" }),
   ),
 );
 

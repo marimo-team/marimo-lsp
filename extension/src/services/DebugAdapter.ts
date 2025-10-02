@@ -110,7 +110,6 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
               config.notebookUri = notebook.value.uri.toString();
               yield* Effect.logInfo("Configuration resolved").pipe(
                 Effect.annotateLogs({
-                  component: "debug-adapter",
                   notebookUri: config.notebookUri,
                   type: config.type,
                   request: config.request,
@@ -123,6 +122,6 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
       });
 
       return { debugType };
-    }).pipe(Effect.annotateLogs("service", "DebugAdapter")),
+    }),
   },
 ) {}
