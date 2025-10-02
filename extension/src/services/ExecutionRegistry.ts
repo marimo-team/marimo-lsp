@@ -82,6 +82,11 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
             }
 
             case "running": {
+              if (Option.isNone(cell.pendingExecution)) {
+                yield* Effect.logWarning(
+                  "Got running message but no cell execution found.",
+                );
+              }
               const update = yield* Ref.modify(ref, (map) => {
                 const update = CellEntry.start(cell, msg.timestamp ?? 0);
                 return [update, HashMap.set(map, cellId, update)];
@@ -94,6 +99,11 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
             }
 
             case "idle": {
+              if (Option.isNone(cell.pendingExecution)) {
+                yield* Effect.logWarning(
+                  "Got idle message but no cell execution found.",
+                );
+              }
               // MUST modify cell output before `ExecutionHandle.end`
               yield* CellEntry.maybeUpdateCellOutput(cell, code);
               yield* Ref.update(ref, (map) =>
@@ -193,22 +203,18 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
     });
   }
   static start(cell: CellEntry, timestamp: number) {
-    assert(
-      Option.isSome(cell.pendingExecution),
-      `Expected execution for ${cell.id}`,
-    );
-    cell.pendingExecution.value.inner.start(timestamp * 1000);
+    if (Option.isSome(cell.pendingExecution)) {
+      cell.pendingExecution.value.inner.start(timestamp * 1000);
+    }
     return new CellEntry({ ...cell });
   }
   static end(cell: CellEntry, success: boolean, timestamp?: number) {
-    assert(
-      Option.isSome(cell.pendingExecution),
-      `Expected execution for ${cell.id}`,
-    );
-    cell.pendingExecution.value.inner.end(
-      success,
-      timestamp ? timestamp * 1000 : undefined,
-    );
+    if (Option.isSome(cell.pendingExecution)) {
+      cell.pendingExecution.value.inner.end(
+        success,
+        timestamp ? timestamp * 1000 : undefined,
+      );
+    }
     return new CellEntry({
       ...cell,
       pendingExecution: Option.none(),
