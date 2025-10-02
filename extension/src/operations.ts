@@ -1,76 +1,21 @@
-import { type Brand, Data, Effect, HashMap, Option, Ref } from "effect";
+import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
-import { assert } from "./assert.ts";
 import type { Config } from "./services/Config.ts";
+import type { ExecutionRegistry } from "./services/ExecutionRegistry.ts";
 import type { NotebookController } from "./services/NotebookControllers.ts";
 import type { NotebookRenderer } from "./services/NotebookRenderer.ts";
 import type { Uv } from "./services/Uv.ts";
 import type { VsCode } from "./services/VsCode.ts";
-import { type CellRuntimeState, CellStateManager } from "./shared/cells.ts";
-import type {
-  CellMessage,
-  MessageOperation,
-  MessageOperationOf,
-} from "./types.ts";
+import type { MessageOperation, MessageOperationOf } from "./types.ts";
 import { findVenvPath } from "./utils/findVenvPath.ts";
 import { installPackages } from "./utils/installPackages.ts";
-
-type RunId = Brand.Branded<string, "RunId">;
-function extractRunId(msg: CellMessage) {
-  const runId = msg.run_id;
-  assert(runId, `Expected run_id for operation.`);
-  return runId as RunId;
-}
-
-export type NotebookCellId = Brand.Branded<string, "CellId">;
-function extractCellId(msg: CellMessage) {
-  return msg.cell_id as NotebookCellId;
-}
-
-export class NotebookExecutionContext extends Data.TaggedClass(
-  "NotebookExecutionContext",
-)<{
-  readonly editor: vscode.NotebookEditor;
-  readonly executions: Ref.Ref<
-    HashMap.HashMap<NotebookCellId, NotebookCellExecution>
-  >;
-}> {
-  static make = Effect.fnUntraced(function* (editor: vscode.NotebookEditor) {
-    return new NotebookExecutionContext({
-      editor,
-      executions: yield* Ref.make(
-        HashMap.empty<NotebookCellId, NotebookCellExecution>(),
-      ),
-    });
-  });
-}
-
-export class NotebookCellExecution extends Data.TaggedClass("CellExecution")<{
-  readonly inner: vscode.NotebookCellExecution;
-  readonly runId: RunId;
-}> {
-  static make = (
-    msg: CellMessage,
-    options: {
-      controller: NotebookController;
-      context: NotebookExecutionContext;
-    },
-  ) => {
-    const { controller, context } = options;
-    return new NotebookCellExecution({
-      runId: extractRunId(msg),
-      inner: controller.inner.createNotebookCellExecution(
-        getNotebookCell(context.editor.notebook, extractCellId(msg)),
-      ),
-    });
-  };
-}
 
 export const routeOperation = Effect.fn("routeOperation")(function* (
   operation: MessageOperation,
   deps: {
     runPromise: (e: Effect.Effect<void, never, never>) => Promise<void>;
-    context: NotebookExecutionContext;
+    editor: vscode.NotebookEditor;
+    executions: ExecutionRegistry;
     controller: NotebookController;
     renderer: NotebookRenderer;
     code: VsCode;
@@ -87,17 +32,11 @@ export const routeOperation = Effect.fn("routeOperation")(function* (
 
   switch (operation.op) {
     case "cell-op": {
-      yield* handleCellOperation(operation, deps);
+      yield* deps.executions.handleCellOperation(operation, deps);
       break;
     }
     case "interrupted": {
-      // Clear all pending executions when run is interrupted
-      yield* Ref.update(deps.context.executions, (map) => {
-        for (const execution of HashMap.values(map)) {
-          execution.inner.end(false, Date.now());
-        }
-        return HashMap.empty();
-      });
+      yield* deps.executions.handleInterrupted(deps.editor);
       break;
     }
     case "completed-run": {
@@ -112,9 +51,7 @@ export const routeOperation = Effect.fn("routeOperation")(function* (
     case "remove-ui-elements":
     case "function-call-result":
     case "send-ui-element-message": {
-      deps.runPromise(
-        deps.renderer.postMessage(operation, deps.context.editor),
-      );
+      deps.runPromise(deps.renderer.postMessage(operation, deps.editor));
       break;
     }
     default: {
@@ -128,126 +65,6 @@ export const routeOperation = Effect.fn("routeOperation")(function* (
     Effect.annotateLogs({ op: operation.op }),
   );
 });
-
-const cellStateManager = new CellStateManager();
-
-function handleCellOperation(
-  operation: CellMessage,
-  deps: {
-    code: VsCode;
-    context: NotebookExecutionContext;
-    controller: NotebookController;
-  },
-): Effect.Effect<void, never, never> {
-  const { code, context, controller } = deps;
-  return Effect.gen(function* () {
-    const { status, timestamp = 0 } = operation;
-    const cellId = extractCellId(operation);
-
-    const state = cellStateManager.handleCellOp(operation);
-
-    switch (status) {
-      case "queued": {
-        const execution = NotebookCellExecution.make(operation, {
-          controller,
-          context,
-        });
-        yield* Ref.update(deps.context.executions, (map) =>
-          HashMap.set(map, cellId, execution),
-        );
-        yield* Effect.logDebug("Cell queued for execution").pipe(
-          Effect.annotateLogs({ cellId }),
-        );
-        yield* Effect.void;
-        return;
-      }
-
-      case "running": {
-        const executions = yield* Ref.get(context.executions);
-        const execution = HashMap.get(executions, cellId);
-        assert(Option.isSome(execution), `Expected execution for ${cellId}`);
-        execution.value.inner.start(timestamp * 1000);
-        yield* Effect.logDebug("Cell execution started").pipe(
-          Effect.annotateLogs({ cellId }),
-        );
-        // MUST modify cell output after `NotebookCellExecution.start`
-        yield* updateOrCreateMarimoCellOutput(code, execution.value, {
-          cellId,
-          state,
-        });
-        return;
-      }
-
-      case "idle": {
-        const executions = yield* Ref.get(context.executions);
-        const execution = HashMap.get(executions, cellId);
-        assert(Option.isSome(execution), `Expected execution for ${cellId}`);
-        // MUST modify cell output before `NotebookCellExecution.end`
-        yield* updateOrCreateMarimoCellOutput(code, execution.value, {
-          cellId,
-          state,
-        });
-        execution.value.inner.end(true, timestamp * 1000);
-        yield* Ref.update(context.executions, (map) =>
-          HashMap.remove(map, cellId),
-        );
-        yield* Effect.logDebug("Cell execution completed").pipe(
-          Effect.annotateLogs({ cellId }),
-        );
-        return;
-      }
-
-      default: {
-        const executions = yield* Ref.get(context.executions);
-        const execution = HashMap.get(executions, cellId);
-        if (Option.isSome(execution)) {
-          yield* updateOrCreateMarimoCellOutput(code, execution.value, {
-            cellId,
-            state,
-          });
-        }
-        return;
-      }
-    }
-  });
-}
-
-function updateOrCreateMarimoCellOutput(
-  code: VsCode,
-  execution: NotebookCellExecution,
-  payload: {
-    cellId: string;
-    state: CellRuntimeState;
-  },
-): Effect.Effect<void, never, never> {
-  return Effect.tryPromise(() =>
-    execution.inner.replaceOutput(
-      new code.NotebookCellOutput([
-        code.NotebookCellOutputItem.json(
-          payload,
-          "application/vnd.marimo.ui+json",
-        ),
-      ]),
-    ),
-  ).pipe(
-    Effect.catchAllCause((cause) =>
-      Effect.logError("Failed to update cell output", cause).pipe(
-        Effect.annotateLogs({ cellId: payload.cellId }),
-      ),
-    ),
-  );
-}
-
-function getNotebookCell(
-  notebook: vscode.NotebookDocument,
-  cellId: NotebookCellId,
-): vscode.NotebookCell {
-  const cell = notebook
-    .getCells()
-    .find((c) => c.document.uri.toString() === cellId);
-  assert(cell, `No cell id ${cellId} in notebook ${notebook.uri.toString()} `);
-  return cell;
-}
 
 function handleMissingPackageAlert(
   operation: MessageOperationOf<"missing-package-alert">,
