@@ -1,7 +1,7 @@
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
 import {
-  type Brand,
+  Brand,
   Data,
   Effect,
   Either,
@@ -24,7 +24,8 @@ import { PythonExtension } from "./PythonExtension.ts";
 import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
-type ControllerId = string & Brand.Brand<"ControllerId">;
+type ControllerId = Brand.Branded<string, "ControllerId">;
+const ControllerId = Brand.nominal<ControllerId>();
 
 interface NotebookControllerHandle {
   readonly controller: NotebookController;
@@ -47,9 +48,6 @@ class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       const selectionsRef = yield* Ref.make(
         HashMap.empty<vscode.NotebookDocument, NotebookController>(),
       );
-
-      const idFor = (env: py.Environment) =>
-        `marimo-${env.path}` as ControllerId;
 
       const updateControllerEntry = Effect.fnUntraced(function* (
         id: ControllerId,
@@ -79,7 +77,7 @@ class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
 
       return {
         createOrUpdate: Effect.fnUntraced(function* (env: py.Environment) {
-          const controllerId = idFor(env);
+          const controllerId = NotebookController.getId(env);
           const controllerLabel = formatControllerLabel(code, env);
 
           yield* Effect.logDebug("Creating or updating controller").pipe(
@@ -154,7 +152,9 @@ class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
           envs: ReadonlyArray<py.Environment>,
         ) {
           yield* Effect.logDebug("Checking for stale controllers");
-          const validIds = new Set(envs.map((env) => idFor(env)));
+          const validIds = new Set(
+            envs.map((env) => NotebookController.getId(env)),
+          );
           const controllers = yield* Ref.get(handlesRef);
           const selections = yield* Ref.get(selectionsRef);
 
@@ -343,6 +343,9 @@ export class NotebookController extends Data.TaggedClass("NotebookController")<{
       Effect.sync(() => this.inner.onDidChangeSelectedNotebooks(listener)),
       (disposable) => Effect.sync(() => disposable.dispose()),
     );
+  }
+  static getId(env: py.Environment) {
+    return ControllerId(`marimo-${env.path}`);
   }
   static create = Effect.fnUntraced(function* (options: {
     id: string;

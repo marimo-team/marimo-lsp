@@ -3,8 +3,10 @@ import type * as vscode from "vscode";
 import { LanguageClient } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
 
-export type MarimoNotebookDocument = vscode.NotebookDocument &
-  Brand.Brand<"MarimoNotebookDocument">;
+export type MarimoNotebookDocument = Brand.Branded<
+  vscode.NotebookDocument,
+  "MarimoNotebookDocument"
+>;
 
 /**
  * Handles serialization and deserialization of marimo notebooks,
