@@ -90,17 +90,6 @@ export const routeOperation = Effect.fn("routeOperation")(function* (
       yield* handleCellOperation(operation, deps);
       break;
     }
-    case "missing-package-alert": {
-      yield* handleMissingPackageAlert(operation, deps);
-      break;
-    }
-    // Forward to renderer (front end)
-    case "remove-ui-elements":
-    case "function-call-result":
-    case "send-ui-element-message": {
-      yield* deps.renderer.postMessage(operation, deps.context.editor);
-      break;
-    }
     case "interrupted": {
       // Clear all pending executions when run is interrupted
       yield* Ref.update(deps.context.executions, (map) => {
@@ -112,6 +101,20 @@ export const routeOperation = Effect.fn("routeOperation")(function* (
       break;
     }
     case "completed-run": {
+      break;
+    }
+    case "missing-package-alert": {
+      // Handle in a separate fork (we don't want to block resolution)
+      deps.runPromise(handleMissingPackageAlert(operation, deps));
+      break;
+    }
+    // Forward to renderer (front end) (non-blocking)
+    case "remove-ui-elements":
+    case "function-call-result":
+    case "send-ui-element-message": {
+      deps.runPromise(
+        deps.renderer.postMessage(operation, deps.context.editor),
+      );
       break;
     }
     default: {
