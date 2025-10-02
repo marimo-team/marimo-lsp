@@ -14,6 +14,7 @@ import type {
   MessageOperation,
   MessageOperationOf,
 } from "./types.ts";
+import { installPackages } from "./utils/installPackages.ts";
 
 export interface OperationContext {
   editor: vscode.NotebookEditor;
@@ -189,59 +190,13 @@ function getNotebookCell(
 function handleMissingPackageAlert(
   operation: MessageOperationOf<"missing-package-alert">,
   deps: {
-    runPromise: (e: Effect.Effect<void, never, never>) => Promise<void>;
     context: OperationContext;
     code: VsCode;
     uv: Uv;
     config: Config;
   },
 ): Effect.Effect<void, never, never> {
-  const { context, code, uv, config } = deps;
-
-  const installPackages = (venv: string, packages: ReadonlyArray<string>) =>
-    code.window.useInfallible((api) =>
-      api.withProgress(
-        {
-          location: code.ProcessLocation.Notification,
-          title: `Installing ${packages.length > 1 ? "packages" : "package"}`,
-          cancellable: true,
-        },
-        (progress) =>
-          deps.runPromise(
-            Effect.gen(function* () {
-              progress.report({
-                message: `Installing ${packages.join(", ")}...`,
-              });
-              yield* Effect.logDebug("Attempting `uv add`.").pipe(
-                Effect.annotateLogs({ packages, directory: venv }),
-              );
-              yield* uv.add(packages, { directory: venv }).pipe(
-                Effect.catchTag(
-                  "MissingPyProjectError",
-                  Effect.fnUntraced(function* () {
-                    yield* Effect.logWarning(
-                      "Failed to `uv add`, attempting `uv pip install`.",
-                    );
-                    yield* uv.pipInstall(packages, { venv });
-                  }),
-                ),
-              );
-              progress.report({
-                message: `Successfully installed ${packages.join(", ")}`,
-              });
-            }).pipe(
-              Effect.tapError(Effect.logError),
-              Effect.catchAllCause((_) =>
-                code.window.useInfallible((api) =>
-                  api.showErrorMessage(
-                    `Failed to install ${packages.join(", ")}. See marimo logs for details.`,
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ),
-    );
+  const { context, code, config } = deps;
 
   return Effect.gen(function* () {
     if (operation.packages.length === 0) {
@@ -263,7 +218,7 @@ function handleMissingPackageAlert(
     const venv = findVenvPath(context.controller.env.path);
 
     if (Option.isNone(venv)) {
-      yield* Effect.logWarning("Could not find venv.Skipping install.");
+      yield* Effect.logWarning("Could not find venv. Skipping install.");
       return;
     }
 
@@ -288,7 +243,7 @@ function handleMissingPackageAlert(
       yield* Effect.logInfo("Install packages").pipe(
         Effect.annotateLogs("packages", operation.packages),
       );
-      yield* installPackages(venv.value, operation.packages);
+      yield* installPackages(venv.value, operation.packages, deps);
     }
 
     if (choice.value === "Customize...") {
@@ -311,7 +266,7 @@ function handleMissingPackageAlert(
         Effect.annotateLogs("packages", newPackages),
       );
 
-      yield* installPackages(venv.value, newPackages);
+      yield* installPackages(venv.value, newPackages, deps);
     }
   }).pipe(Effect.catchAllCause(Effect.logError));
 }

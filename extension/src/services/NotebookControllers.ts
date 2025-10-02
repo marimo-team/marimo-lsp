@@ -1,4 +1,3 @@
-import * as NodeFs from "node:fs";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
 import {
@@ -15,10 +14,14 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 import { unreachable } from "../assert.ts";
+import { findVenvPath } from "../utils/findVenvPath.ts";
+import { installPackages } from "../utils/installPackages.ts";
+import { Config } from "./Config.ts";
 import { EnvironmentValidator } from "./EnvironmentValidator.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookSerializer } from "./NotebookSerializer.ts";
 import { PythonExtension } from "./PythonExtension.ts";
+import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
 type ControllerId = string & Brand.Brand<"ControllerId">;
@@ -213,7 +216,9 @@ export class NotebookControllers extends Effect.Service<NotebookControllers>()(
       EnvironmentValidator.Default,
     ],
     scoped: Effect.gen(function* () {
+      const uv = yield* Uv;
       const code = yield* VsCode;
+      const config = yield* Config;
       const pyExt = yield* PythonExtension;
       const marimo = yield* LanguageClient;
       const registry = yield* ControllerRegistry;
@@ -236,15 +241,15 @@ export class NotebookControllers extends Effect.Service<NotebookControllers>()(
           yield* Effect.forEach(
             environments,
             (env) => registry.createOrUpdate(env),
-            {
-              discard: true,
-            },
+            { discard: true },
           );
 
           // Let the state handle disposal logic internally
           yield* registry.removeStale(environments);
         }).pipe(
+          Effect.provideService(Uv, uv),
           Effect.provideService(VsCode, code),
+          Effect.provideService(Config, config),
           Effect.provideService(PythonExtension, pyExt),
           Effect.provideService(EnvironmentValidator, validator),
           Effect.provideService(LanguageClient, marimo),
@@ -344,7 +349,9 @@ export class NotebookController extends Data.TaggedClass("NotebookController")<{
     label: string;
     env: py.Environment;
   }) {
+    const uv = yield* Uv;
     const code = yield* VsCode;
+    const config = yield* Config;
     const marimo = yield* LanguageClient;
     const validator = yield* EnvironmentValidator;
     const serializer = yield* NotebookSerializer;
@@ -397,16 +404,10 @@ export class NotebookController extends Data.TaggedClass("NotebookController")<{
                 ),
               );
             }),
-            PythonExecutionError: Effect.fnUntraced(function* (error) {
-              yield* Effect.logError("Python check failed", error).pipe(
-                Effect.annotateLogs({
-                  pythonPath: error.env.path,
-                  stderr: error.stderr,
-                }),
-              );
+            EnvironmentInspectionError: Effect.fnUntraced(function* (error) {
+              yield* Effect.logError("Python venv check failed", error);
 
-              // Check if Python executable still exists
-              if (!NodeFs.existsSync(error.env.path)) {
+              if (error.cause?._tag === "InvalidExecutableError") {
                 yield* code.window.useInfallible((api) =>
                   api.showErrorMessage(
                     `Python executable does not exist for env: ${error.env.path}.`,
@@ -443,14 +444,44 @@ export class NotebookController extends Data.TaggedClass("NotebookController")<{
                 }
               });
 
-              const msg =
-                `${formatControllerLabel(code, options.env)} cannot run the marimo kernel:\n\n` +
-                messages.join("\n") +
-                `\n\nPlease install or update the missing packages.`;
+              // Only prompt to install if uv is enabled
+              if (config.uv.enabled) {
+                const msg =
+                  `${formatControllerLabel(code, options.env)} cannot run the marimo kernel:\n\n` +
+                  messages.join("\n") +
+                  `\n\nPackages are missing or outdated.\n\nInstall with uv?`;
 
-              yield* code.window.useInfallible((api) =>
-                api.showErrorMessage(msg, { modal: true }),
-              );
+                const choice = yield* code.window.useInfallible((api) =>
+                  api.showErrorMessage(msg, { modal: true }, "Yes"),
+                );
+                if (!choice) {
+                  return;
+                }
+                const packages = error.diagnostics.map((d) =>
+                  d.kind === "outdated"
+                    ? `${d.package}>=${semver.format(d.requiredVersion)}`
+                    : d.package,
+                );
+                const venv = findVenvPath(options.env.path);
+                if (Option.isNone(venv)) {
+                  yield* code.window.useInfallible((api) =>
+                    api.showWarningMessage(
+                      `Package install failed. No venv found for ${options.env.path}`,
+                    ),
+                  );
+                  return;
+                }
+                yield* installPackages(venv.value, packages, { uv, code });
+              } else {
+                const msg =
+                  `${formatControllerLabel(code, options.env)} cannot run the marimo kernel:\n\n` +
+                  messages.join("\n") +
+                  `\n\nPlease install or update the missing packages.`;
+
+                yield* code.window.useInfallible((api) =>
+                  api.showErrorMessage(msg, { modal: true }),
+                );
+              }
             }),
           }),
         ),

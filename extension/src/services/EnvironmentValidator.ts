@@ -1,7 +1,9 @@
-import * as NodeChildProcess from "node:child_process";
+import { Command, CommandExecutor, FileSystem } from "@effect/platform";
+import type { PlatformError } from "@effect/platform/Error";
+import { NodeContext } from "@effect/platform-node";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Data, Effect, Schema } from "effect";
+import { Data, Effect, type ParseResult, Schema } from "effect";
 import { SemVerFromString } from "../schemas.ts";
 
 const MINIMUM_MARIMO_VERSION = {
@@ -10,10 +12,20 @@ const MINIMUM_MARIMO_VERSION = {
   patch: 0,
 } satisfies semver.SemVer;
 
-class PythonExecutionError extends Data.TaggedError("PythonExecutionError")<{
+class InvalidExecutableError extends Data.TaggedError(
+  "InvalidExecutableError",
+)<{
   readonly env: py.Environment;
-  readonly error: NodeChildProcess.ExecFileException;
-  readonly stderr: string;
+}> {}
+
+class EnvironmentInspectionError extends Data.TaggedError(
+  "EnvironmentInspectionError",
+)<{
+  readonly env: py.Environment;
+  readonly cause?:
+    | PlatformError
+    | ParseResult.ParseError
+    | InvalidExecutableError;
 }> {}
 
 class EnvironmentRequirementError extends Data.TaggedError(
@@ -36,28 +48,24 @@ class EnvironmentRequirementError extends Data.TaggedError(
 export class EnvironmentValidator extends Effect.Service<EnvironmentValidator>()(
   "EnvironmentValidator",
   {
-    succeed: {
-      validate(
-        env: py.Environment,
-      ): Effect.Effect<
-        ValidPythonEnvironemnt,
-        PythonExecutionError | EnvironmentRequirementError,
-        never
-      > {
-        const EnvCheck = Schema.Array(
-          Schema.Struct({
-            name: Schema.String,
-            version: Schema.NullOr(SemVerFromString),
-          }),
-        );
-        return Effect.gen(function* () {
-          const stdout = yield* Effect.async<string, PythonExecutionError>(
-            (resume) => {
-              NodeChildProcess.execFile(
-                env.path,
-                [
-                  "-c",
-                  `\
+    dependencies: [NodeContext.layer],
+    effect: Effect.gen(function* () {
+      const executor = yield* CommandExecutor.CommandExecutor;
+      const fs = yield* FileSystem.FileSystem;
+
+      const EnvCheck = Schema.Array(
+        Schema.Struct({
+          name: Schema.String,
+          version: Schema.NullOr(SemVerFromString),
+        }),
+      );
+
+      return {
+        validate: Effect.fn(function* (env: py.Environment) {
+          const packages = yield* Command.make(
+            env.path,
+            "-c",
+            `\
 import json
 
 packages = []
@@ -77,35 +85,24 @@ except ImportError:
     pass
 
 print(json.dumps(packages))`,
-                ],
-                (error, stdout, stderr) => {
-                  if (!error) {
-                    resume(Effect.succeed(stdout));
-                  } else {
-                    resume(
-                      Effect.fail(
-                        new PythonExecutionError({ env, error, stderr }),
-                      ),
-                    );
-                  }
-                },
-              );
-            },
-          );
-
-          const packages = yield* Schema.decode(Schema.parseJson(EnvCheck))(
-            stdout.trim(),
           ).pipe(
-            Effect.mapError(
-              () =>
-                new EnvironmentRequirementError({
-                  env,
-                  diagnostics: [
-                    { kind: "unknown", package: "marimo" },
-                    { kind: "unknown", package: "pyzmq" },
-                  ],
-                }),
+            Command.string,
+            Effect.andThen(
+              Schema.parseJson(EnvCheck).pipe(Schema.decodeUnknown),
             ),
+            Effect.catchTag(
+              "SystemError",
+              Effect.fnUntraced(function* (error) {
+                const exists = yield* fs.exists(env.path);
+                return yield* exists
+                  ? error
+                  : new InvalidExecutableError({ env });
+              }),
+            ),
+            Effect.catchAll(
+              (cause) => new EnvironmentInspectionError({ env, cause }),
+            ),
+            Effect.provideService(CommandExecutor.CommandExecutor, executor),
           );
 
           const diagnostics: Array<RequirementDiagnostic> = [];
@@ -127,13 +124,16 @@ print(json.dumps(packages))`,
           }
 
           if (diagnostics.length > 0) {
-            return yield* new EnvironmentRequirementError({ env, diagnostics });
+            return yield* new EnvironmentRequirementError({
+              env,
+              diagnostics,
+            });
           }
 
           return new ValidPythonEnvironemnt({ inner: env });
-        });
-      },
-    },
+        }),
+      };
+    }),
   },
 ) {}
 
