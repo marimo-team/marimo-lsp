@@ -5,6 +5,7 @@ import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { VsCode } from "../services/VsCode.ts";
+import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
 /**
  * Registers VS Code commands for the marimo extension.
@@ -159,20 +160,3 @@ const createGist = ({
       ),
     ),
   );
-
-const showErrorAndPromptLogs = (
-  msg: string,
-  deps: {
-    code: VsCode;
-    channel: OutputChannel;
-  },
-) =>
-  deps.code.window
-    .useInfallible((api) => api.showErrorMessage(msg, "Open Logs"))
-    .pipe(
-      Effect.tap((selection) =>
-        selection === "Open Logs"
-          ? Effect.sync(() => deps.channel.show())
-          : Effect.void,
-      ),
-    );

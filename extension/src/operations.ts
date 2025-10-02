@@ -18,7 +18,6 @@ import { installPackages } from "./utils/installPackages.ts";
 
 export interface OperationContext {
   editor: vscode.NotebookEditor;
-  controller: NotebookController;
   executions: Map<string, vscode.NotebookCellExecution>;
 }
 
@@ -28,6 +27,7 @@ export const routeOperation = Effect.fn("routeOperation")(function* (
     runPromise: (e: Effect.Effect<void, never, never>) => Promise<void>;
     context: OperationContext;
     renderer: NotebookRenderer;
+    controller: NotebookController;
     code: VsCode;
     uv: Uv;
     config: Config;
@@ -86,16 +86,17 @@ function handleCellOperation(
   deps: {
     code: VsCode;
     context: OperationContext;
+    controller: NotebookController;
   },
 ): Effect.Effect<void, never, never> {
-  const { code, context } = deps;
+  const { code, context, controller } = deps;
   return Effect.gen(function* () {
     const { cell_id: cellId, status, timestamp = 0 } = operation;
     const state = cellStateManager.handleCellOp(operation);
 
     switch (status) {
       case "queued": {
-        const execution = context.controller.inner.createNotebookCellExecution(
+        const execution = controller.inner.createNotebookCellExecution(
           getNotebookCell(context.editor.notebook, cellId),
         );
         context.executions.set(cellId, execution);
@@ -190,13 +191,13 @@ function getNotebookCell(
 function handleMissingPackageAlert(
   operation: MessageOperationOf<"missing-package-alert">,
   deps: {
-    context: OperationContext;
+    controller: NotebookController;
     code: VsCode;
     uv: Uv;
     config: Config;
   },
 ): Effect.Effect<void, never, never> {
-  const { context, code, config } = deps;
+  const { code, config, controller } = deps;
 
   return Effect.gen(function* () {
     if (operation.packages.length === 0) {
@@ -215,7 +216,7 @@ function handleMissingPackageAlert(
       return;
     }
 
-    const venv = findVenvPath(context.controller.env.path);
+    const venv = findVenvPath(controller.env.path);
 
     if (Option.isNone(venv)) {
       yield* Effect.logWarning("Could not find venv. Skipping install.");

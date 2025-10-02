@@ -1,4 +1,5 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
+import { Brand } from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
 import type { MarimoNotebook } from "./schemas.ts";
@@ -12,8 +13,16 @@ export type MessageOperationOf<T extends MessageOperation["op"]> = Extract<
 >;
 export type CellMessage = MessageOperationOf<"cell-op">;
 
+export type NotebookUri = Brand.Branded<string, "NotebookUri">;
+
+// Only way to get our NotebookUri type is from the server or a vscode.NotebookDocument
+const NotebookUri = Brand.nominal<NotebookUri>();
+export function getNotebookUri(doc: vscode.NotebookDocument): NotebookUri {
+  return NotebookUri(doc.uri.toString());
+}
+
 interface NotebookScoped<T> {
-  notebookUri: string;
+  notebookUri: NotebookUri;
   inner: T;
 }
 
@@ -83,7 +92,7 @@ export type RendererReceiveMessage =
 
 // Language server -> client
 type MarimoNotificationMap = {
-  "marimo/operation": { notebookUri: string; operation: MessageOperation };
+  "marimo/operation": { notebookUri: NotebookUri; operation: MessageOperation };
   "marimo/dap": { sessionId: string; message: vscode.DebugProtocolMessage };
   "window/logMessage": lsp.LogMessageParams;
 };
