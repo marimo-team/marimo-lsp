@@ -1,6 +1,14 @@
-import { Effect, FiberSet, Layer, Option, Queue } from "effect";
+import {
+  Effect,
+  FiberSet,
+  HashMap,
+  Layer,
+  Option,
+  Queue,
+  SynchronizedRef,
+} from "effect";
 import { assert, unreachable } from "../assert.ts";
-import * as ops from "../operations.ts";
+import { NotebookExecutionContext, routeOperation } from "../operations.ts";
 import { Config } from "../services/Config.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookControllers } from "../services/NotebookControllers.ts";
@@ -40,8 +48,9 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const controllers = yield* NotebookControllers;
 
     const runPromise = yield* FiberSet.makeRuntimePromise();
-
-    const contexts = new Map<string, ops.OperationContext>();
+    const contextsRef = yield* SynchronizedRef.make(
+      HashMap.empty<NotebookUri, NotebookExecutionContext>(),
+    );
 
     const queue = yield* Queue.unbounded<MarimoOperation>();
     yield* marimo.onNotification("marimo/operation", (msg) =>
@@ -66,37 +75,41 @@ export const KernelManagerLive = Layer.scopedDiscard(
             Effect.annotateLogs({ op: operation.op }),
           );
           yield* Effect.logTrace(operation.op, operation);
-          let context = contexts.get(notebookUri);
 
-          if (!context) {
-            const editor = code.window
-              .getVisibleNotebookEditors()
-              .find((editor) => editor.notebook.uri.toString() === notebookUri);
-            assert(editor, `Expected notebook document for ${notebookUri}`);
-            context = { editor, executions: new Map() };
-            contexts.set(notebookUri, context);
-            yield* Effect.logInfo("Created new context for notebook").pipe(
-              Effect.annotateLogs({ notebookUri }),
-            );
-          }
+          const context = yield* SynchronizedRef.modifyEffect(
+            contextsRef,
+            Effect.fnUntraced(function* (map) {
+              const existing = HashMap.get(map, notebookUri);
+              if (Option.isSome(existing)) {
+                return [existing.value, map];
+              }
+              const editor = code.window
+                .getVisibleNotebookEditors()
+                .find(
+                  (editor) => editor.notebook.uri.toString() === notebookUri,
+                );
+              assert(editor, `Expected notebook document for ${notebookUri}`);
+              const context = yield* NotebookExecutionContext.make(editor);
+              return [context, HashMap.set(map, notebookUri, context)];
+            }),
+          );
 
           const controller = yield* controllers.getActiveController(
             context.editor.notebook,
           );
-
           assert(
             Option.isSome(controller),
             `Expected notebook controller for ${notebookUri}`,
           );
 
-          yield* ops.routeOperation(operation, {
-            controller: controller.value,
-            context,
+          yield* routeOperation(operation, {
             code,
-            renderer,
-            uv,
-            runPromise,
             config,
+            context,
+            controller: controller.value,
+            renderer,
+            runPromise,
+            uv,
           });
 
           yield* Effect.logDebug("Completed processing operation").pipe(
@@ -149,14 +162,5 @@ export const KernelManagerLive = Layer.scopedDiscard(
         }),
       ),
     );
-
-    yield* Effect.addFinalizer(() =>
-      Effect.gen(function* () {
-        yield* Effect.logInfo("Tearing down kernel manager");
-        contexts.clear();
-      }),
-    );
-
-    yield* Effect.logInfo("Kernel manager initialized");
   }),
 );
