@@ -14,6 +14,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 import { unreachable } from "../assert.ts";
+import { getNotebookUri } from "../types.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { installPackages } from "../utils/installPackages.ts";
 import { Config } from "./Config.ts";
@@ -384,7 +385,7 @@ export class NotebookController extends Data.TaggedClass("NotebookController")<{
           );
           const validEnv = yield* validator.validate(options.env);
           return yield* marimo.run({
-            notebookUri: notebook.uri.toString(),
+            notebookUri: getNotebookUri(notebook),
             executable: validEnv.executable,
             inner: {
               cellIds: cells.map((cell) => cell.document.uri.toString()),
@@ -501,7 +502,7 @@ export class NotebookController extends Data.TaggedClass("NotebookController")<{
             }),
           );
           return yield* marimo.interrupt({
-            notebookUri: notebook.uri.toString(),
+            notebookUri: getNotebookUri(notebook),
             inner: {},
           });
         }).pipe(
