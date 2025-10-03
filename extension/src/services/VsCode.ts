@@ -1,4 +1,4 @@
-import { Data, Effect, Either, FiberSet, Stream, Option, Scope } from "effect";
+import { Data, Effect, Either, FiberSet, Option, Scope, Stream } from "effect";
 // VsCode.ts is the centralized service that wraps the VS Code API.
 //
 // All other modules should use type-only imports and access the API through this service.
