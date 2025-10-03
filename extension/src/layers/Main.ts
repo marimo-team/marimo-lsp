@@ -12,6 +12,8 @@ import { OutputChannel } from "../services/OutputChannel.ts";
 import { PythonExtension } from "../services/PythonExtension.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
+import { MarimoStatusBarLive } from "../views/MarimoStatusBar.ts";
+import { StatusBar } from "../views/StatusBar.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
 import { LoggerLive } from "./Logger.ts";
 import { LspLive } from "./Lsp.ts";
@@ -24,6 +26,7 @@ import { RegisterCommandsLive } from "./RegisterCommands.ts";
 export const MainLive = LspLive.pipe(
   Layer.merge(RegisterCommandsLive),
   Layer.merge(KernelManagerLive),
+  Layer.merge(MarimoStatusBarLive),
   Layer.provide(Uv.Default),
   Layer.provide(GitHubClient.Default),
   Layer.provide(DebugAdapter.Default),
@@ -34,6 +37,7 @@ export const MainLive = LspLive.pipe(
   Layer.provide(ExecutionRegistry.Default),
   Layer.provide(ControllerRegistry.Default),
   Layer.provide(NotebookEditorRegistry.Default),
+  Layer.provide(StatusBar.Default),
   Layer.provide(Config.Default),
   Layer.provide(VsCode.Default),
   // Make sure we have logging setup before everything else

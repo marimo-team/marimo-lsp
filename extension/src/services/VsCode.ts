@@ -7,6 +7,7 @@ import { Data, Effect, Either, FiberSet, Option } from "effect";
 // biome-ignore lint: See above
 import * as vscode from "vscode";
 import type { AssertionError } from "../assert.ts";
+import type { MarimoCommandKey } from "../constants.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
   cause: unknown;
@@ -59,7 +60,10 @@ export class Window extends Effect.Service<Window>()("Window", {
   }),
 }) {}
 
-type Command = "workbench.action.reloadWindow";
+type ExecutableCommand =
+  | "workbench.action.reloadWindow"
+  | "workbench.action.openSettings"
+  | MarimoCommandKey;
 
 class Commands extends Effect.Service<Commands>()("Commands", {
   dependencies: [Window.Default],
@@ -68,11 +72,11 @@ class Commands extends Effect.Service<Commands>()("Commands", {
     const api = vscode.commands;
     const runPromise = yield* FiberSet.makeRuntimePromise();
     return {
-      executeCommand(command: Command) {
-        return Effect.promise(() => api.executeCommand(command));
+      executeCommand(command: ExecutableCommand, ...args: unknown[]) {
+        return Effect.promise(() => api.executeCommand(command, ...args));
       },
       registerCommand(
-        command: string,
+        command: MarimoCommandKey,
         effect: Effect.Effect<void, AssertionError | VsCodeError, never>,
       ) {
         return Effect.acquireRelease(
@@ -252,6 +256,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       EventEmitter: vscode.EventEmitter,
       DebugAdapterInlineImplementation: vscode.DebugAdapterInlineImplementation,
       ProcessLocation: vscode.ProgressLocation,
+      ThemeIcon: vscode.ThemeIcon,
       // helper
       utils: {
         parseUri(value: string) {

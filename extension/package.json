@@ -95,6 +95,11 @@
     ],
     "commands": [
       {
+        "command": "marimo.showMarimoMenu",
+        "title": "Show marimo menu",
+        "category": "marimo"
+      },
+      {
         "command": "marimo.newMarimoNotebook",
         "title": "New marimo notebook",
         "shortTitle": "Marimo notebook",
