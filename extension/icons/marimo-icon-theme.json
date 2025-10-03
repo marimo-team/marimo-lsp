@@ -1,0 +1,12 @@
+{
+  "iconDefinitions": {
+    "_marimo_icon": {
+      "iconPath": "./marimo-file.png"
+    }
+  },
+  "fileNames": {},
+  "fileExtensions": {
+    "mo.py": "_marimo_icon"
+  },
+  "languageIds": {}
+}
