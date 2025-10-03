@@ -19,7 +19,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         Option.none<NotebookUri>(),
       );
 
-      yield* Effect.runFork(
+      yield* Effect.forkScoped(
         code.window.activeNotebookEditorChanges().pipe(
           Stream.mapEffect(
             Effect.fnUntraced(function* (editor) {

@@ -56,9 +56,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         );
       },
       activeNotebookEditorChanges(): Stream.Stream<
-        Option.Option<vscode.NotebookEditor>,
-        never,
-        never
+        Option.Option<vscode.NotebookEditor>
       > {
         return Stream.asyncPush((emit) =>
           Effect.acquireRelease(
