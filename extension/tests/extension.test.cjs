@@ -45,6 +45,7 @@ suite("marimo Extension Hello World Tests", () => {
       "marimo.run",
       "marimo.serialize",
       "marimo.set_ui_element_value",
+      "marimo.showMarimoMenu",
     ]);
   });
 

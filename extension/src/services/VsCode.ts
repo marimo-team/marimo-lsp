@@ -1,5 +1,4 @@
 import { Data, Effect, Either, FiberSet, Option } from "effect";
-
 // VsCode.ts is the centralized service that wraps the VS Code API.
 //
 // All other modules should use type-only imports and access the API through this service.
@@ -7,6 +6,7 @@ import { Data, Effect, Either, FiberSet, Option } from "effect";
 // biome-ignore lint: See above
 import * as vscode from "vscode";
 import type { AssertionError } from "../assert.ts";
+import type { MarimoCommandKey } from "../constants.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
   cause: unknown;
@@ -41,6 +41,22 @@ export class Window extends Effect.Service<Window>()("Window", {
       getVisibleNotebookEditors() {
         return api.visibleNotebookEditors;
       },
+      createTreeView<T>(viewId: string, options: vscode.TreeViewOptions<T>) {
+        return Effect.acquireRelease(
+          Effect.sync(() => api.createTreeView(viewId, options)),
+          (disposable) => Effect.sync(() => disposable.dispose()),
+        );
+      },
+      createStatusBarItem(
+        id: string,
+        alignment: vscode.StatusBarAlignment,
+        priority?: number,
+      ) {
+        return Effect.acquireRelease(
+          Effect.sync(() => api.createStatusBarItem(id, alignment, priority)),
+          (disposable) => Effect.sync(() => disposable.dispose()),
+        );
+      },
       onDidChangeActiveNotebookEditor(
         factory: (
           editor: Option.Option<vscode.NotebookEditor>,
@@ -59,7 +75,10 @@ export class Window extends Effect.Service<Window>()("Window", {
   }),
 }) {}
 
-type Command = "workbench.action.reloadWindow";
+type ExecutableCommand =
+  | "workbench.action.reloadWindow"
+  | "workbench.action.openSettings"
+  | MarimoCommandKey;
 
 class Commands extends Effect.Service<Commands>()("Commands", {
   dependencies: [Window.Default],
@@ -68,11 +87,11 @@ class Commands extends Effect.Service<Commands>()("Commands", {
     const api = vscode.commands;
     const runPromise = yield* FiberSet.makeRuntimePromise();
     return {
-      executeCommand(command: Command) {
-        return Effect.promise(() => api.executeCommand(command));
+      executeCommand(command: ExecutableCommand, ...args: unknown[]) {
+        return Effect.promise(() => api.executeCommand(command, ...args));
       },
       registerCommand(
-        command: string,
+        command: MarimoCommandKey,
         effect: Effect.Effect<void, AssertionError | VsCodeError, never>,
       ) {
         return Effect.acquireRelease(
@@ -252,6 +271,13 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       EventEmitter: vscode.EventEmitter,
       DebugAdapterInlineImplementation: vscode.DebugAdapterInlineImplementation,
       ProcessLocation: vscode.ProgressLocation,
+      ThemeIcon: vscode.ThemeIcon,
+      TreeItem: vscode.TreeItem,
+      TreeItemCollapsibleState: vscode.TreeItemCollapsibleState,
+      ThemeColor: vscode.ThemeColor,
+      StatusBarAlignment: vscode.StatusBarAlignment,
+      Uri: vscode.Uri,
+      MarkdownString: vscode.MarkdownString,
       // helper
       utils: {
         parseUri(value: string) {

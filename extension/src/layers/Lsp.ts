@@ -1,6 +1,6 @@
 import * as NodeChildProcess from "node:child_process";
 import { Effect, Either, Layer } from "effect";
-
+import { logNever } from "@/utils/assertNever.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { VsCode } from "../services/VsCode.ts";
 
@@ -45,6 +45,10 @@ export const LspLive = Layer.scopedDiscard(
             yield* code.commands.executeCommand(
               "workbench.action.reloadWindow",
             );
+          } else if (result === undefined) {
+            // dismissed
+          } else {
+            logNever(result);
           }
         } else {
           yield* code.window.useInfallible((api) =>
