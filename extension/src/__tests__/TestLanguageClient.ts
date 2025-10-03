@@ -1,5 +1,5 @@
 import * as NodeChildProcess from "node:child_process";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Stream } from "effect";
 import * as rpc from "vscode-jsonrpc/node";
 import {
   ExecuteCommandError,
@@ -7,11 +7,6 @@ import {
   LanguageClient,
   LanguageClientStartError,
 } from "../services/LanguageClient.ts";
-import type {
-  MarimoCommand,
-  MarimoNotification,
-  MarimoNotificationOf,
-} from "../types.ts";
 
 export const TestLanguageClientLive = Layer.scoped(
   LanguageClient,
@@ -51,7 +46,7 @@ export const TestLanguageClientLive = Layer.scoped(
               proc.kill();
             }),
         ),
-      executeCommand(cmd: MarimoCommand) {
+      executeCommand(cmd) {
         return Effect.tryPromise({
           try: () =>
             connection.sendRequest("workspace/executeCommand", {
@@ -61,13 +56,16 @@ export const TestLanguageClientLive = Layer.scoped(
           catch: (cause) => new ExecuteCommandError({ command: cmd, cause }),
         });
       },
-      onNotification<Notification extends MarimoNotification>(
-        notification: Notification,
-        cb: (msg: MarimoNotificationOf<Notification>) => void,
-      ) {
-        return Effect.acquireRelease(
-          Effect.sync(() => connection.onNotification(notification, cb)),
-          (disposable) => Effect.sync(() => disposable.dispose()),
+      streamOf(notification) {
+        return Stream.asyncPush((emit) =>
+          Effect.acquireRelease(
+            Effect.sync(() =>
+              connection.onNotification(notification, (msg) =>
+                emit.single(msg),
+              ),
+            ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          ),
         );
       },
     });

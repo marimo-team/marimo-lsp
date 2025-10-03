@@ -45,9 +45,8 @@ export const createStorageKey = <A, I = A>(
 /**
  * Generic wrapper around VSCode Memento for type-safe storage operations.
  */
-class MementoStorage<Scope extends "workspace" | "global"> {
+class MementoStorage<_Scope extends "workspace" | "global"> {
   private readonly memento: vscode.Memento;
-  private readonly _scope!: Scope;
 
   constructor(memento: vscode.Memento) {
     this.memento = memento;

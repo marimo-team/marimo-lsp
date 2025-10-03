@@ -1,4 +1,4 @@
-import { Effect, Fiber, FiberSet, Option } from "effect";
+import { Effect, Fiber, FiberSet, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { LanguageClient } from "./LanguageClient.ts";
@@ -30,9 +30,9 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
         vscode.EventEmitter<vscode.DebugProtocolMessage>
       >();
 
-      yield* client.onNotification("marimo/dap", ({ sessionId, message }) =>
-        runFork(
-          Effect.gen(function* () {
+      yield* client.streamOf("marimo/dap").pipe(
+        Stream.mapEffect(
+          Effect.fnUntraced(function* ({ sessionId, message }) {
             yield* Effect.logDebug("Received DAP message from LSP").pipe(
               Effect.annotateLogs({
                 sessionId,
@@ -43,6 +43,8 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
             emitters.get(sessionId)?.fire(message);
           }),
         ),
+        Stream.runDrain,
+        Effect.forkScoped,
       );
 
       yield* code.debug.registerDebugAdapterDescriptorFactory(debugType, {

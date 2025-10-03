@@ -1,9 +1,8 @@
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
-import { Data, Effect, Option, type ParseResult, Schema } from "effect";
+import { Data, Effect, FiberSet, Option, type Scope, Stream } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
-import { MarimoNotebook } from "../schemas.ts";
 import type {
   MarimoCommand,
   MarimoNotification,
@@ -61,6 +60,8 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
         },
       );
 
+      const _runPromise = yield* FiberSet.makeRuntimePromise();
+
       return {
         manage() {
           return Effect.acquireRelease(
@@ -87,15 +88,20 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
             catch: (cause) => new ExecuteCommandError({ command: cmd, cause }),
           });
         },
-        onNotification<Notification extends MarimoNotification>(
+        streamOf<Notification extends MarimoNotification>(
           notification: Notification,
-          cb: (msg: MarimoNotificationOf<Notification>) => void,
-        ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              client.onNotification(notification, (msg) => cb(msg)),
+        ): Stream.Stream<
+          MarimoNotificationOf<Notification>,
+          never,
+          Scope.Scope
+        > {
+          return Stream.asyncPush((emit) =>
+            Effect.acquireRelease(
+              Effect.sync(() =>
+                client.onNotification(notification, (msg) => emit.single(msg)),
+              ),
+              (disposable) => Effect.sync(() => disposable.dispose()),
             ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
           );
         },
       };
