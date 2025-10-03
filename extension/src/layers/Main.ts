@@ -1,4 +1,5 @@
 import { Layer } from "effect";
+import { CellStateManager } from "../services/CellStateManager.ts";
 import { Config } from "../services/Config.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { DebugAdapter } from "../services/DebugAdapter.ts";
@@ -40,6 +41,7 @@ export const MainLive = LspLive.pipe(
   Layer.provide(LanguageClient.Default),
   Layer.provide(PythonExtension.Default),
   Layer.provide(ExecutionRegistry.Default),
+  Layer.provide(CellStateManager.Default),
   Layer.provide(ControllerRegistry.Default),
   Layer.provide(NotebookEditorRegistry.Default),
   Layer.provide(TreeView.Default),

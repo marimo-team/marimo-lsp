@@ -15,16 +15,18 @@ import {
   createCellRuntimeState,
   transitionCell,
 } from "../shared/cells.ts";
-import type { CellMessage } from "../types.ts";
+import { type CellMessage, getNotebookUri } from "../types.ts";
+import { CellStateManager } from "./CellStateManager.ts";
 import type { NotebookController } from "./NotebookControllerFactory.ts";
 import { VsCode } from "./VsCode.ts";
 
 export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
   "ExecutionRegistry",
   {
-    dependencies: [VsCode.Default],
+    dependencies: [VsCode.Default, CellStateManager.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
+      const cellStateManager = yield* CellStateManager;
       const ref = yield* Ref.make(HashMap.empty<NotebookCellId, CellEntry>());
 
       yield* Effect.addFinalizer(() =>
@@ -70,14 +72,20 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
 
           switch (msg.status) {
             case "queued": {
+              // Clear stale state when cell is queued for execution
+              const notebookUri = getNotebookUri(editor.notebook);
+              const notebookCell = getNotebookCell(editor.notebook, cell.id);
+              yield* cellStateManager.clearCellStale(
+                notebookUri,
+                notebookCell.index,
+              );
+
               yield* Ref.update(ref, (map) => {
                 const update = CellEntry.withExecution(
                   cell,
                   new ExecutionHandle({
                     runId: Option.getOrThrow(extractRunId(msg)),
-                    inner: controller.createNotebookCellExecution(
-                      getNotebookCell(editor.notebook, cell.id),
-                    ),
+                    inner: controller.createNotebookCellExecution(notebookCell),
                   }),
                 );
                 return HashMap.set(map, cellId, update);

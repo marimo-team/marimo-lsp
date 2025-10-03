@@ -9,6 +9,7 @@ import {
 import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { MarimoNotebook } from "../schemas.ts";
+import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -121,13 +122,9 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
 
       return {
         notebookType: NOTEBOOK_TYPE,
+        isMarimoNotebookDocument: isMarimoNotebookDocument,
         serializeEffect,
         deserializeEffect,
-        isMarimoNotebookDocument(
-          notebook: vscode.NotebookDocument,
-        ): notebook is MarimoNotebookDocument {
-          return notebook.notebookType === NOTEBOOK_TYPE;
-        },
       };
     }),
   },

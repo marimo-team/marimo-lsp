@@ -1,5 +1,6 @@
 import * as NodePath from "node:path";
 import { Cause, Chunk, Effect, Either, Layer, Option } from "effect";
+import { decodeCellMetadata, isStaleCellMetadata } from "../schemas.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
@@ -24,6 +25,11 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     yield* code.commands.registerCommand(
       "marimo.createGist",
       createGist({ code, serializer, gh, channel }),
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.runStale",
+      runStale({ code, serializer, channel }),
     );
   }),
 );
@@ -154,6 +160,71 @@ const createGist = ({
           code,
           channel,
         },
+      ),
+    ),
+  );
+
+const runStale = ({
+  code,
+  serializer,
+  channel,
+}: {
+  code: VsCode;
+  serializer: NotebookSerializer;
+  channel: OutputChannel;
+}) =>
+  Effect.gen(function* () {
+    const notebook = code.window
+      .getActiveNotebookEditor()
+      .pipe(
+        Option.filterMap((editor) =>
+          serializer.isMarimoNotebookDocument(editor.notebook)
+            ? Option.some(editor.notebook)
+            : Option.none(),
+        ),
+      );
+
+    if (Option.isNone(notebook)) {
+      yield* showErrorAndPromptLogs(
+        "Must have an open marimo notebook to run stale cells.",
+        { code, channel },
+      );
+      return;
+    }
+
+    const staleCells = notebook.value.getCells().filter((cell) => {
+      const metadata = decodeCellMetadata(cell.metadata);
+      return Option.isSome(metadata) && isStaleCellMetadata(metadata.value);
+    });
+
+    if (staleCells.length === 0) {
+      yield* Effect.logInfo("No stale cells found");
+      yield* code.window.useInfallible((api) =>
+        api.showInformationMessage("No stale cells to run"),
+      );
+      return;
+    }
+
+    yield* Effect.logInfo("Running stale cells").pipe(
+      Effect.annotateLogs({
+        staleCount: staleCells.length,
+        notebook: notebook.value.uri.toString(),
+      }),
+    );
+
+    // Execute stale cells using VS Code's notebook execution command
+    yield* code.commands.executeCommand("notebook.cell.execute", {
+      ranges: staleCells.map((cell) => ({
+        start: cell.index,
+        end: cell.index + 1,
+      })),
+    });
+  }).pipe(
+    Effect.tapErrorCause(Effect.logError),
+    Effect.catchAllCause(() =>
+      showErrorAndPromptLogs(
+        "Failed to run stale cells. See marimo logs for details.",
+        { code, channel },
       ),
     ),
   );
