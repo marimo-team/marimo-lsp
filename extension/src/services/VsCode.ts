@@ -1,4 +1,4 @@
-import { Data, Effect, Either, FiberSet, Option, Scope, Stream } from "effect";
+import { Data, Effect, Either, FiberSet, Option, Stream } from "effect";
 // VsCode.ts is the centralized service that wraps the VS Code API.
 //
 // All other modules should use type-only imports and access the API through this service.
@@ -16,8 +16,6 @@ export class Window extends Effect.Service<Window>()("Window", {
   scoped: Effect.gen(function* () {
     const api = vscode.window;
     type WindowApi = typeof api;
-
-    const runPromise = yield* FiberSet.makeRuntimePromise();
 
     return {
       use<T>(cb: (win: WindowApi) => Thenable<T>) {
@@ -57,18 +55,18 @@ export class Window extends Effect.Service<Window>()("Window", {
           (disposable) => Effect.sync(() => disposable.dispose()),
         );
       },
-      onDidChangeActiveNotebookEditor(
-        factory: (
-          editor: Option.Option<vscode.NotebookEditor>,
-        ) => Effect.Effect<void, never, never>,
-      ) {
-        return Effect.acquireRelease(
-          Effect.sync(() =>
-            api.onDidChangeActiveNotebookEditor((editor) =>
-              Option.fromNullable(editor).pipe(factory, runPromise),
+      activeNotebookEditorChanges(): Stream.Stream<
+        Option.Option<vscode.NotebookEditor>
+      > {
+        return Stream.asyncPush((emit) =>
+          Effect.acquireRelease(
+            Effect.sync(() =>
+              api.onDidChangeActiveNotebookEditor((e) =>
+                emit.single(Option.fromNullable(e)),
+              ),
             ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
           ),
-          (disposable) => Effect.sync(() => disposable.dispose()),
         );
       },
     };
@@ -123,11 +121,9 @@ class Commands extends Effect.Service<Commands>()("Commands", {
 }) {}
 
 class Workspace extends Effect.Service<Workspace>()("Workspace", {
-  scoped: Effect.gen(function* () {
+  sync: () => {
     const api = vscode.workspace;
     type WorkspaceApi = typeof api;
-    const runPromise = yield* FiberSet.makeRuntimePromise();
-
     return {
       getNotebookDocuments() {
         return api.notebookDocuments;
@@ -170,7 +166,7 @@ class Workspace extends Effect.Service<Workspace>()("Workspace", {
         return Effect.promise(() => api.applyEdit(edit));
       },
     };
-  }),
+  },
 }) {}
 
 class Env extends Effect.Service<Env>()("Env", {

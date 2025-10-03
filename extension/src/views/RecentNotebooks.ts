@@ -1,4 +1,4 @@
-import { Effect, Layer, Ref, Schema } from "effect";
+import { Effect, Layer, Option, Ref, Schema, Stream } from "effect";
 import type { NotebookDocument, Uri, WorkspaceFolder } from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { createStorageKey, Storage } from "../services/Storage.ts";
@@ -39,8 +39,9 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
     const initialNotebooks = yield* storage.workspace
       .getWithDefault(RECENT_NOTEBOOKS_KEY, [])
       .pipe(
-        Effect.catchTag("StorageDecodeError", (error) =>
-          Effect.gen(function* () {
+        Effect.catchTag(
+          "StorageDecodeError",
+          Effect.fnUntraced(function* (error) {
             yield* Effect.logWarning(
               "Failed to decode recent notebooks from storage, using empty list",
               error.cause,
@@ -95,59 +96,59 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
     });
 
     // Helper to add a notebook to recent list
-    const addRecentNotebook = (uri: Uri, document: NotebookDocument) =>
-      Effect.gen(function* () {
-        const uriString = uri.toString();
-        // TODO: NodePath? or windows support?
-        const label =
-          uri.path.split("/").pop() || document.notebookType || "Untitled";
+    const addRecentNotebook = Effect.fnUntraced(function* (
+      uri: Uri,
+      document: NotebookDocument,
+    ) {
+      const uriString = uri.toString();
+      // TODO: NodePath? or windows support?
+      const label =
+        uri.path.split("/").pop() || document.notebookType || "Untitled";
 
-        const updated = yield* Ref.updateAndGet(
-          recentNotebooks,
-          (notebooks) => {
-            // Remove existing entry if present
-            const filtered = notebooks.filter((n) => n.uri !== uriString);
+      const updated = yield* Ref.updateAndGet(recentNotebooks, (notebooks) => {
+        // Remove existing entry if present
+        const filtered = notebooks.filter((n) => n.uri !== uriString);
 
-            // Add new entry at the beginning
-            const updated: readonly RecentNotebook[] = [
-              { uri: uriString, label, timestamp: Date.now() },
-              ...filtered,
-            ];
+        // Add new entry at the beginning
+        const updated: readonly RecentNotebook[] = [
+          { uri: uriString, label, timestamp: Date.now() },
+          ...filtered,
+        ];
 
-            // Keep only the most recent N notebooks
-            return updated.slice(0, MAX_RECENT_NOTEBOOKS);
-          },
-        );
-
-        // Persist to workspace storage
-        yield* storage.workspace.set(RECENT_NOTEBOOKS_KEY, updated).pipe(
-          Effect.catchAllDefect((error) =>
-            Effect.logWarning("Failed to persist recent notebooks", error),
-          ),
-          Effect.catchAll((error) =>
-            Effect.logWarning(
-              "Failed to persist recent notebooks",
-              error.cause,
-            ),
-          ),
-        );
-
-        yield* provider.refresh();
+        // Keep only the most recent N notebooks
+        return updated.slice(0, MAX_RECENT_NOTEBOOKS);
       });
 
+      // Persist to workspace storage
+      yield* storage.workspace
+        .set(RECENT_NOTEBOOKS_KEY, updated)
+        .pipe(
+          Effect.catchAllCause((cause) =>
+            Effect.logWarning("Failed to persist recent notebooks", cause),
+          ),
+        );
+
+      yield* provider.refresh();
+    });
+
     // Listen for notebook open events
-    yield* code.window.onDidChangeActiveNotebookEditor((maybeEditor) =>
-      Effect.gen(function* () {
-        if (maybeEditor._tag === "Some") {
-          const editor = maybeEditor.value;
-          if (
-            editor.notebook.notebookType === "marimo-notebook" &&
-            editor.notebook.uri.scheme === "file"
-          ) {
-            yield* addRecentNotebook(editor.notebook.uri, editor.notebook);
-          }
-        }
-      }),
+    yield* Effect.forkScoped(
+      code.window.activeNotebookEditorChanges().pipe(
+        Stream.mapEffect(
+          Effect.fnUntraced(function* (maybeEditor) {
+            if (Option.isSome(maybeEditor)) {
+              const editor = maybeEditor.value;
+              if (
+                editor.notebook.notebookType === NOTEBOOK_TYPE &&
+                editor.notebook.uri.scheme === "file"
+              ) {
+                yield* addRecentNotebook(editor.notebook.uri, editor.notebook);
+              }
+            }
+          }),
+        ),
+        Stream.runDrain,
+      ),
     );
 
     // Register command to clear recent notebooks
@@ -155,14 +156,13 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
       "marimo.clearRecentNotebooks",
       Effect.gen(function* () {
         yield* Ref.set(recentNotebooks, []);
-        yield* storage.workspace.set(RECENT_NOTEBOOKS_KEY, []).pipe(
-          Effect.catchAllDefect((error) =>
-            Effect.logWarning("Failed to clear recent notebooks", error),
-          ),
-          Effect.catchAll((error) =>
-            Effect.logWarning("Failed to clear recent notebooks", error.cause),
-          ),
-        );
+        yield* storage.workspace
+          .set(RECENT_NOTEBOOKS_KEY, [])
+          .pipe(
+            Effect.catchAllCause((cause) =>
+              Effect.logWarning("Failed to clear recent notebooks", cause),
+            ),
+          );
         yield* provider.refresh();
         yield* Effect.logInfo("Cleared recent notebooks");
       }),

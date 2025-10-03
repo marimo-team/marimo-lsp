@@ -19,29 +19,34 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         Option.none<NotebookUri>(),
       );
 
-      yield* code.window.onDidChangeActiveNotebookEditor(
-        Effect.fnUntraced(function* (editor) {
-          // TODO: should we filter out non-marimo notebooks?
-          // if (!isMarimoNotebookDocument(e.notebook)) {
-          //   return;
-          // }
+      yield* Effect.forkScoped(
+        code.window.activeNotebookEditorChanges().pipe(
+          Stream.mapEffect(
+            Effect.fnUntraced(function* (editor) {
+              // TODO: should we filter out non-marimo notebooks?
+              // if (!isMarimoNotebookDocument(e.notebook)) {
+              //   return;
+              // }
 
-          if (Option.isNone(editor)) {
-            yield* SubscriptionRef.set(activeNotebookRef, Option.none());
-            return;
-          }
+              if (Option.isNone(editor)) {
+                yield* SubscriptionRef.set(activeNotebookRef, Option.none());
+                return;
+              }
 
-          const notebookUri = getNotebookUri(editor.value.notebook);
+              const notebookUri = getNotebookUri(editor.value.notebook);
 
-          yield* Ref.update(ref, (map) =>
-            HashMap.set(map, notebookUri, editor.value),
-          );
+              yield* Ref.update(ref, (map) =>
+                HashMap.set(map, notebookUri, editor.value),
+              );
 
-          yield* SubscriptionRef.set(
-            activeNotebookRef,
-            Option.some(notebookUri),
-          );
-        }),
+              yield* SubscriptionRef.set(
+                activeNotebookRef,
+                Option.some(notebookUri),
+              );
+            }),
+          ),
+          Stream.runDrain,
+        ),
       );
 
       return {
