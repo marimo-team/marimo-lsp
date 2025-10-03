@@ -20,7 +20,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
       const debugType = "marimo";
 
       const code = yield* VsCode;
-      const marimo = yield* LanguageClient;
+      const client = yield* LanguageClient;
       const serializer = yield* NotebookSerializer;
 
       const runFork = yield* FiberSet.makeRuntime();
@@ -30,7 +30,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
         vscode.EventEmitter<vscode.DebugProtocolMessage>
       >();
 
-      yield* marimo.onNotification("marimo/dap", ({ sessionId, message }) =>
+      yield* client.onNotification("marimo/dap", ({ sessionId, message }) =>
         runFork(
           Effect.gen(function* () {
             yield* Effect.logDebug("Received DAP message from LSP").pipe(
@@ -62,11 +62,14 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
                       type: message.type,
                     }),
                   );
-                  yield* marimo.dap({
-                    notebookUri: session.configuration.notebookUri,
-                    inner: {
-                      sessionId: session.id,
-                      message,
+                  yield* client.executeCommand({
+                    command: "marimo.dap",
+                    params: {
+                      notebookUri: session.configuration.notebookUri,
+                      inner: {
+                        sessionId: session.id,
+                        message,
+                      },
                     },
                   });
                 }).pipe(
