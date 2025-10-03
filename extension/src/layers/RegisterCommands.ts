@@ -14,7 +14,6 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const gh = yield* GitHubClient;
     const code = yield* VsCode;
-    const marimo = yield* LanguageClient;
     const channel = yield* OutputChannel;
     const serializer = yield* NotebookSerializer;
 
@@ -25,7 +24,7 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
 
     yield* code.commands.registerCommand(
       "marimo.createGist",
-      createGist({ code, serializer, gh, marimo, channel }),
+      createGist({ code, serializer, gh, channel }),
     );
   }),
 );
@@ -58,13 +57,11 @@ const createGist = ({
   code,
   serializer,
   gh,
-  marimo,
   channel,
 }: {
   code: VsCode;
   serializer: NotebookSerializer;
   gh: GitHubClient;
-  marimo: LanguageClient;
   channel: OutputChannel;
 }) =>
   Effect.gen(function* () {
@@ -100,7 +97,7 @@ const createGist = ({
       return;
     }
 
-    const bytes = yield* marimo.serialize({
+    const bytes = yield* serializer.serializeEffect({
       metadata: notebook.value.metadata,
       cells: notebook.value
         .getCells()
@@ -113,6 +110,7 @@ const createGist = ({
             ),
         ),
     });
+
     const filename = NodePath.basename(notebook.value.uri.path);
     const gist = yield* gh.Gists.create({
       payload: {

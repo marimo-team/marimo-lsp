@@ -36,7 +36,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const uv = yield* Uv;
     const code = yield* VsCode;
     const config = yield* Config;
-    const marimo = yield* LanguageClient;
+    const client = yield* LanguageClient;
     const channel = yield* OutputChannel;
     const editors = yield* NotebookEditorRegistry;
     const renderer = yield* NotebookRenderer;
@@ -46,7 +46,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const runPromise = yield* FiberSet.makeRuntimePromise();
 
     const queue = yield* Queue.unbounded<MarimoOperation>();
-    yield* marimo.onNotification("marimo/operation", (msg) =>
+    yield* client.onNotification("marimo/operation", (msg) =>
       runPromise(
         Effect.gen(function* () {
           yield* Effect.logTrace("Recieved marimo/operation").pipe(
@@ -119,16 +119,22 @@ export const KernelManagerLive = Layer.scopedDiscard(
           );
           switch (message.command) {
             case "marimo.set_ui_element_value": {
-              yield* marimo.setUiElementValue({
-                notebookUri,
-                inner: message.params,
+              yield* client.executeCommand({
+                command: message.command,
+                params: {
+                  notebookUri,
+                  inner: message.params,
+                },
               });
               return;
             }
             case "marimo.function_call_request": {
-              yield* marimo.functionCallRequest({
-                notebookUri,
-                inner: message.params,
+              yield* client.executeCommand({
+                command: message.command,
+                params: {
+                  notebookUri,
+                  inner: message.params,
+                },
               });
               return;
             }
