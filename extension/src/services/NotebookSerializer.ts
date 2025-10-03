@@ -19,7 +19,6 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   {
     dependencies: [VsCode.Default, LanguageClient.Default],
     scoped: Effect.gen(function* () {
-
       const code = yield* VsCode;
       const marimo = yield* LanguageClient;
       const runPromise = yield* FiberSet.makeRuntimePromise();

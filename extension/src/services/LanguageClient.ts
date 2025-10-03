@@ -254,7 +254,10 @@ function notebookDataToMarimoNotebook(
     violations: metadata.violations ?? [],
     valid: metadata.valid ?? true,
     cells: cells.map((cell) => ({
-      code: cell.kind === code.NotebookCellKind.Markup ? wrapInMarkdown(cell.value) : cell.value,
+      code:
+        cell.kind === code.NotebookCellKind.Markup
+          ? wrapInMarkdown(cell.value)
+          : cell.value,
       name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
       options: cell.metadata?.options ?? {},
     })),
