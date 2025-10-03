@@ -110,13 +110,44 @@
         "title": "Create marimo notebook Gist",
         "shortTitle": "Create Gist",
         "category": "marimo"
+      },
+      {
+        "command": "marimo.clearRecentNotebooks",
+        "title": "Clear recent notebooks",
+        "category": "marimo",
+        "icon": "$(clear-all)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "marimo-explorer",
+          "title": "marimo",
+          "icon": "images/icon.png"
+        }
+      ]
+    },
+    "views": {
+      "marimo-explorer": [
+        {
+          "id": "marimo-explorer-recents",
+          "name": "Recent Notebooks",
+          "icon": "images/icon.png"
+        }
+      ]
+    },
     "menus": {
       "file/newFile": [
         {
           "command": "marimo.newMarimoNotebook",
           "group": "notebook"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "marimo.clearRecentNotebooks",
+          "when": "view == marimo-explorer-recents",
+          "group": "navigation"
         }
       ]
     }

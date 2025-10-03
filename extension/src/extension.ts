@@ -2,9 +2,10 @@ import { Effect, Exit, Layer, Logger, LogLevel, pipe, Scope } from "effect";
 import type * as vscode from "vscode";
 
 import { MainLive } from "./layers/Main.ts";
+import { ExtensionContext } from "./services/Storage.ts";
 
 export async function activate(
-  _context: vscode.ExtensionContext,
+  context: vscode.ExtensionContext,
 ): Promise<vscode.Disposable> {
   return pipe(
     Effect.gen(function* () {
@@ -19,6 +20,7 @@ export async function activate(
         dispose: () => Effect.runPromise(Scope.close(scope, Exit.void)),
       };
     }),
+    Effect.provideService(ExtensionContext, context),
     Logger.withMinimumLogLevel(LogLevel.All),
     Effect.runPromise,
   );

@@ -131,6 +131,9 @@ class Workspace extends Effect.Service<Workspace>()("Workspace", {
       getConfiguration(section: string) {
         return api.getConfiguration(section);
       },
+      getWorkspaceFolders() {
+        return api.workspaceFolders;
+      },
       registerNotebookSerializer(
         notebookType: string,
         impl: vscode.NotebookSerializer,

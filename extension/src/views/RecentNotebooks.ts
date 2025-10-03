@@ -1,0 +1,186 @@
+import { Effect, Layer, Ref, Schema } from "effect";
+import type { NotebookDocument, Uri, WorkspaceFolder } from "vscode";
+import { NOTEBOOK_TYPE } from "../constants.ts";
+import { createStorageKey, Storage } from "../services/Storage.ts";
+import { VsCode } from "../services/VsCode.ts";
+import { type TreeItem, TreeView } from "./TreeView.ts";
+
+interface RecentNotebook {
+  uri: string;
+  label: string;
+  timestamp: number;
+}
+
+const MAX_RECENT_NOTEBOOKS = 20;
+
+// Define schema for RecentNotebook
+const RecentNotebookSchema = Schema.Struct({
+  uri: Schema.String,
+  label: Schema.String,
+  timestamp: Schema.Number,
+});
+
+// Create type-safe storage key
+const RECENT_NOTEBOOKS_KEY = createStorageKey(
+  "marimo.recentNotebooks",
+  Schema.Array(RecentNotebookSchema),
+);
+
+/**
+ * Manages the recent notebooks tree view.
+ */
+export const RecentNotebooksLive = Layer.scopedDiscard(
+  Effect.gen(function* () {
+    const treeView = yield* TreeView;
+    const code = yield* VsCode;
+    const storage = yield* Storage;
+
+    // Track recently opened notebooks - load from workspace storage
+    const initialNotebooks = yield* storage.workspace
+      .getWithDefault(RECENT_NOTEBOOKS_KEY, [])
+      .pipe(
+        Effect.catchTag("StorageDecodeError", (error) =>
+          Effect.gen(function* () {
+            yield* Effect.logWarning(
+              "Failed to decode recent notebooks from storage, using empty list",
+              error.cause,
+            );
+            return [];
+          }),
+        ),
+      );
+    const recentNotebooks =
+      yield* Ref.make<readonly RecentNotebook[]>(initialNotebooks);
+
+    // Create the tree data provider
+    const provider = yield* treeView.createTreeDataProvider({
+      viewId: "marimo-explorer-recents",
+      getChildren: (element?: RecentNotebook) =>
+        Effect.gen(function* () {
+          if (element) {
+            return [];
+          }
+          const notebooks = yield* Ref.get(recentNotebooks);
+          return [...notebooks];
+        }),
+      getTreeItem: (element: RecentNotebook) =>
+        Effect.gen(function* () {
+          const uri = code.Uri.parse(element.uri);
+          const workspaceFolders = code.workspace.getWorkspaceFolders() ?? [];
+          const workspaceFolder = workspaceFolders.find(
+            (folder: WorkspaceFolder) =>
+              element.uri.startsWith(folder.uri.toString()),
+          );
+
+          const description = workspaceFolder
+            ? element.uri.replace(`${workspaceFolder.uri.toString()}/`, "")
+            : uri.fsPath;
+
+          const item: TreeItem = {
+            label: element.label,
+            description: new Date(element.timestamp).toLocaleString(),
+            tooltip: `${description}\nLast opened: ${new Date(element.timestamp).toLocaleString()}`,
+            iconPath: undefined, // Will use default notebook icon
+            contextValue: "marimoRecentNotebook",
+            command: {
+              command: "vscode.open",
+              title: "Open Notebook",
+              arguments: [uri],
+            },
+            collapsibleState: "None",
+            resourceUri: element.uri,
+          };
+          return item;
+        }),
+    });
+
+    // Helper to add a notebook to recent list
+    const addRecentNotebook = (uri: Uri, document: NotebookDocument) =>
+      Effect.gen(function* () {
+        const uriString = uri.toString();
+        // TODO: NodePath? or windows support?
+        const label =
+          uri.path.split("/").pop() || document.notebookType || "Untitled";
+
+        const updated = yield* Ref.updateAndGet(
+          recentNotebooks,
+          (notebooks) => {
+            // Remove existing entry if present
+            const filtered = notebooks.filter((n) => n.uri !== uriString);
+
+            // Add new entry at the beginning
+            const updated: readonly RecentNotebook[] = [
+              { uri: uriString, label, timestamp: Date.now() },
+              ...filtered,
+            ];
+
+            // Keep only the most recent N notebooks
+            return updated.slice(0, MAX_RECENT_NOTEBOOKS);
+          },
+        );
+
+        // Persist to workspace storage
+        yield* storage.workspace.set(RECENT_NOTEBOOKS_KEY, updated).pipe(
+          Effect.catchAllDefect((error) =>
+            Effect.logWarning("Failed to persist recent notebooks", error),
+          ),
+          Effect.catchAll((error) =>
+            Effect.logWarning(
+              "Failed to persist recent notebooks",
+              error.cause,
+            ),
+          ),
+        );
+
+        yield* provider.refresh();
+      });
+
+    // Listen for notebook open events
+    yield* code.window.onDidChangeActiveNotebookEditor((maybeEditor) =>
+      Effect.gen(function* () {
+        if (maybeEditor._tag === "Some") {
+          const editor = maybeEditor.value;
+          if (
+            editor.notebook.notebookType === "marimo-notebook" &&
+            editor.notebook.uri.scheme === "file"
+          ) {
+            yield* addRecentNotebook(editor.notebook.uri, editor.notebook);
+          }
+        }
+      }),
+    );
+
+    // Register command to clear recent notebooks
+    yield* code.commands.registerCommand(
+      "marimo.clearRecentNotebooks",
+      Effect.gen(function* () {
+        yield* Ref.set(recentNotebooks, []);
+        yield* storage.workspace.set(RECENT_NOTEBOOKS_KEY, []).pipe(
+          Effect.catchAllDefect((error) =>
+            Effect.logWarning("Failed to clear recent notebooks", error),
+          ),
+          Effect.catchAll((error) =>
+            Effect.logWarning("Failed to clear recent notebooks", error.cause),
+          ),
+        );
+        yield* provider.refresh();
+        yield* Effect.logInfo("Cleared recent notebooks");
+      }),
+    );
+
+    // Initialize with currently open notebooks
+    yield* Effect.gen(function* () {
+      const openNotebooks = code.workspace.getNotebookDocuments();
+      for (const notebook of openNotebooks) {
+        if (
+          notebook.notebookType === NOTEBOOK_TYPE &&
+          notebook.uri.scheme === "file"
+        ) {
+          yield* addRecentNotebook(notebook.uri, notebook);
+        }
+      }
+    });
+
+    yield* Effect.logInfo("Recent notebooks view initialized");
+  }),
+);
