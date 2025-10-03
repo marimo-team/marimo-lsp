@@ -44,6 +44,7 @@ suite("marimo Extension Hello World Tests", () => {
       "marimo.interrupt",
       "marimo.newMarimoNotebook",
       "marimo.run",
+      "marimo.runStale",
       "marimo.serialize",
       "marimo.set_ui_element_value",
       "marimo.showMarimoMenu",
