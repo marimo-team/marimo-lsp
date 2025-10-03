@@ -76,49 +76,59 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
       );
 
       // Listen to notebook document changes
-      yield* code.workspace.onDidChangeNotebookDocument(
-        Effect.fnUntraced(function* (event) {
-          // Only process marimo notebooks
-          if (!isMarimoNotebookDocument(event.notebook)) {
-            return;
-          }
+      yield* Effect.forkScoped(
+        code.workspace.notebookDocumentChanges().pipe(
+          Stream.mapEffect(
+            Effect.fnUntraced(function* (event) {
+              yield* Effect.logTrace("onDidChangeNotebookDocument", event);
 
-          const notebookUri = getNotebookUri(event.notebook);
+              // Only process marimo notebooks
+              if (!isMarimoNotebookDocument(event.notebook)) {
+                return;
+              }
 
-          // Process cell changes (content or metadata edits)
-          for (const cellChange of event.cellChanges) {
-            const cell = cellChange.cell;
-            const cellIndex = cell.index;
+              const notebookUri = getNotebookUri(event.notebook);
 
-            // Check if document (content) changed
-            if (cellChange.document) {
-              yield* Log.trace("Cell content changed", {
-                notebookUri,
-                cellIndex,
-              });
+              // Process cell changes (content or metadata edits)
+              for (const cellChange of event.cellChanges) {
+                const cell = cellChange.cell;
+                const cellIndex = cell.index;
 
-              // Mark cell as stale
-              yield* markCellStale(notebookUri, cellIndex, {
-                code,
-                staleStateRef,
-                notebook: event.notebook,
-              });
-            }
+                // Check if document (content) changed
+                if (cellChange.document) {
+                  yield* Log.trace("Cell content changed", {
+                    notebookUri,
+                    cellIndex,
+                  });
 
-            // No metadata change
-            if (!cellChange.metadata) {
-              continue;
-            }
-            // Check if metadata changed and state is not stale
-            // (e.g., cleared by execution)
-            const metadata = decodeCellMetadata(cellChange.metadata);
-            if (Option.isSome(metadata) && metadata.value.state !== "stale") {
-              yield* clearCellStaleTracking(notebookUri, cellIndex, {
-                staleStateRef,
-              });
-            }
-          }
-        }),
+                  // Mark cell as stale
+                  yield* markCellStale(notebookUri, cellIndex, {
+                    code,
+                    staleStateRef,
+                    notebook: event.notebook,
+                  });
+                }
+
+                // No metadata change
+                if (!cellChange.metadata) {
+                  continue;
+                }
+                // Check if metadata changed and state is not stale
+                // (e.g., cleared by execution)
+                const metadata = decodeCellMetadata(cellChange.metadata);
+                if (
+                  Option.isSome(metadata) &&
+                  metadata.value.state !== "stale"
+                ) {
+                  yield* clearCellStaleTracking(notebookUri, cellIndex, {
+                    staleStateRef,
+                  });
+                }
+              }
+            }),
+          ),
+          Stream.runDrain,
+        ),
       );
 
       return {
