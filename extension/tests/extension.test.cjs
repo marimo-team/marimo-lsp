@@ -35,6 +35,7 @@ suite("marimo Extension Hello World Tests", () => {
     const marimoCommands = commands.filter((cmd) => cmd.startsWith("marimo."));
     marimoCommands.sort();
     assert.deepEqual(marimoCommands, [
+      "marimo.clearRecentNotebooks",
       "marimo.convert",
       "marimo.createGist",
       "marimo.dap",
@@ -57,6 +58,53 @@ suite("marimo Extension Hello World Tests", () => {
     for (const { command } of packageJSON.contributes.commands) {
       assert.ok(marimoCommands.includes(command));
     }
+  });
+
+  test("Should contribute view containers", async () => {
+    const packageJSON = getExtension().packageJSON;
+    assert.ok(
+      packageJSON.contributes.viewsContainers,
+      "Should have viewsContainers section",
+    );
+    assert.ok(
+      packageJSON.contributes.viewsContainers.activitybar,
+      "Should have activitybar view containers",
+    );
+    assert.strictEqual(
+      packageJSON.contributes.viewsContainers.activitybar.length,
+      1,
+      "Should contribute one activitybar view container",
+    );
+    assert.strictEqual(
+      packageJSON.contributes.viewsContainers.activitybar[0].id,
+      "marimo-explorer",
+      "Should contribute marimo-explorer view container",
+    );
+  });
+
+  test("Should contribute views", async () => {
+    const packageJSON = getExtension().packageJSON;
+    assert.ok(packageJSON.contributes.views, "Should have views section");
+    assert.ok(
+      packageJSON.contributes.views["marimo-explorer"],
+      "Should have views in marimo-explorer container",
+    );
+    const marimoViews = packageJSON.contributes.views["marimo-explorer"];
+    assert.strictEqual(
+      marimoViews.length,
+      1,
+      "Should contribute one view to marimo-explorer",
+    );
+    assert.strictEqual(
+      marimoViews[0].id,
+      "marimo-explorer-recents",
+      "Should contribute marimo-explorer-recents view",
+    );
+    assert.strictEqual(
+      marimoViews[0].name,
+      "Recent Notebooks",
+      "Recent notebooks view should have correct name",
+    );
   });
 
   test("Should have proper extension metadata", async () => {
