@@ -33,6 +33,7 @@ export default vite.defineConfig({
   test: {
     globals: true,
     environment: "node",
+    watch: false,
     // Unit tests live in src/
     include: ["src/**/*.test.ts"],
     // Extension tests live in tests/extension/

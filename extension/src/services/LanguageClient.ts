@@ -123,7 +123,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
           never
         > {
           return Effect.gen(function* () {
-            const notebook = yield* notebookDataToMarimoNotebook(params);
+            const notebook = yield* notebookDataToMarimoNotebook(params, code);
             const resp = yield* executeCommand(client, {
               command: "marimo.serialize",
               params: { notebook },
@@ -238,10 +238,14 @@ const decodeSerializeResponse = Schema.decodeUnknown(
   Schema.Struct({ source: Schema.String }),
 );
 
+const DEFAULT_CELL_NAME = "_";
+
 function notebookDataToMarimoNotebook(
   notebook: vscode.NotebookData,
+  code: VsCode,
 ): Effect.Effect<typeof MarimoNotebook.Type, ParseResult.ParseError, never> {
   const { cells, metadata = {} } = notebook;
+
   // Deserialize response is just the IR for our notebook
   return decodeDeserializeResponse({
     app: metadata.app ?? { options: {} },
@@ -250,9 +254,17 @@ function notebookDataToMarimoNotebook(
     violations: metadata.violations ?? [],
     valid: metadata.valid ?? true,
     cells: cells.map((cell) => ({
-      code: cell.value,
-      name: cell.metadata?.name ?? "_",
+      code: cell.kind === code.NotebookCellKind.Markup ? wrapInMarkdown(cell.value) : cell.value,
+      name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
       options: cell.metadata?.options ?? {},
     })),
   });
+}
+
+export function wrapInMarkdown(code: string): string {
+  return `
+mo.md(
+r"""
+${code}
+""")`.trim();
 }

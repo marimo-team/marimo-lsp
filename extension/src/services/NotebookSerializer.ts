@@ -8,6 +8,8 @@ export type MarimoNotebookDocument = Brand.Branded<
   "MarimoNotebookDocument"
 >;
 
+export const NOTEBOOK_TYPE = "marimo-notebook";
+
 /**
  * Handles serialization and deserialization of marimo notebooks,
  * converting between VS Code's notebook format and marimo's Python format.
@@ -17,7 +19,6 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   {
     dependencies: [VsCode.Default, LanguageClient.Default],
     scoped: Effect.gen(function* () {
-      const notebookType = "marimo-notebook";
 
       const code = yield* VsCode;
       const marimo = yield* LanguageClient;
@@ -25,7 +26,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
 
       yield* Effect.logInfo("Setting up notebook serializer");
 
-      yield* code.workspace.registerNotebookSerializer(notebookType, {
+      yield* code.workspace.registerNotebookSerializer(NOTEBOOK_TYPE, {
         serializeNotebook(notebook) {
           return runPromise(
             Effect.gen(function* () {
@@ -79,11 +80,11 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       });
 
       return {
-        notebookType,
+        notebookType: NOTEBOOK_TYPE,
         isMarimoNotebookDocument(
           notebook: vscode.NotebookDocument,
         ): notebook is MarimoNotebookDocument {
-          return notebook.notebookType === notebookType;
+          return notebook.notebookType === NOTEBOOK_TYPE;
         },
       };
     }),
