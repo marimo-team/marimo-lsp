@@ -1,5 +1,6 @@
 import { type Brand, Effect, FiberSet } from "effect";
 import type * as vscode from "vscode";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -7,8 +8,6 @@ export type MarimoNotebookDocument = Brand.Branded<
   vscode.NotebookDocument,
   "MarimoNotebookDocument"
 >;
-
-export const NOTEBOOK_TYPE = "marimo-notebook";
 
 /**
  * Handles serialization and deserialization of marimo notebooks,

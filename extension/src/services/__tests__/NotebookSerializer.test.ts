@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import packageJson from "../../../package.json";
-import { NOTEBOOK_TYPE } from "../NotebookSerializer.ts";
+import { NOTEBOOK_TYPE } from "../../constants.ts";
 
 describe("NotebookSerializer", () => {
   it("NOTEBOOK_TYPE matches package.json notebook type", () => {
