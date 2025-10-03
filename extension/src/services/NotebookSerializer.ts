@@ -1,6 +1,7 @@
 import { type Brand, Effect, FiberSet } from "effect";
 import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
+import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -79,11 +80,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
 
       return {
         notebookType: NOTEBOOK_TYPE,
-        isMarimoNotebookDocument(
-          notebook: vscode.NotebookDocument,
-        ): notebook is MarimoNotebookDocument {
-          return notebook.notebookType === NOTEBOOK_TYPE;
-        },
+        isMarimoNotebookDocument: isMarimoNotebookDocument,
       };
     }),
   },

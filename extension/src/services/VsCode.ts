@@ -78,6 +78,8 @@ export class Window extends Effect.Service<Window>()("Window", {
 type ExecutableCommand =
   | "workbench.action.reloadWindow"
   | "workbench.action.openSettings"
+  | "notebook.cell.execute"
+  | "setContext"
   | MarimoCommandKey;
 
 class Commands extends Effect.Service<Commands>()("Commands", {
@@ -121,9 +123,11 @@ class Commands extends Effect.Service<Commands>()("Commands", {
 }) {}
 
 class Workspace extends Effect.Service<Workspace>()("Workspace", {
-  sync: () => {
+  scoped: Effect.gen(function* () {
     const api = vscode.workspace;
     type WorkspaceApi = typeof api;
+    const runPromise = yield* FiberSet.makeRuntimePromise();
+
     return {
       getNotebookDocuments() {
         return api.notebookDocuments;
@@ -152,8 +156,25 @@ class Workspace extends Effect.Service<Workspace>()("Workspace", {
       useInfallible<T>(cb: (win: WorkspaceApi) => Thenable<T>) {
         return Effect.promise(() => cb(api));
       },
+      onDidChangeNotebookDocument(
+        factory: (
+          event: vscode.NotebookDocumentChangeEvent,
+        ) => Effect.Effect<void, never, never>,
+      ) {
+        return Effect.acquireRelease(
+          Effect.sync(() =>
+            api.onDidChangeNotebookDocument((event) =>
+              runPromise(factory(event)),
+            ),
+          ),
+          (disposable) => Effect.sync(() => disposable.dispose()),
+        );
+      },
+      applyEdit(edit: vscode.WorkspaceEdit) {
+        return Effect.promise(() => api.applyEdit(edit));
+      },
     };
-  },
+  }),
 }) {}
 
 class Env extends Effect.Service<Env>()("Env", {
@@ -271,6 +292,8 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       NotebookCellKind: vscode.NotebookCellKind,
       NotebookCellOutput: vscode.NotebookCellOutput,
       NotebookCellOutputItem: vscode.NotebookCellOutputItem,
+      NotebookEdit: vscode.NotebookEdit,
+      WorkspaceEdit: vscode.WorkspaceEdit,
       EventEmitter: vscode.EventEmitter,
       DebugAdapterInlineImplementation: vscode.DebugAdapterInlineImplementation,
       ProcessLocation: vscode.ProgressLocation,

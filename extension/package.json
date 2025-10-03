@@ -116,6 +116,13 @@
         "title": "Clear recent notebooks",
         "category": "marimo",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "marimo.runStale",
+        "title": "Run Stale Cells",
+        "shortTitle": "Run Stale",
+        "category": "marimo",
+        "icon": "$(play)"
       }
     ],
     "viewsContainers": {
@@ -148,6 +155,13 @@
           "command": "marimo.clearRecentNotebooks",
           "when": "view == marimo-explorer-recents",
           "group": "navigation"
+        }
+      ],
+      "notebook/toolbar": [
+        {
+          "command": "marimo.runStale",
+          "when": "notebookType == 'marimo-notebook' && marimo.hasStaleCells",
+          "group": "navigation@1"
         }
       ]
     }
