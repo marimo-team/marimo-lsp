@@ -1,4 +1,4 @@
-import { Data, Effect, Either, FiberSet, Option } from "effect";
+import { Data, Effect, Either, FiberSet, Stream, Option, Scope } from "effect";
 // VsCode.ts is the centralized service that wraps the VS Code API.
 //
 // All other modules should use type-only imports and access the API through this service.
@@ -156,18 +156,14 @@ class Workspace extends Effect.Service<Workspace>()("Workspace", {
       useInfallible<T>(cb: (win: WorkspaceApi) => Thenable<T>) {
         return Effect.promise(() => cb(api));
       },
-      onDidChangeNotebookDocument(
-        factory: (
-          event: vscode.NotebookDocumentChangeEvent,
-        ) => Effect.Effect<void, never, never>,
-      ) {
-        return Effect.acquireRelease(
-          Effect.sync(() =>
-            api.onDidChangeNotebookDocument((event) =>
-              runPromise(factory(event)),
+      notebookDocumentChanges() {
+        return Stream.asyncPush<vscode.NotebookDocumentChangeEvent>((emit) =>
+          Effect.acquireRelease(
+            Effect.sync(() =>
+              api.onDidChangeNotebookDocument((evt) => emit.single(evt)),
             ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
           ),
-          (disposable) => Effect.sync(() => disposable.dispose()),
         );
       },
       applyEdit(edit: vscode.WorkspaceEdit) {
