@@ -1,5 +1,5 @@
-import { PythonExtension as VsCodePythonExtension } from "@vscode/python-extension";
-import { Effect } from "effect";
+import * as py from "@vscode/python-extension";
+import { Effect, FiberSet } from "effect";
 
 /**
  * Provides access to the VS Code Python extension API for
@@ -8,13 +8,28 @@ import { Effect } from "effect";
 export class PythonExtension extends Effect.Service<PythonExtension>()(
   "PythonExtension",
   {
-    effect: Effect.gen(function* () {
-      const api = yield* Effect.promise(() => VsCodePythonExtension.api());
+    scoped: Effect.gen(function* () {
+      const api = yield* Effect.promise(() => py.PythonExtension.api());
+      const runPromise = yield* FiberSet.makeRuntimePromise();
       return {
-        get environments() {
-          return api.environments;
+        getKnownEnvironments() {
+          return api.environments.known;
+        },
+        onDidChangeEnvironments(
+          factory: (
+            e: py.EnvironmentsChangeEvent,
+          ) => Effect.Effect<void, never, never>,
+        ) {
+          return Effect.acquireRelease(
+            Effect.sync(() =>
+              api.environments.onDidChangeEnvironments((evt) =>
+                runPromise(factory(evt)),
+              ),
+            ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          );
         },
       };
-    }).pipe(Effect.annotateLogs("service", "PythonExtension")),
+    }),
   },
 ) {}

@@ -2,7 +2,6 @@ import { Command, CommandExecutor } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 
 import { Data, Effect, Stream, String } from "effect";
-import { LoggerLive } from "../layers/Logger";
 
 // Helper function to collect stream output as a string
 const runString = <E, R>(
@@ -22,7 +21,7 @@ class MissingPyProjectError extends Data.TaggedError("MissingPyProjectError")<{
 }> {}
 
 export class Uv extends Effect.Service<Uv>()("Uv", {
-  dependencies: [NodeContext.layer, LoggerLive],
+  dependencies: [NodeContext.layer],
   scoped: Effect.gen(function* () {
     const executor = yield* CommandExecutor.CommandExecutor;
     const uv = createUv(executor);

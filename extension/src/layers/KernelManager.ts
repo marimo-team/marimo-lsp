@@ -1,11 +1,11 @@
-import { Effect, FiberSet, HashMap, Layer, Option, Queue, Ref } from "effect";
-import type * as vscode from "vscode";
-import { assert, unreachable } from "../assert.ts";
+import { Effect, FiberSet, Layer, Option, Queue } from "effect";
+import { unreachable } from "../assert.ts";
 import { routeOperation } from "../operations.ts";
 import { Config } from "../services/Config.ts";
+import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
-import { NotebookControllers } from "../services/NotebookControllers.ts";
+import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { Uv } from "../services/Uv.ts";
@@ -38,9 +38,10 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const config = yield* Config;
     const marimo = yield* LanguageClient;
     const channel = yield* OutputChannel;
+    const editors = yield* NotebookEditorRegistry;
     const renderer = yield* NotebookRenderer;
     const executions = yield* ExecutionRegistry;
-    const controllers = yield* NotebookControllers;
+    const controllers = yield* ControllerRegistry;
 
     const runPromise = yield* FiberSet.makeRuntimePromise();
 
@@ -59,10 +60,6 @@ export const KernelManagerLive = Layer.scopedDiscard(
       ),
     );
 
-    const editorsRef = yield* Ref.make(
-      HashMap.empty<NotebookUri, vscode.NotebookEditor>(),
-    );
-
     yield* Effect.forkScoped(
       Effect.gen(function* () {
         while (true) {
@@ -72,32 +69,21 @@ export const KernelManagerLive = Layer.scopedDiscard(
           );
           yield* Effect.logTrace(operation.op, operation);
 
-          const editor = yield* Ref.modify(editorsRef, (map) => {
-            const existing = HashMap.get(map, notebookUri);
-            if (Option.isSome(existing)) {
-              return [existing.value, map];
-            }
-            const editor = code.window
-              .getVisibleNotebookEditors()
-              .find((editor) => editor.notebook.uri.toString() === notebookUri);
-            assert(editor, `Expected notebook document for ${notebookUri}`);
-            return [editor, HashMap.set(map, notebookUri, editor)];
-          });
-
-          const controller = yield* controllers.getActiveController(
-            editor.notebook,
+          const editor = Option.getOrThrowWith(
+            yield* editors.getLastNotebookEditor(notebookUri),
+            () => new Error(`Expected NotebookEditor for ${notebookUri}`),
           );
-          assert(
-            Option.isSome(controller),
-            `Expected notebook controller for ${notebookUri}`,
+          const controller = Option.getOrThrowWith(
+            yield* controllers.getActiveController(editor.notebook),
+            () => new Error(`Expected NotebookController for ${notebookUri}`),
           );
 
           yield* routeOperation(operation, {
             code,
             config,
-            editor,
             executions,
-            controller: controller.value,
+            editor,
+            controller,
             renderer,
             runPromise,
             uv,
