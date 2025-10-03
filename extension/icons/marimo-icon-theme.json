@@ -1,12 +1,20 @@
 {
   "iconDefinitions": {
-    "_marimo_icon": {
-      "iconPath": "./marimo-file.png"
+    "_marimo_icon_dark": {
+      "iconPath": "./marimo-icon-dark.svg"
+    },
+    "_marimo_icon_light": {
+      "iconPath": "./marimo-icon-light.svg"
     }
   },
   "fileNames": {},
   "fileExtensions": {
-    "mo.py": "_marimo_icon"
+    "mo.py": "_marimo_icon_dark"
+  },
+  "light": {
+    "fileExtensions": {
+      "mo.py": "_marimo_icon_light"
+    }
   },
   "languageIds": {}
 }
