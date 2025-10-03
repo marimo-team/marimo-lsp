@@ -38,5 +38,6 @@ export default vite.defineConfig({
     include: ["src/**/*.test.ts"],
     // Extension tests live in tests/extension/
     exclude: ["tests/extension/**/*.test.ts"],
+    setupFiles: ["./src/__tests__/setup.ts"],
   },
 });

@@ -16,6 +16,13 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "iconThemes": [
+      {
+        "id": "marimo-file-icons",
+        "label": "Marimo File Icons",
+        "path": "./icons/marimo-icon-theme.json"
+      }
+    ],
     "configuration": {
       "title": "Marimo",
       "properties": {
@@ -183,6 +190,7 @@
     "@effect/language-service": "^0.40.1",
     "@effect/platform": "^0.92.1",
     "@effect/platform-node": "^0.98.2",
+    "@effect/vitest": "^0.26.0",
     "@marimo-team/frontend": "link:../../marimo/frontend",
     "@marimo-team/openapi": "link:../../marimo/packages/openapi",
     "@std/semver": "jsr:^1.0.5",
@@ -206,8 +214,9 @@
     "turbo": "^2.5.8",
     "typescript": "^5.9.3",
     "vite": "npm:rolldown-vite@^7.1.14",
-    "vitest": "^2.1.9",
-    "vscode-languageclient": "^9.0.1"
+    "vitest": "^3.2.4",
+    "vscode-languageclient": "^9.0.1",
+    "vscode-jsonrpc": "^8.2.1"
   },
   "packageManager": "pnpm@10.9.0"
 }

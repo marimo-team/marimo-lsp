@@ -32,7 +32,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
       const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
-      const marimo = yield* LanguageClient;
+      const client = yield* LanguageClient;
       const validator = yield* EnvironmentValidator;
       const serializer = yield* NotebookSerializer;
 
@@ -66,12 +66,17 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                   }),
                 );
                 const validEnv = yield* validator.validate(options.env);
-                return yield* marimo.run({
-                  notebookUri: getNotebookUri(notebook),
-                  executable: validEnv.executable,
-                  inner: {
-                    cellIds: cells.map((cell) => cell.document.uri.toString()),
-                    codes: cells.map((cell) => cell.document.getText()),
+                yield* client.executeCommand({
+                  command: "marimo.run",
+                  params: {
+                    notebookUri: getNotebookUri(notebook),
+                    executable: validEnv.executable,
+                    inner: {
+                      cellIds: cells.map((cell) =>
+                        cell.document.uri.toString(),
+                      ),
+                      codes: cells.map((cell) => cell.document.getText()),
+                    },
                   },
                 });
               }).pipe(
@@ -195,9 +200,12 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                     notebook: notebook.uri.toString(),
                   }),
                 );
-                return yield* marimo.interrupt({
-                  notebookUri: getNotebookUri(notebook),
-                  inner: {},
+                yield* client.executeCommand({
+                  command: "marimo.interrupt",
+                  params: {
+                    notebookUri: getNotebookUri(notebook),
+                    inner: {},
+                  },
                 });
               }).pipe(
                 Effect.catchAllCause((cause) =>
