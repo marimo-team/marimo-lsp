@@ -1,5 +1,6 @@
 import { type Brand, Effect, FiberSet } from "effect";
 import type * as vscode from "vscode";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -17,15 +18,13 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   {
     dependencies: [VsCode.Default, LanguageClient.Default],
     scoped: Effect.gen(function* () {
-      const notebookType = "marimo-notebook";
-
       const code = yield* VsCode;
       const marimo = yield* LanguageClient;
       const runPromise = yield* FiberSet.makeRuntimePromise();
 
       yield* Effect.logInfo("Setting up notebook serializer");
 
-      yield* code.workspace.registerNotebookSerializer(notebookType, {
+      yield* code.workspace.registerNotebookSerializer(NOTEBOOK_TYPE, {
         serializeNotebook(notebook) {
           return runPromise(
             Effect.gen(function* () {
@@ -79,11 +78,11 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       });
 
       return {
-        notebookType,
+        notebookType: NOTEBOOK_TYPE,
         isMarimoNotebookDocument(
           notebook: vscode.NotebookDocument,
         ): notebook is MarimoNotebookDocument {
-          return notebook.notebookType === notebookType;
+          return notebook.notebookType === NOTEBOOK_TYPE;
         },
       };
     }),
