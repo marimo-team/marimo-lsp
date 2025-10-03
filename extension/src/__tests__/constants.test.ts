@@ -10,7 +10,7 @@ describe("constants", () => {
     );
 
     // Extract command IDs from constants.ts
-    const constantCommands = new Set(Object.values(Commands));
+    const constantCommands = new Set<string>(Object.values(Commands));
 
     // Check that all commands from constants.ts appear in package.json
     for (const cmd of constantCommands) {
