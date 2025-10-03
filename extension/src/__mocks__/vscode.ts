@@ -78,6 +78,7 @@ export async function createVSCodeMock(vi: vitest.VitestUtils) {
       error: vi.fn().mockImplementation((...args) => console.error(...args)),
       warn: vi.fn().mockImplementation((...args) => console.warn(...args)),
       createLogger: vi.fn(),
+      dispose: vi.fn(),
     };
   });
 
@@ -288,6 +289,8 @@ export async function createVSCodeMock(vi: vitest.VitestUtils) {
     fsPath: value,
     toString: () => value,
   }));
+
+  vscode.NotebookEdit = vscode.NotebookEdit || {};
 
   return vscode;
 }
