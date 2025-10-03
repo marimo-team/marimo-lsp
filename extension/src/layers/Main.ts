@@ -1,10 +1,11 @@
 import { Layer } from "effect";
 import { Config } from "../services/Config.ts";
+import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { DebugAdapter } from "../services/DebugAdapter.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
-import { NotebookControllers } from "../services/NotebookControllers.ts";
+import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
@@ -23,15 +24,16 @@ import { RegisterCommandsLive } from "./RegisterCommands.ts";
 export const MainLive = LspLive.pipe(
   Layer.merge(RegisterCommandsLive),
   Layer.merge(KernelManagerLive),
-  Layer.provide(NotebookControllers.Default),
   Layer.provide(Uv.Default),
   Layer.provide(GitHubClient.Default),
   Layer.provide(DebugAdapter.Default),
   Layer.provide(NotebookRenderer.Default),
   Layer.provide(NotebookSerializer.Default),
-  Layer.provide(ExecutionRegistry.Default),
-  Layer.provide(PythonExtension.Default),
   Layer.provide(LanguageClient.Default),
+  Layer.provide(PythonExtension.Default),
+  Layer.provide(ExecutionRegistry.Default),
+  Layer.provide(ControllerRegistry.Default),
+  Layer.provide(NotebookEditorRegistry.Default),
   Layer.provide(Config.Default),
   Layer.provide(VsCode.Default),
   // Make sure we have logging setup before everything else

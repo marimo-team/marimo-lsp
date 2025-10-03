@@ -2,7 +2,7 @@ import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 import type { Config } from "./services/Config.ts";
 import type { ExecutionRegistry } from "./services/ExecutionRegistry.ts";
-import type { NotebookController } from "./services/NotebookControllers.ts";
+import type { NotebookController } from "./services/NotebookControllerFactory.ts";
 import type { NotebookRenderer } from "./services/NotebookRenderer.ts";
 import type { Uv } from "./services/Uv.ts";
 import type { VsCode } from "./services/VsCode.ts";

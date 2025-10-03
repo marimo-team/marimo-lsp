@@ -7,7 +7,7 @@ import {
   transitionCell,
 } from "../shared/cells.ts";
 import type { CellMessage } from "../types.ts";
-import type { NotebookController } from "./NotebookControllers.ts";
+import type { NotebookController } from "./NotebookControllerFactory.ts";
 import { VsCode } from "./VsCode.ts";
 
 export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
@@ -68,7 +68,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                   cell,
                   new ExecutionHandle({
                     runId: Option.getOrThrow(extractRunId(msg)),
-                    inner: controller.inner.createNotebookCellExecution(
+                    inner: controller.createNotebookCellExecution(
                       getNotebookCell(editor.notebook, cell.id),
                     ),
                   }),

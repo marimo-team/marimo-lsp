@@ -13,9 +13,12 @@ export class VsCodeError extends Data.TaggedError("VsCodeError")<{
 }> {}
 
 export class Window extends Effect.Service<Window>()("Window", {
-  effect: Effect.gen(function* () {
+  scoped: Effect.gen(function* () {
     const api = vscode.window;
     type WindowApi = typeof api;
+
+    const runPromise = yield* FiberSet.makeRuntimePromise();
+
     return {
       use<T>(cb: (win: WindowApi) => Thenable<T>) {
         return Effect.tryPromise({
@@ -37,6 +40,20 @@ export class Window extends Effect.Service<Window>()("Window", {
       },
       getVisibleNotebookEditors() {
         return api.visibleNotebookEditors;
+      },
+      onDidChangeActiveNotebookEditor(
+        factory: (
+          editor: Option.Option<vscode.NotebookEditor>,
+        ) => Effect.Effect<void, never, never>,
+      ) {
+        return Effect.acquireRelease(
+          Effect.sync(() =>
+            api.onDidChangeActiveNotebookEditor((editor) =>
+              Option.fromNullable(editor).pipe(factory, runPromise),
+            ),
+          ),
+          (disposable) => Effect.sync(() => disposable.dispose()),
+        );
       },
     };
   }),
