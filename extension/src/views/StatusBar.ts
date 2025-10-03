@@ -67,17 +67,16 @@ export class StatusBar extends Effect.Service<StatusBar>()("StatusBar", {
       ) {
         // Import the actual vscode module inside the callback
         return Effect.gen(function* () {
-          const vscode = yield* Effect.promise(() => import("vscode"));
+          const code = yield* VsCode;
           const alignmentValue =
             alignment === "Left"
-              ? vscode.StatusBarAlignment.Left
-              : vscode.StatusBarAlignment.Right;
+              ? code.StatusBarAlignment.Left
+              : code.StatusBarAlignment.Right;
 
-          const item = yield* Effect.acquireRelease(
-            Effect.sync(() =>
-              vscode.window.createStatusBarItem(id, alignmentValue, priority),
-            ),
-            (item) => Effect.sync(() => item.dispose()),
+          const item = yield* code.window.createStatusBarItem(
+            id,
+            alignmentValue,
+            priority,
           );
 
           return {
@@ -102,14 +101,12 @@ export class StatusBar extends Effect.Service<StatusBar>()("StatusBar", {
                 if (typeof tooltip === "string") {
                   item.tooltip = tooltip;
                 } else {
-                  item.tooltip = new vscode.MarkdownString(
+                  item.tooltip = new code.MarkdownString(
                     tooltip.value,
                     tooltip.supportHtml,
                   );
                   if (tooltip.isTrusted !== undefined) {
-                    (
-                      item.tooltip as typeof vscode.MarkdownString.prototype
-                    ).isTrusted = tooltip.isTrusted;
+                    item.tooltip.isTrusted = tooltip.isTrusted;
                   }
                 }
               });
@@ -129,7 +126,7 @@ export class StatusBar extends Effect.Service<StatusBar>()("StatusBar", {
              */
             setBackgroundColor(color: string) {
               return Effect.sync(() => {
-                item.backgroundColor = new vscode.ThemeColor(color);
+                item.backgroundColor = new code.ThemeColor(color);
               });
             },
 

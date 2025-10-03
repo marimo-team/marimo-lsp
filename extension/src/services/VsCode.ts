@@ -1,5 +1,4 @@
 import { Data, Effect, Either, FiberSet, Option } from "effect";
-
 // VsCode.ts is the centralized service that wraps the VS Code API.
 //
 // All other modules should use type-only imports and access the API through this service.
@@ -41,6 +40,22 @@ export class Window extends Effect.Service<Window>()("Window", {
       },
       getVisibleNotebookEditors() {
         return api.visibleNotebookEditors;
+      },
+      createTreeView<T>(viewId: string, options: vscode.TreeViewOptions<T>) {
+        return Effect.acquireRelease(
+          Effect.sync(() => api.createTreeView(viewId, options)),
+          (disposable) => Effect.sync(() => disposable.dispose()),
+        );
+      },
+      createStatusBarItem(
+        id: string,
+        alignment: vscode.StatusBarAlignment,
+        priority?: number,
+      ) {
+        return Effect.acquireRelease(
+          Effect.sync(() => api.createStatusBarItem(id, alignment, priority)),
+          (disposable) => Effect.sync(() => disposable.dispose()),
+        );
       },
       onDidChangeActiveNotebookEditor(
         factory: (
@@ -257,6 +272,12 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       DebugAdapterInlineImplementation: vscode.DebugAdapterInlineImplementation,
       ProcessLocation: vscode.ProgressLocation,
       ThemeIcon: vscode.ThemeIcon,
+      TreeItem: vscode.TreeItem,
+      TreeItemCollapsibleState: vscode.TreeItemCollapsibleState,
+      ThemeColor: vscode.ThemeColor,
+      StatusBarAlignment: vscode.StatusBarAlignment,
+      Uri: vscode.Uri,
+      MarkdownString: vscode.MarkdownString,
       // helper
       utils: {
         parseUri(value: string) {
