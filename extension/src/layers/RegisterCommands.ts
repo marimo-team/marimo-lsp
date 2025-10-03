@@ -1,7 +1,6 @@
 import * as NodePath from "node:path";
 import { Cause, Chunk, Effect, Either, Layer, Option } from "effect";
 import { GitHubClient } from "../services/GitHubClient.ts";
-import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { VsCode } from "../services/VsCode.ts";

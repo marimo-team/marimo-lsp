@@ -1,4 +1,4 @@
-import { Effect, FiberSet, Layer, Option, Queue } from "effect";
+import { Effect, FiberSet, Layer, Option, Queue, Stream } from "effect";
 import { unreachable } from "../assert.ts";
 import { routeOperation } from "../operations.ts";
 import { Config } from "../services/Config.ts";
@@ -46,17 +46,21 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const runPromise = yield* FiberSet.makeRuntimePromise();
 
     const queue = yield* Queue.unbounded<MarimoOperation>();
-    yield* client.onNotification("marimo/operation", (msg) =>
-      runPromise(
-        Effect.gen(function* () {
-          yield* Effect.logTrace("Recieved marimo/operation").pipe(
-            Effect.annotateLogs({
-              notebookUri: msg.notebookUri,
-              op: msg.operation.op,
-            }),
-          );
-          yield* Queue.offer(queue, msg);
-        }),
+
+    yield* Effect.forkScoped(
+      client.streamOf("marimo/operation").pipe(
+        Stream.mapEffect(
+          Effect.fnUntraced(function* (msg) {
+            yield* Effect.logTrace("Recieved marimo/operation").pipe(
+              Effect.annotateLogs({
+                notebookUri: msg.notebookUri,
+                op: msg.operation.op,
+              }),
+            );
+            yield* Queue.offer(queue, msg);
+          }),
+        ),
+        Stream.runDrain,
       ),
     );
 
