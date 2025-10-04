@@ -31,7 +31,7 @@ export class CellStatusBarProvider extends Effect.Service<CellStatusBarProvider>
               );
 
               if (hasMetadataChanges) {
-                yield* Effect.sync(() => onDidChangeCellStatusBarItems.fire());
+                onDidChangeCellStatusBarItems.fire();
               }
             }),
           ),
