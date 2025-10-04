@@ -124,6 +124,7 @@ class Workspace extends Effect.Service<Workspace>()("Workspace", {
   sync: () => {
     const api = vscode.workspace;
     type WorkspaceApi = typeof api;
+
     return {
       getNotebookDocuments() {
         return api.notebookDocuments;
@@ -234,6 +235,20 @@ class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
           (disposable) => Effect.sync(() => disposable.dispose()),
         );
       },
+      registerNotebookCellStatusBarItemProvider(
+        notebookType: string,
+        provider: vscode.NotebookCellStatusBarItemProvider,
+      ) {
+        return Effect.acquireRelease(
+          Effect.sync(() =>
+            api.registerNotebookCellStatusBarItemProvider(
+              notebookType,
+              provider,
+            ),
+          ),
+          (disposable) => Effect.sync(() => disposable.dispose()),
+        );
+      },
     };
   },
 }) {}
@@ -285,6 +300,8 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       NotebookCellOutput: vscode.NotebookCellOutput,
       NotebookCellOutputItem: vscode.NotebookCellOutputItem,
       NotebookEdit: vscode.NotebookEdit,
+      NotebookCellStatusBarItem: vscode.NotebookCellStatusBarItem,
+      NotebookCellStatusBarAlignment: vscode.NotebookCellStatusBarAlignment,
       WorkspaceEdit: vscode.WorkspaceEdit,
       EventEmitter: vscode.EventEmitter,
       DebugAdapterInlineImplementation: vscode.DebugAdapterInlineImplementation,
