@@ -51,7 +51,7 @@ export class CellStatusBarProvider extends Effect.Service<CellStatusBarProvider>
           const metadata = decodeCellMetadata(cell.metadata);
 
           // No metadata or not stale - don't show anything
-          if (!Option.isSome(metadata)) {
+          if (Option.isNone(metadata)) {
             return [];
           }
 
