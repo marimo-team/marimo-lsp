@@ -127,6 +127,12 @@ export async function createVSCodeMock(vi: vitest.VitestUtils) {
     }),
   });
 
+  vscode.notebooks.registerNotebookCellStatusBarItemProvider = vi
+    .fn()
+    .mockReturnValue({
+      dispose: vi.fn(),
+    });
+
   vscode.debug = vscode.debug || {};
   vscode.debug.registerDebugConfigurationProvider = vi.fn();
   vscode.debug.registerDebugAdapterDescriptorFactory = vi.fn().mockReturnValue({
@@ -291,6 +297,7 @@ export async function createVSCodeMock(vi: vitest.VitestUtils) {
   }));
 
   vscode.NotebookEdit = vscode.NotebookEdit || {};
+  vscode.NotebookCellStatusBarItem = vscode.NotebookCellStatusBarItem || {};
 
   return vscode;
 }
