@@ -1,4 +1,4 @@
-import { Effect, Either, Layer } from "effect";
+import { Effect, Either, Layer, Option } from "effect";
 import { logNever } from "@/utils/assertNever.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { StatusBar } from "./StatusBar.ts";
@@ -18,37 +18,35 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
     yield* code.commands.registerCommand(
       "marimo.showMarimoMenu",
       Effect.gen(function* () {
-        const selection = yield* code.window.useInfallible((api) =>
-          api.showQuickPick(
-            [
-              {
-                label: "$(question) View marimo documentation",
-                value: "documentation",
-              },
-              {
-                label: "$(bookmark) View tutorials",
-                value: "tutorials",
-              },
-              {
-                label: "$(comment-discussion) Join Discord community",
-                value: "discord",
-              },
-              {
-                label: "$(settings) Edit settings",
-                value: "settings",
-              },
-            ] as const,
+        const selection = yield* code.window.showQuickPickItems(
+          [
             {
-              placeHolder: "marimo",
+              label: "$(question) View marimo documentation",
+              value: "documentation",
             },
-          ),
+            {
+              label: "$(bookmark) View tutorials",
+              value: "tutorials",
+            },
+            {
+              label: "$(comment-discussion) Join Discord community",
+              value: "discord",
+            },
+            {
+              label: "$(settings) Edit settings",
+              value: "settings",
+            },
+          ] as const,
+          {
+            placeHolder: "marimo",
+          },
         );
 
-        if (!selection) {
+        if (Option.isNone(selection)) {
           return;
         }
 
-        switch (selection.value) {
+        switch (selection.value.value) {
           case "documentation": {
             yield* openUrl(code, DOCUMENTATION_URL);
             break;
@@ -69,7 +67,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
             break;
           }
           default: {
-            logNever(selection);
+            logNever(selection.value);
             break;
           }
         }
@@ -95,9 +93,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
  * Opens a URL in the default browser
  */
 function openUrl(code: VsCode, url: `https://${string}`) {
-  return code.env.useInfallible((api) =>
-    api.openExternal(Either.getOrThrow(code.utils.parseUri(url))),
-  );
+  return code.env.openExternal(Either.getOrThrow(code.utils.parseUri(url)));
 }
 
 // TODO: Open in local vscode instead of external browser
@@ -127,23 +123,21 @@ const TUTORIALS = [
  */
 function tutorialCommands(code: VsCode) {
   return Effect.gen(function* () {
-    const selection = yield* code.window.useInfallible((api) =>
-      api.showQuickPick(
-        TUTORIALS.map(([label, url, icon]) => ({
-          label,
-          description: url,
-          iconPath: new code.ThemeIcon(icon),
-        })),
-        {
-          placeHolder: "Select a tutorial",
-        },
-      ),
+    const selection = yield* code.window.showQuickPickItems(
+      TUTORIALS.map(([label, url, icon]) => ({
+        label,
+        description: url,
+        iconPath: new code.ThemeIcon(icon),
+      })),
+      {
+        placeHolder: "Select a tutorial",
+      },
     );
 
-    if (!selection) {
+    if (Option.isNone(selection)) {
       return;
     }
 
-    yield* openUrl(code, selection.description);
+    yield* openUrl(code, selection.value.description);
   });
 }

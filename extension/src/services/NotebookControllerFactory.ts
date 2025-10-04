@@ -32,7 +32,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
       const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
-      const client = yield* LanguageClient;
+      const marimo = yield* LanguageClient;
       const validator = yield* EnvironmentValidator;
       const serializer = yield* NotebookSerializer;
 
@@ -66,7 +66,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                   }),
                 );
                 const validEnv = yield* validator.validate(options.env);
-                yield* client.executeCommand({
+                yield* marimo.executeCommand({
                   command: "marimo.run",
                   params: {
                     notebookUri: getNotebookUri(notebook),
@@ -91,11 +91,9 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                         command: error.command.command,
                       }),
                     );
-                    yield* code.window.useInfallible((api) =>
-                      api.showErrorMessage(
-                        "Failed to execute marimo command. Please check the logs for details.",
-                        { modal: true },
-                      ),
+                    yield* code.window.showErrorMessage(
+                      "Failed to execute marimo command. Please check the logs for details.",
+                      { modal: true },
                     );
                   }),
                   EnvironmentInspectionError: Effect.fnUntraced(
@@ -103,19 +101,15 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                       yield* Effect.logError("Python venv check failed", error);
 
                       if (error.cause?._tag === "InvalidExecutableError") {
-                        yield* code.window.useInfallible((api) =>
-                          api.showErrorMessage(
-                            `Python executable does not exist for env: ${error.env.path}.`,
-                            { modal: true },
-                          ),
+                        yield* code.window.showErrorMessage(
+                          `Python executable does not exist for env: ${error.env.path}.`,
+                          { modal: true },
                         );
                       } else {
-                        yield* code.window.useInfallible((api) =>
-                          api.showErrorMessage(
-                            `Failed to check dependencies in ${formatControllerLabel(code, options.env)}.\n\n` +
-                              `Python path: ${error.env.path}`,
-                            { modal: true },
-                          ),
+                        yield* code.window.showErrorMessage(
+                          `Failed to check dependencies in ${formatControllerLabel(code, options.env)}.\n\n` +
+                            `Python path: ${error.env.path}`,
+                          { modal: true },
                         );
                       }
                     },
@@ -150,8 +144,9 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                           messages.join("\n") +
                           `\n\nPackages are missing or outdated.\n\nInstall with uv?`;
 
-                        const choice = yield* code.window.useInfallible((api) =>
-                          api.showErrorMessage(msg, { modal: true }, "Yes"),
+                        const choice = yield* code.window.showErrorMessage(
+                          msg,
+                          { modal: true, items: ["Yes"] },
                         );
                         if (!choice) {
                           return;
@@ -163,10 +158,8 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                         );
                         const venv = findVenvPath(options.env.path);
                         if (Option.isNone(venv)) {
-                          yield* code.window.useInfallible((api) =>
-                            api.showWarningMessage(
-                              `Package install failed. No venv found for ${options.env.path}`,
-                            ),
+                          yield* code.window.showWarningMessage(
+                            `Package install failed. No venv found for ${options.env.path}`,
                           );
                           return;
                         }
@@ -180,9 +173,9 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                           messages.join("\n") +
                           `\n\nPlease install or update the missing packages.`;
 
-                        yield* code.window.useInfallible((api) =>
-                          api.showErrorMessage(msg, { modal: true }),
-                        );
+                        yield* code.window.showErrorMessage(msg, {
+                          modal: true,
+                        });
                       }
                     },
                   ),
@@ -200,7 +193,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                     notebook: notebook.uri.toString(),
                   }),
                 );
-                yield* client.executeCommand({
+                yield* marimo.executeCommand({
                   command: "marimo.interrupt",
                   params: {
                     notebookUri: getNotebookUri(notebook),
@@ -211,10 +204,8 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                 Effect.catchAllCause((cause) =>
                   Effect.gen(function* () {
                     yield* Effect.logError(cause);
-                    yield* code.window.useInfallible((api) =>
-                      api.showErrorMessage(
-                        "Failed to interrupt execution. Please check the logs for details.",
-                      ),
+                    yield* code.window.showErrorMessage(
+                      "Failed to interrupt execution. Please check the logs for details.",
                     );
                   }),
                 ),

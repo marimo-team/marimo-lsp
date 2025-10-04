@@ -42,15 +42,13 @@ const newMarimoNotebook = ({
   serializer: NotebookSerializer;
 }) =>
   Effect.gen(function* () {
-    const doc = yield* code.workspace.use((api) =>
-      api.openNotebookDocument(
-        serializer.notebookType,
-        new code.NotebookData([
-          new code.NotebookCellData(code.NotebookCellKind.Code, "", "python"),
-        ]),
-      ),
+    const doc = yield* code.workspace.openUntitledNotebookDocument(
+      serializer.notebookType,
+      new code.NotebookData([
+        new code.NotebookCellData(code.NotebookCellKind.Code, "", "python"),
+      ]),
     );
-    yield* code.window.use((api) => api.showNotebookDocument(doc));
+    yield* code.window.showNotebookDocument(doc);
     yield* Effect.logInfo("Created new marimo notebook").pipe(
       Effect.annotateLogs({
         uri: doc.uri.toString(),
@@ -91,13 +89,11 @@ const createGist = ({
       return;
     }
 
-    const choice = yield* code.window.useInfallible((api) =>
-      api.showQuickPick(["Public", "Secret"], {
-        placeHolder: "Gist visibility",
-      }),
-    );
+    const choice = yield* code.window.showQuickPick(["Public", "Secret"], {
+      placeHolder: "Gist visibility",
+    });
 
-    if (!choice) {
+    if (Option.isNone(choice)) {
       // cancelled
       return;
     }
@@ -120,7 +116,7 @@ const createGist = ({
     const gist = yield* gh.Gists.create({
       payload: {
         description: filename,
-        public: choice === "Public",
+        public: choice.value === "Public",
         files: {
           [filename]: {
             content: new TextDecoder().decode(bytes),
@@ -131,14 +127,15 @@ const createGist = ({
 
     yield* Effect.logInfo(gist);
 
-    const selection = yield* code.window.useInfallible((api) =>
-      api.showInformationMessage(`Published Gist at ${gist.html_url}`, "Open"),
+    const selection = yield* code.window.showInformationMessage(
+      `Published Gist at ${gist.html_url}`,
+      { items: ["Open"] },
     );
 
     if (selection === "Open") {
       // Open the URL
-      yield* code.env.useInfallible((api) =>
-        api.openExternal(Either.getOrThrow(code.utils.parseUri(gist.html_url))),
+      yield* code.env.openExternal(
+        Either.getOrThrow(code.utils.parseUri(gist.html_url)),
       );
     }
   }).pipe(
@@ -199,9 +196,7 @@ const runStale = ({
 
     if (staleCells.length === 0) {
       yield* Effect.logInfo("No stale cells found");
-      yield* code.window.useInfallible((api) =>
-        api.showInformationMessage("No stale cells to run"),
-      );
+      yield* code.window.showInformationMessage("No stale cells to run");
       return;
     }
 

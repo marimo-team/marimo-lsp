@@ -25,12 +25,11 @@ export const LspLive = Layer.scopedDiscard(
         if (error.exec.command === "uv" && !isUvInstalled()) {
           yield* Effect.logError("uv is not installed in PATH");
 
-          const result = yield* code.window.useInfallible((api) =>
-            api.showErrorMessage(
-              "The marimo VS Code extension currently requires uv to be installed.",
-              "Install uv",
-              "Try Again",
-            ),
+          const result = yield* code.window.showErrorMessage(
+            "The marimo VS Code extension currently requires uv to be installed.",
+            {
+              items: ["Install uv", "Try Again"],
+            },
           );
 
           if (result === "Install uv") {
@@ -39,7 +38,7 @@ export const LspLive = Layer.scopedDiscard(
                 "https://docs.astral.sh/uv/getting-started/installation/",
               ),
             );
-            yield* code.env.useInfallible((api) => api.openExternal(uri));
+            yield* code.env.openExternal(uri);
           } else if (result === "Try Again") {
             // Reload the window to retry
             yield* code.commands.executeCommand(
@@ -51,10 +50,8 @@ export const LspLive = Layer.scopedDiscard(
             logNever(result);
           }
         } else {
-          yield* code.window.useInfallible((api) =>
-            api.showErrorMessage(
-              `marimo-lsp failed to start. See marimo logs for more info.`,
-            ),
+          yield* code.window.showErrorMessage(
+            `marimo-lsp failed to start. See marimo logs for more info.`,
           );
         }
       }),

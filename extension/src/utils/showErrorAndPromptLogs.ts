@@ -10,9 +10,9 @@ export const showErrorAndPromptLogs = (
   },
 ) =>
   deps.code.window
-    .useInfallible((api) =>
-      api.showErrorMessage(`${msg}\n\nSee logs for details.`, "Open Logs"),
-    )
+    .showErrorMessage(`${msg}\n\nSee logs for details.`, {
+      items: ["Open Logs"],
+    })
     .pipe(
       Effect.tap((selection) =>
         selection === "Open Logs"

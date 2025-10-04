@@ -1,4 +1,4 @@
-import { Data, Effect, Either, FiberSet, Option, Stream } from "effect";
+import { Data, Effect, Either, Fiber, FiberSet, Option, Stream } from "effect";
 // VsCode.ts is the centralized service that wraps the VS Code API.
 //
 // All other modules should use type-only imports and access the API through this service.
@@ -7,6 +7,7 @@ import { Data, Effect, Either, FiberSet, Option, Stream } from "effect";
 import * as vscode from "vscode";
 import type { AssertionError } from "../assert.ts";
 import type { MarimoCommandKey } from "../constants.ts";
+import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
   cause: unknown;
@@ -15,17 +16,67 @@ export class VsCodeError extends Data.TaggedError("VsCodeError")<{
 export class Window extends Effect.Service<Window>()("Window", {
   scoped: Effect.gen(function* () {
     const api = vscode.window;
-    type WindowApi = typeof api;
+    const runPromise = yield* FiberSet.makeRuntimePromise();
 
     return {
-      use<T>(cb: (win: WindowApi) => Thenable<T>) {
-        return Effect.tryPromise({
-          try: () => cb(api),
-          catch: (cause) => new VsCodeError({ cause }),
-        });
+      showInputBox(
+        options?: vscode.InputBoxOptions,
+      ): Effect.Effect<Option.Option<string>> {
+        return Effect.map(
+          Effect.promise((signal) =>
+            api.showInputBox(options, tokenFromSignal(signal)),
+          ),
+          Option.fromNullable,
+        );
       },
-      useInfallible<T>(cb: (win: WindowApi) => Thenable<T>) {
-        return Effect.promise(() => cb(api));
+      showInformationMessage<T extends string>(
+        message: string,
+        options: vscode.MessageOptions & { items?: readonly T[] } = {},
+      ) {
+        const { items = [], ...rest } = options;
+        return Effect.promise(() =>
+          api.showInformationMessage(message, rest, ...items),
+        );
+      },
+      showWarningMessage<T extends string>(
+        message: string,
+        options: vscode.MessageOptions & { items?: readonly T[] } = {},
+      ) {
+        const { items = [], ...rest } = options;
+        return Effect.promise(() =>
+          api.showWarningMessage(message, rest, ...items),
+        );
+      },
+      showErrorMessage<T extends string>(
+        message: string,
+        options: vscode.MessageOptions & { items?: readonly T[] } = {},
+      ) {
+        const { items = [], ...rest } = options;
+        return Effect.promise(() =>
+          api.showErrorMessage(message, rest, ...items),
+        );
+      },
+      showQuickPick(
+        items: readonly string[],
+        options: Omit<vscode.QuickPickOptions, "canPickMany"> = {},
+      ) {
+        return Effect.map(
+          Effect.promise((signal) =>
+            api.showQuickPick(items, options, tokenFromSignal(signal)),
+          ),
+          Option.fromNullable,
+        );
+      },
+      showQuickPickItems<T extends vscode.QuickPickItem>(
+        items: readonly T[],
+        options: Omit<vscode.QuickPickOptions, "canPickMany"> = {},
+      ) {
+        return Effect.map(
+          Effect.promise((signal) =>
+            api.showQuickPick(items, options, tokenFromSignal(signal)),
+          ),
+          Option.fromNullable,
+        );
       },
       createOutputChannel(name: string) {
         return Effect.acquireRelease(
@@ -69,6 +120,49 @@ export class Window extends Effect.Service<Window>()("Window", {
           ),
         );
       },
+      showNotebookDocument(
+        doc: vscode.NotebookDocument,
+        options?: vscode.NotebookDocumentShowOptions,
+      ) {
+        return Effect.promise(() => api.showNotebookDocument(doc, options));
+      },
+      withProgress(
+        options: {
+          location: vscode.ProgressLocation;
+          title: string;
+          cancellable: boolean;
+        },
+        fn: (
+          progress: vscode.Progress<{
+            message: string;
+            increment?: number;
+          }>,
+        ) => Effect.Effect<void, never, never>,
+      ) {
+        return Effect.promise((signal) =>
+          api.withProgress(options, (progress, token) =>
+            Effect.gen(function* () {
+              const fiber = yield* Effect.fork(fn(progress));
+              const kill = () => runPromise(Fiber.interrupt(fiber));
+
+              yield* Effect.acquireRelease(
+                Effect.sync(() => token.onCancellationRequested(kill)),
+                (disposable) => Effect.sync(() => disposable.dispose()),
+              );
+
+              yield* Effect.acquireRelease(
+                Effect.sync(() =>
+                  signal.addEventListener("abort", kill, { once: true }),
+                ),
+                () =>
+                  Effect.sync(() => signal.removeEventListener("abort", kill)),
+              );
+
+              yield* fiber.await;
+            }).pipe(Effect.scoped, runPromise),
+          ),
+        );
+      },
     };
   }),
 }) {}
@@ -102,10 +196,8 @@ class Commands extends Effect.Service<Commands>()("Commands", {
                   Effect.catchAllCause((cause) =>
                     Effect.gen(function* () {
                       yield* Effect.logError(cause);
-                      yield* win.useInfallible((api) =>
-                        api.showWarningMessage(
-                          `Something went wrong in ${JSON.stringify(command)}. See marimo logs for more info.`,
-                        ),
+                      yield* win.showWarningMessage(
+                        `Something went wrong in ${JSON.stringify(command)}. See marimo logs for more info.`,
                       );
                     }),
                   ),
@@ -123,8 +215,6 @@ class Commands extends Effect.Service<Commands>()("Commands", {
 class Workspace extends Effect.Service<Workspace>()("Workspace", {
   sync: () => {
     const api = vscode.workspace;
-    type WorkspaceApi = typeof api;
-
     return {
       getNotebookDocuments() {
         return api.notebookDocuments;
@@ -144,15 +234,6 @@ class Workspace extends Effect.Service<Workspace>()("Workspace", {
           (disposable) => Effect.sync(() => disposable.dispose()),
         );
       },
-      use<T>(cb: (workspace: WorkspaceApi) => Thenable<T>) {
-        return Effect.tryPromise({
-          try: () => cb(api),
-          catch: (cause) => new VsCodeError({ cause }),
-        });
-      },
-      useInfallible<T>(cb: (win: WorkspaceApi) => Thenable<T>) {
-        return Effect.promise(() => cb(api));
-      },
       notebookDocumentChanges() {
         return Stream.asyncPush<vscode.NotebookDocumentChangeEvent>((emit) =>
           Effect.acquireRelease(
@@ -166,6 +247,17 @@ class Workspace extends Effect.Service<Workspace>()("Workspace", {
       applyEdit(edit: vscode.WorkspaceEdit) {
         return Effect.promise(() => api.applyEdit(edit));
       },
+      openNotebookDocument(uri: vscode.Uri) {
+        return Effect.promise(() => api.openNotebookDocument(uri));
+      },
+      openUntitledNotebookDocument(
+        notebookType: string,
+        content?: vscode.NotebookData,
+      ) {
+        return Effect.promise(() =>
+          api.openNotebookDocument(notebookType, content),
+        );
+      },
     };
   },
 }) {}
@@ -173,16 +265,9 @@ class Workspace extends Effect.Service<Workspace>()("Workspace", {
 class Env extends Effect.Service<Env>()("Env", {
   sync: () => {
     const api = vscode.env;
-    type EnvApi = typeof api;
     return {
-      use<T>(cb: (win: EnvApi) => Thenable<T>) {
-        return Effect.tryPromise({
-          try: () => cb(api),
-          catch: (cause) => new VsCodeError({ cause }),
-        });
-      },
-      useInfallible<T>(cb: (win: EnvApi) => Thenable<T>) {
-        return Effect.promise(() => cb(api));
+      openExternal(target: vscode.Uri): Effect.Effect<boolean> {
+        return Effect.promise(() => api.openExternal(target));
       },
     };
   },
