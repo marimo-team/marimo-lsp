@@ -61,7 +61,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
       // Subscribe to stale state changes to update VSCode context
       yield* Effect.forkScoped(
-        Stream.changes(staleStateRef).pipe(
+        staleStateRef.changes.pipe(
           Stream.mapEffect(updateContext),
           Stream.runDrain,
         ),
@@ -214,7 +214,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
          * Get the changes stream for external subscriptions
          */
         get changes() {
-          return Stream.changes(staleStateRef);
+          return staleStateRef.changes;
         },
       };
     }),

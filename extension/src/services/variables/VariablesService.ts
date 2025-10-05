@@ -120,14 +120,14 @@ export class VariablesService extends Effect.Service<VariablesService>()(
          * Stream of variable declaration changes
          */
         streamVariablesChanges() {
-          return Stream.changes(variablesRef);
+          return variablesRef.changes;
         },
 
         /**
          * Stream of variable value changes
          */
         streamVariableValuesChanges() {
-          return Stream.changes(variableValuesRef);
+          return variableValuesRef.changes;
         },
       };
     }),
