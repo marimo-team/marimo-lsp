@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect";
 import { ExtensionContext } from "../services/Storage.ts";
 
-class Memento {
+export class Memento {
   #map = new Map<string, unknown>();
   keys() {
     return Array.from(this.#map.keys());
@@ -16,6 +16,10 @@ class Memento {
     this.#map.set(key, value);
   }
   setKeysForSync() {}
+
+  toJSON() {
+    return Object.fromEntries(this.#map.entries());
+  }
 }
 
 export const TestExtensionContextLive = Layer.succeed(ExtensionContext, {

@@ -14,10 +14,10 @@ const NotebookSerializerLive = Layer.scopedDiscard(
   }),
 ).pipe(
   Layer.provideMerge(NotebookSerializer.Default),
-  Layer.provide(TestLanguageClientLive),
+  Layer.provideMerge(TestLanguageClientLive),
 );
 
-describe("NotebookSerializer", () => {
+it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
   it("NOTEBOOK_TYPE matches package.json notebook type", () => {
     const notebookConfig = packageJson.contributes.notebooks.find(
       (nb) => nb.type === NOTEBOOK_TYPE,
@@ -26,8 +26,17 @@ describe("NotebookSerializer", () => {
     expect(notebookConfig?.type).toBe(NOTEBOOK_TYPE);
   });
 
-  it.scoped("serializes notebook cells to marimo format", () =>
-    Effect.gen(function* () {
+  it.effect(
+    "provides same notebookType as in package.json",
+    Effect.fnUntraced(function* () {
+      const serializer = yield* NotebookSerializer;
+      expect(serializer.notebookType).toBe(NOTEBOOK_TYPE);
+    }),
+  );
+
+  it.effect(
+    "serializes notebook cells to marimo format",
+    Effect.fnUntraced(function* () {
       const serializer = yield* NotebookSerializer;
       const bytes = yield* serializer.serializeEffect({
         cells: [
@@ -66,6 +75,6 @@ describe("NotebookSerializer", () => {
           app.run()
       "
     `);
-    }).pipe(Effect.provide(NotebookSerializerLive)),
+    }),
   );
 });
