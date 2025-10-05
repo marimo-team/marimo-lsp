@@ -1,11 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
-import { makeActivate } from "../../src/layers/Main.ts";
-import { ExtensionContext } from "../services/Storage.ts";
-import { TestExtensionContextLive } from "./TestExtensionContext.ts";
-import { TestLanguageClientLive } from "./TestLanguageClient.ts";
-import { TestPythonExtensionLive } from "./TestPythonExtension.ts";
-import { TestVsCodeLive } from "./TestVsCode.ts";
+import { Layer } from "effect";
+import { getExtensionContext } from "../__mocks__/TestExtensionContext.ts";
+import { TestLanguageClientLive } from "../__mocks__/TestLanguageClient.ts";
+import { TestPythonExtensionLive } from "../__mocks__/TestPythonExtension.ts";
+import { TestVsCodeLive } from "../__mocks__/TestVsCode.ts";
+import { makeActivate } from "../layers/Main.ts";
 
 const activate = makeActivate(
   Layer.empty.pipe(
@@ -16,15 +15,13 @@ const activate = makeActivate(
 );
 
 describe("extension", () => {
-  it.effect("activation returns disposable", () =>
-    Effect.gen(function* () {
-      const context = yield* ExtensionContext;
-      const disposable = yield* Effect.promise(() => activate(context));
-      expect(disposable).toMatchInlineSnapshot(`
+  it("activation returns disposable", async () => {
+    const context = await getExtensionContext();
+    const disposable = await activate(context);
+    expect(disposable).toMatchInlineSnapshot(`
       {
         "dispose": [Function],
       }
     `);
-    }).pipe(Effect.provide(TestExtensionContextLive)),
-  );
+  });
 });

@@ -1,4 +1,4 @@
-import { Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { ExtensionContext } from "../services/Storage.ts";
 
 class Memento {
@@ -22,3 +22,10 @@ export const TestExtensionContextLive = Layer.succeed(ExtensionContext, {
   globalState: new Memento(),
   workspaceState: new Memento(),
 });
+
+export async function getExtensionContext() {
+  return Effect.gen(function* () {
+    const context = yield* ExtensionContext;
+    return context;
+  }).pipe(Effect.provide(TestExtensionContextLive), Effect.runPromise);
+}

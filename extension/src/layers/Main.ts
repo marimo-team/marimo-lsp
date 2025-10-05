@@ -11,7 +11,6 @@ import type { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
-import { OutputChannel } from "../services/OutputChannel.ts";
 import type { PythonExtension } from "../services/PythonExtension.ts";
 import { ExtensionContext, Storage } from "../services/Storage.ts";
 import { Uv } from "../services/Uv.ts";
@@ -21,9 +20,9 @@ import { RecentNotebooksLive } from "../views/RecentNotebooks.ts";
 import { StatusBar } from "../views/StatusBar.ts";
 import { TreeView } from "../views/TreeView.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
-import { LoggerLive } from "./Logger.ts";
 import { LspLive } from "./Lsp.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
+import { OutputChannel } from "../services/OutputChannel.ts";
 
 /**
  * Main application layer that wires together all services and layers
@@ -48,7 +47,6 @@ const MainLive = LspLive.pipe(
   Layer.provide(StatusBar.Default),
   Layer.provide(Storage.Default),
   Layer.provide(Config.Default),
-  Layer.provide(LoggerLive),
   Layer.provide(OutputChannel.Default),
 );
 
