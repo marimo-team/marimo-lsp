@@ -29,7 +29,6 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
               }
 
               const notebookUri = getNotebookUri(editor.value.notebook);
-              yield* Log.info("Active notebook changed", { notebookUri });
 
               // Only track marimo notebooks
               if (!isMarimoNotebookDocument(editor.value.notebook)) {
@@ -41,6 +40,9 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
                 HashMap.set(map, notebookUri, editor.value),
               );
 
+              yield* Log.info("Active notebook changed", {
+                notebookUri,
+              });
               yield* SubscriptionRef.set(
                 activeNotebookRef,
                 Option.some(notebookUri),
