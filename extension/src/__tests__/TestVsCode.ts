@@ -878,16 +878,37 @@ class WorkspaceEdit implements vscode.WorkspaceEdit {
   has(uri: Uri): boolean {
     return this.#edits.has(uri.toString());
   }
-  set(uri: Uri, edits: any): void {
+
+  set(
+    uri: Uri,
+    edits:
+      | ReadonlyArray<NotebookEdit | vscode.SnippetTextEdit | vscode.TextEdit>
+      | ReadonlyArray<
+          [
+            edit: NotebookEdit | vscode.SnippetTextEdit | vscode.TextEdit,
+            metadata: unknown,
+          ]
+        >,
+  ): void {
     const key = uri.toString();
-    if (Array.isArray(edits[0])) {
+    function isTuples(
+      arr: typeof edits,
+    ): arr is ReadonlyArray<
+      [
+        edit: NotebookEdit | vscode.SnippetTextEdit | vscode.TextEdit,
+        metadata: unknown,
+      ]
+    > {
+      return Array.isArray(arr[0]);
+    }
+    if (isTuples(edits)) {
       // Array of tuples with metadata - extract just the edits
       this.#edits.set(
         key,
-        edits.map((e: any) => e[0]),
+        edits.map((e) => e[0]),
       );
     } else {
-      this.#edits.set(key, edits);
+      this.#edits.set(key, [...edits]);
     }
   }
   get(uri: Uri): TextEdit[] {
