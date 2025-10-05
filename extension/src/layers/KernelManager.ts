@@ -114,39 +114,42 @@ export const KernelManagerLive = Layer.scopedDiscard(
     );
 
     // renderer (i.e., front end) -> kernel
-    yield* renderer.onDidReceiveMessage(({ editor, message }) =>
-      runPromise(
-        Effect.gen(function* () {
-          const notebookUri = getNotebookUri(editor.notebook);
-          yield* Effect.logTrace("Renderer command").pipe(
-            Effect.annotateLogs({ command: message.command, notebookUri }),
-          );
-          switch (message.command) {
-            case "marimo.set_ui_element_value": {
-              yield* client.executeCommand({
-                command: message.command,
-                params: {
-                  notebookUri,
-                  inner: message.params,
-                },
-              });
-              return;
+    yield* Effect.forkScoped(
+      renderer.messages().pipe(
+        Stream.mapEffect(
+          Effect.fnUntraced(function* ({ editor, message }) {
+            const notebookUri = getNotebookUri(editor.notebook);
+            yield* Effect.logTrace("Renderer command").pipe(
+              Effect.annotateLogs({ command: message.command, notebookUri }),
+            );
+            switch (message.command) {
+              case "marimo.set_ui_element_value": {
+                yield* client.executeCommand({
+                  command: message.command,
+                  params: {
+                    notebookUri,
+                    inner: message.params,
+                  },
+                });
+                return;
+              }
+              case "marimo.function_call_request": {
+                yield* client.executeCommand({
+                  command: message.command,
+                  params: {
+                    notebookUri,
+                    inner: message.params,
+                  },
+                });
+                return;
+              }
+              default: {
+                unreachable(message, "Unknown message from frontend");
+              }
             }
-            case "marimo.function_call_request": {
-              yield* client.executeCommand({
-                command: message.command,
-                params: {
-                  notebookUri,
-                  inner: message.params,
-                },
-              });
-              return;
-            }
-            default: {
-              unreachable(message, "Unknown message from frontend");
-            }
-          }
-        }),
+          }),
+        ),
+        Stream.runDrain,
       ),
     );
   }),
