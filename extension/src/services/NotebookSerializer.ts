@@ -1,6 +1,7 @@
 import {
   type Brand,
   Effect,
+  Fiber,
   FiberSet,
   Option,
   type ParseResult,
@@ -84,12 +85,19 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       if (Option.isSome(code)) {
         // Register with VS Code if present
         const runPromise = yield* FiberSet.makeRuntimePromise();
+
         yield* code.value.workspace.registerNotebookSerializer(NOTEBOOK_TYPE, {
-          serializeNotebook(notebook) {
+          serializeNotebook(notebook, token) {
             return runPromise(
-              serializeEffect(notebook).pipe(
-                Effect.tapError((error) =>
-                  Effect.logError(`Notebook serialize failed.`, error),
+              Effect.gen(function* () {
+                const fiber = yield* Effect.fork(serializeEffect(notebook));
+                token.onCancellationRequested(() =>
+                  runPromise(Fiber.interrupt(fiber)),
+                );
+                return yield* Fiber.join(fiber);
+              }).pipe(
+                Effect.tapErrorCause((cause) =>
+                  Effect.logError(`Notebook serialize failed.`, cause),
                 ),
                 Effect.mapError(
                   () =>
@@ -97,15 +105,20 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                       `Failed to serialize notebook. See marimo logs for details.`,
                     ),
                 ),
-                Effect.annotateLogs("service", "NotebookSerializer"),
               ),
             );
           },
-          deserializeNotebook(bytes) {
+          deserializeNotebook(bytes, token) {
             return runPromise(
-              deserializeEffect(bytes).pipe(
-                Effect.tapError((error) =>
-                  Effect.logError(`Notebook deserialize failed.`, error),
+              Effect.gen(function* () {
+                const fiber = yield* Effect.fork(deserializeEffect(bytes));
+                token.onCancellationRequested(() =>
+                  runPromise(Fiber.interrupt(fiber)),
+                );
+                return yield* Fiber.join(fiber);
+              }).pipe(
+                Effect.tapErrorCause((cause) =>
+                  Effect.logError(`Notebook deserialize failed.`, cause),
                 ),
                 Effect.mapError(
                   () =>
@@ -113,7 +126,6 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                       `Failed to deserialize notebook. See marimo logs for details.`,
                     ),
                 ),
-                Effect.annotateLogs("service", "NotebookSerializer"),
               ),
             );
           },
