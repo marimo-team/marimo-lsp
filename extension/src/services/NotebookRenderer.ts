@@ -14,7 +14,7 @@ export class NotebookRenderer extends Effect.Service<NotebookRenderer>()(
       const code = yield* VsCode;
       // Defined in package.json
       const rendererId = "marimo-renderer";
-      const channel = code.notebooks.createRendererMessaging(rendererId);
+      const channel = yield* code.notebooks.createRendererMessaging(rendererId);
       return {
         rendererId,
         postMessage(

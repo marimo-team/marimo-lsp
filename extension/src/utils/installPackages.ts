@@ -9,7 +9,7 @@ export const installPackages = (
 ) =>
   code.window.withProgress(
     {
-      location: code.ProcessLocation.Notification,
+      location: code.ProgressLocation.Notification,
       title: `Installing ${packages.length > 1 ? "packages" : "package"}`,
       cancellable: true,
     },

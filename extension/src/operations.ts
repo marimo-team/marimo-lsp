@@ -101,15 +101,13 @@ function handleMissingPackageAlert(
       return;
     }
 
-    const choice = Option.fromNullable(
-      yield* code.window.showInformationMessage(
-        operation.packages.length === 1
-          ? `Missing package: ${operation.packages[0]}. Install with uv?`
-          : `Missing packages: ${operation.packages.join(", ")}. Install with uv?`,
-        {
-          items: ["Install All", "Customize..."],
-        },
-      ),
+    const choice = yield* code.window.showInformationMessage(
+      operation.packages.length === 1
+        ? `Missing package: ${operation.packages[0]}. Install with uv?`
+        : `Missing packages: ${operation.packages.join(", ")}. Install with uv?`,
+      {
+        items: ["Install All", "Customize..."],
+      },
     );
 
     if (Option.isNone(choice)) {
