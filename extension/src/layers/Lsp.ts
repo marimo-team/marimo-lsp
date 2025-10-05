@@ -1,5 +1,5 @@
 import * as NodeChildProcess from "node:child_process";
-import { Effect, Either, Option, Layer } from "effect";
+import { Effect, Either, Layer, Option } from "effect";
 import { logNever } from "@/utils/assertNever.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { VsCode } from "../services/VsCode.ts";

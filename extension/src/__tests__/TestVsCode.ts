@@ -14,7 +14,7 @@ import {
   Workspace,
 } from "../services/VsCode.ts";
 
-export const TestLanguageClientLive = Layer.scoped(
+export const TestVsCodeLive = Layer.scoped(
   VsCode,
   Effect.gen(function* () {
     return VsCode.make({
@@ -194,19 +194,18 @@ export const TestLanguageClientLive = Layer.scoped(
           return Effect.succeed(true);
         },
         openNotebookDocument(uri: vscode.Uri) {
-          return Effect.succeed(
-            new NotebookDocument({
-              uri,
-              notebookType: "marimo-notebook",
-            }),
-          );
+          return Effect.succeed(new NotebookDocument("marimo-notebook", uri));
         },
         openUntitledNotebookDocument(
           notebookType: string,
           content?: vscode.NotebookData,
         ) {
           return Effect.succeed(
-            new NotebookDocument({ content, notebookType }),
+            new NotebookDocument(
+              notebookType,
+              Uri.file("/mocks/foo_mo.py"),
+              content,
+            ),
           );
         },
       }),
@@ -290,8 +289,8 @@ export const TestLanguageClientLive = Layer.scoped(
         },
       }),
       auth: Auth.make({
-        getSession(provider, scopes, options) {
-          return Effect.sync(() => 10 as any);
+        getSession() {
+          return Effect.succeed(Option.none());
         },
       }),
       NotebookData,
@@ -310,9 +309,7 @@ export const TestLanguageClientLive = Layer.scoped(
       },
       WorkspaceEdit,
       EventEmitter,
-      DebugAdapterInlineImplementation: class {
-        constructor(_impl: vscode.DebugAdapter) {}
-      },
+      DebugAdapterInlineImplementation: class {},
       ProgressLocation: {
         SourceControl: 1,
         Window: 10,
@@ -897,13 +894,13 @@ class WorkspaceEdit implements vscode.WorkspaceEdit {
     const edits = this.#edits.get(uri.toString()) || [];
     return edits.filter((e) => e instanceof TextEdit) as TextEdit[];
   }
-  createFile(uri: Uri): void {
+  createFile(_uri: Uri): void {
     this.#fileOperationCount += 1;
   }
-  deleteFile(uri: Uri): void {
+  deleteFile(_uri: Uri): void {
     this.#fileOperationCount += 1;
   }
-  renameFile(oldUri: Uri, newUri: Uri): void {
+  renameFile(_oldUri: Uri, _newUri: Uri): void {
     this.#fileOperationCount += 1;
   }
   entries(): [Uri, TextEdit[]][] {
@@ -1093,27 +1090,19 @@ class NotebookDocument implements vscode.NotebookDocument {
   readonly isClosed: boolean;
   readonly metadata: Record<string, unknown>;
   readonly cellCount: number;
+
   #cells: vscode.NotebookCell[];
 
-  constructor(options: {
-    notebookType: string;
-    uri?: Uri;
-    content?: vscode.NotebookData;
-    version?: number;
-    isDirty?: boolean;
-    isClosed?: boolean;
-    isUntitled?: boolean;
-    metadata?: Record<string, unknown>;
-  }) {
-    this.uri = options.uri ?? Uri.file("/mock/notebook.marimo");
-    this.notebookType = options.notebookType;
-    this.version = options.version ?? 1;
-    this.isDirty = options.isDirty ?? false;
-    this.isUntitled = options.isUntitled ?? false;
-    this.isClosed = options.isClosed ?? false;
+  constructor(notebookType: string, uri: Uri, content?: vscode.NotebookData) {
+    this.uri = uri;
+    this.notebookType = notebookType;
+    this.version = 1;
+    this.isDirty = false;
+    this.isUntitled = false;
+    this.isClosed = false;
+    this.metadata = {};
 
-    const cellData = options.content?.cells ?? [];
-    this.metadata = options.content?.metadata ?? options.metadata ?? {};
+    const cellData = content?.cells ?? [];
     this.cellCount = cellData.length;
     this.#cells = cellData.map(
       (data, index) => new NotebookCell(this, data, index),
@@ -1134,7 +1123,7 @@ class NotebookDocument implements vscode.NotebookDocument {
     return this.#cells.slice(range.start, range.end);
   }
 
-  save(): Thenable<boolean> {
+  save() {
     return Promise.resolve(true);
   }
 }

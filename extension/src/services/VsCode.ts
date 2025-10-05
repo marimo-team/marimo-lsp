@@ -357,11 +357,14 @@ export class Auth extends Effect.Service<Auth>()("Auth", {
         scopes: ReadonlyArray<string>,
         options: vscode.AuthenticationGetSessionOptions,
       ) {
-        return Effect.tryPromise({
-          try: () =>
-            vscode.authentication.getSession(providerId, scopes, options),
-          catch: (cause) => new AuthError({ cause }),
-        }).pipe(Effect.map(Option.fromNullable));
+        return Effect.map(
+          Effect.tryPromise({
+            try: () =>
+              vscode.authentication.getSession(providerId, scopes, options),
+            catch: (cause) => new AuthError({ cause }),
+          }),
+          Option.fromNullable,
+        );
       },
     };
   }),
