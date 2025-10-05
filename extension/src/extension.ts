@@ -1,11 +1,11 @@
 import { Effect, Exit, Layer, Logger, LogLevel, pipe, Scope } from "effect";
 import type * as vscode from "vscode";
 
-import { MainLive } from "./layers/Main.ts";
+import { MainLiveVsCode } from "./layers/MainVsCode.ts";
 import { ExtensionContext } from "./services/Storage.ts";
 
 export async function activate(
-  context: vscode.ExtensionContext,
+  context: Pick<vscode.ExtensionContext, "globalState" | "workspaceState">,
 ): Promise<vscode.Disposable> {
   return pipe(
     Effect.gen(function* () {
@@ -15,7 +15,7 @@ export async function activate(
       // their lifetime to the manually-managed scope. Resources are only released
       // when we explicitly close the scope on deactivation.
       const scope = yield* Scope.make();
-      yield* Layer.buildWithScope(MainLive, scope);
+      yield* Layer.buildWithScope(MainLiveVsCode, scope);
       return {
         dispose: () => Effect.runPromise(Scope.close(scope, Exit.void)),
       };
