@@ -1,4 +1,4 @@
-import { Layer } from "effect";
+import { Layer, LogLevel } from "effect";
 import { LoggerLive } from "./layers/Logger.ts";
 import { makeActivate } from "./layers/Main.ts";
 import { LanguageClient } from "./services/LanguageClient.ts";
@@ -14,6 +14,7 @@ export const activate = makeActivate(
     Layer.provide(OutputChannel.Default),
     Layer.provideMerge(VsCode.Default),
   ),
+  LogLevel.All,
 );
 
 export async function deactivate() {

@@ -56,7 +56,10 @@ export const TestLanguageClientLive = Layer.effect(
         return Effect.gen(function* () {
           const conn = Option.getOrThrowWith(
             yield* Ref.get(ref),
-            () => new Error("Language server connection closed."),
+            () =>
+              new Error(
+                "marimo-lsp connection is closed. Forgot to call `LanguageClient.manage()`?",
+              ),
           );
           return yield* Effect.tryPromise({
             try: () =>
@@ -74,7 +77,10 @@ export const TestLanguageClientLive = Layer.effect(
             Effect.gen(function* () {
               const conn = Option.getOrThrowWith(
                 yield* Ref.get(ref),
-                () => new Error("Language server connection closed."),
+                () =>
+                  new Error(
+                    "marimo-lsp connection is closed. Forgot to call `LanguageClient.manage()`?",
+                  ),
               );
               return conn.onNotification(notification, (msg) =>
                 emit.single(msg),

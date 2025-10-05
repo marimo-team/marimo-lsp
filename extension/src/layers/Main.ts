@@ -1,4 +1,12 @@
-import { Effect, Exit, Layer, Logger, LogLevel, pipe, Scope } from "effect";
+import {
+  Effect,
+  Exit,
+  Layer,
+  Logger,
+  type LogLevel,
+  pipe,
+  Scope,
+} from "effect";
 import type * as vscode from "vscode";
 import { CellStateManager } from "../services/CellStateManager.ts";
 import { CellStatusBarProvider } from "../services/CellStatusBarProvider.ts";
@@ -11,6 +19,7 @@ import type { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
+import { OutputChannel } from "../services/OutputChannel.ts";
 import type { PythonExtension } from "../services/PythonExtension.ts";
 import { ExtensionContext, Storage } from "../services/Storage.ts";
 import { Uv } from "../services/Uv.ts";
@@ -22,7 +31,6 @@ import { TreeView } from "../views/TreeView.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
 import { LspLive } from "./Lsp.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
-import { OutputChannel } from "../services/OutputChannel.ts";
 
 /**
  * Main application layer that wires together all services and layers
@@ -52,6 +60,7 @@ const MainLive = LspLive.pipe(
 
 export function makeActivate(
   layer: Layer.Layer<LanguageClient | VsCode | PythonExtension>,
+  minimumLogLevel: LogLevel.LogLevel,
 ): (
   context: Pick<vscode.ExtensionContext, "globalState" | "workspaceState">,
 ) => Promise<vscode.Disposable> {
@@ -70,7 +79,7 @@ export function makeActivate(
         };
       }),
       Effect.provideService(ExtensionContext, context),
-      Logger.withMinimumLogLevel(LogLevel.All),
+      Logger.withMinimumLogLevel(minimumLogLevel),
       Effect.runPromise,
     );
 }

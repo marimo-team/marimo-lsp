@@ -4,7 +4,6 @@ import { decodeCellMetadata, isStaleCellMetadata } from "../schemas.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
-import { PythonExtension } from "../services/PythonExtension.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 

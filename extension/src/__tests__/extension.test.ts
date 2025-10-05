@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Layer } from "effect";
+import { Layer, LogLevel } from "effect";
 import { getExtensionContext } from "../__mocks__/TestExtensionContext.ts";
 import { TestLanguageClientLive } from "../__mocks__/TestLanguageClient.ts";
 import { TestPythonExtensionLive } from "../__mocks__/TestPythonExtension.ts";
@@ -12,6 +12,7 @@ const activate = makeActivate(
     Layer.provideMerge(TestLanguageClientLive),
     Layer.provideMerge(TestVsCodeLive),
   ),
+  LogLevel.Error,
 );
 
 describe("extension", () => {
