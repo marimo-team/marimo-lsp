@@ -81,6 +81,13 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
               );
 
               yield* Ref.update(ref, (map) => {
+                const handle = HashMap.get(map, cellId).pipe(
+                  Option.andThen((v) => v.pendingExecution),
+                );
+                if (Option.isSome(handle)) {
+                  // Need to clear existing
+                  handle.value.end(true);
+                }
                 const update = CellEntry.withExecution(
                   cell,
                   new ExecutionHandle({
