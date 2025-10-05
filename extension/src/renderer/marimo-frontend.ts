@@ -46,7 +46,7 @@ import "@marimo-team/frontend/unstable_internal/css/admonition.css";
 import "@marimo-team/frontend/unstable_internal/css/md-tooltip.css";
 import "@marimo-team/frontend/unstable_internal/css/table.css";
 
-import type { CellRuntimeState } from "../shared/cells.ts";
+import type { CellRuntimeState } from "../utils/transitionCell.ts";
 import type { MessageOperationOf } from "../types.ts";
 
 export { useTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";

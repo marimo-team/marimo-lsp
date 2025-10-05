@@ -14,7 +14,7 @@ import {
   type CellRuntimeState,
   createCellRuntimeState,
   transitionCell,
-} from "../shared/cells.ts";
+} from "../utils/transitionCell.ts";
 import { type CellMessage, getNotebookUri } from "../types.ts";
 import { CellStateManager } from "./CellStateManager.ts";
 import type { NotebookController } from "./NotebookControllerFactory.ts";
