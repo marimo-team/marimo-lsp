@@ -6,7 +6,12 @@ import type { NotebookController } from "./services/NotebookControllerFactory.ts
 import type { NotebookRenderer } from "./services/NotebookRenderer.ts";
 import type { Uv } from "./services/Uv.ts";
 import type { VsCode } from "./services/VsCode.ts";
-import type { MessageOperation, MessageOperationOf } from "./types.ts";
+import type { VariablesService } from "./services/variables/VariablesService.ts";
+import type {
+  MessageOperation,
+  MessageOperationOf,
+  NotebookUri,
+} from "./types.ts";
 import { findVenvPath } from "./utils/findVenvPath.ts";
 import { installPackages } from "./utils/installPackages.ts";
 
@@ -15,9 +20,11 @@ export const routeOperation = Effect.fn("routeOperation")(function* (
   deps: {
     runPromise: (e: Effect.Effect<void, never, never>) => Promise<void>;
     editor: vscode.NotebookEditor;
+    notebookUri: NotebookUri;
     executions: ExecutionRegistry;
     controller: NotebookController;
     renderer: NotebookRenderer;
+    variables: VariablesService;
     code: VsCode;
     uv: Uv;
     config: Config;
@@ -45,6 +52,15 @@ export const routeOperation = Effect.fn("routeOperation")(function* (
     case "missing-package-alert": {
       // Handle in a separate fork (we don't want to block resolution)
       deps.runPromise(handleMissingPackageAlert(operation, deps));
+      break;
+    }
+    // Update variable state
+    case "variables": {
+      yield* deps.variables.updateVariables(deps.notebookUri, operation);
+      break;
+    }
+    case "variable-values": {
+      yield* deps.variables.updateVariableValues(deps.notebookUri, operation);
       break;
     }
     // Forward to renderer (front end) (non-blocking)

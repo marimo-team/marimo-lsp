@@ -1,6 +1,7 @@
 import { Effect, HashMap, Option, Ref, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
 import { getNotebookUri, type NotebookUri } from "../types.ts";
+import { Log } from "../utils/log.ts";
 import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -22,17 +23,13 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         code.window.activeNotebookEditorChanges().pipe(
           Stream.mapEffect(
             Effect.fnUntraced(function* (editor) {
-              // TODO: should we filter out non-marimo notebooks?
-              // if (!isMarimoNotebookDocument(e.notebook)) {
-              //   return;
-              // }
-
               if (Option.isNone(editor)) {
                 yield* SubscriptionRef.set(activeNotebookRef, Option.none());
                 return;
               }
 
               const notebookUri = getNotebookUri(editor.value.notebook);
+              Log.info("Active notebook changed", { notebookUri });
 
               yield* Ref.update(ref, (map) =>
                 HashMap.set(map, notebookUri, editor.value),
@@ -75,7 +72,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         /**
          * Stream of active notebook URI changes
          */
-        get activeNotebookChanges() {
+        streamActiveNotebookChanges() {
           return Stream.changes(activeNotebookRef);
         },
       };

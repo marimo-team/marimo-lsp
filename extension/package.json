@@ -147,6 +147,11 @@
           "id": "marimo-explorer-recents",
           "name": "Recent Notebooks",
           "icon": "images/icon.png"
+        },
+        {
+          "id": "marimo-explorer-variables",
+          "name": "Variables",
+          "icon": "images/icon.png"
         }
       ]
     },
@@ -175,7 +180,7 @@
   },
   "scripts": {
     "prepare": "effect-language-service patch",
-    "build": "turbo build:renderer && turbo build:extension",
+    "build": "turbo build:renderer --no-cache && turbo build:extension --no-cache",
     "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
     "build:renderer": "vite build",
     "fix": "biome check --write",

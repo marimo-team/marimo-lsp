@@ -69,7 +69,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
       // Subscribe to active notebook changes to update VSCode context
       yield* Effect.forkScoped(
-        editorRegistry.activeNotebookChanges.pipe(
+        editorRegistry.streamActiveNotebookChanges().pipe(
           Stream.tap(() => updateContext),
           Stream.runDrain,
         ),
