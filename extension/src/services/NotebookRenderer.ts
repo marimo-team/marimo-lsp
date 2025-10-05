@@ -9,7 +9,6 @@ import { VsCode } from "./VsCode.ts";
 export class NotebookRenderer extends Effect.Service<NotebookRenderer>()(
   "NotebookRenderer",
   {
-    dependencies: [VsCode.Default],
     effect: Effect.gen(function* () {
       const code = yield* VsCode;
       // Defined in package.json

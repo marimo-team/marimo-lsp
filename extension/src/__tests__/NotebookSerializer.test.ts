@@ -11,7 +11,7 @@ const NotebookSerializerLive = Layer.scopedDiscard(
     yield* client.manage();
   }),
 ).pipe(
-  Layer.provideMerge(NotebookSerializer.DefaultWithoutDependencies),
+  Layer.provideMerge(NotebookSerializer.Default),
   Layer.provide(TestLanguageClientLive),
 );
 

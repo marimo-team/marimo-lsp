@@ -936,14 +936,15 @@ class WorkspaceEdit implements vscode.WorkspaceEdit {
   }
 }
 
-export class EventEmitter<T> implements vscode.EventEmitter<T> {
-  #emitter = new NodeEvents.EventEmitter();
-  #disposed = false;
-  event<T>(
+class EventEmitter<T> implements vscode.EventEmitter<T> {
+  #emitter: NodeEvents.EventEmitter = new NodeEvents.EventEmitter();
+  #disposed: boolean = false;
+
+  event = <T>(
     listener: (e: T) => unknown,
     thisArgs?: unknown,
     disposables?: vscode.Disposable[],
-  ) {
+  ) => {
     if (this.#disposed) {
       return { dispose: () => {} };
     }
@@ -958,7 +959,7 @@ export class EventEmitter<T> implements vscode.EventEmitter<T> {
       disposables.push(disposable);
     }
     return disposable;
-  }
+  };
 
   fire(data: T): void {
     if (this.#disposed) {
@@ -1112,7 +1113,7 @@ class NotebookDocument implements vscode.NotebookDocument {
   readonly metadata: Record<string, unknown>;
   readonly cellCount: number;
 
-  #cells: vscode.NotebookCell[];
+  private _cells: vscode.NotebookCell[];
 
   constructor(notebookType: string, uri: Uri, content?: vscode.NotebookData) {
     this.uri = uri;
@@ -1125,23 +1126,23 @@ class NotebookDocument implements vscode.NotebookDocument {
 
     const cellData = content?.cells ?? [];
     this.cellCount = cellData.length;
-    this.#cells = cellData.map(
+    this._cells = cellData.map(
       (data, index) => new NotebookCell(this, data, index),
     );
   }
 
   cellAt(index: number): vscode.NotebookCell {
-    if (index < 0 || index >= this.#cells.length) {
+    if (index < 0 || index >= this._cells.length) {
       throw new Error(`Cell index ${index} out of bounds`);
     }
-    return this.#cells[index];
+    return this._cells[index];
   }
 
   getCells(range?: vscode.NotebookRange): vscode.NotebookCell[] {
     if (!range) {
-      return this.#cells;
+      return this._cells;
     }
-    return this.#cells.slice(range.start, range.end);
+    return this._cells.slice(range.start, range.end);
   }
 
   save() {

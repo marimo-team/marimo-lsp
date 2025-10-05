@@ -26,7 +26,6 @@ import { VsCode } from "../services/VsCode.ts";
  * ```
  */
 export class TreeView extends Effect.Service<TreeView>()("TreeView", {
-  dependencies: [VsCode.Default],
   scoped: Effect.gen(function* () {
     yield* VsCode;
 

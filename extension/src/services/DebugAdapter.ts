@@ -11,11 +11,7 @@ import { VsCode } from "./VsCode.ts";
 export class DebugAdapter extends Effect.Service<DebugAdapter>()(
   "DebugAdapter",
   {
-    dependencies: [
-      NotebookSerializer.Default,
-      LanguageClient.Default,
-      VsCode.Default,
-    ],
+    dependencies: [NotebookSerializer.Default],
     scoped: Effect.gen(function* () {
       const debugType = "marimo";
 

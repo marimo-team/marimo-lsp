@@ -309,7 +309,7 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
 }) {}
 
 export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
-  sync: () => {
+  effect: Effect.sync(() => {
     const api = vscode.notebooks;
     return {
       createRendererMessaging(rendererId: string) {
@@ -342,7 +342,7 @@ export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
         );
       },
     };
-  },
+  }),
 }) {}
 
 export class AuthError extends Data.TaggedError("AuthError")<{

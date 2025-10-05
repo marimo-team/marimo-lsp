@@ -1,31 +1,30 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
-import { vi } from "vitest";
-import { MainLive } from "../../src/layers/Main.ts";
+import { makeActivate } from "../../src/layers/Main.ts";
 import { ExtensionContext } from "../services/Storage.ts";
 import { TestExtensionContextLive } from "./TestExtensionContext.ts";
 import { TestLanguageClientLive } from "./TestLanguageClient.ts";
 import { TestPythonExtensionLive } from "./TestPythonExtension.ts";
 import { TestVsCodeLive } from "./TestVsCode.ts";
 
-vi.mock("../../src/layers/MainVsCode.ts", () => ({
-  MainLiveVsCode: MainLive.pipe(
-    Layer.provide(TestPythonExtensionLive),
-    Layer.provide(TestVsCodeLive),
-    Layer.provide(TestLanguageClientLive),
+const activate = makeActivate(
+  Layer.empty.pipe(
+    Layer.provideMerge(TestPythonExtensionLive),
+    Layer.provideMerge(TestLanguageClientLive),
+    Layer.provideMerge(TestVsCodeLive),
   ),
-}));
-
-import { activate } from "../extension.ts";
+);
 
 describe("extension", () => {
-  it("activation returns expected interface", () =>
-    Effect.provide(
-      Effect.gen(function* () {
-        const context = yield* ExtensionContext;
-        const result = yield* Effect.tryPromise(() => activate(context));
-        expect(result).toMatchInlineSnapshot();
-      }),
-      TestExtensionContextLive,
-    ));
+  it.effect("activation returns disposable", () =>
+    Effect.gen(function* () {
+      const context = yield* ExtensionContext;
+      const disposable = yield* Effect.promise(() => activate(context));
+      expect(disposable).toMatchInlineSnapshot(`
+      {
+        "dispose": [Function],
+      }
+    `);
+    }).pipe(Effect.provide(TestExtensionContextLive)),
+  );
 });

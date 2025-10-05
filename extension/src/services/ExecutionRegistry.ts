@@ -23,7 +23,7 @@ import { VsCode } from "./VsCode.ts";
 export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
   "ExecutionRegistry",
   {
-    dependencies: [VsCode.Default, CellStateManager.Default],
+    dependencies: [CellStateManager.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const cellStateManager = yield* CellStateManager;

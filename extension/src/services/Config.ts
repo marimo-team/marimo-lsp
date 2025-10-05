@@ -5,7 +5,6 @@ import { VsCode } from "./VsCode.ts";
  * Provides access to the extension configuration settings.
  */
 export class Config extends Effect.Service<Config>()("Config", {
-  dependencies: [VsCode.Default],
   effect: Effect.gen(function* () {
     const code = yield* VsCode;
     return {

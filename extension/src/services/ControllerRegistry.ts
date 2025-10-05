@@ -30,11 +30,7 @@ interface NotebookControllerHandle {
 export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
   "ControllerRegistry",
   {
-    dependencies: [
-      VsCode.Default,
-      PythonExtension.Default,
-      NotebookControllerFactory.Default,
-    ],
+    dependencies: [NotebookControllerFactory.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const pyExt = yield* PythonExtension;

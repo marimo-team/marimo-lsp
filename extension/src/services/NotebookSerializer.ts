@@ -26,7 +26,6 @@ export type MarimoNotebookDocument = Brand.Branded<
 export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   "NotebookSerializer",
   {
-    dependencies: [LanguageClient.Default],
     scoped: Effect.gen(function* () {
       const client = yield* LanguageClient;
       const code = yield* Effect.serviceOption(VsCode);

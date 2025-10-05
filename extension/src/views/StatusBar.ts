@@ -48,7 +48,6 @@ export type StatusBarCommand = string;
  * ```
  */
 export class StatusBar extends Effect.Service<StatusBar>()("StatusBar", {
-  dependencies: [VsCode.Default],
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
 

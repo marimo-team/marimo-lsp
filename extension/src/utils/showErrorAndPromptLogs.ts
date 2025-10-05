@@ -16,5 +16,6 @@ export const showErrorAndPromptLogs = Effect.fnUntraced(function* (
 
   if (Option.isSome(selection)) {
     deps.channel.show();
+    return;
   }
 });
