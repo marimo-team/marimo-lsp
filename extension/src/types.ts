@@ -4,6 +4,8 @@ import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
 import type { MarimoNotebook } from "./schemas.ts";
 
+export type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
+
 type Schemas = Api["schemas"];
 
 export type MessageOperation = Schemas["KnownUnions"]["operation"];

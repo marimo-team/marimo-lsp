@@ -1,3 +1,6 @@
+// @ts-expect-error
+import { transitionCell as untypedTransitionCell } from "@marimo-team/frontend/unstable_internal/core/cells/cell.ts?nocheck";
+import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import {
   type Brand,
   Data,
@@ -11,11 +14,10 @@ import {
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import {
+  type CellMessage,
   type CellRuntimeState,
-  createCellRuntimeState,
-  transitionCell,
-} from "../shared/cells.ts";
-import { type CellMessage, getNotebookUri } from "../types.ts";
+  getNotebookUri,
+} from "../types.ts";
 import { CellStateManager } from "./CellStateManager.ts";
 import type { NotebookController } from "./NotebookControllerFactory.ts";
 import { VsCode } from "./VsCode.ts";
@@ -23,7 +25,7 @@ import { VsCode } from "./VsCode.ts";
 export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
   "ExecutionRegistry",
   {
-    dependencies: [VsCode.Default, CellStateManager.Default],
+    dependencies: [CellStateManager.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const cellStateManager = yield* CellStateManager;
@@ -319,4 +321,12 @@ function getNotebookCell(
     .find((c) => c.document.uri.toString() === cellId);
   assert(cell, `No cell id ${cellId} in notebook ${notebook.uri.toString()} `);
   return cell;
+}
+
+/* Type-safe wrapper around marimo's `transitionCell` we import above */
+function transitionCell(
+  cell: CellRuntimeState,
+  message: CellMessage,
+): CellRuntimeState {
+  return untypedTransitionCell(cell, message);
 }

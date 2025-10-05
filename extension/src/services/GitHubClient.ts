@@ -36,7 +36,7 @@ const GitHubApi = HttpApi.make("GitHubApi").add(
 export class GitHubClient extends Effect.Service<GitHubClient>()(
   "GitHubClient",
   {
-    dependencies: [VsCode.Default, FetchHttpClient.layer],
+    dependencies: [FetchHttpClient.layer],
     effect: Effect.gen(function* () {
       const code = yield* VsCode;
 

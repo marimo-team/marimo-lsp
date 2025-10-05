@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import type * as vscode from "vscode";
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 import { VsCode } from "./VsCode.ts";
@@ -9,12 +9,11 @@ import { VsCode } from "./VsCode.ts";
 export class NotebookRenderer extends Effect.Service<NotebookRenderer>()(
   "NotebookRenderer",
   {
-    dependencies: [VsCode.Default],
     effect: Effect.gen(function* () {
       const code = yield* VsCode;
       // Defined in package.json
       const rendererId = "marimo-renderer";
-      const channel = code.notebooks.createRendererMessaging(rendererId);
+      const channel = yield* code.notebooks.createRendererMessaging(rendererId);
       return {
         rendererId,
         postMessage(
@@ -23,15 +22,17 @@ export class NotebookRenderer extends Effect.Service<NotebookRenderer>()(
         ): Effect.Effect<boolean, never, never> {
           return Effect.promise(() => channel.postMessage(message, editor));
         },
-        onDidReceiveMessage(
-          cb: (msg: {
-            editor: vscode.NotebookEditor;
-            message: RendererCommand;
-          }) => void,
-        ) {
-          return Effect.acquireRelease(
-            Effect.sync(() => channel.onDidReceiveMessage((msg) => cb(msg))),
-            (disposable) => Effect.sync(() => disposable.dispose()),
+        messages(): Stream.Stream<{
+          editor: vscode.NotebookEditor;
+          message: RendererCommand;
+        }> {
+          return Stream.asyncPush((emit) =>
+            Effect.acquireRelease(
+              Effect.sync(() =>
+                channel.onDidReceiveMessage((msg) => emit.single(msg)),
+              ),
+              (disposable) => Effect.sync(() => disposable.dispose()),
+            ),
           );
         },
       };

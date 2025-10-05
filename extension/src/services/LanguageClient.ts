@@ -1,7 +1,6 @@
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
-import { Data, Effect, FiberSet, Option, type Scope, Stream } from "effect";
-import type * as vscode from "vscode";
+import { Data, Effect, Option, type Scope, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
 import type {
   MarimoCommand,
@@ -60,8 +59,6 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
           revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
         },
       );
-
-      const _runPromise = yield* FiberSet.makeRuntimePromise();
 
       return {
         manage() {

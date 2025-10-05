@@ -13,7 +13,6 @@ import { VsCode } from "./VsCode.ts";
 export class CellStatusBarProvider extends Effect.Service<CellStatusBarProvider>()(
   "CellStatusBarProvider",
   {
-    dependencies: [VsCode.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
 

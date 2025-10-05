@@ -34,8 +34,11 @@ export class Window extends Effect.Service<Window>()("Window", {
         options: vscode.MessageOptions & { items?: readonly T[] } = {},
       ) {
         const { items = [], ...rest } = options;
-        return Effect.promise(() =>
-          api.showInformationMessage(message, rest, ...items),
+        return Effect.map(
+          Effect.promise(() =>
+            api.showInformationMessage(message, rest, ...items),
+          ),
+          Option.fromNullable,
         );
       },
       showWarningMessage<T extends string>(
@@ -43,8 +46,9 @@ export class Window extends Effect.Service<Window>()("Window", {
         options: vscode.MessageOptions & { items?: readonly T[] } = {},
       ) {
         const { items = [], ...rest } = options;
-        return Effect.promise(() =>
-          api.showWarningMessage(message, rest, ...items),
+        return Effect.map(
+          Effect.promise(() => api.showWarningMessage(message, rest, ...items)),
+          Option.fromNullable,
         );
       },
       showErrorMessage<T extends string>(
@@ -52,8 +56,9 @@ export class Window extends Effect.Service<Window>()("Window", {
         options: vscode.MessageOptions & { items?: readonly T[] } = {},
       ) {
         const { items = [], ...rest } = options;
-        return Effect.promise(() =>
-          api.showErrorMessage(message, rest, ...items),
+        return Effect.map(
+          Effect.promise(() => api.showErrorMessage(message, rest, ...items)),
+          Option.fromNullable,
         );
       },
       showQuickPick(
@@ -174,7 +179,7 @@ type ExecutableCommand =
   | "setContext"
   | MarimoCommandKey;
 
-class Commands extends Effect.Service<Commands>()("Commands", {
+export class Commands extends Effect.Service<Commands>()("Commands", {
   dependencies: [Window.Default],
   scoped: Effect.gen(function* () {
     const win = yield* Window;
@@ -212,7 +217,7 @@ class Commands extends Effect.Service<Commands>()("Commands", {
   }),
 }) {}
 
-class Workspace extends Effect.Service<Workspace>()("Workspace", {
+export class Workspace extends Effect.Service<Workspace>()("Workspace", {
   sync: () => {
     const api = vscode.workspace;
     return {
@@ -262,7 +267,7 @@ class Workspace extends Effect.Service<Workspace>()("Workspace", {
   },
 }) {}
 
-class Env extends Effect.Service<Env>()("Env", {
+export class Env extends Effect.Service<Env>()("Env", {
   sync: () => {
     const api = vscode.env;
     return {
@@ -273,7 +278,7 @@ class Env extends Effect.Service<Env>()("Env", {
   },
 }) {}
 
-class Debug extends Effect.Service<Debug>()("Debug", {
+export class Debug extends Effect.Service<Debug>()("Debug", {
   scoped: Effect.gen(function* () {
     const api = vscode.debug;
     return {
@@ -303,11 +308,13 @@ class Debug extends Effect.Service<Debug>()("Debug", {
   }),
 }) {}
 
-class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
-  sync: () => {
+export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
+  effect: Effect.sync(() => {
     const api = vscode.notebooks;
     return {
-      createRendererMessaging: api.createRendererMessaging,
+      createRendererMessaging(rendererId: string) {
+        return Effect.succeed(api.createRendererMessaging(rendererId));
+      },
       createNotebookController(
         id: string,
         notebookType: string,
@@ -335,14 +342,14 @@ class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
         );
       },
     };
-  },
+  }),
 }) {}
 
-class AuthError extends Data.TaggedError("AuthError")<{
+export class AuthError extends Data.TaggedError("AuthError")<{
   cause: unknown;
 }> {}
 
-class Auth extends Effect.Service<Auth>()("Auth", {
+export class Auth extends Effect.Service<Auth>()("Auth", {
   effect: Effect.gen(function* () {
     return {
       getSession(
@@ -350,17 +357,20 @@ class Auth extends Effect.Service<Auth>()("Auth", {
         scopes: ReadonlyArray<string>,
         options: vscode.AuthenticationGetSessionOptions,
       ) {
-        return Effect.tryPromise({
-          try: () =>
-            vscode.authentication.getSession(providerId, scopes, options),
-          catch: (cause) => new AuthError({ cause }),
-        }).pipe(Effect.map(Option.fromNullable));
+        return Effect.map(
+          Effect.tryPromise({
+            try: () =>
+              vscode.authentication.getSession(providerId, scopes, options),
+            catch: (cause) => new AuthError({ cause }),
+          }),
+          Option.fromNullable,
+        );
       },
     };
   }),
 }) {}
 
-class ParseUriError extends Data.TaggedError("ParseUriError")<{
+export class ParseUriError extends Data.TaggedError("ParseUriError")<{
   cause: unknown;
 }> {}
 
@@ -390,7 +400,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       WorkspaceEdit: vscode.WorkspaceEdit,
       EventEmitter: vscode.EventEmitter,
       DebugAdapterInlineImplementation: vscode.DebugAdapterInlineImplementation,
-      ProcessLocation: vscode.ProgressLocation,
+      ProgressLocation: vscode.ProgressLocation,
       ThemeIcon: vscode.ThemeIcon,
       TreeItem: vscode.TreeItem,
       TreeItemCollapsibleState: vscode.TreeItemCollapsibleState,

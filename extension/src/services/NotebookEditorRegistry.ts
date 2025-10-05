@@ -7,7 +7,6 @@ import { VsCode } from "./VsCode.ts";
 export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistry>()(
   "NotebookEditorRegistry",
   {
-    dependencies: [VsCode.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const ref = yield* Ref.make(

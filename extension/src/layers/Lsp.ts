@@ -1,5 +1,5 @@
 import * as NodeChildProcess from "node:child_process";
-import { Effect, Either, Layer } from "effect";
+import { Effect, Either, Layer, Option } from "effect";
 import { logNever } from "@/utils/assertNever.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { VsCode } from "../services/VsCode.ts";
@@ -32,22 +32,29 @@ export const LspLive = Layer.scopedDiscard(
             },
           );
 
-          if (result === "Install uv") {
-            const uri = Either.getOrThrow(
-              code.utils.parseUri(
-                "https://docs.astral.sh/uv/getting-started/installation/",
-              ),
-            );
-            yield* code.env.openExternal(uri);
-          } else if (result === "Try Again") {
-            // Reload the window to retry
-            yield* code.commands.executeCommand(
-              "workbench.action.reloadWindow",
-            );
-          } else if (result === undefined) {
-            // dismissed
-          } else {
-            logNever(result);
+          if (Option.isNone(result)) {
+            // dissmissed
+            return;
+          }
+
+          switch (result.value) {
+            case "Install uv": {
+              const uri = Either.getOrThrow(
+                code.utils.parseUri(
+                  "https://docs.astral.sh/uv/getting-started/installation/",
+                ),
+              );
+              yield* code.env.openExternal(uri);
+              return;
+            }
+            case "Try Again": {
+              yield* code.commands.executeCommand(
+                "workbench.action.reloadWindow",
+              );
+              return;
+            }
+            default:
+              logNever(result.value);
           }
         } else {
           yield* code.window.showErrorMessage(

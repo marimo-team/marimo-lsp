@@ -132,7 +132,7 @@ const createGist = ({
       { items: ["Open"] },
     );
 
-    if (selection === "Open") {
+    if (Option.isSome(selection)) {
       // Open the URL
       yield* code.env.openExternal(
         Either.getOrThrow(code.utils.parseUri(gist.html_url)),
