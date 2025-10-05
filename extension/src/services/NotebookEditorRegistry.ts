@@ -29,7 +29,13 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
               }
 
               const notebookUri = getNotebookUri(editor.value.notebook);
-              Log.info("Active notebook changed", { notebookUri });
+              yield* Log.info("Active notebook changed", { notebookUri });
+
+              // Only track marimo notebooks
+              if (!isMarimoNotebookDocument(editor.value.notebook)) {
+                yield* SubscriptionRef.set(activeNotebookRef, Option.none());
+                return;
+              }
 
               yield* Ref.update(ref, (map) =>
                 HashMap.set(map, notebookUri, editor.value),
@@ -58,15 +64,6 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
          */
         getActiveNotebookUri() {
           return SubscriptionRef.get(activeNotebookRef);
-        },
-
-        /**
-         * Get all marimo notebook documents
-         */
-        getMarimoNotebookDocuments() {
-          return code.workspace
-            .getNotebookDocuments()
-            .filter((notebook) => isMarimoNotebookDocument(notebook));
         },
 
         /**
