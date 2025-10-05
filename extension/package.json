@@ -137,7 +137,7 @@
         {
           "id": "marimo-explorer",
           "title": "marimo",
-          "icon": "images/icon.png"
+          "icon": "images/small-icon.png"
         }
       ]
     },
@@ -146,12 +146,12 @@
         {
           "id": "marimo-explorer-recents",
           "name": "Recent Notebooks",
-          "icon": "images/icon.png"
+          "icon": "images/small-icon.png"
         },
         {
           "id": "marimo-explorer-variables",
           "name": "Variables",
-          "icon": "images/icon.png"
+          "icon": "images/small-icon.png"
         }
       ]
     },

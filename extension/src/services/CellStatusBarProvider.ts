@@ -22,7 +22,7 @@ export class CellStatusBarProvider extends Effect.Service<CellStatusBarProvider>
       // Listen to notebook document changes and emit events
       yield* Effect.forkScoped(
         code.workspace.notebookDocumentChanges().pipe(
-          Stream.tap(
+          Stream.mapEffect(
             Effect.fnUntraced(function* (event) {
               // Only process metadata changes
               const hasMetadataChanges = event.cellChanges.some(
