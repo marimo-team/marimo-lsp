@@ -8,6 +8,7 @@ import type {
   MarimoNotification,
   MarimoNotificationOf,
 } from "../types.ts";
+import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 import { Config } from "./Config.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -83,7 +84,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
                   command: cmd.command,
                   arguments: [cmd.params],
                 },
-                cancellationTokenFor(signal),
+                tokenFromSignal(signal),
               ),
             catch: (cause) => new ExecuteCommandError({ command: cmd, cause }),
           });
@@ -134,22 +135,3 @@ export const findLspExecutable = Effect.fnUntraced(function* () {
     args: ["run", "--directory", __dirname, "marimo-lsp"],
   };
 });
-
-function cancellationTokenFor(signal: AbortSignal): vscode.CancellationToken {
-  return {
-    get isCancellationRequested() {
-      return signal.aborted;
-    },
-    onCancellationRequested(listener, thisArgs, disposables) {
-      const handler = () => listener.call(thisArgs, undefined);
-      signal.addEventListener("abort", handler);
-      const disposable = {
-        dispose: () => signal.removeEventListener("abort", handler),
-      };
-      if (disposables) {
-        disposables.push(disposable);
-      }
-      return disposable;
-    },
-  };
-}

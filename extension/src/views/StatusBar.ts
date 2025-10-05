@@ -50,7 +50,7 @@ export type StatusBarCommand = string;
 export class StatusBar extends Effect.Service<StatusBar>()("StatusBar", {
   dependencies: [VsCode.Default],
   scoped: Effect.gen(function* () {
-    yield* VsCode;
+    const code = yield* VsCode;
 
     return {
       /**
@@ -67,7 +67,6 @@ export class StatusBar extends Effect.Service<StatusBar>()("StatusBar", {
       ) {
         // Import the actual vscode module inside the callback
         return Effect.gen(function* () {
-          const code = yield* VsCode;
           const alignmentValue =
             alignment === "Left"
               ? code.StatusBarAlignment.Left

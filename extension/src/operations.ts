@@ -102,14 +102,13 @@ function handleMissingPackageAlert(
     }
 
     const choice = Option.fromNullable(
-      yield* code.window.useInfallible((api) =>
-        api.showInformationMessage(
-          operation.packages.length === 1
-            ? `Missing package: ${operation.packages[0]}. Install with uv?`
-            : `Missing packages: ${operation.packages.join(", ")}. Install with uv?`,
-          "Install All",
-          "Customize...",
-        ),
+      yield* code.window.showInformationMessage(
+        operation.packages.length === 1
+          ? `Missing package: ${operation.packages[0]}. Install with uv?`
+          : `Missing packages: ${operation.packages.join(", ")}. Install with uv?`,
+        {
+          items: ["Install All", "Customize..."],
+        },
       ),
     );
 
@@ -126,15 +125,11 @@ function handleMissingPackageAlert(
     }
 
     if (choice.value === "Customize...") {
-      const response = yield* code.window
-        .useInfallible((api) =>
-          api.showInputBox({
-            prompt: "Add packages",
-            value: operation.packages.join(" "),
-            placeHolder: "package1 package2 package3",
-          }),
-        )
-        .pipe(Effect.map(Option.fromNullable));
+      const response = yield* code.window.showInputBox({
+        prompt: "Add packages",
+        value: operation.packages.join(" "),
+        placeHolder: "package1 package2 package3",
+      });
 
       if (Option.isNone(response)) {
         return;
