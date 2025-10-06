@@ -64,7 +64,7 @@ jobs:
         run: |
           cd marimo-lsp/extension
           pnpm install
-          pnpm turbo typecheck
+          pnpm turbo typecheck-ci
 
   typescript-test:
     name: TypeScript / Test / ${{ matrix.os }}
