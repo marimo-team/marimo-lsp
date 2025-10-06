@@ -1,4 +1,4 @@
-import { Effect, HashMap, Schema, SubscriptionRef } from "effect";
+import { Effect, HashMap, Option, Schema, SubscriptionRef } from "effect";
 import {
   type DependencyTreeNode,
   DependencyTreeResponse,
@@ -7,7 +7,10 @@ import {
 } from "../../schemas.ts";
 import type { NotebookUri } from "../../types.ts";
 import { Log } from "../../utils/log.ts";
+import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { LanguageClient } from "../LanguageClient.ts";
+import { NotebookEditorRegistry } from "../NotebookEditorRegistry.ts";
+import { VsCode } from "../VsCode.ts";
 
 // Re-export schema types for convenience
 export type { DependencyTreeNode };
@@ -41,6 +44,9 @@ export class PackagesService extends Effect.Service<PackagesService>()(
   {
     scoped: Effect.gen(function* () {
       const client = yield* LanguageClient;
+      const controllers = yield* ControllerRegistry;
+      const editors = yield* NotebookEditorRegistry;
+      const code = yield* VsCode;
 
       // Track package lists: NotebookUri -> PackageListState
       const packageListsRef = yield* SubscriptionRef.make(
@@ -209,6 +215,34 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               return existing.value.tree;
             }
 
+            // Get the executable from the active controller
+            const activeNotebookUri = yield* editors.getActiveNotebookUri();
+            if (Option.isNone(activeNotebookUri)) {
+              yield* Log.warn(
+                "No active notebook for fetching dependency tree",
+              );
+              return null;
+            }
+
+            const notebooks = yield* code.workspace.getNotebookDocuments();
+            const notebook = notebooks.find(
+              (nb) => nb.uri.toString() === activeNotebookUri.value,
+            );
+            if (!notebook) {
+              yield* Log.warn("Could not find notebook document");
+              return null;
+            }
+
+            const controller = yield* controllers.getActiveController(notebook);
+            if (Option.isNone(controller)) {
+              yield* Log.warn(
+                "No active controller for fetching dependency tree",
+              );
+              return null;
+            }
+
+            const executable = controller.value.env.path;
+
             // Set loading state
             yield* SubscriptionRef.update(dependencyTreesRef, (map) => {
               const current = HashMap.get(map, notebookUri);
@@ -225,6 +259,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                 command: "marimo.get_dependency_tree",
                 params: {
                   notebookUri,
+                  executable,
                   inner: {},
                 },
               })
@@ -245,10 +280,13 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                 Effect.catchAll((error) =>
                   Effect.gen(function* () {
                     const errorMsg = String(error);
-                    yield* Log.warn("Dependency tree failed, falling back to package list", {
-                      notebookUri,
-                      error: errorMsg,
-                    });
+                    yield* Log.warn(
+                      "Dependency tree failed, falling back to package list",
+                      {
+                        notebookUri,
+                        error: errorMsg,
+                      },
+                    );
 
                     // Fallback: fetch package list and convert to flat tree
                     const packageListRaw = yield* client
@@ -256,6 +294,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                         command: "marimo.get_package_list",
                         params: {
                           notebookUri,
+                          executable,
                           inner: {},
                         },
                       })
@@ -263,25 +302,31 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                         Effect.catchAll((fallbackError) =>
                           Effect.gen(function* () {
                             const fallbackErrorMsg = String(fallbackError);
-                            yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
-                              HashMap.set(map, notebookUri, {
-                                tree: null,
-                                loading: false,
-                                error: `${errorMsg}; fallback also failed: ${fallbackErrorMsg}`,
-                              }),
+                            yield* SubscriptionRef.update(
+                              dependencyTreesRef,
+                              (map) =>
+                                HashMap.set(map, notebookUri, {
+                                  tree: null,
+                                  loading: false,
+                                  error: `${errorMsg}; fallback also failed: ${fallbackErrorMsg}`,
+                                }),
                             );
-                            yield* Log.error("Package list fallback also failed", {
-                              notebookUri,
-                              error: fallbackErrorMsg,
-                            });
+                            yield* Log.error(
+                              "Package list fallback also failed",
+                              {
+                                notebookUri,
+                                error: fallbackErrorMsg,
+                              },
+                            );
                             return { packages: [] };
                           }),
                         ),
                       );
 
-                    const packageListResult = yield* Schema.decodeUnknown(
-                      ListPackagesResponse,
-                    )(packageListRaw);
+                    const packageListResult =
+                      yield* Schema.decodeUnknown(ListPackagesResponse)(
+                        packageListRaw,
+                      );
 
                     // Convert flat package list to flat tree
                     const flatTree: DependencyTreeNode = {

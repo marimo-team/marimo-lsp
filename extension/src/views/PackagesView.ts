@@ -176,7 +176,20 @@ export const PackagesViewLive = Layer.scopedDiscard(
 
         // Clear cache and force re-fetch
         yield* packagesService.setDependencyTreeLoading(notebookUri, true);
-        yield* packagesService.fetchDependencyTree(notebookUri);
+        yield* packagesService.fetchDependencyTree(notebookUri).pipe(
+          Effect.catchAll((error) =>
+            Effect.gen(function* () {
+              yield* Log.error("Failed to refresh packages", {
+                notebookUri,
+                error: String(error),
+              });
+              yield* packagesService.setDependencyTreeError(
+                notebookUri,
+                String(error),
+              );
+            }),
+          ),
+        );
       }),
     );
 

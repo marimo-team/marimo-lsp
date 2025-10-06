@@ -35,6 +35,7 @@ from marimo_lsp.models import (
     SessionCommand,
     SetUIElementValueRequest,
 )
+from marimo_lsp.package_manager import LspPackageManager
 from marimo_lsp.session_manager import LspSessionManager
 
 if TYPE_CHECKING:
@@ -210,10 +211,10 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         else:
             logger.warning(f"No session found for {args.notebook_uri}")
 
-    @command(server, "marimo.get_package_list", NotebookCommand[ListPackagesRequest])
+    @command(server, "marimo.get_package_list", SessionCommand[ListPackagesRequest])
     async def get_package_list(
         ls: LanguageServer,  # noqa: ARG001
-        args: NotebookCommand[ListPackagesRequest],
+        args: SessionCommand[ListPackagesRequest],
     ):
         logger.info(f"marimo.get_package_list for {args.notebook_uri}")
         session = manager.get_session(args.notebook_uri)
@@ -221,7 +222,10 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             logger.warning(f"No session found for {args.notebook_uri}")
             return {"packages": []}
 
-        package_manager = create_package_manager("uv")
+        package_manager = LspPackageManager(
+            delegate=create_package_manager("uv"),
+            venv_location=args.executable,
+        )
         if not package_manager.is_manager_installed():
             logger.warning(f"Package manager not installed for {args.notebook_uri}")
             return {"packages": []}
@@ -230,11 +234,11 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         return msgspec.to_builtins({"packages": packages})
 
     @command(
-        server, "marimo.get_dependency_tree", NotebookCommand[DependencyTreeRequest]
+        server, "marimo.get_dependency_tree", SessionCommand[DependencyTreeRequest]
     )
     async def get_dependency_tree(
         ls: LanguageServer,  # noqa: ARG001
-        args: NotebookCommand[DependencyTreeRequest],
+        args: SessionCommand[DependencyTreeRequest],
     ):
         logger.info(f"marimo.get_dependency_tree for {args.notebook_uri}")
         session = manager.get_session(args.notebook_uri)
@@ -242,7 +246,10 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             logger.warning(f"No session found for {args.notebook_uri}")
             return {"tree": None}
 
-        package_manager = create_package_manager("uv")
+        package_manager = LspPackageManager(
+            delegate=create_package_manager("uv"),
+            venv_location=args.executable,
+        )
 
         is_sandbox = False
         if is_sandbox:
@@ -375,7 +382,9 @@ def command(server: LanguageServer, name: str, type: type[T]) -> Callable:  # no
             @server.command(name)
             @wraps(func)
             async def wrapper(ls: LanguageServer, args: dict[str, Any]) -> Any:  # noqa: ANN401
-                return await func(ls, msgspec.convert(args, type=type))  # ty: ignore[invalid-await]
+                return await func(
+                    ls, msgspec.convert(args, type=type)
+                )  # ty: ignore[invalid-await]
 
             # Override annotations to prevent cattrs from inspecting
             wrapper.__annotations__ = {}

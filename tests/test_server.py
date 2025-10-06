@@ -323,7 +323,13 @@ async def test_marimo_get_package_list_no_session(client: LanguageClient) -> Non
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
             command="marimo.get_package_list",
-            arguments=[{"notebookUri": "file:///nonexistent.py", "inner": {}}],
+            arguments=[
+                {
+                    "notebookUri": "file:///nonexistent.py",
+                    "executable": sys.executable,
+                    "inner": {},
+                }
+            ],
         )
     )
 
@@ -382,7 +388,13 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
             command="marimo.get_package_list",
-            arguments=[{"notebookUri": "file:///package_test.py", "inner": {}}],
+            arguments=[
+                {
+                    "notebookUri": "file:///package_test.py",
+                    "executable": sys.executable,
+                    "inner": {},
+                }
+            ],
         )
     )
 
@@ -398,7 +410,13 @@ async def test_marimo_get_dependency_tree_no_session(client: LanguageClient) -> 
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
             command="marimo.get_dependency_tree",
-            arguments=[{"notebookUri": "file:///nonexistent.py", "inner": {}}],
+            arguments=[
+                {
+                    "notebookUri": "file:///nonexistent.py",
+                    "executable": sys.executable,
+                    "inner": {},
+                }
+            ],
         )
     )
 
@@ -457,7 +475,13 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
             command="marimo.get_dependency_tree",
-            arguments=[{"notebookUri": "file:///dep_tree_test.py", "inner": {}}],
+            arguments=[
+                {
+                    "notebookUri": "file:///dep_tree_test.py",
+                    "executable": sys.executable,
+                    "inner": {},
+                }
+            ],
         )
     )
 
