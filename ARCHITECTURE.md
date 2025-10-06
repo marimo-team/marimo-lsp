@@ -44,26 +44,31 @@ Language features provided through standard LSP:
 - `textDocument/codeAction` - Provide code action to convert Python/Jupyter
   files to marimo format
 - `textDocument/completion` - Cell code completions triggered by `@` character
+  for referencing other cell names
 
 ### 3. Custom LSP Commands
 
 Marimo-specific operations invoked by the extension:
 
 <a name="marimo.run" href="#marimo.run">#</a> **marimo.run** ·
-[Source](src/marimo_lsp/server.py#L109)
+[Source](src/marimo_lsp/server.py#L153)
 
-Executes cells with specified IDs in the marimo kernel.
+Executes cells with specified IDs in the marimo kernel. Creates or reuses a
+session for the given notebook and Python executable.
 
 ```typescript
-{
+SessionCommand<RunRequest> {
   notebookUri: string;
-  cellIds: string[];
-  codes: string[];
+  executable: string;  // Python interpreter path
+  inner: {
+    cellIds: string[];
+    codes: string[];
+  }
 }
 ```
 
 <a name="marimo.serialize" href="#marimo.serialize">#</a> **marimo.serialize** →
-`{source: string}` · [Source](src/marimo_lsp/server.py#L126)
+`{source: string}` · [Source](src/marimo_lsp/server.py#L210)
 
 Converts notebook document to marimo Python file format.
 
@@ -75,7 +80,7 @@ Converts notebook document to marimo Python file format.
 
 <a name="marimo.deserialize" href="#marimo.deserialize">#</a>
 **marimo.deserialize** → `NotebookSerialization` ·
-[Source](src/marimo_lsp/server.py#L143)
+[Source](src/marimo_lsp/server.py#L216)
 
 Converts marimo Python file to notebook document structure.
 
@@ -86,50 +91,74 @@ Converts marimo Python file to notebook document structure.
 ```
 
 <a name="marimo.set_ui_element_value" href="#marimo.set_ui_element_value">#</a>
-**marimo.set_ui_element_value** · [Source](src/marimo_lsp/server.py#L119)
+**marimo.set_ui_element_value** · [Source](src/marimo_lsp/server.py#L173)
 
 Updates UI element values from frontend interactions.
 
 ```typescript
-{
+NotebookCommand<SetUIElementValueRequest> {
   notebookUri: string;
-  object_id: string;
-  value: any;
+  inner: {
+    object_id: string;
+    value: any;
+  }
+}
+```
+
+<a name="marimo.function_call_request" href="#marimo.function_call_request">#</a>
+**marimo.function_call_request** · [Source](src/marimo_lsp/server.py#L185)
+
+Handles function call requests from UI elements (e.g., button clicks, form
+submissions).
+
+```typescript
+NotebookCommand<FunctionCallRequest> {
+  notebookUri: string;
+  inner: {
+    function_call_id: string;
+    args: Record<string, any>;
+    namespace: string;
+  }
 }
 ```
 
 <a name="marimo.interrupt" href="#marimo.interrupt">#</a>
-**marimo.interrupt** · [Source](src/marimo_lsp/server.py#L184)
+**marimo.interrupt** · [Source](src/marimo_lsp/server.py#L197)
 
-Interrupts kernel execution for the specified notebook, stopping all running cells.
+Interrupts kernel execution for the specified notebook, stopping all running
+cells by sending SIGINT to the kernel process.
 
 ```typescript
-{
+NotebookCommand<InterruptRequest> {
   notebookUri: string;
+  inner: {}
 }
 ```
 
 <a name="marimo.dap" href="#marimo.dap">#</a> **marimo.dap** ·
-[Source](src/marimo_lsp/server.py#L149)
+[Source](src/marimo_lsp/server.py#L222)
 
 Handles Debug Adapter Protocol requests. Responses are sent via `marimo/dap`
 notification.
 
 ```typescript
-{
-  sessionId: string;
+NotebookCommand<DebugAdapterRequest> {
   notebookUri: string;
-  message: DebugProtocolMessage;
+  inner: {
+    sessionId: string;
+    message: DebugProtocolMessage;
+  }
 }
 ```
 
 <a name="marimo.convert" href="#marimo.convert">#</a> **marimo.convert** ·
-[Source](src/marimo_lsp/server.py#L206)
+[Source](src/marimo_lsp/server.py#L237)
 
-Converts Python/Jupyter files to marimo format, creating a new `_mo.py` file.
+Converts Python/Jupyter files to marimo format, creating a new `_mo.py` file
+and opening it in the editor.
 
 ```typescript
-{
+ConvertRequest {
   uri: string; // File URI to convert
 }
 ```
@@ -139,19 +168,28 @@ Converts Python/Jupyter files to marimo format, creating a new `_mo.py` file.
 Server-to-client notifications for kernel updates:
 
 <a name="marimo/operation" href="#marimo/operation">#</a> **marimo/operation** ·
-[Source](src/marimo_lsp/session_consumer.py#L46)
+[Source](src/marimo_lsp/session_consumer.py#L48)
 
-Forwards kernel operations to the frontend.
+Forwards kernel operations to the frontend. This is the primary communication
+channel for all kernel state updates.
 
 ```typescript
 {
   notebookUri: string;
-  op: string; // Operation type (e.g., "cell-op")
-  data: any; // Operation-specific data
+  operation: MessageOperation; // Operation with type and data
 }
 ```
 
-Currently implemented: `cell-op` for cell execution state transitions.
+Currently implemented operations:
+- `cell-op` - Cell execution state transitions (queued, running, idle)
+- `variables` - Variable state updates for the variables panel
+- `data-column-preview` - Datasource column preview data
+- `data-table-preview` - Datasource table preview data
+- `interrupted` - Kernel interrupt notification
+- `alert` - Error and info messages to display to user
+- `package-install-start` - Package installation started
+- `package-install-complete` - Package installation completed
+- And other marimo kernel operations
 
 <a name="marimo/dap" href="#marimo/dap">#</a> **marimo/dap** ·
 [Source](src/marimo_lsp/debug_adapter.py#L59)
@@ -162,20 +200,18 @@ command).
 ```typescript
 {
   sessionId: string;
-  notebookUri: string;
   message: DebugProtocolMessage;
 }
 ```
 
 ## Components
 
-### LSP Server
+### Language Server
 
-The LSP server acts as the entry point, creating a `pygls.LanguageServer` that
-registers handlers for notebook lifecycle events. When a notebook opens
-(`notebookDocument/didOpen`), the `LspSessionManager` creates a marimo session
-for that file's URI (if there isn't one already), maintaining a one-to-one
-mapping between open notebooks and kernel sessions.
+The `pygls.LanguageServer` registers handlers for notebook lifecycle events,
+language features (code actions, completions), and custom commands. Sessions are
+lazily created on the first `marimo.run` command. The `LspSessionManager`
+maintains a mapping of notebook URI → marimo `Session`.
 
 > [!IMPORTANT]
 > This mapping is tied to the file's URI, which may be unstable (e.g., renamed
@@ -183,56 +219,62 @@ mapping between open notebooks and kernel sessions.
 > a session, cell URIs remain stable, enabling reliable references to both
 > notebooks and cells.
 
-The notebook document is kept in sync via LSP notifications
-(`notebookDocument/didChange`) and remains accessible on the LSP server even
-after it's closed or saved — provided the same VS Code session.
+### Session Manager
 
-### File Management
+The `LspSessionManager` creates and manages marimo `Session` objects. Each
+session contains a `QueueManager`, `LspKernelManager`, `LspAppFileManager`,
+`LspSessionConsumer`, and `ConfigManager`. Sessions are closed when the notebook
+is untitled and closed, the Python executable changes, or during shutdown.
 
-The custom `LspAppFileManager` adapts VS Code's notebook documents into marimo's
-App structure. Unlike marimo's standard file-based loading, it reads directly
-from the LSP's in-memory document state, tracking which cells have changed
-between reloads.
+### App File Manager
+
+The `LspAppFileManager` adapts VS Code's notebook documents into marimo's
+`InternalApp` structure. Unlike marimo's standard file-based loading, it reads
+from the LSP's in-memory document state via `sync_app_with_workspace()`, which
+extracts cell IDs, codes, configs, and names from the notebook document.
 
 ### Session Consumer
 
-For kernel communication, the `LspSessionConsumer` "consumes" kernel messages
-and forwards them as LSP notifications. This enables real-time updates of:
+The `LspSessionConsumer` implements marimo's `SessionConsumer` interface,
+forwarding kernel messages to VS Code via `marimo/operation` notifications.
+This enables real-time updates of cell execution status, outputs, variable
+state, UI elements, and package installation progress.
 
-- Cell execution status (queued, running, idle)
-- Cell outputs and console messages
-- Variable state and dependencies
-- UI element updates
+### Kernel Manager (TypeScript)
 
-### Cell Execution and State Management
+The `KernelManagerLive` layer (`extension/src/layers/KernelManager.ts`)
+orchestrates kernel operations by:
 
-The extension maintains cell runtime state through the `CellStateManager` which
-tracks:
+1. Consuming `marimo/operation` notifications from the LSP server
+2. Routing operations via `routeOperation()` to appropriate handlers
+3. Forwarding renderer messages (UI interactions) back to the kernel via LSP
+   commands
 
-- Cell execution status (queued, running, idle, disabled, stale)
-- Cell outputs (console logs, UI elements, errors)
-- Execution timing and timestamps
+### Cell State Manager (TypeScript)
 
-Cell execution follows this lifecycle:
+The `CellStateManager` (`extension/src/services/CellStateManager.ts`) tracks
+cell stale state. When a cell's content changes, it's marked as stale in the
+cell metadata and the `marimo.hasStaleCells` context key is updated for UI
+enablement (e.g., "Run Stale Cells" button).
 
-1. **Queued**: `NotebookCellExecution` created when cell is submitted
-2. **Running**: Execution started with timestamp, outputs begin streaming
-3. **Idle**: Execution completed, final outputs rendered, execution disposed
-4. **Interrupted**: Execution can be stopped via VS Code's interrupt button, which sends a SIGINT signal to the kernel
+### Execution Registry (TypeScript)
 
-### Frontend Integration
+The `ExecutionRegistry` (`extension/src/services/ExecutionRegistry.ts`) manages
+`NotebookCellExecution` objects for cells. It handles `cell-op` operations from
+the kernel, transitioning cells through queued → running → idle states, and
+manages output rendering.
 
-The VS Code extension includes a custom notebook renderer for marimo UI
-elements. The renderer (`marimo-renderer`) handles:
+### Notebook Renderer (TypeScript)
 
-- Rendering marimo UI components within notebook cells
-- Bidirectional communication with the kernel for UI interactions
-- Managing cell output state with `application/vnd.marimo.ui+json` MIME type
+The `NotebookRenderer` (`extension/src/services/NotebookRenderer.ts`) provides a
+custom renderer for marimo UI elements. It renders marimo components within
+notebook cells using the `application/vnd.marimo+html` MIME type and forwards UI
+interactions (e.g., `marimo.set_ui_element_value`, `marimo.function_call_request`)
+back to the kernel.
 
-### Debug Adapter Protocol (DAP) Support
+### Variables and Datasources (TypeScript)
 
-The LSP server supports debugging through the Debug Adapter Protocol:
-
-- DAP messages are forwarded via the `marimo.dap` command
-- Enables breakpoints, stepping, and variable inspection in marimo notebooks
-- Integrates with VS Code's native debugging UI
+The `VariablesService` and `DatasourcesService` maintain state for their
+respective tree views. They consume `variables`, `data-column-preview`, and
+`data-table-preview` operations, updating the views in real-time as the kernel
+sends updates.
