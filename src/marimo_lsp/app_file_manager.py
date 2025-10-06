@@ -122,7 +122,9 @@ def sync_app_with_workspace(
     names: list[str] = []
 
     for cell in notebook.cells:
-        cell_ids.append(CellId_t(cell.document))
+        # Extract cell ID from document URI fragment (e.g., "file:///test.py#cell1" -> "cell1")
+        cell_id = cell.document.split("#")[-1] if "#" in cell.document else cell.document
+        cell_ids.append(CellId_t(cell_id))
         codes.append(workspace.text_documents.get(cell.document) or "")
         configs.append((cell.metadata or {}).get("config", {}))
         names.append((cell.metadata or {}).get("name", "_"))

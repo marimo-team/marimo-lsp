@@ -409,6 +409,24 @@ x = 42\
             {
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
+                    "op": "cell-op",
+                    "cell_id": "cell1",
+                    "output": None,
+                    "console": None,
+                    "status": None,
+                    "stale_inputs": True,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {"op": "completed-run"},
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
                     "op": "variables",
                     "variables": IsList(
                         {"name": "sys", "declared_by": ["cell1"], "used_by": []},
@@ -426,6 +444,20 @@ x = 42\
                     "console": None,
                     "status": "queued",
                     "stale_inputs": None,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "cell1",
+                    "output": None,
+                    "console": None,
+                    "status": None,
+                    "stale_inputs": False,
                     "run_id": IsUUID(),
                     "serialization": None,
                     "timestamp": IsFloat(),
