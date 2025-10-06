@@ -3,8 +3,8 @@ import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/
 import { Effect } from "effect";
 import { TestVsCodeLive } from "../../__mocks__/TestVsCode.ts";
 import type { CellRuntimeState } from "../../types.ts";
+import { buildCellOutputs, type NotebookCellId } from "../ExecutionRegistry.ts";
 import { VsCode } from "../VsCode.ts";
-import { buildCellOutputs, NotebookCellId } from "../ExecutionRegistry.ts";
 
 const ExecutionRegistryTestLive = TestVsCodeLive;
 
@@ -50,11 +50,7 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
         ],
       };
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -76,11 +72,7 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
         ],
       };
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -114,11 +106,7 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
         ],
       };
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -144,11 +132,7 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
         },
       };
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -168,11 +152,7 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
         },
       };
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -192,11 +172,7 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
         },
       };
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -230,11 +206,7 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
         },
       };
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -256,11 +228,7 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
         ],
       };
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -272,11 +240,7 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
       const code = yield* VsCode;
       const state: CellRuntimeState = createCellRuntimeState();
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       // Should still have the marimo UI output
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
@@ -308,11 +272,7 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
         },
       };
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -346,11 +306,7 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
         ],
       };
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -390,11 +346,7 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
         },
       };
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -409,18 +361,13 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
         output: {
           mimetype: "application/vnd.marimo+traceback",
           channel: "output",
-          data: "<b>Traceback (most recent call last):</b>\n  File \"<stdin>\", line 1, in <module>\nTypeError: invalid value",
+          data: '<b>Traceback (most recent call last):</b>\n  File "<stdin>", line 1, in <module>\nTypeError: invalid value',
         },
       };
 
-      const outputs = buildCellOutputs(
-        CELL_ID,
-        state,
-        code,
-      );
+      const outputs = buildCellOutputs(CELL_ID, state, code);
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 });
-

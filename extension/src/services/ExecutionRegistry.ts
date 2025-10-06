@@ -5,11 +5,11 @@ import {
   type Brand,
   Data,
   Effect,
+  String as EffectString,
   HashMap,
   Option,
   Ref,
   Runtime,
-  String as EffectString,
 } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
@@ -18,10 +18,10 @@ import {
   type CellRuntimeState,
   getNotebookUri,
 } from "../types.ts";
+import { prettyErrorMessage } from "../utils/errors.ts";
 import { CellStateManager } from "./CellStateManager.ts";
 import type { NotebookController } from "./NotebookControllerFactory.ts";
 import { VsCode } from "./VsCode.ts";
-import { prettyErrorMessage } from "../utils/errors.ts";
 
 export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
   "ExecutionRegistry",
@@ -295,15 +295,17 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
         ).pipe(Effect.annotateLogs({ cellId }));
 
         const notebookCell = getNotebookCell(deps.editor.notebook, cellId);
-        const execution = deps.controller.createNotebookCellExecution(notebookCell);
+        const execution =
+          deps.controller.createNotebookCellExecution(notebookCell);
 
         execution.start();
         const outputs = buildCellOutputs(cellId, state, code);
         yield* Effect.tryPromise(() => execution.replaceOutput(outputs)).pipe(
           Effect.catchAllCause((cause) =>
-            Effect.logError("Failed to update cell output for ephemeral execution", cause).pipe(
-              Effect.annotateLogs({ cellId }),
-            ),
+            Effect.logError(
+              "Failed to update cell output for ephemeral execution",
+              cause,
+            ).pipe(Effect.annotateLogs({ cellId })),
           ),
         );
         execution.end(false);
@@ -504,8 +506,5 @@ function buildOutputItem(
   }
 
   // Default: treat as text
-  return code.NotebookCellOutputItem.text(
-    String(output.data),
-    output.mimetype,
-  );
+  return code.NotebookCellOutputItem.text(String(output.data), output.mimetype);
 }
