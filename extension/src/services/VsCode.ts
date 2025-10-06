@@ -1,11 +1,10 @@
-import { Data, Effect, Either, Fiber, FiberSet, Option, Stream } from "effect";
+import { Data, Effect, Either, Fiber, Option, Runtime, Stream } from "effect";
 // VsCode.ts is the centralized service that wraps the VS Code API.
 //
 // All other modules should use type-only imports and access the API through this service.
 //
 // biome-ignore lint: See above
 import * as vscode from "vscode";
-import type { AssertionError } from "../assert.ts";
 import type { MarimoCommandKey } from "../constants.ts";
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 
@@ -16,7 +15,7 @@ export class VsCodeError extends Data.TaggedError("VsCodeError")<{
 export class Window extends Effect.Service<Window>()("Window", {
   scoped: Effect.gen(function* () {
     const api = vscode.window;
-    const runPromise = yield* FiberSet.makeRuntimePromise();
+    const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
     return {
       showInputBox(
@@ -142,7 +141,7 @@ export class Window extends Effect.Service<Window>()("Window", {
             message: string;
             increment?: number;
           }>,
-        ) => Effect.Effect<void, never, never>,
+        ) => Effect.Effect<void>,
       ) {
         return Effect.promise((signal) =>
           api.withProgress(options, (progress, token) =>
@@ -163,7 +162,7 @@ export class Window extends Effect.Service<Window>()("Window", {
                   Effect.sync(() => signal.removeEventListener("abort", kill)),
               );
 
-              yield* fiber.await;
+              yield* Fiber.join(fiber);
             }).pipe(Effect.scoped, runPromise),
           ),
         );
@@ -184,19 +183,17 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
   scoped: Effect.gen(function* () {
     const win = yield* Window;
     const api = vscode.commands;
-    const runPromise = yield* FiberSet.makeRuntimePromise();
+    const runPromise = Runtime.runPromise(yield* Effect.runtime());
+
     return {
       executeCommand(command: ExecutableCommand, ...args: unknown[]) {
         return Effect.promise(() => api.executeCommand(command, ...args));
       },
-      registerCommand(
-        command: MarimoCommandKey,
-        effect: Effect.Effect<void, AssertionError | VsCodeError, never>,
-      ) {
+      registerCommand(command: MarimoCommandKey, effect: Effect.Effect<void>) {
         return Effect.acquireRelease(
           Effect.sync(() =>
             api.registerCommand(command, () =>
-              runPromise<never, void>(
+              runPromise(
                 effect.pipe(
                   Effect.catchAllCause((cause) =>
                     Effect.gen(function* () {
@@ -351,6 +348,7 @@ export class AuthError extends Data.TaggedError("AuthError")<{
 
 export class Auth extends Effect.Service<Auth>()("Auth", {
   effect: Effect.gen(function* () {
+    const api = vscode.authentication;
     return {
       getSession(
         providerId: "github" | "microsoft", // could be custom but these are default
@@ -359,8 +357,7 @@ export class Auth extends Effect.Service<Auth>()("Auth", {
       ) {
         return Effect.map(
           Effect.tryPromise({
-            try: () =>
-              vscode.authentication.getSession(providerId, scopes, options),
+            try: () => api.getSession(providerId, scopes, options),
             catch: (cause) => new AuthError({ cause }),
           }),
           Option.fromNullable,

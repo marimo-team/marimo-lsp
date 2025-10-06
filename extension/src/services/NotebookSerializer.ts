@@ -2,9 +2,9 @@ import {
   type Brand,
   Effect,
   Fiber,
-  FiberSet,
   Option,
   type ParseResult,
+  Runtime,
   Schema,
 } from "effect";
 import type * as vscode from "vscode";
@@ -83,7 +83,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
 
       if (Option.isSome(code)) {
         // Register with VS Code if present
-        const runPromise = yield* FiberSet.makeRuntimePromise();
+        const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
         yield* code.value.workspace.registerNotebookSerializer(NOTEBOOK_TYPE, {
           serializeNotebook(notebook, token) {

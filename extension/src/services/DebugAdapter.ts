@@ -1,4 +1,4 @@
-import { Effect, Fiber, FiberSet, Option, Stream } from "effect";
+import { Effect, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { LanguageClient } from "./LanguageClient.ts";
@@ -19,7 +19,9 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
       const client = yield* LanguageClient;
       const serializer = yield* NotebookSerializer;
 
-      const runFork = yield* FiberSet.makeRuntime();
+      const runtime = yield* Effect.runtime();
+      const runFork = Runtime.runFork(runtime);
+      const runPromise = Runtime.runPromise(runtime);
 
       const emitters = new Map<
         string,
@@ -51,7 +53,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
           return new code.DebugAdapterInlineImplementation({
             onDidSendMessage: emitter.event,
             handleMessage(message) {
-              runFork<never, void>(
+              runFork<void, never>(
                 Effect.gen(function* () {
                   yield* Effect.logDebug("Sending DAP message to LSP").pipe(
                     Effect.annotateLogs({
@@ -87,7 +89,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
 
       yield* code.debug.registerDebugConfigurationProvider(debugType, {
         resolveDebugConfiguration(_workspaceFolder, config) {
-          return runFork<never, vscode.DebugConfiguration | undefined>(
+          return runPromise<vscode.DebugConfiguration | undefined, never>(
             Effect.gen(function* () {
               yield* Effect.logInfo("Resolving debug configuration").pipe(
                 Effect.annotateLogs({ config }),
@@ -118,7 +120,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
               );
               return config;
             }),
-          ).pipe(Fiber.join, Effect.runPromise);
+          );
         },
       });
 

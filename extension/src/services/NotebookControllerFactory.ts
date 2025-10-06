@@ -1,6 +1,6 @@
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Brand, Data, Effect, FiberSet, Option } from "effect";
+import { Brand, Data, Effect, Option, Runtime } from "effect";
 import type * as vscode from "vscode";
 import { unreachable } from "../assert.ts";
 import { getNotebookUri } from "../types.ts";
@@ -34,7 +34,8 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
       const validator = yield* EnvironmentValidator;
       const serializer = yield* NotebookSerializer;
 
-      const runPromise = yield* FiberSet.makeRuntimePromise();
+      const runtime = yield* Effect.runtime();
+      const runPromise = Runtime.runPromise(runtime);
 
       return {
         createNotebookController: Effect.fnUntraced(function* (options: {

@@ -5,10 +5,10 @@ import {
   type Brand,
   Data,
   Effect,
-  FiberSet,
   HashMap,
   Option,
   Ref,
+  Runtime,
   String,
 } from "effect";
 import type * as vscode from "vscode";
@@ -39,7 +39,10 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
           return HashMap.empty();
         }),
       );
-      const runFork = yield* FiberSet.makeRuntime();
+
+      const runtime = yield* Effect.runtime();
+      const runFork = Runtime.runFork(runtime);
+
       return {
         handleInterrupted(editor: vscode.NotebookEditor) {
           return Ref.update(ref, (map) =>
