@@ -9,7 +9,7 @@ import {
   Option,
   Ref,
   Runtime,
-  String,
+  String as EffectString,
 } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
@@ -21,6 +21,7 @@ import {
 import { CellStateManager } from "./CellStateManager.ts";
 import type { NotebookController } from "./NotebookControllerFactory.ts";
 import { VsCode } from "./VsCode.ts";
+import { prettyErrorMessage } from "../utils/errors.ts";
 
 export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
   "ExecutionRegistry",
@@ -121,7 +122,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
               yield* Effect.logDebug("Cell execution started").pipe(
                 Effect.annotateLogs({ cellId }),
               );
-              yield* CellEntry.maybeUpdateCellOutput(update, code);
+              yield* CellEntry.maybeUpdateCellOutput(update, code, deps);
               return;
             }
 
@@ -132,7 +133,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                 );
               }
               // MUST modify cell output before `ExecutionHandle.end`
-              yield* CellEntry.maybeUpdateCellOutput(cell, code);
+              yield* CellEntry.maybeUpdateCellOutput(cell, code, deps);
 
               {
                 // FIXME: stdin/stdout are flushed every 10ms, so wait 50ms
@@ -155,7 +156,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                   }
 
                   const isDifferentRun = !Option.getEquivalence(
-                    String.Equivalence,
+                    EffectString.Equivalence,
                   )(fresh.value.lastRunId, lastRunId);
 
                   if (isDifferentRun) {
@@ -179,7 +180,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
             }
 
             default: {
-              yield* CellEntry.maybeUpdateCellOutput(cell, code);
+              yield* CellEntry.maybeUpdateCellOutput(cell, code, deps);
             }
           }
         }),
@@ -207,16 +208,8 @@ class ExecutionHandle extends Data.TaggedClass("ExecutionHandle")<{
     },
   ) {
     const { cellId, state, code } = options;
-    yield* Effect.tryPromise(() =>
-      execution.inner.replaceOutput(
-        new code.NotebookCellOutput([
-          code.NotebookCellOutputItem.json(
-            { cellId, state },
-            "application/vnd.marimo.ui+json",
-          ),
-        ]),
-      ),
-    ).pipe(
+    const outputs = buildCellOutputs(cellId, state, code);
+    yield* Effect.tryPromise(() => execution.inner.replaceOutput(outputs)).pipe(
       Effect.catchAllCause((cause) =>
         Effect.logError("Failed to update cell output", cause).pipe(
           Effect.annotateLogs({ cellId }),
@@ -285,10 +278,42 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
   static maybeUpdateCellOutput = Effect.fnUntraced(function* (
     cell: CellEntry,
     code: VsCode,
+    deps?: {
+      editor: vscode.NotebookEditor;
+      controller: NotebookController;
+    },
   ) {
     const { pendingExecution, id: cellId, state } = cell;
     if (Option.isNone(pendingExecution)) {
-      yield* Effect.logWarning("No pending execution to update.");
+      // If it is an error, the cell likely never got queued and errored during compilation.
+      // Create an ephemeral execution to display the error.
+      const hasError = state.output?.channel === "marimo-error";
+
+      if (hasError && deps) {
+        yield* Effect.logDebug(
+          "Creating ephemeral execution for marimo error without pending execution",
+        ).pipe(Effect.annotateLogs({ cellId }));
+
+        const notebookCell = getNotebookCell(deps.editor.notebook, cellId);
+        const execution = deps.controller.createNotebookCellExecution(notebookCell);
+
+        execution.start();
+        const outputs = buildCellOutputs(cellId, state, code);
+        yield* Effect.tryPromise(() => execution.replaceOutput(outputs)).pipe(
+          Effect.catchAllCause((cause) =>
+            Effect.logError("Failed to update cell output for ephemeral execution", cause).pipe(
+              Effect.annotateLogs({ cellId }),
+            ),
+          ),
+        );
+        execution.end(false);
+
+        return;
+      }
+
+      yield* Effect.logWarning("No pending execution to update.").pipe(
+        Effect.annotateLogs({ cellId }),
+      );
       return;
     }
     yield* ExecutionHandle.updateCellOutput(pendingExecution.value, {
@@ -310,7 +335,7 @@ function extractRunId(msg: CellMessage) {
   return Option.fromNullable(msg.run_id) as Option.Option<RunId>;
 }
 
-type NotebookCellId = Brand.Branded<string, "CellId">;
+export type NotebookCellId = Brand.Branded<string, "CellId">;
 function extractCellId(msg: CellMessage) {
   return msg.cell_id as NotebookCellId;
 }
@@ -332,4 +357,155 @@ function transitionCell(
   message: CellMessage,
 ): CellRuntimeState {
   return untypedTransitionCell(cell, message);
+}
+
+/**
+ * Builds VSCode NotebookCellOutput items from CellRuntimeState
+ * Separates outputs by channel (stdout, stderr, marimo-error, etc.)
+ */
+export function buildCellOutputs(
+  cellId: NotebookCellId,
+  state: CellRuntimeState,
+  code: VsCode,
+): vscode.NotebookCellOutput[] {
+  const outputs: vscode.NotebookCellOutput[] = [];
+
+  // Collect items by channel
+  const stdoutItems: vscode.NotebookCellOutputItem[] = [];
+  const stderrItems: vscode.NotebookCellOutputItem[] = [];
+  const stdinItems: vscode.NotebookCellOutputItem[] = [];
+  const errorItems: vscode.NotebookCellOutputItem[] = [];
+  const outputItems: vscode.NotebookCellOutputItem[] = [];
+
+  // Process console outputs (stdout, stderr, stdin)
+  if (state.consoleOutputs) {
+    for (const output of state.consoleOutputs) {
+      const item = buildOutputItem(output, code);
+      if (!item) continue;
+
+      switch (output.channel) {
+        case "stdout":
+          stdoutItems.push(item);
+          break;
+        case "stderr":
+          stderrItems.push(item);
+          break;
+        case "stdin":
+          stdinItems.push(item);
+          break;
+      }
+    }
+  }
+
+  // Process main output and errors
+  if (state.output) {
+    const item = buildOutputItem(state.output, code);
+    if (item) {
+      if (state.output.channel === "marimo-error") {
+        errorItems.push(item);
+      } else {
+        outputItems.push(item);
+      }
+    }
+  }
+
+  // Create NotebookCellOutputs for each channel with items
+  if (errorItems.length > 0) {
+    outputs.push(
+      new code.NotebookCellOutput(errorItems, {
+        channel: "marimo-error",
+      }),
+    );
+  }
+
+  if (stdoutItems.length > 0) {
+    outputs.push(
+      new code.NotebookCellOutput(stdoutItems, {
+        channel: "stdout",
+      }),
+    );
+  }
+
+  if (stderrItems.length > 0) {
+    outputs.push(
+      new code.NotebookCellOutput(stderrItems, {
+        channel: "stderr",
+      }),
+    );
+  }
+
+  if (stdinItems.length > 0) {
+    outputs.push(
+      new code.NotebookCellOutput(stdinItems, {
+        channel: "stdin",
+      }),
+    );
+  }
+
+  if (outputItems.length > 0) {
+    outputs.push(new code.NotebookCellOutput(outputItems));
+  }
+
+  return outputs;
+}
+
+/**
+ * Builds a single NotebookCellOutputItem from a CellOutput
+ */
+function buildOutputItem(
+  output: { mimetype: string; data: unknown; channel: string },
+  code: VsCode,
+): vscode.NotebookCellOutputItem | null {
+  // Handle stdout/stderr with proper VSCode helpers
+  if (output.mimetype === "text/plain") {
+    const text = String(output.data);
+    switch (output.channel) {
+      case "stdout":
+        return code.NotebookCellOutputItem.stdout(text);
+      case "stderr":
+        return code.NotebookCellOutputItem.stderr(text);
+      case "stdin":
+        return code.NotebookCellOutputItem.text(text, "text/plain");
+    }
+  }
+
+  // Handle traceback
+  if (output.mimetype === "application/vnd.marimo+traceback") {
+    return code.NotebookCellOutputItem.text(String(output.data), "text/html");
+  }
+
+  // Handle marimo errors
+  if (output.channel === "marimo-error" && Array.isArray(output.data)) {
+    // Convert marimo errors to VSCode Error objects
+    const errors = output.data.map((error) => {
+      const { type, ...rest } = error;
+      const message = Object.entries(rest)
+        .map(([key, value]) => `${key}: ${String(value)}`)
+        .join(", ");
+      return code.NotebookCellOutputItem.stderr(prettyErrorMessage(error));
+    });
+    return errors[0] || null;
+  }
+
+  // Handle HTML
+  if (output.mimetype === "text/html") {
+    return code.NotebookCellOutputItem.text(
+      String(output.data),
+      output.mimetype,
+    );
+  }
+
+  // Handle JSON outputs
+  if (
+    output.mimetype === "application/json" ||
+    typeof output.data === "object"
+  ) {
+    return code.NotebookCellOutputItem.json(output.data, output.mimetype);
+  }
+
+  // Default: treat as text
+  return code.NotebookCellOutputItem.text(
+    String(output.data),
+    output.mimetype,
+  );
 }
