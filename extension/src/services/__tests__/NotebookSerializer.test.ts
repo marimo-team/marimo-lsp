@@ -79,6 +79,68 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
     }),
   );
 
+  it.effect(
+    "serializes markdown notebook cells to marimo format",
+    Effect.fnUntraced(function* () {
+      const serializer = yield* NotebookSerializer;
+      const bytes = yield* serializer.serializeEffect({
+        cells: [
+          {
+            kind: 2,
+            value: "import marimo as mo",
+            languageId: "python",
+          },
+          {
+            kind: 1,
+            value: "# single line markdown",
+            languageId: "markdown",
+          },
+          {
+            kind: 1,
+            value: "- multiline\n-markdown",
+            languageId: "markdown",
+          },
+        ],
+      });
+      const serializedSource = new TextDecoder().decode(bytes).trim();
+      expect(removeGeneratedWith(serializedSource)).toMatchInlineSnapshot(`
+        "import marimo
+
+        __generated_with = ""
+        app = marimo.App()
+
+
+        @app.cell
+        def _():
+            import marimo as mo
+            return (mo,)
+
+
+        @app.cell
+        def _(mo):
+            mo.md(
+                r"""
+            # single line markdown
+            """)
+            return
+
+
+        @app.cell
+        def _(mo):
+            mo.md(
+                r"""
+            - multiline
+            -markdown
+            """)
+            return
+
+
+        if __name__ == "__main__":
+            app.run()"
+      `);
+    }),
+  );
+
   it.effect.each([
     ["simple notebook", "simple.txt"],
     ["notebook with named cells", "with_names.txt"],
