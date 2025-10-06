@@ -11,6 +11,9 @@
       "inputs": ["src/**/*.ts", "!src/renderer/**", "package.json"],
       "env": ["NODE_ENV", "MODE"]
     },
+    "patch-tsc": {
+      "inputs": ["package.json"]
+    },
     "typecheck": {},
     "typecheck-ci": {},
     "fix": {},
