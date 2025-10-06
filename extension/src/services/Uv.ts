@@ -26,10 +26,13 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
     const executor = yield* CommandExecutor.CommandExecutor;
     const uv = createUv(executor);
     return {
-      venv(path: string, options: { python?: string } = {}) {
+      venv(path: string, options: { python?: string; clear?: true } = {}) {
         const args = ["venv", path];
         if (options.python) {
           args.push("--python", options.python);
+        }
+        if (options.clear) {
+          args.push("--clear");
         }
         return uv({ args });
       },
