@@ -1,4 +1,4 @@
-import { Effect, FiberSet, Layer, Option, Queue, Stream } from "effect";
+import { Effect, Layer, Option, Queue, Runtime, Stream } from "effect";
 import { unreachable } from "../assert.ts";
 import { routeOperation } from "../operations.ts";
 import { Config } from "../services/Config.ts";
@@ -47,7 +47,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const variables = yield* VariablesService;
     const datasources = yield* DatasourcesService;
 
-    const runPromise = yield* FiberSet.makeRuntimePromise();
+    const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
     const queue = yield* Queue.unbounded<MarimoOperation>();
 

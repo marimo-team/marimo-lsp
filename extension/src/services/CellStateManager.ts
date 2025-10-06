@@ -32,9 +32,10 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
       // Helper to update context based on current state
       const updateContext = Effect.fnUntraced(function* () {
-        const staleMap = yield* SubscriptionRef.get(staleStateRef);
-        const activeMarimoNotebook =
-          yield* editorRegistry.getActiveNotebookUri();
+        const [staleMap, activeMarimoNotebook] = yield* Effect.all([
+          SubscriptionRef.get(staleStateRef),
+          editorRegistry.getActiveNotebookUri(),
+        ]);
 
         // Check if the active marimo notebook has any stale cells
         const hasStaleCells = Option.match(activeMarimoNotebook, {
