@@ -1,5 +1,5 @@
 import * as py from "@vscode/python-extension";
-import { Effect, Runtime } from "effect";
+import { Effect, Stream } from "effect";
 
 /**
  * Provides access to the VS Code Python extension API for
@@ -10,23 +10,20 @@ export class PythonExtension extends Effect.Service<PythonExtension>()(
   {
     scoped: Effect.gen(function* () {
       const api = yield* Effect.promise(() => py.PythonExtension.api());
-      const runPromise = Runtime.runPromise(yield* Effect.runtime());
       return {
-        getKnownEnvironments() {
-          return api.environments.known;
+        knownEnvironments() {
+          return Effect.succeed(api.environments.known);
         },
-        onDidChangeEnvironments(
-          factory: (
-            e: py.EnvironmentsChangeEvent,
-          ) => Effect.Effect<void, never, never>,
-        ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              api.environments.onDidChangeEnvironments((evt) =>
-                runPromise(factory(evt)),
+        environmentChanges() {
+          return Stream.asyncPush<py.EnvironmentsChangeEvent>((emit) =>
+            Effect.acquireRelease(
+              Effect.sync(() =>
+                api.environments.onDidChangeEnvironments((evt) =>
+                  emit.single(evt),
+                ),
               ),
+              (disposable) => Effect.sync(() => disposable.dispose()),
             ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
           );
         },
       };

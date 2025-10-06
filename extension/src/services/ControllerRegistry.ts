@@ -6,6 +6,7 @@ import {
   Option,
   Ref,
   Scope,
+  Stream,
   SynchronizedRef,
 } from "effect";
 import type * as vscode from "vscode";
@@ -58,7 +59,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       );
 
       const refresh = Effect.fnUntraced(function* () {
-        const envs = pyExt.getKnownEnvironments();
+        const envs = yield* pyExt.knownEnvironments();
         yield* Effect.logDebug("Refreshing controllers").pipe(
           Effect.annotateLogs({ environmentCount: envs.length }),
         );
@@ -80,7 +81,11 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       });
 
       yield* refresh();
-      yield* pyExt.onDidChangeEnvironments(refresh);
+      yield* Effect.forkScoped(
+        pyExt
+          .environmentChanges()
+          .pipe(Stream.mapEffect(refresh), Stream.runDrain),
+      );
 
       return {
         getActiveController(notebook: vscode.NotebookDocument) {
