@@ -238,7 +238,9 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
     const refreshDatasources = Effect.fnUntraced(function* () {
       const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
 
-      yield* Log.info("Refreshing datasources", { activeNotebookUri });
+      yield* Log.info("Refreshing datasources", {
+        activeNotebookUri: Option.getOrElse(activeNotebookUri, () => null),
+      });
       if (Option.isNone(activeNotebookUri)) {
         yield* Ref.set(datasourceItems, []);
         yield* provider.refresh();

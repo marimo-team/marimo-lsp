@@ -43,6 +43,8 @@ interface SessionScoped<T> extends NotebookScoped<T> {
 
 type RunRequest = Schemas["RunRequest"];
 type SetUIElementValueRequest = Schemas["SetUIElementValueRequest"];
+type ListPackagesResponse = Schemas["ListPackagesResponse"];
+type DependencyTreeResponse = Schemas["DependencyTreeResponse"];
 type FunctionCallRequest = Schemas["FunctionCallRequest"];
 interface DeserializeRequest {
   source: string;
@@ -56,6 +58,10 @@ interface DebugAdapterRequest {
 }
 // biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type InterruptRequest = {};
+// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
+type ListPackagesRequest = {};
+// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
+type DependencyTreeRequest = {};
 
 // client -> language server
 type MarimoCommandMap = {
@@ -66,6 +72,8 @@ type MarimoCommandMap = {
   "marimo.interrupt": NotebookScoped<InterruptRequest>;
   "marimo.serialize": SerializeRequest;
   "marimo.deserialize": DeserializeRequest;
+  "marimo.get_package_list": NotebookScoped<ListPackagesRequest>;
+  "marimo.get_dependency_tree": NotebookScoped<DependencyTreeRequest>;
 };
 
 type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {

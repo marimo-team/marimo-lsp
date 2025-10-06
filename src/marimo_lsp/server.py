@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar, cast
 import lsprotocol.types as lsp
 import msgspec
 from marimo._convert.converters import MarimoConvert
+from marimo._runtime.packages.package_managers import create_package_manager
 from marimo._runtime.requests import FunctionCallRequest
 from marimo._schemas.serialization import NotebookSerialization
 from marimo._utils.parse_dataclass import parse_raw
@@ -24,8 +25,10 @@ from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     ConvertRequest,
     DebugAdapterRequest,
+    DependencyTreeRequest,
     DeserializeRequest,
     InterruptRequest,
+    ListPackagesRequest,
     NotebookCommand,
     RunRequest,
     SerializeRequest,
@@ -207,6 +210,49 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         else:
             logger.warning(f"No session found for {args.notebook_uri}")
 
+    @command(server, "marimo.get_package_list", NotebookCommand[ListPackagesRequest])
+    async def get_package_list(
+        ls: LanguageServer,  # noqa: ARG001
+        args: NotebookCommand[ListPackagesRequest],
+    ):
+        logger.info(f"marimo.get_package_list for {args.notebook_uri}")
+        session = manager.get_session(args.notebook_uri)
+        if not session:
+            logger.warning(f"No session found for {args.notebook_uri}")
+            return {"packages": []}
+
+        package_manager = create_package_manager("uv")
+        if not package_manager.is_manager_installed():
+            logger.warning(f"Package manager not installed for {args.notebook_uri}")
+            return {"packages": []}
+
+        packages = package_manager.list_packages()
+        return msgspec.to_builtins({"packages": packages})
+
+    @command(
+        server, "marimo.get_dependency_tree", NotebookCommand[DependencyTreeRequest]
+    )
+    async def get_dependency_tree(
+        ls: LanguageServer,  # noqa: ARG001
+        args: NotebookCommand[DependencyTreeRequest],
+    ):
+        logger.info(f"marimo.get_dependency_tree for {args.notebook_uri}")
+        session = manager.get_session(args.notebook_uri)
+        if not session:
+            logger.warning(f"No session found for {args.notebook_uri}")
+            return {"tree": None}
+
+        package_manager = create_package_manager("uv")
+
+        is_sandbox = False
+        if is_sandbox:
+            filename = session.app_file_manager.filename
+            tree = package_manager.dependency_tree(filename)
+        else:
+            tree = package_manager.dependency_tree()
+
+        return msgspec.to_builtins({"tree": tree})
+
     @command(server, "marimo.serialize", SerializeRequest)
     async def serialize(ls: LanguageServer, args: SerializeRequest):  # noqa: ARG001
         logger.info("marimo.serialize")
@@ -222,7 +268,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     @command(server, "marimo.dap", NotebookCommand[DebugAdapterRequest])
     async def dap(ls: LanguageServer, args: NotebookCommand[DebugAdapterRequest]):
         """Handle DAP messages forwarded from VS Code extension."""
-        from marimo_lsp.debug_adapter import (  # noqa: PLC0415
+        from marimo_lsp.debug_adapter import (
             handle_debug_adapter_request,
         )
 

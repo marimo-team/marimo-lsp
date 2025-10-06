@@ -69,11 +69,19 @@ class DebugAdapterRequest(msgspec.Struct, rename="camel"):
     """A UUID for the debug session."""
 
     message: dict
-    """They DAP message."""
+    """The DAP message."""
 
 
 class InterruptRequest(msgspec.Struct, rename="camel"):
     """A request to interrupt the kernel execution."""
+
+
+class ListPackagesRequest(msgspec.Struct, rename="camel"):
+    """A request to list installed packages in the kernel environment."""
+
+
+class DependencyTreeRequest(msgspec.Struct, rename="camel"):
+    """A request to get the dependency tree of installed packages."""
 
 
 RunRequest = core.RunRequest

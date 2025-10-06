@@ -4,6 +4,7 @@ export const Commands = {
   "marimo.createGist": "marimo.createGist",
   "marimo.runStale": "marimo.runStale",
   "marimo.clearRecentNotebooks": "marimo.clearRecentNotebooks",
+  "marimo.refreshPackages": "marimo.refreshPackages",
 } as const;
 
 export type MarimoCommandKey = (typeof Commands)[keyof typeof Commands];
@@ -12,6 +13,7 @@ export const Views = {
   "marimo-explorer-recents": "marimo-explorer-recents",
   "marimo-explorer-variables": "marimo-explorer-variables",
   "marimo-explorer-datasources": "marimo-explorer-datasources",
+  "marimo-explorer-packages": "marimo-explorer-packages",
 } as const;
 export type MarimoViewKey = (typeof Views)[keyof typeof Views];
 
