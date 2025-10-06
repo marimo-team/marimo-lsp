@@ -175,7 +175,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       );
 
       assert(Either.isRight(result), "Expected validation to succeed");
-      expect(result.right._tag).toBe("ValidPythonEnvironment");
+      assert.strictEqual(result.right._tag, "ValidPythonEnvironment");
     }),
   );
 
@@ -192,10 +192,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         validator.validate(env(NodePath.join(venv, "bin", "python"))),
       );
       assert(Either.isLeft(result), "Expected validation to fail");
-      assert(
-        result.left._tag === "EnvironmentInspectionError",
-        `Expected EnvironmentInspectionError, got ${result.left._tag}`,
-      );
+      assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
     }),
   );
 });
