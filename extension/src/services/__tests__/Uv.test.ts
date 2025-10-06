@@ -49,7 +49,7 @@ it.layer(UvLive)("Uv", (it) => {
         uv.add(["httpx"], { directory: tmpdir.path }),
       );
       assert(Either.isLeft(result), "Expected failure");
-      expect(result.left._tag).toBe("MissingPyProjectError");
+      assert.strictEqual(result.left._tag, "MissingPyProjectError");
     }),
   );
 

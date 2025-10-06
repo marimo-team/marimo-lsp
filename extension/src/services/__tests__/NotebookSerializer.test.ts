@@ -1,6 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { expect, it } from "@effect/vitest";
+import * as NodeFs from "node:fs";
+import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import packageJson from "../../../package.json";
 import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
@@ -25,14 +24,14 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
       (nb) => nb.type === NOTEBOOK_TYPE,
     );
     expect(notebookConfig).toBeDefined();
-    expect(notebookConfig?.type).toBe(NOTEBOOK_TYPE);
+    assert.strictEqual(notebookConfig?.type, NOTEBOOK_TYPE);
   });
 
   it.effect(
     "provides same notebookType as in package.json",
     Effect.fnUntraced(function* () {
       const serializer = yield* NotebookSerializer;
-      expect(serializer.notebookType).toBe(NOTEBOOK_TYPE);
+      assert.strictEqual(serializer.notebookType, NOTEBOOK_TYPE);
     }),
   );
 
@@ -90,8 +89,8 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
     return Effect.gen(function* () {
       const serializer = yield* NotebookSerializer;
       const source = yield* Effect.tryPromise(() =>
-        readFile(
-          join(__dirname, `../../__mocks__/notebooks/${filename}`),
+        NodeFs.promises.readFile(
+          new URL(`../../__mocks__/notebooks/${filename}`, import.meta.url),
           "utf-8",
         ),
       );
