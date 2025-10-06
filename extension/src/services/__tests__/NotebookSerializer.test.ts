@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import packageJson from "../../../package.json";
@@ -52,29 +54,61 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
           },
         ],
       });
-      expect(new TextDecoder().decode(bytes)).toMatchInlineSnapshot(`
-      "import marimo
+      const serializedSource = new TextDecoder().decode(bytes).trim();
+      expect(removeGeneratedWith(serializedSource)).toMatchInlineSnapshot(`
+        "import marimo
 
-      __generated_with = "0.16.2"
-      app = marimo.App()
-
-
-      @app.cell
-      def _():
-          import marimo as mo
-          return
+        __generated_with = ""
+        app = marimo.App()
 
 
-      @app.cell
-      def _():
-          x = 1
-          return
+        @app.cell
+        def _():
+            import marimo as mo
+            return
 
 
-      if __name__ == "__main__":
-          app.run()
-      "
-    `);
+        @app.cell
+        def _():
+            x = 1
+            return
+
+
+        if __name__ == "__main__":
+            app.run()"
+      `);
     }),
   );
+
+  it.effect.each([
+    ["simple notebook", "simple.txt"],
+    ["notebook with named cells", "with_names.txt"],
+    ["notebook with multiline cells", "multiline.txt"],
+    ["notebook with cell options", "with_options.txt"],
+    ["notebook with setup cell", "with_setup.txt"],
+  ] as const)("identity: %s", ([_name, filename]) => {
+    return Effect.gen(function* () {
+      const serializer = yield* NotebookSerializer;
+      const source = yield* Effect.tryPromise(() =>
+        readFile(
+          join(__dirname, `../../__mocks__/notebooks/${filename}`),
+          "utf-8",
+        ),
+      );
+      const bytes = new TextEncoder().encode(source);
+
+      const notebook = yield* serializer.deserializeEffect(bytes);
+      const serialized = yield* serializer.serializeEffect(notebook);
+      const serializedSource = new TextDecoder().decode(serialized).trim();
+      const sourceSource = source.trim();
+
+      expect(removeGeneratedWith(serializedSource)).toBe(
+        removeGeneratedWith(sourceSource),
+      );
+    });
+  });
 });
+
+function removeGeneratedWith(source: string): string {
+  return source.replace(/__generated_with = ".*"/, '__generated_with = ""');
+}

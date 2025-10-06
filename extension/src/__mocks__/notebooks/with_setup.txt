@@ -1,0 +1,27 @@
+import marimo
+
+__generated_with = "0.16.2"
+app = marimo.App()
+
+with app.setup:
+    import marimo as mo
+    import numpy as np
+
+
+@app.cell
+def _():
+    data = np.random.randn(100)
+    mo.md(f"Generated {len(data)} random numbers")
+    return (data,)
+
+
+@app.cell
+def _(data):
+    mean = data.mean()
+    std = data.std()
+    return
+
+
+if __name__ == "__main__":
+    app.run()
+
