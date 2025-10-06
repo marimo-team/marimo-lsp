@@ -184,8 +184,9 @@
     }
   },
   "scripts": {
-    "prepare": "effect-language-service patch",
-    "build": "turbo build:renderer --no-cache && turbo build:extension --no-cache",
+    "prepare": "turbo patch-tsc",
+    "patch-tsc": "effect-language-service patch",
+    "build": "turbo build:renderer && turbo build:extension",
     "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
     "build:renderer": "vite build",
     "fix": "biome check --write",
