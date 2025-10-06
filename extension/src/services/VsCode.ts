@@ -217,7 +217,7 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
             ),
           ),
           (disposable) => Effect.sync(() => disposable.dispose()),
-        );
+        ).pipe(Effect.andThen(Effect.void));
       },
     };
   }),

@@ -4,7 +4,7 @@ import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import {
   createTestNotebookDocument,
-  TestVsCodeLive,
+  TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { VsCode } from "../VsCode.ts";
@@ -12,7 +12,7 @@ import { VsCode } from "../VsCode.ts";
 const ControllerRegistryLive = Layer.empty.pipe(
   Layer.provideMerge(ControllerRegistry.Default),
   Layer.provide(TestLanguageClientLive),
-  Layer.provideMerge(TestVsCodeLive),
+  Layer.provideMerge(TestVsCode.Default),
   Layer.provide(TestPythonExtension.Default),
 );
 

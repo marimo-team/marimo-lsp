@@ -4,6 +4,7 @@ import {
   Data,
   Effect,
   Either,
+  HashSet,
   Layer,
   Option,
   PubSub,
@@ -12,6 +13,7 @@ import {
   SubscriptionRef,
 } from "effect";
 import type * as vscode from "vscode";
+import type { MarimoCommandKey } from "../constants.ts";
 import {
   Auth,
   Commands,
@@ -841,9 +843,13 @@ export function createTestNotebookDocument(
 
 export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly layer: Layer.Layer<VsCode>;
-  readonly controllers: Ref.Ref<vscode.NotebookController[]>;
+  readonly commands: Ref.Ref<HashSet.HashSet<MarimoCommandKey>>;
+  readonly controllers: Ref.Ref<HashSet.HashSet<vscode.NotebookController>>;
   readonly serializers: Ref.Ref<
-    { notebookType: string; serializer: vscode.NotebookSerializer }[]
+    HashSet.HashSet<{
+      notebookType: string;
+      serializer: vscode.NotebookSerializer;
+    }>
   >;
   readonly setActiveNotebookEditor: (
     editor: Option.Option<vscode.NotebookEditor>,
@@ -855,6 +861,26 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     doc: vscode.NotebookDocument,
   ) => Effect.Effect<void>;
 }> {
+  snapshot() {
+    const self = this;
+    return Effect.gen(function* () {
+      return {
+        commands: yield* Effect.map(Ref.get(self.commands), (map) =>
+          HashSet.toValues(map).toSorted(),
+        ),
+        serializers: yield* Effect.map(Ref.get(self.serializers), (map) =>
+          HashSet.toValues(map)
+            .map((s) => s.notebookType)
+            .toSorted(),
+        ),
+        controllers: yield* Effect.map(Ref.get(self.controllers), (map) =>
+          HashSet.toValues(map)
+            .map((c) => c.id)
+            .toSorted(),
+        ),
+      };
+    });
+  }
   static make = Effect.fnUntraced(function* (
     initialDocuments: vscode.NotebookDocument[] = [],
   ) {
@@ -873,10 +899,16 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const documentChanges =
       yield* PubSub.unbounded<vscode.NotebookDocumentChangeEvent>();
 
-    const serializers = yield* Ref.make<
-      { notebookType: string; serializer: vscode.NotebookSerializer }[]
-    >([]);
-    const controllers = yield* Ref.make<vscode.NotebookController[]>([]);
+    const commands = yield* Ref.make(HashSet.empty<MarimoCommandKey>());
+    const controllers = yield* Ref.make(
+      HashSet.empty<vscode.NotebookController>(),
+    );
+    const serializers = yield* Ref.make(
+      HashSet.empty<{
+        notebookType: string;
+        serializer: vscode.NotebookSerializer;
+      }>(),
+    );
 
     const layer = Layer.scoped(
       VsCode,
@@ -1021,11 +1053,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             executeCommand() {
               return Effect.void;
             },
-            registerCommand() {
-              return Effect.acquireRelease(
-                Effect.succeed({ dispose() {} }),
-                () => Effect.void,
-              );
+            registerCommand(name) {
+              return Effect.gen(function* () {
+                yield* Ref.update(commands, HashSet.add(name));
+                yield* Effect.addFinalizer(() =>
+                  Ref.update(commands, HashSet.remove(name)),
+                );
+              });
             },
           }),
           workspace: Workspace.make({
@@ -1047,13 +1081,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               return Effect.acquireRelease(
                 Effect.gen(function* () {
                   const serializer = { notebookType, serializer: impl };
-                  yield* Ref.update(serializers, (arr) => [...arr, serializer]);
+                  yield* Ref.update(serializers, HashSet.add(serializer));
                   return serializer;
                 }),
                 (serializer) =>
-                  Ref.update(serializers, (arr) =>
-                    arr.filter((s) => !Object.is(s, serializer)),
-                  ),
+                  Ref.update(serializers, HashSet.remove(serializer)),
               );
             },
             notebookDocumentChanges() {
@@ -1104,7 +1136,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               return Effect.acquireRelease(
                 Effect.gen(function* () {
                   const emitter = new EventEmitter();
-                  const controller = {
+                  const controller: vscode.NotebookController = {
                     id,
                     notebookType,
                     label,
@@ -1136,15 +1168,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                     executeHandler() {},
                     updateNotebookAffinity() {},
                   };
-                  yield* Ref.update(controllers, (arr) => [...arr, controller]);
+                  yield* Ref.update(controllers, HashSet.add(controller));
                   return controller;
                 }),
                 (controller) =>
                   Effect.gen(function* () {
                     yield* Effect.sync(() => controller.dispose());
-                    yield* Ref.update(controllers, (arr) =>
-                      arr.filter((c) => !Object.is(c, controller)),
-                    );
+                    yield* Ref.update(controllers, HashSet.remove(controller));
                   }),
               );
             },
@@ -1221,6 +1251,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
 
     return new TestVsCode({
       layer,
+      commands,
       controllers,
       serializers,
       setActiveNotebookEditor: (editor) =>
