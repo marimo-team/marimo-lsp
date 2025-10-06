@@ -91,6 +91,27 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         getActiveController(notebook: vscode.NotebookDocument) {
           return Effect.map(Ref.get(selectionsRef), HashMap.get(notebook));
         },
+        // for testing only
+        snapshot() {
+          return Effect.gen(function* () {
+            const handles = yield* SynchronizedRef.get(handlesRef);
+            const selections = yield* Ref.get(selectionsRef);
+            return {
+              controllers: HashMap.toValues(handles)
+                .map((handle) => ({
+                  id: handle.controller.id,
+                  envPath: handle.controller.env.path,
+                }))
+                .toSorted((a, b) => a.id.localeCompare(b.id)),
+              selections: HashMap.toEntries(selections)
+                .map(([notebook, controller]) => ({
+                  notebookUri: notebook.uri.toString(),
+                  controllerId: controller.id,
+                }))
+                .toSorted((a, b) => a.notebookUri.localeCompare(b.notebookUri)),
+            };
+          });
+        },
       };
     }),
   },
