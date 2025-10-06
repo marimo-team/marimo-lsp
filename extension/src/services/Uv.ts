@@ -26,6 +26,20 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
     const executor = yield* CommandExecutor.CommandExecutor;
     const uv = createUv(executor);
     return {
+      venv(path: string, options: { python?: string } = {}) {
+        const args = ["venv", path];
+        if (options.python) {
+          args.push("--python", options.python);
+        }
+        return uv({ args });
+      },
+      init(path: string, options: { python?: string } = {}) {
+        const args = ["init", path];
+        if (options.python) {
+          args.push("--python", options.python);
+        }
+        return uv({ args });
+      },
       add(
         packages: ReadonlyArray<string>,
         options: {
