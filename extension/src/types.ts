@@ -14,6 +14,8 @@ export type MessageOperationOf<T extends MessageOperation["op"]> = Extract<
   { op: T }
 >;
 export type CellMessage = MessageOperationOf<"cell-op">;
+export type VariableValuesOp = MessageOperationOf<"variable-values">;
+export type VariablesOp = MessageOperationOf<"variables">;
 
 export type NotebookUri = Brand.Branded<string, "NotebookUri">;
 

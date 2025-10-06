@@ -1,6 +1,7 @@
 import { Effect, HashMap, Option, Ref, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
 import { getNotebookUri, type NotebookUri } from "../types.ts";
+import { Log } from "../utils/log.ts";
 import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -22,11 +23,6 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         code.window.activeNotebookEditorChanges().pipe(
           Stream.mapEffect(
             Effect.fnUntraced(function* (editor) {
-              // TODO: should we filter out non-marimo notebooks?
-              // if (!isMarimoNotebookDocument(e.notebook)) {
-              //   return;
-              // }
-
               if (Option.isNone(editor)) {
                 yield* SubscriptionRef.set(activeNotebookRef, Option.none());
                 return;
@@ -34,10 +30,19 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
 
               const notebookUri = getNotebookUri(editor.value.notebook);
 
+              // Only track marimo notebooks
+              if (!isMarimoNotebookDocument(editor.value.notebook)) {
+                yield* SubscriptionRef.set(activeNotebookRef, Option.none());
+                return;
+              }
+
               yield* Ref.update(ref, (map) =>
                 HashMap.set(map, notebookUri, editor.value),
               );
 
+              yield* Log.info("Active notebook changed", {
+                notebookUri,
+              });
               yield* SubscriptionRef.set(
                 activeNotebookRef,
                 Option.some(notebookUri),
@@ -64,19 +69,10 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         },
 
         /**
-         * Get all marimo notebook documents
-         */
-        getMarimoNotebookDocuments() {
-          return code.workspace
-            .getNotebookDocuments()
-            .filter((notebook) => isMarimoNotebookDocument(notebook));
-        },
-
-        /**
          * Stream of active notebook URI changes
          */
-        get activeNotebookChanges() {
-          return Stream.changes(activeNotebookRef);
+        streamActiveNotebookChanges() {
+          return activeNotebookRef.changes;
         },
       };
     }),

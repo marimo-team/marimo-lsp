@@ -24,10 +24,12 @@ import type { PythonExtension } from "../services/PythonExtension.ts";
 import { ExtensionContext, Storage } from "../services/Storage.ts";
 import { Uv } from "../services/Uv.ts";
 import type { VsCode } from "../services/VsCode.ts";
+import { VariablesService } from "../services/variables/VariablesService.ts";
 import { MarimoStatusBarLive } from "../views/MarimoStatusBar.ts";
 import { RecentNotebooksLive } from "../views/RecentNotebooks.ts";
 import { StatusBar } from "../views/StatusBar.ts";
 import { TreeView } from "../views/TreeView.ts";
+import { VariablesViewLive } from "../views/VariablesView.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
 import { LspLive } from "./Lsp.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
@@ -41,12 +43,15 @@ const MainLive = LspLive.pipe(
   Layer.merge(KernelManagerLive),
   Layer.merge(MarimoStatusBarLive),
   Layer.merge(RecentNotebooksLive),
+  Layer.merge(VariablesViewLive),
+).pipe(
   Layer.provide(Uv.Default),
   Layer.provide(GitHubClient.Default),
   Layer.provide(DebugAdapter.Default),
   Layer.provide(NotebookRenderer.Default),
   Layer.provide(NotebookSerializer.Default),
   Layer.provide(ExecutionRegistry.Default),
+  Layer.provide(VariablesService.Default),
   Layer.provide(CellStateManager.Default),
   Layer.provide(CellStatusBarProvider.Default),
   Layer.provide(ControllerRegistry.Default),

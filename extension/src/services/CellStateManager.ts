@@ -31,7 +31,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
       );
 
       // Helper to update context based on current state
-      const updateContext = Effect.gen(function* () {
+      const updateContext = Effect.fnUntraced(function* () {
         const staleMap = yield* SubscriptionRef.get(staleStateRef);
         const activeMarimoNotebook =
           yield* editorRegistry.getActiveNotebookUri();
@@ -57,22 +57,21 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
       });
 
       // Set initial context state
-      yield* updateContext;
+      yield* Effect.forkScoped(updateContext());
 
       // Subscribe to stale state changes to update VSCode context
       yield* Effect.forkScoped(
-        Stream.changes(staleStateRef).pipe(
-          Stream.tap(() => updateContext),
+        staleStateRef.changes.pipe(
+          Stream.mapEffect(updateContext),
           Stream.runDrain,
         ),
       );
 
       // Subscribe to active notebook changes to update VSCode context
       yield* Effect.forkScoped(
-        editorRegistry.activeNotebookChanges.pipe(
-          Stream.tap(() => updateContext),
-          Stream.runDrain,
-        ),
+        editorRegistry
+          .streamActiveNotebookChanges()
+          .pipe(Stream.mapEffect(updateContext), Stream.runDrain),
       );
 
       // Listen to notebook document changes
@@ -215,7 +214,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
          * Get the changes stream for external subscriptions
          */
         get changes() {
-          return Stream.changes(staleStateRef);
+          return staleStateRef.changes;
         },
       };
     }),

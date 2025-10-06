@@ -10,6 +10,7 @@ import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
+import { VariablesService } from "../services/variables/VariablesService.ts";
 import {
   getNotebookUri,
   type MessageOperation,
@@ -42,6 +43,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const renderer = yield* NotebookRenderer;
     const executions = yield* ExecutionRegistry;
     const controllers = yield* ControllerRegistry;
+    const variables = yield* VariablesService;
 
     const runPromise = yield* FiberSet.makeRuntimePromise();
 
@@ -87,8 +89,10 @@ export const KernelManagerLive = Layer.scopedDiscard(
             config,
             executions,
             editor,
+            notebookUri,
             controller,
             renderer,
+            variables,
             runPromise,
             uv,
           });
