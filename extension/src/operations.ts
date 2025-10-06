@@ -1,6 +1,7 @@
 import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 import type { Config } from "./services/Config.ts";
+import type { DatasourcesService } from "./services/datasources/DatasourcesService.ts";
 import type { ExecutionRegistry } from "./services/ExecutionRegistry.ts";
 import type { NotebookController } from "./services/NotebookControllerFactory.ts";
 import type { NotebookRenderer } from "./services/NotebookRenderer.ts";
@@ -25,6 +26,7 @@ export const routeOperation = Effect.fn("routeOperation")(function* (
     controller: NotebookController;
     renderer: NotebookRenderer;
     variables: VariablesService;
+    datasources: DatasourcesService;
     code: VsCode;
     uv: Uv;
     config: Config;
@@ -61,6 +63,30 @@ export const routeOperation = Effect.fn("routeOperation")(function* (
     }
     case "variable-values": {
       yield* deps.variables.updateVariableValues(deps.notebookUri, operation);
+      break;
+    }
+    // Update datasource state
+    case "data-source-connections": {
+      yield* deps.datasources.updateConnections(deps.notebookUri, operation);
+      break;
+    }
+    case "datasets": {
+      yield* deps.datasources.updateDatasets(deps.notebookUri, operation);
+      break;
+    }
+    case "sql-table-preview": {
+      yield* deps.datasources.updateTablePreview(deps.notebookUri, operation);
+      break;
+    }
+    case "sql-table-list-preview": {
+      yield* deps.datasources.updateTableListPreview(
+        deps.notebookUri,
+        operation,
+      );
+      break;
+    }
+    case "data-column-preview": {
+      yield* deps.datasources.updateColumnPreview(deps.notebookUri, operation);
       break;
     }
     // Forward to renderer (front end) (non-blocking)

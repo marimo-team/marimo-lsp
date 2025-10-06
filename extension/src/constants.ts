@@ -11,6 +11,7 @@ export type MarimoCommandKey = (typeof Commands)[keyof typeof Commands];
 export const Views = {
   "marimo-explorer-recents": "marimo-explorer-recents",
   "marimo-explorer-variables": "marimo-explorer-variables",
+  "marimo-explorer-datasources": "marimo-explorer-datasources",
 } as const;
 export type MarimoViewKey = (typeof Views)[keyof typeof Views];
 

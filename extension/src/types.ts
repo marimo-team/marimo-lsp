@@ -16,6 +16,13 @@ export type MessageOperationOf<T extends MessageOperation["op"]> = Extract<
 export type CellMessage = MessageOperationOf<"cell-op">;
 export type VariableValuesOp = MessageOperationOf<"variable-values">;
 export type VariablesOp = MessageOperationOf<"variables">;
+export type DataColumnPreviewOp = MessageOperationOf<"data-column-preview">;
+export type DataSourceConnectionsOp =
+  MessageOperationOf<"data-source-connections">;
+export type DatasetsOp = MessageOperationOf<"datasets">;
+export type SqlTablePreviewOp = MessageOperationOf<"sql-table-preview">;
+export type SqlTableListPreviewOp =
+  MessageOperationOf<"sql-table-list-preview">;
 
 export type NotebookUri = Brand.Branded<string, "NotebookUri">;
 
