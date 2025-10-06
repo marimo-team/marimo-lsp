@@ -1,0 +1,42 @@
+import marimo
+
+__generated_with = "0.16.2"
+app = marimo.App()
+
+
+@app.cell
+def _():
+    import pandas as pd
+    import numpy as np
+    import matplotlib.pyplot as plt
+    return np, pd, plt
+
+
+@app.cell
+def _(np, pd):
+    # Create a dataframe with multiple operations
+    df = pd.DataFrame({
+        'A': np.random.randn(100),
+        'B': np.random.randn(100),
+        'C': np.random.randn(100)
+    })
+
+    # Process the data
+    df['sum'] = df.sum(axis=1)
+    df['mean'] = df.mean(axis=1)
+    return (df,)
+
+
+@app.cell
+def _(df, plt):
+    plt.figure(figsize=(10, 6))
+    plt.plot(df['A'], label='A')
+    plt.plot(df['B'], label='B')
+    plt.legend()
+    plt.show()
+    return
+
+
+if __name__ == "__main__":
+    app.run()
+

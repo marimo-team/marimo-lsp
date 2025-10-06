@@ -1,0 +1,29 @@
+import marimo
+
+__generated_with = "0.16.2"
+app = marimo.App(width="medium")
+
+
+@app.cell(hide_code=True)
+def _():
+    import marimo as mo
+    return (mo,)
+
+
+@app.cell(disabled=True)
+def _(mo):
+    # This cell is disabled
+    mo.md("This won't run")
+    return
+
+
+@app.cell
+def _(mo):
+    value = mo.ui.slider(0, 100)
+    value
+    return
+
+
+if __name__ == "__main__":
+    app.run()
+
