@@ -27,9 +27,9 @@ export const TestExtensionContextLive = Layer.succeed(ExtensionContext, {
   workspaceState: new Memento(),
 });
 
-export async function getExtensionContext() {
+export function getTestExtensionContext() {
   return Effect.gen(function* () {
     const context = yield* ExtensionContext;
     return context;
-  }).pipe(Effect.provide(TestExtensionContextLive), Effect.runPromise);
+  }).pipe(Effect.provide(TestExtensionContextLive));
 }

@@ -94,15 +94,13 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
               yield* Effect.logInfo("Resolving debug configuration").pipe(
                 Effect.annotateLogs({ config }),
               );
-              const notebook = code.window
-                .getActiveNotebookEditor()
-                .pipe(
-                  Option.flatMap((editor) =>
-                    serializer.isMarimoNotebookDocument(editor.notebook)
-                      ? Option.some(editor.notebook)
-                      : Option.none(),
-                  ),
-                );
+              const notebook = Option.flatMap(
+                yield* code.window.getActiveNotebookEditor(),
+                (editor) =>
+                  serializer.isMarimoNotebookDocument(editor.notebook)
+                    ? Option.some(editor.notebook)
+                    : Option.none(),
+              );
               if (Option.isNone(notebook)) {
                 yield* Effect.logWarning("No active marimo notebook found");
                 return undefined;

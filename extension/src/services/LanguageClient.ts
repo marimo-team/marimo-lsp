@@ -37,7 +37,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
       const code = yield* VsCode;
       const config = yield* Config;
 
-      const exec = yield* Option.match(config.lsp.executable, {
+      const exec = yield* Option.match(yield* config.lsp.executable, {
         onSome: Effect.succeed,
         onNone: findLspExecutable,
       });

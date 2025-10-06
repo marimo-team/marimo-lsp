@@ -10,25 +10,24 @@ export class Config extends Effect.Service<Config>()("Config", {
     return {
       uv: {
         get enabled() {
-          return !code.workspace
-            .getConfiguration("marimo")
-            .get<boolean>("disableUvIntegration", false);
+          return Effect.andThen(
+            code.workspace.getConfiguration("marimo"),
+            (config) => !config.get<boolean>("disableUvIntegration", false),
+          );
         },
       },
       lsp: {
-        get executable(): Option.Option<{
-          command: string;
-          args: Array<string>;
-        }> {
-          return Option.fromNullable(
-            code.workspace.getConfiguration("marimo.lsp").get<string[]>("path"),
-          ).pipe(
-            Option.filter((path) => path.length > 0),
-            Option.map(([command, ...args]) => ({
-              command,
-              args,
-            })),
-          );
+        get executable() {
+          return Effect.gen(function* () {
+            const config = yield* code.workspace.getConfiguration("marimo.lsp");
+            return Option.fromNullable(config.get<string[]>("path")).pipe(
+              Option.filter((path) => path.length > 0),
+              Option.map(([command, ...args]) => ({
+                command,
+                args,
+              })),
+            );
+          });
         },
       },
     };

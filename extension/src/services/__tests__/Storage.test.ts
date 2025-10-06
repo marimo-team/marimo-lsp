@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Schema } from "effect";
 import { Memento } from "../../__mocks__/TestExtensionContext.ts";
-import { TestVsCodeLive } from "../../__mocks__/TestVsCode.ts";
+import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import {
   createStorageKey,
   ExtensionContext,
@@ -10,7 +10,7 @@ import {
 
 const StorageLive = Layer.empty.pipe(
   Layer.provideMerge(Storage.Default),
-  Layer.provide(TestVsCodeLive),
+  Layer.provide(TestVsCode.Default),
   Layer.provideMerge(
     Layer.succeed(ExtensionContext, {
       globalState: new Memento(),

@@ -68,15 +68,13 @@ const createGist = ({
   channel: OutputChannel;
 }) =>
   Effect.gen(function* () {
-    const notebook = code.window
-      .getActiveNotebookEditor()
-      .pipe(
-        Option.filterMap((editor) =>
-          serializer.isMarimoNotebookDocument(editor.notebook)
-            ? Option.some(editor.notebook)
-            : Option.none(),
-        ),
-      );
+    const notebook = Option.filterMap(
+      yield* code.window.getActiveNotebookEditor(),
+      (editor) =>
+        serializer.isMarimoNotebookDocument(editor.notebook)
+          ? Option.some(editor.notebook)
+          : Option.none(),
+    );
 
     if (Option.isNone(notebook)) {
       yield* showErrorAndPromptLogs(
@@ -171,15 +169,13 @@ const runStale = ({
   channel: OutputChannel;
 }) =>
   Effect.gen(function* () {
-    const notebook = code.window
-      .getActiveNotebookEditor()
-      .pipe(
-        Option.filterMap((editor) =>
-          serializer.isMarimoNotebookDocument(editor.notebook)
-            ? Option.some(editor.notebook)
-            : Option.none(),
-        ),
-      );
+    const notebook = Option.filterMap(
+      yield* code.window.getActiveNotebookEditor(),
+      (editor) =>
+        serializer.isMarimoNotebookDocument(editor.notebook)
+          ? Option.some(editor.notebook)
+          : Option.none(),
+    );
 
     if (Option.isNone(notebook)) {
       yield* showErrorAndPromptLogs(
