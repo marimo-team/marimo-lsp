@@ -152,6 +152,11 @@
           "id": "marimo-explorer-variables",
           "name": "Variables",
           "icon": "images/small-icon.png"
+        },
+        {
+          "id": "marimo-explorer-datasources",
+          "name": "Datasources",
+          "icon": "images/small-icon.png"
         }
       ]
     },

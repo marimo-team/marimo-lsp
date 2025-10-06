@@ -1,4 +1,4 @@
-import { Effect, HashMap, Stream, SubscriptionRef } from "effect";
+import { Effect, HashMap, SubscriptionRef } from "effect";
 import type {
   NotebookUri,
   VariablesOp,

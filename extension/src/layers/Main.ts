@@ -13,6 +13,7 @@ import { CellStatusBarProvider } from "../services/CellStatusBarProvider.ts";
 import { Config } from "../services/Config.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { DebugAdapter } from "../services/DebugAdapter.ts";
+import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
 import type { LanguageClient } from "../services/LanguageClient.ts";
@@ -25,6 +26,7 @@ import { ExtensionContext, Storage } from "../services/Storage.ts";
 import { Uv } from "../services/Uv.ts";
 import type { VsCode } from "../services/VsCode.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
+import { DatasourcesViewLive } from "../views/DatasourcesView.ts";
 import { MarimoStatusBarLive } from "../views/MarimoStatusBar.ts";
 import { RecentNotebooksLive } from "../views/RecentNotebooks.ts";
 import { StatusBar } from "../views/StatusBar.ts";
@@ -44,6 +46,7 @@ const MainLive = LspLive.pipe(
   Layer.merge(MarimoStatusBarLive),
   Layer.merge(RecentNotebooksLive),
   Layer.merge(VariablesViewLive),
+  Layer.merge(DatasourcesViewLive),
 ).pipe(
   Layer.provide(Uv.Default),
   Layer.provide(GitHubClient.Default),
@@ -52,6 +55,7 @@ const MainLive = LspLive.pipe(
   Layer.provide(NotebookSerializer.Default),
   Layer.provide(ExecutionRegistry.Default),
   Layer.provide(VariablesService.Default),
+  Layer.provide(DatasourcesService.Default),
   Layer.provide(CellStateManager.Default),
   Layer.provide(CellStatusBarProvider.Default),
   Layer.provide(ControllerRegistry.Default),

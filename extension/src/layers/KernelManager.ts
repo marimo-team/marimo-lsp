@@ -3,6 +3,7 @@ import { unreachable } from "../assert.ts";
 import { routeOperation } from "../operations.ts";
 import { Config } from "../services/Config.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
+import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
@@ -44,6 +45,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const executions = yield* ExecutionRegistry;
     const controllers = yield* ControllerRegistry;
     const variables = yield* VariablesService;
+    const datasources = yield* DatasourcesService;
 
     const runPromise = yield* FiberSet.makeRuntimePromise();
 
@@ -93,6 +95,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
             controller,
             renderer,
             variables,
+            datasources,
             runPromise,
             uv,
           });
