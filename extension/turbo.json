@@ -12,6 +12,7 @@
       "env": ["NODE_ENV", "MODE"]
     },
     "typecheck": {},
+    "typecheck-ci": {},
     "fix": {},
     "test:extension": {
       "dependsOn": ["build:extension"]

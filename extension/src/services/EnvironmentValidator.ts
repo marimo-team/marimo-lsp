@@ -87,9 +87,7 @@ except ImportError:
 print(json.dumps(packages))`,
           ).pipe(
             Command.string,
-            Effect.andThen(
-              Schema.parseJson(EnvCheck).pipe(Schema.decodeUnknown),
-            ),
+            Effect.andThen(Schema.decodeUnknown(Schema.parseJson(EnvCheck))),
             Effect.catchTag(
               "SystemError",
               Effect.fnUntraced(function* (error) {

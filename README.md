@@ -14,8 +14,8 @@ explanation from the command references:
 
 ## Development
 
-This project requires [uv](https://docs.astral.sh/uv/) and
-[pnpm](https://pnpm.io/).
+This project requires [uv](https://docs.astral.sh/uv/),
+[pnpm](https://pnpm.io/), and [just](https://just.systems/).
 
 **Quickstart**
 
@@ -39,28 +39,25 @@ code .
 > Eventually this codebase will be merged into the main marimo repo, simplifying
 > setup.
 
-### Language Server (Python)
+### Common Commands
 
-All commands are run from the project root:
+This project uses [just](https://just.systems/) for common development tasks:
 
-| Command              | Action                  |
-| -------------------- | ----------------------- |
-| `uv run marimo-lsp`  | Run the language server |
-| `uv run pytest`      | Run unit tests          |
-| `uv run ruff check`  | Lint code               |
-| `uv run ruff format` | Format code             |
-| `uv run ty check`    | Typecheck               |
+| Command            | Action                                      |
+| ------------------ | ------------------------------------------- |
+| `just check`       | Lint and typecheck all code                 |
+| `just fix`         | Fix linting issues and format all code      |
+| `just test`        | Run all tests (pytest + vitest)             |
+| `just pytest`      | Run Python tests only                       |
+| `just vitest`      | Run TypeScript tests only                   |
+| `just vscode-test` | Run VS Code extension integration tests     |
 
-### VS Code Extension (JavaScript/TypeScript)
-
-Run these from the `extension/` directory:
-
-| Command            | Action                           |
-| ------------------ | -------------------------------- |
-| `pnpm install`     | Install dependencies             |
-| `pnpm build`       | Build the extension and renderer |
-| `pnpm biome check` | Lint code                        |
-| `pnpm typecheck`   | Typecheck TypeScript             |
+You can pass additional arguments to test commands:
+```sh
+just pytest -v                    # Run pytest with verbose output
+just pytest tests/test_foo.py     # Run specific test file
+just vitest --watch               # Run vitest in watch mode
+```
 
 ## Architecture
 
