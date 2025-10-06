@@ -4,9 +4,10 @@ import { NOTEBOOK_TYPE } from "../constants.ts";
 import { decodeCellMetadata, isStaleCellMetadata } from "../schemas.ts";
 import { VsCode } from "./VsCode.ts";
 
+const DEFAULT_NAME = "_";
+
 /**
- * Provides status bar items for notebook cells, showing a stale indicator
- * when cells have been edited but not re-executed.
+ * Provides status bar items for notebook cells, showing staleness and custom cell names.
  *
  * Listens to cell metadata changes and updates the status bar accordingly.
  */
@@ -38,46 +39,90 @@ export class CellStatusBarProvider extends Effect.Service<CellStatusBarProvider>
         ),
       );
 
-      const provider: vscode.NotebookCellStatusBarItemProvider = {
-        onDidChangeCellStatusBarItems: onDidChangeCellStatusBarItems.event,
-
-        provideCellStatusBarItems(
+      /**
+       * Creates a provider for a specific status bar item type
+       */
+      function createProvider(
+        provide: (
           cell: vscode.NotebookCell,
-          _token: vscode.CancellationToken,
-        ): vscode.ProviderResult<
-          vscode.NotebookCellStatusBarItem | vscode.NotebookCellStatusBarItem[]
-        > {
-          const metadata = decodeCellMetadata(cell.metadata);
+        ) => vscode.NotebookCellStatusBarItem | undefined,
+      ): vscode.NotebookCellStatusBarItemProvider {
+        return {
+          onDidChangeCellStatusBarItems: onDidChangeCellStatusBarItems.event,
+          provideCellStatusBarItems(
+            cell: vscode.NotebookCell,
+            _token: vscode.CancellationToken,
+          ): vscode.ProviderResult<vscode.NotebookCellStatusBarItem[]> {
+            const item = provide(cell);
+            return item ? [item] : [];
+          },
+        };
+      }
 
-          // No metadata or not stale - don't show anything
-          if (Option.isNone(metadata)) {
-            return [];
-          }
+      /**
+       * Provider for staleness indicator
+       */
+      const stalenessProvider = createProvider((cell) => {
+        const metadata = decodeCellMetadata(cell.metadata);
 
-          if (!isStaleCellMetadata(metadata.value)) {
-            return [];
-          }
+        if (Option.isNone(metadata) || !isStaleCellMetadata(metadata.value)) {
+          return undefined;
+        }
 
-          // Create stale indicator
-          const item = new code.NotebookCellStatusBarItem(
-            "$(warning) Stale",
-            code.NotebookCellStatusBarAlignment.Right,
-          );
-          item.tooltip = "Cell has been edited but not re-executed";
-          item.command = "marimo.runStale";
+        const item = new code.NotebookCellStatusBarItem(
+          "$(warning) Stale",
+          code.NotebookCellStatusBarAlignment.Right,
+        );
+        item.tooltip = "Cell has been edited but not re-executed";
+        item.command = "marimo.runStale";
 
-          return [item];
-        },
-      };
+        return item;
+      });
 
-      // Register the provider
-      const disposable =
+      /**
+       * Provider for cell name indicator
+       */
+      const nameProvider = createProvider((cell) => {
+        const metadata = decodeCellMetadata(cell.metadata);
+
+        if (Option.isNone(metadata)) {
+          return undefined;
+        }
+
+        const name = metadata.value.name;
+        if (!name || name === DEFAULT_NAME) {
+          return undefined;
+        }
+
+        const item = new code.NotebookCellStatusBarItem(
+          `$(symbol-variable) ${name}`,
+          code.NotebookCellStatusBarAlignment.Left,
+        );
+        item.tooltip = `Cell name: ${name}`;
+
+        return item;
+      });
+
+      // Register both providers
+      const stalenessDisposable =
         yield* code.notebooks.registerNotebookCellStatusBarItemProvider(
           NOTEBOOK_TYPE,
-          provider,
+          stalenessProvider,
         );
 
-      return disposable;
+      const nameDisposable =
+        yield* code.notebooks.registerNotebookCellStatusBarItemProvider(
+          NOTEBOOK_TYPE,
+          nameProvider,
+        );
+
+      // Return combined disposable
+      return {
+        dispose() {
+          stalenessDisposable.dispose();
+          nameDisposable.dispose();
+        },
+      };
     }).pipe(Effect.annotateLogs("service", "CellStatusBarProvider")),
   },
 ) {}
