@@ -1149,3 +1149,10 @@ class NotebookDocument implements vscode.NotebookDocument {
     return Promise.resolve(true);
   }
 }
+
+export function createTestNotebookDocument(
+  uri: Uri,
+  content?: vscode.NotebookData,
+): vscode.NotebookDocument {
+  return new NotebookDocument("marimo-notebook", uri, content);
+}
