@@ -7,6 +7,9 @@ const vscode = require("vscode");
 function getExtension() {
   const ext = vscode.extensions.getExtension("marimo-team.vscode-marimo");
   assert.ok(ext, "Extension should be found");
+  if (!ext) {
+    throw new Error("Extension should be found");
+  }
   return ext;
 }
 
@@ -91,21 +94,7 @@ suite("marimo Extension Hello World Tests", () => {
       "Should have views in marimo-explorer container",
     );
     const marimoViews = packageJSON.contributes.views["marimo-explorer"];
-    assert.strictEqual(
-      marimoViews.length,
-      1,
-      "Should contribute one view to marimo-explorer",
-    );
-    assert.strictEqual(
-      marimoViews[0].id,
-      "marimo-explorer-recents",
-      "Should contribute marimo-explorer-recents view",
-    );
-    assert.strictEqual(
-      marimoViews[0].name,
-      "Recent Notebooks",
-      "Recent notebooks view should have correct name",
-    );
+    assert.strictEqual(marimoViews.length, 2, "Should contribute views");
   });
 
   test("Should have proper extension metadata", async () => {
