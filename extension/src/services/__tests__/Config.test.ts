@@ -1,11 +1,11 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
-import { TestVsCodeLive } from "../../__mocks__/TestVsCode.ts";
+import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Config } from "../Config.ts";
 
 const ConfigLive = Layer.empty.pipe(
   Layer.provideMerge(Config.Default),
-  Layer.provide(TestVsCodeLive),
+  Layer.provide(TestVsCode.Default),
 );
 
 it.layer(ConfigLive)("Config", (it) => {

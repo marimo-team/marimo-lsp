@@ -1,4 +1,13 @@
-import { Data, Effect, Either, Fiber, Option, Runtime, Stream } from "effect";
+import {
+  Data,
+  Effect,
+  Either,
+  Fiber,
+  Option,
+  Runtime,
+  type Scope,
+  Stream,
+} from "effect";
 // VsCode.ts is the centralized service that wraps the VS Code API.
 //
 // All other modules should use type-only imports and access the API through this service.
@@ -89,10 +98,10 @@ export class Window extends Effect.Service<Window>()("Window", {
         );
       },
       getActiveNotebookEditor() {
-        return Option.fromNullable(api.activeNotebookEditor);
+        return Effect.succeed(Option.fromNullable(api.activeNotebookEditor));
       },
       getVisibleNotebookEditors() {
-        return api.visibleNotebookEditors;
+        return Effect.succeed(api.visibleNotebookEditors);
       },
       createTreeView<T>(viewId: string, options: vscode.TreeViewOptions<T>) {
         return Effect.acquireRelease(
@@ -219,13 +228,13 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
     const api = vscode.workspace;
     return {
       getNotebookDocuments() {
-        return api.notebookDocuments;
+        return Effect.succeed(api.notebookDocuments);
       },
       getConfiguration(section: string) {
-        return api.getConfiguration(section);
+        return Effect.succeed(api.getConfiguration(section));
       },
       getWorkspaceFolders() {
-        return api.workspaceFolders;
+        return Effect.succeed(Option.fromNullable(api.workspaceFolders));
       },
       registerNotebookSerializer(
         notebookType: string,
@@ -234,7 +243,7 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
         return Effect.acquireRelease(
           Effect.sync(() => api.registerNotebookSerializer(notebookType, impl)),
           (disposable) => Effect.sync(() => disposable.dispose()),
-        );
+        ).pipe(Effect.andThen(Effect.void));
       },
       notebookDocumentChanges() {
         return Stream.asyncPush<vscode.NotebookDocumentChangeEvent>((emit) =>
@@ -316,7 +325,11 @@ export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
         id: string,
         notebookType: string,
         label: string,
-      ) {
+      ): Effect.Effect<
+        Omit<vscode.NotebookController, "dispose">,
+        never,
+        Scope.Scope
+      > {
         return Effect.acquireRelease(
           Effect.sync(() =>
             api.createNotebookController(id, notebookType, label),

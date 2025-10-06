@@ -67,7 +67,10 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
       getTreeItem: (element: RecentNotebook) =>
         Effect.gen(function* () {
           const uri = code.Uri.parse(element.uri);
-          const workspaceFolders = code.workspace.getWorkspaceFolders() ?? [];
+          const workspaceFolders = Option.getOrElse(
+            yield* code.workspace.getWorkspaceFolders(),
+            () => [],
+          );
           const workspaceFolder = workspaceFolders.find(
             (folder: WorkspaceFolder) =>
               element.uri.startsWith(folder.uri.toString()),
@@ -170,7 +173,7 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
 
     // Initialize with currently open notebooks
     yield* Effect.gen(function* () {
-      const openNotebooks = code.workspace.getNotebookDocuments();
+      const openNotebooks = yield* code.workspace.getNotebookDocuments();
       for (const notebook of openNotebooks) {
         if (
           notebook.notebookType === NOTEBOOK_TYPE &&

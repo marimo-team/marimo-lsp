@@ -223,7 +223,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
 ) {}
 
 export class NotebookController extends Data.TaggedClass("NotebookController")<{
-  readonly _inner: vscode.NotebookController;
+  readonly _inner: Omit<vscode.NotebookController, "dispose">;
   readonly _runPromise: (
     effect: Effect.Effect<void, never, never>,
   ) => Promise<void>;

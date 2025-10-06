@@ -1,6 +1,16 @@
 import * as NodeEvents from "node:events";
 import * as NodePath from "node:path";
-import { Effect, Either, Layer, Option, Stream } from "effect";
+import {
+  Data,
+  Effect,
+  Either,
+  Layer,
+  Option,
+  PubSub,
+  Ref,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import type * as vscode from "vscode";
 import {
   Auth,
@@ -13,334 +23,6 @@ import {
   Window,
   Workspace,
 } from "../services/VsCode.ts";
-
-export const TestVsCodeLive = Layer.scoped(
-  VsCode,
-  Effect.gen(function* () {
-    return VsCode.make({
-      // namespaces
-      window: Window.make({
-        showInputBox() {
-          return Effect.succeed(Option.none());
-        },
-        showInformationMessage() {
-          return Effect.succeed(Option.none());
-        },
-        showWarningMessage() {
-          return Effect.succeed(Option.none());
-        },
-        showErrorMessage() {
-          return Effect.succeed(Option.none());
-        },
-        showQuickPick() {
-          return Effect.succeed(Option.none());
-        },
-        showQuickPickItems() {
-          return Effect.succeed(Option.none());
-        },
-        createOutputChannel(name) {
-          return Effect.acquireRelease(
-            Effect.sync(() => {
-              const emitter = new EventEmitter<vscode.LogLevel>();
-              return {
-                name,
-                logLevel: 0,
-                onDidChangeLogLevel: emitter.event,
-                dispose() {
-                  emitter.dispose();
-                },
-                append() {},
-                appendLine() {},
-                replace() {},
-                clear() {},
-                show() {},
-                hide() {},
-                trace() {},
-                debug() {},
-                info() {},
-                warn() {},
-                error() {},
-              };
-            }),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          );
-        },
-        getActiveNotebookEditor() {
-          return Option.none();
-        },
-        getVisibleNotebookEditors() {
-          return [];
-        },
-        createTreeView<T>() {
-          return Effect.acquireRelease(
-            Effect.sync(() => {
-              const expandElement = new EventEmitter<
-                vscode.TreeViewExpansionEvent<T>
-              >();
-              const collapseElement = new EventEmitter<
-                vscode.TreeViewExpansionEvent<T>
-              >();
-              const changeSelection = new EventEmitter<
-                vscode.TreeViewSelectionChangeEvent<T>
-              >();
-              const changeVisibility =
-                new EventEmitter<vscode.TreeViewVisibilityChangeEvent>();
-              const changeCheckboxState = new EventEmitter<
-                vscode.TreeCheckboxChangeEvent<T>
-              >();
-              return {
-                onDidExpandElement: expandElement.event,
-                onDidCollapseElement: collapseElement.event,
-                selection: [],
-                onDidChangeSelection: changeSelection.event,
-                visible: false,
-                onDidChangeVisibility: changeVisibility.event,
-                onDidChangeCheckboxState: changeCheckboxState.event,
-                async reveal(): Promise<void> {},
-                dispose() {
-                  expandElement.dispose();
-                  collapseElement.dispose();
-                  changeSelection.dispose();
-                  changeVisibility.dispose();
-                  changeCheckboxState.dispose();
-                },
-              };
-            }),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          );
-        },
-        createStatusBarItem(
-          id: string,
-          alignment: vscode.StatusBarAlignment,
-          priority?: number,
-        ) {
-          return Effect.acquireRelease(
-            Effect.sync(() => ({
-              id,
-              alignment,
-              priority,
-              text: "",
-              name: undefined,
-              tooltip: undefined,
-              color: undefined,
-              backgroundColor: undefined,
-              command: undefined,
-              accessibilityInformation: undefined,
-              show() {},
-              hide() {},
-              dispose() {},
-            })),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          );
-        },
-        activeNotebookEditorChanges(): Stream.Stream<
-          Option.Option<vscode.NotebookEditor>
-        > {
-          return Stream.never;
-        },
-        showNotebookDocument(
-          doc: vscode.NotebookDocument,
-          options?: vscode.NotebookDocumentShowOptions,
-        ) {
-          return Effect.succeed({
-            notebook: doc,
-            visibleRanges: [],
-            selection: new NotebookRange(0, 0),
-            selections: options?.selections ?? [],
-            viewColumn: options?.viewColumn,
-            revealRange() {},
-          });
-        },
-        withProgress() {
-          return Effect.void;
-        },
-      }),
-      commands: Commands.make({
-        executeCommand() {
-          return Effect.void;
-        },
-        registerCommand() {
-          return Effect.acquireRelease(
-            Effect.succeed({ dispose() {} }),
-            () => Effect.void,
-          );
-        },
-      }),
-      workspace: Workspace.make({
-        getNotebookDocuments() {
-          return [];
-        },
-        getConfiguration() {
-          return {
-            get: () => undefined,
-            has: () => false,
-            inspect: () => undefined,
-            async update() {},
-          };
-        },
-        getWorkspaceFolders() {
-          return [];
-        },
-        registerNotebookSerializer() {
-          return Effect.acquireRelease(
-            Effect.succeed({ dispose() {} }),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          );
-        },
-        notebookDocumentChanges() {
-          return Stream.never;
-        },
-        applyEdit() {
-          return Effect.succeed(true);
-        },
-        openNotebookDocument(uri: vscode.Uri) {
-          return Effect.succeed(new NotebookDocument("marimo-notebook", uri));
-        },
-        openUntitledNotebookDocument(
-          notebookType: string,
-          content?: vscode.NotebookData,
-        ) {
-          return Effect.succeed(
-            new NotebookDocument(
-              notebookType,
-              Uri.file("/mocks/foo_mo.py"),
-              content,
-            ),
-          );
-        },
-      }),
-      env: Env.make({
-        openExternal() {
-          return Effect.succeed(true);
-        },
-      }),
-      debug: Debug.make({
-        registerDebugConfigurationProvider() {
-          return Effect.acquireRelease(
-            Effect.succeed({ dispose() {} }),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          );
-        },
-        registerDebugAdapterDescriptorFactory() {
-          return Effect.acquireRelease(
-            Effect.succeed({ dispose() {} }),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          );
-        },
-      }),
-      notebooks: Notebooks.make({
-        createNotebookController(id, notebookType, label) {
-          return Effect.acquireRelease(
-            Effect.sync(() => {
-              const emitter = new EventEmitter();
-              return {
-                id,
-                notebookType,
-                label,
-                onDidChangeSelectedNotebooks: emitter.event,
-                dispose: () => {
-                  emitter.dispose();
-                },
-                createNotebookCellExecution() {
-                  return {
-                    start() {},
-                    end() {},
-                    async appendOutput() {},
-                    async clearOutput() {},
-                    async appendOutputItems() {},
-                    executionOrder: undefined,
-                    token: {
-                      isCancellationRequested: false,
-                      onCancellationRequested() {
-                        return { dispose: () => {} };
-                      },
-                    },
-                    async replaceOutput() {},
-                    async replaceOutputItems() {},
-                    get cell(): vscode.NotebookCell {
-                      throw new Error(
-                        "CellExecution.cell not implemented in TestVsCode.",
-                      );
-                    },
-                  };
-                },
-                executeHandler() {},
-                updateNotebookAffinity() {},
-              };
-            }),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          );
-        },
-        createRendererMessaging() {
-          const emitter = new EventEmitter<{
-            editor: vscode.NotebookEditor;
-            message: unknown;
-          }>();
-          return Effect.succeed({
-            postMessage: () => Promise.resolve(true),
-            onDidReceiveMessage: emitter.event,
-          });
-        },
-        registerNotebookCellStatusBarItemProvider() {
-          return Effect.acquireRelease(
-            Effect.succeed({ dispose() {} }),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          );
-        },
-      }),
-      auth: Auth.make({
-        getSession() {
-          return Effect.succeed(Option.none());
-        },
-      }),
-      NotebookData,
-      NotebookCellData,
-      NotebookCellKind: {
-        Markup: 1,
-        Code: 2,
-      },
-      NotebookCellOutput,
-      NotebookCellOutputItem,
-      NotebookEdit,
-      NotebookCellStatusBarItem,
-      NotebookCellStatusBarAlignment: {
-        Left: 1,
-        Right: 2,
-      },
-      WorkspaceEdit,
-      EventEmitter,
-      DebugAdapterInlineImplementation: class {},
-      ProgressLocation: {
-        SourceControl: 1,
-        Window: 10,
-        Notification: 15,
-      },
-      ThemeIcon,
-      TreeItem,
-      TreeItemCollapsibleState: {
-        None: 0,
-        Collapsed: 1,
-        Expanded: 2,
-      },
-      ThemeColor,
-      StatusBarAlignment: {
-        Left: 1,
-        Right: 2,
-      },
-      Uri,
-      MarkdownString,
-      // helper
-      utils: {
-        parseUri(value: string) {
-          return Either.try({
-            try: () => Uri.parse(value, /* strict */ true),
-            catch: (cause) => new ParseUriError({ cause }),
-          });
-        },
-      },
-    });
-  }),
-);
 
 class NotebookCellData implements vscode.NotebookCellData {
   kind: vscode.NotebookCellKind;
@@ -1155,4 +837,409 @@ export function createTestNotebookDocument(
   content?: vscode.NotebookData,
 ): vscode.NotebookDocument {
   return new NotebookDocument("marimo-notebook", uri, content);
+}
+
+export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
+  readonly layer: Layer.Layer<VsCode>;
+  readonly controllers: Ref.Ref<vscode.NotebookController[]>;
+  readonly serializers: Ref.Ref<
+    { notebookType: string; serializer: vscode.NotebookSerializer }[]
+  >;
+  readonly setActiveNotebookEditor: (
+    editor: Option.Option<vscode.NotebookEditor>,
+  ) => Effect.Effect<void>;
+  readonly addNotebookDocument: (
+    doc: vscode.NotebookDocument,
+  ) => Effect.Effect<void>;
+  readonly removeNotebookDocument: (
+    doc: vscode.NotebookDocument,
+  ) => Effect.Effect<void>;
+}> {
+  static make = Effect.fnUntraced(function* (
+    initialDocuments: vscode.NotebookDocument[] = [],
+  ) {
+    const activeNotebookEditor = yield* Ref.make(
+      Option.none<vscode.NotebookEditor>(),
+    );
+    const visibleNotebookEditors = yield* Ref.make<vscode.NotebookEditor[]>([]);
+
+    const notebookDocuments =
+      yield* Ref.make<vscode.NotebookDocument[]>(initialDocuments);
+
+    const activeEditorChanges = yield* SubscriptionRef.make(
+      Option.none<vscode.NotebookEditor>(),
+    );
+
+    const documentChanges =
+      yield* PubSub.unbounded<vscode.NotebookDocumentChangeEvent>();
+
+    const serializers = yield* Ref.make<
+      { notebookType: string; serializer: vscode.NotebookSerializer }[]
+    >([]);
+    const controllers = yield* Ref.make<vscode.NotebookController[]>([]);
+
+    const layer = Layer.scoped(
+      VsCode,
+      Effect.gen(function* () {
+        return VsCode.make({
+          // namespaces
+          window: Window.make({
+            showInputBox() {
+              return Effect.succeed(Option.none());
+            },
+            showInformationMessage() {
+              return Effect.succeed(Option.none());
+            },
+            showWarningMessage() {
+              return Effect.succeed(Option.none());
+            },
+            showErrorMessage() {
+              return Effect.succeed(Option.none());
+            },
+            showQuickPick() {
+              return Effect.succeed(Option.none());
+            },
+            showQuickPickItems() {
+              return Effect.succeed(Option.none());
+            },
+            createOutputChannel(name) {
+              return Effect.acquireRelease(
+                Effect.sync(() => {
+                  const emitter = new EventEmitter<vscode.LogLevel>();
+                  return {
+                    name,
+                    logLevel: 0,
+                    onDidChangeLogLevel: emitter.event,
+                    dispose() {
+                      emitter.dispose();
+                    },
+                    append() {},
+                    appendLine() {},
+                    replace() {},
+                    clear() {},
+                    show() {},
+                    hide() {},
+                    trace() {},
+                    debug() {},
+                    info() {},
+                    warn() {},
+                    error() {},
+                  };
+                }),
+                (disposable) => Effect.sync(() => disposable.dispose()),
+              );
+            },
+            getActiveNotebookEditor() {
+              return Ref.get(activeNotebookEditor);
+            },
+            getVisibleNotebookEditors() {
+              return Ref.get(visibleNotebookEditors);
+            },
+            createTreeView<T>() {
+              return Effect.acquireRelease(
+                Effect.sync(() => {
+                  const expandElement = new EventEmitter<
+                    vscode.TreeViewExpansionEvent<T>
+                  >();
+                  const collapseElement = new EventEmitter<
+                    vscode.TreeViewExpansionEvent<T>
+                  >();
+                  const changeSelection = new EventEmitter<
+                    vscode.TreeViewSelectionChangeEvent<T>
+                  >();
+                  const changeVisibility =
+                    new EventEmitter<vscode.TreeViewVisibilityChangeEvent>();
+                  const changeCheckboxState = new EventEmitter<
+                    vscode.TreeCheckboxChangeEvent<T>
+                  >();
+                  return {
+                    onDidExpandElement: expandElement.event,
+                    onDidCollapseElement: collapseElement.event,
+                    selection: [],
+                    onDidChangeSelection: changeSelection.event,
+                    visible: false,
+                    onDidChangeVisibility: changeVisibility.event,
+                    onDidChangeCheckboxState: changeCheckboxState.event,
+                    async reveal(): Promise<void> {},
+                    dispose() {
+                      expandElement.dispose();
+                      collapseElement.dispose();
+                      changeSelection.dispose();
+                      changeVisibility.dispose();
+                      changeCheckboxState.dispose();
+                    },
+                  };
+                }),
+                (disposable) => Effect.sync(() => disposable.dispose()),
+              );
+            },
+            createStatusBarItem(
+              id: string,
+              alignment: vscode.StatusBarAlignment,
+              priority?: number,
+            ) {
+              return Effect.acquireRelease(
+                Effect.sync(() => ({
+                  id,
+                  alignment,
+                  priority,
+                  text: "",
+                  name: undefined,
+                  tooltip: undefined,
+                  color: undefined,
+                  backgroundColor: undefined,
+                  command: undefined,
+                  accessibilityInformation: undefined,
+                  show() {},
+                  hide() {},
+                  dispose() {},
+                })),
+                (disposable) => Effect.sync(() => disposable.dispose()),
+              );
+            },
+            activeNotebookEditorChanges() {
+              return activeEditorChanges.changes;
+            },
+            showNotebookDocument(
+              doc: vscode.NotebookDocument,
+              options?: vscode.NotebookDocumentShowOptions,
+            ) {
+              return Effect.succeed({
+                notebook: doc,
+                visibleRanges: [],
+                selection: new NotebookRange(0, 0),
+                selections: options?.selections ?? [],
+                viewColumn: options?.viewColumn,
+                revealRange() {},
+              });
+            },
+            withProgress() {
+              return Effect.void;
+            },
+          }),
+          commands: Commands.make({
+            executeCommand() {
+              return Effect.void;
+            },
+            registerCommand() {
+              return Effect.acquireRelease(
+                Effect.succeed({ dispose() {} }),
+                () => Effect.void,
+              );
+            },
+          }),
+          workspace: Workspace.make({
+            getNotebookDocuments() {
+              return Ref.get(notebookDocuments);
+            },
+            getConfiguration() {
+              return Effect.succeed({
+                get: () => undefined,
+                has: () => false,
+                inspect: () => undefined,
+                async update() {},
+              });
+            },
+            getWorkspaceFolders() {
+              return Effect.succeed(Option.none());
+            },
+            registerNotebookSerializer(notebookType, impl) {
+              return Effect.acquireRelease(
+                Effect.gen(function* () {
+                  const serializer = { notebookType, serializer: impl };
+                  yield* Ref.update(serializers, (arr) => [...arr, serializer]);
+                  return serializer;
+                }),
+                (serializer) =>
+                  Ref.update(serializers, (arr) =>
+                    arr.filter((s) => !Object.is(s, serializer)),
+                  ),
+              );
+            },
+            notebookDocumentChanges() {
+              return Stream.fromPubSub(documentChanges);
+            },
+            applyEdit() {
+              return Effect.succeed(true);
+            },
+            openNotebookDocument(uri: vscode.Uri) {
+              return Effect.succeed(
+                new NotebookDocument("marimo-notebook", uri),
+              );
+            },
+            openUntitledNotebookDocument(
+              notebookType: string,
+              content?: vscode.NotebookData,
+            ) {
+              return Effect.succeed(
+                new NotebookDocument(
+                  notebookType,
+                  Uri.file("/mocks/foo_mo.py"),
+                  content,
+                ),
+              );
+            },
+          }),
+          env: Env.make({
+            openExternal() {
+              return Effect.succeed(true);
+            },
+          }),
+          debug: Debug.make({
+            registerDebugConfigurationProvider() {
+              return Effect.acquireRelease(
+                Effect.succeed({ dispose() {} }),
+                (disposable) => Effect.sync(() => disposable.dispose()),
+              );
+            },
+            registerDebugAdapterDescriptorFactory() {
+              return Effect.acquireRelease(
+                Effect.succeed({ dispose() {} }),
+                (disposable) => Effect.sync(() => disposable.dispose()),
+              );
+            },
+          }),
+          notebooks: Notebooks.make({
+            createNotebookController(id, notebookType, label) {
+              return Effect.acquireRelease(
+                Effect.gen(function* () {
+                  const emitter = new EventEmitter();
+                  const controller = {
+                    id,
+                    notebookType,
+                    label,
+                    onDidChangeSelectedNotebooks: emitter.event,
+                    dispose: () => emitter.dispose(),
+                    createNotebookCellExecution() {
+                      return {
+                        start() {},
+                        end() {},
+                        async appendOutput() {},
+                        async clearOutput() {},
+                        async appendOutputItems() {},
+                        executionOrder: undefined,
+                        token: {
+                          isCancellationRequested: false,
+                          onCancellationRequested() {
+                            return { dispose: () => {} };
+                          },
+                        },
+                        async replaceOutput() {},
+                        async replaceOutputItems() {},
+                        get cell(): vscode.NotebookCell {
+                          throw new Error(
+                            "CellExecution.cell not implemented in TestVsCode.",
+                          );
+                        },
+                      };
+                    },
+                    executeHandler() {},
+                    updateNotebookAffinity() {},
+                  };
+                  yield* Ref.update(controllers, (arr) => [...arr, controller]);
+                  return controller;
+                }),
+                (controller) =>
+                  Effect.gen(function* () {
+                    yield* Effect.sync(() => controller.dispose());
+                    yield* Ref.update(controllers, (arr) =>
+                      arr.filter((c) => !Object.is(c, controller)),
+                    );
+                  }),
+              );
+            },
+            createRendererMessaging() {
+              const emitter = new EventEmitter<{
+                editor: vscode.NotebookEditor;
+                message: unknown;
+              }>();
+              return Effect.succeed({
+                postMessage: () => Promise.resolve(true),
+                onDidReceiveMessage: emitter.event,
+              });
+            },
+            registerNotebookCellStatusBarItemProvider() {
+              return Effect.acquireRelease(
+                Effect.succeed({ dispose() {} }),
+                (disposable) => Effect.sync(() => disposable.dispose()),
+              );
+            },
+          }),
+          auth: Auth.make({
+            getSession() {
+              return Effect.succeed(Option.none());
+            },
+          }),
+          NotebookData,
+          NotebookCellData,
+          NotebookCellKind: {
+            Markup: 1,
+            Code: 2,
+          },
+          NotebookCellOutput,
+          NotebookCellOutputItem,
+          NotebookEdit,
+          NotebookCellStatusBarItem,
+          NotebookCellStatusBarAlignment: {
+            Left: 1,
+            Right: 2,
+          },
+          WorkspaceEdit,
+          EventEmitter,
+          DebugAdapterInlineImplementation: class {},
+          ProgressLocation: {
+            SourceControl: 1,
+            Window: 10,
+            Notification: 15,
+          },
+          ThemeIcon,
+          TreeItem,
+          TreeItemCollapsibleState: {
+            None: 0,
+            Collapsed: 1,
+            Expanded: 2,
+          },
+          ThemeColor,
+          StatusBarAlignment: {
+            Left: 1,
+            Right: 2,
+          },
+          Uri,
+          MarkdownString,
+          // helper
+          utils: {
+            parseUri(value: string) {
+              return Either.try({
+                try: () => Uri.parse(value, /* strict */ true),
+                catch: (cause) => new ParseUriError({ cause }),
+              });
+            },
+          },
+        });
+      }),
+    );
+
+    return new TestVsCode({
+      layer,
+      controllers,
+      serializers,
+      setActiveNotebookEditor: (editor) =>
+        Effect.gen(function* () {
+          yield* Ref.set(activeNotebookEditor, editor);
+          yield* SubscriptionRef.set(activeEditorChanges, editor);
+        }),
+      addNotebookDocument: (doc) =>
+        Ref.update(notebookDocuments, (docs) => [...docs, doc]),
+      removeNotebookDocument: (doc) =>
+        Ref.update(notebookDocuments, (docs) =>
+          docs.filter((d) => d.uri.toString() !== doc.uri.toString()),
+        ),
+    });
+  });
+
+  static Default = TestVsCode.make([]).pipe(
+    Effect.map((test) => test.layer),
+    Effect.scoped,
+    Layer.unwrapEffect,
+  );
 }
