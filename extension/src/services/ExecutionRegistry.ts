@@ -349,7 +349,13 @@ function getNotebookCell(
   const cell = notebook
     .getCells()
     .find((c) => c.document.uri.toString() === cellId);
-  assert(cell, `No cell id ${cellId} in notebook ${notebook.uri.toString()} `);
+  if (!cell) {
+    const cellIds = notebook.getCells().map((c) => c.document.uri.toString());
+    assert(
+      cell,
+      `No cell id ${cellId} in notebook ${notebook.uri.toString()}. Available cells: ${cellIds.join(", ")}`,
+    );
+  }
   return cell;
 }
 

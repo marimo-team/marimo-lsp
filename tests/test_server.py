@@ -325,7 +325,8 @@ import sys
 
 print("hello, world")
 print("error message", file=sys.stderr)
-x = 42\
+x = 42
+x\
 """
 
     client.notebook_document_did_open(
@@ -396,7 +397,8 @@ import sys
 
 print("hello, world")
 print("error message", file=sys.stderr)
-x = 42\
+x = 42
+x\
 """
                     ],
                     "code_is_stale": False,
@@ -405,6 +407,24 @@ x = 42\
             {
                 "notebookUri": "file:///exec_test.py",
                 "operation": {"op": "focus-cell", "cell_id": "cell1"},
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "file:///exec_test.py#cell1",
+                    "output": None,
+                    "console": None,
+                    "status": None,
+                    "stale_inputs": True,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {"op": "completed-run"},
             },
             {
                 "notebookUri": "file:///exec_test.py",
@@ -467,8 +487,8 @@ x = 42\
                     "cell_id": "cell1",
                     "output": {
                         "channel": "output",
-                        "mimetype": "text/plain",
-                        "data": "",
+                        "mimetype": "text/html",
+                        "data": "<pre style='font-size: 12px'>42</pre>",
                         "timestamp": IsFloat(),
                     },
                     "console": None,
@@ -526,6 +546,319 @@ x = 42\
                         "channel": "stderr",
                         "mimetype": "text/plain",
                         "data": "error message\n",
+                        "timestamp": IsFloat(),
+                    },
+                    "status": None,
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
+    """Test that we can collect marimo operations until cell reaches idle state."""
+    code_x = """x = 42"""
+    code_y = """print(x)"""
+
+    client.notebook_document_did_open(
+        lsp.DidOpenNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocument(
+                uri="file:///exec_test.py",
+                notebook_type="marimo-notebook",
+                version=1,
+                cells=[
+                    lsp.NotebookCell(
+                        kind=lsp.NotebookCellKind.Code,
+                        document="file:///exec_test.py#cell1",
+                    ),
+                    lsp.NotebookCell(
+                        kind=lsp.NotebookCellKind.Code,
+                        document="file:///exec_test.py#cell2",
+                    ),
+                ],
+            ),
+            cell_text_documents=[
+                lsp.TextDocumentItem(
+                    uri="file:///exec_test.py#cell1",
+                    language_id="python",
+                    version=1,
+                    text=code_x,
+                ),
+                lsp.TextDocumentItem(
+                    uri="file:///exec_test.py#cell2",
+                    language_id="python",
+                    version=1,
+                    text=code_y,
+                ),
+            ],
+        ),
+    )
+
+    messages = []
+    completion_event = asyncio.Event()
+
+    @client.feature("marimo/operation")
+    async def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
+        # pygls dynamically makes an `Object` named tuple which makes snapshotting hard
+        # we just convert to a regular dict here for snapshotting
+        messages.append(asdict(params))
+        if params.operation.op == "completed-run":
+            # FIXME: stdin/stdout are flushed every 10ms, so wait 100ms to ensure
+            # all related events. The frontend uses the same workaround.
+            await asyncio.sleep(0.1)
+            completion_event.set()
+
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.run",
+            arguments=[
+                {
+                    "notebookUri": "file:///exec_test.py",
+                    "executable": sys.executable,
+                    # Just run cell_y, and cell_x should be run automatically
+                    "inner": {
+                        "cellIds": ["cell2"],
+                        "codes": [code_y],
+                    },
+                }
+            ],
+        )
+    )
+
+    await asyncio.wait_for(completion_event.wait(), timeout=5.0)
+    assert messages == snapshot(
+        [
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "update-cell-codes",
+                    "cell_ids": ["cell2"],
+                    "codes": ["print(x)"],
+                    "code_is_stale": False,
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {"op": "focus-cell", "cell_id": "cell2"},
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "file:///exec_test.py#cell1",
+                    "output": None,
+                    "console": None,
+                    "status": None,
+                    "stale_inputs": True,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "file:///exec_test.py#cell2",
+                    "output": None,
+                    "console": None,
+                    "status": None,
+                    "stale_inputs": True,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {"op": "completed-run"},
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "variables",
+                    "variables": [
+                        {
+                            "name": "x",
+                            "declared_by": ["file:///exec_test.py#cell1"],
+                            "used_by": ["cell2"],
+                        }
+                    ],
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "file:///exec_test.py#cell1",
+                    "output": None,
+                    "console": None,
+                    "status": "queued",
+                    "stale_inputs": None,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "file:///exec_test.py#cell1",
+                    "output": None,
+                    "console": None,
+                    "status": None,
+                    "stale_inputs": False,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "cell2",
+                    "output": None,
+                    "console": None,
+                    "status": "queued",
+                    "stale_inputs": None,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "remove-ui-elements",
+                    "cell_id": "file:///exec_test.py#cell1",
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {"op": "remove-ui-elements", "cell_id": "cell2"},
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "file:///exec_test.py#cell1",
+                    "output": None,
+                    "console": [],
+                    "status": "running",
+                    "stale_inputs": None,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "variable-values",
+                    "variables": [{"name": "x", "value": "42", "datatype": "int"}],
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "file:///exec_test.py#cell1",
+                    "output": {
+                        "channel": "output",
+                        "mimetype": "text/plain",
+                        "data": "",
+                        "timestamp": IsFloat(),
+                    },
+                    "console": None,
+                    "status": None,
+                    "stale_inputs": None,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "file:///exec_test.py#cell1",
+                    "output": None,
+                    "console": None,
+                    "status": "idle",
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "cell2",
+                    "output": None,
+                    "console": [],
+                    "status": "running",
+                    "stale_inputs": None,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "cell2",
+                    "output": {
+                        "channel": "output",
+                        "mimetype": "text/plain",
+                        "data": "",
+                        "timestamp": IsFloat(),
+                    },
+                    "console": None,
+                    "status": None,
+                    "stale_inputs": None,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "cell2",
+                    "output": None,
+                    "console": None,
+                    "status": "idle",
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {"op": "completed-run"},
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "cell2",
+                    "output": None,
+                    "console": {
+                        "channel": "stdout",
+                        "mimetype": "text/plain",
+                        "data": "42\n",
                         "timestamp": IsFloat(),
                     },
                     "status": None,

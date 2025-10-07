@@ -39,6 +39,7 @@ class LspSessionManager:
     def __init__(self) -> None:
         """Initialize the session manager with an empty session map."""
         self._sessions: dict[str, Session] = {}
+        self._instantiated: dict[str, bool] = {}
 
     def get_session(self, notebook_uri: str) -> Session | None:
         """Get a session by notebook URI."""
@@ -48,6 +49,7 @@ class LspSessionManager:
         """Add a session to the manager."""
         logger.info(f"Adding session for {notebook_uri}")
         self._sessions[notebook_uri] = session
+        self._instantiated[notebook_uri] = False
 
     def close_session(self, notebook_uri: str) -> None:
         """Close and remove a session."""
@@ -58,6 +60,8 @@ class LspSessionManager:
                 session.close()
             except Exception:
                 logger.exception(f"Error closing session for {notebook_uri}")
+
+        self._instantiated.pop(notebook_uri, None)
 
     def create_session(
         self, *, server: LanguageServer, notebook_uri: str, executable: str
@@ -106,3 +110,11 @@ class LspSessionManager:
         uris = list(self._sessions.keys())
         for uri in uris:
             self.close_session(uri)
+
+    def is_instantiated(self, notebook_uri: str) -> bool:
+        """Check if a session is instantiated."""
+        return self._instantiated.get(notebook_uri, False)
+
+    def set_instantiated(self, notebook_uri: str, *, instantiated: bool) -> None:
+        """Set if a session is instantiated."""
+        self._instantiated[notebook_uri] = instantiated

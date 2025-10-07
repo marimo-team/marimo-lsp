@@ -14,6 +14,7 @@ import msgspec
 from marimo._convert.converters import MarimoConvert
 from marimo._runtime.requests import FunctionCallRequest
 from marimo._schemas.serialization import NotebookSerialization
+from marimo._server.models.models import InstantiateRequest
 from marimo._utils.parse_dataclass import parse_raw
 from pygls.lsp.server import LanguageServer
 from pygls.uris import to_fs_path
@@ -165,6 +166,18 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
                 notebook_uri=args.notebook_uri,
             )
             logger.info(f"Created and synced session {args.notebook_uri}")
+
+        # We lazily instantiate the session until the first run command is sent
+        # so we don't force connecting to a kernel unnecessarily
+        is_instantiated = manager.is_instantiated(args.notebook_uri)
+        if not is_instantiated:
+            logger.info(f"Instantiating session {args.notebook_uri}")
+            session.instantiate(
+                InstantiateRequest(auto_run=False, object_ids=[], values=[]),
+                http_request=None,
+            )
+            manager.set_instantiated(args.notebook_uri, instantiated=True)
+
         session.put_control_request(
             args.inner.as_execution_request(), from_consumer_id=None
         )
@@ -222,7 +235,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     @command(server, "marimo.dap", NotebookCommand[DebugAdapterRequest])
     async def dap(ls: LanguageServer, args: NotebookCommand[DebugAdapterRequest]):
         """Handle DAP messages forwarded from VS Code extension."""
-        from marimo_lsp.debug_adapter import (  # noqa: PLC0415
+        from marimo_lsp.debug_adapter import (
             handle_debug_adapter_request,
         )
 

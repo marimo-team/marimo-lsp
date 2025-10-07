@@ -44,6 +44,7 @@ ignore = [
   "PLC2701",  # Private imports
   "TD",  # TODOS
   "S101",  # Use of assert
+  "E501",  # Line too long (we will still format these)
   "ANN202",  # Return types
 ]
 
