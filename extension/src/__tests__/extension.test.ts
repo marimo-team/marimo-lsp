@@ -1,9 +1,11 @@
-import { expect, it } from "@effect/vitest";
+import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, LogLevel } from "effect";
+import * as pkg from "../../package.json";
 import { getTestExtensionContext } from "../__mocks__/TestExtensionContext.ts";
 import { TestLanguageClientLive } from "../__mocks__/TestLanguageClient.ts";
 import { TestPythonExtension } from "../__mocks__/TestPythonExtension.ts";
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import { makeActivate } from "../layers/Main.ts";
 
 describe("extension.activate", () => {
@@ -50,12 +52,14 @@ describe("extension.activate", () => {
       const context = yield* getTestExtensionContext();
       yield* Effect.promise(() => activate(context));
 
-      expect(yield* vscode.snapshot()).toMatchInlineSnapshot(`
+      const snapshot = yield* vscode.snapshot();
+      expect(snapshot).toMatchInlineSnapshot(`
         {
           "commands": [
             "marimo.clearRecentNotebooks",
-            "marimo.createGist",
             "marimo.newMarimoNotebook",
+            "marimo.publishMarimoNotebook",
+            "marimo.publishMarimoNotebookGist",
             "marimo.runStale",
             "marimo.showMarimoMenu",
           ],
@@ -63,8 +67,26 @@ describe("extension.activate", () => {
           "serializers": [
             "marimo-notebook",
           ],
+          "views": [
+            "marimo-explorer-datasources",
+            "marimo-explorer-recents",
+            "marimo-explorer-variables",
+          ],
         }
       `);
+
+      // Should exactly match package.json
+      expect(new Set(pkg.contributes.commands.map((c) => c.command))).toEqual(
+        new Set(snapshot.commands),
+      );
+      expect(
+        new Set(
+          pkg.contributes.views["marimo-explorer"].map((view) => view.id),
+        ),
+      ).toEqual(new Set(snapshot.views));
+
+      assert.strictEqual(pkg.contributes.notebooks.length, 1);
+      assert.strictEqual(pkg.contributes.notebooks[0].type, NOTEBOOK_TYPE);
     }),
   );
 });
