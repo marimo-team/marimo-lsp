@@ -399,9 +399,12 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
     )
 
     # Should return a list of packages (at least some common ones should be present)
+    assert result is not None
     assert "packages" in result
-    assert isinstance(result["packages"], list)
-    assert len(result["packages"]) > 2  # Has more than just marimo
+    packages = result["packages"]
+    assert packages is not None
+    assert isinstance(packages, list)
+    assert len(packages) > 2  # Has more than just marimo
 
 
 @pytest.mark.asyncio
@@ -486,13 +489,15 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
     )
 
     # Should return a tree or None
+    assert result is not None
     assert "tree" in result
-    assert result["tree"] is not None
-    assert "name" in result["tree"]
-    assert "version" in result["tree"]
-    assert "tags" in result["tree"]
-    assert "dependencies" in result["tree"]
-    assert len(result["tree"]["dependencies"]) > 2  # Has more than just marimo
+    tree = result["tree"]
+    assert tree is not None
+    assert "name" in tree
+    assert "version" in tree
+    assert "tags" in tree
+    assert "dependencies" in tree
+    assert len(tree["dependencies"]) > 2  # Has more than just marimo
 
 
 @pytest.mark.asyncio

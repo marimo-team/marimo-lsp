@@ -10,7 +10,6 @@ import { Log } from "../../utils/log.ts";
 import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { LanguageClient } from "../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../NotebookEditorRegistry.ts";
-import { VsCode } from "../VsCode.ts";
 
 // Re-export schema types for convenience
 export type { DependencyTreeNode };

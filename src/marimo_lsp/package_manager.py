@@ -37,8 +37,10 @@ class LspPackageManager:
         """List installed packages."""
         return self._delegate.list_packages()
 
-    # TODO: instead of overriding this, we should extend PackageManager
-    # to allow custom env to be passed in
+    def is_manager_installed(self) -> bool:
+        """Check if the package manager is installed."""
+        return self._delegate.is_manager_installed()
+
     def run(self, command: list[str], log_callback: LogCallback | None) -> bool:
         """Run a package manager command with optional logging."""
         if not self._delegate.is_manager_installed():
