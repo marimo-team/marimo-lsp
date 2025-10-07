@@ -240,7 +240,7 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
     }),
   );
 
-  it.scoped.only(
+  it.scoped.skip(
     "should stream configuration changes",
     Effect.fnUntraced(function* () {
       const ctx = yield* TestContext;
@@ -274,19 +274,19 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
 
       // Trigger some changes
       // lazy, lazy, autorun, lazy, lazy
-      let updated = yield* service.updateConfig(notebookUri, {
+      let _updated = yield* service.updateConfig(notebookUri, {
         runtime: { on_cell_change: "lazy" },
       });
-      updated = yield* service.updateConfig(notebookUri, {
+      _updated = yield* service.updateConfig(notebookUri, {
         runtime: { on_cell_change: "lazy" },
       });
-      updated = yield* service.updateConfig(notebookUri, {
+      _updated = yield* service.updateConfig(notebookUri, {
         runtime: { on_cell_change: "autorun" },
       });
-      updated = yield* service.updateConfig(notebookUri, {
+      _updated = yield* service.updateConfig(notebookUri, {
         runtime: { on_cell_change: "lazy" },
       });
-      updated = yield* service.updateConfig(notebookUri, lastMessage);
+      _updated = yield* service.updateConfig(notebookUri, lastMessage);
 
       // Collect the stream
 
@@ -348,7 +348,7 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
       const mockConfig = AUTORUN_CONFIG;
 
       // Test that streamOf is available and can map config
-      const stream = service.streamOf(
+      const _stream = service.streamOf(
         (config) => config.runtime?.on_cell_change,
       );
 

@@ -13,7 +13,7 @@ import lsprotocol.types as lsp
 import msgspec
 from marimo._convert.converters import MarimoConvert
 from marimo._runtime.packages.package_managers import create_package_manager
-from marimo._runtime.requests import FunctionCallRequest
+from marimo._runtime.requests import FunctionCallRequest, SetUserConfigRequest
 from marimo._schemas.serialization import NotebookSerialization
 from marimo._server.models.models import InstantiateRequest
 from marimo._utils.parse_dataclass import parse_raw
@@ -43,6 +43,8 @@ from marimo_lsp.package_manager import LspPackageManager
 from marimo_lsp.session_manager import LspSessionManager
 
 if TYPE_CHECKING:
+    from marimo._config.config import PartialMarimoConfig
+
     from marimo_lsp.kernel_manager import LspKernelManager
 
 logger = get_logger()
@@ -396,16 +398,11 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             return {"success": False, "error": "No session found"}
 
         try:
-            # Save the configuration using the config manager
-            from marimo._config.config import PartialMarimoConfig
-
             updated_config = session.config_manager.save_config(
-                cast(PartialMarimoConfig, args.inner.config)
+                cast("PartialMarimoConfig", args.inner.config)
             )
 
             # Update the kernel's view of the config
-            from marimo._runtime.requests import SetUserConfigRequest
-
             session.put_control_request(
                 SetUserConfigRequest(updated_config),
                 from_consumer_id=None,
@@ -449,9 +446,7 @@ def command(server: LanguageServer, name: str, type: type[T]) -> Callable:  # no
             @server.command(name)
             @wraps(func)
             async def wrapper(ls: LanguageServer, args: dict[str, Any]) -> Any:  # noqa: ANN401
-                return await func(
-                    ls, msgspec.convert(args, type=type)
-                )  # ty: ignore[invalid-await]
+                return await func(ls, msgspec.convert(args, type=type))  # ty: ignore[invalid-await]
 
             # Override annotations to prevent cattrs from inspecting
             wrapper.__annotations__ = {}
