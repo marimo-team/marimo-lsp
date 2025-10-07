@@ -342,9 +342,7 @@ def command(server: LanguageServer, name: str, type: type[T]) -> Callable:  # no
             @server.command(name)
             @wraps(func)
             async def wrapper(ls: LanguageServer, args: dict[str, Any]) -> Any:  # noqa: ANN401
-                return await func(
-                    ls, msgspec.convert(args, type=type)
-                )  # ty: ignore[invalid-await]
+                return await func(ls, msgspec.convert(args, type=type))  # ty: ignore[invalid-await]
 
             # Override annotations to prevent cattrs from inspecting
             wrapper.__annotations__ = {}
