@@ -46,7 +46,6 @@ export class PackagesService extends Effect.Service<PackagesService>()(
       const client = yield* LanguageClient;
       const controllers = yield* ControllerRegistry;
       const editors = yield* NotebookEditorRegistry;
-      const code = yield* VsCode;
 
       // Track package lists: NotebookUri -> PackageListState
       const packageListsRef = yield* SubscriptionRef.make(
@@ -216,24 +215,16 @@ export class PackagesService extends Effect.Service<PackagesService>()(
             }
 
             // Get the executable from the active controller
-            const activeNotebookUri = yield* editors.getActiveNotebookUri();
-            if (Option.isNone(activeNotebookUri)) {
-              yield* Log.warn(
-                "No active notebook for fetching dependency tree",
-              );
+            const activeNotebookEditor =
+              yield* editors.getActiveNotebookEditor();
+            if (Option.isNone(activeNotebookEditor)) {
+              yield* Log.warn("Could not find notebook editor");
               return null;
             }
 
-            const notebooks = yield* code.workspace.getNotebookDocuments();
-            const notebook = notebooks.find(
-              (nb) => nb.uri.toString() === activeNotebookUri.value,
+            const controller = yield* controllers.getActiveController(
+              activeNotebookEditor.value.notebook,
             );
-            if (!notebook) {
-              yield* Log.warn("Could not find notebook document");
-              return null;
-            }
-
-            const controller = yield* controllers.getActiveController(notebook);
             if (Option.isNone(controller)) {
               yield* Log.warn(
                 "No active controller for fetching dependency tree",

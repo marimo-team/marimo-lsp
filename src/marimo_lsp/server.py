@@ -21,6 +21,7 @@ from pygls.uris import to_fs_path
 
 from marimo_lsp.app_file_manager import sync_app_with_workspace
 from marimo_lsp.completions import get_completions
+from marimo_lsp.debug_adapter import handle_debug_adapter_request
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     ConvertRequest,
@@ -275,10 +276,6 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     @command(server, "marimo.dap", NotebookCommand[DebugAdapterRequest])
     async def dap(ls: LanguageServer, args: NotebookCommand[DebugAdapterRequest]):
         """Handle DAP messages forwarded from VS Code extension."""
-        from marimo_lsp.debug_adapter import (
-            handle_debug_adapter_request,
-        )
-
         return handle_debug_adapter_request(
             ls=ls,
             manager=manager,
@@ -382,9 +379,7 @@ def command(server: LanguageServer, name: str, type: type[T]) -> Callable:  # no
             @server.command(name)
             @wraps(func)
             async def wrapper(ls: LanguageServer, args: dict[str, Any]) -> Any:  # noqa: ANN401
-                return await func(
-                    ls, msgspec.convert(args, type=type)
-                )  # ty: ignore[invalid-await]
+                return await func(ls, msgspec.convert(args, type=type))  # ty: ignore[invalid-await]
 
             # Override annotations to prevent cattrs from inspecting
             wrapper.__annotations__ = {}
