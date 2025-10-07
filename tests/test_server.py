@@ -318,6 +318,189 @@ if __name__ == "__main__":
 
 
 @pytest.mark.asyncio
+async def test_marimo_get_package_list_no_session(client: LanguageClient) -> None:
+    """Test the marimo.get_package_list command when no session exists."""
+    result = await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.get_package_list",
+            arguments=[
+                {
+                    "notebookUri": "file:///nonexistent.py",
+                    "executable": sys.executable,
+                    "inner": {},
+                }
+            ],
+        )
+    )
+
+    assert result == {"packages": []}
+
+
+@pytest.mark.asyncio
+async def test_marimo_get_package_list_with_session(client: LanguageClient) -> None:
+    """Test the marimo.get_package_list command with an active session."""
+    # First create a session by opening a notebook and running a cell
+    client.notebook_document_did_open(
+        lsp.DidOpenNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocument(
+                uri="file:///package_test.py",
+                notebook_type="marimo-notebook",
+                version=1,
+                cells=[
+                    lsp.NotebookCell(
+                        kind=lsp.NotebookCellKind.Code,
+                        document="file:///package_test.py#cell1",
+                    )
+                ],
+            ),
+            cell_text_documents=[
+                lsp.TextDocumentItem(
+                    uri="file:///package_test.py#cell1",
+                    language_id="python",
+                    version=1,
+                    text="x = 1",
+                )
+            ],
+        ),
+    )
+
+    # Run a cell to ensure session is created
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.run",
+            arguments=[
+                {
+                    "notebookUri": "file:///package_test.py",
+                    "executable": sys.executable,
+                    "inner": {
+                        "cellIds": ["cell1"],
+                        "codes": ["x = 1"],
+                    },
+                }
+            ],
+        )
+    )
+
+    # Give the session a moment to start
+    await asyncio.sleep(0.1)
+
+    # Now get the package list
+    result = await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.get_package_list",
+            arguments=[
+                {
+                    "notebookUri": "file:///package_test.py",
+                    "executable": sys.executable,
+                    "inner": {},
+                }
+            ],
+        )
+    )
+
+    # Should return a list of packages (at least some common ones should be present)
+    assert result is not None
+    assert "packages" in result
+    packages = result["packages"]
+    assert packages is not None
+    assert isinstance(packages, list)
+    assert len(packages) > 2  # Has more than just marimo
+
+
+@pytest.mark.asyncio
+async def test_marimo_get_dependency_tree_no_session(client: LanguageClient) -> None:
+    """Test the marimo.get_dependency_tree command when no session exists."""
+    result = await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.get_dependency_tree",
+            arguments=[
+                {
+                    "notebookUri": "file:///nonexistent.py",
+                    "executable": sys.executable,
+                    "inner": {},
+                }
+            ],
+        )
+    )
+
+    assert result == {"tree": None}
+
+
+@pytest.mark.asyncio
+async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -> None:
+    """Test the marimo.get_dependency_tree command with an active session."""
+    # First create a session by opening a notebook and running a cell
+    client.notebook_document_did_open(
+        lsp.DidOpenNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocument(
+                uri="file:///dep_tree_test.py",
+                notebook_type="marimo-notebook",
+                version=1,
+                cells=[
+                    lsp.NotebookCell(
+                        kind=lsp.NotebookCellKind.Code,
+                        document="file:///dep_tree_test.py#cell1",
+                    )
+                ],
+            ),
+            cell_text_documents=[
+                lsp.TextDocumentItem(
+                    uri="file:///dep_tree_test.py#cell1",
+                    language_id="python",
+                    version=1,
+                    text="x = 1",
+                )
+            ],
+        ),
+    )
+
+    # Run a cell to ensure session is created
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.run",
+            arguments=[
+                {
+                    "notebookUri": "file:///dep_tree_test.py",
+                    "executable": sys.executable,
+                    "inner": {
+                        "cellIds": ["cell1"],
+                        "codes": ["x = 1"],
+                    },
+                }
+            ],
+        )
+    )
+
+    # Give the session a moment to start
+    await asyncio.sleep(0.1)
+
+    # Now get the dependency tree
+    result = await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.get_dependency_tree",
+            arguments=[
+                {
+                    "notebookUri": "file:///dep_tree_test.py",
+                    "executable": sys.executable,
+                    "inner": {},
+                }
+            ],
+        )
+    )
+
+    # Should return a tree or None
+    assert result is not None
+    assert "tree" in result
+    tree = result["tree"]
+    assert tree is not None
+    assert "name" in tree
+    assert "version" in tree
+    assert "tags" in tree
+    assert "dependencies" in tree
+    assert len(tree["dependencies"]) > 2  # Has more than just marimo
+
+
+@pytest.mark.asyncio
 async def test_simple_marimo_run(client: LanguageClient) -> None:
     """Test that we can collect marimo operations until cell reaches idle state."""
     code = """\

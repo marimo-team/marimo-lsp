@@ -1,6 +1,7 @@
 import * as semver from "@std/semver";
 import { ParseResult, Schema } from "effect";
 
+export * from "./schemas/packages.ts";
 export * from "./schemas/vscode-notebook.ts";
 
 const Header = Schema.Struct({

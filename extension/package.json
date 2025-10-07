@@ -131,6 +131,12 @@
         "icon": "$(clear-all)"
       },
       {
+        "command": "marimo.refreshPackages",
+        "title": "Refresh packages",
+        "category": "marimo",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "marimo.runStale",
         "title": "Run Stale Cells",
         "shortTitle": "Run Stale",
@@ -163,6 +169,11 @@
           "id": "marimo-explorer-datasources",
           "name": "Datasources",
           "icon": "images/small-icon.png"
+        },
+        {
+          "id": "marimo-explorer-packages",
+          "name": "Packages",
+          "icon": "images/small-icon.png"
         }
       ]
     },
@@ -177,6 +188,11 @@
         {
           "command": "marimo.clearRecentNotebooks",
           "when": "view == marimo-explorer-recents",
+          "group": "navigation"
+        },
+        {
+          "command": "marimo.refreshPackages",
+          "when": "view == marimo-explorer-packages",
           "group": "navigation"
         }
       ],

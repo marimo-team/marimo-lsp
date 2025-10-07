@@ -6,11 +6,13 @@ export type MarimoCommand =
   | "marimo.newMarimoNotebook"
   | "marimo.publishMarimoNotebook"
   | "marimo.publishMarimoNotebookGist"
+  | "marimo.refreshPackages"
   | "marimo.runStale"
   | "marimo.showMarimoMenu";
 
 export type MarimoView =
   | "marimo-explorer-datasources"
+  | "marimo-explorer-packages"
   | "marimo-explorer-recents"
   | "marimo-explorer-variables";
 

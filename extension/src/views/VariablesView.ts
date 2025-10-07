@@ -55,7 +55,9 @@ export const VariablesViewLive = Layer.scopedDiscard(
     const refreshVariables = Effect.fnUntraced(function* () {
       const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
 
-      yield* Log.info("Refreshing variables", { activeNotebookUri });
+      yield* Log.info("Refreshing variables", {
+        activeNotebookUri: Option.getOrElse(activeNotebookUri, () => null),
+      });
       if (Option.isNone(activeNotebookUri)) {
         yield* Ref.set(variableItems, []);
         yield* provider.refresh();

@@ -22,12 +22,14 @@ import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import type { PythonExtension } from "../services/PythonExtension.ts";
+import { PackagesService } from "../services/packages/PackagesService.ts";
 import { ExtensionContext, Storage } from "../services/Storage.ts";
 import { Uv } from "../services/Uv.ts";
 import type { VsCode } from "../services/VsCode.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
 import { DatasourcesViewLive } from "../views/DatasourcesView.ts";
 import { MarimoStatusBarLive } from "../views/MarimoStatusBar.ts";
+import { PackagesViewLive } from "../views/PackagesView.ts";
 import { RecentNotebooksLive } from "../views/RecentNotebooks.ts";
 import { StatusBar } from "../views/StatusBar.ts";
 import { TreeView } from "../views/TreeView.ts";
@@ -47,6 +49,7 @@ const MainLive = LspLive.pipe(
   Layer.merge(RecentNotebooksLive),
   Layer.merge(VariablesViewLive),
   Layer.merge(DatasourcesViewLive),
+  Layer.merge(PackagesViewLive),
 ).pipe(
   Layer.provide(Uv.Default),
   Layer.provide(GitHubClient.Default),
@@ -56,6 +59,7 @@ const MainLive = LspLive.pipe(
   Layer.provide(ExecutionRegistry.Default),
   Layer.provide(VariablesService.Default),
   Layer.provide(DatasourcesService.Default),
+  Layer.provide(PackagesService.Default),
   Layer.provide(CellStateManager.Default),
   Layer.provide(CellStatusBarProvider.Default),
   Layer.provide(ControllerRegistry.Default),

@@ -56,6 +56,10 @@ interface DebugAdapterRequest {
 }
 // biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type InterruptRequest = {};
+// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
+type ListPackagesRequest = {};
+// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
+type DependencyTreeRequest = {};
 
 // client -> language server
 type MarimoCommandMap = {
@@ -66,6 +70,8 @@ type MarimoCommandMap = {
   "marimo.interrupt": NotebookScoped<InterruptRequest>;
   "marimo.serialize": SerializeRequest;
   "marimo.deserialize": DeserializeRequest;
+  "marimo.get_package_list": SessionScoped<ListPackagesRequest>;
+  "marimo.get_dependency_tree": SessionScoped<DependencyTreeRequest>;
 };
 
 type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {

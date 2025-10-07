@@ -1,12 +1,12 @@
 import { expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import { Effect } from "effect";
-import { TestVsCodeLive } from "../../__mocks__/TestVsCode.ts";
+import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import type { CellRuntimeState } from "../../types.ts";
 import { buildCellOutputs, type NotebookCellId } from "../ExecutionRegistry.ts";
 import { VsCode } from "../VsCode.ts";
 
-const ExecutionRegistryTestLive = TestVsCodeLive;
+const ExecutionRegistryTestLive = TestVsCode.Default;
 
 const CELL_ID = "test-cell-id" as NotebookCellId;
 

@@ -69,6 +69,31 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         },
 
         /**
+         * Get the notebook editor for a given notebook URI
+         */
+        getNotebookEditor(uri: NotebookUri) {
+          return Effect.map(Ref.get(ref), HashMap.get(uri));
+        },
+
+        /**
+         * Get the currently active notebook editor
+         */
+        getActiveNotebookEditor() {
+          return Effect.gen(function* () {
+            const activeNotebookUri =
+              yield* SubscriptionRef.get(activeNotebookRef);
+
+            if (Option.isNone(activeNotebookUri)) {
+              yield* Log.warn("No active notebook editor");
+              return Option.none();
+            }
+
+            const editors = yield* Ref.get(ref);
+            return HashMap.get(editors, activeNotebookUri.value);
+          });
+        },
+
+        /**
          * Stream of active notebook URI changes
          */
         streamActiveNotebookChanges() {

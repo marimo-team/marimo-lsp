@@ -372,7 +372,7 @@ function transitionCell(
  * Separates outputs by channel (stdout, stderr, marimo-error, etc.)
  */
 export function buildCellOutputs(
-  cellId: NotebookCellId,
+  _cellId: NotebookCellId,
   state: CellRuntimeState,
   code: VsCode,
 ): vscode.NotebookCellOutput[] {
@@ -487,7 +487,7 @@ function buildOutputItem(
     // Convert marimo errors to VSCode Error objects
     const errors = output.data.map((error) => {
       const { type, ...rest } = error;
-      const message = Object.entries(rest)
+      const _message = Object.entries(rest)
         .map(([key, value]) => `${key}: ${String(value)}`)
         .join(", ");
       return code.NotebookCellOutputItem.stderr(prettyErrorMessage(error));
