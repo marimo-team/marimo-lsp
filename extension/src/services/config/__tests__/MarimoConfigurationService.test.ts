@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Stream, SubscriptionRef } from "effect";
-import { partialService } from "../../../__tests__/__utilts__/partial.ts";
+import { partialService } from "../../../__tests__/__utils__/partial.ts";
 import type { MarimoConfig, NotebookUri } from "../../../types.ts";
 import { LanguageClient } from "../../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../NotebookEditorRegistry.ts";
