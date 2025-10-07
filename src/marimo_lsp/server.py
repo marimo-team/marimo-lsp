@@ -172,11 +172,11 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         is_instantiated = manager.is_instantiated(args.notebook_uri)
         if not is_instantiated:
             logger.info(f"Instantiating session {args.notebook_uri}")
-            manager.set_instantiated(args.notebook_uri, instantiated=True)
             session.instantiate(
                 InstantiateRequest(auto_run=False, object_ids=[], values=[]),
                 http_request=None,
             )
+            manager.set_instantiated(args.notebook_uri, instantiated=True)
 
         session.put_control_request(
             args.inner.as_execution_request(), from_consumer_id=None

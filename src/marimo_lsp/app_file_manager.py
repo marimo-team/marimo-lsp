@@ -123,9 +123,12 @@ def sync_app_with_workspace(
 
     for cell in notebook.cells:
         # Extract cell ID from document URI fragment (e.g., "file:///test.py#cell1" -> "cell1")
-        cell_id = cell.document.split("#")[-1] if "#" in cell.document else cell.document
-        cell_ids.append(CellId_t(cell_id))
-        codes.append(workspace.text_documents.get(cell.document) or "")
+        cell_ids.append(CellId_t(cell.document))
+        document = workspace.text_documents.get(cell.document)
+        if document:
+            codes.append(document.source or "")
+        else:
+            codes.append("")
         configs.append((cell.metadata or {}).get("config", {}))
         names.append((cell.metadata or {}).get("name", "_"))
 
