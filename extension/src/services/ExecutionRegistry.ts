@@ -21,7 +21,8 @@ import {
 } from "../types.ts";
 import { prettyErrorMessage } from "../utils/errors.ts";
 import { CellStateManager } from "./CellStateManager.ts";
-import type { NotebookController } from "./NotebookControllerFactory.ts";
+import type { VenvPythonController } from "./NotebookControllerFactory.ts";
+import type { SandboxController } from "./SandboxController.ts";
 import { VsCode } from "./VsCode.ts";
 
 export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
@@ -60,18 +61,18 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
         },
         handleCellOperation: Effect.fnUntraced(function* (
           msg: CellMessage,
-          deps: {
+          options: {
             editor: vscode.NotebookEditor;
-            controller: NotebookController;
+            controller: VenvPythonController | SandboxController;
           },
         ) {
-          const { editor, controller } = deps;
+          const { editor, controller } = options;
           const cellId = extractCellId(msg);
 
           const cell = yield* Ref.modify(ref, (map) => {
             const prev = Option.match(HashMap.get(map, cellId), {
               onSome: (cell) => cell,
-              onNone: () => CellEntry.make(cellId, deps.editor),
+              onNone: () => CellEntry.make(cellId, editor),
             });
             const update = CellEntry.transition(prev, msg);
             return [update, HashMap.set(map, cellId, update)];
@@ -123,7 +124,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
               yield* Effect.logDebug("Cell execution started").pipe(
                 Effect.annotateLogs({ cellId }),
               );
-              yield* CellEntry.maybeUpdateCellOutput(update, code, deps);
+              yield* CellEntry.maybeUpdateCellOutput(update, code, options);
               return;
             }
 
@@ -134,7 +135,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                 );
               }
               // MUST modify cell output before `ExecutionHandle.end`
-              yield* CellEntry.maybeUpdateCellOutput(cell, code, deps);
+              yield* CellEntry.maybeUpdateCellOutput(cell, code, options);
 
               {
                 // FIXME: stdin/stdout are flushed every 10ms, so wait 50ms
@@ -181,7 +182,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
             }
 
             default: {
-              yield* CellEntry.maybeUpdateCellOutput(cell, code, deps);
+              yield* CellEntry.maybeUpdateCellOutput(cell, code, options);
             }
           }
         }),
@@ -281,7 +282,7 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
     code: VsCode,
     deps?: {
       editor: vscode.NotebookEditor;
-      controller: NotebookController;
+      controller: VenvPythonController | SandboxController;
     },
   ) {
     const { pendingExecution, id: cellId, state } = cell;
@@ -489,10 +490,6 @@ function buildOutputItem(
   if (output.channel === "marimo-error" && Array.isArray(output.data)) {
     // Convert marimo errors to VSCode Error objects
     const errors = output.data.map((error) => {
-      const { type, ...rest } = error;
-      const _message = Object.entries(rest)
-        .map(([key, value]) => `${key}: ${String(value)}`)
-        .join(", ");
       return code.NotebookCellOutputItem.stderr(prettyErrorMessage(error));
     });
     return errors[0] || null;

@@ -1,6 +1,6 @@
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Brand, Data, Effect, Option, Runtime } from "effect";
+import { Brand, Effect, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
 import { unreachable } from "../assert.ts";
 import { getNotebookUri } from "../types.ts";
@@ -162,10 +162,12 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                           );
                           return;
                         }
-                        yield* installPackages(venv.value, packages, {
-                          uv,
-                          code,
-                        });
+                        yield* installPackages(packages, {
+                          venvPath: venv.value,
+                        }).pipe(
+                          Effect.provideService(VsCode, code),
+                          Effect.provideService(Uv, uv),
+                        );
                       } else {
                         const msg =
                           `${formatControllerLabel(code, options.env)} cannot run the marimo kernel:\n\n` +
@@ -211,50 +213,49 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
               ),
             );
 
-          return new NotebookController({
-            _inner: controller,
-            _runPromise: runPromise,
-            env: options.env,
-          });
+          return new VenvPythonController(controller, options.env.path);
         }),
       };
     }),
   },
 ) {}
 
-export class NotebookController extends Data.TaggedClass("NotebookController")<{
-  readonly _inner: Omit<vscode.NotebookController, "dispose">;
-  readonly _runPromise: (
-    effect: Effect.Effect<void, never, never>,
-  ) => Promise<void>;
-  readonly env: py.Environment;
-}> {
+export class VenvPythonController {
+  #inner: Omit<vscode.NotebookController, "dispose">;
+  executable: string;
+  constructor(
+    inner: Omit<vscode.NotebookController, "dispose">,
+    executable: string,
+  ) {
+    this.#inner = inner;
+    this.executable = executable;
+  }
   static getId(env: py.Environment) {
     return NotebookControllerId(`marimo-${env.path}`);
   }
   get id(): NotebookControllerId {
-    return this._inner.id as NotebookControllerId;
+    return this.#inner.id as NotebookControllerId;
   }
   mutateDescription(description: string) {
-    this._inner.description = description;
-    return this;
+    return Effect.sync(() => {
+      this.#inner.description = description;
+      return this;
+    });
   }
   createNotebookCellExecution(cell: vscode.NotebookCell) {
-    return this._inner.createNotebookCellExecution(cell);
+    return this.#inner.createNotebookCellExecution(cell);
   }
-  onDidChangeSelectedNotebooks(
-    listener: (options: {
-      readonly notebook: vscode.NotebookDocument;
-      readonly selected: boolean;
-    }) => Effect.Effect<void, never, never>,
-  ) {
-    return Effect.acquireRelease(
-      Effect.sync(() =>
-        this._inner.onDidChangeSelectedNotebooks((e) =>
-          this._runPromise(listener(e)),
+  selectedNotebookChanges() {
+    return Stream.asyncPush<{
+      notebook: vscode.NotebookDocument;
+      selected: boolean;
+    }>((emit) =>
+      Effect.acquireRelease(
+        Effect.sync(() =>
+          this.#inner.onDidChangeSelectedNotebooks((e) => emit.single(e)),
         ),
+        (disposable) => Effect.sync(() => disposable.dispose()),
       ),
-      (disposable) => Effect.sync(() => disposable.dispose()),
     );
   }
 }

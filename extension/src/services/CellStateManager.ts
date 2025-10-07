@@ -75,7 +75,11 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         code.workspace.notebookDocumentChanges().pipe(
           Stream.mapEffect(
             Effect.fnUntraced(function* (event) {
-              yield* Effect.logTrace("onDidChangeNotebookDocument", event);
+              yield* Effect.logTrace("onDidChangeNotebookDocument", {
+                notebook: event.notebook.uri.fsPath,
+                numCellChanges: event.cellChanges.length,
+                newMetadata: event.metadata,
+              });
 
               // Only process marimo notebooks
               if (!isMarimoNotebookDocument(event.notebook)) {

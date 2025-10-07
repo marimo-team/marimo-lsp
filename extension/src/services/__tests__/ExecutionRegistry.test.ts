@@ -1,6 +1,7 @@
 import { expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import { Effect } from "effect";
+import type * as vscode from "vscode";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import type { CellRuntimeState } from "../../types.ts";
 import { buildCellOutputs, type NotebookCellId } from "../ExecutionRegistry.ts";
@@ -11,15 +12,21 @@ const ExecutionRegistryTestLive = TestVsCode.Default;
 const CELL_ID = "test-cell-id" as NotebookCellId;
 
 // Convert Uint8Array data to strings for readable snapshots
-function normalizeOutputsForSnapshot(outputs: unknown) {
-  if (!Array.isArray(outputs)) return outputs;
+function normalizeOutputsForSnapshot(
+  outputs: Array<vscode.NotebookCellOutput>,
+) {
+  if (!Array.isArray(outputs)) {
+    return outputs;
+  }
 
-  return outputs.map((output: any) => {
-    if (!output.items) return output;
+  return outputs.map((output) => {
+    if (!output.items) {
+      return output;
+    }
 
     return {
       ...output,
-      items: output.items.map((item: any) => {
+      items: output.items.map((item) => {
         if (item.data instanceof Uint8Array) {
           const decoder = new TextDecoder();
           return {

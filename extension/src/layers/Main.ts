@@ -23,6 +23,7 @@ import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import type { PythonExtension } from "../services/PythonExtension.ts";
 import { PackagesService } from "../services/packages/PackagesService.ts";
+import { SandboxController } from "../services/SandboxController.ts";
 import { ExtensionContext, Storage } from "../services/Storage.ts";
 import { Uv } from "../services/Uv.ts";
 import type { VsCode } from "../services/VsCode.ts";
@@ -51,7 +52,6 @@ const MainLive = LspLive.pipe(
   Layer.merge(DatasourcesViewLive),
   Layer.merge(PackagesViewLive),
 ).pipe(
-  Layer.provide(Uv.Default),
   Layer.provide(GitHubClient.Default),
   Layer.provide(DebugAdapter.Default),
   Layer.provide(NotebookRenderer.Default),
@@ -64,6 +64,8 @@ const MainLive = LspLive.pipe(
   Layer.provide(CellStatusBarProvider.Default),
   Layer.provide(ControllerRegistry.Default),
   Layer.provide(NotebookEditorRegistry.Default),
+  Layer.provide(SandboxController.Default),
+  Layer.provide(Uv.Default),
   Layer.provide(TreeView.Default),
   Layer.provide(StatusBar.Default),
   Layer.provide(Storage.Default),

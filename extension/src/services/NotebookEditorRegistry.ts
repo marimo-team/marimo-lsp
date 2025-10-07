@@ -54,6 +54,9 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
       );
 
       return {
+        getNotebookEditors() {
+          return Effect.map(Ref.get(ref), HashMap.toEntries);
+        },
         /**
          * Get the last notebook editor for a given notebook URI
          */

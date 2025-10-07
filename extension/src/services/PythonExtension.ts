@@ -10,7 +10,13 @@ export class PythonExtension extends Effect.Service<PythonExtension>()(
   {
     scoped: Effect.gen(function* () {
       const api = yield* Effect.promise(() => py.PythonExtension.api());
+
       return {
+        updateActiveEnvironmentPath(executable: string) {
+          return Effect.promise(() =>
+            api.environments.updateActiveEnvironmentPath(executable),
+          );
+        },
         knownEnvironments() {
           return Effect.succeed(api.environments.known);
         },

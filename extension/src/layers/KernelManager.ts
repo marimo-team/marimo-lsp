@@ -1,6 +1,6 @@
 import { Effect, Layer, Option, Queue, Runtime, Stream } from "effect";
 import { unreachable } from "../assert.ts";
-import { routeOperation } from "../operations.ts";
+import { handleMissingPackageAlert } from "../operations.ts";
 import { Config } from "../services/Config.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
@@ -9,6 +9,7 @@ import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
+import { SandboxController } from "../services/SandboxController.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
@@ -46,6 +47,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const controllers = yield* ControllerRegistry;
     const variables = yield* VariablesService;
     const datasources = yield* DatasourcesService;
+    const sandboxController = yield* SandboxController;
 
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
@@ -81,24 +83,92 @@ export const KernelManagerLive = Layer.scopedDiscard(
             yield* editors.getLastNotebookEditor(notebookUri),
             () => new Error(`Expected NotebookEditor for ${notebookUri}`),
           );
-          const controller = Option.getOrThrowWith(
+
+          const controller = Option.getOrElse(
             yield* controllers.getActiveController(editor.notebook),
-            () => new Error(`Expected NotebookController for ${notebookUri}`),
+            // fallback to sandbox
+            () => sandboxController,
           );
 
-          yield* routeOperation(operation, {
-            code,
-            config,
-            executions,
-            editor,
-            notebookUri,
-            controller,
-            renderer,
-            variables,
-            datasources,
-            runPromise,
-            uv,
-          });
+          switch (operation.op) {
+            case "cell-op": {
+              yield* executions.handleCellOperation(operation, {
+                editor,
+                controller,
+              });
+              break;
+            }
+            case "interrupted": {
+              yield* executions.handleInterrupted(editor);
+              break;
+            }
+            case "completed-run": {
+              break;
+            }
+            case "missing-package-alert": {
+              // Handle in a separate fork (we don't want to block resolution)
+              runPromise(
+                handleMissingPackageAlert(
+                  operation,
+                  editor.notebook,
+                  controller,
+                ).pipe(
+                  Effect.provideService(Uv, uv),
+                  Effect.provideService(VsCode, code),
+                  Effect.provideService(Config, config),
+                ),
+              );
+              break;
+            }
+            // Update variable state
+            case "variables": {
+              yield* variables.updateVariables(notebookUri, operation);
+              break;
+            }
+            case "variable-values": {
+              yield* variables.updateVariableValues(notebookUri, operation);
+              break;
+            }
+            // Update datasource state
+            case "data-source-connections": {
+              yield* datasources.updateConnections(notebookUri, operation);
+              break;
+            }
+            case "datasets": {
+              yield* datasources.updateDatasets(notebookUri, operation);
+              break;
+            }
+            case "sql-table-preview": {
+              yield* datasources.updateTablePreview(notebookUri, operation);
+              break;
+            }
+            case "sql-table-list-preview": {
+              yield* datasources.updateTableListPreview(notebookUri, operation);
+              break;
+            }
+            case "data-column-preview": {
+              yield* datasources.updateColumnPreview(notebookUri, operation);
+              break;
+            }
+            // Forward to renderer (front end) (non-blocking)
+            case "remove-ui-elements":
+            case "function-call-result":
+            case "send-ui-element-message": {
+              runPromise(renderer.postMessage(operation, editor));
+              break;
+            }
+            case "update-cell-codes":
+            case "focus-cell": {
+              // Ignore
+              break;
+            }
+            default: {
+              yield* Effect.logWarning("Unknown operation").pipe(
+                Effect.annotateLogs({ op: operation.op }),
+              );
+              break;
+            }
+          }
 
           yield* Effect.logDebug("Completed processing operation").pipe(
             Effect.annotateLogs({ op: operation.op }),

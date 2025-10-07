@@ -63,11 +63,11 @@ it.effect(
       {
         "controllers": [
           {
-            "envPath": "/home/user/.venv/bin/python",
+            "executable": "/home/user/.venv/bin/python",
             "id": "marimo-/home/user/.venv/bin/python",
           },
           {
-            "envPath": "/usr/local/bin/python3.11",
+            "executable": "/usr/local/bin/python3.11",
             "id": "marimo-/usr/local/bin/python3.11",
           },
         ],
@@ -96,7 +96,7 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
@@ -116,7 +116,7 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
@@ -148,11 +148,11 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/home/user/.venv/bin/python",
+                "executable": "/home/user/.venv/bin/python",
                 "id": "marimo-/home/user/.venv/bin/python",
               },
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
@@ -172,11 +172,11 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/home/user/.venv/bin/python",
+                "executable": "/home/user/.venv/bin/python",
                 "id": "marimo-/home/user/.venv/bin/python",
               },
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
@@ -232,11 +232,11 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/home/user/.venv/bin/python",
+                "executable": "/home/user/.venv/bin/python",
                 "id": "marimo-/home/user/.venv/bin/python",
               },
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
@@ -268,11 +268,11 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/home/user/.venv/bin/python",
+                "executable": "/home/user/.venv/bin/python",
                 "id": "marimo-/home/user/.venv/bin/python",
               },
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
@@ -292,11 +292,11 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/home/user/.venv/bin/python",
+                "executable": "/home/user/.venv/bin/python",
                 "id": "marimo-/home/user/.venv/bin/python",
               },
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
@@ -329,7 +329,7 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
@@ -346,7 +346,7 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
@@ -363,15 +363,15 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/home/user/.venv/bin/python",
+                "executable": "/home/user/.venv/bin/python",
                 "id": "marimo-/home/user/.venv/bin/python",
               },
               {
-                "envPath": "/opt/python3.12/bin/python",
+                "executable": "/opt/python3.12/bin/python",
                 "id": "marimo-/opt/python3.12/bin/python",
               },
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
@@ -388,11 +388,11 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/opt/python3.12/bin/python",
+                "executable": "/opt/python3.12/bin/python",
                 "id": "marimo-/opt/python3.12/bin/python",
               },
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
@@ -409,7 +409,7 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/opt/python3.12/bin/python",
+                "executable": "/opt/python3.12/bin/python",
                 "id": "marimo-/opt/python3.12/bin/python",
               },
             ],
@@ -440,7 +440,7 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
@@ -461,7 +461,7 @@ it.effect(
           {
             "controllers": [
               {
-                "envPath": "/usr/local/bin/python3.11",
+                "executable": "/usr/local/bin/python3.11",
                 "id": "marimo-/usr/local/bin/python3.11",
               },
             ],
