@@ -23,8 +23,28 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     );
 
     yield* code.commands.registerCommand(
-      "marimo.createGist",
+      "marimo.publishMarimoNotebookGist",
       createGist({ code, serializer, gh, channel }),
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.publishMarimoNotebook",
+      Effect.gen(function* () {
+        const choice = yield* code.window.showQuickPickItems([
+          {
+            label: "GitHub Gist",
+            detail: "Publish marimo notebook as a GitHub Gist",
+          },
+        ]);
+        if (Option.isNone(choice)) {
+          return choice;
+        }
+        if (choice.value.label === "GitHub Gist") {
+          yield* code.commands.executeCommand(
+            "marimo.publishMarimoNotebookGist",
+          );
+        }
+      }),
     );
 
     yield* code.commands.registerCommand(

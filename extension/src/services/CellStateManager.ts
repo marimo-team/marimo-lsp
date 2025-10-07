@@ -1,6 +1,5 @@
 import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
-import { ContextKeys } from "../constants.ts";
 import { decodeCellMetadata, encodeCellMetadata } from "../schemas.ts";
 import { getNotebookUri, type NotebookUri } from "../types.ts";
 import { Log } from "../utils/log.ts";
@@ -49,11 +48,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
           },
         });
 
-        yield* code.commands.executeCommand(
-          "setContext",
-          ContextKeys["marimo.hasStaleCells"],
-          hasStaleCells,
-        );
+        yield* code.commands.setContext("marimo.hasStaleCells", hasStaleCells);
         yield* Log.debug("Updated stale context", { hasStaleCells });
       });
 

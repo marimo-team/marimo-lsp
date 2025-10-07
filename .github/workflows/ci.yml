@@ -64,6 +64,8 @@ jobs:
         run: |
           cd marimo-lsp/extension
           pnpm install
+          # make sure our types are up to date
+          node scripts/codegen.mjs
           pnpm turbo typecheck-ci
 
   typescript-test:
@@ -108,6 +110,8 @@ jobs:
         working-directory: marimo-lsp/extension
         run: |
           pnpm install
+          # make sure our types are up to date
+          node scripts/codegen.mjs
           pnpm build
           pnpm embed-sdist
 
