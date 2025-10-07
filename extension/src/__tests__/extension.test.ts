@@ -60,6 +60,7 @@ describe("extension.activate", () => {
             "marimo.newMarimoNotebook",
             "marimo.publishMarimoNotebook",
             "marimo.publishMarimoNotebookGist",
+            "marimo.refreshPackages",
             "marimo.runStale",
             "marimo.showMarimoMenu",
           ],
@@ -69,6 +70,7 @@ describe("extension.activate", () => {
           ],
           "views": [
             "marimo-explorer-datasources",
+            "marimo-explorer-packages",
             "marimo-explorer-recents",
             "marimo-explorer-variables",
           ],
