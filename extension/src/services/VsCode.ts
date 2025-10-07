@@ -180,7 +180,7 @@ type ExecutableCommand =
   | MarimoCommand;
 
 type ContextMap = {
-  "marimo.hasStaleCells": boolean;
+  "marimo.notebook.hasStaleCells": boolean;
 };
 
 export class Commands extends Effect.Service<Commands>()("Commands", {

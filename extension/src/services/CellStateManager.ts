@@ -12,7 +12,7 @@ import { VsCode } from "./VsCode.ts";
  *
  * Tracks which cells have been edited (stale) and updates:
  * 1. Cell metadata with state: "stale"
- * 2. VSCode context key "marimo.hasStaleCells" for UI enablement
+ * 2. VSCode context key "marimo.notebook.hasStaleCells" for UI enablement
  *
  * Uses SubscriptionRef for reactive state management.
  */
@@ -48,7 +48,10 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
           },
         });
 
-        yield* code.commands.setContext("marimo.hasStaleCells", hasStaleCells);
+        yield* code.commands.setContext(
+          "marimo.notebook.hasStaleCells",
+          hasStaleCells,
+        );
         yield* Log.debug("Updated stale context", { hasStaleCells });
       });
 

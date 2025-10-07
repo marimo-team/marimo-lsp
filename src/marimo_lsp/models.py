@@ -84,5 +84,16 @@ class DependencyTreeRequest(msgspec.Struct, rename="camel"):
     """A request to get the dependency tree of installed packages."""
 
 
+class GetConfigurationRequest(msgspec.Struct, rename="camel"):
+    """A request to get the current configuration."""
+
+
+class UpdateConfigurationRequest(msgspec.Struct, rename="camel"):
+    """A request to update the user configuration."""
+
+    config: dict[str, typing.Any]
+    """The partial configuration to merge with the current config."""
+
+
 RunRequest = core.RunRequest
 SetUIElementValueRequest = requests.SetUIElementValueRequest
