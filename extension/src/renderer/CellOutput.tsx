@@ -1,7 +1,6 @@
 import {
   type CellId,
   type CellRuntimeState,
-  ConsoleOutput,
   OutputRenderer,
   TooltipProvider,
   useTheme,
@@ -20,14 +19,6 @@ export function CellOutput({ cellId, state }: CellOutputProps) {
   return (
     <div className={`marimo-cell-output p-4 ${theme}`}>
       <TooltipProvider>
-        <ConsoleOutput
-          cellId={cellId}
-          cellName={"_"}
-          consoleOutputs={state.consoleOutputs}
-          stale={false}
-          debuggerActive={false}
-          onSubmitDebugger={(_text: string, _index: number) => {}}
-        />
         {state.output && (
           <OutputRenderer cellId={cellId} message={state.output} />
         )}

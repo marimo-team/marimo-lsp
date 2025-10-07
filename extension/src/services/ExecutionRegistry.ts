@@ -12,6 +12,7 @@ import {
   Runtime,
 } from "effect";
 import type * as vscode from "vscode";
+import type { CellOutput } from "@/core/kernel/messages.ts";
 import { assert } from "../assert.ts";
 import {
   type CellMessage,
@@ -372,7 +373,7 @@ function transitionCell(
  * Separates outputs by channel (stdout, stderr, marimo-error, etc.)
  */
 export function buildCellOutputs(
-  _cellId: NotebookCellId,
+  cellId: NotebookCellId,
   state: CellRuntimeState,
   code: VsCode,
 ): vscode.NotebookCellOutput[] {
@@ -388,7 +389,7 @@ export function buildCellOutputs(
   // Process console outputs (stdout, stderr, stdin)
   if (state.consoleOutputs) {
     for (const output of state.consoleOutputs) {
-      const item = buildOutputItem(output, code);
+      const item = buildOutputItem(output, cellId, state, code);
       if (!item) continue;
 
       switch (output.channel) {
@@ -407,7 +408,7 @@ export function buildCellOutputs(
 
   // Process main output and errors
   if (state.output) {
-    const item = buildOutputItem(state.output, code);
+    const item = buildOutputItem(state.output, cellId, state, code);
     if (item) {
       if (state.output.channel === "marimo-error") {
         errorItems.push(item);
@@ -461,7 +462,9 @@ export function buildCellOutputs(
  * Builds a single NotebookCellOutputItem from a CellOutput
  */
 function buildOutputItem(
-  output: { mimetype: string; data: unknown; channel: string },
+  output: CellOutput,
+  cellId: NotebookCellId,
+  state: CellRuntimeState,
   code: VsCode,
 ): vscode.NotebookCellOutputItem | null {
   // Handle stdout/stderr with proper VSCode helpers
@@ -495,22 +498,9 @@ function buildOutputItem(
     return errors[0] || null;
   }
 
-  // Handle HTML
-  if (output.mimetype === "text/html") {
-    return code.NotebookCellOutputItem.text(
-      String(output.data),
-      output.mimetype,
-    );
-  }
-
-  // Handle JSON outputs
-  if (
-    output.mimetype === "application/json" ||
-    typeof output.data === "object"
-  ) {
-    return code.NotebookCellOutputItem.json(output.data, output.mimetype);
-  }
-
-  // Default: treat as text
-  return code.NotebookCellOutputItem.text(String(output.data), output.mimetype);
+  // Default pass to our renderer
+  return code.NotebookCellOutputItem.json(
+    { cellId, state },
+    "application/vnd.marimo.ui+json",
+  );
 }
