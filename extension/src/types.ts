@@ -24,6 +24,8 @@ export type SqlTablePreviewOp = MessageOperationOf<"sql-table-preview">;
 export type SqlTableListPreviewOp =
   MessageOperationOf<"sql-table-list-preview">;
 
+export type MarimoConfig = Schemas["MarimoConfig"];
+
 export type NotebookUri = Brand.Branded<string, "NotebookUri">;
 
 // Only way to get our NotebookUri type is from the server or a vscode.NotebookDocument
@@ -60,6 +62,11 @@ type InterruptRequest = {};
 type ListPackagesRequest = {};
 // biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type DependencyTreeRequest = {};
+// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
+type GetConfigurationRequest = {};
+interface UpdateConfigurationRequest {
+  config: Record<string, unknown>;
+}
 
 // client -> language server
 type MarimoCommandMap = {
@@ -72,6 +79,8 @@ type MarimoCommandMap = {
   "marimo.deserialize": DeserializeRequest;
   "marimo.get_package_list": SessionScoped<ListPackagesRequest>;
   "marimo.get_dependency_tree": SessionScoped<DependencyTreeRequest>;
+  "marimo.get_configuration": NotebookScoped<GetConfigurationRequest>;
+  "marimo.update_configuration": NotebookScoped<UpdateConfigurationRequest>;
 };
 
 type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {

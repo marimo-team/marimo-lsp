@@ -40,7 +40,10 @@ assert(
 );
 const notebook = pkg.contributes.notebooks[0];
 
-const contextKeys = ["marimo.hasStaleCells"];
+const contextKeys = [
+  "marimo.notebook.hasStaleCells",
+  "marimo.config.runtime.on_cell_change",
+];
 
 const code = NodeChildProcess.execFileSync(
   NodeUrl.fileURLToPath(

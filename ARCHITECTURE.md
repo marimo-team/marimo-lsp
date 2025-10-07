@@ -254,7 +254,7 @@ orchestrates kernel operations by:
 
 The `CellStateManager` (`extension/src/services/CellStateManager.ts`) tracks
 cell stale state. When a cell's content changes, it's marked as stale in the
-cell metadata and the `marimo.hasStaleCells` context key is updated for UI
+cell metadata and the `marimo.notebook.hasStaleCells` context key is updated for UI
 enablement (e.g., "Run Stale Cells" button).
 
 ### Execution Registry (TypeScript)

@@ -11,6 +11,8 @@ import type * as vscode from "vscode";
 import { CellStateManager } from "../services/CellStateManager.ts";
 import { CellStatusBarProvider } from "../services/CellStatusBarProvider.ts";
 import { Config } from "../services/Config.ts";
+import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
+import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { DebugAdapter } from "../services/DebugAdapter.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
@@ -60,6 +62,8 @@ const MainLive = LspLive.pipe(
   Layer.provide(VariablesService.Default),
   Layer.provide(DatasourcesService.Default),
   Layer.provide(PackagesService.Default),
+  Layer.provide(MarimoConfigurationService.Default),
+  Layer.provide(ConfigContextManager.Default),
   Layer.provide(CellStateManager.Default),
   Layer.provide(CellStatusBarProvider.Default),
   Layer.provide(ControllerRegistry.Default),

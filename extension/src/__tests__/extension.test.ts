@@ -63,6 +63,8 @@ describe("extension.activate", () => {
             "marimo.refreshPackages",
             "marimo.runStale",
             "marimo.showMarimoMenu",
+            "marimo.toggleOnCellChange",
+            "marimo.toggleOnCellChangeLazy",
           ],
           "controllers": [],
           "serializers": [
