@@ -174,7 +174,7 @@ function notebookDataToMarimoNotebook(
 export function wrapInMarkdown(code: string): string {
   return `
 mo.md(
-r"""
+    r"""
 ${code}
 """)`.trim();
 }

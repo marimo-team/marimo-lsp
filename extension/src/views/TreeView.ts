@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type * as vscode from "vscode";
-import type { MarimoViewKey } from "../constants.ts";
+import type { MarimoView } from "../constants.ts";
 import { VsCode } from "../services/VsCode.ts";
 
 /**
@@ -36,7 +36,7 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
        * @param options - Configuration for the tree view
        */
       createTreeDataProvider<T>(options: {
-        viewId: MarimoViewKey;
+        viewId: MarimoView;
         getChildren: (element?: T) => Effect.Effect<T[], never, never>;
         getTreeItem: (element: T) => Effect.Effect<TreeItem, never, never>;
         getParent?: (element: T) => Effect.Effect<T | undefined, never, never>;

@@ -1,0 +1,269 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildCellOutputs > handles HTML output 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "<div>Hello <b>world</b></div>",
+        "mime": "text/html",
+      },
+    ],
+    "metadata": undefined,
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles JSON output 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "{"foo":"bar","count":42}",
+        "mime": "application/json",
+      },
+    ],
+    "metadata": undefined,
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles application/vnd.marimo+traceback output 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "<b>Traceback (most recent call last):</b>
+  File "<stdin>", line 1, in <module>
+TypeError: invalid value",
+        "mime": "text/html",
+      },
+    ],
+    "metadata": undefined,
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles empty state 1`] = `[]`;
+
+exports[`buildCellOutputs > handles marimo error output 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "Syntax error: Invalid syntax",
+        "mime": "application/vnd.code.notebook.stderr",
+      },
+    ],
+    "metadata": {
+      "channel": "marimo-error",
+    },
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles mixed output and console streams 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "Processing...
+",
+        "mime": "application/vnd.code.notebook.stdout",
+      },
+    ],
+    "metadata": {
+      "channel": "stdout",
+    },
+  },
+  {
+    "items": [
+      {
+        "data": "Warning: deprecated function
+",
+        "mime": "application/vnd.code.notebook.stderr",
+      },
+    ],
+    "metadata": {
+      "channel": "stderr",
+    },
+  },
+  {
+    "items": [
+      {
+        "data": "<div>Result: 42</div>",
+        "mime": "text/html",
+      },
+    ],
+    "metadata": undefined,
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles multiple console outputs 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "Line 1
+",
+        "mime": "application/vnd.code.notebook.stdout",
+      },
+      {
+        "data": "Line 2
+",
+        "mime": "application/vnd.code.notebook.stdout",
+      },
+    ],
+    "metadata": {
+      "channel": "stdout",
+    },
+  },
+  {
+    "items": [
+      {
+        "data": "Warning: something happened
+",
+        "mime": "application/vnd.code.notebook.stderr",
+      },
+    ],
+    "metadata": {
+      "channel": "stderr",
+    },
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles multiple errors in marimo error output 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "ValueError: ValueError: invalid value",
+        "mime": "application/vnd.code.notebook.stderr",
+      },
+    ],
+    "metadata": {
+      "channel": "marimo-error",
+    },
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles multiple stderr errors 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "Error 1: Connection failed
+",
+        "mime": "application/vnd.code.notebook.stderr",
+      },
+      {
+        "data": "Error 2: Retry failed
+",
+        "mime": "application/vnd.code.notebook.stderr",
+      },
+      {
+        "data": "Error 3: Timeout
+",
+        "mime": "application/vnd.code.notebook.stderr",
+      },
+    ],
+    "metadata": {
+      "channel": "stderr",
+    },
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles stderr output 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "Error message",
+        "mime": "application/vnd.code.notebook.stderr",
+      },
+    ],
+    "metadata": {
+      "channel": "stderr",
+    },
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles stdin output 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "Enter your name: ",
+        "mime": "text/plain",
+      },
+    ],
+    "metadata": {
+      "channel": "stdin",
+    },
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles stdout + stderr + output together 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "Starting computation...
+",
+        "mime": "application/vnd.code.notebook.stdout",
+      },
+      {
+        "data": "Computation complete
+",
+        "mime": "application/vnd.code.notebook.stdout",
+      },
+    ],
+    "metadata": {
+      "channel": "stdout",
+    },
+  },
+  {
+    "items": [
+      {
+        "data": "Warning: using deprecated API
+",
+        "mime": "application/vnd.code.notebook.stderr",
+      },
+    ],
+    "metadata": {
+      "channel": "stderr",
+    },
+  },
+  {
+    "items": [
+      {
+        "data": "{"result":"success","value":100}",
+        "mime": "application/json",
+      },
+    ],
+    "metadata": undefined,
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles stdout output 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "Hello from stdout",
+        "mime": "application/vnd.code.notebook.stdout",
+      },
+    ],
+    "metadata": {
+      "channel": "stdout",
+    },
+  },
+]
+`;

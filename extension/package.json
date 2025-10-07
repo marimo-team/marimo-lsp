@@ -113,9 +113,15 @@
         "category": "Create"
       },
       {
-        "command": "marimo.createGist",
-        "title": "Create marimo notebook Gist",
-        "shortTitle": "Create Gist",
+        "command": "marimo.publishMarimoNotebookGist",
+        "title": "Publish notebook as Gist",
+        "shortTitle": "Publish Gist",
+        "category": "marimo"
+      },
+      {
+        "command": "marimo.publishMarimoNotebook",
+        "title": "Publish notebook as...",
+        "shortTitle": "Publish notebook",
         "category": "marimo"
       },
       {

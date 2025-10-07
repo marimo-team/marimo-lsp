@@ -2,8 +2,8 @@ import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import { assert, expect, it } from "@effect/vitest";
-import type * as py from "@vscode/python-extension";
 import { Effect, Either, Layer } from "effect";
+import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { EnvironmentValidator } from "../EnvironmentValidator.ts";
 import { Uv } from "../Uv.ts";
 
@@ -31,19 +31,6 @@ const EnvironmentValidatorLive = Layer.empty.pipe(
 
 it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   const python = "3.13";
-  const env = (path: string) =>
-    ({
-      id: path,
-      path: path,
-      environment: undefined,
-      tools: [],
-      version: undefined,
-      executable: {
-        uri: undefined,
-        bitness: undefined,
-        sysPrefix: undefined,
-      },
-    }) satisfies py.Environment;
 
   it.effect(
     "should build",
@@ -64,7 +51,9 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       yield* uv.venv(venv, { python, clear: true });
 
       const result = yield* Effect.either(
-        validator.validate(env(NodePath.join(venv, "bin", "python"))),
+        validator.validate(
+          TestPythonExtension.makeEnv(NodePath.join(venv, "bin", "python")),
+        ),
       );
 
       assert(Either.isLeft(result), "Expected validation to fail");
@@ -99,7 +88,9 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       yield* uv.pipInstall(["marimo"], { venv });
 
       const result = yield* Effect.either(
-        validator.validate(env(NodePath.join(venv, "bin", "python"))),
+        validator.validate(
+          TestPythonExtension.makeEnv(NodePath.join(venv, "bin", "python")),
+        ),
       );
 
       assert(Either.isLeft(result), "Expected validation to fail");
@@ -130,7 +121,9 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       yield* uv.pipInstall(["marimo<0.16.0", "pyzmq"], { venv });
 
       const result = yield* Effect.either(
-        validator.validate(env(NodePath.join(venv, "bin", "python"))),
+        validator.validate(
+          TestPythonExtension.makeEnv(NodePath.join(venv, "bin", "python")),
+        ),
       );
 
       assert(Either.isLeft(result), "Expected validation to fail");
@@ -171,7 +164,9 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       yield* uv.pipInstall(["marimo", "pyzmq"], { venv });
 
       const result = yield* Effect.either(
-        validator.validate(env(NodePath.join(venv, "bin", "python"))),
+        validator.validate(
+          TestPythonExtension.makeEnv(NodePath.join(venv, "bin", "python")),
+        ),
       );
 
       assert(Either.isRight(result), "Expected validation to succeed");
@@ -189,7 +184,9 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       NodeFs.rmSync(venv, { recursive: true });
 
       const result = yield* Effect.either(
-        validator.validate(env(NodePath.join(venv, "bin", "python"))),
+        validator.validate(
+          TestPythonExtension.makeEnv(NodePath.join(venv, "bin", "python")),
+        ),
       );
       assert(Either.isLeft(result), "Expected validation to fail");
       assert.strictEqual(result.left._tag, "EnvironmentInspectionError");

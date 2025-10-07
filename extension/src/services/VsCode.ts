@@ -14,7 +14,7 @@ import {
 //
 // biome-ignore lint: See above
 import * as vscode from "vscode";
-import type { MarimoCommandKey } from "../constants.ts";
+import type { MarimoCommand, MarimoContextKey } from "../constants.ts";
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
@@ -184,8 +184,11 @@ type ExecutableCommand =
   | "workbench.action.reloadWindow"
   | "workbench.action.openSettings"
   | "notebook.cell.execute"
-  | "setContext"
-  | MarimoCommandKey;
+  | MarimoCommand;
+
+type ContextMap = {
+  "marimo.hasStaleCells": boolean;
+};
 
 export class Commands extends Effect.Service<Commands>()("Commands", {
   dependencies: [Window.Default],
@@ -198,7 +201,10 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
       executeCommand(command: ExecutableCommand, ...args: unknown[]) {
         return Effect.promise(() => api.executeCommand(command, ...args));
       },
-      registerCommand(command: MarimoCommandKey, effect: Effect.Effect<void>) {
+      setContext<K extends MarimoContextKey>(key: K, value: ContextMap[K]) {
+        return Effect.promise(() => api.executeCommand(key, value));
+      },
+      registerCommand(command: MarimoCommand, effect: Effect.Effect<void>) {
         return Effect.acquireRelease(
           Effect.sync(() =>
             api.registerCommand(command, () =>

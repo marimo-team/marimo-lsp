@@ -13,7 +13,7 @@ import {
   SubscriptionRef,
 } from "effect";
 import type * as vscode from "vscode";
-import type { MarimoCommandKey } from "../constants.ts";
+import type { MarimoCommand } from "../constants.ts";
 import {
   Auth,
   Commands,
@@ -639,9 +639,7 @@ class EventEmitter<T> implements vscode.EventEmitter<T> {
         this.#emitter.off("event", bound);
       },
     };
-    if (disposables) {
-      disposables.push(disposable);
-    }
+    disposables?.push(disposable);
     return disposable;
   };
 
@@ -797,7 +795,7 @@ class NotebookDocument implements vscode.NotebookDocument {
   readonly metadata: Record<string, unknown>;
   readonly cellCount: number;
 
-  private _cells: vscode.NotebookCell[];
+  #cells: vscode.NotebookCell[];
 
   constructor(notebookType: string, uri: Uri, content?: vscode.NotebookData) {
     this.uri = uri;
@@ -810,23 +808,23 @@ class NotebookDocument implements vscode.NotebookDocument {
 
     const cellData = content?.cells ?? [];
     this.cellCount = cellData.length;
-    this._cells = cellData.map(
+    this.#cells = cellData.map(
       (data, index) => new NotebookCell(this, data, index),
     );
   }
 
   cellAt(index: number): vscode.NotebookCell {
-    if (index < 0 || index >= this._cells.length) {
+    if (index < 0 || index >= this.#cells.length) {
       throw new Error(`Cell index ${index} out of bounds`);
     }
-    return this._cells[index];
+    return this.#cells[index];
   }
 
   getCells(range?: vscode.NotebookRange): vscode.NotebookCell[] {
     if (!range) {
-      return this._cells;
+      return this.#cells;
     }
-    return this._cells.slice(range.start, range.end);
+    return this.#cells.slice(range.start, range.end);
   }
 
   save() {
@@ -843,7 +841,8 @@ export function createTestNotebookDocument(
 
 export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly layer: Layer.Layer<VsCode>;
-  readonly commands: Ref.Ref<HashSet.HashSet<MarimoCommandKey>>;
+  readonly views: Ref.Ref<HashSet.HashSet<string>>;
+  readonly commands: Ref.Ref<HashSet.HashSet<MarimoCommand>>;
   readonly controllers: Ref.Ref<HashSet.HashSet<vscode.NotebookController>>;
   readonly serializers: Ref.Ref<
     HashSet.HashSet<{
@@ -865,6 +864,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const self = this;
     return Effect.gen(function* () {
       return {
+        views: yield* Effect.map(Ref.get(self.views), (map) =>
+          HashSet.toValues(map).toSorted(),
+        ),
         commands: yield* Effect.map(Ref.get(self.commands), (map) =>
           HashSet.toValues(map).toSorted(),
         ),
@@ -887,10 +889,14 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const activeNotebookEditor = yield* Ref.make(
       Option.none<vscode.NotebookEditor>(),
     );
-    const visibleNotebookEditors = yield* Ref.make<vscode.NotebookEditor[]>([]);
 
-    const notebookDocuments =
-      yield* Ref.make<vscode.NotebookDocument[]>(initialDocuments);
+    const visibleNotebookEditors = yield* Ref.make(
+      HashSet.empty<vscode.NotebookEditor>(),
+    );
+
+    const notebookDocuments = yield* Ref.make(
+      HashSet.make(...initialDocuments),
+    );
 
     const activeEditorChanges = yield* SubscriptionRef.make(
       Option.none<vscode.NotebookEditor>(),
@@ -899,7 +905,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const documentChanges =
       yield* PubSub.unbounded<vscode.NotebookDocumentChangeEvent>();
 
-    const commands = yield* Ref.make(HashSet.empty<MarimoCommandKey>());
+    const commands = yield* Ref.make(HashSet.empty<MarimoCommand>());
     const controllers = yield* Ref.make(
       HashSet.empty<vscode.NotebookController>(),
     );
@@ -909,6 +915,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         serializer: vscode.NotebookSerializer;
       }>(),
     );
+    const views = yield* Ref.make(HashSet.empty<string>());
 
     const layer = Layer.scoped(
       VsCode,
@@ -965,11 +972,15 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               return Ref.get(activeNotebookEditor);
             },
             getVisibleNotebookEditors() {
-              return Ref.get(visibleNotebookEditors);
+              return Effect.map(
+                Ref.get(visibleNotebookEditors),
+                HashSet.toValues,
+              );
             },
-            createTreeView<T>() {
+            createTreeView<T>(viewId: string) {
               return Effect.acquireRelease(
-                Effect.sync(() => {
+                Effect.gen(function* () {
+                  yield* Ref.update(views, HashSet.add(viewId));
                   const expandElement = new EventEmitter<
                     vscode.TreeViewExpansionEvent<T>
                   >();
@@ -1002,7 +1013,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                     },
                   };
                 }),
-                (disposable) => Effect.sync(() => disposable.dispose()),
+                (disposable) =>
+                  Effect.gen(function* () {
+                    yield* Ref.update(views, HashSet.remove(viewId));
+                    yield* Effect.sync(() => disposable.dispose());
+                  }),
               );
             },
             createStatusBarItem(
@@ -1053,6 +1068,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             executeCommand() {
               return Effect.void;
             },
+            setContext() {
+              return Effect.void;
+            },
             registerCommand(name) {
               return Effect.gen(function* () {
                 yield* Ref.update(commands, HashSet.add(name));
@@ -1064,7 +1082,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           }),
           workspace: Workspace.make({
             getNotebookDocuments() {
-              return Ref.get(notebookDocuments);
+              return Effect.map(Ref.get(notebookDocuments), HashSet.toValues);
             },
             getConfiguration() {
               return Effect.succeed({
@@ -1251,6 +1269,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
 
     return new TestVsCode({
       layer,
+      views,
       commands,
       controllers,
       serializers,
@@ -1260,11 +1279,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           yield* SubscriptionRef.set(activeEditorChanges, editor);
         }),
       addNotebookDocument: (doc) =>
-        Ref.update(notebookDocuments, (docs) => [...docs, doc]),
+        Ref.update(notebookDocuments, (docs) => HashSet.add(docs, doc)),
       removeNotebookDocument: (doc) =>
-        Ref.update(notebookDocuments, (docs) =>
-          docs.filter((d) => d.uri.toString() !== doc.uri.toString()),
-        ),
+        Ref.update(notebookDocuments, (docs) => HashSet.remove(docs, doc)),
     });
   });
 
