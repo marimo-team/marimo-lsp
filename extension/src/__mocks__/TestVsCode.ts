@@ -313,7 +313,7 @@ class Uri implements vscode.Uri {
     if (skipEncoding !== undefined) {
       throw new Error("skipEncoding parameter not supported in test mock");
     }
-    const url = new URL("blank:");
+    const url = new URL(this.scheme ? `${this.scheme}:` : "");
     url.protocol = this.scheme ? `${this.scheme}:` : "";
     url.host = this.authority;
     url.pathname = this.path;
@@ -832,11 +832,35 @@ class NotebookDocument implements vscode.NotebookDocument {
   }
 }
 
+class NotebookEditor implements vscode.NotebookEditor {
+  readonly notebook: vscode.NotebookDocument;
+  readonly visibleRanges: vscode.NotebookRange[];
+  readonly selection: vscode.NotebookRange;
+  readonly selections: vscode.NotebookRange[];
+  readonly viewColumn: vscode.ViewColumn | undefined;
+  readonly revealRange: (range: vscode.NotebookRange) => Promise<void>;
+
+  constructor(notebook: vscode.NotebookDocument) {
+    this.notebook = notebook;
+    this.visibleRanges = [];
+    this.selection = new NotebookRange(0, 0);
+    this.selections = [];
+    this.viewColumn = undefined;
+    this.revealRange = () => Promise.resolve();
+  }
+}
+
 export function createTestNotebookDocument(
   uri: Uri,
   content?: vscode.NotebookData,
 ): vscode.NotebookDocument {
   return new NotebookDocument("marimo-notebook", uri, content);
+}
+
+export function createTestNotebookEditor(
+  notebook: vscode.NotebookDocument,
+): vscode.NotebookEditor {
+  return new NotebookEditor(notebook);
 }
 
 export class TestVsCode extends Data.TaggedClass("TestVsCode")<{

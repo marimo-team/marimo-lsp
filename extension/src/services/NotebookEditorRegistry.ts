@@ -97,7 +97,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
          * Stream of active notebook URI changes
          */
         streamActiveNotebookChanges() {
-          return activeNotebookRef.changes;
+          return activeNotebookRef.changes.pipe(Stream.changes);
         },
       };
     }),
