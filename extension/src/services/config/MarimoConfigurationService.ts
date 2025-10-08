@@ -163,7 +163,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
           ).pipe(
             Stream.map(([map, activeNotebookUri]) => {
               if (Option.isNone(activeNotebookUri)) {
-                return Option.none();
+                return Option.none<MarimoConfig>();
               }
               return HashMap.get(map, activeNotebookUri.value);
             }),
