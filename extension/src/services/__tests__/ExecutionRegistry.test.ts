@@ -409,17 +409,22 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
 it.scoped(
   "marks cell as stale when message has staleInputs",
   Effect.fnUntraced(function* () {
-    const notebook = createTestNotebookDocument("file:///test/notebook_mo.py", {
-      cells: [
-        {
-          kind: 1, // Code
-          value: "x = 1",
-          languageId: "python",
-        },
-      ],
-    });
+    const editor = TestVsCode.makeNotebookEditor(
+      "file:///test/notebook_mo.py",
+      {
+        cells: [
+          {
+            kind: 1, // Code
+            value: "x = 1",
+            languageId: "python",
+          },
+        ],
+      },
+    );
 
-    const testVsCode = yield* TestVsCode.make([notebook]);
+    const testVsCode = yield* TestVsCode.make({
+      initialDocuments: [editor.notebook],
+    });
 
     yield* Effect.provide(
       Effect.gen(function* () {
@@ -427,8 +432,7 @@ it.scoped(
         const cellStateManager = yield* CellStateManager;
         const code = yield* VsCode;
 
-        const editor = createTestNotebookEditor(notebook);
-        const cell = notebook.cellAt(0);
+        const cell = editor.notebook.cellAt(0);
 
         // Set active editor in testVsCode so NotebookEditorRegistry can find it
         yield* testVsCode.setActiveNotebookEditor(Option.some(editor));
@@ -457,7 +461,7 @@ it.scoped(
         });
 
         // Check that CellStateManager tracked the cell as stale
-        const notebookUri = getNotebookUri(notebook);
+        const notebookUri = getNotebookUri(editor.notebook);
         const staleCells = yield* cellStateManager.getStaleCells(notebookUri);
         expect(staleCells).toContain(cell.index);
 
