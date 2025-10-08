@@ -36,9 +36,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
                 return;
               }
 
-              yield* Ref.update(ref, (map) =>
-                HashMap.set(map, notebookUri, editor.value),
-              );
+              yield* Ref.update(ref, HashMap.set(notebookUri, editor.value));
 
               yield* Log.info("Active notebook changed", {
                 notebookUri,
@@ -100,7 +98,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
          * Stream of active notebook URI changes
          */
         streamActiveNotebookChanges() {
-          return activeNotebookRef.changes.pipe(Stream.changes);
+          return Stream.changes(activeNotebookRef.changes);
         },
       };
     }),

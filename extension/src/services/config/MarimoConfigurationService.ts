@@ -63,8 +63,9 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
             )(result);
 
             // Cache the result
-            yield* SubscriptionRef.update(configRef, (map) =>
-              HashMap.set(map, notebookUri, config.config),
+            yield* SubscriptionRef.update(
+              configRef,
+              HashMap.set(notebookUri, config.config),
             );
 
             yield* Log.trace("Configuration fetched and cached", {
@@ -104,8 +105,9 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
             )(result);
 
             // Update cached config
-            yield* SubscriptionRef.update(configRef, (map) =>
-              HashMap.set(map, notebookUri, config.config),
+            yield* SubscriptionRef.update(
+              configRef,
+              HashMap.set(notebookUri, config.config),
             );
 
             yield* Log.trace("Configuration updated successfully", {
@@ -134,7 +136,6 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
             yield* SubscriptionRef.update(configRef, (map) =>
               HashMap.remove(map, notebookUri),
             );
-
             yield* Log.trace("Cleared configuration cache", { notebookUri });
           });
         },
@@ -178,9 +179,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
           mapper: (config: MarimoConfig) => R,
         ): Stream.Stream<Option.Option<R>> {
           return this.streamActiveConfigChanges().pipe(
-            Stream.map((config) => {
-              return Option.map(config, mapper);
-            }),
+            Stream.map(Option.map(mapper)),
             Stream.changes,
           );
         },
