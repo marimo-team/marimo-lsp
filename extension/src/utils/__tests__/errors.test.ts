@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type MarimoError, prettyErrorMessage } from "../errors";
+import { type MarimoError, prettyErrorMessage } from "../errors.ts";
 
 describe("prettyErrorMessage", () => {
   it("handles setup-refs error", () => {

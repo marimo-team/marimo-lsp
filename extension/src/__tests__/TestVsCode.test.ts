@@ -1,7 +1,7 @@
 import { assert, describe, expect, it } from "@effect/vitest";
 import { Chunk, Effect, Fiber, Option, Stream } from "effect";
-import { TestVsCode } from "../__mocks__/TestVsCode";
-import { VsCode } from "../services/VsCode";
+import { TestVsCode } from "../__mocks__/TestVsCode.ts";
+import { VsCode } from "../services/VsCode.ts";
 
 // Tests for our VsCode test harness
 describe("TestVsCode", () => {
