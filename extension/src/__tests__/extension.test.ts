@@ -8,20 +8,25 @@ import { TestVsCode } from "../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { makeActivate } from "../layers/Main.ts";
 
+const withTestCtx = Effect.fnUntraced(function* () {
+  const vscode = yield* TestVsCode.make();
+  const layer = Layer.empty.pipe(
+    Layer.provideMerge(vscode.layer),
+    Layer.provideMerge(TestLanguageClientLive),
+    Layer.provideMerge(TestPythonExtension.Default),
+  );
+  return {
+    layer,
+    vscode,
+    activate: makeActivate(layer, LogLevel.Error),
+  };
+});
+
 describe("extension.activate", () => {
   it.scoped(
     "should return a disposable",
     Effect.fnUntraced(function* () {
-      const vscode = yield* TestVsCode.make();
-
-      const activate = makeActivate(
-        Layer.empty.pipe(
-          Layer.provideMerge(vscode.layer),
-          Layer.provideMerge(TestLanguageClientLive),
-          Layer.provideMerge(TestPythonExtension.Default),
-        ),
-        LogLevel.Error,
-      );
+      const { activate } = yield* withTestCtx();
 
       const context = yield* getTestExtensionContext();
       const disposable = yield* Effect.promise(() => activate(context));
@@ -37,16 +42,7 @@ describe("extension.activate", () => {
   it.scoped(
     "should register contributions on activation",
     Effect.fnUntraced(function* () {
-      const vscode = yield* TestVsCode.make();
-
-      const activate = makeActivate(
-        Layer.empty.pipe(
-          Layer.provideMerge(vscode.layer),
-          Layer.provideMerge(TestLanguageClientLive),
-          Layer.provideMerge(TestPythonExtension.Default),
-        ),
-        LogLevel.Error,
-      );
+      const { vscode, activate } = yield* withTestCtx();
 
       // activate the extension
       const context = yield* getTestExtensionContext();
