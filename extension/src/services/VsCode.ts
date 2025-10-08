@@ -196,7 +196,9 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
         return Effect.promise(() => api.executeCommand(command, ...args));
       },
       setContext<K extends MarimoContextKey>(key: K, value: ContextMap[K]) {
-        return Effect.promise(() => api.executeCommand(key, value));
+        return Effect.promise(() =>
+          api.executeCommand("setContext", key, value),
+        );
       },
       registerCommand(command: MarimoCommand, effect: Effect.Effect<void>) {
         return Effect.acquireRelease(

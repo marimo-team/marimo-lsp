@@ -155,7 +155,7 @@
         "title": "Toggle On-Cell-Change Mode",
         "shortTitle": "On cell change: Lazy",
         "category": "marimo",
-        "icon": "$(zap-off)"
+        "icon": "$(symbol-interface)"
       }
     ],
     "viewsContainers": {

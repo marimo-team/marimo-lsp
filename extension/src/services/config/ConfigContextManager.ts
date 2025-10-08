@@ -27,14 +27,14 @@ export class ConfigContextManager extends Effect.Service<ConfigContextManager>()
       // Run indefinitely
       yield* Effect.forkScoped(
         onCellChangeModeStream.pipe(
-          Stream.mapEffect(
-            Effect.fnUntraced(function* (mode) {
-              yield* code.commands.setContext(
-                "marimo.config.runtime.on_cell_change",
-                Option.getOrElse(mode, () => "autorun"),
-              );
-              yield* Log.debug("Updated onCellChangeMode context", { mode });
-            }),
+          Stream.tap((mode) =>
+            Log.debug("Updated onCellChangeMode context", { mode }),
+          ),
+          Stream.tap((mode) =>
+            code.commands.setContext(
+              "marimo.config.runtime.on_cell_change",
+              Option.getOrElse(mode, () => "autorun"),
+            ),
           ),
           Stream.runDrain,
         ),
