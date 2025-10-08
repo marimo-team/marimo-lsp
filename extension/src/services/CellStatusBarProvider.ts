@@ -2,9 +2,11 @@ import { Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { decodeCellMetadata, isStaleCellMetadata } from "../schemas.ts";
+import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import { VsCode } from "./VsCode.ts";
 
 const DEFAULT_NAME = "_";
+const SETUP_CELL_NAME = "setup";
 
 /**
  * Provides status bar items for notebook cells, showing staleness and custom cell names.
@@ -23,18 +25,22 @@ export class CellStatusBarProvider extends Effect.Service<CellStatusBarProvider>
       // Listen to notebook document changes and emit events
       yield* Effect.forkScoped(
         code.workspace.notebookDocumentChanges().pipe(
-          Stream.mapEffect(
-            Effect.fnUntraced(function* (event) {
-              // Only process metadata changes
-              const hasMetadataChanges = event.cellChanges.some(
-                (change) => change.metadata !== undefined,
-              );
+          Stream.map((event) => {
+            // Only marimo notebooks
+            if (!isMarimoNotebookDocument(event.notebook)) {
+              return undefined;
+            }
 
-              if (hasMetadataChanges) {
-                onDidChangeCellStatusBarItems.fire();
-              }
-            }),
-          ),
+            // Only process metadata changes
+            const hasMetadataChanges = event.cellChanges.some(
+              (change) => change.metadata !== undefined,
+            );
+
+            if (hasMetadataChanges) {
+              onDidChangeCellStatusBarItems.fire();
+            }
+            return undefined;
+          }),
           Stream.runDrain,
         ),
       );
@@ -92,6 +98,15 @@ export class CellStatusBarProvider extends Effect.Service<CellStatusBarProvider>
         const name = metadata.value.name;
         if (!name || name === DEFAULT_NAME) {
           return undefined;
+        }
+
+        if (name === SETUP_CELL_NAME) {
+          const item = new code.NotebookCellStatusBarItem(
+            `$(gear) ${SETUP_CELL_NAME}`,
+            code.NotebookCellStatusBarAlignment.Left,
+          );
+          item.tooltip = `Setup cell`;
+          return item;
         }
 
         const item = new code.NotebookCellStatusBarItem(

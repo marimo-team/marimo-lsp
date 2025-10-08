@@ -332,6 +332,10 @@ class Uri implements vscode.Uri {
   }
 }
 
+export function createNotebookUri(path: string): Uri {
+  return Uri.file(path);
+}
+
 class Position implements vscode.Position {
   readonly line: number;
   readonly character: number;
@@ -763,13 +767,7 @@ class NotebookCell implements vscode.NotebookCell {
   readonly metadata: { readonly [key: string]: unknown };
   readonly outputs: readonly NotebookCellOutput[];
   readonly executionSummary: vscode.NotebookCellExecutionSummary | undefined;
-
-  // TODO
-  get document(): vscode.TextDocument {
-    throw Error(
-      "NotebookCell.TextDocument not implemented in TestVsCode service.",
-    );
-  }
+  readonly document: vscode.TextDocument;
 
   constructor(
     notebook: vscode.NotebookDocument,
@@ -782,6 +780,38 @@ class NotebookCell implements vscode.NotebookCell {
     this.metadata = data.metadata ?? {};
     this.outputs = data.outputs ?? [];
     this.executionSummary = data.executionSummary;
+
+    // Create a minimal TextDocument for the cell
+    const cellUri = Uri.from({
+      scheme: notebook.uri.scheme,
+      authority: notebook.uri.authority,
+      path: notebook.uri.path,
+      query: notebook.uri.query,
+      fragment: `cell-${index}`,
+    });
+
+    this.document = {
+      uri: cellUri,
+      fileName: cellUri.path,
+      isUntitled: false,
+      languageId: data.languageId,
+      version: 1,
+      isDirty: false,
+      isClosed: false,
+      eol: 1, // LF
+      lineCount: 1,
+      encoding: "utf-8",
+      save: () => Promise.resolve(false),
+      getText: () => data.value,
+      getWordRangeAtPosition: () => undefined,
+      validateRange: (range: vscode.Range) => range,
+      validatePosition: (position: vscode.Position) => position,
+      positionAt: () => ({ line: 0, character: 0 }) as vscode.Position,
+      offsetAt: () => 0,
+      lineAt: () => {
+        throw new Error("lineAt not implemented");
+      },
+    };
   }
 }
 
@@ -832,6 +862,14 @@ class NotebookDocument implements vscode.NotebookDocument {
   }
 }
 
+export function createNotebookCell(
+  notebook: vscode.NotebookDocument,
+  data: vscode.NotebookCellData,
+  index: number,
+): vscode.NotebookCell {
+  return new NotebookCell(notebook, data, index);
+}
+
 class NotebookEditor implements vscode.NotebookEditor {
   readonly notebook: vscode.NotebookDocument;
   readonly visibleRanges: vscode.NotebookRange[];
@@ -851,9 +889,12 @@ class NotebookEditor implements vscode.NotebookEditor {
 }
 
 export function createTestNotebookDocument(
-  uri: Uri,
+  uri: Uri | string,
   content?: vscode.NotebookData,
 ): vscode.NotebookDocument {
+  if (typeof uri === "string") {
+    uri = Uri.file(uri);
+  }
   return new NotebookDocument("marimo-notebook", uri, content);
 }
 
@@ -874,6 +915,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       serializer: vscode.NotebookSerializer;
     }>
   >;
+  readonly statusBarProviders: Ref.Ref<
+    Array<{
+      notebookType: string;
+      provider: vscode.NotebookCellStatusBarItemProvider;
+    }>
+  >;
+  readonly documentChangesPubSub: PubSub.PubSub<vscode.NotebookDocumentChangeEvent>;
   readonly setActiveNotebookEditor: (
     editor: Option.Option<vscode.NotebookEditor>,
   ) => Effect.Effect<void>;
@@ -907,6 +955,22 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       };
     });
   }
+
+  createMockUri(path: string): Uri {
+    return Uri.from({
+      scheme: "file",
+      authority: "",
+      path,
+    });
+  }
+
+  getRegisteredStatusBarItemProviders() {
+    return Ref.get(this.statusBarProviders);
+  }
+
+  fireNotebookDocumentChange(event: vscode.NotebookDocumentChangeEvent) {
+    return PubSub.publish(this.documentChangesPubSub, event);
+  }
   static make = Effect.fnUntraced(function* (
     initialDocuments: vscode.NotebookDocument[] = [],
   ) {
@@ -939,6 +1003,12 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         serializer: vscode.NotebookSerializer;
       }>(),
     );
+    const statusBarProviders = yield* Ref.make<
+      Array<{
+        notebookType: string;
+        provider: vscode.NotebookCellStatusBarItemProvider;
+      }>
+    >([]);
     const views = yield* Ref.make(HashSet.empty<string>());
 
     const layer = Layer.scoped(
@@ -1230,9 +1300,27 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 onDidReceiveMessage: emitter.event,
               });
             },
-            registerNotebookCellStatusBarItemProvider() {
+            registerNotebookCellStatusBarItemProvider(
+              notebookType: string,
+              provider: vscode.NotebookCellStatusBarItemProvider,
+            ) {
               return Effect.acquireRelease(
-                Effect.succeed({ dispose() {} }),
+                Effect.gen(function* () {
+                  const registration = { notebookType, provider };
+                  yield* Ref.update(statusBarProviders, (providers) => [
+                    ...providers,
+                    registration,
+                  ]);
+                  return {
+                    dispose() {
+                      Effect.runSync(
+                        Ref.update(statusBarProviders, (providers) =>
+                          providers.filter((p) => p !== registration),
+                        ),
+                      );
+                    },
+                  };
+                }),
                 (disposable) => Effect.sync(() => disposable.dispose()),
               );
             },
@@ -1297,6 +1385,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       commands,
       controllers,
       serializers,
+      statusBarProviders,
+      documentChangesPubSub: documentChanges,
       setActiveNotebookEditor: (editor) =>
         Effect.gen(function* () {
           yield* Ref.set(activeNotebookEditor, editor);
