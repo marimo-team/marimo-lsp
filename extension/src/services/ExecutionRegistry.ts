@@ -78,11 +78,20 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
             return [update, HashMap.set(map, cellId, update)];
           });
 
+          const notebookUri = getNotebookUri(editor.notebook);
+          const notebookCell = getNotebookCell(editor.notebook, cell.id);
+
+          // If cell has stale inputs, mark it as stale
+          if (cell.state.staleInputs) {
+            yield* cellStateManager.markCellStale(
+              notebookUri,
+              notebookCell.index,
+            );
+          }
+
           switch (msg.status) {
             case "queued": {
               // Clear stale state when cell is queued for execution
-              const notebookUri = getNotebookUri(editor.notebook);
-              const notebookCell = getNotebookCell(editor.notebook, cell.id);
               yield* cellStateManager.clearCellStale(
                 notebookUri,
                 notebookCell.index,

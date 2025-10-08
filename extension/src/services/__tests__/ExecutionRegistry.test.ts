@@ -1,13 +1,40 @@
 import { expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import { Effect } from "effect";
+import { Effect, Layer, Option, TestClock } from "effect";
 import type * as vscode from "vscode";
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import type { CellRuntimeState } from "../../types.ts";
-import { buildCellOutputs, type NotebookCellId } from "../ExecutionRegistry.ts";
+import {
+  createTestNotebookDocument,
+  createTestNotebookEditor,
+  TestVsCode,
+} from "../../__mocks__/TestVsCode.ts";
+import { NOTEBOOK_TYPE } from "../../constants.ts";
+import {
+  type CellMessage,
+  type CellRuntimeState,
+  getNotebookUri,
+} from "../../types.ts";
+import { CellStateManager } from "../CellStateManager.ts";
+import {
+  buildCellOutputs,
+  ExecutionRegistry,
+  type NotebookCellId,
+} from "../ExecutionRegistry.ts";
+import { VenvPythonController } from "../NotebookControllerFactory.ts";
+import { NotebookEditorRegistry } from "../NotebookEditorRegistry.ts";
 import { VsCode } from "../VsCode.ts";
 
 const ExecutionRegistryTestLive = TestVsCode.Default;
+
+function makeExecutionRegistryLayer(testVsCode: TestVsCode) {
+  return Layer.provideMerge(
+    Layer.mergeAll(
+      ExecutionRegistry.Default,
+      CellStateManager.Default,
+      NotebookEditorRegistry.Default,
+    ),
+    testVsCode.layer,
+  );
+}
 
 const CELL_ID = "test-cell-id" as NotebookCellId;
 
@@ -378,3 +405,143 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
     }),
   );
 });
+
+it.scoped(
+  "marks cell as stale when message has staleInputs",
+  Effect.fnUntraced(function* () {
+    const notebook = createTestNotebookDocument("file:///test/notebook_mo.py", {
+      cells: [
+        {
+          kind: 1, // Code
+          value: "x = 1",
+          languageId: "python",
+        },
+      ],
+    });
+
+    const testVsCode = yield* TestVsCode.make([notebook]);
+
+    yield* Effect.provide(
+      Effect.gen(function* () {
+        const registry = yield* ExecutionRegistry;
+        const cellStateManager = yield* CellStateManager;
+        const code = yield* VsCode;
+
+        const editor = createTestNotebookEditor(notebook);
+        const cell = notebook.cellAt(0);
+
+        // Set active editor in testVsCode so NotebookEditorRegistry can find it
+        yield* testVsCode.setActiveNotebookEditor(Option.some(editor));
+
+        // Wait for NotebookEditorRegistry to process the change
+        yield* TestClock.adjust("10 millis");
+
+        // Create a mock controller
+        const controller = yield* code.notebooks.createNotebookController(
+          "test-controller",
+          NOTEBOOK_TYPE,
+          "test-controller",
+        );
+
+        // Send a message with staleInputs: true
+        const message: CellMessage = {
+          op: "cell-op",
+          cell_id: cell.document.uri.toString(),
+          status: "idle",
+          stale_inputs: true,
+        };
+
+        yield* registry.handleCellOperation(message, {
+          editor,
+          controller: new VenvPythonController(controller, "test-controller"),
+        });
+
+        // Check that CellStateManager tracked the cell as stale
+        const notebookUri = getNotebookUri(notebook);
+        const staleCells = yield* cellStateManager.getStaleCells(notebookUri);
+        expect(staleCells).toContain(cell.index);
+
+        // Clear stale state
+        yield* cellStateManager.clearCellStale(notebookUri, cell.index);
+
+        // Check that the cell is no longer stale
+        const staleCells2 = yield* cellStateManager.getStaleCells(notebookUri);
+        expect(staleCells2).not.toContain(cell.index);
+      }),
+      makeExecutionRegistryLayer(testVsCode),
+    );
+  }),
+);
+
+it.scoped(
+  "clears stale state when cell is queued for execution",
+  Effect.fnUntraced(function* () {
+    const testVsCode = yield* TestVsCode.make();
+
+    yield* Effect.provide(
+      Effect.gen(function* () {
+        const registry = yield* ExecutionRegistry;
+        const cellStateManager = yield* CellStateManager;
+
+        // Create a test notebook with a stale cell
+        const cellData = {
+          kind: 1, // Code
+          value: "x = 1",
+          languageId: "python",
+          metadata: {
+            name: "test_cell",
+            state: "stale",
+          },
+        };
+        const notebook = createTestNotebookDocument(
+          "file:///test/notebook_mo.py",
+          {
+            cells: [cellData],
+          },
+        );
+        const editor = createTestNotebookEditor(notebook);
+        const cell = notebook.cellAt(0);
+        const code = yield* VsCode;
+
+        // Set active editor in testVsCode so NotebookEditorRegistry can find it
+        yield* testVsCode.setActiveNotebookEditor(Option.some(editor));
+
+        // Wait for NotebookEditorRegistry to process the change
+        yield* TestClock.adjust("10 millis");
+
+        // First, mark the cell as stale in CellStateManager
+        const notebookUri = getNotebookUri(notebook);
+        yield* cellStateManager.markCellStale(notebookUri, cell.index);
+
+        // Verify cell is tracked as stale
+        let staleCells = yield* cellStateManager.getStaleCells(notebookUri);
+        expect(staleCells).toContain(cell.index);
+
+        // Create a mock controller
+        const controller = yield* code.notebooks.createNotebookController(
+          "test-controller",
+          NOTEBOOK_TYPE,
+          "test-controller",
+        );
+
+        // Send a queued message
+        const message: CellMessage = {
+          op: "cell-op",
+          cell_id: cell.document.uri.toString(),
+          status: "queued",
+          run_id: "test-run-id",
+        };
+
+        yield* registry.handleCellOperation(message, {
+          editor,
+          controller: new VenvPythonController(controller, "test-controller"),
+        });
+
+        // Check that the cell's stale state was cleared
+        staleCells = yield* cellStateManager.getStaleCells(notebookUri);
+        expect(staleCells).not.toContain(cell.index);
+      }),
+      makeExecutionRegistryLayer(testVsCode),
+    );
+  }),
+);
