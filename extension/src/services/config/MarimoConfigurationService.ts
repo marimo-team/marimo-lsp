@@ -1,6 +1,5 @@
 import {
   Effect,
-  Equal,
   HashMap,
   Option,
   Schema,

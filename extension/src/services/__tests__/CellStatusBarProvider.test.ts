@@ -19,6 +19,11 @@ function makeCellStatusBarProviderLayer(testVsCode: TestVsCode) {
 
 const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
 
+const noopToken: vscode.CancellationToken = {
+  isCancellationRequested: false,
+  onCancellationRequested: () => ({ dispose: () => {} }),
+};
+
 // Mock cell factory
 function createMockCell(uri: vscode.Uri, metadata: Partial<CellMetadata> = {}) {
   return createNotebookCell(
@@ -54,7 +59,7 @@ it.effect(
     const testVsCode = yield* TestVsCode.make();
     yield* Effect.provide(
       Effect.gen(function* () {
-        const _provider = yield* CellStatusBarProvider;
+        yield* CellStatusBarProvider;
 
         // Verify that registerNotebookCellStatusBarItemProvider was called
         const registrations =
@@ -160,7 +165,7 @@ it.effect(
         const nameProvider = providers[1]?.provider;
 
         if (nameProvider) {
-          const items = nameProvider.provideCellStatusBarItems(cell, {} as any);
+          const items = nameProvider.provideCellStatusBarItems(cell, noopToken);
           const itemArray = Array.isArray(items) ? items : [];
           expect(itemArray.length).toBe(0);
         }
@@ -187,7 +192,7 @@ it.effect(
         const nameProvider = providers[1]?.provider;
 
         if (nameProvider) {
-          const items = nameProvider.provideCellStatusBarItems(cell, {} as any);
+          const items = nameProvider.provideCellStatusBarItems(cell, noopToken);
           const itemArray = Array.isArray(items) ? items : [];
           const nameItem = itemArray[0];
 
@@ -218,7 +223,7 @@ it.effect(
         const nameProvider = providers[1]?.provider;
 
         if (nameProvider) {
-          const items = nameProvider.provideCellStatusBarItems(cell, {} as any);
+          const items = nameProvider.provideCellStatusBarItems(cell, noopToken);
           const itemArray = Array.isArray(items) ? items : [];
           const setupItem = itemArray[0];
 
@@ -247,7 +252,7 @@ it.effect(
           yield* testVsCode.getRegisteredStatusBarItemProviders();
 
         for (const { provider } of providers) {
-          const items = provider.provideCellStatusBarItems(cell, {} as any);
+          const items = provider.provideCellStatusBarItems(cell, noopToken);
           const itemArray = Array.isArray(items) ? items : [];
           // Should return empty array for cells without proper metadata
           expect(itemArray.length).toBe(0);

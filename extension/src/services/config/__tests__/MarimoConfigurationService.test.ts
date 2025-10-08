@@ -8,8 +8,8 @@ import {
 import type { MarimoConfig, NotebookUri } from "../../../types.ts";
 import { LanguageClient } from "../../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../NotebookEditorRegistry.ts";
-import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";
 import { VsCode } from "../../VsCode.ts";
+import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";
 
 const NOTEBOOK_URI = "file:///test/notebook.py" as NotebookUri;
 const NOTEBOOK_URI_1 = "file:///test/notebook1.py" as NotebookUri;
