@@ -1,71 +1,73 @@
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
-import { assert, expect, it } from "@effect/vitest";
-import { Effect, Either, Layer } from "effect";
+import { assert, describe, expect, it } from "@effect/vitest";
+import { Effect, Either } from "effect";
 import { Uv } from "../../services/Uv.ts";
 
-class TempDir extends Effect.Service<TempDir>()("TempDir", {
-  scoped: Effect.gen(function* () {
-    const disposable = yield* Effect.acquireRelease(
-      Effect.sync(() => {
-        return NodeFs.mkdtempDisposableSync(
-          NodePath.join(NodeOs.tmpdir(), "marimo-lsp-"),
-        );
-      }),
-      (disposable) => Effect.sync(() => disposable.remove()),
-    );
-    return {
-      path: disposable.path,
-    };
-  }),
-}) {}
-
-const UvLive = Layer.empty.pipe(
-  Layer.provideMerge(TempDir.Default),
-  Layer.provideMerge(Uv.Default),
-);
-
-it.layer(UvLive)("Uv", (it) => {
+function test(
+  name: string,
+  fn: (ctx: {
+    tmpdir: string;
+    python: string;
+  }) => Effect.Effect<void, void, Uv>,
+) {
   const python = "3.13";
-
-  it.effect(
-    "should create a new python venv",
+  it.scoped(
+    name,
     Effect.fnUntraced(function* () {
+      const disposable = yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          return NodeFs.mkdtempDisposableSync(
+            NodePath.join(NodeOs.tmpdir(), "marimo-lsp-"),
+          );
+        }),
+        (disposable) => Effect.sync(() => disposable.remove()),
+      );
+      return yield* Effect.provide(
+        fn({ tmpdir: disposable.path, python }),
+        Uv.Default,
+      );
+    }),
+  );
+}
+
+describe("Uv", () => {
+  test(
+    "should create a new python venv",
+    Effect.fnUntraced(function* (ctx) {
       const uv = yield* Uv;
-      const tmpdir = yield* TempDir;
-      const target = NodePath.join(tmpdir.path, ".venv");
-      yield* uv.venv(target, { python });
+      const target = NodePath.join(ctx.tmpdir, ".venv");
+      yield* uv.venv(target, { python: ctx.python });
       assert(NodeFs.existsSync(target), "Expected new venv.");
     }),
   );
 
-  it.effect(
+  test(
     "should fail `uv add` without pyproject.toml",
-    Effect.fnUntraced(function* () {
+    Effect.fnUntraced(function* (ctx) {
       const uv = yield* Uv;
-      const tmpdir = yield* TempDir;
       const result = yield* Effect.either(
-        uv.add(["httpx"], { directory: tmpdir.path }),
+        uv.add(["httpx"], { directory: ctx.tmpdir }),
       );
       assert(Either.isLeft(result), "Expected failure");
       assert.strictEqual(result.left._tag, "MissingPyProjectError");
     }),
   );
 
-  it.effect(
+  test(
     "should `uv pip install` into venv",
-    Effect.fnUntraced(function* () {
+    Effect.fnUntraced(function* (ctx) {
       const uv = yield* Uv;
-      const tmpdir = yield* TempDir;
 
-      const venv = NodePath.join(tmpdir.path, ".venv");
+      const venv = NodePath.join(ctx.tmpdir, ".venv");
+      yield* uv.venv(venv, { python: ctx.python });
+
       yield* uv.pipInstall(["httpx"], { venv });
-
       const sitePackages = NodePath.join(
         venv,
         "lib",
-        `python${python}`,
+        `python${ctx.python}`,
         "site-packages",
       );
       assert(
@@ -75,14 +77,13 @@ it.layer(UvLive)("Uv", (it) => {
     }),
   );
 
-  it.effect(
+  test(
     "should `uv init` a new project",
-    Effect.fnUntraced(function* () {
+    Effect.fnUntraced(function* (ctx) {
       const uv = yield* Uv;
-      const tmpdir = yield* TempDir;
 
-      const target = NodePath.join(tmpdir.path, "foo");
-      yield* uv.init(target, { python });
+      const target = NodePath.join(ctx.tmpdir, "foo");
+      yield* uv.init(target, { python: ctx.python });
 
       const pyproject = NodePath.join(target, "pyproject.toml");
       assert(NodeFs.existsSync(pyproject), `Expected to create ${pyproject}`);
