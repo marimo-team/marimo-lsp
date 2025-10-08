@@ -37,6 +37,7 @@ class TestContext extends Effect.Service<TestContext>()("TestContext", {
         SubscriptionRef.set(activeNotebookRef, uri),
       setConfig: (uri: NotebookUri, config: MarimoConfig) => {
         configStore.set(uri, config);
+        return Effect.void;
       },
       cleanup: () =>
         Effect.gen(function* () {
@@ -146,7 +147,7 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
       const notebookUri = NOTEBOOK_URI;
       const mockConfig = AUTORUN_CONFIG;
 
-      ctx.setConfig(notebookUri, mockConfig);
+      yield* ctx.setConfig(notebookUri, mockConfig);
 
       const config = yield* service.getConfig(notebookUri);
 
@@ -164,7 +165,7 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
       const notebookUri = NOTEBOOK_URI;
       const mockConfig = AUTORUN_CONFIG;
 
-      ctx.setConfig(notebookUri, mockConfig);
+      yield* ctx.setConfig(notebookUri, mockConfig);
 
       // First fetch
       const config1 = yield* service.getConfig(notebookUri);
@@ -176,7 +177,7 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
       expect(Option.getOrThrow(cached)).toEqual(mockConfig);
 
       // Clear the server-side config to verify cache is used
-      ctx.setConfig(notebookUri, {} as MarimoConfig);
+      yield* ctx.setConfig(notebookUri, {} as MarimoConfig);
 
       // Second fetch should return cached value
       const config2 = yield* service.getConfig(notebookUri);
@@ -194,7 +195,7 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
       const notebookUri = NOTEBOOK_URI;
       const initialConfig = AUTORUN_CONFIG;
 
-      ctx.setConfig(notebookUri, initialConfig);
+      yield* ctx.setConfig(notebookUri, initialConfig);
 
       // Update configuration
       const partialUpdate = { runtime: { on_cell_change: "lazy" } };
@@ -222,7 +223,7 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
       const notebookUri = NOTEBOOK_URI;
       const mockConfig = AUTORUN_CONFIG;
 
-      ctx.setConfig(notebookUri, mockConfig);
+      yield* ctx.setConfig(notebookUri, mockConfig);
 
       // Fetch and cache
       yield* service.getConfig(notebookUri);
@@ -250,8 +251,8 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
       const notebookUri = NOTEBOOK_URI;
       const initialConfig = AUTORUN_CONFIG;
 
-      ctx.setConfig(notebookUri, initialConfig);
-      ctx.setActiveNotebook(Option.some(notebookUri));
+      yield* ctx.setConfig(notebookUri, initialConfig);
+      yield* ctx.setActiveNotebook(Option.some(notebookUri));
 
       // Test that streamConfigChanges is available and returns a stream
       const stream = service.streamActiveConfigChanges();
@@ -309,8 +310,8 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
       const config1 = AUTORUN_CONFIG;
       const config2 = AUTORUN_CONFIG;
 
-      ctx.setConfig(notebook1Uri, config1);
-      ctx.setConfig(notebook2Uri, config2);
+      yield* ctx.setConfig(notebook1Uri, config1);
+      yield* ctx.setConfig(notebook2Uri, config2);
 
       // Test that streamActiveConfigChanges is available
       const stream = service.streamActiveConfigChanges();
@@ -352,7 +353,7 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
         (config) => config.runtime?.on_cell_change,
       );
 
-      ctx.setConfig(notebookUri, mockConfig);
+      yield* ctx.setConfig(notebookUri, mockConfig);
 
       // Set active and fetch
       yield* ctx.setActiveNotebook(Option.some(notebookUri));
@@ -376,8 +377,8 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
       const config1 = AUTORUN_CONFIG;
       const config2 = LAZY_CONFIG;
 
-      ctx.setConfig(notebook1Uri, config1);
-      ctx.setConfig(notebook2Uri, config2);
+      yield* ctx.setConfig(notebook1Uri, config1);
+      yield* ctx.setConfig(notebook2Uri, config2);
 
       // Fetch both
       const fetchedConfig1 = yield* service.getConfig(notebook1Uri);
@@ -414,7 +415,7 @@ it.layer(TestLayer)("MarimoConfigurationService", (it) => {
       const notebookUri = NOTEBOOK_URI;
       const mockConfig = AUTORUN_CONFIG;
 
-      ctx.setConfig(notebookUri, mockConfig);
+      yield* ctx.setConfig(notebookUri, mockConfig);
 
       // Initial fetch
       yield* service.getConfig(notebookUri);

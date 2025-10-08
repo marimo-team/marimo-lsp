@@ -143,9 +143,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
          * Cleanup the configuration service
          */
         cleanup() {
-          return Effect.gen(function* () {
-            yield* SubscriptionRef.set(configRef, HashMap.empty());
-          });
+          return SubscriptionRef.set(configRef, HashMap.empty());
         },
 
         /**
