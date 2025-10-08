@@ -86,14 +86,16 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          * Set package list loading state
          */
         setPackageListLoading(notebookUri: NotebookUri, loading: boolean) {
-          return SubscriptionRef.update(packageListsRef, (map) => {
-            const existing = HashMap.get(map, notebookUri);
-            const state: PackageListState =
-              existing._tag === "Some"
-                ? { ...existing.value, loading }
-                : { packages: [], loading, error: null };
-            return HashMap.set(map, notebookUri, state);
-          });
+          return SubscriptionRef.update(packageListsRef, (map) =>
+            HashMap.set(
+              map,
+              notebookUri,
+              Option.match(HashMap.get(map, notebookUri), {
+                onSome: (value) => ({ ...value, loading }),
+                onNone: () => ({ packages: [], loading, error: null }),
+              }),
+            ),
+          );
         },
 
         /**
@@ -101,15 +103,16 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          */
         setPackageListError(notebookUri: NotebookUri, error: string) {
           return Effect.gen(function* () {
-            yield* SubscriptionRef.update(packageListsRef, (map) => {
-              const existing = HashMap.get(map, notebookUri);
-              const state: PackageListState =
-                existing._tag === "Some"
-                  ? { ...existing.value, loading: false, error }
-                  : { packages: [], loading: false, error };
-              return HashMap.set(map, notebookUri, state);
-            });
-
+            yield* SubscriptionRef.update(packageListsRef, (map) =>
+              HashMap.set(
+                map,
+                notebookUri,
+                Option.match(HashMap.get(map, notebookUri), {
+                  onSome: (value) => ({ ...value, loading: false, error }),
+                  onNone: () => ({ packages: [], loading: false, error }),
+                }),
+              ),
+            );
             yield* Log.error("Package list error", { notebookUri, error });
           });
         },
@@ -177,20 +180,20 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          * Get package list state for a notebook
          */
         getPackageList(notebookUri: NotebookUri) {
-          return Effect.gen(function* () {
-            const map = yield* SubscriptionRef.get(packageListsRef);
-            return HashMap.get(map, notebookUri);
-          });
+          return Effect.map(
+            SubscriptionRef.get(packageListsRef),
+            HashMap.get(notebookUri),
+          );
         },
 
         /**
          * Get dependency tree state for a notebook
          */
         getDependencyTree(notebookUri: NotebookUri) {
-          return Effect.gen(function* () {
-            const map = yield* SubscriptionRef.get(dependencyTreesRef);
-            return HashMap.get(map, notebookUri);
-          });
+          return Effect.map(
+            SubscriptionRef.get(dependencyTreesRef),
+            HashMap.get(notebookUri),
+          );
         },
 
         /**
@@ -205,7 +208,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
 
             // If we have a tree and it's not in error state, re-use it
             if (
-              existing._tag === "Some" &&
+              Option.isSome(existing) &&
               existing.value.tree &&
               !existing.value.error
             ) {
@@ -365,13 +368,14 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          */
         clearNotebook(notebookUri: NotebookUri) {
           return Effect.gen(function* () {
-            yield* SubscriptionRef.update(packageListsRef, (map) =>
-              HashMap.remove(map, notebookUri),
+            yield* SubscriptionRef.update(
+              packageListsRef,
+              HashMap.remove(notebookUri),
             );
-            yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
-              HashMap.remove(map, notebookUri),
+            yield* SubscriptionRef.update(
+              dependencyTreesRef,
+              HashMap.remove(notebookUri),
             );
-
             yield* Log.trace("Cleared package data", { notebookUri });
           });
         },
