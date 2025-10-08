@@ -154,25 +154,18 @@ export class Window extends Effect.Service<Window>()("Window", {
       ) {
         return Effect.promise((signal) =>
           api.withProgress(options, (progress, token) =>
-            Effect.gen(function* () {
-              const fiber = yield* Effect.fork(fn(progress));
-              const kill = () => runPromise(Fiber.interrupt(fiber));
-
-              yield* Effect.acquireRelease(
-                Effect.sync(() => token.onCancellationRequested(kill)),
-                (disposable) => Effect.sync(() => disposable.dispose()),
-              );
-
-              yield* Effect.acquireRelease(
-                Effect.sync(() =>
-                  signal.addEventListener("abort", kill, { once: true }),
-                ),
-                () =>
-                  Effect.sync(() => signal.removeEventListener("abort", kill)),
-              );
-
-              yield* Fiber.join(fiber);
-            }).pipe(Effect.scoped, runPromise),
+            runPromise(
+              Effect.gen(function* () {
+                const fiber = yield* Effect.forkScoped(fn(progress));
+                const kill = () => runPromise(Fiber.interrupt(fiber));
+                yield* Effect.acquireRelease(
+                  Effect.sync(() => token.onCancellationRequested(kill)),
+                  (disposable) => Effect.sync(() => disposable.dispose()),
+                );
+                yield* Fiber.join(fiber);
+              }).pipe(Effect.scoped),
+              { signal },
+            ),
           ),
         );
       },

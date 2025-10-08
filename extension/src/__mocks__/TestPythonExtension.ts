@@ -32,6 +32,10 @@ export class TestPythonExtension extends Data.TaggedClass(
         PythonExtension,
         Effect.gen(function* () {
           return PythonExtension.make({
+            updateActiveEnvironmentPath() {
+              // TODO
+              return Effect.void;
+            },
             knownEnvironments() {
               return Effect.map(Ref.get(known), (set) => HashSet.toValues(set));
             },

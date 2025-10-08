@@ -12,15 +12,15 @@ import {
 import type * as vscode from "vscode";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
 import {
-  NotebookController,
   NotebookControllerFactory,
   type NotebookControllerId,
+  VenvPythonController,
 } from "./NotebookControllerFactory.ts";
 import { PythonExtension } from "./PythonExtension.ts";
 import { VsCode } from "./VsCode.ts";
 
 interface NotebookControllerHandle {
-  readonly controller: NotebookController;
+  readonly controller: VenvPythonController;
   readonly scope: Scope.CloseableScope;
 }
 
@@ -41,7 +41,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         HashMap.empty<NotebookControllerId, NotebookControllerHandle>(),
       );
       const selectionsRef = yield* Ref.make(
-        HashMap.empty<vscode.NotebookDocument, NotebookController>(),
+        HashMap.empty<vscode.NotebookDocument, VenvPythonController>(),
       );
 
       yield* Effect.addFinalizer(() =>
@@ -63,7 +63,6 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         yield* Effect.logDebug("Refreshing controllers").pipe(
           Effect.annotateLogs({ environmentCount: envs.length }),
         );
-
         yield* Effect.forEach(
           envs,
           (env) =>
@@ -71,12 +70,12 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
               env,
               handlesRef,
               selectionsRef,
-              factory,
-              code,
-            }),
+            }).pipe(
+              Effect.provideService(VsCode, code),
+              Effect.provideService(NotebookControllerFactory, factory),
+            ),
           { discard: true },
         );
-
         yield* pruneStaleControllers({ envs, handlesRef, selectionsRef });
       });
 
@@ -100,7 +99,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
               controllers: HashMap.toValues(handles)
                 .map((handle) => ({
                   id: handle.controller.id,
-                  envPath: handle.controller.env.path,
+                  executable: handle.controller.executable,
                 }))
                 .toSorted((a, b) => a.id.localeCompare(b.id)),
               selections: HashMap.toEntries(selections)
@@ -123,13 +122,13 @@ const createOrUpdateController = Effect.fnUntraced(function* (options: {
     HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
   >;
   selectionsRef: Ref.Ref<
-    HashMap.HashMap<vscode.NotebookDocument, NotebookController>
+    HashMap.HashMap<vscode.NotebookDocument, VenvPythonController>
   >;
-  factory: NotebookControllerFactory;
-  code: VsCode;
 }) {
-  const { env, selectionsRef, handlesRef, factory, code } = options;
-  const controllerId = NotebookController.getId(env);
+  const code = yield* VsCode;
+  const factory = yield* NotebookControllerFactory;
+  const { env, selectionsRef, handlesRef } = options;
+  const controllerId = VenvPythonController.getId(env);
   const controllerLabel = formatControllerLabel(code, env);
 
   yield* Effect.logDebug("Creating or updating controller").pipe(
@@ -143,7 +142,7 @@ const createOrUpdateController = Effect.fnUntraced(function* (options: {
 
       // Just update description if we already have a controller
       if (Option.isSome(existing)) {
-        existing.value.controller.mutateDescription(controllerLabel);
+        yield* existing.value.controller.mutateDescription(controllerLabel);
         // We updated an existing controller and don't need to recreate
         yield* Effect.annotateLogs(
           Effect.logTrace("Controller already exists, updated label"),
@@ -162,23 +161,30 @@ const createOrUpdateController = Effect.fnUntraced(function* (options: {
             label: controllerLabel,
           });
 
-          yield* controller.onDidChangeSelectedNotebooks(
-            Effect.fnUntraced(function* (e) {
-              if (!e.selected) {
-                // NB: We don't delete from selections when deselected
-                // because another controller will overwrite it when selected
-                return;
-              }
-              yield* Ref.update(selectionsRef, (selections) =>
-                HashMap.set(selections, e.notebook, controller),
-              );
-              yield* Effect.logDebug("Updated controller for notebook").pipe(
-                Effect.annotateLogs({
-                  controllerId: controller.id,
-                  notebookUri: e.notebook.uri.toString(),
+          yield* Effect.forkScoped(
+            controller.selectedNotebookChanges().pipe(
+              Stream.mapEffect(
+                Effect.fnUntraced(function* (e) {
+                  if (!e.selected) {
+                    // NB: We don't delete from selections when deselected
+                    // because another controller will overwrite it when selected
+                    return;
+                  }
+                  yield* Ref.update(selectionsRef, (selections) =>
+                    HashMap.set(selections, e.notebook, controller),
+                  );
+                  yield* Effect.logDebug(
+                    "Updated controller for notebook",
+                  ).pipe(
+                    Effect.annotateLogs({
+                      controllerId: controller.id,
+                      notebookUri: e.notebook.uri.toString(),
+                    }),
+                  );
                 }),
-              );
-            }),
+              ),
+              Stream.runDrain,
+            ),
           );
 
           return controller;
@@ -201,13 +207,13 @@ const pruneStaleControllers = Effect.fnUntraced(function* (options: {
     HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
   >;
   selectionsRef: Ref.Ref<
-    HashMap.HashMap<vscode.NotebookDocument, NotebookController>
+    HashMap.HashMap<vscode.NotebookDocument, VenvPythonController>
   >;
 }) {
   const { envs, handlesRef, selectionsRef } = options;
   yield* Effect.logDebug("Checking for stale controllers");
   const desiredControllerIds = new Set(
-    envs.map((env) => NotebookController.getId(env)),
+    envs.map((env) => VenvPythonController.getId(env)),
   );
 
   yield* SynchronizedRef.updateEffect(

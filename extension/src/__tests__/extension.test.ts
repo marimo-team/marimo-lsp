@@ -64,7 +64,9 @@ describe("extension.activate", () => {
             "marimo.runStale",
             "marimo.showMarimoMenu",
           ],
-          "controllers": [],
+          "controllers": [
+            "marimo-sandbox",
+          ],
           "serializers": [
             "marimo-notebook",
           ],

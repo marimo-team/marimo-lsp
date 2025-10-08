@@ -10,6 +10,7 @@ import { Log } from "../../utils/log.ts";
 import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { LanguageClient } from "../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../NotebookEditorRegistry.ts";
+import { SandboxController } from "../SandboxController.ts";
 
 // Re-export schema types for convenience
 export type { DependencyTreeNode };
@@ -45,6 +46,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
       const client = yield* LanguageClient;
       const controllers = yield* ControllerRegistry;
       const editors = yield* NotebookEditorRegistry;
+      const sandboxController = yield* SandboxController;
 
       // Track package lists: NotebookUri -> PackageListState
       const packageListsRef = yield* SubscriptionRef.make(
@@ -84,15 +86,13 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          * Set package list loading state
          */
         setPackageListLoading(notebookUri: NotebookUri, loading: boolean) {
-          return Effect.gen(function* () {
-            yield* SubscriptionRef.update(packageListsRef, (map) => {
-              const existing = HashMap.get(map, notebookUri);
-              const state: PackageListState =
-                existing._tag === "Some"
-                  ? { ...existing.value, loading }
-                  : { packages: [], loading, error: null };
-              return HashMap.set(map, notebookUri, state);
-            });
+          return SubscriptionRef.update(packageListsRef, (map) => {
+            const existing = HashMap.get(map, notebookUri);
+            const state: PackageListState =
+              existing._tag === "Some"
+                ? { ...existing.value, loading }
+                : { packages: [], loading, error: null };
+            return HashMap.set(map, notebookUri, state);
           });
         },
 
@@ -141,16 +141,16 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          * Set dependency tree loading state
          */
         setDependencyTreeLoading(notebookUri: NotebookUri, loading: boolean) {
-          return Effect.gen(function* () {
-            yield* SubscriptionRef.update(dependencyTreesRef, (map) => {
-              const existing = HashMap.get(map, notebookUri);
-              const state: DependencyTreeState =
-                existing._tag === "Some"
-                  ? { ...existing.value, loading }
-                  : { tree: null, loading, error: null };
-              return HashMap.set(map, notebookUri, state);
-            });
-          });
+          return SubscriptionRef.update(dependencyTreesRef, (map) =>
+            HashMap.set(
+              map,
+              notebookUri,
+              Option.match(HashMap.get(map, notebookUri), {
+                onNone: () => ({ tree: null, loading, error: null }),
+                onSome: (value) => ({ ...value, loading }),
+              }),
+            ),
+          );
         },
 
         /**
@@ -158,14 +158,16 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          */
         setDependencyTreeError(notebookUri: NotebookUri, error: string) {
           return Effect.gen(function* () {
-            yield* SubscriptionRef.update(dependencyTreesRef, (map) => {
-              const existing = HashMap.get(map, notebookUri);
-              const state: DependencyTreeState =
-                existing._tag === "Some"
-                  ? { ...existing.value, loading: false, error }
-                  : { tree: null, loading: false, error };
-              return HashMap.set(map, notebookUri, state);
-            });
+            yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
+              HashMap.set(
+                map,
+                notebookUri,
+                Option.match(HashMap.get(map, notebookUri), {
+                  onSome: (value) => ({ ...value, loading: false, error }),
+                  onNone: () => ({ tree: null, loading: false, error }),
+                }),
+              ),
+            );
 
             yield* Log.error("Dependency tree error", { notebookUri, error });
           });
@@ -221,27 +223,35 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               return null;
             }
 
-            const controller = yield* controllers.getActiveController(
-              activeNotebookEditor.value.notebook,
+            const controller = Option.getOrElse(
+              yield* controllers.getActiveController(
+                activeNotebookEditor.value.notebook,
+              ),
+              // fallback to sandbox
+              () => sandboxController,
             );
-            if (Option.isNone(controller)) {
+
+            let executable: string;
+            if ("executable" in controller) {
+              executable = controller.executable;
+            } else {
               yield* Log.warn(
                 "No active controller for fetching dependency tree",
               );
               return null;
             }
 
-            const executable = controller.value.env.path;
-
             // Set loading state
-            yield* SubscriptionRef.update(dependencyTreesRef, (map) => {
-              const current = HashMap.get(map, notebookUri);
-              const state: DependencyTreeState =
-                current._tag === "Some"
-                  ? { ...current.value, loading: true }
-                  : { tree: null, loading: true, error: null };
-              return HashMap.set(map, notebookUri, state);
-            });
+            yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
+              HashMap.set(
+                map,
+                notebookUri,
+                Option.match(HashMap.get(map, notebookUri), {
+                  onNone: () => ({ tree: null, loading: true, error: null }),
+                  onSome: (value) => ({ ...value, loading: true }),
+                }),
+              ),
+            );
 
             // Fetch from language server
             const rawResult = yield* client
@@ -260,13 +270,9 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                     result,
                   }),
                 ),
-              )
-              .pipe(
                 Effect.flatMap((raw) =>
                   Schema.decodeUnknown(DependencyTreeResponse)(raw),
                 ),
-              )
-              .pipe(
                 Effect.catchAll((error) =>
                   Effect.gen(function* () {
                     const errorMsg = String(error);
