@@ -909,6 +909,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly views: Ref.Ref<HashSet.HashSet<string>>;
   readonly commands: Ref.Ref<HashSet.HashSet<MarimoCommand>>;
   readonly controllers: Ref.Ref<HashSet.HashSet<vscode.NotebookController>>;
+  readonly executions: Ref.Ref<
+    ReadonlyArray<{ command: string; args: ReadonlyArray<unknown> }>
+  >;
   readonly serializers: Ref.Ref<
     HashSet.HashSet<{
       notebookType: string;
@@ -932,6 +935,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     doc: vscode.NotebookDocument,
   ) => Effect.Effect<void>;
 }> {
+  static makeNotebookEditor(uri: string | Uri, data?: NotebookData) {
+    return createTestNotebookEditor(createTestNotebookDocument(uri, data));
+  }
   snapshot() {
     const self = this;
     return Effect.gen(function* () {
@@ -972,9 +978,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     return PubSub.publish(this.documentChangesPubSub, event);
   }
   static make = Effect.fnUntraced(function* (
-    initialDocuments: vscode.NotebookDocument[] = [],
+    options: { initialDocuments?: Array<vscode.NotebookDocument> } = {},
   ) {
-    const activeNotebookEditor = yield* Ref.make(
+    const activeNotebookEditor = yield* SubscriptionRef.make(
       Option.none<vscode.NotebookEditor>(),
     );
 
@@ -983,11 +989,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     );
 
     const notebookDocuments = yield* Ref.make(
-      HashSet.make(...initialDocuments),
-    );
-
-    const activeEditorChanges = yield* SubscriptionRef.make(
-      Option.none<vscode.NotebookEditor>(),
+      HashSet.make(...(options.initialDocuments ?? [])),
     );
 
     const documentChanges =
@@ -1010,6 +1012,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       }>
     >([]);
     const views = yield* Ref.make(HashSet.empty<string>());
+
+    const executions = yield* Ref.make<
+      ReadonlyArray<{ command: string; args: ReadonlyArray<unknown> }>
+    >([]);
 
     const layer = Layer.scoped(
       VsCode,
@@ -1139,7 +1145,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               );
             },
             activeNotebookEditorChanges() {
-              return activeEditorChanges.changes;
+              return activeNotebookEditor.changes;
             },
             showNotebookDocument(
               doc: vscode.NotebookDocument,
@@ -1159,11 +1165,17 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             },
           }),
           commands: Commands.make({
-            executeCommand() {
-              return Effect.void;
+            setContext(key, value) {
+              return Ref.update(executions, (arr) => [
+                ...arr,
+                { command: "setContext", args: [key, value] },
+              ]);
             },
-            setContext() {
-              return Effect.void;
+            executeCommand(command, ...args) {
+              return Ref.update(executions, (arr) => [
+                ...arr,
+                { command, args },
+              ]);
             },
             registerCommand(name) {
               return Effect.gen(function* () {
@@ -1383,15 +1395,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       layer,
       views,
       commands,
+      executions,
       controllers,
       serializers,
       statusBarProviders,
       documentChangesPubSub: documentChanges,
       setActiveNotebookEditor: (editor) =>
-        Effect.gen(function* () {
-          yield* Ref.set(activeNotebookEditor, editor);
-          yield* SubscriptionRef.set(activeEditorChanges, editor);
-        }),
+        SubscriptionRef.set(activeNotebookEditor, editor),
       addNotebookDocument: (doc) =>
         Ref.update(notebookDocuments, (docs) => HashSet.add(docs, doc)),
       removeNotebookDocument: (doc) =>
@@ -1399,7 +1409,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     });
   });
 
-  static Default = TestVsCode.make([]).pipe(
+  static Default = TestVsCode.make().pipe(
     Effect.map((test) => test.layer),
     Effect.scoped,
     Layer.unwrapEffect,
