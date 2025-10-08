@@ -8,8 +8,8 @@ import {
 import type { MarimoConfig, NotebookUri } from "../../../types.ts";
 import { LanguageClient } from "../../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../NotebookEditorRegistry.ts";
-import { VsCode } from "../../VsCode.ts";
 import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";
+import { VsCode } from "../../VsCode.ts";
 
 const NOTEBOOK_URI = "file:///test/notebook.py" as NotebookUri;
 const NOTEBOOK_URI_1 = "file:///test/notebook1.py" as NotebookUri;
@@ -212,19 +212,28 @@ describe("MarimoConfigurationService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "should stream configuration changes and dedupe",
     Effect.fnUntraced(function* () {
-      const ctx = yield* withTestCtx();
+      const notebookUri = NOTEBOOK_URI;
+      const initialConfig = AUTORUN_CONFIG;
 
-      const result = yield* Effect.gen(function* () {
+      const ctx = yield* withTestCtx({
+        configStore: new Map([[notebookUri, initialConfig]]),
+      });
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
         const service = yield* MarimoConfigurationService;
 
-        const notebookUri = NOTEBOOK_URI;
-        const initialConfig = AUTORUN_CONFIG;
-
-        yield* ctx.setConfig(notebookUri, initialConfig);
-        yield* ctx.vscode.setActiveNotebook(Option.some(notebookUri));
+        const doc = createTestNotebookDocument(
+          code.Uri.parse(notebookUri, true),
+        );
+        yield* ctx.vscode.addNotebookDocument(doc);
+        yield* ctx.vscode.setActiveNotebookEditor(
+          Option.some(createTestNotebookEditor(doc)),
+        );
+        yield* TestClock.adjust("10 millis");
 
         // Test that streamConfigChanges is available and returns a stream
         const stream = service.streamOf(
@@ -239,29 +248,29 @@ describe("MarimoConfigurationService", () => {
 
         // Trigger some changes
         // lazy, lazy, autorun, lazy, lazy
-        let _updated = yield* service.updateConfig(notebookUri, {
+        yield* service.updateConfig(notebookUri, {
           runtime: { on_cell_change: "lazy" },
         });
-        _updated = yield* service.updateConfig(notebookUri, {
+        yield* service.updateConfig(notebookUri, {
           runtime: { on_cell_change: "lazy" },
         });
-        _updated = yield* service.updateConfig(notebookUri, {
+        yield* service.updateConfig(notebookUri, {
           runtime: { on_cell_change: "autorun" },
         });
-        _updated = yield* service.updateConfig(notebookUri, {
+        yield* service.updateConfig(notebookUri, {
           runtime: { on_cell_change: "lazy" },
         });
-        _updated = yield* service.updateConfig(notebookUri, {
+        yield* service.updateConfig(notebookUri, {
           runtime: { on_cell_change: "lazy" },
         });
 
         yield* TestClock.adjust("10 millis");
 
-        // Verify the stream contains the correct changes
-        return yield* collectedStreamed;
-      }).pipe(Effect.provide(ctx.layer));
+        // Collect the stream
 
-      expect(result).toMatchInlineSnapshot(`
+        // Verify the stream contains the correct changes
+        const collected = yield* collectedStreamed;
+        expect(collected).toMatchInlineSnapshot(`
         {
           "_id": "Chunk",
           "values": [
@@ -287,64 +296,88 @@ describe("MarimoConfigurationService", () => {
           ],
         }
       `);
+      }).pipe(Effect.provide(ctx.layer));
     }),
   );
 
-  it.scoped(
+  it.effect(
     "should stream configuration changes when active notebook changes",
     Effect.fnUntraced(function* () {
-      const ctx = yield* TestContext;
-      const service = yield* MarimoConfigurationService;
-      yield* lifecycle;
-
       const notebook1Uri = NOTEBOOK_URI_1;
       const notebook2Uri = NOTEBOOK_URI_2;
 
       const config1 = AUTORUN_CONFIG;
       const config2 = LAZY_CONFIG;
 
-      yield* ctx.setConfig(notebook1Uri, config1);
-      yield* ctx.setConfig(notebook2Uri, config2);
+      const ctx = yield* withTestCtx({
+        configStore: new Map([
+          [notebook1Uri, config1],
+          [notebook2Uri, config2],
+        ]),
+      });
 
-      // Test that streamActiveConfigChanges is available
-      const stream = service.streamOf(
-        (config) => config.runtime?.on_cell_change,
-      );
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const service = yield* MarimoConfigurationService;
 
-      const collectedStreamed = yield* Effect.fork(
-        stream.pipe(Stream.take(5), Stream.runCollect),
-      );
+        const doc = createTestNotebookDocument(
+          code.Uri.parse(notebook1Uri, true),
+        );
+        const doc2 = createTestNotebookDocument(
+          code.Uri.parse(notebook2Uri, true),
+        );
 
-      yield* TestClock.adjust("10 millis");
+        // Add to workspace
+        yield* ctx.vscode.addNotebookDocument(doc);
+        yield* ctx.vscode.addNotebookDocument(doc2);
 
-      // Change active notebook and verify state changes
-      yield* ctx.setActiveNotebook(Option.some(notebook1Uri));
-      yield* service.getConfig(notebook1Uri);
-      yield* TestClock.adjust("10 millis");
+        // Test that streamActiveConfigChanges is available
+        const stream = service.streamOf(
+          (config) => config.runtime?.on_cell_change,
+        );
 
-      const cached1 = yield* service.getCachedConfig(notebook1Uri);
-      expect(Option.isSome(cached1)).toBe(true);
-      expect(Option.getOrThrow(cached1).runtime?.on_cell_change).toBe(
-        "autorun",
-      );
+        const collectedStreamed = yield* Effect.fork(
+          stream.pipe(Stream.take(5), Stream.runCollect),
+        );
 
-      yield* ctx.setActiveNotebook(Option.some(notebook2Uri));
-      yield* service.getConfig(notebook2Uri);
-      yield* TestClock.adjust("10 millis");
+        yield* TestClock.adjust("10 millis");
 
-      const cached2 = yield* service.getCachedConfig(notebook2Uri);
-      expect(Option.isSome(cached2)).toBe(true);
-      expect(Option.getOrThrow(cached2).runtime?.on_cell_change).toBe("lazy");
-      yield* service.updateConfig(notebook2Uri, AUTORUN_CONFIG);
-      yield* TestClock.adjust("10 millis");
+        // Change active notebook and verify state changes
+        yield* ctx.vscode.setActiveNotebookEditor(
+          Option.some(createTestNotebookEditor(doc)),
+        );
+        yield* TestClock.adjust("10 millis");
 
-      // Get it again
-      const cached3 = yield* service.getConfig(notebook2Uri);
-      expect(cached3.runtime?.on_cell_change).toBe("autorun");
-      yield* TestClock.adjust("10 millis");
+        yield* service.getConfig(notebook1Uri);
+        yield* TestClock.adjust("10 millis");
 
-      const collected = yield* collectedStreamed;
-      expect(collected).toMatchInlineSnapshot(`
+        const cached1 = yield* service.getCachedConfig(notebook1Uri);
+        expect(Option.isSome(cached1)).toBe(true);
+        expect(Option.getOrThrow(cached1).runtime?.on_cell_change).toBe(
+          "autorun",
+        );
+
+        yield* ctx.vscode.setActiveNotebookEditor(
+          Option.some(createTestNotebookEditor(doc2)),
+        );
+        yield* TestClock.adjust("10 millis");
+
+        yield* service.getConfig(notebook2Uri);
+        yield* TestClock.adjust("10 millis");
+
+        const cached2 = yield* service.getCachedConfig(notebook2Uri);
+        expect(Option.isSome(cached2)).toBe(true);
+        expect(Option.getOrThrow(cached2).runtime?.on_cell_change).toBe("lazy");
+        yield* service.updateConfig(notebook2Uri, AUTORUN_CONFIG);
+        yield* TestClock.adjust("10 millis");
+
+        // Get it again
+        const cached3 = yield* service.getConfig(notebook2Uri);
+        expect(cached3.runtime?.on_cell_change).toBe("autorun");
+        yield* TestClock.adjust("10 millis");
+
+        const collected = yield* collectedStreamed;
+        expect(collected).toMatchInlineSnapshot(`
         {
           "_id": "Chunk",
           "values": [
@@ -374,41 +407,51 @@ describe("MarimoConfigurationService", () => {
           ],
         }
       `);
+      }).pipe(Effect.provide(ctx.layer));
     }),
   );
 
-  it.scoped(
+  it.effect(
     "should stream mapped configuration values",
     Effect.fnUntraced(function* () {
-      const ctx = yield* TestContext;
-      const service = yield* MarimoConfigurationService;
-      yield* lifecycle;
-
       const notebookUri = NOTEBOOK_URI;
       const mockConfig = AUTORUN_CONFIG;
+      const ctx = yield* withTestCtx();
 
-      // Test that streamOf is available and can map config
-      const stream = service.streamOf(
-        (config) => config.runtime?.on_cell_change,
-      );
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const service = yield* MarimoConfigurationService;
 
-      const collectedStreamed = yield* Effect.fork(
-        stream.pipe(Stream.take(2), Stream.runCollect),
-      );
+        const doc = createTestNotebookDocument(
+          code.Uri.parse(notebookUri, true),
+        );
+        yield* ctx.vscode.addNotebookDocument(doc);
+        yield* TestClock.adjust("10 millis");
 
-      yield* TestClock.adjust("10 millis");
+        // Test that streamOf is available and can map config
+        const stream = service.streamOf(
+          (config) => config.runtime?.on_cell_change,
+        );
 
-      yield* ctx.setConfig(notebookUri, mockConfig);
+        const collectedStreamed = yield* Effect.fork(
+          stream.pipe(Stream.take(2), Stream.runCollect),
+        );
 
-      // Set active and fetch
-      yield* ctx.setActiveNotebook(Option.some(notebookUri));
-      const config = yield* service.getConfig(notebookUri);
+        yield* TestClock.adjust("10 millis");
 
-      // Verify mapping would work on the config
-      expect(config.runtime?.on_cell_change).toBe("autorun");
+        yield* ctx.setConfig(notebookUri, mockConfig);
 
-      const collected = yield* collectedStreamed;
-      expect(collected).toMatchInlineSnapshot(`
+        // Set active and fetch
+        yield* ctx.vscode.setActiveNotebookEditor(
+          Option.some(createTestNotebookEditor(doc)),
+        );
+        const config = yield* service.getConfig(notebookUri);
+
+        // Verify mapping would work on the config
+        expect(config.runtime?.on_cell_change).toBe("autorun");
+
+        const collected = yield* collectedStreamed;
+        expect(collected).toMatchInlineSnapshot(`
         {
           "_id": "Chunk",
           "values": [
@@ -424,42 +467,49 @@ describe("MarimoConfigurationService", () => {
           ],
         }
       `);
+      }).pipe(Effect.provide(ctx.layer));
     }),
   );
 
-  it.scoped(
+  it.effect(
     "should handle multiple notebooks independently",
     Effect.fnUntraced(function* () {
-      const ctx = yield* TestContext;
-      const service = yield* MarimoConfigurationService;
-      yield* lifecycle;
-
       const notebook1Uri = NOTEBOOK_URI_1;
       const notebook2Uri = NOTEBOOK_URI_2;
 
       const config1 = AUTORUN_CONFIG;
       const config2 = LAZY_CONFIG;
 
-      yield* ctx.setConfig(notebook1Uri, config1);
-      yield* ctx.setConfig(notebook2Uri, config2);
-
-      // Fetch both
-      const fetchedConfig1 = yield* service.getConfig(notebook1Uri);
-      const fetchedConfig2 = yield* service.getConfig(notebook2Uri);
-
-      expect(fetchedConfig1.runtime?.on_cell_change).toBe("autorun");
-      expect(fetchedConfig2.runtime?.on_cell_change).toBe("lazy");
-
-      // Update one
-      yield* service.updateConfig(notebook1Uri, {
-        runtime: {
-          on_cell_change: "lazy",
-        },
+      const ctx = yield* withTestCtx({
+        configStore: new Map([
+          [notebook1Uri, config1],
+          [notebook2Uri, config2],
+        ]),
       });
 
-      // Verify both are independent
-      const cached1 = yield* service.getCachedConfig(notebook1Uri);
-      const cached2 = yield* service.getCachedConfig(notebook2Uri);
+      const { cached1, cached2 } = yield* Effect.gen(function* () {
+        const service = yield* MarimoConfigurationService;
+
+        // Fetch both
+        const fetchedConfig1 = yield* service.getConfig(notebook1Uri);
+        const fetchedConfig2 = yield* service.getConfig(notebook2Uri);
+
+        expect(fetchedConfig1.runtime?.on_cell_change).toBe("autorun");
+        expect(fetchedConfig2.runtime?.on_cell_change).toBe("lazy");
+
+        // Update one
+        yield* service.updateConfig(notebook1Uri, {
+          runtime: {
+            on_cell_change: "lazy",
+          },
+        });
+
+        // Verify both are independent
+        const cached1 = yield* service.getCachedConfig(notebook1Uri);
+        const cached2 = yield* service.getCachedConfig(notebook2Uri);
+
+        return { cached1, cached2 };
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(Option.isSome(cached1)).toBe(true);
       expect(Option.isSome(cached2)).toBe(true);
@@ -468,23 +518,26 @@ describe("MarimoConfigurationService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "should return cached config when available without LSP call",
     Effect.fnUntraced(function* () {
-      const ctx = yield* TestContext;
-      const service = yield* MarimoConfigurationService;
-      yield* lifecycle;
-
       const notebookUri = NOTEBOOK_URI;
       const mockConfig = AUTORUN_CONFIG;
 
-      yield* ctx.setConfig(notebookUri, mockConfig);
+      const ctx = yield* withTestCtx({
+        configStore: new Map([[notebookUri, mockConfig]]),
+      });
 
-      // Initial fetch
-      yield* service.getConfig(notebookUri);
+      const cached = yield* Effect.gen(function* () {
+        const service = yield* MarimoConfigurationService;
 
-      // Verify getCachedConfig returns immediately
-      const cached = yield* service.getCachedConfig(notebookUri);
+        // Initial fetch
+        yield* service.getConfig(notebookUri);
+
+        // Verify getCachedConfig returns immediately
+        return yield* service.getCachedConfig(notebookUri);
+      }).pipe(Effect.provide(ctx.layer));
+
       expect(Option.isSome(cached)).toBe(true);
       expect(Option.getOrThrow(cached).runtime?.on_cell_change).toBe("autorun");
     }),
