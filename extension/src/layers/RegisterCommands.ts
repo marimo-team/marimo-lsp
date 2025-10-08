@@ -272,7 +272,6 @@ const toggleOnCellChange = ({
   serializer,
   channel,
   configService,
-  configContextManager,
 }: {
   code: VsCode;
   serializer: NotebookSerializer;
