@@ -181,6 +181,7 @@ type ExecutableCommand =
 
 type ContextMap = {
   "marimo.notebook.hasStaleCells": boolean;
+  "marimo.config.runtime.on_cell_change": "autorun" | "lazy";
 };
 
 export class Commands extends Effect.Service<Commands>()("Commands", {

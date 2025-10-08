@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { Effect, Option, Stream } from "effect";
 import { Log } from "../../utils/log.ts";
 import { VsCode } from "../VsCode.ts";
 import { MarimoConfigurationService } from "./MarimoConfigurationService.ts";
@@ -31,7 +31,7 @@ export class ConfigContextManager extends Effect.Service<ConfigContextManager>()
             Effect.fnUntraced(function* (mode) {
               yield* code.commands.setContext(
                 "marimo.config.runtime.on_cell_change",
-                mode ?? "autorun",
+                Option.getOrElse(mode, () => "autorun"),
               );
               yield* Log.debug("Updated onCellChangeMode context", { mode });
             }),
