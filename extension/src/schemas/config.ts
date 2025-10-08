@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import type { MarimoConfig } from "../types";
+import type { MarimoConfig } from "../types.ts";
 
 export const MarimoConfigSchema = Schema.Record({
   key: Schema.String,
