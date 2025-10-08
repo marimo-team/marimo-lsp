@@ -13,7 +13,7 @@ import lsprotocol.types as lsp
 import msgspec
 from marimo._convert.converters import MarimoConvert
 from marimo._runtime.packages.package_managers import create_package_manager
-from marimo._runtime.requests import FunctionCallRequest
+from marimo._runtime.requests import FunctionCallRequest, SetUserConfigRequest
 from marimo._schemas.serialization import NotebookSerialization
 from marimo._server.models.models import InstantiateRequest
 from marimo._utils.parse_dataclass import parse_raw
@@ -29,6 +29,7 @@ from marimo_lsp.models import (
     DebugAdapterRequest,
     DependencyTreeRequest,
     DeserializeRequest,
+    GetConfigurationRequest,
     InterruptRequest,
     ListPackagesRequest,
     NotebookCommand,
@@ -36,11 +37,14 @@ from marimo_lsp.models import (
     SerializeRequest,
     SessionCommand,
     SetUIElementValueRequest,
+    UpdateConfigurationRequest,
 )
 from marimo_lsp.package_manager import LspPackageManager
 from marimo_lsp.session_manager import LspSessionManager
 
 if TYPE_CHECKING:
+    from marimo._config.config import PartialMarimoConfig
+
     from marimo_lsp.kernel_manager import LspKernelManager
 
 logger = get_logger()
@@ -358,6 +362,56 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
                     selection=None,
                 )
             )
+
+    @command(
+        server, "marimo.get_configuration", NotebookCommand[GetConfigurationRequest]
+    )
+    async def get_configuration(
+        ls: LanguageServer,  # noqa: ARG001
+        args: NotebookCommand[GetConfigurationRequest],
+    ):
+        """Get the current marimo configuration."""
+        logger.info(f"marimo.get_configuration for {args.notebook_uri}")
+        session = manager.get_session(args.notebook_uri)
+        if not session:
+            logger.warning(f"No session found for {args.notebook_uri}")
+            return {"config": {}}
+
+        # Get the configuration from the session's config manager
+        config = session.config_manager.get_config(hide_secrets=True)
+        return msgspec.to_builtins({"config": config})
+
+    @command(
+        server,
+        "marimo.update_configuration",
+        NotebookCommand[UpdateConfigurationRequest],
+    )
+    async def update_configuration(
+        ls: LanguageServer,  # noqa: ARG001
+        args: NotebookCommand[UpdateConfigurationRequest],
+    ):
+        """Update the marimo user configuration."""
+        logger.info(f"marimo.update_configuration for {args.notebook_uri}")
+        session = manager.get_session(args.notebook_uri)
+        if not session:
+            logger.warning(f"No session found for {args.notebook_uri}")
+            return {"success": False, "error": "No session found"}
+
+        try:
+            updated_config = session.config_manager.save_config(
+                cast("PartialMarimoConfig", args.inner.config)
+            )
+
+            # Update the kernel's view of the config
+            session.put_control_request(
+                SetUserConfigRequest(updated_config),
+                from_consumer_id=None,
+            )
+
+            return msgspec.to_builtins({"success": True, "config": updated_config})
+        except Exception as e:
+            logger.exception(f"Error updating configuration for {args.notebook_uri}")
+            return {"success": False, "error": str(e)}
 
     logger.info("All handlers registered successfully")
 

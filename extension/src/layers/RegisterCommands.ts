@@ -1,10 +1,13 @@
 import * as NodePath from "node:path";
 import { Cause, Chunk, Effect, Either, Layer, Option } from "effect";
 import { decodeCellMetadata, isStaleCellMetadata } from "../schemas.ts";
+import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
+import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { VsCode } from "../services/VsCode.ts";
+import { getNotebookUri } from "../types.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
 /**
@@ -16,6 +19,8 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     const code = yield* VsCode;
     const channel = yield* OutputChannel;
     const serializer = yield* NotebookSerializer;
+    const configService = yield* MarimoConfigurationService;
+    const configContextManager = yield* ConfigContextManager;
 
     yield* code.commands.registerCommand(
       "marimo.newMarimoNotebook",
@@ -50,6 +55,28 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     yield* code.commands.registerCommand(
       "marimo.runStale",
       runStale({ code, serializer, channel }),
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.toggleOnCellChangeAutoRun",
+      toggleOnCellChange({
+        code,
+        serializer,
+        channel,
+        configService,
+        configContextManager,
+      }),
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.toggleOnCellChangeLazy",
+      toggleOnCellChange({
+        code,
+        serializer,
+        channel,
+        configService,
+        configContextManager,
+      }),
     );
   }),
 );
@@ -235,6 +262,99 @@ const runStale = ({
     Effect.catchAllCause(() =>
       showErrorAndPromptLogs(
         "Failed to run stale cells. See marimo logs for details.",
+        { code, channel },
+      ),
+    ),
+  );
+
+const toggleOnCellChange = ({
+  code,
+  serializer,
+  channel,
+  configService,
+  configContextManager,
+}: {
+  code: VsCode;
+  serializer: NotebookSerializer;
+  channel: OutputChannel;
+  configService: MarimoConfigurationService;
+  configContextManager: ConfigContextManager;
+}) =>
+  Effect.gen(function* () {
+    const notebook = Option.filterMap(
+      yield* code.window.getActiveNotebookEditor(),
+      (editor) =>
+        serializer.isMarimoNotebookDocument(editor.notebook)
+          ? Option.some(editor.notebook)
+          : Option.none(),
+    );
+
+    if (Option.isNone(notebook)) {
+      yield* showErrorAndPromptLogs(
+        "Must have an open marimo notebook to toggle on cell change mode.",
+        { code, channel },
+      );
+      return;
+    }
+
+    const notebookUri = getNotebookUri(notebook.value);
+
+    // Fetch current configuration
+    const config = yield* configService.getConfig(notebookUri);
+
+    const currentMode = config.runtime?.on_cell_change ?? "autorun";
+
+    // Show quick pick to select mode
+    const choice = yield* code.window.showQuickPickItems([
+      {
+        label: "Auto-Run",
+        description: currentMode === "autorun" ? "$(check) Current" : undefined,
+        detail: "Automatically run cells when their ancestors change",
+        value: "autorun" as const,
+      },
+      {
+        label: "Lazy",
+        description: currentMode === "lazy" ? "$(check) Current" : undefined,
+        detail: "Mark cells stale when ancestors change, don't autorun",
+        value: "lazy" as const,
+      },
+    ]);
+
+    if (Option.isNone(choice)) {
+      // User cancelled
+      return;
+    }
+
+    const newMode = choice.value.value;
+
+    if (newMode === currentMode) {
+      yield* Effect.logInfo("Mode unchanged");
+      return;
+    }
+
+    // Update configuration
+    yield* Effect.logInfo("Updating on_cell_change mode").pipe(
+      Effect.annotateLogs({
+        notebook: notebookUri,
+        from: currentMode,
+        to: newMode,
+      }),
+    );
+
+    yield* configService.updateConfig(notebookUri, {
+      runtime: {
+        on_cell_change: newMode,
+      },
+    });
+
+    yield* code.window.showInformationMessage(
+      `On cell change mode updated to: ${newMode === "autorun" ? "Auto-Run" : "Lazy"}`,
+    );
+  }).pipe(
+    Effect.tapErrorCause(Effect.logError),
+    Effect.catchAllCause(() =>
+      showErrorAndPromptLogs(
+        "Failed to toggle on cell change mode. See marimo logs for details.",
         { code, channel },
       ),
     ),

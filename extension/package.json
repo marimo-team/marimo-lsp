@@ -142,6 +142,20 @@
         "shortTitle": "Run Stale",
         "category": "marimo",
         "icon": "$(play)"
+      },
+      {
+        "command": "marimo.toggleOnCellChangeAutoRun",
+        "title": "Toggle On-Cell-Change Mode",
+        "shortTitle": "On cell change: Auto-Run",
+        "category": "marimo",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "marimo.toggleOnCellChangeLazy",
+        "title": "Toggle On-Cell-Change Mode",
+        "shortTitle": "On cell change: Lazy",
+        "category": "marimo",
+        "icon": "$(zap-off)"
       }
     ],
     "viewsContainers": {
@@ -199,8 +213,18 @@
       "notebook/toolbar": [
         {
           "command": "marimo.runStale",
-          "when": "notebookType == 'marimo-notebook' && marimo.hasStaleCells",
+          "when": "notebookType == 'marimo-notebook' && marimo.notebook.hasStaleCells",
           "group": "navigation@1"
+        },
+        {
+          "command": "marimo.toggleOnCellChangeAutoRun",
+          "when": "notebookType == 'marimo-notebook' && marimo.config.runtime.on_cell_change != 'lazy'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "marimo.toggleOnCellChangeLazy",
+          "when": "notebookType == 'marimo-notebook' && marimo.config.runtime.on_cell_change == 'lazy'",
+          "group": "navigation@2"
         }
       ]
     }

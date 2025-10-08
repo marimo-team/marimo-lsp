@@ -8,7 +8,9 @@ export type MarimoCommand =
   | "marimo.publishMarimoNotebookGist"
   | "marimo.refreshPackages"
   | "marimo.runStale"
-  | "marimo.showMarimoMenu";
+  | "marimo.showMarimoMenu"
+  | "marimo.toggleOnCellChangeAutoRun"
+  | "marimo.toggleOnCellChangeLazy";
 
 export type MarimoView =
   | "marimo-explorer-datasources"
@@ -18,4 +20,6 @@ export type MarimoView =
 
 export const NOTEBOOK_TYPE = "marimo-notebook";
 
-export type MarimoContextKey = "marimo.hasStaleCells";
+export type MarimoContextKey =
+  | "marimo.notebook.hasStaleCells"
+  | "marimo.config.runtime.on_cell_change";

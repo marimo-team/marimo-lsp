@@ -43,6 +43,7 @@ suite("marimo Extension Hello World Tests", () => {
       "marimo.dap",
       "marimo.deserialize",
       "marimo.function_call_request",
+      "marimo.get_configuration",
       "marimo.get_dependency_tree",
       "marimo.get_package_list",
       "marimo.interrupt",
@@ -55,6 +56,9 @@ suite("marimo Extension Hello World Tests", () => {
       "marimo.serialize",
       "marimo.set_ui_element_value",
       "marimo.showMarimoMenu",
+      "marimo.toggleOnCellChangeAutoRun",
+      "marimo.toggleOnCellChangeLazy",
+      "marimo.update_configuration",
     ]);
   });
 

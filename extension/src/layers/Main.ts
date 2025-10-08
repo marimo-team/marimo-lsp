@@ -12,6 +12,8 @@ import { CellStateManager } from "../services/CellStateManager.ts";
 import { CellStatusBarProvider } from "../services/CellStatusBarProvider.ts";
 import { Config } from "../services/Config.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
+import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
+import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { DebugAdapter } from "../services/DebugAdapter.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
@@ -51,27 +53,32 @@ const MainLive = LspLive.pipe(
   Layer.merge(VariablesViewLive),
   Layer.merge(DatasourcesViewLive),
   Layer.merge(PackagesViewLive),
-).pipe(
-  Layer.provide(GitHubClient.Default),
-  Layer.provide(DebugAdapter.Default),
-  Layer.provide(NotebookRenderer.Default),
-  Layer.provide(NotebookSerializer.Default),
-  Layer.provide(ExecutionRegistry.Default),
-  Layer.provide(VariablesService.Default),
-  Layer.provide(DatasourcesService.Default),
-  Layer.provide(PackagesService.Default),
-  Layer.provide(CellStateManager.Default),
-  Layer.provide(CellStatusBarProvider.Default),
-  Layer.provide(ControllerRegistry.Default),
-  Layer.provide(NotebookEditorRegistry.Default),
-  Layer.provide(SandboxController.Default),
-  Layer.provide(Uv.Default),
-  Layer.provide(TreeView.Default),
-  Layer.provide(StatusBar.Default),
-  Layer.provide(Storage.Default),
-  Layer.provide(Config.Default),
-  Layer.provide(OutputChannel.Default),
-);
+)
+  .pipe(
+    Layer.provide(GitHubClient.Default),
+    Layer.provide(DebugAdapter.Default),
+    Layer.provide(NotebookRenderer.Default),
+    Layer.provide(NotebookSerializer.Default),
+    Layer.provide(ExecutionRegistry.Default),
+    Layer.provide(VariablesService.Default),
+    Layer.provide(DatasourcesService.Default),
+    Layer.provide(PackagesService.Default),
+  )
+  .pipe(
+    Layer.provide(MarimoConfigurationService.Default),
+    Layer.provide(ConfigContextManager.Default),
+    Layer.provide(CellStateManager.Default),
+    Layer.provide(CellStatusBarProvider.Default),
+    Layer.provide(ControllerRegistry.Default),
+    Layer.provide(NotebookEditorRegistry.Default),
+    Layer.provide(SandboxController.Default),
+    Layer.provide(Uv.Default),
+    Layer.provide(TreeView.Default),
+    Layer.provide(StatusBar.Default),
+    Layer.provide(Storage.Default),
+    Layer.provide(Config.Default),
+    Layer.provide(OutputChannel.Default),
+  );
 
 export function makeActivate(
   layer: Layer.Layer<LanguageClient | VsCode | PythonExtension>,
