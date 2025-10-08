@@ -1,5 +1,6 @@
 import {
   Effect,
+  Equal,
   HashMap,
   Option,
   Schema,
@@ -150,7 +151,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
          * Stream of configuration changes
          */
         streamConfigChanges() {
-          return configRef.changes;
+          return configRef.changes.pipe(Stream.changes);
         },
 
         /**
@@ -167,8 +168,8 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
               }
               return HashMap.get(map, activeNotebookUri.value);
             }),
+            Stream.changes,
           );
-          // .pipe(Stream.changes);
         },
 
         /**
@@ -181,7 +182,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
             Stream.map((config) => {
               return Option.map(config, mapper);
             }),
-            // Stream.changes,
+            Stream.changes,
           );
         },
       };
