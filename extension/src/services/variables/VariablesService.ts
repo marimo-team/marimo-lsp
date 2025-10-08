@@ -1,4 +1,4 @@
-import { Effect, HashMap, SubscriptionRef } from "effect";
+import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import type {
   NotebookUri,
   VariablesOp,
@@ -38,6 +38,26 @@ export class VariablesService extends Effect.Service<VariablesService>()(
             yield* SubscriptionRef.update(variablesRef, (map) =>
               HashMap.set(map, notebookUri, operation),
             );
+
+            // Filter variable values to only include variables that exist in declarations
+            const valuesMap = yield* SubscriptionRef.get(variableValuesRef);
+            const existingValues = HashMap.get(valuesMap, notebookUri);
+
+            if (Option.isSome(existingValues)) {
+              const declaredVarNames = new Set(
+                operation.variables.map((v) => v.name),
+              );
+              const filteredValues = existingValues.value.variables.filter(
+                (v) => declaredVarNames.has(v.name),
+              );
+
+              yield* SubscriptionRef.update(variableValuesRef, (map) =>
+                HashMap.set(map, notebookUri, {
+                  ...existingValues.value,
+                  variables: filteredValues,
+                }),
+              );
+            }
 
             yield* Log.trace("Updated variable declarations", {
               notebookUri,
@@ -120,14 +140,14 @@ export class VariablesService extends Effect.Service<VariablesService>()(
          * Stream of variable declaration changes
          */
         streamVariablesChanges() {
-          return variablesRef.changes;
+          return variablesRef.changes.pipe(Stream.changes);
         },
 
         /**
          * Stream of variable value changes
          */
         streamVariableValuesChanges() {
-          return variableValuesRef.changes;
+          return variableValuesRef.changes.pipe(Stream.changes);
         },
       };
     }),
