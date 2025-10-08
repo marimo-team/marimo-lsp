@@ -28,7 +28,7 @@ export class CellStatusBarProvider extends Effect.Service<CellStatusBarProvider>
           Stream.map((event) => {
             // Only marimo notebooks
             if (!isMarimoNotebookDocument(event.notebook)) {
-              return;
+              return undefined;
             }
 
             // Only process metadata changes
@@ -39,6 +39,7 @@ export class CellStatusBarProvider extends Effect.Service<CellStatusBarProvider>
             if (hasMetadataChanges) {
               onDidChangeCellStatusBarItems.fire();
             }
+            return undefined;
           }),
           Stream.runDrain,
         ),

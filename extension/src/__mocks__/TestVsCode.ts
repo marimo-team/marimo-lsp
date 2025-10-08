@@ -332,6 +332,10 @@ class Uri implements vscode.Uri {
   }
 }
 
+export function createNotebookUri(path: string): Uri {
+  return Uri.file(path);
+}
+
 class Position implements vscode.Position {
   readonly line: number;
   readonly character: number;

@@ -3,6 +3,7 @@ import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 import {
   createNotebookCell,
+  createNotebookUri,
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
@@ -16,7 +17,7 @@ function makeCellStatusBarProviderLayer(testVsCode: TestVsCode) {
   );
 }
 
-const notebookUri = undefined!;
+const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
 
 // Mock cell factory
 function createMockCell(uri: vscode.Uri, metadata: Partial<CellMetadata> = {}) {
