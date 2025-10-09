@@ -1,4 +1,5 @@
-import type { CellOutput } from "@/core/kernel/messages";
+import type { CellOutput } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
+import { unreachable } from "../assert.ts";
 
 export type ExtendsArray<T> = T extends Array<infer U> ? U : never;
 
@@ -33,9 +34,7 @@ export function prettyErrorMessage(error: MarimoError): string {
     case "unknown":
       return `${error.error_type ? `${error.error_type}: ` : ""}${error.msg}`;
     default: {
-      // Exhaustiveness check
-      const _exhaustive: never = error;
-      return "Unknown error";
+      unreachable(error);
     }
   }
 }

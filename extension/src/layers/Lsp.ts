@@ -1,6 +1,6 @@
 import * as NodeChildProcess from "node:child_process";
 import { Effect, Either, Layer, Option } from "effect";
-import { logNever } from "@/utils/assertNever.ts";
+import { unreachable } from "../assert.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { VsCode } from "../services/VsCode.ts";
 
@@ -54,7 +54,7 @@ export const LspLive = Layer.scopedDiscard(
               return;
             }
             default:
-              logNever(result.value);
+              unreachable(result.value);
           }
         } else {
           yield* code.window.showErrorMessage(

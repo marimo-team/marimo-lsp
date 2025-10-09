@@ -1,6 +1,7 @@
 // @ts-expect-error
 import { transitionCell as untypedTransitionCell } from "@marimo-team/frontend/unstable_internal/core/cells/cell.ts?nocheck";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
+import type { CellOutput } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
 import {
   type Brand,
   Data,
@@ -12,7 +13,6 @@ import {
   Runtime,
 } from "effect";
 import type * as vscode from "vscode";
-import type { CellOutput } from "@/core/kernel/messages.ts";
 import { assert } from "../assert.ts";
 import {
   type CellMessage,
