@@ -5,7 +5,10 @@
     "clientKind": "git",
     "useIgnoreFile": true
   },
-  "plugins": ["./extension/lint/vscode-type-only.grit"],
+  "plugins": [
+    "./extension/lint/vscode-type-only.grit",
+    "./extension/lint/no-at-imports.grit"
+  ],
   "files": {
     "ignoreUnknown": false
   },

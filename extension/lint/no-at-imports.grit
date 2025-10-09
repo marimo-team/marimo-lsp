@@ -1,0 +1,6 @@
+language js
+
+`import $_ from $path` where {
+  $path <: r"['\"]@/.*['\"]",
+  register_diagnostic(span=$path, message="Do not use @/* imports. Use @marimo-team/frontend/unstable_internal/* instead, preferably with type-only imports. Use sparingly and with caution.", severity="error")
+}

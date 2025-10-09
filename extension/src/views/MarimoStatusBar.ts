@@ -1,5 +1,5 @@
 import { Effect, Either, Layer, Option } from "effect";
-import { logNever } from "@/utils/assertNever.ts";
+import { unreachable } from "../assert.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { StatusBar } from "./StatusBar.ts";
 
@@ -67,8 +67,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
             break;
           }
           default: {
-            logNever(selection.value);
-            break;
+            unreachable(selection.value);
           }
         }
       }),
