@@ -95,5 +95,15 @@ class UpdateConfigurationRequest(msgspec.Struct, rename="camel"):
     """The partial configuration to merge with the current config."""
 
 
+class ApiRequest(msgspec.Struct, rename="camel"):
+    """A unified API request for all marimo internal methods."""
+
+    method: str
+    """The API method to call (e.g., 'run', 'interrupt', 'serialize')."""
+
+    params: dict[str, typing.Any]
+    """The parameters for the method."""
+
+
 RunRequest = core.RunRequest
 SetUIElementValueRequest = requests.SetUIElementValueRequest

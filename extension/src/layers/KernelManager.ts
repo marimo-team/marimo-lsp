@@ -200,22 +200,28 @@ export const KernelManagerLive = Layer.scopedDiscard(
               Effect.annotateLogs({ command: message.command, notebookUri }),
             );
             switch (message.command) {
-              case "marimo.set_ui_element_value": {
+              case "set_ui_element_value": {
                 yield* client.executeCommand({
-                  command: message.command,
+                  command: "marimo.api",
                   params: {
-                    notebookUri,
-                    inner: message.params,
+                    method: message.command,
+                    params: {
+                      notebookUri,
+                      inner: message.params,
+                    },
                   },
                 });
                 return;
               }
-              case "marimo.function_call_request": {
+              case "function_call_request": {
                 yield* client.executeCommand({
-                  command: message.command,
+                  command: "marimo.api",
                   params: {
-                    notebookUri,
-                    inner: message.params,
+                    method: message.command,
+                    params: {
+                      notebookUri,
+                      inner: message.params,
+                    },
                   },
                 });
                 return;

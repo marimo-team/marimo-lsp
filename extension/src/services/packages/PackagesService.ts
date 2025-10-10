@@ -259,11 +259,14 @@ export class PackagesService extends Effect.Service<PackagesService>()(
             // Fetch from language server
             const rawResult = yield* client
               .executeCommand({
-                command: "marimo.get_dependency_tree",
+                command: "marimo.api",
                 params: {
-                  notebookUri,
-                  executable,
-                  inner: {},
+                  method: "get_dependency_tree",
+                  params: {
+                    notebookUri,
+                    executable,
+                    inner: {},
+                  },
                 },
               })
               .pipe(
@@ -290,11 +293,14 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                     // Fallback: fetch package list and convert to flat tree
                     const packageListRaw = yield* client
                       .executeCommand({
-                        command: "marimo.get_package_list",
+                        command: "marimo.api",
                         params: {
-                          notebookUri,
-                          executable,
-                          inner: {},
+                          method: "get_package_list",
+                          params: {
+                            notebookUri,
+                            executable,
+                            inner: {},
+                          },
                         },
                       })
                       .pipe(

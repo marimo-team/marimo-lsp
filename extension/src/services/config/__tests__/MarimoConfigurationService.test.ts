@@ -41,30 +41,39 @@ const withTestCtx = Effect.fnUntraced(function* (
         LanguageClient.make({
           manage: () => Effect.scope,
           streamOf: () => Stream.never,
-          executeCommand: Effect.fnUntraced(function* (cmd) {
-            if (cmd.command === "marimo.get_configuration") {
-              const config = configStore.get(cmd.params.notebookUri);
+          executeCommand: Effect.fnUntraced(function* ({ command, params }) {
+            if (!(command === "marimo.api")) {
+              return yield* Effect.die(`Unknown command: ${command}`);
+            }
+
+            if (params.method === "get_configuration") {
+              const config = configStore.get(params.params.notebookUri);
               if (config === undefined) {
                 return yield* Effect.die(
-                  `Config not found for ${cmd.params.notebookUri}`,
+                  `Config not found for ${params.params.notebookUri}`,
                 );
               }
               return { config };
             }
 
-            if (cmd.command === "marimo.update_configuration") {
-              const existing = configStore.get(cmd.params.notebookUri);
+            if (params.method === "update_configuration") {
+              const existing = configStore.get(params.params.notebookUri);
               if (existing === undefined) {
                 return yield* Effect.die(
-                  `Config not found for ${cmd.params.notebookUri}`,
+                  `Config not found for ${params.params.notebookUri}`,
                 );
               }
-              const config = { ...existing, ...cmd.params.inner.config };
-              configStore.set(cmd.params.notebookUri, config);
+              const config = {
+                ...existing,
+                ...params.params.inner.config,
+              };
+              configStore.set(params.params.notebookUri, config);
               return { config };
             }
 
-            return yield* Effect.die(`Unknown command: ${cmd.command}`);
+            return yield* Effect.die(
+              `Unexpected marimo.api method: ${params.method}`,
+            );
           }),
         }),
       ),

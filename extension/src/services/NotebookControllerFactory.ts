@@ -66,15 +66,18 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                 );
                 const validEnv = yield* validator.validate(options.env);
                 yield* marimo.executeCommand({
-                  command: "marimo.run",
+                  command: "marimo.api",
                   params: {
-                    notebookUri: getNotebookUri(notebook),
-                    executable: validEnv.executable,
-                    inner: {
-                      cellIds: cells.map((cell) =>
-                        cell.document.uri.toString(),
-                      ),
-                      codes: cells.map((cell) => cell.document.getText()),
+                    method: "run",
+                    params: {
+                      notebookUri: getNotebookUri(notebook),
+                      executable: validEnv.executable,
+                      inner: {
+                        cellIds: cells.map((cell) =>
+                          cell.document.uri.toString(),
+                        ),
+                        codes: cells.map((cell) => cell.document.getText()),
+                      },
                     },
                   },
                 });
@@ -195,10 +198,13 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                   }),
                 );
                 yield* marimo.executeCommand({
-                  command: "marimo.interrupt",
+                  command: "marimo.api",
                   params: {
-                    notebookUri: getNotebookUri(notebook),
-                    inner: {},
+                    method: "interrupt",
+                    params: {
+                      notebookUri: getNotebookUri(notebook),
+                      inner: {},
+                    },
                   },
                 });
               }).pipe(

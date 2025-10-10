@@ -63,12 +63,15 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
                     }),
                   );
                   yield* client.executeCommand({
-                    command: "marimo.dap",
+                    command: "marimo.api",
                     params: {
-                      notebookUri: session.configuration.notebookUri,
-                      inner: {
-                        sessionId: session.id,
-                        message,
+                      method: "dap",
+                      params: {
+                        notebookUri: session.configuration.notebookUri,
+                        inner: {
+                          sessionId: session.id,
+                          message,
+                        },
                       },
                     },
                   });

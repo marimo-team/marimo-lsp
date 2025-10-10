@@ -51,10 +51,13 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
             });
 
             const result = yield* client.executeCommand({
-              command: "marimo.get_configuration",
+              command: "marimo.api",
               params: {
-                notebookUri,
-                inner: {},
+                method: "get_configuration",
+                params: {
+                  notebookUri,
+                  inner: {},
+                },
               },
             });
 
@@ -90,11 +93,14 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
 
             // Send update to LSP server
             const result = yield* client.executeCommand({
-              command: "marimo.update_configuration",
+              command: "marimo.api",
               params: {
-                notebookUri,
-                inner: {
-                  config: partialConfig,
+                method: "update_configuration",
+                params: {
+                  notebookUri,
+                  inner: {
+                    config: partialConfig,
+                  },
                 },
               },
             });
