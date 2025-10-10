@@ -16,6 +16,7 @@ from marimo._utils.parse_dataclass import parse_raw
 from marimo_lsp.debug_adapter import handle_debug_adapter_request
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
+    CloseSessionRequest,
     DebugAdapterRequest,
     DependencyTreeRequest,
     DeserializeRequest,
@@ -109,6 +110,14 @@ async def interrupt(
         logger.info(f"Interrupt request sent for {args.notebook_uri}")
     else:
         logger.warning(f"No session found for {args.notebook_uri}")
+
+
+async def close_session(
+    manager: LspSessionManager,
+    args: NotebookCommand[CloseSessionRequest],
+):
+    logger.info(f"close_session for {args.notebook_uri}")
+    manager.close_session(args.notebook_uri)
 
 
 async def get_package_list(
@@ -256,6 +265,12 @@ async def handle_api_command(  # noqa: C901, PLR0911
             ls,
             manager,
             msgspec.convert(params, type=NotebookCommand[DebugAdapterRequest]),
+        )
+
+    if method == "close_session":
+        return await close_session(
+            manager,
+            msgspec.convert(params, type=NotebookCommand[CloseSessionRequest]),
         )
 
     if method == "serialize":

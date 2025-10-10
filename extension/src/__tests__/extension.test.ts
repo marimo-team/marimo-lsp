@@ -57,6 +57,7 @@ describe("extension.activate", () => {
             "marimo.publishMarimoNotebook",
             "marimo.publishMarimoNotebookGist",
             "marimo.refreshPackages",
+            "marimo.restartKernel",
             "marimo.runStale",
             "marimo.showMarimoMenu",
             "marimo.toggleOnCellChangeAutoRun",

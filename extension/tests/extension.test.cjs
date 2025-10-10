@@ -45,6 +45,7 @@ suite("marimo Extension Hello World Tests", () => {
       "marimo.publishMarimoNotebook",
       "marimo.publishMarimoNotebookGist",
       "marimo.refreshPackages",
+      "marimo.restartKernel",
       "marimo.runStale",
       "marimo.showMarimoMenu",
       "marimo.toggleOnCellChangeAutoRun",

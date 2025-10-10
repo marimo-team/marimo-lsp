@@ -64,6 +64,9 @@ type ListPackagesRequest = {};
 type DependencyTreeRequest = {};
 // biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type GetConfigurationRequest = {};
+// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
+type CloseSessionRequest = {};
+
 interface UpdateConfigurationRequest {
   config: Record<string, unknown>;
 }
@@ -81,6 +84,7 @@ type MarimoApiMethodMap = {
   get_dependency_tree: SessionScoped<DependencyTreeRequest>;
   get_configuration: NotebookScoped<GetConfigurationRequest>;
   update_configuration: NotebookScoped<UpdateConfigurationRequest>;
+  close_session: NotebookScoped<CloseSessionRequest>;
 };
 
 type ApiRequest<K extends keyof MarimoApiMethodMap> = {

@@ -156,6 +156,12 @@
         "shortTitle": "On cell change: Lazy",
         "category": "marimo",
         "icon": "$(symbol-interface)"
+      },
+      {
+        "command": "marimo.restartKernel",
+        "title": "Restart Notebook Kernel",
+        "shortTitle": "Restart Kernel",
+        "category": "marimo"
       }
     ],
     "viewsContainers": {
@@ -217,14 +223,19 @@
           "group": "navigation@1"
         },
         {
+          "command": "marimo.restartKernel",
+          "when": "notebookType == 'marimo-notebook'",
+          "group": "navigation@2"
+        },
+        {
           "command": "marimo.toggleOnCellChangeAutoRun",
           "when": "notebookType == 'marimo-notebook' && marimo.config.runtime.on_cell_change != 'lazy'",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "marimo.toggleOnCellChangeLazy",
           "when": "notebookType == 'marimo-notebook' && marimo.config.runtime.on_cell_change == 'lazy'",
-          "group": "navigation@2"
+          "group": "navigation@3"
         }
       ]
     }
