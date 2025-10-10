@@ -88,6 +88,10 @@ class GetConfigurationRequest(msgspec.Struct, rename="camel"):
     """A request to get the current configuration."""
 
 
+class CloseSessionRequest(msgspec.Struct, rename="camel"):
+    """A request to close the current session."""
+
+
 class UpdateConfigurationRequest(msgspec.Struct, rename="camel"):
     """A request to update the user configuration."""
 

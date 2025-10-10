@@ -3,7 +3,9 @@ import { Cause, Chunk, Effect, Either, Layer, Option } from "effect";
 import { decodeCellMetadata, isStaleCellMetadata } from "../schemas.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
+import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
+import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { VsCode } from "../services/VsCode.ts";
@@ -17,10 +19,12 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const gh = yield* GitHubClient;
     const code = yield* VsCode;
+    const client = yield* LanguageClient;
     const channel = yield* OutputChannel;
     const serializer = yield* NotebookSerializer;
     const configService = yield* MarimoConfigurationService;
     const configContextManager = yield* ConfigContextManager;
+    const executions = yield* ExecutionRegistry;
 
     yield* code.commands.registerCommand(
       "marimo.newMarimoNotebook",
@@ -76,6 +80,61 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
         channel,
         configService,
         configContextManager,
+      }),
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.restartKernel",
+      Effect.gen(function* () {
+        const editor = yield* code.window.getActiveNotebookEditor();
+        if (Option.isNone(editor)) {
+          yield* code.window.showInformationMessage(
+            "No marimo notebook is currently open",
+          );
+          return;
+        }
+
+        yield* code.window.withProgress(
+          {
+            location: code.ProgressLocation.Window,
+            title: "Restarting kernel",
+            cancellable: true,
+          },
+          Effect.fnUntraced(function* (progress) {
+            progress.report({ message: "Closing session..." });
+
+            const result = yield* client
+              .executeCommand({
+                command: "marimo.api",
+                params: {
+                  method: "close_session",
+                  params: {
+                    notebookUri: getNotebookUri(editor.value.notebook),
+                    inner: {},
+                  },
+                },
+              })
+              .pipe(Effect.either);
+
+            if (Either.isLeft(result)) {
+              yield* Effect.logFatal("Failed to restart kernel", result.left);
+              yield* showErrorAndPromptLogs("Failed to restart kernel.", {
+                channel,
+                code,
+              });
+              return;
+            }
+
+            yield* executions.handleInterrupted(editor.value);
+
+            progress.report({ message: "Kernel restarted." });
+            yield* Effect.sleep("500 millis");
+          }),
+        );
+
+        yield* code.window.showInformationMessage(
+          "Kernel restarted successfully",
+        );
       }),
     );
   }),
