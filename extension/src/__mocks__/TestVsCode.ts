@@ -939,21 +939,20 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     return createTestNotebookEditor(createTestNotebookDocument(uri, data));
   }
   snapshot() {
-    const self = this;
-    return Effect.gen(function* () {
+    return Effect.gen(this, function* () {
       return {
-        views: yield* Effect.map(Ref.get(self.views), (map) =>
+        views: yield* Effect.map(Ref.get(this.views), (map) =>
           HashSet.toValues(map).toSorted(),
         ),
-        commands: yield* Effect.map(Ref.get(self.commands), (map) =>
+        commands: yield* Effect.map(Ref.get(this.commands), (map) =>
           HashSet.toValues(map).toSorted(),
         ),
-        serializers: yield* Effect.map(Ref.get(self.serializers), (map) =>
+        serializers: yield* Effect.map(Ref.get(this.serializers), (map) =>
           HashSet.toValues(map)
             .map((s) => s.notebookType)
             .toSorted(),
         ),
-        controllers: yield* Effect.map(Ref.get(self.controllers), (map) =>
+        controllers: yield* Effect.map(Ref.get(this.controllers), (map) =>
           HashSet.toValues(map)
             .map((c) => c.id)
             .toSorted(),
