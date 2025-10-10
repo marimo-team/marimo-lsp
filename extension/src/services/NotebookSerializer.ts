@@ -38,9 +38,12 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
         );
 
         const resp = yield* client.executeCommand({
-          command: "marimo.serialize",
+          command: "marimo.api",
           params: {
-            notebook: yield* notebookDataToMarimoNotebook(notebook),
+            method: "serialize",
+            params: {
+              notebook: yield* notebookDataToMarimoNotebook(notebook),
+            },
           },
         });
         const result = yield* decodeSerializeResponse(resp);
@@ -58,8 +61,11 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
           Effect.annotateLogs({ bytes: bytes.length }),
         );
         const resp = yield* client.executeCommand({
-          command: "marimo.deserialize",
-          params: { source: new TextDecoder().decode(bytes) },
+          command: "marimo.api",
+          params: {
+            method: "deserialize",
+            params: { source: new TextDecoder().decode(bytes) },
+          },
         });
         const { cells, ...metadata } = yield* decodeDeserializeResponse(resp);
         const notebook = {

@@ -28,11 +28,7 @@ export const DependencyTreeNode: Schema.Schema<DependencyTreeNode> =
     tags: Schema.Array(
       Schema.Record({ key: Schema.String, value: Schema.String }),
     ),
-    dependencies: Schema.Array(
-      Schema.suspend(
-        (): Schema.Schema<DependencyTreeNode> => DependencyTreeNode,
-      ),
-    ),
+    dependencies: Schema.Array(Schema.suspend(() => DependencyTreeNode)),
   });
 
 /**

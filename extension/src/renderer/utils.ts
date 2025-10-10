@@ -34,14 +34,14 @@ export function createRequestClient(
   const client = {
     async sendFunctionRequest(request) {
       context.postMessage({
-        command: "marimo.function_call_request",
+        command: "function_call_request",
         params: request,
       });
       return null;
     },
     async sendComponentValues(request) {
       context.postMessage({
-        command: "marimo.set_ui_element_value",
+        command: "set_ui_element_value",
         // FIXME: The token is required by "set_ui_element_value" (but not needed)
         params: { ...request, token: "" },
       });

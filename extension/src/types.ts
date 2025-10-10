@@ -68,19 +68,32 @@ interface UpdateConfigurationRequest {
   config: Record<string, unknown>;
 }
 
+// API methods routed through marimo.api
+type MarimoApiMethodMap = {
+  run: SessionScoped<RunRequest>;
+  set_ui_element_value: NotebookScoped<SetUIElementValueRequest>;
+  function_call_request: NotebookScoped<FunctionCallRequest>;
+  dap: NotebookScoped<DebugAdapterRequest>;
+  interrupt: NotebookScoped<InterruptRequest>;
+  serialize: SerializeRequest;
+  deserialize: DeserializeRequest;
+  get_package_list: SessionScoped<ListPackagesRequest>;
+  get_dependency_tree: SessionScoped<DependencyTreeRequest>;
+  get_configuration: NotebookScoped<GetConfigurationRequest>;
+  update_configuration: NotebookScoped<UpdateConfigurationRequest>;
+};
+
+type ApiRequest<K extends keyof MarimoApiMethodMap> = {
+  [M in keyof MarimoApiMethodMap]: {
+    method: M;
+    params: MarimoApiMethodMap[M];
+  };
+}[K];
+
 // client -> language server
 type MarimoCommandMap = {
-  "marimo.run": SessionScoped<RunRequest>;
-  "marimo.set_ui_element_value": NotebookScoped<SetUIElementValueRequest>;
-  "marimo.function_call_request": NotebookScoped<FunctionCallRequest>;
-  "marimo.dap": NotebookScoped<DebugAdapterRequest>;
-  "marimo.interrupt": NotebookScoped<InterruptRequest>;
-  "marimo.serialize": SerializeRequest;
-  "marimo.deserialize": DeserializeRequest;
-  "marimo.get_package_list": SessionScoped<ListPackagesRequest>;
-  "marimo.get_dependency_tree": SessionScoped<DependencyTreeRequest>;
-  "marimo.get_configuration": NotebookScoped<GetConfigurationRequest>;
-  "marimo.update_configuration": NotebookScoped<UpdateConfigurationRequest>;
+  "marimo.api": ApiRequest<keyof MarimoApiMethodMap>;
+  "marimo.convert": { uri: string };
 };
 
 type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {
@@ -90,11 +103,10 @@ type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {
   };
 }[K];
 
-/** Subset of commands allowed to be dispatched by the renderer */
+/** Subset of API methods allowed to be dispatched by the renderer */
 type RendererCommandMap = {
-  [K in
-    | "marimo.set_ui_element_value"
-    | "marimo.function_call_request"]: MarimoCommandMap[K]["inner"];
+  set_ui_element_value: MarimoApiMethodMap["set_ui_element_value"]["inner"];
+  function_call_request: MarimoApiMethodMap["function_call_request"]["inner"];
 };
 type RendererCommandMessageOf<K extends keyof RendererCommandMap> = {
   [C in keyof RendererCommandMap]: {

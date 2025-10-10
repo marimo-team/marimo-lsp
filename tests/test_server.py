@@ -230,8 +230,8 @@ async def test_marimo_serialize_command(client: LanguageClient) -> None:
 
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
-            command="marimo.serialize",
-            arguments=[{"notebook": notebook}],
+            command="marimo.api",
+            arguments=[{"method": "serialize", "params": {"notebook": notebook}}],
         )
     )
 
@@ -276,8 +276,8 @@ if __name__ == "__main__":
 
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
-            command="marimo.deserialize",
-            arguments=[{"source": source}],
+            command="marimo.api",
+            arguments=[{"method": "deserialize", "params": {"source": source}}],
         )
     )
 
@@ -322,12 +322,15 @@ async def test_marimo_get_package_list_no_session(client: LanguageClient) -> Non
     """Test the marimo.get_package_list command when no session exists."""
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
-            command="marimo.get_package_list",
+            command="marimo.api",
             arguments=[
                 {
-                    "notebookUri": "file:///nonexistent.py",
-                    "executable": sys.executable,
-                    "inner": {},
+                    "method": "get_package_list",
+                    "params": {
+                        "notebookUri": "file:///nonexistent.py",
+                        "executable": sys.executable,
+                        "inner": {},
+                    },
                 }
             ],
         )
@@ -367,14 +370,17 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
     # Run a cell to ensure session is created
     await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
-            command="marimo.run",
+            command="marimo.api",
             arguments=[
                 {
-                    "notebookUri": "file:///package_test.py",
-                    "executable": sys.executable,
-                    "inner": {
-                        "cellIds": ["cell1"],
-                        "codes": ["x = 1"],
+                    "method": "run",
+                    "params": {
+                        "notebookUri": "file:///package_test.py",
+                        "executable": sys.executable,
+                        "inner": {
+                            "cellIds": ["cell1"],
+                            "codes": ["x = 1"],
+                        },
                     },
                 }
             ],
@@ -387,12 +393,15 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
     # Now get the package list
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
-            command="marimo.get_package_list",
+            command="marimo.api",
             arguments=[
                 {
-                    "notebookUri": "file:///package_test.py",
-                    "executable": sys.executable,
-                    "inner": {},
+                    "method": "get_package_list",
+                    "params": {
+                        "notebookUri": "file:///package_test.py",
+                        "executable": sys.executable,
+                        "inner": {},
+                    },
                 }
             ],
         )
@@ -412,12 +421,15 @@ async def test_marimo_get_dependency_tree_no_session(client: LanguageClient) -> 
     """Test the marimo.get_dependency_tree command when no session exists."""
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
-            command="marimo.get_dependency_tree",
+            command="marimo.api",
             arguments=[
                 {
-                    "notebookUri": "file:///nonexistent.py",
-                    "executable": sys.executable,
-                    "inner": {},
+                    "method": "get_dependency_tree",
+                    "params": {
+                        "notebookUri": "file:///nonexistent.py",
+                        "executable": sys.executable,
+                        "inner": {},
+                    },
                 }
             ],
         )
@@ -457,14 +469,17 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
     # Run a cell to ensure session is created
     await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
-            command="marimo.run",
+            command="marimo.api",
             arguments=[
                 {
-                    "notebookUri": "file:///dep_tree_test.py",
-                    "executable": sys.executable,
-                    "inner": {
-                        "cellIds": ["cell1"],
-                        "codes": ["x = 1"],
+                    "method": "run",
+                    "params": {
+                        "notebookUri": "file:///dep_tree_test.py",
+                        "executable": sys.executable,
+                        "inner": {
+                            "cellIds": ["cell1"],
+                            "codes": ["x = 1"],
+                        },
                     },
                 }
             ],
@@ -477,12 +492,15 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
     # Now get the dependency tree
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
-            command="marimo.get_dependency_tree",
+            command="marimo.api",
             arguments=[
                 {
-                    "notebookUri": "file:///dep_tree_test.py",
-                    "executable": sys.executable,
-                    "inner": {},
+                    "method": "get_dependency_tree",
+                    "params": {
+                        "notebookUri": "file:///dep_tree_test.py",
+                        "executable": sys.executable,
+                        "inner": {},
+                    },
                 }
             ],
         )
@@ -552,14 +570,17 @@ x\
 
     await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
-            command="marimo.run",
+            command="marimo.api",
             arguments=[
                 {
-                    "notebookUri": "file:///exec_test.py",
-                    "executable": sys.executable,
-                    "inner": {
-                        "cellIds": ["cell1"],
-                        "codes": [code],
+                    "method": "run",
+                    "params": {
+                        "notebookUri": "file:///exec_test.py",
+                        "executable": sys.executable,
+                        "inner": {
+                            "cellIds": ["cell1"],
+                            "codes": [code],
+                        },
                     },
                 }
             ],
@@ -798,15 +819,18 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
 
     await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
-            command="marimo.run",
+            command="marimo.api",
             arguments=[
                 {
-                    "notebookUri": "file:///exec_test.py",
-                    "executable": sys.executable,
-                    # Just run cell_y, and cell_x should be run automatically
-                    "inner": {
-                        "cellIds": ["cell2"],
-                        "codes": [code_y],
+                    "method": "run",
+                    "params": {
+                        "notebookUri": "file:///exec_test.py",
+                        "executable": sys.executable,
+                        # Just run cell_y, and cell_x should be run automatically
+                        "inner": {
+                            "cellIds": ["cell2"],
+                            "codes": [code_y],
+                        },
                     },
                 }
             ],

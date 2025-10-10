@@ -49,13 +49,16 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             yield* python.updateActiveEnvironmentPath(executable);
 
             yield* client.executeCommand({
-              command: "marimo.run",
+              command: "marimo.api",
               params: {
-                notebookUri: getNotebookUri(notebook),
-                executable,
-                inner: {
-                  cellIds: cells.map((cell) => cell.document.uri.toString()),
-                  codes: cells.map((cell) => cell.document.getText()),
+                method: "run",
+                params: {
+                  notebookUri: getNotebookUri(notebook),
+                  executable,
+                  inner: {
+                    cellIds: cells.map((cell) => cell.document.uri.toString()),
+                    codes: cells.map((cell) => cell.document.getText()),
+                  },
                 },
               },
             });

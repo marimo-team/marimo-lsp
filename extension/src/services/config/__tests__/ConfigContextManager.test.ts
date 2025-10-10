@@ -107,35 +107,40 @@ const TestLanguageClientLive = Layer.effect(
   Effect.gen(function* () {
     const ctx = yield* TestContext;
     return {
-      executeCommand: (cmd: { command: string; params: unknown }) =>
+      executeCommand: ({ command, params }) =>
         Effect.gen(function* () {
-          const command = cmd.command;
-          const params = cmd.params as {
-            notebookUri: NotebookUri;
-            inner: { config?: Record<string, unknown> };
-          };
+          if (!(command === "marimo.api")) {
+            return yield* Effect.fail(new Error(`Unknown command: ${command}`));
+          }
 
-          if (command === "marimo.get_configuration") {
-            const config = ctx.configStore.get(params.notebookUri);
+          if (params.method === "get_configuration") {
+            const config = ctx.configStore.get(params.params.notebookUri);
             if (!config) {
               return yield* Effect.fail(
-                new Error(`Config not found for ${params.notebookUri}`),
+                new Error(`Config not found for ${params.params.notebookUri}`),
               );
             }
             return { config };
           }
 
-          if (command === "marimo.update_configuration") {
-            const existingConfig = ctx.configStore.get(params.notebookUri);
-            const updatedConfig = {
-              ...existingConfig,
-              ...params.inner.config,
-            } as MarimoConfig;
-            ctx.configStore.set(params.notebookUri, updatedConfig);
-            return { config: updatedConfig };
+          if (params.method === "update_configuration") {
+            const existing = ctx.configStore.get(params.params.notebookUri);
+            if (existing === undefined) {
+              return yield* Effect.die(
+                `Config not found for ${params.params.notebookUri}`,
+              );
+            }
+            const config = {
+              ...existing,
+              ...params.params.inner.config,
+            };
+            ctx.configStore.set(params.params.notebookUri, config);
+            return { config };
           }
 
-          return yield* Effect.fail(new Error(`Unknown command: ${command}`));
+          return yield* Effect.fail(
+            new Error(`Unknown marimo.api method: ${params.method}`),
+          );
         }),
     } as LanguageClient;
   }),

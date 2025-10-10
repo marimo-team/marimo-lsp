@@ -17,6 +17,7 @@ export class LanguageClientStartError extends Data.TaggedError(
   exec: lsp.Executable;
   cause: unknown;
 }> {}
+
 export class ExecuteCommandError extends Data.TaggedError(
   "ExecuteCommandError",
 )<{
@@ -77,10 +78,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
             try: (signal) =>
               client.sendRequest<unknown>(
                 "workspace/executeCommand",
-                {
-                  command: cmd.command,
-                  arguments: [cmd.params],
-                },
+                { command: cmd.command, arguments: [cmd.params] },
                 tokenFromSignal(signal),
               ),
             catch: (cause) => new ExecuteCommandError({ command: cmd, cause }),

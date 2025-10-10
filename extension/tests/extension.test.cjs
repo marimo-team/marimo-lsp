@@ -38,27 +38,17 @@ suite("marimo Extension Hello World Tests", () => {
     const marimoCommands = commands.filter((cmd) => cmd.startsWith("marimo."));
     marimoCommands.sort();
     assert.deepEqual(marimoCommands, [
+      "marimo.api",
       "marimo.clearRecentNotebooks",
       "marimo.convert",
-      "marimo.dap",
-      "marimo.deserialize",
-      "marimo.function_call_request",
-      "marimo.get_configuration",
-      "marimo.get_dependency_tree",
-      "marimo.get_package_list",
-      "marimo.interrupt",
       "marimo.newMarimoNotebook",
       "marimo.publishMarimoNotebook",
       "marimo.publishMarimoNotebookGist",
       "marimo.refreshPackages",
-      "marimo.run",
       "marimo.runStale",
-      "marimo.serialize",
-      "marimo.set_ui_element_value",
       "marimo.showMarimoMenu",
       "marimo.toggleOnCellChangeAutoRun",
       "marimo.toggleOnCellChangeLazy",
-      "marimo.update_configuration",
     ]);
   });
 
