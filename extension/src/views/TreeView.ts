@@ -27,7 +27,7 @@ import { VsCode } from "../services/VsCode.ts";
  */
 export class TreeView extends Effect.Service<TreeView>()("TreeView", {
   scoped: Effect.gen(function* () {
-    yield* VsCode;
+    const code = yield* VsCode;
 
     return {
       /**
@@ -35,20 +35,17 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
        *
        * @param options - Configuration for the tree view
        */
-      createTreeDataProvider<T>(options: {
+      createTreeDataProvider: Effect.fnUntraced(function* <T>(options: {
         viewId: MarimoView;
         getChildren: (element?: T) => Effect.Effect<T[], never, never>;
         getTreeItem: (element: T) => Effect.Effect<TreeItem, never, never>;
         getParent?: (element: T) => Effect.Effect<T | undefined, never, never>;
       }) {
-        return Effect.gen(function* () {
-          const code = yield* VsCode;
+        // Create event emitter for refresh events
+        const eventEmitter = new code.EventEmitter<T | undefined | null>();
 
-          // Create event emitter for refresh events
-          const eventEmitter = new code.EventEmitter<T | undefined | null>();
-
-          // Create the tree data provider implementation
-          const provider: vscode.TreeDataProvider<T> = {
+        const treeView = yield* code.window.createTreeView(options.viewId, {
+          treeDataProvider: {
             onDidChangeTreeData: eventEmitter.event,
 
             getTreeItem: (element: T): vscode.TreeItem => {
@@ -76,51 +73,31 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
                   );
                 }
               : undefined,
-          };
-
-          // Register the tree data provider
-          const treeView = yield* code.window.createTreeView(options.viewId, {
-            treeDataProvider: provider,
-            showCollapseAll: true,
-          });
-
-          return {
-            /**
-             * Refreshes the entire tree view.
-             */
-            refresh(element?: T) {
-              return Effect.sync(() => eventEmitter.fire(element ?? null));
-            },
-
-            /**
-             * Reveals an element in the tree view.
-             */
-            reveal(
-              element: T,
-              options?: { select?: boolean; focus?: boolean; expand?: boolean },
-            ) {
-              return Effect.promise(() => treeView.reveal(element, options));
-            },
-
-            /**
-             * Direct access to the underlying VS Code TreeView.
-             * Use with caution - prefer the provided methods.
-             */
-            get raw() {
-              return treeView;
-            },
-
-            /**
-             * Get the event emitter for manual control.
-             */
-            get eventEmitter() {
-              return eventEmitter;
-            },
-          };
+          },
+          showCollapseAll: true,
         });
-      },
+
+        return {
+          /**
+           * Refreshes the entire tree view.
+           */
+          refresh(element?: T) {
+            return Effect.sync(() => eventEmitter.fire(element ?? null));
+          },
+
+          /**
+           * Reveals an element in the tree view.
+           */
+          reveal(
+            element: T,
+            options?: { select?: boolean; focus?: boolean; expand?: boolean },
+          ) {
+            return Effect.promise(() => treeView.reveal(element, options));
+          },
+        };
+      }),
     };
-  }).pipe(Effect.annotateLogs("service", "TreeView")),
+  }),
 }) {}
 
 /**
