@@ -127,7 +127,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
         },
       ];
 
-      yield* Log.info("Refreshed packages", {
+      yield* Log.debug("Refreshed packages", {
         rootPackage: tree.name,
         version: tree.version,
         totalDependencies: tree.dependencies.length,

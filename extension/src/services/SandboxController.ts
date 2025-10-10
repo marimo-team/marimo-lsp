@@ -68,6 +68,37 @@ export class SandboxController extends Effect.Service<SandboxController>()(
           ),
         );
 
+      controller.interruptHandler = (doc) =>
+        runPromise(
+          Effect.gen(function* () {
+            yield* Effect.logInfo("Interrupting execution").pipe(
+              Effect.annotateLogs({
+                controllerId: controller.id,
+                notebook: getNotebookUri(doc),
+              }),
+            );
+            yield* client.executeCommand({
+              command: "marimo.api",
+              params: {
+                method: "interrupt",
+                params: {
+                  notebookUri: getNotebookUri(doc),
+                  inner: {},
+                },
+              },
+            });
+          }).pipe(
+            Effect.catchAllCause((cause) =>
+              Effect.gen(function* () {
+                yield* Effect.logError(cause);
+                yield* code.window.showErrorMessage(
+                  "Failed to interrupt execution. Please check the logs for details.",
+                );
+              }),
+            ),
+          ),
+        );
+
       return {
         createNotebookCellExecution(cell: vscode.NotebookCell) {
           return controller.createNotebookCellExecution(cell);
