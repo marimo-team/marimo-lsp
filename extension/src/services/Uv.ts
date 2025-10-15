@@ -73,6 +73,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
           ({ stderr }) => {
             const match =
               stderr.match(/Using script environment at: (.+)/m) ??
+              stderr.match(/Updating script environment at: (.+)/m) ??
               stderr.match(/Creating script environment at: (.+)/m);
             const path = match?.[1];
             assert(path, `Expected path from uv, got: stderr=${stderr}`);
