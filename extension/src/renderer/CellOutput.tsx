@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import {
   type CellId,
   type CellRuntimeState,
@@ -16,9 +17,10 @@ interface CellOutputProps {
  */
 export function CellOutput({ cellId, state }: CellOutputProps) {
   const { theme } = useTheme();
+  const container = useRef<HTMLDivElement>(null);
   return (
-    <div className={`marimo-cell-output p-4 ${theme}`}>
-      <TooltipProvider>
+    <div className={`marimo-cell-output p-4 pt-6 ${theme}`} ref={container}>
+      <TooltipProvider container={container.current}>
         {state.output && (
           <OutputRenderer cellId={cellId} message={state.output} />
         )}
