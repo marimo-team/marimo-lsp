@@ -54,6 +54,7 @@ describe("extension.activate", () => {
           "commands": [
             "marimo.clearRecentNotebooks",
             "marimo.newMarimoNotebook",
+            "marimo.openAsMarimoNotebook",
             "marimo.publishMarimoNotebook",
             "marimo.publishMarimoNotebookGist",
             "marimo.refreshPackages",

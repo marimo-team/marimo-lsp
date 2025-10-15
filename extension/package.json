@@ -78,13 +78,10 @@
       {
         "type": "marimo-notebook",
         "displayName": "marimo Notebook",
-        "priority": "default",
+        "priority": "option",
         "selector": [
           {
-            "filenamePattern": "*_mo.py"
-          },
-          {
-            "filenamePattern": "*.mo.py"
+            "filenamePattern": "*.py"
           }
         ]
       }
@@ -162,6 +159,12 @@
         "title": "Restart Notebook Kernel",
         "shortTitle": "Restart Kernel",
         "category": "marimo"
+      },
+      {
+        "command": "marimo.openAsMarimoNotebook",
+        "title": "Open as marimo Notebook",
+        "category": "marimo",
+        "icon": "images/small-icon.png"
       }
     ],
     "viewsContainers": {
@@ -236,6 +239,13 @@
           "command": "marimo.toggleOnCellChangeLazy",
           "when": "notebookType == 'marimo-notebook' && marimo.config.runtime.on_cell_change == 'lazy'",
           "group": "navigation@3"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "marimo.openAsMarimoNotebook",
+          "when": "resourceLangId == python && !notebookType && marimo.isPythonFileMarimoNotebook",
+          "group": "navigation"
         }
       ]
     }

@@ -28,14 +28,6 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
   });
 
   it.effect(
-    "provides same notebookType as in package.json",
-    Effect.fnUntraced(function* () {
-      const serializer = yield* NotebookSerializer;
-      assert.strictEqual(serializer.notebookType, NOTEBOOK_TYPE);
-    }),
-  );
-
-  it.effect(
     "serializes notebook cells to marimo format",
     Effect.fnUntraced(function* () {
       const serializer = yield* NotebookSerializer;

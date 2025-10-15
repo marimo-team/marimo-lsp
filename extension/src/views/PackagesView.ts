@@ -85,7 +85,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
     const refreshPackages = Effect.fnUntraced(function* () {
       const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
 
-      yield* Log.info("Refreshing packages", {
+      yield* Log.debug("Refreshing packages", {
         activeNotebookUri: Option.getOrElse(activeNotebookUri, () => null),
       });
       if (Option.isNone(activeNotebookUri)) {

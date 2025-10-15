@@ -9,7 +9,6 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 import { CellStateManager } from "../services/CellStateManager.ts";
-import { CellStatusBarProvider } from "../services/CellStatusBarProvider.ts";
 import { Config } from "../services/Config.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
@@ -37,8 +36,10 @@ import { RecentNotebooksLive } from "../views/RecentNotebooks.ts";
 import { StatusBar } from "../views/StatusBar.ts";
 import { TreeView } from "../views/TreeView.ts";
 import { VariablesViewLive } from "../views/VariablesView.ts";
+import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
 import { LspLive } from "./Lsp.ts";
+import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
 
 /**
@@ -49,10 +50,12 @@ const MainLive = LspLive.pipe(
   Layer.merge(RegisterCommandsLive),
   Layer.merge(KernelManagerLive),
   Layer.merge(MarimoStatusBarLive),
+  Layer.merge(MarimoFileDetectorLive),
   Layer.merge(RecentNotebooksLive),
   Layer.merge(VariablesViewLive),
   Layer.merge(DatasourcesViewLive),
   Layer.merge(PackagesViewLive),
+  Layer.merge(CellStatusBarProviderLive),
 )
   .pipe(
     Layer.provide(GitHubClient.Default),
@@ -68,7 +71,6 @@ const MainLive = LspLive.pipe(
     Layer.provide(MarimoConfigurationService.Default),
     Layer.provide(ConfigContextManager.Default),
     Layer.provide(CellStateManager.Default),
-    Layer.provide(CellStatusBarProvider.Default),
     Layer.provide(ControllerRegistry.Default),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(SandboxController.Default),

@@ -32,6 +32,10 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
                     cells=[lsp.NotebookCellLanguage(language="python")],
                     notebook="marimo-notebook",
                 ),
+                lsp.NotebookDocumentFilterWithCells(
+                    cells=[lsp.NotebookCellLanguage(language="python")],
+                    notebook="marimo-notebook-generic",
+                ),
             ],
             save=True,
         ),

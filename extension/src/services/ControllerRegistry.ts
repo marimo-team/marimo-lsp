@@ -257,7 +257,7 @@ const pruneStaleControllers = Effect.fnUntraced(function* (options: {
 
       // Remove all disposed controllers in one update
       yield* Effect.annotateLogs(
-        Effect.logInfo("Completed stale controller removal"),
+        Effect.logDebug("Completed stale controller removal"),
         { removedCount: toRemove.length },
       );
 

@@ -103,6 +103,9 @@ export class Window extends Effect.Service<Window>()("Window", {
       getVisibleNotebookEditors() {
         return Effect.succeed(api.visibleNotebookEditors);
       },
+      getActiveTextEditor() {
+        return Effect.succeed(Option.fromNullable(api.activeTextEditor));
+      },
       createTreeView<T>(viewId: string, options: vscode.TreeViewOptions<T>) {
         return Effect.acquireRelease(
           Effect.sync(() => api.createTreeView(viewId, options)),
@@ -126,6 +129,20 @@ export class Window extends Effect.Service<Window>()("Window", {
           Effect.acquireRelease(
             Effect.sync(() =>
               api.onDidChangeActiveNotebookEditor((e) =>
+                emit.single(Option.fromNullable(e)),
+              ),
+            ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          ),
+        );
+      },
+      activeTextEditorChanges(): Stream.Stream<
+        Option.Option<vscode.TextEditor>
+      > {
+        return Stream.asyncPush((emit) =>
+          Effect.acquireRelease(
+            Effect.sync(() =>
+              api.onDidChangeActiveTextEditor((e) =>
                 emit.single(Option.fromNullable(e)),
               ),
             ),
@@ -177,11 +194,13 @@ type ExecutableCommand =
   | "workbench.action.reloadWindow"
   | "workbench.action.openSettings"
   | "notebook.cell.execute"
+  | "vscode.openWith"
   | MarimoCommand;
 
 type ContextMap = {
   "marimo.notebook.hasStaleCells": boolean;
   "marimo.config.runtime.on_cell_change": "autorun" | "lazy";
+  "marimo.isPythonFileMarimoNotebook": boolean;
 };
 
 export class Commands extends Effect.Service<Commands>()("Commands", {
