@@ -4,6 +4,7 @@ import type * as vscode from "vscode";
 import { SemVerFromString } from "../schemas.ts";
 import { getNotebookUri } from "../types.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
+import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { PythonExtension } from "./PythonExtension.ts";
 import { Uv } from "./Uv.ts";
@@ -110,7 +111,6 @@ export class SandboxController extends Effect.Service<SandboxController>()(
 
 const findRequirements = (uv: Uv, notebook: vscode.NotebookDocument) =>
   Effect.gen(function* () {
-    const marimoVersion = { major: 0, minor: 16, patch: 0 };
     const packages = yield* uv.currentDeps({
       script: notebook.uri.fsPath,
     });
@@ -126,7 +126,7 @@ const findRequirements = (uv: Uv, notebook: vscode.NotebookDocument) =>
 
         if (
           Option.isSome(version) &&
-          semver.greaterOrEqual(version.value, marimoVersion)
+          semver.greaterOrEqual(version.value, MINIMUM_MARIMO_VERSION)
         ) {
           marimoOk = true;
         }
@@ -138,7 +138,7 @@ const findRequirements = (uv: Uv, notebook: vscode.NotebookDocument) =>
 
     const requirements = [];
     if (!marimoOk) {
-      requirements.push(`marimo>=${semver.format(marimoVersion)}`);
+      requirements.push(`marimo>=${semver.format(MINIMUM_MARIMO_VERSION)}`);
     }
     if (!pyzmqOk) {
       requirements.push("pyzmq");

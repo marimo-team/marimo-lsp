@@ -6,9 +6,9 @@ import type * as py from "@vscode/python-extension";
 import { Data, Effect, type ParseResult, Schema } from "effect";
 import { SemVerFromString } from "../schemas.ts";
 
-const MINIMUM_MARIMO_VERSION = {
+export const MINIMUM_MARIMO_VERSION = {
   major: 0,
-  minor: 16,
+  minor: 17,
   patch: 0,
 } satisfies semver.SemVer;
 
