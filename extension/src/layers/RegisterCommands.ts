@@ -181,6 +181,10 @@ const openAsMarimoNotebook = ({ code }: { code: VsCode }) =>
       return;
     }
 
+    // close previous editor
+    yield* code.commands.executeCommand("workbench.action.closeActiveEditor");
+
+    // Open as notebook
     yield* code.commands.executeCommand(
       "vscode.openWith",
       editor.value.document.uri,
