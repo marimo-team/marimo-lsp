@@ -191,16 +191,17 @@ export class Window extends Effect.Service<Window>()("Window", {
 }) {}
 
 type ExecutableCommand =
-  | "workbench.action.reloadWindow"
-  | "workbench.action.openSettings"
   | "notebook.cell.execute"
   | "vscode.openWith"
+  | "workbench.action.closeActiveEditor"
+  | "workbench.action.openSettings"
+  | "workbench.action.reloadWindow"
   | MarimoCommand;
 
 type ContextMap = {
-  "marimo.notebook.hasStaleCells": boolean;
   "marimo.config.runtime.on_cell_change": "autorun" | "lazy";
   "marimo.isPythonFileMarimoNotebook": boolean;
+  "marimo.notebook.hasStaleCells": boolean;
 };
 
 export class Commands extends Effect.Service<Commands>()("Commands", {
