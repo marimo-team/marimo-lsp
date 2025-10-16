@@ -21,7 +21,7 @@ export function CellOutput({ cellId, state }: CellOutputProps) {
 
   return (
     <div
-      className={`marimo-cell-output p-4 pt-6 ${theme}`}
+      className={`marimo-cell-output p-4 pb-8 ${theme}`}
       data-vscode-output-container="true"
       ref={container}
     >
