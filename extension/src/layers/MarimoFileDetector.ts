@@ -19,9 +19,9 @@ export const MarimoFileDetectorLive = Layer.scopedDiscard(
 
       const text = document.getText();
 
-      // Check for top-level marimo.App() declaration (at start of line)
-      // This regex matches: optional whitespace, 'app', whitespace, '=', whitespace, 'marimo.App()'
-      return /^app\s*=\s*marimo\.App\(\)/m.test(text);
+      // Check for top-level marimo.App( declaration (at start of line)
+      // This regex matches: optional whitespace, 'app', optional type annotation, '=', whitespace, 'marimo.App()'
+      return /^app\s*(?::\s*[^=]+)?\s*=\s*marimo\.App\(/m.test(text);
     };
 
     // Update context based on active editor
@@ -42,7 +42,7 @@ export const MarimoFileDetectorLive = Layer.scopedDiscard(
         yield* Effect.logDebug("Detected marimo notebook file").pipe(
           Effect.annotateLogs({
             uri: Option.map(editor, (e) => e.document.uri.toString()).pipe(
-              Option.getOrNull,
+              Option.getOrThrow,
             ),
           }),
         );
