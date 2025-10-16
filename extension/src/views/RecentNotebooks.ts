@@ -1,8 +1,8 @@
 import { Effect, Layer, Option, Ref, Schema, Stream } from "effect";
 import type { NotebookDocument, Uri, WorkspaceFolder } from "vscode";
-import { NOTEBOOK_TYPE } from "../constants.ts";
 import { createStorageKey, Storage } from "../services/Storage.ts";
 import { VsCode } from "../services/VsCode.ts";
+import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import { type TreeItem, TreeView } from "./TreeView.ts";
 
 interface RecentNotebook {
@@ -142,7 +142,7 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
             if (Option.isSome(maybeEditor)) {
               const editor = maybeEditor.value;
               if (
-                editor.notebook.notebookType === NOTEBOOK_TYPE &&
+                isMarimoNotebookDocument(editor.notebook) &&
                 editor.notebook.uri.scheme === "file"
               ) {
                 yield* addRecentNotebook(editor.notebook.uri, editor.notebook);
@@ -176,7 +176,7 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
       const openNotebooks = yield* code.workspace.getNotebookDocuments();
       for (const notebook of openNotebooks) {
         if (
-          notebook.notebookType === NOTEBOOK_TYPE &&
+          isMarimoNotebookDocument(notebook) &&
           notebook.uri.scheme === "file"
         ) {
           yield* addRecentNotebook(notebook.uri, notebook);

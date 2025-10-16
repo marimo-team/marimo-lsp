@@ -4,6 +4,7 @@
 export type MarimoCommand =
   | "marimo.clearRecentNotebooks"
   | "marimo.newMarimoNotebook"
+  | "marimo.openAsMarimoNotebook"
   | "marimo.publishMarimoNotebook"
   | "marimo.publishMarimoNotebookGist"
   | "marimo.refreshPackages"
@@ -23,4 +24,5 @@ export const NOTEBOOK_TYPE = "marimo-notebook";
 
 export type MarimoContextKey =
   | "marimo.config.runtime.on_cell_change"
+  | "marimo.isPythonFileMarimoNotebook"
   | "marimo.notebook.hasStaleCells";

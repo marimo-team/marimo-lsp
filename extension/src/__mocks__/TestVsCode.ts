@@ -509,6 +509,49 @@ class Range implements vscode.Range {
   }
 }
 
+class Selection extends Range implements vscode.Selection {
+  readonly anchor: Position;
+  readonly active: Position;
+
+  constructor(anchor: Position, active: Position);
+  constructor(
+    anchorLine: number,
+    anchorCharacter: number,
+    activeLine: number,
+    activeCharacter: number,
+  );
+  constructor(
+    anchorOrLine: Position | number,
+    activeOrCharacter: Position | number,
+    activeLine?: number,
+    activeCharacter?: number,
+  ) {
+    let anchor: Position;
+    let active: Position;
+
+    if (typeof anchorOrLine === "number") {
+      anchor = new Position(anchorOrLine, activeOrCharacter as number);
+      active = new Position(activeLine as number, activeCharacter as number);
+    } else {
+      anchor = anchorOrLine;
+      active = activeOrCharacter as Position;
+    }
+
+    // Call Range constructor with start and end
+    // The start is the earlier position, end is the later position
+    const start = anchor.isBefore(active) ? anchor : active;
+    const end = anchor.isBefore(active) ? active : anchor;
+    super(start, end);
+
+    this.anchor = anchor;
+    this.active = active;
+  }
+
+  get isReversed(): boolean {
+    return this.anchor.isAfter(this.active);
+  }
+}
+
 class TextEdit implements vscode.TextEdit {
   static replace(range: Range, newText: string): TextEdit {
     return new TextEdit(range, newText);
@@ -760,6 +803,126 @@ class TreeItem implements vscode.TreeItem {
   }
 }
 
+class TextDocument implements vscode.TextDocument {
+  readonly uri: Uri;
+  readonly fileName: string;
+  readonly isUntitled: boolean;
+  readonly languageId: string;
+  readonly version: number;
+  readonly isDirty: boolean;
+  readonly isClosed: boolean;
+  readonly eol: vscode.EndOfLine;
+  readonly lineCount: number;
+  readonly encoding: string;
+
+  #text: string;
+
+  constructor(uri: Uri, languageId: string, version: number, text: string) {
+    this.uri = uri;
+    this.fileName = uri.fsPath;
+    this.languageId = languageId;
+    this.version = version;
+    this.#text = text;
+    this.isUntitled = false;
+    this.isDirty = false;
+    this.isClosed = false;
+    this.eol = 1; // LF
+    this.lineCount = text.split("\n").length;
+    this.encoding = "utf-8";
+  }
+
+  save(): Thenable<boolean> {
+    return Promise.resolve(true);
+  }
+
+  getText(range?: vscode.Range): string {
+    if (!range) {
+      return this.#text;
+    }
+    // For simplicity, just return full text for now
+    return this.#text;
+  }
+
+  getWordRangeAtPosition(): vscode.Range | undefined {
+    return undefined;
+  }
+
+  validateRange(range: vscode.Range): vscode.Range {
+    return range;
+  }
+
+  validatePosition(position: vscode.Position): vscode.Position {
+    return position;
+  }
+
+  positionAt(): vscode.Position {
+    return new Position(0, 0);
+  }
+
+  offsetAt(): number {
+    return 0;
+  }
+
+  lineAt(): vscode.TextLine {
+    throw new Error("lineAt not implemented in test mock");
+  }
+}
+
+class TextEditor implements vscode.TextEditor {
+  readonly document: vscode.TextDocument;
+  selections: readonly vscode.Selection[];
+  visibleRanges: readonly vscode.Range[];
+  options: vscode.TextEditorOptions;
+
+  constructor(document: vscode.TextDocument) {
+    this.document = document;
+    this.selections = [new Selection(new Position(0, 0), new Position(0, 0))];
+    this.visibleRanges = [];
+    this.options = {};
+  }
+
+  get selection(): vscode.Selection {
+    return this.selections[0];
+  }
+
+  get viewColumn(): never {
+    throw Error("TextEditor.viewColumn is not implemented.");
+  }
+
+  edit(): Thenable<boolean> {
+    return Promise.resolve(true);
+  }
+
+  insertSnippet(): Thenable<boolean> {
+    return Promise.resolve(true);
+  }
+
+  setDecorations(): void {}
+
+  revealRange(): void {}
+
+  show(): void {}
+
+  hide(): void {}
+}
+
+export function createTestTextDocument(
+  uri: Uri | string,
+  languageId: string,
+  text: string,
+): vscode.TextDocument {
+  if (typeof uri === "string") {
+    uri = Uri.file(uri);
+  }
+  return new TextDocument(uri, languageId, 1, text);
+}
+
+export function createTestTextEditor(
+  document: vscode.TextDocument,
+): vscode.TextEditor {
+  return new TextEditor(document);
+}
+
 class NotebookCell implements vscode.NotebookCell {
   readonly index: number;
   readonly notebook: vscode.NotebookDocument;
@@ -928,6 +1091,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly setActiveNotebookEditor: (
     editor: Option.Option<vscode.NotebookEditor>,
   ) => Effect.Effect<void>;
+  readonly setActiveTextEditor: (
+    editor: Option.Option<vscode.TextEditor>,
+  ) => Effect.Effect<void>;
   readonly addNotebookDocument: (
     doc: vscode.NotebookDocument,
   ) => Effect.Effect<void>;
@@ -979,6 +1145,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   static make = Effect.fnUntraced(function* (
     options: { initialDocuments?: Array<vscode.NotebookDocument> } = {},
   ) {
+    const activeTextEditor = yield* SubscriptionRef.make(
+      Option.none<vscode.TextEditor>(),
+    );
     const activeNotebookEditor = yield* SubscriptionRef.make(
       Option.none<vscode.NotebookEditor>(),
     );
@@ -1067,14 +1236,23 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 (disposable) => Effect.sync(() => disposable.dispose()),
               );
             },
-            getActiveNotebookEditor() {
-              return Ref.get(activeNotebookEditor);
-            },
             getVisibleNotebookEditors() {
               return Effect.map(
                 Ref.get(visibleNotebookEditors),
                 HashSet.toValues,
               );
+            },
+            getActiveNotebookEditor() {
+              return Ref.get(activeNotebookEditor);
+            },
+            activeNotebookEditorChanges() {
+              return activeNotebookEditor.changes;
+            },
+            getActiveTextEditor() {
+              return Ref.get(activeTextEditor);
+            },
+            activeTextEditorChanges() {
+              return activeTextEditor.changes;
             },
             createTreeView<T>(viewId: string) {
               return Effect.acquireRelease(
@@ -1142,9 +1320,6 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 })),
                 (disposable) => Effect.sync(() => disposable.dispose()),
               );
-            },
-            activeNotebookEditorChanges() {
-              return activeNotebookEditor.changes;
             },
             showNotebookDocument(
               doc: vscode.NotebookDocument,
@@ -1401,6 +1576,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       documentChangesPubSub: documentChanges,
       setActiveNotebookEditor: (editor) =>
         SubscriptionRef.set(activeNotebookEditor, editor),
+      setActiveTextEditor: (editor) =>
+        SubscriptionRef.set(activeTextEditor, editor),
       addNotebookDocument: (doc) =>
         Ref.update(notebookDocuments, (docs) => HashSet.add(docs, doc)),
       removeNotebookDocument: (doc) =>

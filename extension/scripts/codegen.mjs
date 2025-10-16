@@ -38,11 +38,12 @@ assert(
   pkg.contributes.notebooks.length === 1,
   "Expected one notebook contribution",
 );
-const notebook = pkg.contributes.notebooks[0];
+const [notebook] = pkg.contributes.notebooks;
 
 const contextKeys = [
   "marimo.notebook.hasStaleCells",
   "marimo.config.runtime.on_cell_change",
+  "marimo.isPythonFileMarimoNotebook",
 ];
 
 const code = NodeChildProcess.execFileSync(

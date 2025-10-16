@@ -1,5 +1,6 @@
 import * as NodePath from "node:path";
 import { Cause, Chunk, Effect, Either, Layer, Option } from "effect";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import { decodeCellMetadata, isStaleCellMetadata } from "../schemas.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
@@ -21,14 +22,19 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     const code = yield* VsCode;
     const client = yield* LanguageClient;
     const channel = yield* OutputChannel;
+    const executions = yield* ExecutionRegistry;
     const serializer = yield* NotebookSerializer;
     const configService = yield* MarimoConfigurationService;
     const configContextManager = yield* ConfigContextManager;
-    const executions = yield* ExecutionRegistry;
 
     yield* code.commands.registerCommand(
       "marimo.newMarimoNotebook",
       newMarimoNotebook({ code, serializer }),
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.openAsMarimoNotebook",
+      openAsMarimoNotebook({ code }),
     );
 
     yield* code.commands.registerCommand(
@@ -154,10 +160,36 @@ const newMarimoNotebook = ({
         new code.NotebookCellData(code.NotebookCellKind.Code, "", "python"),
       ]),
     );
+
     yield* code.window.showNotebookDocument(doc);
+
     yield* Effect.logInfo("Created new marimo notebook").pipe(
       Effect.annotateLogs({
         uri: doc.uri.toString(),
+      }),
+    );
+  });
+
+const openAsMarimoNotebook = ({ code }: { code: VsCode }) =>
+  Effect.gen(function* () {
+    const editor = yield* code.window.getActiveTextEditor();
+
+    if (Option.isNone(editor)) {
+      yield* code.window.showInformationMessage(
+        "No active file to open as notebook",
+      );
+      return;
+    }
+
+    yield* code.commands.executeCommand(
+      "vscode.openWith",
+      editor.value.document.uri,
+      NOTEBOOK_TYPE,
+    );
+
+    yield* Effect.logInfo("Opened Python file as marimo notebook").pipe(
+      Effect.annotateLogs({
+        uri: editor.value.document.uri.toString(),
       }),
     );
   });
@@ -183,12 +215,8 @@ const createGist = ({
     );
 
     if (Option.isNone(notebook)) {
-      yield* showErrorAndPromptLogs(
+      yield* code.window.showWarningMessage(
         "Must have an open marimo notebook to publish Gist.",
-        {
-          code,
-          channel,
-        },
       );
       return;
     }
@@ -319,10 +347,7 @@ const runStale = ({
   }).pipe(
     Effect.tapErrorCause(Effect.logError),
     Effect.catchAllCause(() =>
-      showErrorAndPromptLogs(
-        "Failed to run stale cells. See marimo logs for details.",
-        { code, channel },
-      ),
+      showErrorAndPromptLogs("Failed to run stale cells.", { code, channel }),
     ),
   );
 

@@ -42,6 +42,7 @@ suite("marimo Extension Hello World Tests", () => {
       "marimo.clearRecentNotebooks",
       "marimo.convert",
       "marimo.newMarimoNotebook",
+      "marimo.openAsMarimoNotebook",
       "marimo.publishMarimoNotebook",
       "marimo.publishMarimoNotebookGist",
       "marimo.refreshPackages",
