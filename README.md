@@ -7,10 +7,7 @@ A language server and VS Code extension for
 
 1. Open this project in VS Code
 2. Press `F5` to launch a new VS Code window with the extension loaded
-3. Open any `*_mo.py` file to see it as a marimo notebook
-
-Here’s a tightened version that keeps your style but separates the conceptual
-explanation from the command references:
+3. Open a marimo notebook (or create a new one)
 
 ## Development
 
