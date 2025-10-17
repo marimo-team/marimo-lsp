@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import * as React from "react";
 import {
   type CellId,
   type CellRuntimeState,
@@ -17,7 +17,7 @@ interface CellOutputProps {
  */
 export function CellOutput({ cellId, state }: CellOutputProps) {
   const { theme } = useTheme();
-  const container = useRef<HTMLDivElement>(null);
+  const container = React.useRef<HTMLDivElement>(null);
 
   return (
     <div
