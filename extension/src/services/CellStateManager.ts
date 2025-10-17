@@ -3,7 +3,11 @@ import type * as vscode from "vscode";
 import { decodeCellMetadata, encodeCellMetadata } from "../schemas.ts";
 import { getNotebookUri, type NotebookUri } from "../types.ts";
 import { Log } from "../utils/log.ts";
-import { isMarimoNotebookDocument } from "../utils/notebook.ts";
+import {
+  getNotebookCellId,
+  isMarimoNotebookDocument,
+} from "../utils/notebook.ts";
+import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -13,6 +17,7 @@ import { VsCode } from "./VsCode.ts";
  * Tracks which cells have been edited (stale) and updates:
  * 1. Cell metadata with state: "stale"
  * 2. VSCode context key "marimo.notebook.hasStaleCells" for UI enablement
+ * 3. Backend about cell deletions
  *
  * Uses SubscriptionRef for reactive state management.
  */
@@ -23,6 +28,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const editorRegistry = yield* NotebookEditorRegistry;
+      const client = yield* LanguageClient;
 
       // Track stale state: NotebookUri -> (CellIndex -> isStale)
       const staleStateRef = yield* SubscriptionRef.make(
@@ -78,18 +84,59 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         code.workspace.notebookDocumentChanges().pipe(
           Stream.mapEffect(
             Effect.fnUntraced(function* (event) {
+              // Only process marimo notebooks
+              if (!isMarimoNotebookDocument(event.notebook)) {
+                return;
+              }
+
               yield* Effect.logTrace("onDidChangeNotebookDocument", {
                 notebook: event.notebook.uri.fsPath,
                 numCellChanges: event.cellChanges.length,
                 newMetadata: event.metadata,
               });
 
-              // Only process marimo notebooks
-              if (!isMarimoNotebookDocument(event.notebook)) {
-                return;
-              }
-
               const notebookUri = getNotebookUri(event.notebook);
+
+              // Process cell deletions
+              for (const change of event.contentChanges) {
+                if (change.removedCells.length > 0) {
+                  for (const cell of change.removedCells) {
+                    // Clear local tracking
+                    yield* clearCellStaleTracking(notebookUri, cell.index, {
+                      staleStateRef,
+                    });
+
+                    // Notify backend about cell deletion
+                    yield* client
+                      .executeCommand({
+                        command: "marimo.api",
+                        params: {
+                          method: "delete_cell",
+                          params: {
+                            notebookUri,
+                            inner: {
+                              cellId: getNotebookCellId(cell),
+                            },
+                          },
+                        },
+                      })
+                      .pipe(
+                        Effect.catchAllCause((cause) =>
+                          // TODO: should we add this back to the UI on failure?
+                          Effect.logWarning(
+                            "Failed to notify backend about cell deletion",
+                            cause,
+                          ).pipe(
+                            Effect.annotateLogs({
+                              notebookUri,
+                              cellIndex: cell.index,
+                            }),
+                          ),
+                        ),
+                      );
+                  }
+                }
+              }
 
               // Process cell changes (content or metadata edits)
               for (const cellChange of event.cellChanges) {
@@ -115,6 +162,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                 if (!cellChange.metadata) {
                   continue;
                 }
+
                 // Check if metadata changed and state is not stale
                 // (e.g., cleared by execution)
                 const metadata = decodeCellMetadata(cellChange.metadata);

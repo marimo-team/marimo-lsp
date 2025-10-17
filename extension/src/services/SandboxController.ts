@@ -4,6 +4,7 @@ import type * as vscode from "vscode";
 import { SemVerFromString } from "../schemas.ts";
 import { getNotebookUri } from "../types.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
+import { getNotebookCellId } from "../utils/notebook.ts";
 import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { PythonExtension } from "./PythonExtension.ts";
@@ -57,7 +58,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
                   notebookUri: getNotebookUri(notebook),
                   executable,
                   inner: {
-                    cellIds: cells.map((cell) => cell.document.uri.toString()),
+                    cellIds: cells.map((cell) => getNotebookCellId(cell)),
                     codes: cells.map((cell) => cell.document.getText()),
                   },
                 },

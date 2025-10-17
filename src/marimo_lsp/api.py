@@ -18,6 +18,7 @@ from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     CloseSessionRequest,
     DebugAdapterRequest,
+    DeleteCellRequest,
     DependencyTreeRequest,
     DeserializeRequest,
     GetConfigurationRequest,
@@ -108,6 +109,19 @@ async def interrupt(
     if session:
         session.try_interrupt()
         logger.info(f"Interrupt request sent for {args.notebook_uri}")
+    else:
+        logger.warning(f"No session found for {args.notebook_uri}")
+
+
+async def delete_cell(
+    manager: LspSessionManager,
+    args: NotebookCommand[DeleteCellRequest],
+):
+    logger.info(f"delete_cell for {args.notebook_uri}")
+    session = manager.get_session(args.notebook_uri)
+    if session:
+        session.put_control_request(args.inner, from_consumer_id=None)
+        logger.info(f"Delete cell request sent for {args.notebook_uri}")
     else:
         logger.warning(f"No session found for {args.notebook_uri}")
 
@@ -234,7 +248,7 @@ async def update_configuration(
         return {"success": False, "error": str(e)}
 
 
-async def handle_api_command(  # noqa: C901, PLR0911
+async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
     ls: LanguageServer, manager: LspSessionManager, method: str, params: dict
 ) -> object:
     """Unified API endpoint for all marimo internal methods."""
@@ -246,6 +260,11 @@ async def handle_api_command(  # noqa: C901, PLR0911
     if method == "interrupt":
         return await interrupt(
             manager, msgspec.convert(params, type=NotebookCommand[InterruptRequest])
+        )
+
+    if method == "delete_cell":
+        return await delete_cell(
+            manager, msgspec.convert(params, type=NotebookCommand[DeleteCellRequest])
         )
 
     if method == "set_ui_element_value":

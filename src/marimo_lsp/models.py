@@ -111,3 +111,4 @@ class ApiRequest(msgspec.Struct, rename="camel"):
 
 RunRequest = core.RunRequest
 SetUIElementValueRequest = requests.SetUIElementValueRequest
+DeleteCellRequest = requests.DeleteCellRequest
