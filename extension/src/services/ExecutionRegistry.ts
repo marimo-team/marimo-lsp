@@ -1,7 +1,10 @@
 // @ts-expect-error
 import { transitionCell as untypedTransitionCell } from "@marimo-team/frontend/unstable_internal/core/cells/cell.ts?nocheck";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import type { CellOutput } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
+import type {
+  CellOutput,
+  OutputMessage,
+} from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
 import {
   type Brand,
   Data,
@@ -462,6 +465,10 @@ function buildOutputItem(
   // Handle stdout/stderr with proper VSCode helpers
   if (output.mimetype === "text/plain") {
     const text = String(output.data);
+    if (!text) {
+      return null;
+    }
+
     switch (output.channel) {
       case "stdout":
         return code.NotebookCellOutputItem.stdout(text);
@@ -474,7 +481,11 @@ function buildOutputItem(
 
   // Handle traceback
   if (output.mimetype === "application/vnd.marimo+traceback") {
-    return code.NotebookCellOutputItem.text(String(output.data), "text/html");
+    const text = String(output.data);
+    if (!text) {
+      return null;
+    }
+    return code.NotebookCellOutputItem.text(text, "text/html");
   }
 
   // Handle marimo errors
@@ -486,9 +497,25 @@ function buildOutputItem(
     return errors[0] || null;
   }
 
+  if (isOutputEmpty(output)) {
+    return null;
+  }
+
   // Default pass to our renderer
   return code.NotebookCellOutputItem.json(
     { cellId, state },
     "application/vnd.marimo.ui+json",
   );
+}
+
+function isOutputEmpty(output: OutputMessage | undefined | null): boolean {
+  if (output == null) {
+    return true;
+  }
+
+  if (output.data == null || output.data === "") {
+    return true;
+  }
+
+  return false;
 }
