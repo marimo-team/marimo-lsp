@@ -29,6 +29,9 @@ importers:
       '@marimo-team/openapi':
         specifier: link:../../marimo/packages/openapi
         version: link:../../marimo/packages/openapi
+      '@marimo-team/smart-cells':
+        specifier: link:../../marimo/packages/smart-cells
+        version: link:../../marimo/packages/smart-cells
       '@std/semver':
         specifier: jsr:^1.0.6
         version: '@jsr/std__semver@1.0.6'
