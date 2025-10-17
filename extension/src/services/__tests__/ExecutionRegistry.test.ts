@@ -448,6 +448,283 @@ describe("buildCellOutputs", () => {
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
+
+  it.effect(
+    "filters out empty text/plain stdout output",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        consoleOutputs: [
+          {
+            mimetype: "text/plain",
+            channel: "stdout",
+            data: "",
+            timestamp: 0,
+          },
+        ],
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "filters out empty text/plain stderr output",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        consoleOutputs: [
+          {
+            mimetype: "text/plain",
+            channel: "stderr",
+            data: "",
+            timestamp: 0,
+          },
+        ],
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "filters out empty traceback output",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        output: {
+          mimetype: "application/vnd.marimo+traceback",
+          channel: "output",
+          data: "",
+        },
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "filters out null output data",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        output: {
+          mimetype: "text/plain",
+          channel: "output",
+          data: null as unknown as string,
+        },
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "filters out undefined output data",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        output: {
+          mimetype: "text/html",
+          channel: "output",
+          data: undefined as unknown as string,
+        },
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "handles mix of empty and non-empty console outputs",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        consoleOutputs: [
+          {
+            mimetype: "text/plain",
+            channel: "stdout",
+            data: "",
+            timestamp: 0,
+          },
+          {
+            mimetype: "text/plain",
+            channel: "stdout",
+            data: "Actual output\n",
+            timestamp: 1,
+          },
+          {
+            mimetype: "text/plain",
+            channel: "stderr",
+            data: "",
+            timestamp: 2,
+          },
+          {
+            mimetype: "text/plain",
+            channel: "stderr",
+            data: "Actual error\n",
+            timestamp: 3,
+          },
+        ],
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "handles null output object",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        output: null,
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "handles empty marimo error data array",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        output: {
+          mimetype: "application/vnd.marimo+error",
+          channel: "marimo-error",
+          data: [],
+          timestamp: 0,
+        },
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "preserves whitespace-only output",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        consoleOutputs: [
+          {
+            mimetype: "text/plain",
+            channel: "stdout",
+            data: "   \n",
+            timestamp: 0,
+          },
+        ],
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "handles numeric zero output",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        output: {
+          mimetype: "application/json",
+          channel: "output",
+          data: 0 as unknown as string,
+          timestamp: 0,
+        },
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "handles boolean false output",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        output: {
+          mimetype: "application/json",
+          channel: "output",
+          data: false as unknown as string,
+          timestamp: 0,
+        },
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
 });
 
 it.scoped(

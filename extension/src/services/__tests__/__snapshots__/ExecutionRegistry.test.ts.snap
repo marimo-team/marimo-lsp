@@ -1,5 +1,15 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`buildCellOutputs > filters out empty text/plain stderr output 1`] = `[]`;
+
+exports[`buildCellOutputs > filters out empty text/plain stdout output 1`] = `[]`;
+
+exports[`buildCellOutputs > filters out empty traceback output 1`] = `[]`;
+
+exports[`buildCellOutputs > filters out null output data 1`] = `[]`;
+
+exports[`buildCellOutputs > filters out undefined output data 1`] = `[]`;
+
 exports[`buildCellOutputs > handles HTML output 1`] = `
 [
   {
@@ -44,6 +54,22 @@ TypeError: invalid value",
 ]
 `;
 
+exports[`buildCellOutputs > handles boolean false output 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"application/json","channel":"output","data":false,"timestamp":0},"consoleOutputs":[],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
+        "mime": "application/vnd.marimo.ui+json",
+      },
+    ],
+    "metadata": undefined,
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles empty marimo error data array 1`] = `[]`;
+
 exports[`buildCellOutputs > handles empty state 1`] = `[]`;
 
 exports[`buildCellOutputs > handles marimo error output 1`] = `
@@ -57,6 +83,35 @@ exports[`buildCellOutputs > handles marimo error output 1`] = `
     ],
     "metadata": {
       "channel": "marimo-error",
+    },
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles mix of empty and non-empty console outputs 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "Actual output
+",
+        "mime": "application/vnd.code.notebook.stdout",
+      },
+    ],
+    "metadata": {
+      "channel": "stdout",
+    },
+  },
+  {
+    "items": [
+      {
+        "data": "Actual error
+",
+        "mime": "application/vnd.code.notebook.stderr",
+      },
+    ],
+    "metadata": {
+      "channel": "stderr",
     },
   },
 ]
@@ -177,6 +232,22 @@ exports[`buildCellOutputs > handles multiple stderr errors 1`] = `
 ]
 `;
 
+exports[`buildCellOutputs > handles null output object 1`] = `[]`;
+
+exports[`buildCellOutputs > handles numeric zero output 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"application/json","channel":"output","data":0,"timestamp":0},"consoleOutputs":[],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
+        "mime": "application/vnd.marimo.ui+json",
+      },
+    ],
+    "metadata": undefined,
+  },
+]
+`;
+
 exports[`buildCellOutputs > handles stderr output 1`] = `
 [
   {
@@ -258,6 +329,23 @@ exports[`buildCellOutputs > handles stdout output 1`] = `
     "items": [
       {
         "data": "Hello from stdout",
+        "mime": "application/vnd.code.notebook.stdout",
+      },
+    ],
+    "metadata": {
+      "channel": "stdout",
+    },
+  },
+]
+`;
+
+exports[`buildCellOutputs > preserves whitespace-only output 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "   
+",
         "mime": "application/vnd.code.notebook.stdout",
       },
     ],
