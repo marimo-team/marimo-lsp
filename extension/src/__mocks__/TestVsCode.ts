@@ -117,7 +117,7 @@ class NotebookCellOutputItem implements NotebookCellOutputItem {
   }
 }
 
-class NotebookRange implements vscode.NotebookRange {
+export class NotebookRange implements vscode.NotebookRange {
   readonly start: number;
   readonly end: number;
   get isEmpty(): boolean {
@@ -1139,7 +1139,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     return Ref.get(this.statusBarProviders);
   }
 
-  fireNotebookDocumentChange(event: vscode.NotebookDocumentChangeEvent) {
+  notebookChange(event: vscode.NotebookDocumentChangeEvent) {
     return PubSub.publish(this.documentChangesPubSub, event);
   }
   static make = Effect.fnUntraced(function* (

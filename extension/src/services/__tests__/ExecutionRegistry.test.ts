@@ -28,8 +28,8 @@ const withTestCtx = Effect.fnUntraced(function* (
   const layer = Layer.empty.pipe(
     Layer.merge(ExecutionRegistry.Default),
     Layer.merge(CellStateManager.Default),
-    Layer.provideMerge(vscode.layer),
     Layer.provide(TestLanguageClientLive),
+    Layer.provideMerge(vscode.layer),
   );
   return { vscode, layer };
 });
