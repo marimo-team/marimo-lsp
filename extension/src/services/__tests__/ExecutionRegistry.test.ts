@@ -13,12 +13,10 @@ import {
   type CellRuntimeState,
   getNotebookUri,
 } from "../../types.ts";
+import type { NotebookCellId } from "../../utils/notebook.ts";
+import { getNotebookCellId } from "../../utils/notebook.ts";
 import { CellStateManager } from "../CellStateManager.ts";
-import {
-  buildCellOutputs,
-  ExecutionRegistry,
-  type NotebookCellId,
-} from "../ExecutionRegistry.ts";
+import { buildCellOutputs, ExecutionRegistry } from "../ExecutionRegistry.ts";
 import { VenvPythonController } from "../NotebookControllerFactory.ts";
 import { NotebookEditorRegistry } from "../NotebookEditorRegistry.ts";
 import { VsCode } from "../VsCode.ts";
@@ -450,7 +448,7 @@ it.scoped(
         // Send a message with staleInputs: true
         const message: CellMessage = {
           op: "cell-op",
-          cell_id: cell.document.uri.toString(),
+          cell_id: getNotebookCellId(cell),
           status: "idle",
           stale_inputs: true,
         };
@@ -531,7 +529,7 @@ it.scoped(
         // Send a queued message
         const message: CellMessage = {
           op: "cell-op",
-          cell_id: cell.document.uri.toString(),
+          cell_id: getNotebookCellId(cell),
           status: "queued",
           run_id: "test-run-id",
         };
