@@ -271,7 +271,7 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
         return Stream.asyncPush<vscode.NotebookDocumentChangeEvent>((emit) =>
           Effect.acquireRelease(
             Effect.sync(() =>
-              api.onDidChangeNotebookDocument((evt) => emit.single(evt)),
+              api.onDidChangeNotebookDocument((event) => emit.single(event)),
             ),
             (disposable) => Effect.sync(() => disposable.dispose()),
           ),
