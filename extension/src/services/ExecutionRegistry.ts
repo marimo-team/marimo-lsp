@@ -402,7 +402,7 @@ export function buildCellOutputs(
   }
 
   // Process main output and errors
-  if (state.output) {
+  if (state.output && !isOutputEmpty(state.output)) {
     const item = buildOutputItem(state.output, cellId, state, code);
     if (item) {
       if (state.output.channel === "marimo-error") {
