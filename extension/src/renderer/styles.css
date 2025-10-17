@@ -50,3 +50,16 @@
   --link: var(--vscode-textLink-foreground);
   --link-visited: var(--vscode-textLink-activeForeground);
 }
+
+/**
+ * Set minimum height for cell outputs containing elements with large popovers
+ * This prevents popovers from being cut off in VS Code's output rendering
+ */
+.marimo-cell-output:has(
+    marimo-date,
+    marimo-date-range,
+    marimo-datetime,
+    marimo-multiselect
+  ) {
+  min-height: 350px;
+}
