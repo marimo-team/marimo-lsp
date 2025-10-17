@@ -1,3 +1,4 @@
+import { SQLParser } from "@marimo-team/smart-cells";
 import {
   Effect,
   Fiber,
@@ -62,18 +63,39 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
           },
         });
         const { cells, ...metadata } = yield* decodeDeserializeResponse(resp);
+        const sqlParser = new SQLParser();
         const notebook = {
           metadata: metadata,
-          cells: cells.map((cell) => ({
-            // Hard code to avoid taking dep on VsCode
-            kind: 2 satisfies vscode.NotebookCellKind.Code,
-            value: cell.code,
-            languageId: "python",
-            metadata: {
-              name: cell.name,
-              options: cell.options,
-            },
-          })),
+          cells: cells.map((cell) => {
+            // Check if this is a SQL cell
+            if (sqlParser.isSupported(cell.code)) {
+              const result = sqlParser.transformIn(cell.code);
+              return {
+                // Hard code to avoid taking dep on VsCode
+                kind: 2 satisfies vscode.NotebookCellKind.Code,
+                value: result.code,
+                languageId: "sql",
+                metadata: {
+                  name: cell.name,
+                  options: cell.options,
+                  language: "sql" as const,
+                  languageMetadata: result.metadata,
+                },
+              };
+            }
+            // Default Python cell
+            return {
+              // Hard code to avoid taking dep on VsCode
+              kind: 2 satisfies vscode.NotebookCellKind.Code,
+              value: cell.code,
+              languageId: "python",
+              metadata: {
+                name: cell.name,
+                options: cell.options,
+                language: "python" as const,
+              },
+            };
+          }),
         };
         yield* Effect.logDebug("Deserialization complete").pipe(
           Effect.annotateLogs({ cellCount: notebook.cells.length }),
@@ -152,6 +174,7 @@ function notebookDataToMarimoNotebook(
   notebook: vscode.NotebookData,
 ): Effect.Effect<typeof MarimoNotebook.Type, ParseResult.ParseError, never> {
   const { cells, metadata = {} } = notebook;
+  const sqlParser = new SQLParser();
 
   // Deserialize response is just the IR for our notebook
   return decodeDeserializeResponse({
@@ -160,14 +183,34 @@ function notebookDataToMarimoNotebook(
     version: metadata.version ?? null,
     violations: metadata.violations ?? [],
     valid: metadata.valid ?? true,
-    cells: cells.map((cell) => ({
-      code:
-        cell.kind === (1 satisfies vscode.NotebookCellKind.Markup)
-          ? wrapInMarkdown(cell.value)
-          : cell.value,
-      name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
-      options: cell.metadata?.options ?? {},
-    })),
+    cells: cells.map((cell) => {
+      // Handle markup cells
+      if (cell.kind === (1 satisfies vscode.NotebookCellKind.Markup)) {
+        return {
+          code: wrapInMarkdown(cell.value),
+          name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
+          options: cell.metadata?.options ?? {},
+        };
+      }
+
+      // Handle SQL cells - transform back to Python mo.sql() wrapper
+      if (cell.metadata?.language === "sql") {
+        const languageMetadata = cell.metadata?.languageMetadata ?? {};
+        const result = sqlParser.transformOut(cell.value, languageMetadata);
+        return {
+          code: result.code,
+          name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
+          options: cell.metadata?.options ?? {},
+        };
+      }
+
+      // Default Python cells
+      return {
+        code: cell.value,
+        name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
+        options: cell.metadata?.options ?? {},
+      };
+    }),
   });
 }
 

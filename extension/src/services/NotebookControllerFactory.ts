@@ -6,6 +6,7 @@ import { unreachable } from "../assert.ts";
 import { getNotebookUri } from "../types.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
+import { getCellExecutableCode } from "../utils/getCellExecutableCode.ts";
 import { installPackages } from "../utils/installPackages.ts";
 import { getNotebookCellId } from "../utils/notebook.ts";
 import { Config } from "./Config.ts";
@@ -51,7 +52,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
           );
 
           // Add metadata
-          controller.supportedLanguages = ["python"];
+          controller.supportedLanguages = ["python", "sql"];
           controller.description = options.env.path;
 
           // Set up execution handler
@@ -75,7 +76,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                       executable: validEnv.executable,
                       inner: {
                         cellIds: cells.map((cell) => getNotebookCellId(cell)),
-                        codes: cells.map((cell) => cell.document.getText()),
+                        codes: cells.map((cell) => getCellExecutableCode(cell)),
                       },
                     },
                   },
