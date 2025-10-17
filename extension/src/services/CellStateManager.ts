@@ -24,7 +24,7 @@ import { VsCode } from "./VsCode.ts";
 export class CellStateManager extends Effect.Service<CellStateManager>()(
   "CellStateManager",
   {
-    dependencies: [NotebookEditorRegistry.Default, LanguageClient.Default],
+    dependencies: [NotebookEditorRegistry.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const editorRegistry = yield* NotebookEditorRegistry;

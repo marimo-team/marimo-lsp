@@ -2,6 +2,7 @@ import { expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import { Effect, Layer, Option, TestClock } from "effect";
 import type * as vscode from "vscode";
+import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
 import {
   createTestNotebookDocument,
   createTestNotebookEditor,
@@ -18,21 +19,20 @@ import { getNotebookCellId } from "../../utils/notebook.ts";
 import { CellStateManager } from "../CellStateManager.ts";
 import { buildCellOutputs, ExecutionRegistry } from "../ExecutionRegistry.ts";
 import { VenvPythonController } from "../NotebookControllerFactory.ts";
-import { NotebookEditorRegistry } from "../NotebookEditorRegistry.ts";
 import { VsCode } from "../VsCode.ts";
 
-const ExecutionRegistryTestLive = TestVsCode.Default;
-
-function makeExecutionRegistryLayer(testVsCode: TestVsCode) {
-  return Layer.provideMerge(
-    Layer.mergeAll(
-      ExecutionRegistry.Default,
-      CellStateManager.Default,
-      NotebookEditorRegistry.Default,
-    ),
-    testVsCode.layer,
+const withTestCtx = Effect.fnUntraced(function* (
+  options: Parameters<(typeof TestVsCode)["make"]>[0] = {},
+) {
+  const vscode = yield* TestVsCode.make(options);
+  const layer = Layer.empty.pipe(
+    Layer.merge(ExecutionRegistry.Default),
+    Layer.merge(CellStateManager.Default),
+    Layer.provideMerge(vscode.layer),
+    Layer.provide(TestLanguageClientLive),
   );
-}
+  return { vscode, layer };
+});
 
 const CELL_ID = "test-cell-id" as NotebookCellId;
 
@@ -65,24 +65,28 @@ function normalizeOutputsForSnapshot(
   });
 }
 
-it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
+describe("buildCellOutputs", () => {
   it.effect(
     "handles stdout output",
-    Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = {
-        ...createCellRuntimeState(),
-        consoleOutputs: [
-          {
-            mimetype: "text/plain",
-            channel: "stdout",
-            data: "Hello from stdout",
-            timestamp: 0,
-          },
-        ],
-      };
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          consoleOutputs: [
+            {
+              mimetype: "text/plain",
+              channel: "stdout",
+              data: "Hello from stdout",
+              timestamp: 0,
+            },
+          ],
+        };
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -91,20 +95,24 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
   it.effect(
     "handles stderr output",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = {
-        ...createCellRuntimeState(),
-        consoleOutputs: [
-          {
-            mimetype: "text/plain",
-            channel: "stderr",
-            data: "Error message",
-            timestamp: 0,
-          },
-        ],
-      };
+      const ctx = yield* withTestCtx();
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          consoleOutputs: [
+            {
+              mimetype: "text/plain",
+              channel: "stderr",
+              data: "Error message",
+              timestamp: 0,
+            },
+          ],
+        };
+
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -113,32 +121,36 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
   it.effect(
     "handles multiple console outputs",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = {
-        ...createCellRuntimeState(),
-        consoleOutputs: [
-          {
-            mimetype: "text/plain",
-            channel: "stdout",
-            data: "Line 1\n",
-            timestamp: 0,
-          },
-          {
-            mimetype: "text/plain",
-            channel: "stdout",
-            data: "Line 2\n",
-            timestamp: 1,
-          },
-          {
-            mimetype: "text/plain",
-            channel: "stderr",
-            data: "Warning: something happened\n",
-            timestamp: 2,
-          },
-        ],
-      };
+      const ctx = yield* withTestCtx();
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          consoleOutputs: [
+            {
+              mimetype: "text/plain",
+              channel: "stdout",
+              data: "Line 1\n",
+              timestamp: 0,
+            },
+            {
+              mimetype: "text/plain",
+              channel: "stdout",
+              data: "Line 2\n",
+              timestamp: 1,
+            },
+            {
+              mimetype: "text/plain",
+              channel: "stderr",
+              data: "Warning: something happened\n",
+              timestamp: 2,
+            },
+          ],
+        };
+
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -147,24 +159,27 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
   it.effect(
     "handles marimo error output",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = {
-        ...createCellRuntimeState(),
-        output: {
-          mimetype: "application/vnd.marimo+error",
-          channel: "marimo-error",
-          data: [
-            {
-              type: "syntax",
-              msg: "Invalid syntax",
-              cell_id: CELL_ID.toString(),
-            },
-          ],
-          timestamp: 0,
-        },
-      };
+      const ctx = yield* withTestCtx();
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          output: {
+            mimetype: "application/vnd.marimo+error",
+            channel: "marimo-error",
+            data: [
+              {
+                type: "syntax",
+                msg: "Invalid syntax",
+                cell_id: CELL_ID.toString(),
+              },
+            ],
+            timestamp: 0,
+          },
+        };
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -173,18 +188,21 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
   it.effect(
     "handles HTML output",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = {
-        ...createCellRuntimeState(),
-        output: {
-          mimetype: "text/html",
-          channel: "output",
-          data: "<div>Hello <b>world</b></div>",
-          timestamp: 0,
-        },
-      };
+      const ctx = yield* withTestCtx();
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          output: {
+            mimetype: "text/html",
+            channel: "output",
+            data: "<div>Hello <b>world</b></div>",
+            timestamp: 0,
+          },
+        };
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -193,18 +211,21 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
   it.effect(
     "handles JSON output",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = {
-        ...createCellRuntimeState(),
-        output: {
-          mimetype: "application/json",
-          channel: "output",
-          data: { foo: "bar", count: 42 },
-          timestamp: 0,
-        },
-      };
+      const ctx = yield* withTestCtx();
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          output: {
+            mimetype: "application/json",
+            channel: "output",
+            data: { foo: "bar", count: 42 },
+            timestamp: 0,
+          },
+        };
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -213,32 +234,35 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
   it.effect(
     "handles mixed output and console streams",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = {
-        ...createCellRuntimeState(),
-        consoleOutputs: [
-          {
-            mimetype: "text/plain",
-            channel: "stdout",
-            data: "Processing...\n",
-            timestamp: 0,
+      const ctx = yield* withTestCtx();
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          consoleOutputs: [
+            {
+              mimetype: "text/plain",
+              channel: "stdout",
+              data: "Processing...\n",
+              timestamp: 0,
+            },
+            {
+              mimetype: "text/plain",
+              channel: "stderr",
+              data: "Warning: deprecated function\n",
+              timestamp: 1,
+            },
+          ],
+          output: {
+            mimetype: "text/html",
+            channel: "output",
+            data: "<div>Result: 42</div>",
+            timestamp: 2,
           },
-          {
-            mimetype: "text/plain",
-            channel: "stderr",
-            data: "Warning: deprecated function\n",
-            timestamp: 1,
-          },
-        ],
-        output: {
-          mimetype: "text/html",
-          channel: "output",
-          data: "<div>Result: 42</div>",
-          timestamp: 2,
-        },
-      };
+        };
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -247,20 +271,24 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
   it.effect(
     "handles stdin output",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = {
-        ...createCellRuntimeState(),
-        consoleOutputs: [
-          {
-            mimetype: "text/plain",
-            channel: "stdin",
-            data: "Enter your name: ",
-            timestamp: 0,
-          },
-        ],
-      };
+      const ctx = yield* withTestCtx();
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          consoleOutputs: [
+            {
+              mimetype: "text/plain",
+              channel: "stdin",
+              data: "Enter your name: ",
+              timestamp: 0,
+            },
+          ],
+        };
+
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -269,10 +297,13 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
   it.effect(
     "handles empty state",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = createCellRuntimeState();
+      const ctx = yield* withTestCtx();
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = createCellRuntimeState();
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       // Should still have the marimo UI output
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
@@ -282,29 +313,32 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
   it.effect(
     "handles multiple errors in marimo error output",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = {
-        ...createCellRuntimeState(),
-        output: {
-          mimetype: "application/vnd.marimo+error",
-          channel: "marimo-error",
-          data: [
-            {
-              type: "exception",
-              msg: "ValueError: invalid value",
-              exception_type: "ValueError",
-            },
-            {
-              type: "ancestor-stopped",
-              msg: "Ancestor cell was stopped",
-              raising_cell: "other-cell-id",
-            },
-          ],
-          timestamp: 0,
-        },
-      };
+      const ctx = yield* withTestCtx();
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          output: {
+            mimetype: "application/vnd.marimo+error",
+            channel: "marimo-error",
+            data: [
+              {
+                type: "exception",
+                msg: "ValueError: invalid value",
+                exception_type: "ValueError",
+              },
+              {
+                type: "ancestor-stopped",
+                msg: "Ancestor cell was stopped",
+                raising_cell: "other-cell-id",
+              },
+            ],
+            timestamp: 0,
+          },
+        };
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -313,32 +347,36 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
   it.effect(
     "handles multiple stderr errors",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = {
-        ...createCellRuntimeState(),
-        consoleOutputs: [
-          {
-            mimetype: "text/plain",
-            channel: "stderr",
-            data: "Error 1: Connection failed\n",
-            timestamp: 0,
-          },
-          {
-            mimetype: "text/plain",
-            channel: "stderr",
-            data: "Error 2: Retry failed\n",
-            timestamp: 1,
-          },
-          {
-            mimetype: "text/plain",
-            channel: "stderr",
-            data: "Error 3: Timeout\n",
-            timestamp: 2,
-          },
-        ],
-      };
+      const ctx = yield* withTestCtx();
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          consoleOutputs: [
+            {
+              mimetype: "text/plain",
+              channel: "stderr",
+              data: "Error 1: Connection failed\n",
+              timestamp: 0,
+            },
+            {
+              mimetype: "text/plain",
+              channel: "stderr",
+              data: "Error 2: Retry failed\n",
+              timestamp: 1,
+            },
+            {
+              mimetype: "text/plain",
+              channel: "stderr",
+              data: "Error 3: Timeout\n",
+              timestamp: 2,
+            },
+          ],
+        };
+
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -347,38 +385,42 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
   it.effect(
     "handles stdout + stderr + output together",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = {
-        ...createCellRuntimeState(),
-        consoleOutputs: [
-          {
-            mimetype: "text/plain",
-            channel: "stdout",
-            data: "Starting computation...\n",
-            timestamp: 0,
-          },
-          {
-            mimetype: "text/plain",
-            channel: "stderr",
-            data: "Warning: using deprecated API\n",
-            timestamp: 1,
-          },
-          {
-            mimetype: "text/plain",
-            channel: "stdout",
-            data: "Computation complete\n",
-            timestamp: 2,
-          },
-        ],
-        output: {
-          mimetype: "application/json",
-          channel: "output",
-          data: { result: "success", value: 100 },
-          timestamp: 3,
-        },
-      };
+      const ctx = yield* withTestCtx();
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          consoleOutputs: [
+            {
+              mimetype: "text/plain",
+              channel: "stdout",
+              data: "Starting computation...\n",
+              timestamp: 0,
+            },
+            {
+              mimetype: "text/plain",
+              channel: "stderr",
+              data: "Warning: using deprecated API\n",
+              timestamp: 1,
+            },
+            {
+              mimetype: "text/plain",
+              channel: "stdout",
+              data: "Computation complete\n",
+              timestamp: 2,
+            },
+          ],
+          output: {
+            mimetype: "application/json",
+            channel: "output",
+            data: { result: "success", value: 100 },
+            timestamp: 3,
+          },
+        };
+
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -387,17 +429,21 @@ it.layer(ExecutionRegistryTestLive)("buildCellOutputs", (it) => {
   it.effect(
     "handles application/vnd.marimo+traceback output",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
-      const state: CellRuntimeState = {
-        ...createCellRuntimeState(),
-        output: {
-          mimetype: "application/vnd.marimo+traceback",
-          channel: "output",
-          data: '<b>Traceback (most recent call last):</b>\n  File "<stdin>", line 1, in <module>\nTypeError: invalid value',
-        },
-      };
+      const ctx = yield* withTestCtx();
 
-      const outputs = buildCellOutputs(CELL_ID, state, code);
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          output: {
+            mimetype: "application/vnd.marimo+traceback",
+            channel: "output",
+            data: '<b>Traceback (most recent call last):</b>\n  File "<stdin>", line 1, in <module>\nTypeError: invalid value',
+          },
+        };
+
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -420,130 +466,122 @@ it.scoped(
       },
     );
 
-    const testVsCode = yield* TestVsCode.make({
-      initialDocuments: [editor.notebook],
-    });
+    const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
 
-    yield* Effect.provide(
-      Effect.gen(function* () {
-        const registry = yield* ExecutionRegistry;
-        const cellStateManager = yield* CellStateManager;
-        const code = yield* VsCode;
+    yield* Effect.gen(function* () {
+      const registry = yield* ExecutionRegistry;
+      const cellStateManager = yield* CellStateManager;
+      const code = yield* VsCode;
 
-        const cell = editor.notebook.cellAt(0);
+      const cell = editor.notebook.cellAt(0);
 
-        // Set active editor in testVsCode so NotebookEditorRegistry can find it
-        yield* testVsCode.setActiveNotebookEditor(Option.some(editor));
+      // Set active editor in testVsCode so NotebookEditorRegistry can find it
+      yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
 
-        // Wait for NotebookEditorRegistry to process the change
-        yield* TestClock.adjust("10 millis");
+      // Wait for NotebookEditorRegistry to process the change
+      yield* TestClock.adjust("10 millis");
 
-        // Create a mock controller
-        const controller = yield* code.notebooks.createNotebookController(
-          "test-controller",
-          NOTEBOOK_TYPE,
-          "test-controller",
-        );
+      // Create a mock controller
+      const controller = yield* code.notebooks.createNotebookController(
+        "test-controller",
+        NOTEBOOK_TYPE,
+        "test-controller",
+      );
 
-        // Send a message with staleInputs: true
-        const message: CellMessage = {
-          op: "cell-op",
-          cell_id: getNotebookCellId(cell),
-          status: "idle",
-          stale_inputs: true,
-        };
+      // Send a message with staleInputs: true
+      const message: CellMessage = {
+        op: "cell-op",
+        cell_id: getNotebookCellId(cell),
+        status: "idle",
+        stale_inputs: true,
+      };
 
-        yield* registry.handleCellOperation(message, {
-          editor,
-          controller: new VenvPythonController(controller, "test-controller"),
-        });
+      yield* registry.handleCellOperation(message, {
+        editor,
+        controller: new VenvPythonController(controller, "test-controller"),
+      });
 
-        // Check that CellStateManager tracked the cell as stale
-        const notebookUri = getNotebookUri(editor.notebook);
-        const staleCells = yield* cellStateManager.getStaleCells(notebookUri);
-        expect(staleCells).toContain(cell.index);
+      // Check that CellStateManager tracked the cell as stale
+      const notebookUri = getNotebookUri(editor.notebook);
+      const staleCells = yield* cellStateManager.getStaleCells(notebookUri);
+      expect(staleCells).toContain(cell.index);
 
-        // Clear stale state
-        yield* cellStateManager.clearCellStale(notebookUri, cell.index);
+      // Clear stale state
+      yield* cellStateManager.clearCellStale(notebookUri, cell.index);
 
-        // Check that the cell is no longer stale
-        const staleCells2 = yield* cellStateManager.getStaleCells(notebookUri);
-        expect(staleCells2).not.toContain(cell.index);
-      }),
-      makeExecutionRegistryLayer(testVsCode),
-    );
+      // Check that the cell is no longer stale
+      const staleCells2 = yield* cellStateManager.getStaleCells(notebookUri);
+      expect(staleCells2).not.toContain(cell.index);
+    }).pipe(Effect.provide(ctx.layer));
   }),
 );
 
 it.scoped(
   "clears stale state when cell is queued for execution",
   Effect.fnUntraced(function* () {
-    const testVsCode = yield* TestVsCode.make();
+    const ctx = yield* withTestCtx();
 
-    yield* Effect.provide(
-      Effect.gen(function* () {
-        const registry = yield* ExecutionRegistry;
-        const cellStateManager = yield* CellStateManager;
+    yield* Effect.gen(function* () {
+      const registry = yield* ExecutionRegistry;
+      const cellStateManager = yield* CellStateManager;
 
-        // Create a test notebook with a stale cell
-        const cellData = {
-          kind: 1, // Code
-          value: "x = 1",
-          languageId: "python",
-          metadata: {
-            name: "test_cell",
-            state: "stale",
-          },
-        };
-        const notebook = createTestNotebookDocument(
-          "file:///test/notebook_mo.py",
-          {
-            cells: [cellData],
-          },
-        );
-        const editor = createTestNotebookEditor(notebook);
-        const cell = notebook.cellAt(0);
-        const code = yield* VsCode;
+      // Create a test notebook with a stale cell
+      const cellData = {
+        kind: 1, // Code
+        value: "x = 1",
+        languageId: "python",
+        metadata: {
+          name: "test_cell",
+          state: "stale",
+        },
+      };
+      const notebook = createTestNotebookDocument(
+        "file:///test/notebook_mo.py",
+        {
+          cells: [cellData],
+        },
+      );
+      const editor = createTestNotebookEditor(notebook);
+      const cell = notebook.cellAt(0);
+      const code = yield* VsCode;
 
-        // Set active editor in testVsCode so NotebookEditorRegistry can find it
-        yield* testVsCode.setActiveNotebookEditor(Option.some(editor));
+      // Set active editor in testVsCode so NotebookEditorRegistry can find it
+      yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
 
-        // Wait for NotebookEditorRegistry to process the change
-        yield* TestClock.adjust("10 millis");
+      // Wait for NotebookEditorRegistry to process the change
+      yield* TestClock.adjust("10 millis");
 
-        // First, mark the cell as stale in CellStateManager
-        const notebookUri = getNotebookUri(notebook);
-        yield* cellStateManager.markCellStale(notebookUri, cell.index);
+      // First, mark the cell as stale in CellStateManager
+      const notebookUri = getNotebookUri(notebook);
+      yield* cellStateManager.markCellStale(notebookUri, cell.index);
 
-        // Verify cell is tracked as stale
-        let staleCells = yield* cellStateManager.getStaleCells(notebookUri);
-        expect(staleCells).toContain(cell.index);
+      // Verify cell is tracked as stale
+      let staleCells = yield* cellStateManager.getStaleCells(notebookUri);
+      expect(staleCells).toContain(cell.index);
 
-        // Create a mock controller
-        const controller = yield* code.notebooks.createNotebookController(
-          "test-controller",
-          NOTEBOOK_TYPE,
-          "test-controller",
-        );
+      // Create a mock controller
+      const controller = yield* code.notebooks.createNotebookController(
+        "test-controller",
+        NOTEBOOK_TYPE,
+        "test-controller",
+      );
 
-        // Send a queued message
-        const message: CellMessage = {
-          op: "cell-op",
-          cell_id: getNotebookCellId(cell),
-          status: "queued",
-          run_id: "test-run-id",
-        };
+      // Send a queued message
+      const message: CellMessage = {
+        op: "cell-op",
+        cell_id: getNotebookCellId(cell),
+        status: "queued",
+        run_id: "test-run-id",
+      };
 
-        yield* registry.handleCellOperation(message, {
-          editor,
-          controller: new VenvPythonController(controller, "test-controller"),
-        });
+      yield* registry.handleCellOperation(message, {
+        editor,
+        controller: new VenvPythonController(controller, "test-controller"),
+      });
 
-        // Check that the cell's stale state was cleared
-        staleCells = yield* cellStateManager.getStaleCells(notebookUri);
-        expect(staleCells).not.toContain(cell.index);
-      }),
-      makeExecutionRegistryLayer(testVsCode),
-    );
+      // Check that the cell's stale state was cleared
+      staleCells = yield* cellStateManager.getStaleCells(notebookUri);
+      expect(staleCells).not.toContain(cell.index);
+    }).pipe(Effect.provide(ctx.layer));
   }),
 );

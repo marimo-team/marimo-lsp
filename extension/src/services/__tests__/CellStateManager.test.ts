@@ -1,4 +1,4 @@
-import { expect, it } from "@effect/vitest";
+import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 import {
   createTestNotebookDocument,
@@ -7,46 +7,53 @@ import {
 import { getNotebookCellId } from "../../utils/notebook.ts";
 import { VsCode } from "../VsCode.ts";
 
-const TestLayer = TestVsCode.Default;
+const withTestCtx = Effect.fnUntraced(function* () {
+  const vscode = yield* TestVsCode.make();
+  return { vscode, layer: vscode.layer };
+});
 
-it.layer(TestLayer)("CellStateManager delete cell", (it) => {
+describe("CellStateManager", () => {
   it.effect(
     "getNotebookCellId returns consistent cell IDs",
     Effect.fnUntraced(function* () {
-      const code = yield* VsCode;
+      const ctx = yield* withTestCtx();
 
-      // Create a test notebook with cells
-      const notebook = createTestNotebookDocument(
-        "/test/notebook.py",
-        new code.NotebookData([
-          new code.NotebookCellData(
-            code.NotebookCellKind.Code,
-            "x = 1",
-            "python",
-          ),
-          new code.NotebookCellData(
-            code.NotebookCellKind.Code,
-            "y = 2",
-            "python",
-          ),
-        ]),
-      );
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
 
-      const cell0 = notebook.cellAt(0);
-      const cell1 = notebook.cellAt(1);
+        // Create a test notebook with cells
+        const notebook = createTestNotebookDocument(
+          "/test/notebook.py",
+          new code.NotebookData([
+            new code.NotebookCellData(
+              code.NotebookCellKind.Code,
+              "x = 1",
+              "python",
+            ),
+            new code.NotebookCellData(
+              code.NotebookCellKind.Code,
+              "y = 2",
+              "python",
+            ),
+          ]),
+        );
 
-      // Get cell IDs
-      const cellId0 = getNotebookCellId(cell0);
-      const cellId1 = getNotebookCellId(cell1);
+        const cell0 = notebook.cellAt(0);
+        const cell1 = notebook.cellAt(1);
 
-      // Verify cell IDs are strings and different
-      expect(typeof cellId0).toBe("string");
-      expect(typeof cellId1).toBe("string");
-      expect(cellId0).not.toBe(cellId1);
+        // Get cell IDs
+        const cellId0 = getNotebookCellId(cell0);
+        const cellId1 = getNotebookCellId(cell1);
 
-      // Verify calling getNotebookCellId again returns the same ID
-      expect(getNotebookCellId(cell0)).toBe(cellId0);
-      expect(getNotebookCellId(cell1)).toBe(cellId1);
+        // Verify cell IDs are strings and different
+        expect(typeof cellId0).toBe("string");
+        expect(typeof cellId1).toBe("string");
+        expect(cellId0).not.toBe(cellId1);
+
+        // Verify calling getNotebookCellId again returns the same ID
+        expect(getNotebookCellId(cell0)).toBe(cellId0);
+        expect(getNotebookCellId(cell1)).toBe(cellId1);
+      }).pipe(Effect.provide(ctx.layer));
     }),
   );
 });
