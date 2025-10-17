@@ -121,5 +121,6 @@ export const ConsoleOutput: React.FC<{
   onSubmitDebugger: (text: string, index: number) => void;
 }> = untyped.ConsoleOutput;
 
-export const TooltipProvider: React.FC<React.PropsWithChildren> =
-  untyped.TooltipProvider;
+export const TooltipProvider: React.FC<
+  React.PropsWithChildren<{ container: HTMLElement | null }>
+> = untyped.TooltipProvider;
