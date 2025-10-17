@@ -13,13 +13,17 @@ import {
   Runtime,
 } from "effect";
 import type * as vscode from "vscode";
-import { assert } from "../assert.ts";
 import {
   type CellMessage,
   type CellRuntimeState,
   getNotebookUri,
 } from "../types.ts";
 import { prettyErrorMessage } from "../utils/errors.ts";
+import {
+  extractCellId,
+  getNotebookCell,
+  type NotebookCellId,
+} from "../utils/notebook.ts";
 import { CellStateManager } from "./CellStateManager.ts";
 import type { VenvPythonController } from "./NotebookControllerFactory.ts";
 import type { SandboxController } from "./SandboxController.ts";
@@ -346,28 +350,6 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
 type RunId = Brand.Branded<string, "RunId">;
 function extractRunId(msg: CellMessage) {
   return Option.fromNullable(msg.run_id) as Option.Option<RunId>;
-}
-
-export type NotebookCellId = Brand.Branded<string, "CellId">;
-function extractCellId(msg: CellMessage) {
-  return msg.cell_id as NotebookCellId;
-}
-
-function getNotebookCell(
-  notebook: vscode.NotebookDocument,
-  cellId: NotebookCellId,
-): vscode.NotebookCell {
-  const cell = notebook
-    .getCells()
-    .find((c) => c.document.uri.toString() === cellId);
-  if (!cell) {
-    const cellIds = notebook.getCells().map((c) => c.document.uri.toString());
-    assert(
-      cell,
-      `No cell id ${cellId} in notebook ${notebook.uri.toString()}. Available cells: ${cellIds.join(", ")}`,
-    );
-  }
-  return cell;
 }
 
 /* Type-safe wrapper around marimo's `transitionCell` we import above */

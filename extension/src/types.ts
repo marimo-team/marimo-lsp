@@ -46,6 +46,7 @@ interface SessionScoped<T> extends NotebookScoped<T> {
 type RunRequest = Schemas["RunRequest"];
 type SetUIElementValueRequest = Schemas["SetUIElementValueRequest"];
 type FunctionCallRequest = Schemas["FunctionCallRequest"];
+type DeleteCellRequest = Schemas["DeleteCellRequest"];
 interface DeserializeRequest {
   source: string;
 }
@@ -80,6 +81,7 @@ type MarimoApiMethodMap = {
   interrupt: NotebookScoped<InterruptRequest>;
   serialize: SerializeRequest;
   deserialize: DeserializeRequest;
+  delete_cell: NotebookScoped<DeleteCellRequest>;
   get_package_list: SessionScoped<ListPackagesRequest>;
   get_dependency_tree: SessionScoped<DependencyTreeRequest>;
   get_configuration: NotebookScoped<GetConfigurationRequest>;

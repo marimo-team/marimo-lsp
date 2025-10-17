@@ -1,5 +1,4 @@
 import {
-  type Brand,
   Effect,
   Fiber,
   Option,
@@ -13,11 +12,6 @@ import { MarimoNotebook } from "../schemas.ts";
 import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
-
-export type MarimoNotebookDocument = Brand.Branded<
-  vscode.NotebookDocument,
-  "MarimoNotebookDocument"
->;
 
 /**
  * Handles serialization and deserialization of marimo notebooks,

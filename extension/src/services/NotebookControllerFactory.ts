@@ -7,6 +7,7 @@ import { getNotebookUri } from "../types.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
 import { installPackages } from "../utils/installPackages.ts";
+import { getNotebookCellId } from "../utils/notebook.ts";
 import { Config } from "./Config.ts";
 import { EnvironmentValidator } from "./EnvironmentValidator.ts";
 import { LanguageClient } from "./LanguageClient.ts";
@@ -73,9 +74,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                       notebookUri: getNotebookUri(notebook),
                       executable: validEnv.executable,
                       inner: {
-                        cellIds: cells.map((cell) =>
-                          cell.document.uri.toString(),
-                        ),
+                        cellIds: cells.map((cell) => getNotebookCellId(cell)),
                         codes: cells.map((cell) => cell.document.getText()),
                       },
                     },
