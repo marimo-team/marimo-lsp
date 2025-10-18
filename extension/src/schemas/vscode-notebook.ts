@@ -6,6 +6,12 @@ import { Schema } from "effect";
 export const CellState = Schema.Literal("idle", "queued", "running", "stale");
 export type CellState = typeof CellState.Type;
 
+/**
+ * Cell language
+ */
+export const CellLanguage = Schema.Literal("python", "sql");
+export type CellLanguage = typeof CellLanguage.Type;
+
 // TODO: passthrough unknown fields
 /**
  * VS Code notebook cell metadata (runtime state)
@@ -19,6 +25,15 @@ export const CellMetadata = Schema.Struct({
 
   // Cell configuration options
   options: Schema.Record({
+    key: Schema.String,
+    value: Schema.Unknown,
+  }).pipe(Schema.optional),
+
+  // Cell language (for smart-cells support)
+  language: CellLanguage.pipe(Schema.optional),
+
+  // Language-specific metadata (e.g., SQL engine, output flag)
+  languageMetadata: Schema.Record({
     key: Schema.String,
     value: Schema.Unknown,
   }).pipe(Schema.optional),

@@ -3,6 +3,7 @@ import { Effect, Option, Runtime, Schema } from "effect";
 import type * as vscode from "vscode";
 import { SemVerFromString } from "../schemas.ts";
 import { getNotebookUri } from "../types.ts";
+import { getCellExecutableCode } from "../utils/getCellExecutableCode.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
 import { getNotebookCellId } from "../utils/notebook.ts";
 import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
@@ -29,7 +30,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       );
 
       // Add metadata
-      controller.supportedLanguages = ["python"];
+      controller.supportedLanguages = ["python", "sql"];
       controller.description = "marimo sandbox controller";
 
       // Set up execution handler
@@ -59,7 +60,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
                   executable,
                   inner: {
                     cellIds: cells.map((cell) => getNotebookCellId(cell)),
-                    codes: cells.map((cell) => cell.document.getText()),
+                    codes: cells.map((cell) => getCellExecutableCode(cell)),
                   },
                 },
               },
