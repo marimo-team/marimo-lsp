@@ -1,14 +1,18 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
-import { Data, Effect, Option, type Scope, Stream } from "effect";
+import { Data, Effect, Either, Option, type Scope, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
+import { unreachable } from "../assert.ts";
 import type {
   MarimoCommand,
   MarimoNotification,
   MarimoNotificationOf,
 } from "../types.ts";
+import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 import { Config } from "./Config.ts";
+import { OutputChannel } from "./OutputChannel.ts";
 import { VsCode } from "./VsCode.ts";
 
 export class LanguageClientStartError extends Data.TaggedError(
@@ -37,6 +41,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const config = yield* Config;
+      const channel = yield* OutputChannel;
 
       const exec = yield* Option.match(yield* config.lsp.executable, {
         onSome: Effect.succeed,
@@ -61,28 +66,51 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
         },
       );
 
+      // Internal helper - ensures client is started before operations
+      const ensureStarted = Effect.gen(function* () {
+        yield* Effect.logInfo("Starting marimo-lsp client (lazy)");
+        yield* Effect.tryPromise({
+          try: () => client.start(),
+          catch: (cause) => new LanguageClientStartError({ exec, cause }),
+        });
+        yield* Effect.logInfo("marimo-lsp client started");
+      }).pipe(
+        Effect.catchTag(
+          "LanguageClientStartError",
+          handleLanguageClientStartError,
+        ),
+        Effect.provideService(VsCode, code),
+        Effect.provideService(OutputChannel, channel),
+      );
+
+      // Register cleanup when scope closes
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          client.dispose();
+        }),
+      );
+
       return {
-        manage() {
-          return Effect.acquireRelease(
-            Effect.tryPromise({
-              try: () => client.start(),
-              catch: (cause) => new LanguageClientStartError({ exec, cause }),
-            }),
-            () => Effect.sync(() => client.dispose()),
-          );
-        },
         executeCommand(
           cmd: MarimoCommand,
-        ): Effect.Effect<unknown, ExecuteCommandError, never> {
-          return Effect.tryPromise({
-            try: (signal) =>
-              client.sendRequest<unknown>(
-                "workspace/executeCommand",
-                { command: cmd.command, arguments: [cmd.params] },
-                tokenFromSignal(signal),
-              ),
-            catch: (cause) => new ExecuteCommandError({ command: cmd, cause }),
-          });
+        ): Effect.Effect<
+          unknown,
+          LanguageClientStartError | ExecuteCommandError
+        > {
+          return ensureStarted.pipe(
+            Effect.flatMap(() =>
+              Effect.tryPromise({
+                try: (signal) =>
+                  client.sendRequest<unknown>(
+                    "workspace/executeCommand",
+                    { command: cmd.command, arguments: [cmd.params] },
+                    tokenFromSignal(signal),
+                  ),
+                catch: (cause) =>
+                  new ExecuteCommandError({ command: cmd, cause }),
+              }),
+            ),
+          );
         },
         streamOf<Notification extends MarimoNotification>(
           notification: Notification,
@@ -130,3 +158,60 @@ export const findLspExecutable = Effect.fnUntraced(function* () {
     args: ["run", "--directory", __dirname, "marimo-lsp"],
   };
 });
+
+function isUvInstalled(): boolean {
+  try {
+    NodeChildProcess.execSync("uv --version", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function handleLanguageClientStartError(error: LanguageClientStartError) {
+  return Effect.gen(function* () {
+    const code = yield* VsCode;
+    const channel = yield* OutputChannel;
+
+    yield* Effect.logError("Failed to start marimo-lsp", error);
+
+    if (error.exec.command === "uv" && !isUvInstalled()) {
+      yield* Effect.logError("uv is not installed in PATH");
+
+      const result = yield* code.window.showErrorMessage(
+        "The marimo VS Code extension currently requires uv to be installed.",
+        {
+          items: ["Install uv", "Try Again"],
+        },
+      );
+
+      if (Option.isNone(result)) {
+        // dismissed
+        return yield* Effect.fail(error);
+      }
+
+      switch (result.value) {
+        case "Install uv": {
+          const uri = Either.getOrThrow(
+            code.utils.parseUri(
+              "https://docs.astral.sh/uv/getting-started/installation/",
+            ),
+          );
+          yield* code.env.openExternal(uri);
+          return yield* Effect.fail(error);
+        }
+        case "Try Again": {
+          yield* code.commands.executeCommand("workbench.action.reloadWindow");
+          return yield* Effect.fail(error);
+        }
+        default:
+          unreachable(result.value);
+      }
+    }
+
+    // Otherwise just fail
+    const msg = "marimo-lsp failed to start.";
+    yield* showErrorAndPromptLogs(msg, { code, channel });
+    return yield* Effect.die(msg);
+  });
+}

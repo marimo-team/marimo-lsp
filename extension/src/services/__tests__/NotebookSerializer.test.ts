@@ -4,16 +4,9 @@ import { Effect, Layer } from "effect";
 import packageJson from "../../../package.json";
 import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import { LanguageClient } from "../../services/LanguageClient.ts";
 import { NotebookSerializer } from "../../services/NotebookSerializer.ts";
 
-const NotebookSerializerLive = Layer.scopedDiscard(
-  Effect.gen(function* () {
-    const client = yield* LanguageClient;
-    // start the language server
-    yield* client.manage();
-  }),
-).pipe(
+const NotebookSerializerLive = Layer.empty.pipe(
   Layer.provideMerge(NotebookSerializer.Default),
   Layer.provideMerge(TestLanguageClientLive),
 );

@@ -33,14 +33,12 @@ suite("marimo Extension Hello World Tests", () => {
     );
   });
 
-  test("Should register marimo commands", async () => {
+  test("Should register marimo commands (no-lsp)", async () => {
     const commands = await vscode.commands.getCommands();
     const marimoCommands = commands.filter((cmd) => cmd.startsWith("marimo."));
     marimoCommands.sort();
     assert.deepEqual(marimoCommands, [
-      "marimo.api",
       "marimo.clearRecentNotebooks",
-      "marimo.convert",
       "marimo.newMarimoNotebook",
       "marimo.openAsMarimoNotebook",
       "marimo.publishMarimoNotebook",
