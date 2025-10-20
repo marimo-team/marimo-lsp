@@ -170,7 +170,7 @@
       }
     ],
     "viewsContainers": {
-      "activitybar": [
+      "panel": [
         {
           "id": "marimo-explorer",
           "title": "marimo",
