@@ -69,16 +69,16 @@ suite("marimo Extension Hello World Tests", () => {
       "Should have viewsContainers section",
     );
     assert.ok(
-      packageJSON.contributes.viewsContainers.activitybar,
-      "Should have activitybar view containers",
+      packageJSON.contributes.viewsContainers.panel,
+      "Should have panel view containers",
     );
     assert.strictEqual(
-      packageJSON.contributes.viewsContainers.activitybar.length,
+      packageJSON.contributes.viewsContainers.panel.length,
       1,
-      "Should contribute one activitybar view container",
+      "Should contribute one panel view container",
     );
     assert.strictEqual(
-      packageJSON.contributes.viewsContainers.activitybar[0].id,
+      packageJSON.contributes.viewsContainers.panel[0].id,
       "marimo-explorer",
       "Should contribute marimo-explorer view container",
     );
