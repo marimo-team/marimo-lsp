@@ -170,7 +170,7 @@
       }
     ],
     "viewsContainers": {
-      "activitybar": [
+      "panel": [
         {
           "id": "marimo-explorer",
           "title": "marimo",
@@ -182,23 +182,19 @@
       "marimo-explorer": [
         {
           "id": "marimo-explorer-recents",
-          "name": "Recent Notebooks",
-          "icon": "images/small-icon.png"
+          "name": "Recent Notebooks"
         },
         {
           "id": "marimo-explorer-variables",
-          "name": "Variables",
-          "icon": "images/small-icon.png"
+          "name": "Variables"
         },
         {
           "id": "marimo-explorer-datasources",
-          "name": "Datasources",
-          "icon": "images/small-icon.png"
+          "name": "Datasources"
         },
         {
           "id": "marimo-explorer-packages",
-          "name": "Packages",
-          "icon": "images/small-icon.png"
+          "name": "Packages"
         }
       ]
     },
