@@ -1,8 +1,9 @@
 import { Effect, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
-
+import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookSerializer } from "./NotebookSerializer.ts";
+import { OutputChannel } from "./OutputChannel.ts";
 import { VsCode } from "./VsCode.ts";
 
 /**
@@ -17,6 +18,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
 
       const code = yield* VsCode;
       const client = yield* LanguageClient;
+      const channel = yield* OutputChannel;
       const serializer = yield* NotebookSerializer;
 
       const runtime = yield* Effect.runtime();
@@ -78,6 +80,12 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
                 }).pipe(
                   Effect.catchTags({
                     ExecuteCommandError: Effect.logError,
+                    LanguageClientStartError: Effect.fnUntraced(function* () {
+                      yield* showErrorAndPromptLogs(
+                        "marimo-lsp failed to start.",
+                        { code, channel },
+                      );
+                    }),
                   }),
                 ),
               );

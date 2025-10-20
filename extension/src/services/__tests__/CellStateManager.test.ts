@@ -21,9 +21,6 @@ const withTestCtx = Effect.fnUntraced(function* () {
       Layer.succeed(
         LanguageClient,
         LanguageClient.make({
-          manage() {
-            return Effect.void;
-          },
           executeCommand(cmd) {
             return Ref.update(executions, (arr) => [...arr, cmd]);
           },

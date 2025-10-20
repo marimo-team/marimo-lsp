@@ -440,9 +440,9 @@ const toggleOnCellChange = ({
   }).pipe(
     Effect.tapErrorCause(Effect.logError),
     Effect.catchAllCause(() =>
-      showErrorAndPromptLogs(
-        "Failed to toggle on cell change mode. See marimo logs for details.",
-        { code, channel },
-      ),
+      showErrorAndPromptLogs("Failed to toggle on cell change mode.", {
+        code,
+        channel,
+      }),
     ),
   );

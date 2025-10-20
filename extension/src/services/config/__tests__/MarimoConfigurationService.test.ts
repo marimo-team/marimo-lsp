@@ -39,7 +39,6 @@ const withTestCtx = Effect.fnUntraced(function* (
       Layer.succeed(
         LanguageClient,
         LanguageClient.make({
-          manage: () => Effect.scope,
           streamOf: () => Stream.never,
           executeCommand: Effect.fnUntraced(function* ({ command, params }) {
             if (!(command === "marimo.api")) {

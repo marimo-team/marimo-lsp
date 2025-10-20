@@ -38,7 +38,6 @@ import { TreeView } from "../views/TreeView.ts";
 import { VariablesViewLive } from "../views/VariablesView.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
-import { LspLive } from "./Lsp.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
 
@@ -46,17 +45,18 @@ import { RegisterCommandsLive } from "./RegisterCommands.ts";
  * Main application layer that wires together all services and layers
  * required for the marimo VS Code extension to function.
  */
-const MainLive = LspLive.pipe(
-  Layer.merge(RegisterCommandsLive),
-  Layer.merge(KernelManagerLive),
-  Layer.merge(MarimoStatusBarLive),
-  Layer.merge(MarimoFileDetectorLive),
-  Layer.merge(RecentNotebooksLive),
-  Layer.merge(VariablesViewLive),
-  Layer.merge(DatasourcesViewLive),
-  Layer.merge(PackagesViewLive),
-  Layer.merge(CellStatusBarProviderLive),
-)
+const MainLive = Layer.empty
+  .pipe(
+    Layer.merge(RegisterCommandsLive),
+    Layer.merge(KernelManagerLive),
+    Layer.merge(MarimoStatusBarLive),
+    Layer.merge(MarimoFileDetectorLive),
+    Layer.merge(RecentNotebooksLive),
+    Layer.merge(VariablesViewLive),
+    Layer.merge(DatasourcesViewLive),
+    Layer.merge(PackagesViewLive),
+    Layer.merge(CellStatusBarProviderLive),
+  )
   .pipe(
     Layer.provide(GitHubClient.Default),
     Layer.provide(DebugAdapter.Default),
@@ -93,9 +93,10 @@ export function makeActivate(
       Effect.gen(function* () {
         // Create a scope and build layers with it. Layer.buildWithScope completes
         // once all layer initialization finishes (commands registered, serializer
-        // registered, LSP client started), but keeps resources alive by extending
-        // their lifetime to the manually-managed scope. Resources are only released
-        // when we explicitly close the scope on deactivation.
+        // registered, notification streams set up). The LSP client will start lazily
+        // on first use. Resources are kept alive by extending their lifetime to the
+        // manually-managed scope, and are only released when we explicitly close the
+        // scope on deactivation.
         const scope = yield* Scope.make();
         yield* Layer.buildWithScope(Layer.provide(MainLive, layer), scope);
         return {
