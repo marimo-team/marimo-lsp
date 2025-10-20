@@ -69,6 +69,12 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
+      - name: Publish to Open VSX Registry
+        working-directory: marimo-lsp/extension
+        run: npx ovsx publish *.vsix --pre-release
+        env:
+          OVSX_PAT: ${{ secrets.OPEN_VSX_TOKEN }}
+
       # - name: Create GitHub release
       #   working-directory: marimo-lsp/extension
       #   run: |
