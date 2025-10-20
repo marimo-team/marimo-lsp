@@ -13,7 +13,9 @@
     "Notebooks",
     "Data Science"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "iconThemes": [
