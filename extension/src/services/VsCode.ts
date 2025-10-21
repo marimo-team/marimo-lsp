@@ -8,9 +8,12 @@ import {
   type Scope,
   Stream,
 } from "effect";
-// VsCode.ts is the centralized service that wraps the VS Code API.
+
+// VsCode.ts centralizes and restricts access to the VS Code API.
 //
-// All other modules should use type-only imports and access the API through this service.
+// We only expose the APIs we actually need. Being selective gives us a cleaner,
+// easier testing story. The goal is NOT to hide APIs that are hard to mock,
+// but to limit surface area to what's necessary for correctness and clarity.
 //
 // biome-ignore lint: See above
 import * as vscode from "vscode";
@@ -157,7 +160,8 @@ export class Window extends Effect.Service<Window>()("Window", {
         return Effect.promise(() => api.showNotebookDocument(doc, options));
       },
       showTextDocument(doc: vscode.TextDocument) {
-        return Effect.promise(() => api.showTextDocument(doc));
+        // Could return the vscode.TextEditor, but skipping it simplifies mocks/tests
+        return Effect.asVoid(Effect.promise(() => api.showTextDocument(doc)));
       },
       withProgress(
         options: {
@@ -294,7 +298,10 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
           api.openNotebookDocument(notebookType, content),
         );
       },
-      openTextDocument(options: { content?: string; language?: string }) {
+      openUntitledTextDocument(options: {
+        content?: string;
+        language?: string;
+      }) {
         return Effect.promise(() => api.openTextDocument(options));
       },
     };
