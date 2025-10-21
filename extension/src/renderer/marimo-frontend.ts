@@ -36,6 +36,7 @@ import {
 } from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts";
 import { FUNCTIONS_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/functions/FunctionRegistry.ts";
 import { safeExtractSetUIElementMessageBuffers } from "@marimo-team/frontend/unstable_internal/utils/json/base64.ts";
+import { initialModeAtom } from "@marimo-team/frontend/unstable_internal/core/mode.ts";
 
 import "@marimo-team/frontend/unstable_internal/css/common.css";
 import "@marimo-team/frontend/unstable_internal/css/globals.css";
@@ -58,7 +59,9 @@ export type { CellRuntimeState, CellId };
  * This provides a minimal setup to hydrate web components without the full kernel.
  */
 export function initialize(client: RequestClient) {
+  store.set(initialModeAtom, "edit");
   store.set(requestClientAtom, client);
+
   untyped.initializePlugins();
   // Start the RuntimeState to listen for UI element value changes
   // This connects the UI element events to the request client
