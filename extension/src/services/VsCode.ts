@@ -11,6 +11,8 @@ import {
 
 // VsCode.ts centralizes and restricts access to the VS Code API.
 //
+// All other modules should use type-only imports and access the API through this service.
+//
 // We only expose the APIs we actually need. Being selective gives us a cleaner,
 // easier testing story. The goal is NOT to hide APIs that are hard to mock,
 // but to limit surface area to what's necessary for correctness and clarity.
