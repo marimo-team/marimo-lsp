@@ -167,6 +167,11 @@
         "title": "Open as marimo Notebook",
         "category": "marimo",
         "icon": "images/small-icon.png"
+      },
+      {
+        "command": "marimo.restartLsp",
+        "title": "Restart marimo language server (marimo-lsp)",
+        "shortTitle": "Restart marimo-lsp"
       }
     ],
     "viewsContainers": {

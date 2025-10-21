@@ -66,60 +66,70 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
         },
       );
 
-      // Internal helper - ensures client is started before operations
-      const ensureStarted = Effect.gen(function* () {
-        yield* Effect.logInfo("Starting marimo-lsp client (lazy)");
-        yield* Effect.tryPromise({
-          try: () => client.start(),
-          catch: (cause) => new LanguageClientStartError({ exec, cause }),
-        });
-        yield* Effect.logInfo("marimo-lsp client started");
-      }).pipe(
-        Effect.catchTag(
-          "LanguageClientStartError",
-          handleLanguageClientStartError,
-        ),
-        Effect.provideService(VsCode, code),
-        Effect.provideService(OutputChannel, channel),
-      );
+      const startClient = () =>
+        Effect.gen(function* () {
+          yield* Effect.logInfo("Starting marimo-lsp client");
+          yield* Effect.tryPromise({
+            try: () => client.start(),
+            catch: (cause) => new LanguageClientStartError({ exec, cause }),
+          });
+          yield* Effect.logInfo("marimo-lsp client started");
+        }).pipe(
+          Effect.catchTag(
+            "LanguageClientStartError",
+            maybeHandleLanguageClientStartError,
+          ),
+          Effect.provideService(VsCode, code),
+          Effect.provideService(OutputChannel, channel),
+        );
 
       // Register cleanup when scope closes
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          client.dispose();
-        }),
-      );
+      yield* Effect.addFinalizer(() => Effect.promise(() => client.dispose()));
 
       return {
-        executeCommand(
-          cmd: MarimoCommand,
-        ): Effect.Effect<
-          unknown,
-          LanguageClientStartError | ExecuteCommandError
-        > {
-          return ensureStarted.pipe(
-            Effect.flatMap(() =>
-              Effect.tryPromise({
-                try: (signal) =>
-                  client.sendRequest<unknown>(
-                    "workspace/executeCommand",
-                    { command: cmd.command, arguments: [cmd.params] },
-                    tokenFromSignal(signal),
-                  ),
-                catch: (cause) =>
-                  new ExecuteCommandError({ command: cmd, cause }),
-              }),
-            ),
-          );
-        },
+        restart: code.window.withProgress(
+          {
+            location: code.ProgressLocation.Notification,
+            title: "Restarting marimo-lsp",
+            cancellable: true,
+          },
+          Effect.fnUntraced(function* (progress) {
+            if (client.isRunning()) {
+              progress.report({ message: "Stopping..." });
+              yield* Effect.promise(() => client.stop());
+            }
+            progress.report({ message: "Starting..." });
+            yield* startClient().pipe(
+              Effect.catchTag(
+                "LanguageClientStartError",
+                Effect.fnUntraced(function* (error) {
+                  const msg = "Failed to restart marimo-lsp.";
+                  yield* Effect.logError(msg, error);
+                  yield* showErrorAndPromptLogs(msg, { code, channel });
+                }),
+              ),
+            );
+            progress.report({ message: "Done." });
+          }),
+        ),
+        executeCommand: Effect.fnUntraced(function* (cmd: MarimoCommand) {
+          if (!client.isRunning()) {
+            yield* startClient();
+          }
+          return yield* Effect.tryPromise({
+            try: (signal) =>
+              client.sendRequest<unknown>(
+                "workspace/executeCommand",
+                { command: cmd.command, arguments: [cmd.params] },
+                tokenFromSignal(signal),
+              ),
+            catch: (cause) => new ExecuteCommandError({ command: cmd, cause }),
+          });
+        }),
         streamOf<Notification extends MarimoNotification>(
           notification: Notification,
-        ): Stream.Stream<
-          MarimoNotificationOf<Notification>,
-          never,
-          Scope.Scope
-        > {
-          return Stream.asyncPush((emit) =>
+        ) {
+          return Stream.asyncPush<MarimoNotificationOf<Notification>>((emit) =>
             Effect.acquireRelease(
               Effect.sync(() =>
                 client.onNotification(notification, (msg) => emit.single(msg)),
@@ -168,7 +178,7 @@ function isUvInstalled(): boolean {
   }
 }
 
-function handleLanguageClientStartError(error: LanguageClientStartError) {
+function maybeHandleLanguageClientStartError(error: LanguageClientStartError) {
   return Effect.gen(function* () {
     const code = yield* VsCode;
     const channel = yield* OutputChannel;
@@ -201,7 +211,7 @@ function handleLanguageClientStartError(error: LanguageClientStartError) {
           return yield* Effect.fail(error);
         }
         case "Try Again": {
-          yield* code.commands.executeCommand("workbench.action.reloadWindow");
+          yield* code.commands.executeCommand("marimo.restartLsp");
           return yield* Effect.fail(error);
         }
         default:

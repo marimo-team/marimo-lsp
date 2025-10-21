@@ -143,6 +143,8 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
         );
       }),
     );
+
+    yield* code.commands.registerCommand("marimo.restartLsp", client.restart);
   }),
 );
 
