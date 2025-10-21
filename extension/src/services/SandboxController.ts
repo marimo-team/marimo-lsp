@@ -1,3 +1,4 @@
+import * as NodePath from "node:path";
 import * as semver from "@std/semver";
 import { Effect, Option, Runtime, Schema } from "effect";
 import type * as vscode from "vscode";
@@ -46,9 +47,9 @@ export class SandboxController extends Effect.Service<SandboxController>()(
               );
             }
 
-            // always make sure the env is up to date
+            // always ensure the env is up to date
             const venv = yield* uv.sync({ script: notebook.uri.fsPath });
-            const executable = `${venv}/bin/python`;
+            const executable = NodePath.join(venv, "bin", "python");
             yield* python.updateActiveEnvironmentPath(executable);
 
             yield* client.executeCommand({
