@@ -8,9 +8,11 @@ export type MarimoCommand =
   | "marimo.publishMarimoNotebook"
   | "marimo.publishMarimoNotebookGist"
   | "marimo.refreshPackages"
+  | "marimo.reportIssue"
   | "marimo.restartKernel"
   | "marimo.restartLsp"
   | "marimo.runStale"
+  | "marimo.showDiagnostics"
   | "marimo.showMarimoMenu"
   | "marimo.toggleOnCellChangeAutoRun"
   | "marimo.toggleOnCellChangeLazy";

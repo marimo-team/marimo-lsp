@@ -6,11 +6,13 @@ import { ConfigContextManager } from "../services/config/ConfigContextManager.ts
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
+import { HealthService } from "../services/HealthService.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { getNotebookUri } from "../types.ts";
+import { Links } from "../utils/links.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
 /**
@@ -26,6 +28,7 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     const serializer = yield* NotebookSerializer;
     const configService = yield* MarimoConfigurationService;
     const configContextManager = yield* ConfigContextManager;
+    const healthService = yield* HealthService;
 
     yield* code.commands.registerCommand(
       "marimo.newMarimoNotebook",
@@ -145,6 +148,19 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     );
 
     yield* code.commands.registerCommand("marimo.restartLsp", client.restart);
+
+    yield* code.commands.registerCommand(
+      "marimo.showDiagnostics",
+      healthService.showDiagnostics,
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.reportIssue",
+      Effect.gen(function* () {
+        const uri = Either.getOrThrow(code.utils.parseUri(Links.issues));
+        yield* code.env.openExternal(uri);
+      }),
+    );
   }),
 );
 

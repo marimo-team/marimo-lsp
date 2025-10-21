@@ -169,7 +169,7 @@ export const findLspExecutable = Effect.fnUntraced(function* () {
   };
 });
 
-function isUvInstalled(): boolean {
+export function isUvInstalled(): boolean {
   try {
     NodeChildProcess.execSync("uv --version", { stdio: "ignore" });
     return true;

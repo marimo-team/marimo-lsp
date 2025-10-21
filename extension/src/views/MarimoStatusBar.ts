@@ -1,10 +1,8 @@
 import { Effect, Either, Layer, Option } from "effect";
 import { unreachable } from "../assert.ts";
 import { VsCode } from "../services/VsCode.ts";
+import { Links } from "../utils/links.ts";
 import { StatusBar } from "./StatusBar.ts";
-
-const DOCUMENTATION_URL = "https://docs.marimo.io";
-const DISCORD_URL = "https://marimo.io/discord";
 
 /**
  * Manages the marimo status bar item with quick pick menu.
@@ -33,6 +31,10 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
               value: "discord",
             },
             {
+              label: "$(bug) Report an issue or suggest a feature",
+              value: "reportIssue",
+            },
+            {
               label: "$(settings) Edit settings",
               value: "settings",
             },
@@ -48,7 +50,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
 
         switch (selection.value.value) {
           case "documentation": {
-            yield* openUrl(code, DOCUMENTATION_URL);
+            yield* openUrl(code, Links.documentation);
             break;
           }
           case "tutorials": {
@@ -56,7 +58,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
             break;
           }
           case "discord": {
-            yield* openUrl(code, DISCORD_URL);
+            yield* openUrl(code, Links.discord);
             break;
           }
           case "settings": {
@@ -64,6 +66,10 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
               "workbench.action.openSettings",
               "marimo",
             );
+            break;
+          }
+          case "reportIssue": {
+            yield* openUrl(code, Links.issues);
             break;
           }
           default: {
