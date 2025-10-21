@@ -71,7 +71,7 @@ jobs:
 
       - name: Publish to Open VSX Registry
         working-directory: marimo-lsp/extension
-        run: npx ovsx publish *.vsix --pre-release
+        run: npx ovsx publish --pre-release --skip-duplicate
         env:
           OVSX_PAT: ${{ secrets.OPEN_VSX_TOKEN }}
 
