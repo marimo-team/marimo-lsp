@@ -146,7 +146,7 @@ export const findLspExecutable = Effect.fnUntraced(function* () {
     );
     return {
       command: "uv",
-      args: ["tool", "run", "--from", sdist, "marimo-lsp"],
+      args: ["tool", "run", "--python", "3.13", "--from", sdist, "marimo-lsp"],
     };
   }
 
