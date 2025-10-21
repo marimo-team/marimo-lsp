@@ -447,7 +447,11 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       Uri: vscode.Uri,
       MarkdownString: vscode.MarkdownString,
       version: vscode.version,
-      extensions: vscode.extensions,
+      extensions: {
+        getExtension<T = unknown>(extensionId: string) {
+          return vscode.extensions.getExtension<T>(extensionId);
+        },
+      },
       // helper
       utils: {
         parseUri(value: string) {
