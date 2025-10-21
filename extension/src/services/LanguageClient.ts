@@ -1,7 +1,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
-import { Data, Effect, Either, Option, type Scope, Stream } from "effect";
+import { Data, Effect, Either, Option, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
 import { unreachable } from "../assert.ts";
 import type {
