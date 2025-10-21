@@ -17,6 +17,7 @@ import { DebugAdapter } from "../services/DebugAdapter.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
+import { HealthService } from "../services/HealthService.ts";
 import type { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
@@ -66,6 +67,7 @@ const MainLive = Layer.empty
     Layer.provide(VariablesService.Default),
     Layer.provide(DatasourcesService.Default),
     Layer.provide(PackagesService.Default),
+    Layer.provide(HealthService.Default),
   )
   .pipe(
     Layer.provide(MarimoConfigurationService.Default),

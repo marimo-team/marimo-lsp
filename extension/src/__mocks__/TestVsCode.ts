@@ -1334,6 +1334,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 revealRange() {},
               });
             },
+            showTextDocument(doc: vscode.TextDocument) {
+              return Effect.succeed({
+                document: doc,
+              } as vscode.TextEditor);
+            },
             withProgress() {
               return Effect.void;
             },
@@ -1408,6 +1413,27 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                   content,
                 ),
               );
+            },
+            openTextDocument(options: { content?: string; language?: string }) {
+              return Effect.succeed({
+                uri: Uri.file("/mocks/diagnostics.txt"),
+                fileName: "/mocks/diagnostics.txt",
+                isUntitled: true,
+                languageId: options.language ?? "plaintext",
+                version: 1,
+                isDirty: false,
+                isClosed: false,
+                save: () => Promise.resolve(true),
+                eol: 1,
+                lineCount: 1,
+                lineAt: () => ({}) as vscode.TextLine,
+                offsetAt: () => 0,
+                positionAt: () => ({}) as vscode.Position,
+                getText: () => options.content ?? "",
+                getWordRangeAtPosition: () => undefined,
+                validateRange: (range: vscode.Range) => range,
+                validatePosition: (pos: vscode.Position) => pos,
+              } as unknown as vscode.TextDocument);
             },
           }),
           env: Env.make({
@@ -1552,6 +1578,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           },
           Uri,
           MarkdownString,
+          version: "1.86.0",
+          extensions: {
+            getExtension: () => undefined,
+          } as unknown as typeof vscode.extensions,
           // helper
           utils: {
             parseUri(value: string) {

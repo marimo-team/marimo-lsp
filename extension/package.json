@@ -172,6 +172,16 @@
         "command": "marimo.restartLsp",
         "title": "Restart marimo language server (marimo-lsp)",
         "shortTitle": "Restart marimo-lsp"
+      },
+      {
+        "command": "marimo.showDiagnostics",
+        "title": "Show marimo diagnostics",
+        "category": "marimo"
+      },
+      {
+        "command": "marimo.reportIssue",
+        "title": "Report an issue or suggest a feature",
+        "category": "marimo"
       }
     ],
     "viewsContainers": {

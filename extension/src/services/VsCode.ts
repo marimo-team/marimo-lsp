@@ -156,6 +156,9 @@ export class Window extends Effect.Service<Window>()("Window", {
       ) {
         return Effect.promise(() => api.showNotebookDocument(doc, options));
       },
+      showTextDocument(doc: vscode.TextDocument) {
+        return Effect.promise(() => api.showTextDocument(doc));
+      },
       withProgress(
         options: {
           location: vscode.ProgressLocation;
@@ -290,6 +293,9 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
         return Effect.promise(() =>
           api.openNotebookDocument(notebookType, content),
         );
+      },
+      openTextDocument(options: { content?: string; language?: string }) {
+        return Effect.promise(() => api.openTextDocument(options));
       },
     };
   },
@@ -440,6 +446,8 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       StatusBarAlignment: vscode.StatusBarAlignment,
       Uri: vscode.Uri,
       MarkdownString: vscode.MarkdownString,
+      version: vscode.version,
+      extensions: vscode.extensions,
       // helper
       utils: {
         parseUri(value: string) {
