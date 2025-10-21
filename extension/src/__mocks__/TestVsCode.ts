@@ -1337,8 +1337,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 revealRange() {},
               });
             },
-            showTextDocument(doc: vscode.TextDocument) {
-              return Effect.succeed(new TextEditor(doc));
+            showTextDocument() {
+              return Effect.void;
             },
             withProgress() {
               return Effect.void;
@@ -1410,16 +1410,21 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               return Effect.succeed(
                 new NotebookDocument(
                   notebookType,
-                  Uri.file("/mocks/foo_mo.py"),
+                  Uri.file("/mocks/foo.py"),
                   content,
                 ),
               );
             },
-            openTextDocument(options: { content?: string; language?: string }) {
+            openUntitledTextDocument(options: {
+              content?: string;
+              language?: string;
+            }) {
+              const version = 1;
               return Effect.succeed(
-                createTestTextDocument(
-                  Uri.file("/mocks/diagnostics.txt"),
+                new TextDocument(
+                  Uri.file("/mocks/foo.txt"),
                   options.language ?? "plaintext",
+                  version,
                   options.content ?? "",
                 ),
               );

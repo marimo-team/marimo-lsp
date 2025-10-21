@@ -136,7 +136,7 @@ export class HealthService extends Effect.Service<HealthService>()(
             ),
           );
 
-          const doc = yield* code.workspace.openTextDocument({
+          const doc = yield* code.workspace.openUntitledTextDocument({
             content: diagnosticText,
             language: "plaintext",
           });
