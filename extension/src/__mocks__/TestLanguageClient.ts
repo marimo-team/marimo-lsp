@@ -37,6 +37,7 @@ export const TestLanguageClientLive = Layer.scoped(
         }),
     );
     return LanguageClient.make({
+      restart: Effect.void,
       executeCommand(cmd) {
         return Effect.tryPromise({
           try: () =>
