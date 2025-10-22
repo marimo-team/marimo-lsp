@@ -2,6 +2,12 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      pre-release:
+        description: "Release as pre-release"
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -31,7 +37,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'pnpm'
+          cache: "pnpm"
           cache-dependency-path: |
             marimo/pnpm-lock.yaml
             marimo-lsp/extension/pnpm-lock.yaml
@@ -49,7 +55,11 @@ jobs:
           git config --local user.name "GitHub Action"
           pnpm version patch --no-git-tag-version
           git add package.json
-          git commit -m "v$(cat package.json | jq -r '.version') (pre-release)"
+          if [ "${{ inputs.pre-release }}" = "true" ]; then
+            git commit -m "v$(cat package.json | jq -r '.version') (pre-release)"
+          else
+            git commit -m "v$(cat package.json | jq -r '.version')"
+          fi
           git push origin HEAD:main
 
       - name: Install packages and build extension
@@ -65,13 +75,23 @@ jobs:
 
       - name: Publish to marketplace
         working-directory: marimo-lsp/extension
-        run: npx vsce publish --pre-release --skip-duplicate
+        run: |
+          if [ "${{ inputs.pre-release }}" = "true" ]; then
+            npx vsce publish --pre-release --skip-duplicate
+          else
+            npx vsce publish --skip-duplicate
+          fi
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Publish to Open VSX Registry
         working-directory: marimo-lsp/extension
-        run: npx ovsx publish --pre-release --skip-duplicate
+        run: |
+          if [ "${{ inputs.pre-release }}" = "true" ]; then
+            npx ovsx publish --pre-release --skip-duplicate
+          else
+            npx ovsx publish --skip-duplicate
+          fi
         env:
           OVSX_PAT: ${{ secrets.OPEN_VSX_TOKEN }}
 
