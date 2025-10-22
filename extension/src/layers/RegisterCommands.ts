@@ -172,18 +172,17 @@ const newMarimoNotebook = ({
   serializer: NotebookSerializer;
 }) =>
   Effect.gen(function* () {
-    const doc = yield* code.workspace.openUntitledNotebookDocument(
+    const notebook = yield* code.workspace.openUntitledNotebookDocument(
       serializer.notebookType,
       new code.NotebookData([
         new code.NotebookCellData(code.NotebookCellKind.Code, "", "python"),
       ]),
     );
-
-    yield* code.window.showNotebookDocument(doc);
+    yield* code.window.showNotebookDocument(notebook);
 
     yield* Effect.logInfo("Created new marimo notebook").pipe(
       Effect.annotateLogs({
-        uri: doc.uri.toString(),
+        uri: notebook.uri.toString(),
       }),
     );
   });
