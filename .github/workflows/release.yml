@@ -8,6 +8,16 @@ on:
         required: true
         default: true
         type: boolean
+      version-bump:
+        description: "Version bump type"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          # Not yet...
+          # - major
 
 permissions:
   contents: write
@@ -53,7 +63,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          pnpm version patch --no-git-tag-version
+          pnpm version ${{ inputs.version-bump }} --no-git-tag-version
           git add package.json
           if [ "${{ inputs.pre-release }}" = "true" ]; then
             git commit -m "v$(cat package.json | jq -r '.version') (pre-release)"
