@@ -38,6 +38,24 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       controller.executeHandler = (cells, notebook) =>
         runPromise(
           Effect.gen(function* () {
+            // sandboxing only works with titled (saved) notebooks
+            if (notebook.isUntitled) {
+              const choice = yield* code.window.showInformationMessage(
+                "Sandboxing requires a saved file. Please save your notebook and re-run cells.",
+                {
+                  modal: true,
+                  items: ["Save"],
+                },
+              );
+
+              if (Option.isNone(choice)) {
+                return;
+              }
+
+              yield* Effect.promise(() => notebook.save());
+              return;
+            }
+
             const requirements = yield* findRequirements(uv, notebook);
 
             if (requirements.length > 0) {
