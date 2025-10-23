@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import typing
+from pathlib import Path
 from typing import TypeVar
 
 import marimo._ipc as ipc
@@ -29,17 +30,21 @@ logger = get_logger()
 def launch_kernel(
     executable: str,
     args: ipc.KernelArgs,
+    cwd: str | None = None,
 ) -> PopenProcessLike:
     """Launch kernel as a subprocess."""
     cmd = [executable, "-m", "marimo._ipc.launch_kernel"]
     logger.info(f"Launching kernel subprocess: {' '.join(cmd)}")
     logger.debug(f"Connection info: {args.connection_info}")
+    if cwd:
+        logger.debug(f"Setting kernel working directory to: {cwd}")
 
     process = subprocess.Popen(  # noqa: S603
         cmd,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        cwd=cwd,
     )
 
     assert process.stdin, "Expect subprocess stdin pipe"
@@ -117,6 +122,12 @@ class LspKernelManager(KernelManager):
 
     def start_kernel(self) -> None:
         """Start an instance of the marimo kernel using ZeroMQ IPC."""
+        # Set the working directory to the notebook's directory
+        notebook_dir = (
+            Path(self.app_metadata.filename).parent
+            if self.app_metadata.filename
+            else None
+        )
         self.kernel_task = launch_kernel(
             executable=self.executable,
             args=ipc.KernelArgs(
@@ -127,6 +138,7 @@ class LspKernelManager(KernelManager):
                 log_level=GLOBAL_SETTINGS.LOG_LEVEL,
                 profile_path=self.profile_path,
             ),
+            cwd=str(notebook_dir) if notebook_dir else None,
         )
 
 
