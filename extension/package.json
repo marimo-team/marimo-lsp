@@ -112,6 +112,11 @@
         "category": "Create"
       },
       {
+        "command": "marimo.createSetupCell",
+        "title": "Create setup cell",
+        "category": "marimo"
+      },
+      {
         "command": "marimo.publishMarimoNotebookGist",
         "title": "Publish notebook as Gist",
         "shortTitle": "Publish Gist",
@@ -119,7 +124,7 @@
       },
       {
         "command": "marimo.publishMarimoNotebook",
-        "title": "Publish notebook as...",
+        "title": "Publish notebook as ...",
         "shortTitle": "Publish notebook",
         "category": "marimo"
       },
@@ -137,34 +142,34 @@
       },
       {
         "command": "marimo.runStale",
-        "title": "Run Stale Cells",
-        "shortTitle": "Run Stale",
+        "title": "Run stale cells",
+        "shortTitle": "Run stale",
         "category": "marimo",
         "icon": "$(play)"
       },
       {
         "command": "marimo.toggleOnCellChangeAutoRun",
-        "title": "Toggle On-Cell-Change Mode",
+        "title": "Toggle on-cell-change mode",
         "shortTitle": "On cell change: Auto-Run",
         "category": "marimo",
         "icon": "$(zap)"
       },
       {
         "command": "marimo.toggleOnCellChangeLazy",
-        "title": "Toggle On-Cell-Change Mode",
+        "title": "Toggle on-cell-change mode",
         "shortTitle": "On cell change: Lazy",
         "category": "marimo",
         "icon": "$(symbol-interface)"
       },
       {
         "command": "marimo.restartKernel",
-        "title": "Restart Notebook Kernel",
+        "title": "Restart notebook kernel",
         "shortTitle": "Restart Kernel",
         "category": "marimo"
       },
       {
         "command": "marimo.openAsMarimoNotebook",
-        "title": "Open as marimo Notebook",
+        "title": "Open as marimo notebook",
         "category": "marimo",
         "icon": "images/small-icon.png"
       },

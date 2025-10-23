@@ -1,12 +1,11 @@
 import { Effect, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
-import { NOTEBOOK_TYPE } from "../constants.ts";
+import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
 import { decodeCellMetadata, isStaleCellMetadata } from "../schemas.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 
 const DEFAULT_NAME = "_";
-const SETUP_CELL_NAME = "setup";
 
 /**
  * Provides status bar items for notebook cells, showing staleness and custom cell names.
