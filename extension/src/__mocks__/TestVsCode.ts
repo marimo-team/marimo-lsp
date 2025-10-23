@@ -1545,6 +1545,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           NotebookCellOutput,
           NotebookCellOutputItem,
           NotebookEdit,
+          NotebookRange,
           NotebookCellStatusBarItem,
           NotebookCellStatusBarAlignment: {
             Left: 1,

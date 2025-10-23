@@ -3,6 +3,7 @@
 
 export type MarimoCommand =
   | "marimo.clearRecentNotebooks"
+  | "marimo.createSetupCell"
   | "marimo.newMarimoNotebook"
   | "marimo.openAsMarimoNotebook"
   | "marimo.publishMarimoNotebook"
@@ -24,6 +25,8 @@ export type MarimoView =
   | "marimo-explorer-variables";
 
 export const NOTEBOOK_TYPE = "marimo-notebook";
+
+export const SETUP_CELL_NAME = "setup";
 
 export type MarimoContextKey =
   | "marimo.config.runtime.on_cell_change"

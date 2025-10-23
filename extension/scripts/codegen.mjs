@@ -62,6 +62,8 @@ export type MarimoView = ${union(views)};
 
 export const NOTEBOOK_TYPE = "${notebook.type}";
 
+export const SETUP_CELL_NAME = "setup";
+
 export type MarimoContextKey = ${union(contextKeys)};
 `,
     encoding: "utf-8",

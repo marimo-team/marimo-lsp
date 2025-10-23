@@ -1,7 +1,11 @@
 import * as NodePath from "node:path";
 import { Cause, Chunk, Effect, Either, Layer, Option } from "effect";
-import { NOTEBOOK_TYPE } from "../constants.ts";
-import { decodeCellMetadata, isStaleCellMetadata } from "../schemas.ts";
+import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
+import {
+  decodeCellMetadata,
+  encodeCellMetadata,
+  isStaleCellMetadata,
+} from "../schemas.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
@@ -33,6 +37,11 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     yield* code.commands.registerCommand(
       "marimo.newMarimoNotebook",
       newMarimoNotebook({ code, serializer }),
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.createSetupCell",
+      createSetupCell({ code, serializer }),
     );
 
     yield* code.commands.registerCommand(
@@ -183,6 +192,67 @@ const newMarimoNotebook = ({
     yield* Effect.logInfo("Created new marimo notebook").pipe(
       Effect.annotateLogs({
         uri: notebook.uri.toString(),
+      }),
+    );
+  });
+
+const createSetupCell = ({
+  code,
+  serializer,
+}: {
+  code: VsCode;
+  serializer: NotebookSerializer;
+}) =>
+  Effect.gen(function* () {
+    const notebook = Option.filterMap(
+      yield* code.window.getActiveNotebookEditor(),
+      (editor) =>
+        serializer.isMarimoNotebookDocument(editor.notebook)
+          ? Option.some(editor.notebook)
+          : Option.none(),
+    );
+
+    if (Option.isNone(notebook)) {
+      yield* code.window.showInformationMessage(
+        "No marimo notebook is currently open",
+      );
+      return;
+    }
+
+    // Check if setup cell already exists
+    const cells = notebook.value.getCells();
+    const existing = cells.find((cell) => {
+      const metadata = decodeCellMetadata(cell.metadata);
+      return Option.isSome(metadata) && metadata.value.name === SETUP_CELL_NAME;
+    });
+
+    if (existing) {
+      // Show message and focus on existing setup cell
+      yield* code.window.showInformationMessage("Setup cell already exists");
+      yield* code.window.showNotebookDocument(notebook.value, {
+        selections: [
+          new code.NotebookRange(existing.index, existing.index + 1),
+        ],
+      });
+      return;
+    }
+
+    {
+      // Create new setup cell at index 0
+      const edit = new code.WorkspaceEdit();
+      const cell = new code.NotebookCellData(
+        code.NotebookCellKind.Code,
+        "# Initialization code that runs before all other cells",
+        "python",
+      );
+      cell.metadata = encodeCellMetadata({ name: SETUP_CELL_NAME });
+      edit.set(notebook.value.uri, [code.NotebookEdit.insertCells(0, [cell])]);
+      yield* code.workspace.applyEdit(edit);
+    }
+
+    yield* Effect.logInfo("Created setup cell").pipe(
+      Effect.annotateLogs({
+        notebook: notebook.value.uri.toString(),
       }),
     );
   });

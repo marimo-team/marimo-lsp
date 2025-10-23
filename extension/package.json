@@ -112,6 +112,11 @@
         "category": "Create"
       },
       {
+        "command": "marimo.createSetupCell",
+        "title": "Create Setup Cell",
+        "category": "marimo"
+      },
+      {
         "command": "marimo.publishMarimoNotebookGist",
         "title": "Publish notebook as Gist",
         "shortTitle": "Publish Gist",

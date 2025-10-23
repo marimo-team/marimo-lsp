@@ -39,6 +39,7 @@ suite("marimo Extension Hello World Tests", () => {
     marimoCommands.sort();
     assert.deepEqual(marimoCommands, [
       "marimo.clearRecentNotebooks",
+      "marimo.createSetupCell",
       "marimo.newMarimoNotebook",
       "marimo.openAsMarimoNotebook",
       "marimo.publishMarimoNotebook",
