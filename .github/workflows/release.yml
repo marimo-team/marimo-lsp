@@ -6,7 +6,7 @@ on:
       pre-release:
         description: "Release as pre-release"
         required: true
-        default: true
+        default: false
         type: boolean
       version-bump:
         description: "Version bump type"
