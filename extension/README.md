@@ -10,9 +10,7 @@ A VS Code extension for [marimo](https://github.com/marimo-team/marimo), a
 reactive Python notebook that's reproducible, git-friendly, and deployable as
 scripts or apps.
 
-<p align="center">
-   <img width="750" src="https://github.com/user-attachments/assets/24630280-b677-4fe8-b806-d8e31cc9c024" />
-</p>
+![](https://github.com/user-attachments/assets/1221b757-4c82-471d-897c-030d61132e90)
 
 ## Prerequisites
 
@@ -46,12 +44,7 @@ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 4. VS Code will prompt you to open the file as a marimo notebook
 
 If you have an existing Python file that's a marimo notebook, you'll see an
-icon in the editor title bar to open it as a marimo notebook.
-
-
-<p align="center">
-   <img width="750" src="https://github.com/user-attachments/assets/1221b757-4c82-471d-897c-030d61132e90" />
-</p>
+icon in the editor title bar to open it as a notebook (see image above).
 
 ## Commands
 
