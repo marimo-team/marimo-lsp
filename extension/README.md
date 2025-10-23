@@ -51,15 +51,16 @@ icon in the editor title bar to open it as a notebook (see image above).
 | Command                                               | Description                                        |
 | ----------------------------------------------------- | -------------------------------------------------- |
 | `marimo: New marimo notebook`                         | Create a new marimo notebook                       |
-| `marimo: Open as marimo Notebook`                     | Open a Python file as a marimo notebook            |
-| `marimo: Run Stale Cells`                             | Execute all cells that need to be re-run           |
-| `marimo: Restart Notebook Kernel`                     | Restart the notebook's Python kernel               |
-| `marimo: Toggle On-Cell-Change Mode`                  | Switch between auto-run and lazy execution modes   |
+| `marimo: Open as marimo notebook`                     | Open a Python file as a marimo notebook            |
+| `marimo: Toggle on-cell-change mode`                  | Switch between auto-run and lazy execution modes   |
+| `marimo: Run stale cells`                             | Execute all cells that need to be re-run           |
+| `marimo: Restart notebook kernel`                     | Restart the notebook's Python kernel               |
+| `marimo: Create setup cell`                           | Create or navigate to an existing setup cell       |
 | `marimo: Publish notebook as Gist`                    | Share your notebook as a GitHub Gist               |
 | `marimo: Publish notebook as...`                      | Export your notebook in various formats            |
 | `marimo: Restart marimo language server (marimo-lsp)` | Restart the LSP server if it becomes unresponsive  |
-| `marimo: Show marimo diagnostics`                     | Display diagnostic information for troubleshooting |
 | `marimo: Report an issue or suggest a feature`        | Open GitHub to report bugs or request features     |
+| `marimo: Show marimo diagnostics`                     | Display diagnostic information for troubleshooting |
 
 ## Configuration
 
