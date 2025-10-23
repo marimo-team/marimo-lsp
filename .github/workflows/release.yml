@@ -105,9 +105,9 @@ jobs:
         env:
           OVSX_PAT: ${{ secrets.OPEN_VSX_TOKEN }}
 
-      # - name: Create GitHub release
-      #   working-directory: marimo-lsp/extension
-      #   run: |
-      #     gh release create $(cat package.json | jq -r '.version') --generate-notes *.vsix --latest=false
-      #   env:
-      #     GH_TOKEN: ${{ github.token }}
+      - name: Create GitHub Release
+        working-directory: marimo-lsp/extension
+        run: |
+          gh release create $(cat package.json | jq -r '.version') --generate-notes *.vsix
+        env:
+          GH_TOKEN: ${{ github.token }}
