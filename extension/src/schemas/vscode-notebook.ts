@@ -1,5 +1,13 @@
 import { Schema } from "effect";
 
+const SQLMetadata = Schema.Struct({
+  dataframeName: Schema.String,
+  quotePrefix: Schema.Literal("", "f", "r", "fr", "rf"),
+  commentLines: Schema.Array(Schema.String),
+  showOutput: Schema.Boolean,
+  engine: Schema.String,
+});
+
 /**
  * Cell execution state
  */
@@ -16,28 +24,28 @@ export type CellLanguage = typeof CellLanguage.Type;
 /**
  * VS Code notebook cell metadata (runtime state)
  */
-export const CellMetadata = Schema.Struct({
-  // Cell execution state
-  state: CellState.pipe(Schema.optional),
+export const CellMetadata = Schema.partial(
+  Schema.Struct({
+    // Cell execution state
+    state: CellState,
 
-  // Cell name (marimo cell identifier)
-  name: Schema.String.pipe(Schema.optional),
+    // Cell name (marimo cell identifier)
+    name: Schema.String,
 
-  // Cell configuration options
-  options: Schema.Record({
-    key: Schema.String,
-    value: Schema.Unknown,
-  }).pipe(Schema.optional),
+    // Cell configuration options
+    options: Schema.Record({
+      key: Schema.String,
+      value: Schema.Unknown,
+    }),
 
-  // Cell language (for smart-cells support)
-  language: CellLanguage.pipe(Schema.optional),
-
-  // Language-specific metadata (e.g., SQL engine, output flag)
-  languageMetadata: Schema.Record({
-    key: Schema.String,
-    value: Schema.Unknown,
-  }).pipe(Schema.optional),
-});
+    // Language-specific metadata (e.g., SQL engine, output flag)
+    languageMetadata: Schema.partial(
+      Schema.Struct({
+        sql: SQLMetadata,
+      }),
+    ),
+  }),
+);
 
 export type CellMetadata = typeof CellMetadata.Type;
 
@@ -58,23 +66,4 @@ export function isStaleCellMetadata(
   metadata: CellMetadata,
 ): metadata is CellMetadata & { state: "stale" } {
   return metadata.state === "stale";
-}
-
-/**
- * Type guard to check if cell has a specific state
- */
-export function hasCellState(
-  metadata: CellMetadata,
-  state: CellState,
-): boolean {
-  return metadata.state === state;
-}
-
-/**
- * Helper to create cell metadata with validation
- */
-export function createCellMetadata(
-  partial: Partial<CellMetadata>,
-): CellMetadata {
-  return encodeCellMetadata(partial);
 }

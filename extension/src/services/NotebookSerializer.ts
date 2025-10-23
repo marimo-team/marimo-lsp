@@ -9,7 +9,11 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { MarimoNotebook } from "../schemas.ts";
+import {
+  type CellMetadata,
+  decodeCellMetadata,
+  MarimoNotebook,
+} from "../schemas.ts";
 import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
@@ -78,9 +82,10 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                 metadata: {
                   name: cell.name,
                   options: cell.options,
-                  language: "sql" as const,
-                  languageMetadata: result.metadata,
-                },
+                  languageMetadata: {
+                    sql: result.metadata,
+                  },
+                } satisfies CellMetadata,
               };
             }
             // Default Python cell
@@ -92,8 +97,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               metadata: {
                 name: cell.name,
                 options: cell.options,
-                language: "python" as const,
-              },
+              } satisfies CellMetadata,
             };
           }),
         };
@@ -184,6 +188,8 @@ function notebookDataToMarimoNotebook(
     violations: metadata.violations ?? [],
     valid: metadata.valid ?? true,
     cells: cells.map((cell) => {
+      const cellMeta = decodeCellMetadata(cell.metadata);
+
       // Handle markup cells
       if (cell.kind === (1 satisfies vscode.NotebookCellKind.Markup)) {
         return {
@@ -194,9 +200,14 @@ function notebookDataToMarimoNotebook(
       }
 
       // Handle SQL cells - transform back to Python mo.sql() wrapper
-      if (cell.metadata?.language === "sql") {
-        const languageMetadata = cell.metadata?.languageMetadata ?? {};
-        const result = sqlParser.transformOut(cell.value, languageMetadata);
+      if (cell.languageId === "sql") {
+        const result = sqlParser.transformOut(
+          cell.value,
+          cellMeta.pipe(
+            Option.flatMap((x) => Option.fromNullable(x.languageMetadata?.sql)),
+            Option.getOrElse(() => sqlParser.defaultMetadata),
+          ),
+        );
         return {
           code: result.code,
           name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
