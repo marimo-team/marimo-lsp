@@ -42,6 +42,11 @@
           "default": false,
           "markdownDescription": "Disable uv integration features such as automatic package installation prompts.",
           "scope": "resource"
+        },
+        "marimo.telemetry": {
+          "type": "boolean",
+          "default": true,
+          "description": "Anonymous usage data. This helps us prioritize features for the marimo VSCode extension."
         }
       }
     },

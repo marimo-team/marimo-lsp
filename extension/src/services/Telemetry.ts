@@ -1,5 +1,6 @@
-import { Effect, Option, Schema } from "effect";
+import { Effect, Option, Ref, Schema, Stream } from "effect";
 import { PostHog } from "posthog-node";
+import { Log } from "../utils/log.ts";
 import { getExtensionVersion } from "./HealthService.ts";
 import { createStorageKey, Storage } from "./Storage.ts";
 import { VsCode } from "./VsCode.ts";
@@ -38,8 +39,8 @@ export function anonymousId(storage: Storage): Effect.Effect<string, never> {
 }
 
 /**
- * Telemetry service that respects VSCode's telemetry settings and uses PostHog for analytics.
- * Only tracks events when: VSCode telemetry is enabled (respects telemetry.telemetryLevel setting)
+ * Telemetry service that respects marimo's telemetry setting and uses PostHog for analytics.
+ * Only tracks events when: marimo.telemetry is enabled
  */
 export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
   scoped: Effect.gen(function* () {
@@ -47,55 +48,90 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
     const storage = yield* Storage;
     let client: PostHog | undefined;
 
-    // Initialize PostHog client if telemetry is enabled
-    const initialize = Effect.gen(function* () {
-      // Check VSCode telemetry setting
-      const telemetryConfig =
-        yield* code.workspace.getConfiguration("telemetry");
-      const telemetryLevel = telemetryConfig.get<string>("telemetryLevel");
+    // Get initial telemetry setting
+    const marimoConfig = yield* code.workspace.getConfiguration("marimo");
+    const initialTelemetryEnabled =
+      marimoConfig.get<boolean>("telemetry") ?? true;
 
-      // Respect VSCode telemetry settings
-      // Possible values: "all", "error", "crash", "off"
-      if (telemetryLevel === "off" || telemetryLevel === "crash") {
-        return Effect.void;
+    // Track telemetry state and client initialization
+    const telemetryEnabledRef = yield* Ref.make(initialTelemetryEnabled);
+    const clientInitializedRef = yield* Ref.make(false);
+
+    const extensionVersion = yield* getExtensionVersion(code);
+    const distinctId = yield* anonymousId(storage);
+
+    // Initialize PostHog client (only once when telemetry is enabled)
+    const initializeClient = Effect.gen(function* () {
+      const telemetryEnabled = yield* Ref.get(telemetryEnabledRef);
+      const clientInitialized = yield* Ref.get(clientInitializedRef);
+
+      if (!telemetryEnabled || clientInitialized) {
+        return;
       }
 
       client = new PostHog(API_KEY, {
         host: "https://us.i.posthog.com",
       });
+      yield* Ref.set(clientInitializedRef, true);
 
-      return Effect.void;
+      // Track extension activation
+      client.capture({
+        distinctId,
+        event: "extension_activated",
+        properties: {
+          extension_version: extensionVersion,
+        },
+      });
+      yield* Log.info("Anonymous telemetry enabled");
     });
 
-    const extensionVersion = yield* getExtensionVersion(code);
-    const distinctId = yield* anonymousId(storage);
+    // Initialize on startup if enabled
+    yield* initializeClient;
 
-    yield* initialize;
+    // Subscribe to configuration changes
+    yield* code.workspace
+      .configurationChanges()
+      .pipe(
+        Stream.filter((event) =>
+          event.affectsConfiguration("marimo.telemetry"),
+        ),
+        Stream.runForEach(() =>
+          Effect.gen(function* () {
+            const config = yield* code.workspace.getConfiguration("marimo");
+            const newValue = config.get<boolean>("telemetry") ?? true;
+            const oldValue = yield* Ref.get(telemetryEnabledRef);
+
+            yield* Ref.set(telemetryEnabledRef, newValue);
+
+            // If telemetry was just enabled, initialize client
+            if (!oldValue && newValue) {
+              yield* initializeClient;
+            }
+
+            // If telemetry was just disabled, shutdown PostHog
+            if (oldValue && !newValue && client) {
+              yield* Effect.promise(async () => client?.shutdown());
+              client = undefined;
+              yield* Ref.set(clientInitializedRef, false);
+            }
+          }),
+        ),
+      )
+      .pipe(Effect.forkScoped);
 
     // Register finalizer to shutdown PostHog when scope closes
     yield* Effect.addFinalizer(() =>
       Effect.promise(async () => client?.shutdown()),
     );
 
-    // Track extension activation
-    if (client) {
-      client.capture({
-        distinctId,
-        event: "extension_activated",
-        properties: {
-          $lib: "vscode-extension",
-          $lib_version: extensionVersion,
-        },
-      });
-    }
-
     return {
       /**
        * Track an event with optional properties
        */
       capture: (event: string, properties?: Record<string, unknown>) => {
-        return Effect.sync(() => {
-          if (!client) {
+        return Effect.gen(function* () {
+          const telemetryEnabled = yield* Ref.get(telemetryEnabledRef);
+          if (!telemetryEnabled || !client) {
             return;
           }
 
@@ -104,16 +140,16 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
             event,
             properties: {
               ...properties,
-              $lib: "vscode-extension",
-              $lib_version: extensionVersion,
+              extension_version: extensionVersion,
             },
           });
         });
       },
 
       identify: (properties?: Record<string, unknown>) =>
-        Effect.sync(() => {
-          if (!client) {
+        Effect.gen(function* () {
+          const telemetryEnabled = yield* Ref.get(telemetryEnabledRef);
+          if (!telemetryEnabled || !client) {
             return;
           }
 
@@ -124,5 +160,5 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
         }),
     };
   }),
-  dependencies: [VsCode.Default, Storage.Default],
+  dependencies: [Storage.Default],
 }) {}
