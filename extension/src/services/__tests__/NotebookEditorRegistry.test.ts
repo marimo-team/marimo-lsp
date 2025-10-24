@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Stream, TestClock } from "effect";
+import { TestTelemetry } from "../../__mocks__/TestTelemetry.ts";
 import {
   createTestNotebookDocument,
   createTestNotebookEditor,
@@ -11,6 +12,7 @@ import { VsCode } from "../VsCode.ts";
 function makeRegistryLayer(vscode: TestVsCode) {
   return Layer.empty.pipe(
     Layer.provideMerge(NotebookEditorRegistry.Default),
+    Layer.provide(TestTelemetry),
     Layer.provideMerge(vscode.layer),
   );
 }

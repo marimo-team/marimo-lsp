@@ -3,6 +3,7 @@ import type * as vscode from "vscode";
 import { getNotebookUri, type NotebookUri } from "../types.ts";
 import { Log } from "../utils/log.ts";
 import { isMarimoNotebookDocument } from "../utils/notebook.ts";
+import { Telemetry } from "./Telemetry.ts";
 import { VsCode } from "./VsCode.ts";
 
 export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistry>()(
@@ -10,6 +11,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
   {
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
+      const telemetry = yield* Telemetry;
       const ref = yield* Ref.make(
         HashMap.empty<NotebookUri, vscode.NotebookEditor>(),
       );
@@ -36,6 +38,11 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
                 return;
               }
 
+              const isNewNotebook = HashMap.has(
+                yield* Ref.get(ref),
+                notebookUri,
+              );
+
               yield* Ref.update(ref, (map) =>
                 HashMap.set(map, notebookUri, editor.value),
               );
@@ -43,6 +50,14 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
               yield* Log.info("Active notebook changed", {
                 notebookUri,
               });
+
+              // Track notebook opened event (only for new notebooks)
+              if (!isNewNotebook) {
+                yield* telemetry.capture("notebook_opened", {
+                  cellCount: editor.value.notebook.cellCount,
+                });
+              }
+
               yield* SubscriptionRef.set(
                 activeNotebookRef,
                 Option.some(notebookUri),

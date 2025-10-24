@@ -19,6 +19,7 @@ available on your PATH. The extension uses `uvx` to run the bundled
 `marimo-lsp` language server.
 
 Install uv:
+
 ```bash
 # macOS/Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -68,6 +69,7 @@ icon in the editor title bar to open it as a notebook (see image above).
 | ----------------------------- | --------- | ------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `marimo.lsp.path`             | `array`   | `[]`    | Path to a custom `marimo-lsp` executable, e.g., `["/path/to/marimo-lsp"]`. Leave empty to use the bundled version via `uvx`. |
 | `marimo.disableUvIntegration` | `boolean` | `false` | Disable uv integration features such as automatic package installation prompts.                                              |
+| `marimo.telemetry`            | `boolean` | `true`  | Anonymous usage data. This helps us prioritize features for the marimo VSCode extension.                                      |
 
 ## Support
 
