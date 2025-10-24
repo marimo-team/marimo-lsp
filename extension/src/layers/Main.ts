@@ -27,6 +27,7 @@ import type { PythonExtension } from "../services/PythonExtension.ts";
 import { PackagesService } from "../services/packages/PackagesService.ts";
 import { SandboxController } from "../services/SandboxController.ts";
 import { ExtensionContext, Storage } from "../services/Storage.ts";
+import { Telemetry } from "../services/Telemetry.ts";
 import { Uv } from "../services/Uv.ts";
 import type { VsCode } from "../services/VsCode.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
@@ -82,6 +83,7 @@ const MainLive = Layer.empty
     Layer.provide(Storage.Default),
     Layer.provide(Config.Default),
     Layer.provide(OutputChannel.Default),
+    Layer.provide(Telemetry.Default),
   );
 
 export function makeActivate(
@@ -101,6 +103,7 @@ export function makeActivate(
         // scope on deactivation.
         const scope = yield* Scope.make();
         yield* Layer.buildWithScope(Layer.provide(MainLive, layer), scope);
+
         return {
           dispose: () => Effect.runPromise(Scope.close(scope, Exit.void)),
         };

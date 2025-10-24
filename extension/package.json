@@ -307,6 +307,7 @@
     "esbuild": "^0.25.11",
     "jest-mock-vscode": "^4.7.0",
     "mocha": "^11.7.4",
+    "posthog-node": "^5.10.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "turbo": "^2.5.8",
