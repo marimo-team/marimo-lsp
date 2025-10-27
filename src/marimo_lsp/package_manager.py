@@ -26,8 +26,8 @@ class LspPackageManager:
         super().__init__()
         self._delegate = delegate
         self._venv_location = venv_location
-        self._delegate.run = self.run
-        self._delegate._venv_location = venv_location  # noqa: SLF001
+        self._delegate.run = self.run  # ty: ignore error[invalid-assignment]
+        self._delegate._venv_location = venv_location  # ty: ignore error[invalid-assignment]  # noqa: SLF001
 
     def dependency_tree(self, filename: str | None = None) -> DependencyTreeNode | None:
         """Get dependency tree for the project."""
