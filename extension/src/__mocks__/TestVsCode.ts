@@ -1370,6 +1370,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             getNotebookDocuments() {
               return Effect.map(Ref.get(notebookDocuments), HashSet.toValues);
             },
+            configurationChanges() {
+              return Stream.never;
+            },
             getConfiguration() {
               return Effect.succeed({
                 get: () => undefined,

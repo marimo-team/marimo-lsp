@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, Stream, TestClock } from "effect";
+import { TestTelemetry } from "../../__mocks__/TestTelemetry.ts";
 import {
   createTestNotebookDocument,
   NotebookRange,
@@ -17,6 +18,7 @@ const withTestCtx = Effect.fnUntraced(function* () {
   const layer = Layer.empty.pipe(
     Layer.merge(CellStateManager.Default),
     Layer.provideMerge(vscode.layer),
+    Layer.provide(TestTelemetry),
     Layer.provide(
       Layer.succeed(
         LanguageClient,

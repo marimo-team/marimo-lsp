@@ -5,6 +5,19 @@ import { Config } from "./Config.ts";
 import { isUvInstalled } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
 
+export const getExtensionVersion = (code: VsCode) =>
+  Effect.gen(function* () {
+    return yield* Effect.try({
+      try: () => {
+        const extension = code.extensions.getExtension(
+          EXTENSION_PACKAGE.fullName,
+        );
+        return extension?.packageJSON.version || "unknown";
+      },
+      catch: (cause) => new CouldNotGetInformationError({ cause }),
+    });
+  });
+
 export class CouldNotGetInformationError extends Data.TaggedError(
   "CouldNotGetInformationError",
 )<{
@@ -20,19 +33,6 @@ export class HealthService extends Effect.Service<HealthService>()(
     effect: Effect.gen(function* () {
       const code = yield* VsCode;
       const config = yield* Config;
-
-      const getExtensionVersion = () =>
-        Effect.gen(function* () {
-          return yield* Effect.try({
-            try: () => {
-              const extension = code.extensions.getExtension(
-                EXTENSION_PACKAGE.fullName,
-              );
-              return extension?.packageJSON.version || "unknown";
-            },
-            catch: (cause) => new CouldNotGetInformationError({ cause }),
-          });
-        });
 
       const getUvInstalled = () =>
         Effect.gen(function* () {
@@ -57,7 +57,7 @@ export class HealthService extends Effect.Service<HealthService>()(
           Effect.map(config.uv.enabled, (enabled) => !enabled),
         ]);
         const vscodeVersion = code.version;
-        const extensionVersion = yield* getExtensionVersion();
+        const extensionVersion = yield* getExtensionVersion(code);
         const uvInstalled = yield* getUvInstalled();
         const lspStatus = yield* getLspStatus();
 

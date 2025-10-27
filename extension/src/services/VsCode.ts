@@ -286,6 +286,16 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
           ),
         );
       },
+      configurationChanges() {
+        return Stream.asyncPush<vscode.ConfigurationChangeEvent>((emit) =>
+          Effect.acquireRelease(
+            Effect.sync(() =>
+              api.onDidChangeConfiguration((event) => emit.single(event)),
+            ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          ),
+        );
+      },
       applyEdit(edit: vscode.WorkspaceEdit) {
         return Effect.promise(() => api.applyEdit(edit));
       },

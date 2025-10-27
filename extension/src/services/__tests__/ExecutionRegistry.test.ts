@@ -3,6 +3,7 @@ import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/
 import { Effect, Layer, Option, TestClock } from "effect";
 import type * as vscode from "vscode";
 import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
+import { TestTelemetry } from "../../__mocks__/TestTelemetry.ts";
 import {
   createTestNotebookDocument,
   createTestNotebookEditor,
@@ -29,6 +30,7 @@ const withTestCtx = Effect.fnUntraced(function* (
     Layer.merge(ExecutionRegistry.Default),
     Layer.merge(CellStateManager.Default),
     Layer.provide(TestLanguageClientLive),
+    Layer.provide(TestTelemetry),
     Layer.provideMerge(vscode.layer),
   );
   return { vscode, layer };
