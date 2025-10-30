@@ -1,5 +1,5 @@
 import * as NodePath from "node:path";
-import { Cause, Chunk, Effect, Either, Layer, Option } from "effect";
+import { Cause, Chunk, Effect, Either, Layer, Option, Schema } from "effect";
 import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
 import {
   decodeCellMetadata,
@@ -169,6 +169,11 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
         const uri = Either.getOrThrow(code.utils.parseUri(Links.issues));
         yield* code.env.openExternal(uri);
       }),
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.exportNotebookAsHTML",
+      exportNotebookAsHTML({ code, client, channel, serializer }),
     );
   }),
 );
@@ -531,5 +536,114 @@ const toggleOnCellChange = ({
         code,
         channel,
       }),
+    ),
+  );
+
+const exportNotebookAsHTML = ({
+  code,
+  client,
+  channel,
+  serializer,
+}: {
+  code: VsCode;
+  client: LanguageClient;
+  channel: OutputChannel;
+  serializer: NotebookSerializer;
+}) =>
+  Effect.gen(function* () {
+    const notebook = Option.filterMap(
+      yield* code.window.getActiveNotebookEditor(),
+      (editor) =>
+        serializer.isMarimoNotebookDocument(editor.notebook)
+          ? Option.some(editor.notebook)
+          : Option.none(),
+    );
+
+    if (Option.isNone(notebook)) {
+      yield* code.window.showWarningMessage(
+        "Must have an open marimo notebook to export as HTML.",
+      );
+      return;
+    }
+
+    const notebookUri = getNotebookUri(notebook.value);
+
+    // Ask user where to save the file
+    const saveUri = yield* code.window.showSaveDialog({
+      title: "Export notebook as HTML",
+      filters: { HTML: ["html"] },
+      defaultUri: code.utils
+        .parseUri(notebook.value.uri.toString().replace(/\.py$/, ".html"))
+        .pipe(Either.getOrUndefined),
+    });
+
+    if (Option.isNone(saveUri)) {
+      // User cancelled
+      return;
+    }
+
+    yield* code.window.withProgress(
+      {
+        location: code.ProgressLocation.Notification,
+        title: "Exporting notebook as HTML",
+        cancellable: false,
+      },
+      Effect.fnUntraced(function* () {
+        // Call the LSP API to export the notebook
+        const result = yield* client
+          .executeCommand({
+            command: "marimo.api",
+            params: {
+              method: "export_as_html",
+              params: {
+                notebookUri,
+                inner: {
+                  download: false,
+                  files: [],
+                  includeCode: true,
+                  assetUrl: null,
+                },
+              },
+            },
+          })
+          .pipe(
+            Effect.andThen(Schema.decodeUnknown(Schema.String)),
+            Effect.either,
+          );
+
+        if (Either.isLeft(result)) {
+          yield* Effect.logFatal("Failed to export notebook", result.left);
+          yield* showErrorAndPromptLogs("Failed to export notebook as HTML.", {
+            channel,
+            code,
+          });
+          return;
+        }
+
+        // Write the HTML to the file
+        yield* code.workspace.fs.writeFile(
+          saveUri.value,
+          new TextEncoder().encode(result.right),
+        );
+
+        yield* Effect.logInfo("Exported notebook as HTML").pipe(
+          Effect.annotateLogs({
+            notebook: notebookUri,
+            output: saveUri.value.fsPath,
+          }),
+        );
+      }),
+    );
+  }).pipe(
+    Effect.tapErrorCause(Effect.logError),
+    Effect.catchAllCause((cause) =>
+      showErrorAndPromptLogs(
+        `Failed to export notebook: ${Cause.failures(cause).pipe(
+          Chunk.get(0),
+          Option.map((fail) => (fail as Error).message ?? String(fail)),
+          Option.getOrElse(() => "Unknown error"),
+        )}`,
+        { channel, code },
+      ),
     ),
   );

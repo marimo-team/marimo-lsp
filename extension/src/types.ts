@@ -47,6 +47,7 @@ type RunRequest = Schemas["RunRequest"];
 type SetUIElementValueRequest = Schemas["SetUIElementValueRequest"];
 type FunctionCallRequest = Schemas["FunctionCallRequest"];
 type DeleteCellRequest = Schemas["DeleteCellRequest"];
+type ExportAsHtmlRequest = Schemas["ExportAsHTMLRequest"];
 interface DeserializeRequest {
   source: string;
 }
@@ -87,6 +88,7 @@ type MarimoApiMethodMap = {
   get_configuration: NotebookScoped<GetConfigurationRequest>;
   update_configuration: NotebookScoped<UpdateConfigurationRequest>;
   close_session: NotebookScoped<CloseSessionRequest>;
+  export_as_html: NotebookScoped<ExportAsHtmlRequest>;
 };
 
 type ApiRequest<K extends keyof MarimoApiMethodMap> = {
