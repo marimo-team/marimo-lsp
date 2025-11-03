@@ -194,9 +194,9 @@
         "category": "marimo"
       },
       {
-        "command": "marimo.exportNotebookAsHTML",
-        "title": "Export notebook with outputs as HTML",
-        "shortTitle": "Export as HTML",
+        "command": "marimo.exportStaticHTML",
+        "title": "Export static HTML",
+        "shortTitle": "Export static HTML",
         "category": "marimo"
       }
     ],

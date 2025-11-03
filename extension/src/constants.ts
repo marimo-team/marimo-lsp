@@ -4,7 +4,7 @@
 export type MarimoCommand =
   | "marimo.clearRecentNotebooks"
   | "marimo.createSetupCell"
-  | "marimo.exportNotebookAsHTML"
+  | "marimo.exportStaticHTML"
   | "marimo.newMarimoNotebook"
   | "marimo.openAsMarimoNotebook"
   | "marimo.publishMarimoNotebook"

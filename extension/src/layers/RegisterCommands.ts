@@ -172,7 +172,7 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     );
 
     yield* code.commands.registerCommand(
-      "marimo.exportNotebookAsHTML",
+      "marimo.exportStaticHTML",
       exportNotebookAsHTML({ code, client, channel, serializer }),
     );
   }),
