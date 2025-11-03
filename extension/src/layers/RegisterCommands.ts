@@ -566,6 +566,17 @@ const exportNotebookAsHTML = ({
       return;
     }
 
+    const hasOutputs = notebook.value
+      .getCells()
+      .some((c) => c.outputs.length > 0);
+
+    if (!hasOutputs) {
+      yield* code.window.showWarningMessage(
+        "Cannot export to HTML. Run the notebook to generate outputs first.",
+      );
+      return;
+    }
+
     const notebookUri = getNotebookUri(notebook.value);
 
     // Ask user where to save the file
@@ -634,16 +645,4 @@ const exportNotebookAsHTML = ({
         );
       }),
     );
-  }).pipe(
-    Effect.tapErrorCause(Effect.logError),
-    Effect.catchAllCause((cause) =>
-      showErrorAndPromptLogs(
-        `Failed to export notebook: ${Cause.failures(cause).pipe(
-          Chunk.get(0),
-          Option.map((fail) => (fail as Error).message ?? String(fail)),
-          Option.getOrElse(() => "Unknown error"),
-        )}`,
-        { channel, code },
-      ),
-    ),
-  );
+  });

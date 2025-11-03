@@ -54,7 +54,7 @@ describe("extension.activate", () => {
           "commands": [
             "marimo.clearRecentNotebooks",
             "marimo.createSetupCell",
-            "marimo.exportNotebookAsHTML",
+            "marimo.exportStaticHTML",
             "marimo.newMarimoNotebook",
             "marimo.openAsMarimoNotebook",
             "marimo.publishMarimoNotebook",
