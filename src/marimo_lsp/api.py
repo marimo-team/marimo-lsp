@@ -190,7 +190,15 @@ async def serialize(args: SerializeRequest):
 
 async def deserialize(args: DeserializeRequest):
     converter = MarimoConvert.from_py(args.source)
-    return dataclasses.asdict(converter.to_ir())
+    ir = converter.to_ir()
+
+    # The `_ast` field on each `CellDef` holds a parsed Python AST, which isn't
+    # serializable. Since the AST isn't used on the other side of the wire,
+    # we can safely drop it before serialization.
+    for cell in ir.cells:
+        cell._ast = None  # noqa: SLF001
+
+    return dataclasses.asdict(ir)
 
 
 async def dap(
