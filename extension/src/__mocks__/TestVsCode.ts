@@ -1194,6 +1194,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         return VsCode.make({
           // namespaces
           window: Window.make({
+            showSaveDialog() {
+              return Effect.succeed(Option.none());
+            },
             showInputBox() {
               return Effect.succeed(Option.none());
             },
@@ -1367,6 +1370,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             },
           }),
           workspace: Workspace.make({
+            fs: {
+              writeFile() {
+                return Effect.succeed(true);
+              },
+            },
             getNotebookDocuments() {
               return Effect.map(Ref.get(notebookDocuments), HashSet.toValues);
             },
@@ -1578,7 +1586,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           MarkdownString,
           version: options.version ?? "1.86.0",
           extensions: {
-            getExtension: () => undefined,
+            getExtension: () => Option.none(),
           },
           // helper
           utils: {

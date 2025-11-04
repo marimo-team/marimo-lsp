@@ -1,22 +1,9 @@
 import * as NodeProcess from "node:process";
-import { Data, Effect, Option } from "effect";
+import { Data, Effect, Option, pipe, Schema } from "effect";
 import { EXTENSION_PACKAGE } from "../utils/extension.ts";
 import { Config } from "./Config.ts";
 import { isUvInstalled } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
-
-export const getExtensionVersion = (code: VsCode) =>
-  Effect.gen(function* () {
-    return yield* Effect.try({
-      try: () => {
-        const extension = code.extensions.getExtension(
-          EXTENSION_PACKAGE.fullName,
-        );
-        return extension?.packageJSON.version || "unknown";
-      },
-      catch: (cause) => new CouldNotGetInformationError({ cause }),
-    });
-  });
 
 export class CouldNotGetInformationError extends Data.TaggedError(
   "CouldNotGetInformationError",
@@ -34,21 +21,11 @@ export class HealthService extends Effect.Service<HealthService>()(
       const code = yield* VsCode;
       const config = yield* Config;
 
-      const getUvInstalled = () =>
-        Effect.gen(function* () {
-          return yield* Effect.try({
-            try: () => isUvInstalled(),
-            catch: (cause) => new CouldNotGetInformationError({ cause }),
-          });
-        });
-
       const getLspStatus = () =>
-        Effect.gen(function* () {
-          return yield* Effect.try({
-            // TODO: maybe run a quick check to see if the server can start
-            try: () => ({ isAvailable: true }),
-            catch: (cause) => new CouldNotGetInformationError({ cause }),
-          });
+        Effect.try({
+          // TODO: maybe run a quick check to see if the server can start
+          try: () => ({ isAvailable: true }),
+          catch: (cause) => new CouldNotGetInformationError({ cause }),
         });
 
       const formatDiagnostics = Effect.gen(function* () {
@@ -58,7 +35,6 @@ export class HealthService extends Effect.Service<HealthService>()(
         ]);
         const vscodeVersion = code.version;
         const extensionVersion = yield* getExtensionVersion(code);
-        const uvInstalled = yield* getUvInstalled();
         const lspStatus = yield* getLspStatus();
 
         const lines: string[] = [];
@@ -70,7 +46,7 @@ export class HealthService extends Effect.Service<HealthService>()(
 
         // LSP Status
         lines.push("Language Server (LSP):");
-        lines.push(`\tUV installed: ${uvInstalled ? "Yes ✓" : "No ✗"}`);
+        lines.push(`\tUV installed: ${isUvInstalled() ? "Yes ✓" : "No ✗"}`);
 
         if (Option.isSome(lspCustomPath)) {
           const { command, args = [] } = lspCustomPath.value as {
@@ -149,3 +125,19 @@ export class HealthService extends Effect.Service<HealthService>()(
     }),
   },
 ) {}
+
+export const getExtensionVersion = Effect.fnUntraced(function* (code: VsCode) {
+  return code.extensions.getExtension(EXTENSION_PACKAGE.fullName).pipe(
+    // Try parsing metadata if it's there
+    Option.map((ext) =>
+      pipe(
+        ext.packageJSON,
+        Schema.decodeUnknown(Schema.Struct({ version: Schema.String })),
+        Effect.map((pkg) => pkg.version),
+        Effect.mapError((cause) => new CouldNotGetInformationError({ cause })),
+      ),
+    ),
+    // Otherwise fallback to unknown
+    Option.getOrElse(() => Effect.succeed("unknown")),
+  );
+});

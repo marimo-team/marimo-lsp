@@ -10,6 +10,8 @@ from marimo._convert.converters import MarimoConvert
 from marimo._runtime.packages.package_managers import create_package_manager
 from marimo._runtime.requests import FunctionCallRequest, SetUserConfigRequest
 from marimo._schemas.serialization import NotebookSerialization
+from marimo._server.export.exporter import Exporter
+from marimo._server.models.export import ExportAsHTMLRequest
 from marimo._server.models.models import InstantiateRequest
 from marimo._utils.parse_dataclass import parse_raw
 
@@ -248,6 +250,27 @@ async def update_configuration(
         return {"success": False, "error": str(e)}
 
 
+async def export_as_html(
+    manager: LspSessionManager,
+    args: NotebookCommand[ExportAsHTMLRequest],
+):
+    """Export the notebook as HTML with current outputs."""
+    logger.info(f"export_as_html for {args.notebook_uri}")
+    session = manager.get_session(args.notebook_uri)
+    assert session, f"No session in workspace for {args.notebook_uri}"
+
+    # Export the notebook with current outputs using the Exporter
+    html, _filename = Exporter().export_as_html(
+        app=session.app_file_manager.app,
+        filename=session.app_file_manager.filename,
+        session_view=session.session_view,
+        display_config=session.config_manager.get_config()["display"],
+        request=args.inner,
+    )
+
+    return html
+
+
 async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
     ls: LanguageServer, manager: LspSessionManager, method: str, params: dict
 ) -> object:
@@ -320,6 +343,12 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
         return await update_configuration(
             manager,
             msgspec.convert(params, type=NotebookCommand[UpdateConfigurationRequest]),
+        )
+
+    if method == "export_as_html":
+        return await export_as_html(
+            manager,
+            msgspec.convert(params, type=NotebookCommand[ExportAsHTMLRequest]),
         )
 
     logger.warning(f"Unknown API method: {method}")

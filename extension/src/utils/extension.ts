@@ -1,7 +1,7 @@
 export const EXTENSION_PACKAGE = {
-  publisher: "marimo-team",
-  name: "vscode-marimo",
-  get fullName(): string {
-    return `${this.publisher}.${this.name}`;
+  publisher: "marimo-team" as const,
+  name: "vscode-marimo" as const,
+  get fullName() {
+    return `${this.publisher}.${this.name}` as const;
   },
 };

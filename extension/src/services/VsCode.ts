@@ -32,6 +32,12 @@ export class Window extends Effect.Service<Window>()("Window", {
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
     return {
+      showSaveDialog(options?: vscode.SaveDialogOptions) {
+        return Effect.map(
+          Effect.promise(() => api.showSaveDialog(options)),
+          Option.fromNullable,
+        );
+      },
       showInputBox(
         options?: vscode.InputBoxOptions,
       ): Effect.Effect<Option.Option<string>> {
@@ -205,6 +211,7 @@ type ExecutableCommand =
   | "workbench.action.closeActiveEditor"
   | "workbench.action.openSettings"
   | "workbench.action.reloadWindow"
+  | "simpleBrowser.show"
   | MarimoCommand;
 
 type ContextMap = {
@@ -258,6 +265,11 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
   sync: () => {
     const api = vscode.workspace;
     return {
+      fs: {
+        writeFile(uri: vscode.Uri, contents: Uint8Array) {
+          return Effect.promise(() => api.fs.writeFile(uri, contents));
+        },
+      },
       getNotebookDocuments() {
         return Effect.succeed(api.notebookDocuments);
       },
@@ -469,7 +481,9 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       version: vscode.version,
       extensions: {
         getExtension<T = unknown>(extensionId: string) {
-          return vscode.extensions.getExtension<T>(extensionId);
+          return Option.fromNullable(
+            vscode.extensions.getExtension<T>(extensionId),
+          );
         },
       },
       // helper

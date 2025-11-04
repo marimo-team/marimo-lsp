@@ -192,6 +192,12 @@
         "command": "marimo.reportIssue",
         "title": "Report an issue or suggest a feature",
         "category": "marimo"
+      },
+      {
+        "command": "marimo.exportStaticHTML",
+        "title": "Export static HTML",
+        "shortTitle": "Export static HTML",
+        "category": "marimo"
       }
     ],
     "viewsContainers": {
