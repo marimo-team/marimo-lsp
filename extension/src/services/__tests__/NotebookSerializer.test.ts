@@ -132,6 +132,7 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
     ["notebook with multiline cells", "multiline.txt"],
     ["notebook with cell options", "with_options.txt"],
     ["notebook with setup cell", "with_setup.txt"],
+    ["notebook with elipse", "with_elipse.txt"],
   ] as const)("identity: %s", ([_name, filename]) => {
     return Effect.gen(function* () {
       const serializer = yield* NotebookSerializer;

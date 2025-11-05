@@ -1,0 +1,24 @@
+import marimo
+
+__generated_with = "0.17.6"
+app = marimo.App(width="medium")
+
+with app.setup:
+    from typing import Protocol
+
+
+@app.class_definition
+class GoodProtocol(Protocol):
+    @property
+    def prop(self) -> float:
+        pass
+
+
+@app.class_definition
+class BadProtocol(Protocol):
+    @property
+    def prop(self) -> float: ...
+
+
+if __name__ == "__main__":
+    app.run()
