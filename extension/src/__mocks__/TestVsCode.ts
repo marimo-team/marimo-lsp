@@ -1215,7 +1215,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             showQuickPickItems() {
               return Effect.succeed(Option.none());
             },
-            createOutputChannel(name) {
+            createLogOutputChannel(name) {
               return Effect.acquireRelease(
                 Effect.sync(() => {
                   const emitter = new EventEmitter<vscode.LogLevel>();

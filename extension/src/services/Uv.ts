@@ -1,13 +1,9 @@
 import { Command, CommandExecutor } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { Data, Effect, Stream, String } from "effect";
+import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
-
-// Helper function to collect stream output as a string
-const runString = <E, R>(
-  stream: Stream.Stream<Uint8Array, E, R>,
-): Effect.Effect<string, E, R> =>
-  stream.pipe(Stream.decodeText(), Stream.runFold(String.empty, String.concat));
+import { VsCode } from "./VsCode.ts";
 
 class UvError extends Data.TaggedError("UvError")<{
   command: Command.Command;
@@ -30,8 +26,10 @@ class MissingPep723MetadataError extends Data.TaggedError(
 export class Uv extends Effect.Service<Uv>()("Uv", {
   dependencies: [NodeContext.layer],
   scoped: Effect.gen(function* () {
+    const code = yield* VsCode;
     const executor = yield* CommandExecutor.CommandExecutor;
-    const uv = createUv(executor);
+    const channel = yield* code.window.createOutputChannel("marimo (uv)");
+    const uv = createUv(executor, channel);
     return {
       venv(path: string, options: { python?: string; clear?: true } = {}) {
         const args = ["venv", path];
@@ -132,7 +130,10 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
   }),
 }) {}
 
-function createUv(executor: CommandExecutor.CommandExecutor) {
+function createUv(
+  executor: CommandExecutor.CommandExecutor,
+  channel: vscode.OutputChannel,
+) {
   return Effect.fn("uv")(function* (options: {
     readonly args: ReadonlyArray<string>;
     readonly env?: Record<string, string>;
@@ -152,8 +153,8 @@ function createUv(executor: CommandExecutor.CommandExecutor) {
             // Waits for the process to exit and returns
             // the ExitCode of the command that was run
             process.exitCode,
-            runString(process.stdout),
-            runString(process.stderr),
+            runString(process.stdout, channel),
+            runString(process.stderr, channel),
           ],
           { concurrency: 3 },
         ),
@@ -169,4 +170,19 @@ function createUv(executor: CommandExecutor.CommandExecutor) {
     }
     return { stdout, stderr };
   });
+}
+
+/** Helper to collect stream output as a string */
+function runString<E, R>(
+  stream: Stream.Stream<Uint8Array, E, R>,
+  channel: vscode.OutputChannel,
+): Effect.Effect<string, E, R> {
+  return stream.pipe(
+    Stream.decodeText(),
+    Stream.tap((text) => {
+      channel.append(text);
+      return Effect.void;
+    }),
+    Stream.runFold(String.empty, String.concat),
+  );
 }

@@ -104,6 +104,12 @@ export class Window extends Effect.Service<Window>()("Window", {
       },
       createOutputChannel(name: string) {
         return Effect.acquireRelease(
+          Effect.sync(() => api.createOutputChannel(name)),
+          (disposable) => Effect.sync(() => disposable.dispose()),
+        );
+      },
+      createLogOutputChannel(name: string) {
+        return Effect.acquireRelease(
           Effect.sync(() => api.createOutputChannel(name, { log: true })),
           (disposable) => Effect.sync(() => disposable.dispose()),
         );
