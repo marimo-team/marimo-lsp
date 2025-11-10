@@ -103,8 +103,7 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
 
         @app.cell
         def _(mo):
-            mo.md(
-                r"""
+            mo.md(r"""
             # single line markdown
             """)
             return
@@ -112,8 +111,7 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
 
         @app.cell
         def _(mo):
-            mo.md(
-                r"""
+            mo.md(r"""
             - multiline
             -markdown
             """)
@@ -133,7 +131,7 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
     ["notebook with cell options", "with_options.txt"],
     ["notebook with setup cell", "with_setup.txt"],
     ["notebook with elipse", "with_elipse.txt"],
-  ] as const)("identity: %s", ([_name, filename]) => {
+  ] as const)("identity: %s", ([_, filename]) => {
     return Effect.gen(function* () {
       const serializer = yield* NotebookSerializer;
       const source = yield* Effect.tryPromise(() =>
