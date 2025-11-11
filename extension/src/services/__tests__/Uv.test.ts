@@ -3,6 +3,7 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Either, Layer } from "effect";
+import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Uv } from "../../services/Uv.ts";
 
 const python = "3.13";
@@ -23,7 +24,11 @@ class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
   }),
 }) {}
 
-const UvLive = Layer.provideMerge(Uv.Default, TmpDir.Default);
+const UvLive = Layer.empty.pipe(
+  Layer.merge(Uv.Default),
+  Layer.merge(TmpDir.Default),
+  Layer.provide(TestVsCode.Default),
+);
 
 describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {

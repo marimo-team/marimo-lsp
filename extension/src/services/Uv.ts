@@ -31,6 +31,9 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
     const channel = yield* code.window.createOutputChannel("marimo (uv)");
     const uv = createUv(executor, channel);
     return {
+      showLogs(preserveFocus?: boolean) {
+        return Effect.sync(() => channel.show(preserveFocus));
+      },
       venv(path: string, options: { python?: string; clear?: true } = {}) {
         const args = ["venv", path];
         if (options.python) {
@@ -162,11 +165,7 @@ function createUv(
       Effect.scoped,
     );
     if (exitCode !== 0) {
-      return yield* new UvError({
-        command,
-        exitCode,
-        stderr,
-      });
+      return yield* new UvError({ command, exitCode, stderr });
     }
     return { stdout, stderr };
   });

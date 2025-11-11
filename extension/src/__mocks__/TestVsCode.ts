@@ -1215,6 +1215,18 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             showQuickPickItems() {
               return Effect.succeed(Option.none());
             },
+            createOutputChannel(name) {
+              return Effect.succeed({
+                name,
+                dispose() {},
+                append() {},
+                appendLine() {},
+                replace() {},
+                clear() {},
+                show() {},
+                hide() {},
+              });
+            },
             createLogOutputChannel(name) {
               return Effect.acquireRelease(
                 Effect.sync(() => {
