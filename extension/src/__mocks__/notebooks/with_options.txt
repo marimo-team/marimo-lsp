@@ -13,7 +13,9 @@ def _():
 @app.cell(disabled=True)
 def _(mo):
     # This cell is disabled
-    mo.md("This won't run")
+    mo.md("""
+    This won't run
+    """)
     return
 
 

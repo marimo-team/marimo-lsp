@@ -36,7 +36,7 @@ from marimo_lsp.models import (
 from marimo_lsp.package_manager import LspPackageManager
 
 if TYPE_CHECKING:
-    from marimo._config.config import PartialMarimoConfig
+    from marimo._config.config import DisplayConfig, PartialMarimoConfig
     from pygls.lsp.server import LanguageServer
 
     from marimo_lsp.kernel_manager import LspKernelManager
@@ -272,7 +272,9 @@ async def export_as_html(
         app=session.app_file_manager.app,
         filename=session.app_file_manager.filename,
         session_view=session.session_view,
-        display_config=session.config_manager.get_config()["display"],
+        display_config=cast(
+            "DisplayConfig", session.config_manager.get_config()["display"]
+        ),
         request=args.inner,
     )
 
