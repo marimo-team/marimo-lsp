@@ -196,8 +196,9 @@ function maybeHandleLanguageClientStartError(error: LanguageClientStartError) {
       yield* Effect.logError("uv is not installed in PATH");
 
       const result = yield* code.window.showErrorMessage(
-        "The marimo VS Code extension currently requires uv to be installed.",
+        "The marimo VS Code extension requires `uv` to be installed in your system PATH.",
         {
+          modal: true,
           items: ["Install uv", "Try Again"],
         },
       );
