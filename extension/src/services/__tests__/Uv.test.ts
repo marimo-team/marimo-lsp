@@ -9,7 +9,7 @@ import { Uv } from "../../services/Uv.ts";
 const python = "3.13";
 
 class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
-  scoped: Effect.gen(function*() {
+  scoped: Effect.gen(function* () {
     const disposable = yield* Effect.acquireRelease(
       Effect.sync(() => {
         return NodeFs.mkdtempDisposableSync(
@@ -22,7 +22,7 @@ class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
       path: disposable.path,
     };
   }),
-}) { }
+}) {}
 
 const UvLive = Layer.empty.pipe(
   Layer.merge(Uv.Default),
@@ -34,7 +34,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should create a new python venv",
-      Effect.fnUntraced(function*() {
+      Effect.fnUntraced(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
         const target = NodePath.join(tmpdir.path, ".venv");
@@ -47,7 +47,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should fail `uv add` without pyproject.toml",
-      Effect.fnUntraced(function*() {
+      Effect.fnUntraced(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
         const result = yield* Effect.either(
@@ -62,7 +62,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should `uv pip install` into venv",
-      Effect.fnUntraced(function*() {
+      Effect.fnUntraced(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
         const venv = NodePath.join(tmpdir.path, ".venv");
@@ -86,7 +86,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should `uv init` a new project",
-      Effect.fnUntraced(function*() {
+      Effect.fnUntraced(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
 
@@ -114,7 +114,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should fail with UvResolutionError on conflicting dependencies",
-      Effect.fnUntraced(function*() {
+      Effect.fnUntraced(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
 
@@ -138,6 +138,32 @@ print("This should fail to sync")
 
         assert(Either.isLeft(result), "Expected failure");
         assert.strictEqual(result.left._tag, "UvResolutionError");
+      }),
+    );
+  });
+
+  it.layer(Layer.fresh(UvLive))((it) => {
+    it.scoped(
+      "should fail with UvMissingPep723MetadataError when script has no metadata",
+      Effect.fnUntraced(function* () {
+        const uv = yield* Uv;
+        const tmpdir = yield* TmpDir;
+
+        // Create a script without PEP 723 metadata
+        const script = NodePath.join(tmpdir.path, "no-metadata.py");
+        NodeFs.writeFileSync(
+          script,
+          `\
+print("This script has no PEP 723 metadata")
+`,
+          { encoding: "utf8" },
+        );
+
+        // Attempt to get current deps, which should fail
+        const result = yield* Effect.either(uv.currentDeps({ script }));
+
+        assert(Either.isLeft(result), "Expected failure");
+        assert.strictEqual(result.left._tag, "UvMissingPep723MetadataError");
       }),
     );
   });
