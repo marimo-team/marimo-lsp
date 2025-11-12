@@ -21,13 +21,6 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
-    "iconThemes": [
-      {
-        "id": "marimo-file-icons",
-        "label": "Marimo File Icons",
-        "path": "./icons/marimo-icon-theme.json"
-      }
-    ],
     "configuration": {
       "title": "Marimo",
       "properties": {
