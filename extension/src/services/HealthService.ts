@@ -126,7 +126,7 @@ export class HealthService extends Effect.Service<HealthService>()(
   },
 ) {}
 
-export const getExtensionVersion = Effect.fnUntraced(function* (code: VsCode) {
+export function getExtensionVersion(code: VsCode) {
   return code.extensions.getExtension(EXTENSION_PACKAGE.fullName).pipe(
     // Try parsing metadata if it's there
     Option.map((ext) =>
@@ -140,4 +140,4 @@ export const getExtensionVersion = Effect.fnUntraced(function* (code: VsCode) {
     // Otherwise fallback to unknown
     Option.getOrElse(() => Effect.succeed("unknown")),
   );
-});
+}
