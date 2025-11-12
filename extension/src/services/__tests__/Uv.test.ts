@@ -9,7 +9,7 @@ import { Uv } from "../../services/Uv.ts";
 const python = "3.13";
 
 class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
-  scoped: Effect.gen(function* () {
+  scoped: Effect.gen(function*() {
     const disposable = yield* Effect.acquireRelease(
       Effect.sync(() => {
         return NodeFs.mkdtempDisposableSync(
@@ -22,7 +22,7 @@ class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
       path: disposable.path,
     };
   }),
-}) {}
+}) { }
 
 const UvLive = Layer.empty.pipe(
   Layer.merge(Uv.Default),
@@ -34,7 +34,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should create a new python venv",
-      Effect.fnUntraced(function* () {
+      Effect.fnUntraced(function*() {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
         const target = NodePath.join(tmpdir.path, ".venv");
@@ -47,11 +47,11 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should fail `uv add` without pyproject.toml",
-      Effect.fnUntraced(function* () {
+      Effect.fnUntraced(function*() {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
         const result = yield* Effect.either(
-          uv.add(["httpx"], { directory: tmpdir.path }),
+          uv.addProject({ directory: tmpdir.path, packages: ["httpx"] }),
         );
         assert(Either.isLeft(result), "Expected failure");
         assert.strictEqual(result.left._tag, "MissingPyProjectError");
@@ -62,7 +62,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should `uv pip install` into venv",
-      Effect.fnUntraced(function* () {
+      Effect.fnUntraced(function*() {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
         const venv = NodePath.join(tmpdir.path, ".venv");
@@ -86,7 +86,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should `uv init` a new project",
-      Effect.fnUntraced(function* () {
+      Effect.fnUntraced(function*() {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
 

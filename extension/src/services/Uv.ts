@@ -1,9 +1,15 @@
 import { Command, CommandExecutor } from "@effect/platform";
+import type { PlatformError } from "@effect/platform/Error";
 import { NodeContext } from "@effect/platform-node";
 import { Data, Effect, Stream, String } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import { VsCode } from "./VsCode.ts";
+
+class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
+  command: Command.Command;
+  cause: PlatformError;
+}> {}
 
 class UvError extends Data.TaggedError("UvError")<{
   command: Command.Command;
@@ -31,8 +37,9 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
     const channel = yield* code.window.createOutputChannel("marimo (uv)");
     const uv = createUv(executor, channel);
     return {
-      showLogs(preserveFocus?: boolean) {
-        return Effect.sync(() => channel.show(preserveFocus));
+      channel: {
+        name: channel.name,
+        show: () => channel.show(),
       },
       venv(path: string, options: { python?: string; clear?: true } = {}) {
         const args = ["venv", path];
@@ -68,7 +75,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         }
         return uv({ args }).pipe(Effect.andThen(Effect.void));
       },
-      sync(options: { script: string }) {
+      syncScript(options: { script: string }) {
         return Effect.andThen(
           uv({ args: ["sync", "--script", options.script] }),
           ({ stderr }) => {
@@ -82,24 +89,27 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
           },
         );
       },
-      add(
-        packages: ReadonlyArray<string>,
-        options: {
-          readonly directory?: string;
-          readonly script?: string;
-          readonly noSync?: boolean;
-        } = {},
-      ) {
-        const args = ["add", ...packages];
-        if (options.directory) {
-          args.push("--directory", options.directory);
-        }
-        if (options.script) {
-          args.push("--script", options.script);
-        }
+      addScript(options: {
+        script: string;
+        packages: ReadonlyArray<string>;
+        noSync?: boolean;
+      }) {
+        const args = ["add", ...options.packages, "--script", options.script];
         if (options.noSync) {
           args.push("--no-sync");
         }
+        return uv({ args });
+      },
+      addProject(options: {
+        directory: string;
+        packages: ReadonlyArray<string>;
+      }) {
+        const args = [
+          "add",
+          ...options.packages,
+          "--directory",
+          options.directory,
+        ];
         return uv({ args }).pipe(
           Effect.catchTag("UvError", (cause) =>
             Effect.fail(
@@ -107,7 +117,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
                 "error: No `pyproject.toml` found in current directory or any parent directory",
               )
                 ? new MissingPyProjectError({
-                    directory: options.directory ?? "",
+                    directory: options.directory,
                     cause,
                   })
                 : cause,
@@ -163,6 +173,10 @@ function createUv(
         ),
       ),
       Effect.scoped,
+      Effect.catchTags({
+        BadArgument: (cause) => new UvExecutionError({ command, cause }),
+        SystemError: (cause) => new UvExecutionError({ command, cause }),
+      }),
     );
     if (exitCode !== 0) {
       return yield* new UvError({ command, exitCode, stderr });
@@ -179,6 +193,7 @@ function runString<E, R>(
   return stream.pipe(
     Stream.decodeText(),
     Stream.tap((text) => {
+      // Forward all logs to the marimo (uv) channel
       channel.append(text);
       return Effect.void;
     }),
