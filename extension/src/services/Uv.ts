@@ -11,23 +11,55 @@ class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
   cause: PlatformError;
 }> {}
 
-class UvError extends Data.TaggedError("UvError")<{
+class UvUnknownError extends Data.TaggedError("UvUnknownError")<{
   command: Command.Command;
   exitCode?: CommandExecutor.ExitCode;
   stderr: string;
 }> {}
 
-class MissingPyProjectError extends Data.TaggedError("MissingPyProjectError")<{
+class UvMissingPyProjectError extends Data.TaggedError(
+  "UvMissingPyProjectError",
+)<{
   directory: string;
-  cause: UvError;
-}> {}
+  cause: UvUnknownError;
+}> {
+  static refine(directory: string, cause: UvUnknownError) {
+    return Effect.fail(
+      cause.stderr.includes(
+        "error: No `pyproject.toml` found in current directory or any parent directory",
+      )
+        ? new UvMissingPyProjectError({ directory, cause })
+        : cause,
+    );
+  }
+}
 
-class MissingPep723MetadataError extends Data.TaggedError(
-  "MissingPep723MetadataError",
+class UvMissingPep723MetadataError extends Data.TaggedError(
+  "UvMissingPep723MetadataError",
 )<{
   script: string;
-  cause: UvError;
-}> {}
+  cause: UvUnknownError;
+}> {
+  static refine(script: string, cause: UvUnknownError) {
+    return Effect.fail(
+      cause.stderr.includes("does not contain a PEP 723 metadata")
+        ? new UvMissingPep723MetadataError({ script, cause })
+        : cause,
+    );
+  }
+}
+
+class UvResolutionError extends Data.TaggedError("UvResolutionError")<{
+  cause: UvUnknownError;
+}> {
+  static refine(cause: UvUnknownError) {
+    return Effect.fail(
+      cause.stderr.includes("No solution found when resolving dependencies")
+        ? new UvResolutionError({ cause })
+        : cause,
+    );
+  }
+}
 
 export class Uv extends Effect.Service<Uv>()("Uv", {
   dependencies: [NodeContext.layer],
@@ -55,15 +87,10 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         return uv({
           args: ["tree", "--script", options.script, "-d", "0", "--quiet"],
         }).pipe(
-          Effect.catchTag("UvError", (cause) =>
-            Effect.fail(
-              cause.stderr.includes("does not contain a PEP 723 metadata")
-                ? new MissingPep723MetadataError({
-                    script: options.script,
-                    cause,
-                  })
-                : cause,
-            ),
+          Effect.catchTag("UvUnknownError", UvResolutionError.refine),
+          Effect.catchTag(
+            "UvUnknownError",
+            UvMissingPep723MetadataError.refine.bind(null, options.script),
           ),
           Effect.map((e) => e.stdout),
         );
@@ -87,7 +114,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
             assert(path, `Expected path from uv, got: stderr=${stderr}`);
             return path;
           },
-        );
+        ).pipe(Effect.catchTag("UvUnknownError", UvResolutionError.refine));
       },
       addScript(options: {
         script: string;
@@ -111,17 +138,10 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
           options.directory,
         ];
         return uv({ args }).pipe(
-          Effect.catchTag("UvError", (cause) =>
-            Effect.fail(
-              cause.stderr.includes(
-                "error: No `pyproject.toml` found in current directory or any parent directory",
-              )
-                ? new MissingPyProjectError({
-                    directory: options.directory,
-                    cause,
-                  })
-                : cause,
-            ),
+          Effect.catchTag("UvUnknownError", UvResolutionError.refine),
+          Effect.catchTag(
+            "UvUnknownError",
+            UvMissingPyProjectError.refine.bind(null, options.directory),
           ),
           Effect.andThen(Effect.void),
         );
@@ -179,7 +199,7 @@ function createUv(
       }),
     );
     if (exitCode !== 0) {
-      return yield* new UvError({ command, exitCode, stderr });
+      return yield* new UvUnknownError({ command, exitCode, stderr });
     }
     return { stdout, stderr };
   });

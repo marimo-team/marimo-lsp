@@ -90,7 +90,18 @@ export class SandboxController extends Effect.Service<SandboxController>()(
           }).pipe(
             // Log everything
             Effect.tapErrorCause(Effect.logError),
-            // PlatformError(s)
+            Effect.catchTag(
+              "UvUnknownError",
+              Effect.fnUntraced(function* () {
+                yield* showErrorAndPromptLogs(
+                  "uv command failed. Check the logs for details.",
+                  {
+                    code,
+                    channel: uv.channel,
+                  },
+                );
+              }),
+            ),
             Effect.catchTag(
               "UvExecutionError",
               Effect.fnUntraced(function* () {
@@ -104,10 +115,10 @@ export class SandboxController extends Effect.Service<SandboxController>()(
               }),
             ),
             Effect.catchTag(
-              "UvError",
+              "UvResolutionError",
               Effect.fnUntraced(function* () {
                 yield* showErrorAndPromptLogs(
-                  "uv failed to resolve or sync the notebook environment. Check for dependency conflicts or invalid package specifications in the notebook metadata.",
+                  "Dependency conflict. Your notebook has conflicting package version requirements.",
                   {
                     code,
                     channel: uv.channel,
@@ -208,7 +219,7 @@ const findRequirements = (uv: Uv, notebook: vscode.NotebookDocument) =>
     return requirements satisfies ReadonlyArray<string>;
   }).pipe(
     Effect.catchTag(
-      "MissingPep723MetadataError",
+      "UvMissingPep723MetadataError",
       Effect.fnUntraced(function* () {
         yield* Effect.logDebug("No PEP 723 metadata.");
         return ["marimo", "pyzmq"];

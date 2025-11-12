@@ -43,7 +43,7 @@ export function installPackages(
             const venvPath = options.venvPath;
             yield* uv.addProject({ directory: venvPath, packages }).pipe(
               Effect.catchTag(
-                "MissingPyProjectError",
+                "UvMissingPyProjectError",
                 Effect.fnUntraced(function* () {
                   yield* Effect.logWarning(
                     "Failed to `uv add`, attempting `uv pip install`.",
