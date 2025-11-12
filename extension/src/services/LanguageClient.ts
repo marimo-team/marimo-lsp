@@ -55,14 +55,16 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
         }),
       );
 
+      const outputChannel =
+        yield* code.window.createLogOutputChannel("marimo-lsp");
+
       const client = new lsp.LanguageClient(
         "marimo-lsp",
         "Marimo Language Server",
         { run: exec, debug: exec },
         {
           // create a dedicated output channel for marimo-lsp messages
-          outputChannel:
-            yield* code.window.createLogOutputChannel("marimo-lsp"),
+          outputChannel,
           revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
         },
       );
@@ -88,6 +90,10 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
       yield* Effect.addFinalizer(() => Effect.promise(() => client.dispose()));
 
       return {
+        channel: {
+          name: outputChannel.name,
+          show: outputChannel.show.bind(outputChannel),
+        },
         restart: code.window.withProgress(
           {
             location: code.ProgressLocation.Notification,

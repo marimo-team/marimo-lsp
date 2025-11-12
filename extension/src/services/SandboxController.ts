@@ -90,51 +90,44 @@ export class SandboxController extends Effect.Service<SandboxController>()(
           }).pipe(
             // Log everything
             Effect.tapErrorCause(Effect.logError),
-            Effect.catchTag(
-              "UvUnknownError",
-              Effect.fnUntraced(function* () {
-                yield* showErrorAndPromptLogs(
-                  "uv command failed. Check the logs for details.",
-                  {
-                    code,
-                    channel: uv.channel,
-                  },
-                );
-              }),
+            Effect.catchTag("UvExecutionError", () =>
+              showErrorAndPromptLogs(
+                "Failed to execute uv. Ensure uv is installed and accessible in your PATH.",
+                {
+                  code,
+                  channel: uv.channel,
+                },
+              ),
             ),
-            Effect.catchTag(
-              "UvExecutionError",
-              Effect.fnUntraced(function* () {
-                yield* showErrorAndPromptLogs(
-                  "Failed to execute uv. Ensure uv is installed and accessible in your PATH.",
-                  {
-                    code,
-                    channel: uv.channel,
-                  },
-                );
-              }),
+            Effect.catchTag("UvUnknownError", () =>
+              showErrorAndPromptLogs(
+                "uv command failed. Check the logs for details.",
+                {
+                  code,
+                  channel: uv.channel,
+                },
+              ),
             ),
-            Effect.catchTag(
-              "UvResolutionError",
-              Effect.fnUntraced(function* () {
-                yield* showErrorAndPromptLogs(
-                  "Dependency conflict. Your notebook has conflicting package version requirements.",
-                  {
-                    code,
-                    channel: uv.channel,
-                  },
-                );
-              }),
+            Effect.catchTag("UvResolutionError", () =>
+              showErrorAndPromptLogs(
+                "Dependency conflict. Your notebook has conflicting package version requirements.",
+                {
+                  code,
+                  channel: uv.channel,
+                },
+              ),
             ),
-            Effect.catchTag(
-              "ExecuteCommandError",
-              "LanguageClientStartError",
-              Effect.fnUntraced(function* () {
-                yield* showErrorAndPromptLogs(
-                  "Failed to communicate with marimo language server (marimo-lsp).",
-                  { code, channel },
-                );
-              }),
+            Effect.catchTag("ExecuteCommandError", () =>
+              showErrorAndPromptLogs(
+                "Failed to communicate with marimo language server.",
+                { code, channel: client.channel },
+              ),
+            ),
+            Effect.catchTag("LanguageClientStartError", () =>
+              showErrorAndPromptLogs(
+                "Failed to start marimo language server (marimo-lsp).",
+                { code, channel },
+              ),
             ),
             Effect.annotateLogs({ notebook: notebook.uri.fsPath }),
           ),

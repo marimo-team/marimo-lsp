@@ -71,7 +71,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
     return {
       channel: {
         name: channel.name,
-        show: () => channel.show(),
+        show: channel.show.bind(channel),
       },
       venv(path: string, options: { python?: string; clear?: true } = {}) {
         const args = ["venv", path];

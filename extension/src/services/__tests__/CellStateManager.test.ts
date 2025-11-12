@@ -23,6 +23,10 @@ const withTestCtx = Effect.fnUntraced(function* () {
       Layer.succeed(
         LanguageClient,
         LanguageClient.make({
+          channel: {
+            name: "marimo-lsp",
+            show() {},
+          },
           restart: Effect.void,
           executeCommand(cmd) {
             return Ref.update(executions, (arr) => [...arr, cmd]);
