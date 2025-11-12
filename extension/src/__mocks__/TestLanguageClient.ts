@@ -37,6 +37,10 @@ export const TestLanguageClientLive = Layer.scoped(
         }),
     );
     return LanguageClient.make({
+      channel: {
+        name: "marimo-lsp",
+        show() {},
+      },
       restart: Effect.void,
       executeCommand(cmd) {
         return Effect.tryPromise({
