@@ -3,6 +3,7 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Either, Layer } from "effect";
+import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Uv } from "../../services/Uv.ts";
 
 const python = "3.13";
@@ -23,7 +24,11 @@ class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
   }),
 }) {}
 
-const UvLive = Layer.provideMerge(Uv.Default, TmpDir.Default);
+const UvLive = Layer.empty.pipe(
+  Layer.merge(Uv.Default),
+  Layer.merge(TmpDir.Default),
+  Layer.provide(TestVsCode.Default),
+);
 
 describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
@@ -46,10 +51,10 @@ describe("Uv", () => {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
         const result = yield* Effect.either(
-          uv.add(["httpx"], { directory: tmpdir.path }),
+          uv.addProject({ directory: tmpdir.path, packages: ["httpx"] }),
         );
         assert(Either.isLeft(result), "Expected failure");
-        assert.strictEqual(result.left._tag, "MissingPyProjectError");
+        assert.strictEqual(result.left._tag, "UvMissingPyProjectError");
       }),
     );
   });
@@ -102,6 +107,63 @@ describe("Uv", () => {
         dependencies = []
         "
       `);
+      }),
+    );
+  });
+
+  it.layer(Layer.fresh(UvLive))((it) => {
+    it.scoped(
+      "should fail with UvResolutionError on conflicting dependencies",
+      Effect.fnUntraced(function* () {
+        const uv = yield* Uv;
+        const tmpdir = yield* TmpDir;
+
+        // Create a script with conflicting dependencies
+        const script = NodePath.join(tmpdir.path, "conflict.py");
+        NodeFs.writeFileSync(
+          script,
+          `\
+# /// script
+# requires-python = ">=3.13"
+# dependencies = ["pydantic>=2", "pydantic<2"]
+# ///
+
+print("This should fail to sync")
+`,
+          { encoding: "utf8" },
+        );
+
+        // Attempt to sync the script, which should fail with resolution error
+        const result = yield* Effect.either(uv.syncScript({ script }));
+
+        assert(Either.isLeft(result), "Expected failure");
+        assert.strictEqual(result.left._tag, "UvResolutionError");
+      }),
+    );
+  });
+
+  it.layer(Layer.fresh(UvLive))((it) => {
+    it.scoped(
+      "should fail with UvMissingPep723MetadataError when script has no metadata",
+      Effect.fnUntraced(function* () {
+        const uv = yield* Uv;
+        const tmpdir = yield* TmpDir;
+
+        // Create a script without PEP 723 metadata
+        const script = NodePath.join(tmpdir.path, "no-metadata.py");
+        NodeFs.writeFileSync(
+          script,
+          `\
+print("This script has no PEP 723 metadata")
+`,
+          { encoding: "utf8" },
+        );
+
+        // Attempt to get current deps, which should fail
+        const result = yield* Effect.either(uv.currentDeps({ script }));
+
+        assert(Either.isLeft(result), "Expected failure");
+        assert.strictEqual(result.left._tag, "UvMissingPep723MetadataError");
       }),
     );
   });

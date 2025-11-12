@@ -1,38 +1,78 @@
 import { Command, CommandExecutor } from "@effect/platform";
+import type { PlatformError } from "@effect/platform/Error";
 import { NodeContext } from "@effect/platform-node";
 import { Data, Effect, Stream, String } from "effect";
+import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
+import { VsCode } from "./VsCode.ts";
 
-// Helper function to collect stream output as a string
-const runString = <E, R>(
-  stream: Stream.Stream<Uint8Array, E, R>,
-): Effect.Effect<string, E, R> =>
-  stream.pipe(Stream.decodeText(), Stream.runFold(String.empty, String.concat));
+class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
+  command: Command.Command;
+  cause: PlatformError;
+}> {}
 
-class UvError extends Data.TaggedError("UvError")<{
+class UvUnknownError extends Data.TaggedError("UvUnknownError")<{
   command: Command.Command;
   exitCode?: CommandExecutor.ExitCode;
   stderr: string;
 }> {}
 
-class MissingPyProjectError extends Data.TaggedError("MissingPyProjectError")<{
+class UvMissingPyProjectError extends Data.TaggedError(
+  "UvMissingPyProjectError",
+)<{
   directory: string;
-  cause: UvError;
-}> {}
+  cause: UvUnknownError;
+}> {
+  static refine(directory: string, cause: UvUnknownError) {
+    return Effect.fail(
+      cause.stderr.includes(
+        "error: No `pyproject.toml` found in current directory or any parent directory",
+      )
+        ? new UvMissingPyProjectError({ directory, cause })
+        : cause,
+    );
+  }
+}
 
-class MissingPep723MetadataError extends Data.TaggedError(
-  "MissingPep723MetadataError",
+class UvMissingPep723MetadataError extends Data.TaggedError(
+  "UvMissingPep723MetadataError",
 )<{
   script: string;
-  cause: UvError;
-}> {}
+  cause: UvUnknownError;
+}> {
+  static refine(script: string, cause: UvUnknownError) {
+    return Effect.fail(
+      cause.stderr.includes("does not contain a PEP 723 metadata")
+        ? new UvMissingPep723MetadataError({ script, cause })
+        : cause,
+    );
+  }
+}
+
+class UvResolutionError extends Data.TaggedError("UvResolutionError")<{
+  cause: UvUnknownError;
+}> {
+  static refine(cause: UvUnknownError) {
+    return Effect.fail(
+      cause.stderr.includes("No solution found when resolving dependencies")
+        ? new UvResolutionError({ cause })
+        : cause,
+    );
+  }
+}
 
 export class Uv extends Effect.Service<Uv>()("Uv", {
   dependencies: [NodeContext.layer],
   scoped: Effect.gen(function* () {
+    const code = yield* VsCode;
     const executor = yield* CommandExecutor.CommandExecutor;
-    const uv = createUv(executor);
+    const channel = yield* code.window.createOutputChannel("marimo (uv)");
+    const uv = createUv(executor, channel);
     return {
+      channel: {
+        name: channel.name,
+        show: () => channel.show(),
+      },
       venv(path: string, options: { python?: string; clear?: true } = {}) {
         const args = ["venv", path];
         if (options.python) {
@@ -47,15 +87,10 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         return uv({
           args: ["tree", "--script", options.script, "-d", "0", "--quiet"],
         }).pipe(
-          Effect.catchTag("UvError", (cause) =>
-            Effect.fail(
-              cause.stderr.includes("does not contain a PEP 723 metadata")
-                ? new MissingPep723MetadataError({
-                    script: options.script,
-                    cause,
-                  })
-                : cause,
-            ),
+          Effect.catchTag("UvUnknownError", UvResolutionError.refine),
+          Effect.catchTag(
+            "UvUnknownError",
+            UvMissingPep723MetadataError.refine.bind(null, options.script),
           ),
           Effect.map((e) => e.stdout),
         );
@@ -67,7 +102,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         }
         return uv({ args }).pipe(Effect.andThen(Effect.void));
       },
-      sync(options: { script: string }) {
+      syncScript(options: { script: string }) {
         return Effect.andThen(
           uv({ args: ["sync", "--script", options.script] }),
           ({ stderr }) => {
@@ -79,38 +114,34 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
             assert(path, `Expected path from uv, got: stderr=${stderr}`);
             return path;
           },
-        );
+        ).pipe(Effect.catchTag("UvUnknownError", UvResolutionError.refine));
       },
-      add(
-        packages: ReadonlyArray<string>,
-        options: {
-          readonly directory?: string;
-          readonly script?: string;
-          readonly noSync?: boolean;
-        } = {},
-      ) {
-        const args = ["add", ...packages];
-        if (options.directory) {
-          args.push("--directory", options.directory);
-        }
-        if (options.script) {
-          args.push("--script", options.script);
-        }
+      addScript(options: {
+        script: string;
+        packages: ReadonlyArray<string>;
+        noSync?: boolean;
+      }) {
+        const args = ["add", ...options.packages, "--script", options.script];
         if (options.noSync) {
           args.push("--no-sync");
         }
+        return uv({ args });
+      },
+      addProject(options: {
+        directory: string;
+        packages: ReadonlyArray<string>;
+      }) {
+        const args = [
+          "add",
+          ...options.packages,
+          "--directory",
+          options.directory,
+        ];
         return uv({ args }).pipe(
-          Effect.catchTag("UvError", (cause) =>
-            Effect.fail(
-              cause.stderr.includes(
-                "error: No `pyproject.toml` found in current directory or any parent directory",
-              )
-                ? new MissingPyProjectError({
-                    directory: options.directory ?? "",
-                    cause,
-                  })
-                : cause,
-            ),
+          Effect.catchTag("UvUnknownError", UvResolutionError.refine),
+          Effect.catchTag(
+            "UvUnknownError",
+            UvMissingPyProjectError.refine.bind(null, options.directory),
           ),
           Effect.andThen(Effect.void),
         );
@@ -132,7 +163,10 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
   }),
 }) {}
 
-function createUv(executor: CommandExecutor.CommandExecutor) {
+function createUv(
+  executor: CommandExecutor.CommandExecutor,
+  channel: vscode.OutputChannel,
+) {
   return Effect.fn("uv")(function* (options: {
     readonly args: ReadonlyArray<string>;
     readonly env?: Record<string, string>;
@@ -152,21 +186,37 @@ function createUv(executor: CommandExecutor.CommandExecutor) {
             // Waits for the process to exit and returns
             // the ExitCode of the command that was run
             process.exitCode,
-            runString(process.stdout),
-            runString(process.stderr),
+            runString(process.stdout, channel),
+            runString(process.stderr, channel),
           ],
           { concurrency: 3 },
         ),
       ),
       Effect.scoped,
+      Effect.catchTags({
+        BadArgument: (cause) => new UvExecutionError({ command, cause }),
+        SystemError: (cause) => new UvExecutionError({ command, cause }),
+      }),
     );
     if (exitCode !== 0) {
-      return yield* new UvError({
-        command,
-        exitCode,
-        stderr,
-      });
+      return yield* new UvUnknownError({ command, exitCode, stderr });
     }
     return { stdout, stderr };
   });
+}
+
+/** Helper to collect stream output as a string */
+function runString<E, R>(
+  stream: Stream.Stream<Uint8Array, E, R>,
+  channel: vscode.OutputChannel,
+): Effect.Effect<string, E, R> {
+  return stream.pipe(
+    Stream.decodeText(),
+    Stream.tap((text) => {
+      // Forward all logs to the marimo (uv) channel
+      channel.append(text);
+      return Effect.void;
+    }),
+    Stream.runFold(String.empty, String.concat),
+  );
 }

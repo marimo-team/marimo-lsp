@@ -7,8 +7,10 @@ import { getNotebookUri } from "../types.ts";
 import { getCellExecutableCode } from "../utils/getCellExecutableCode.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
 import { getNotebookCellId } from "../utils/notebook.ts";
+import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
 import { LanguageClient } from "./LanguageClient.ts";
+import { OutputChannel } from "./OutputChannel.ts";
 import { PythonExtension } from "./PythonExtension.ts";
 import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
@@ -19,6 +21,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
+      const channel = yield* OutputChannel;
       const client = yield* LanguageClient;
       const python = yield* PythonExtension;
 
@@ -36,7 +39,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
 
       // Set up execution handler
       controller.executeHandler = (cells, notebook) =>
-        runPromise(
+        runPromise<void, never>(
           Effect.gen(function* () {
             // sandboxing only works with titled (saved) notebooks
             if (notebook.isUntitled) {
@@ -66,7 +69,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             }
 
             // always ensure the env is up to date
-            const venv = yield* uv.sync({ script: notebook.uri.fsPath });
+            const venv = yield* uv.syncScript({ script: notebook.uri.fsPath });
             const executable = NodePath.join(venv, "bin", "python");
             yield* python.updateActiveEnvironmentPath(executable);
 
@@ -85,7 +88,54 @@ export class SandboxController extends Effect.Service<SandboxController>()(
               },
             });
           }).pipe(
-            Effect.catchAll(Effect.logError),
+            // Log everything
+            Effect.tapErrorCause(Effect.logError),
+            Effect.catchTag(
+              "UvUnknownError",
+              Effect.fnUntraced(function* () {
+                yield* showErrorAndPromptLogs(
+                  "uv command failed. Check the logs for details.",
+                  {
+                    code,
+                    channel: uv.channel,
+                  },
+                );
+              }),
+            ),
+            Effect.catchTag(
+              "UvExecutionError",
+              Effect.fnUntraced(function* () {
+                yield* showErrorAndPromptLogs(
+                  "Failed to execute uv. Ensure uv is installed and accessible in your PATH.",
+                  {
+                    code,
+                    channel: uv.channel,
+                  },
+                );
+              }),
+            ),
+            Effect.catchTag(
+              "UvResolutionError",
+              Effect.fnUntraced(function* () {
+                yield* showErrorAndPromptLogs(
+                  "Dependency conflict. Your notebook has conflicting package version requirements.",
+                  {
+                    code,
+                    channel: uv.channel,
+                  },
+                );
+              }),
+            ),
+            Effect.catchTag(
+              "ExecuteCommandError",
+              "LanguageClientStartError",
+              Effect.fnUntraced(function* () {
+                yield* showErrorAndPromptLogs(
+                  "Failed to communicate with marimo language server (marimo-lsp).",
+                  { code, channel },
+                );
+              }),
+            ),
             Effect.annotateLogs({ notebook: notebook.uri.fsPath }),
           ),
         );
@@ -113,8 +163,9 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             Effect.catchAllCause((cause) =>
               Effect.gen(function* () {
                 yield* Effect.logError(cause);
-                yield* code.window.showErrorMessage(
-                  "Failed to interrupt execution. Please check the logs for details.",
+                yield* showErrorAndPromptLogs(
+                  "Failed to interrupt execution.",
+                  { code, channel },
                 );
               }),
             ),
@@ -168,7 +219,7 @@ const findRequirements = (uv: Uv, notebook: vscode.NotebookDocument) =>
     return requirements satisfies ReadonlyArray<string>;
   }).pipe(
     Effect.catchTag(
-      "MissingPep723MetadataError",
+      "UvMissingPep723MetadataError",
       Effect.fnUntraced(function* () {
         yield* Effect.logDebug("No PEP 723 metadata.");
         return ["marimo", "pyzmq"];

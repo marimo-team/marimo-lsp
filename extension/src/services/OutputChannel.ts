@@ -7,7 +7,7 @@ export class OutputChannel extends Effect.Service<OutputChannel>()(
   {
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
-      return yield* code.window.createOutputChannel("marimo");
+      return yield* code.window.createLogOutputChannel("marimo");
     }),
   },
 ) {}

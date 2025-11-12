@@ -61,7 +61,8 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
         { run: exec, debug: exec },
         {
           // create a dedicated output channel for marimo-lsp messages
-          outputChannel: yield* code.window.createOutputChannel("marimo-lsp"),
+          outputChannel:
+            yield* code.window.createLogOutputChannel("marimo-lsp"),
           revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
         },
       );

@@ -41,9 +41,9 @@ export function installPackages(
 
           if (options.venvPath) {
             const venvPath = options.venvPath;
-            yield* uv.add(packages, { directory: venvPath }).pipe(
+            yield* uv.addProject({ directory: venvPath, packages }).pipe(
               Effect.catchTag(
-                "MissingPyProjectError",
+                "UvMissingPyProjectError",
                 Effect.fnUntraced(function* () {
                   yield* Effect.logWarning(
                     "Failed to `uv add`, attempting `uv pip install`.",
@@ -63,7 +63,7 @@ export function installPackages(
             );
 
             // sync the virtual env
-            yield* uv.sync({ script: notebook.uri.fsPath });
+            yield* uv.syncScript({ script: notebook.uri.fsPath });
           }
           progress.report({
             message: `Successfully installed ${packages.join(", ")}`,
@@ -93,7 +93,7 @@ export const uvAddScriptSafe = Effect.fnUntraced(function* (
     NodeFs.promises.writeFile(tmpFile, notebook.metadata?.header?.value ?? ""),
   );
 
-  yield* uv.add(packages, { script: tmpFile, noSync: true });
+  yield* uv.addScript({ script: tmpFile, packages, noSync: true });
 
   const newHeader = yield* Effect.promise(async () =>
     NodeFs.promises.readFile(tmpFile, "utf-8"),
