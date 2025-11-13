@@ -166,21 +166,34 @@ const createOrUpdateController = Effect.fnUntraced(function* (options: {
               Stream.mapEffect(
                 Effect.fnUntraced(function* (e) {
                   if (!e.selected) {
-                    // NB: We don't delete from selections when deselected
-                    // because another controller will overwrite it when selected
+                    // Clear the selection when deselected to avoid stale references
+                    const wasSelected = yield* Ref.modify(
+                      selectionsRef,
+                      (selections) => {
+                        const current = HashMap.get(selections, e.notebook);
+                        const isCurrentController = Option.match(current, {
+                          onSome: (c) => c.id === controller.id,
+                          onNone: () => false,
+                        });
+                        if (isCurrentController) {
+                          return [true, HashMap.remove(selections, e.notebook)];
+                        }
+                        return [false, selections];
+                      },
+                    );
+
+                    if (wasSelected) {
+                      yield* Effect.logDebug(
+                        "Controller deselected for notebook, cleared selection",
+                      ).pipe(
+                        Effect.annotateLogs({
+                          controllerId: controller.id,
+                          notebookUri: e.notebook.uri.toString(),
+                        }),
+                      );
+                    }
                     return;
                   }
-                  yield* Ref.update(selectionsRef, (selections) =>
-                    HashMap.set(selections, e.notebook, controller),
-                  );
-                  yield* Effect.logDebug(
-                    "Updated controller for notebook",
-                  ).pipe(
-                    Effect.annotateLogs({
-                      controllerId: controller.id,
-                      notebookUri: e.notebook.uri.toString(),
-                    }),
-                  );
                 }),
               ),
               Stream.runDrain,
