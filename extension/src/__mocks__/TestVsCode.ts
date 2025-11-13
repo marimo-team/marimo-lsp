@@ -1383,6 +1383,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           }),
           workspace: Workspace.make({
             fs: {
+              readFile() {
+                return Effect.succeed(new Uint8Array());
+              },
               writeFile() {
                 return Effect.succeed(true);
               },

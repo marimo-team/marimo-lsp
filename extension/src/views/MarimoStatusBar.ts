@@ -1,5 +1,9 @@
+import * as NodeOs from "node:os";
+import * as NodePath from "node:path";
 import { Effect, Either, Layer, Option } from "effect";
 import { unreachable } from "../assert.ts";
+import { NotebookSerializer } from "../services/NotebookSerializer.ts";
+import { ExtensionContext } from "../services/Storage.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { Links } from "../utils/links.ts";
 import { StatusBar } from "./StatusBar.ts";
@@ -11,6 +15,8 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const statusBar = yield* StatusBar;
     const code = yield* VsCode;
+    const context = yield* ExtensionContext;
+    const serializer = yield* NotebookSerializer;
 
     // Register the command that shows the quick pick menu
     yield* code.commands.registerCommand(
@@ -54,7 +60,16 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
             break;
           }
           case "tutorials": {
-            yield* tutorialCommands(code);
+            yield* tutorialCommands({ code, context, serializer }).pipe(
+              Effect.catchAll((error) =>
+                Effect.gen(function* () {
+                  yield* Effect.logError("Failed to open tutorial", error);
+                  yield* code.window.showErrorMessage(
+                    "Failed to open tutorial. See marimo logs for more info.",
+                  );
+                }),
+              ),
+            );
             break;
           }
           case "discord": {
@@ -101,37 +116,44 @@ function openUrl(code: VsCode, url: `https://${string}`) {
   return code.env.openExternal(Either.getOrThrow(code.utils.parseUri(url)));
 }
 
-// TODO: Open in local vscode instead of external browser
 const TUTORIALS = [
   // Get started with marimo basics
-  ["Intro", "https://links.marimo.app/tutorial-intro", "book"],
+  ["Intro", "intro.py", "book"],
   // Learn how cells interact with each other
-  ["Dataflow", "https://links.marimo.app/tutorial-dataflow", "repo-forked"],
+  ["Dataflow", "dataflow.py", "repo-forked"],
   // Create interactive UI components
-  ["UI Elements", "https://links.marimo.app/tutorial-ui", "layout"],
+  ["UI Elements", "ui.py", "layout"],
   // Format text with parameterized markdown
-  ["Markdown", "https://links.marimo.app/tutorial-markdown", "markdown"],
+  ["Markdown", "markdown.py", "markdown"],
   // Create interactive visualizations
-  ["Plotting", "https://links.marimo.app/tutorial-plotting", "graph"],
+  ["Plotting", "plots.py", "graph"],
   // Query databases directly in marimo
-  ["SQL", "https://links.marimo.app/tutorial-sql", "database"],
+  ["SQL", "sql.py", "database"],
   // Customize the layout of your cells' output
-  ["Layout", "https://links.marimo.app/tutorial-layout", "layout-panel-left"],
+  ["Layout", "layout.py", "layout-panel-left"],
   // Understand marimo's pure-Python file format
-  ["File Format", "https://links.marimo.app/tutorial-fileformat", "file"],
+  ["File Format", "fileformat.py", "file"],
   // Transiting from Jupyter to marimo
-  ["Coming from Jupyter", "https://links.marimo.app/tutorial-jupyter", "code"],
+  ["Coming from Jupyter", "for_jupyter_users.py", "code"],
 ] as const;
 
 /**
  * Shows tutorial options
  */
-function tutorialCommands(code: VsCode) {
+function tutorialCommands({
+  code,
+  context,
+  serializer,
+}: {
+  code: VsCode;
+  context: Pick<import("vscode").ExtensionContext, "extensionUri">;
+  serializer: NotebookSerializer;
+}) {
   return Effect.gen(function* () {
     const selection = yield* code.window.showQuickPickItems(
-      TUTORIALS.map(([label, url, icon]) => ({
+      TUTORIALS.map(([label, filename, icon]) => ({
         label,
-        description: url,
+        description: filename,
         iconPath: new code.ThemeIcon(icon),
       })),
       {
@@ -143,6 +165,74 @@ function tutorialCommands(code: VsCode) {
       return;
     }
 
-    yield* openUrl(code, selection.value.description);
+    const filename = selection.value.description;
+
+    // Build path to tutorial file
+    const tutorialUri = code.Uri.joinPath(
+      context.extensionUri,
+      "tutorials",
+      filename,
+    );
+
+    // Read tutorial file content
+    const bytes = yield* code.workspace.fs.readFile(tutorialUri);
+
+    // Try to write to temp file, fall back to untitled if it fails
+    const result = yield* Effect.either(
+      Effect.gen(function* () {
+        // Create temp file path
+        const tempDir = NodeOs.tmpdir();
+        const tempFilePath = NodePath.join(
+          tempDir,
+          `marimo_tutorial_${filename}`,
+        );
+        const tempFileUri = code.Uri.file(tempFilePath);
+
+        // Write tutorial content to temp file
+        yield* code.workspace.fs.writeFile(tempFileUri, bytes);
+
+        // Open the temp file as a notebook
+        const notebook =
+          yield* code.workspace.openNotebookDocument(tempFileUri);
+        yield* code.window.showNotebookDocument(notebook);
+
+        yield* Effect.logInfo("Opened tutorial as temp file").pipe(
+          Effect.annotateLogs({
+            tutorial: filename,
+            path: tempFilePath,
+          }),
+        );
+      }),
+    );
+
+    // If temp file approach failed, fall back to untitled
+    if (Either.isLeft(result)) {
+      yield* Effect.logWarning(
+        "Failed to create temp file, opening as untitled",
+      ).pipe(
+        Effect.annotateLogs({
+          tutorial: filename,
+          error: result.left,
+        }),
+      );
+
+      // Deserialize Python file to notebook data
+      const notebookData = yield* serializer.deserializeEffect(bytes);
+
+      // Open as untitled notebook
+      const notebook = yield* code.workspace.openUntitledNotebookDocument(
+        serializer.notebookType,
+        notebookData,
+      );
+
+      // Show the notebook
+      yield* code.window.showNotebookDocument(notebook);
+
+      yield* Effect.logInfo("Opened tutorial as untitled").pipe(
+        Effect.annotateLogs({
+          tutorial: filename,
+        }),
+      );
+    }
   });
 }

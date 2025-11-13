@@ -90,7 +90,10 @@ export function makeActivate(
   layer: Layer.Layer<LanguageClient | VsCode | PythonExtension>,
   minimumLogLevel: LogLevel.LogLevel,
 ): (
-  context: Pick<vscode.ExtensionContext, "globalState" | "workspaceState">,
+  context: Pick<
+    vscode.ExtensionContext,
+    "globalState" | "workspaceState" | "extensionUri"
+  >,
 ) => Promise<vscode.Disposable> {
   return (context) =>
     pipe(

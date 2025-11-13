@@ -1,4 +1,5 @@
 import { Effect, Layer } from "effect";
+import type * as vscode from "vscode";
 import { ExtensionContext } from "../services/Storage.ts";
 
 export class Memento {
@@ -25,6 +26,31 @@ export class Memento {
 export const TestExtensionContextLive = Layer.succeed(ExtensionContext, {
   globalState: new Memento(),
   workspaceState: new Memento(),
+  extensionUri: {
+    scheme: "file",
+    authority: "",
+    path: "/test/extension/path",
+    query: "",
+    fragment: "",
+    fsPath: "/test/extension/path",
+    with: () =>
+      ({
+        scheme: "file",
+        authority: "",
+        path: "/test",
+        query: "",
+        fragment: "",
+        fsPath: "/test",
+      }) as vscode.Uri,
+    toString: () => "file:///test/extension/path",
+    toJSON: () => ({
+      scheme: "file",
+      authority: "",
+      path: "/test/extension/path",
+      query: "",
+      fragment: "",
+    }),
+  } as vscode.Uri,
 });
 
 export function getTestExtensionContext() {

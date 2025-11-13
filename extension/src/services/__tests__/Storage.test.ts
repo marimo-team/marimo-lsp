@@ -1,6 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Schema } from "effect";
 import { Memento } from "../../__mocks__/TestExtensionContext.ts";
+import type * as vscode from "vscode";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import {
   createStorageKey,
@@ -19,6 +20,25 @@ const withTestCtx = Effect.fnUntraced(function* (
       Layer.succeed(ExtensionContext, {
         globalState: ctx.globalState ?? new Memento(),
         workspaceState: ctx.workspaceState ?? new Memento(),
+        extensionUri: {
+          scheme: "file",
+          authority: "",
+          path: "/test/extension/path",
+          query: "",
+          fragment: "",
+          fsPath: "/test/extension/path",
+          with(this) {
+            return this;
+          },
+          toString: () => "file:///test/extension/path",
+          toJSON: () => ({
+            scheme: "file",
+            authority: "",
+            path: "/test/extension/path",
+            query: "",
+            fragment: "",
+          }),
+        },
       }),
     ),
   );

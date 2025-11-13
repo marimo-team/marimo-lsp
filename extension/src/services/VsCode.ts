@@ -272,6 +272,9 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
     const api = vscode.workspace;
     return {
       fs: {
+        readFile(uri: vscode.Uri) {
+          return Effect.promise(() => api.fs.readFile(uri));
+        },
         writeFile(uri: vscode.Uri, contents: Uint8Array) {
           return Effect.promise(() => api.fs.writeFile(uri, contents));
         },
