@@ -94,6 +94,23 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
       }),
     );
 
+    // Register the command that opens tutorials directly
+    yield* code.commands.registerCommand(
+      "marimo.openTutorial",
+      Effect.gen(function* () {
+        yield* tutorialCommands({ code, context, serializer }).pipe(
+          Effect.catchAll((error) =>
+            Effect.gen(function* () {
+              yield* Effect.logError("Failed to open tutorial", error);
+              yield* code.window.showErrorMessage(
+                "Failed to open tutorial. See marimo logs for more info.",
+              );
+            }),
+          ),
+        );
+      }),
+    );
+
     // Create the status bar item
     yield* statusBar.createSimpleStatusBarItem({
       id: "marimo.statusBar",
