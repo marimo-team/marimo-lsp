@@ -1,7 +1,4 @@
-import {
-  MarkdownParser,
-  SQLParser,
-} from "@marimo-team/smart-cells";
+import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import {
   Effect,
   Fiber,
