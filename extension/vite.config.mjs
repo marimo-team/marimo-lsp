@@ -9,7 +9,7 @@ import stylesheet from "./scripts/vite-plugin-virtual-stylesheet.mjs";
 export default vite.defineConfig({
   build: {
     // Shipped in: Electron 37.7, VSCode 1.106
-    target: "chrome138", 
+    target: "chrome138",
     minify: process.env.NODE_ENV === "production",
     sourcemap: process.env.NODE_ENV === "development" ? "inline" : false,
     lib: {
