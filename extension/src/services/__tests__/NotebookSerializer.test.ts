@@ -124,6 +124,154 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
     }),
   );
 
+  it.effect(
+    "deserializes mo.md() without f-strings to markdown cells",
+    Effect.fnUntraced(function* () {
+      const serializer = yield* NotebookSerializer;
+      const source = `import marimo
+
+__generated_with = "0.9.0"
+app = marimo.App()
+
+
+@app.cell
+def _():
+    import marimo as mo
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    # Hello World
+
+    This is a markdown cell.
+    """)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md('''Single quotes''')
+    return
+
+
+if __name__ == "__main__":
+    app.run()`;
+
+      const bytes = new TextEncoder().encode(source);
+      const notebook = yield* serializer.deserializeEffect(bytes);
+
+      // First cell should be Python
+      expect(notebook.cells[0].kind).toBe(2);
+      expect(notebook.cells[0].languageId).toBe("python");
+      expect(notebook.cells[0].value).toBe("import marimo as mo");
+
+      // Second cell should be Markdown (not Python)
+      expect(notebook.cells[1].kind).toBe(1);
+      expect(notebook.cells[1].languageId).toBe("markdown");
+      expect(notebook.cells[1].value).toBe(
+        "# Hello World\n\nThis is a markdown cell.",
+      );
+
+      // Third cell should also be Markdown
+      expect(notebook.cells[2].kind).toBe(1);
+      expect(notebook.cells[2].languageId).toBe("markdown");
+      expect(notebook.cells[2].value).toBe("Single quotes");
+    }),
+  );
+
+  it.effect(
+    "keeps mo.md() with f-strings as Python cells",
+    Effect.fnUntraced(function* () {
+      const serializer = yield* NotebookSerializer;
+      const source = `import marimo
+
+__generated_with = "0.9.0"
+app = marimo.App()
+
+
+@app.cell
+def _():
+    import marimo as mo
+    name = "World"
+    return
+
+
+@app.cell
+def _(mo, name):
+    mo.md(f"""
+    # Hello {name}
+
+    This uses an f-string.
+    """)
+    return
+
+
+if __name__ == "__main__":
+    app.run()`;
+
+      const bytes = new TextEncoder().encode(source);
+      const notebook = yield* serializer.deserializeEffect(bytes);
+
+      // First cell should be Python
+      expect(notebook.cells[0].kind).toBe(2);
+      expect(notebook.cells[0].languageId).toBe("python");
+
+      // Second cell should remain Python (because it's an f-string)
+      expect(notebook.cells[1].kind).toBe(2);
+      expect(notebook.cells[1].languageId).toBe("python");
+      expect(notebook.cells[1].value).toContain("mo.md(f");
+      expect(notebook.cells[1].value).toContain("{name}");
+    }),
+  );
+
+  it.effect(
+    "round-trip markdown cells maintain mo.md() format",
+    Effect.fnUntraced(function* () {
+      const serializer = yield* NotebookSerializer;
+      const source = `import marimo
+
+__generated_with = "0.9.0"
+app = marimo.App()
+
+
+@app.cell
+def _():
+    import marimo as mo
+    return (mo,)
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    # Markdown Title
+
+    Some **bold** text.
+    """)
+    return
+
+
+if __name__ == "__main__":
+    app.run()`;
+
+      const bytes = new TextEncoder().encode(source);
+      const notebook = yield* serializer.deserializeEffect(bytes);
+
+      // Should be deserialized as markdown
+      expect(notebook.cells[1].kind).toBe(1);
+      expect(notebook.cells[1].languageId).toBe("markdown");
+
+      // Re-serialize and check it goes back to mo.md()
+      const serialized = yield* serializer.serializeEffect(notebook);
+      const serializedSource = new TextDecoder().decode(serialized).trim();
+
+      expect(removeGeneratedWith(serializedSource)).toBe(
+        removeGeneratedWith(source.trim()),
+      );
+    }),
+  );
+
   it.effect.each([
     ["simple notebook", "simple.txt"],
     ["notebook with named cells", "with_names.txt"],

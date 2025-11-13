@@ -8,6 +8,10 @@ const SQLMetadata = Schema.Struct({
   engine: Schema.String,
 });
 
+const MarkdownMetadata = Schema.Struct({
+  quotePrefix: Schema.Literal("", "f", "r", "fr", "rf"),
+});
+
 /**
  * Cell execution state
  */
@@ -17,7 +21,7 @@ export type CellState = typeof CellState.Type;
 /**
  * Cell language
  */
-export const CellLanguage = Schema.Literal("python", "sql");
+export const CellLanguage = Schema.Literal("python", "sql", "markdown");
 export type CellLanguage = typeof CellLanguage.Type;
 
 // TODO: passthrough unknown fields
@@ -42,6 +46,7 @@ export const CellMetadata = Schema.partial(
     languageMetadata: Schema.partial(
       Schema.Struct({
         sql: SQLMetadata,
+        markdown: MarkdownMetadata,
       }),
     ),
   }),

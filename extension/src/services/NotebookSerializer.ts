@@ -1,4 +1,4 @@
-import { SQLParser } from "@marimo-team/smart-cells";
+import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import {
   Effect,
   Fiber,
@@ -68,11 +68,35 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
         });
         const { cells, ...metadata } = yield* decodeDeserializeResponse(resp);
         const sqlParser = new SQLParser();
+        const markdownParser = new MarkdownParser();
+
         const notebook = {
           metadata: metadata,
           cells: cells.map((cell) => {
+            const isNonEmpty = Boolean(cell.code.trim());
+
+            // Check if this is a markdown cell (mo.md() without f-strings)
+            if (isNonEmpty && markdownParser.isSupported(cell.code)) {
+              const result = markdownParser.transformIn(cell.code);
+              if (!result.metadata.quotePrefix.includes("f")) {
+                return {
+                  // Hard code to avoid taking dep on VsCode
+                  kind: 1 satisfies vscode.NotebookCellKind.Markup,
+                  value: result.code,
+                  languageId: "markdown",
+                  metadata: {
+                    name: cell.name,
+                    options: cell.options,
+                    languageMetadata: {
+                      markdown: result.metadata,
+                    },
+                  } satisfies CellMetadata,
+                };
+              }
+            }
+
             // Check if this is a SQL cell
-            if (sqlParser.isSupported(cell.code)) {
+            if (isNonEmpty && sqlParser.isSupported(cell.code)) {
               const result = sqlParser.transformIn(cell.code);
               return {
                 // Hard code to avoid taking dep on VsCode
@@ -88,6 +112,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                 } satisfies CellMetadata,
               };
             }
+
             // Default Python cell
             return {
               // Hard code to avoid taking dep on VsCode
@@ -179,6 +204,7 @@ function notebookDataToMarimoNotebook(
 ): Effect.Effect<typeof MarimoNotebook.Type, ParseResult.ParseError, never> {
   const { cells, metadata = {} } = notebook;
   const sqlParser = new SQLParser();
+  const markdownParser = new MarkdownParser();
 
   // Deserialize response is just the IR for our notebook
   return decodeDeserializeResponse({
@@ -192,6 +218,24 @@ function notebookDataToMarimoNotebook(
 
       // Handle markup cells
       if (cell.kind === (1 satisfies vscode.NotebookCellKind.Markup)) {
+        // Check if this is a markdown cell with metadata
+        if (cell.languageId === "markdown") {
+          const result = markdownParser.transformOut(
+            cell.value,
+            cellMeta.pipe(
+              Option.flatMap((x) =>
+                Option.fromNullable(x.languageMetadata?.markdown),
+              ),
+              Option.getOrElse(() => markdownParser.defaultMetadata),
+            ),
+          );
+          return {
+            code: result.code,
+            name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
+            options: cell.metadata?.options ?? {},
+          };
+        }
+        // Otherwise use the default wrapInMarkdown
         return {
           code: wrapInMarkdown(cell.value),
           name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
@@ -227,8 +271,7 @@ function notebookDataToMarimoNotebook(
 
 export function wrapInMarkdown(code: string): string {
   return `
-mo.md(
-    r"""
+mo.md(r"""
 ${code}
-""")`.trim();
+""")`;
 }
