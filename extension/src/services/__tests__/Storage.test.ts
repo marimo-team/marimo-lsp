@@ -1,7 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Schema } from "effect";
 import { Memento } from "../../__mocks__/TestExtensionContext.ts";
-import type * as vscode from "vscode";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import {
   createStorageKey,
