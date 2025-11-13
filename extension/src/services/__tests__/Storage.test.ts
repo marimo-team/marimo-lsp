@@ -74,6 +74,13 @@ it.effect(
       const context = yield* ExtensionContext;
       expect(context).toMatchInlineSnapshot(`
         {
+          "extensionUri": {
+            "authority": "",
+            "fragment": "",
+            "path": "/test/extension/path",
+            "query": "",
+            "scheme": "file",
+          },
           "globalState": {},
           "workspaceState": {},
         }
@@ -93,6 +100,13 @@ it.effect(
       const context = yield* ExtensionContext;
       expect(context).toMatchInlineSnapshot(`
         {
+          "extensionUri": {
+            "authority": "",
+            "fragment": "",
+            "path": "/test/extension/path",
+            "query": "",
+            "scheme": "file",
+          },
           "globalState": {},
           "workspaceState": {
             "key": {
@@ -121,6 +135,13 @@ it.effect(
       const context = yield* ExtensionContext;
       expect(context).toMatchInlineSnapshot(`
         {
+          "extensionUri": {
+            "authority": "",
+            "fragment": "",
+            "path": "/test/extension/path",
+            "query": "",
+            "scheme": "file",
+          },
           "globalState": {},
           "workspaceState": {
             "key": {
