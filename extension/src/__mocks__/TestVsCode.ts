@@ -191,7 +191,7 @@ class NotebookCellStatusBarItem implements vscode.NotebookCellStatusBarItem {
   }
 }
 
-class Uri implements vscode.Uri {
+export class Uri implements vscode.Uri {
   static parse(value: string, strict?: boolean): Uri {
     if (strict !== true) {
       throw new Error("strict parameter must be true in test mock");
