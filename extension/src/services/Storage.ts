@@ -14,7 +14,10 @@ export class StorageDecodeError extends Data.TaggedError("StorageDecodeError")<{
  */
 export class ExtensionContext extends Context.Tag("ExtensionContext")<
   ExtensionContext,
-  Pick<vscode.ExtensionContext, "workspaceState" | "globalState">
+  Pick<
+    vscode.ExtensionContext,
+    "workspaceState" | "globalState" | "extensionUri"
+  >
 >() {}
 
 /**

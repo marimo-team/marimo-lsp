@@ -1,5 +1,6 @@
 import { Effect, Layer } from "effect";
 import { ExtensionContext } from "../services/Storage.ts";
+import { Uri } from "./TestVsCode.ts";
 
 export class Memento {
   #map = new Map<string, unknown>();
@@ -25,6 +26,7 @@ export class Memento {
 export const TestExtensionContextLive = Layer.succeed(ExtensionContext, {
   globalState: new Memento(),
   workspaceState: new Memento(),
+  extensionUri: Uri.parse("file:///test/extension/path", true),
 });
 
 export function getTestExtensionContext() {

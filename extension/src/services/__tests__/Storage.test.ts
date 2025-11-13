@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Schema } from "effect";
 import { Memento } from "../../__mocks__/TestExtensionContext.ts";
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import { TestVsCode, Uri } from "../../__mocks__/TestVsCode.ts";
 import {
   createStorageKey,
   ExtensionContext,
@@ -19,6 +19,7 @@ const withTestCtx = Effect.fnUntraced(function* (
       Layer.succeed(ExtensionContext, {
         globalState: ctx.globalState ?? new Memento(),
         workspaceState: ctx.workspaceState ?? new Memento(),
+        extensionUri: Uri.parse("file:///test/extension/path", true),
       }),
     ),
   );
@@ -55,6 +56,13 @@ it.effect(
       const context = yield* ExtensionContext;
       expect(context).toMatchInlineSnapshot(`
         {
+          "extensionUri": {
+            "authority": "",
+            "fragment": "",
+            "path": "/test/extension/path",
+            "query": "",
+            "scheme": "file",
+          },
           "globalState": {},
           "workspaceState": {},
         }
@@ -74,6 +82,13 @@ it.effect(
       const context = yield* ExtensionContext;
       expect(context).toMatchInlineSnapshot(`
         {
+          "extensionUri": {
+            "authority": "",
+            "fragment": "",
+            "path": "/test/extension/path",
+            "query": "",
+            "scheme": "file",
+          },
           "globalState": {},
           "workspaceState": {
             "key": {
@@ -102,6 +117,13 @@ it.effect(
       const context = yield* ExtensionContext;
       expect(context).toMatchInlineSnapshot(`
         {
+          "extensionUri": {
+            "authority": "",
+            "fragment": "",
+            "path": "/test/extension/path",
+            "query": "",
+            "scheme": "file",
+          },
           "globalState": {},
           "workspaceState": {
             "key": {

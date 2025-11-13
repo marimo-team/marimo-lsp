@@ -12,3 +12,6 @@ vite.config.mjs
 .vscode-test
 .claude
 tests
+
+# Include tutorial files in the extension package
+!tutorials/**
