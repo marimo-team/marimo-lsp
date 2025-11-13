@@ -9,7 +9,6 @@ import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
-import { SandboxController } from "../services/SandboxController.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
@@ -47,7 +46,6 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const controllers = yield* ControllerRegistry;
     const variables = yield* VariablesService;
     const datasources = yield* DatasourcesService;
-    const sandboxController = yield* SandboxController;
 
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
@@ -84,11 +82,17 @@ export const KernelManagerLive = Layer.scopedDiscard(
             () => new Error(`Expected NotebookEditor for ${notebookUri}`),
           );
 
-          const controller = Option.getOrElse(
-            yield* controllers.getActiveController(editor.notebook),
-            // fallback to sandbox
-            () => sandboxController,
+          const maybeController = yield* controllers.getActiveController(
+            editor.notebook,
           );
+
+          if (Option.isNone(maybeController)) {
+            yield* Effect.logWarning(
+              "No active controller, skipping operation",
+            ).pipe(Effect.annotateLogs({ op: operation.op }));
+          }
+
+          const controller = yield* maybeController;
 
           switch (operation.op) {
             case "cell-op": {

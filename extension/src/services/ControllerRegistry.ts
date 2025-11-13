@@ -17,7 +17,10 @@ import {
   VenvPythonController,
 } from "./NotebookControllerFactory.ts";
 import { PythonExtension } from "./PythonExtension.ts";
+import { SandboxController } from "./SandboxController.ts";
 import { VsCode } from "./VsCode.ts";
+
+type AnyController = VenvPythonController | SandboxController;
 
 interface NotebookControllerHandle {
   readonly controller: VenvPythonController;
@@ -31,17 +34,21 @@ interface NotebookControllerHandle {
 export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
   "ControllerRegistry",
   {
-    dependencies: [NotebookControllerFactory.Default],
+    dependencies: [
+      NotebookControllerFactory.Default,
+      SandboxController.Default,
+    ],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const pyExt = yield* PythonExtension;
       const factory = yield* NotebookControllerFactory;
+      const sandboxController = yield* SandboxController;
 
       const handlesRef = yield* SynchronizedRef.make(
         HashMap.empty<NotebookControllerId, NotebookControllerHandle>(),
       );
       const selectionsRef = yield* Ref.make(
-        HashMap.empty<vscode.NotebookDocument, VenvPythonController>(),
+        HashMap.empty<vscode.NotebookDocument, AnyController>(),
       );
 
       yield* Effect.addFinalizer(() =>
@@ -86,6 +93,11 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
           .pipe(Stream.mapEffect(refresh), Stream.runDrain),
       );
 
+      // Track sandbox controller selections
+      yield* Effect.forkScoped(
+        trackControllerSelections(sandboxController, selectionsRef),
+      );
+
       return {
         getActiveController(notebook: vscode.NotebookDocument) {
           return Effect.map(Ref.get(selectionsRef), HashMap.get(notebook));
@@ -116,13 +128,41 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
   },
 ) {}
 
+const trackControllerSelections = (
+  controller: AnyController,
+  selectionsRef: Ref.Ref<
+    HashMap.HashMap<vscode.NotebookDocument, AnyController>
+  >,
+) =>
+  controller.selectedNotebookChanges().pipe(
+    Stream.mapEffect(
+      Effect.fnUntraced(function* (e) {
+        if (!e.selected) {
+          // NB: We don't delete from selections when deselected
+          // because another controller will overwrite it when selected
+          return;
+        }
+        yield* Ref.update(selectionsRef, (selections) =>
+          HashMap.set(selections, e.notebook, controller),
+        );
+        yield* Effect.logDebug("Updated controller for notebook").pipe(
+          Effect.annotateLogs({
+            controllerId: controller.id,
+            notebookUri: e.notebook.uri.toString(),
+          }),
+        );
+      }),
+    ),
+    Stream.runDrain,
+  );
+
 const createOrUpdateController = Effect.fnUntraced(function* (options: {
   env: py.Environment;
   handlesRef: SynchronizedRef.SynchronizedRef<
     HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
   >;
   selectionsRef: Ref.Ref<
-    HashMap.HashMap<vscode.NotebookDocument, VenvPythonController>
+    HashMap.HashMap<vscode.NotebookDocument, AnyController>
   >;
 }) {
   const code = yield* VsCode;
@@ -162,29 +202,7 @@ const createOrUpdateController = Effect.fnUntraced(function* (options: {
           });
 
           yield* Effect.forkScoped(
-            controller.selectedNotebookChanges().pipe(
-              Stream.mapEffect(
-                Effect.fnUntraced(function* (e) {
-                  if (!e.selected) {
-                    // NB: We don't delete from selections when deselected
-                    // because another controller will overwrite it when selected
-                    return;
-                  }
-                  yield* Ref.update(selectionsRef, (selections) =>
-                    HashMap.set(selections, e.notebook, controller),
-                  );
-                  yield* Effect.logDebug(
-                    "Updated controller for notebook",
-                  ).pipe(
-                    Effect.annotateLogs({
-                      controllerId: controller.id,
-                      notebookUri: e.notebook.uri.toString(),
-                    }),
-                  );
-                }),
-              ),
-              Stream.runDrain,
-            ),
+            trackControllerSelections(controller, selectionsRef),
           );
 
           return controller;
@@ -207,7 +225,7 @@ const pruneStaleControllers = Effect.fnUntraced(function* (options: {
     HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
   >;
   selectionsRef: Ref.Ref<
-    HashMap.HashMap<vscode.NotebookDocument, VenvPythonController>
+    HashMap.HashMap<vscode.NotebookDocument, AnyController>
   >;
 }) {
   const { envs, handlesRef, selectionsRef } = options;

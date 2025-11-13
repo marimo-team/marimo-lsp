@@ -206,6 +206,7 @@ it.effect(
         [
           "marimo-/home/user/.venv/bin/python",
           "marimo-/usr/local/bin/python3.11",
+          "marimo-sandbox",
         ]
       `);
 
