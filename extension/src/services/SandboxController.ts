@@ -185,6 +185,14 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             ),
           );
         },
+        updateNotebookAffinity(
+          notebook: vscode.NotebookDocument,
+          affinity: vscode.NotebookControllerAffinity,
+        ) {
+          return Effect.sync(() => {
+            controller.updateNotebookAffinity(notebook, affinity);
+          });
+        },
       };
     }),
   },

@@ -1613,6 +1613,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             Left: 1,
             Right: 2,
           },
+          NotebookControllerAffinity: {
+            Default: 1,
+            Preferred: 2,
+          },
           WorkspaceEdit,
           EventEmitter,
           DebugAdapterInlineImplementation: class {},

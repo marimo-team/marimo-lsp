@@ -264,7 +264,12 @@ export class VenvPythonController {
       ),
     );
   }
-  getController() {
-    return this.#inner;
+  updateNotebookAffinity(
+    notebook: vscode.NotebookDocument,
+    affinity: vscode.NotebookControllerAffinity,
+  ) {
+    return Effect.sync(() => {
+      this.#inner.updateNotebookAffinity(notebook, affinity);
+    });
   }
 }
