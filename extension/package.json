@@ -115,19 +115,22 @@
       {
         "command": "marimo.createSetupCell",
         "title": "Create setup cell",
-        "category": "marimo"
+        "category": "marimo",
+        "enablement": "notebookType == 'marimo-notebook'"
       },
       {
         "command": "marimo.publishMarimoNotebookGist",
         "title": "Publish notebook as Gist",
         "shortTitle": "Publish Gist",
-        "category": "marimo"
+        "category": "marimo",
+        "enablement": "notebookType == 'marimo-notebook'"
       },
       {
         "command": "marimo.publishMarimoNotebook",
         "title": "Publish notebook as ...",
         "shortTitle": "Publish notebook",
-        "category": "marimo"
+        "category": "marimo",
+        "enablement": "notebookType == 'marimo-notebook'"
       },
       {
         "command": "marimo.clearRecentNotebooks",
@@ -146,27 +149,31 @@
         "title": "Run stale cells",
         "shortTitle": "Run stale",
         "category": "marimo",
-        "icon": "$(play)"
+        "icon": "$(play)",
+        "enablement": "notebookType == 'marimo-notebook'"
       },
       {
         "command": "marimo.toggleOnCellChangeAutoRun",
         "title": "Toggle on-cell-change mode",
         "shortTitle": "On cell change: Auto-Run",
         "category": "marimo",
-        "icon": "$(zap)"
+        "icon": "$(zap)",
+        "enablement": "notebookType == 'marimo-notebook'"
       },
       {
         "command": "marimo.toggleOnCellChangeLazy",
         "title": "Toggle on-cell-change mode",
         "shortTitle": "On cell change: Lazy",
         "category": "marimo",
-        "icon": "$(symbol-interface)"
+        "icon": "$(symbol-interface)",
+        "enablement": "notebookType == 'marimo-notebook'"
       },
       {
         "command": "marimo.restartKernel",
         "title": "Restart notebook kernel",
         "shortTitle": "Restart Kernel",
-        "category": "marimo"
+        "category": "marimo",
+        "enablement": "notebookType == 'marimo-notebook'"
       },
       {
         "command": "marimo.openAsMarimoNotebook",
@@ -193,7 +200,8 @@
         "command": "marimo.exportStaticHTML",
         "title": "Export static HTML",
         "shortTitle": "Export static HTML",
-        "category": "marimo"
+        "category": "marimo",
+        "enablement": "notebookType == 'marimo-notebook'"
       }
     ],
     "viewsContainers": {
