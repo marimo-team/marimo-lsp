@@ -41,6 +41,7 @@ import { VariablesViewLive } from "../views/VariablesView.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
+import { NotebookLspCoordinatorLive } from "./NotebookLspCoordinatorLive.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
 
 /**
@@ -58,6 +59,7 @@ const MainLive = Layer.empty
     Layer.merge(DatasourcesViewLive),
     Layer.merge(PackagesViewLive),
     Layer.merge(CellStatusBarProviderLive),
+    Layer.merge(NotebookLspCoordinatorLive),
   )
   .pipe(
     Layer.provide(GitHubClient.Default),
