@@ -145,6 +145,26 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
 
             yield* executions.handleInterrupted(editor.value);
 
+            // Clear all cell outputs by replacing each cell with fresh version
+            const edit = new code.WorkspaceEdit();
+            const cells = editor.value.notebook.getCells();
+            const freshCells = cells.map((cell) => {
+              const freshCell = new code.NotebookCellData(
+                cell.kind,
+                cell.document.getText(),
+                cell.document.languageId,
+              );
+              freshCell.metadata = cell.metadata;
+              return freshCell;
+            });
+            edit.set(editor.value.notebook.uri, [
+              code.NotebookEdit.replaceCells(
+                new code.NotebookRange(0, cells.length),
+                freshCells,
+              ),
+            ]);
+            yield* code.workspace.applyEdit(edit);
+
             progress.report({ message: "Kernel restarted." });
             yield* Effect.sleep("500 millis");
           }),
