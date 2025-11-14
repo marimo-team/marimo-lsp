@@ -218,6 +218,10 @@ type ExecutableCommand =
   | "workbench.action.openSettings"
   | "workbench.action.reloadWindow"
   | "simpleBrowser.show"
+  | "vscode.executeCompletionItemProvider"
+  | "vscode.executeDefinitionProvider"
+  | "vscode.executeHoverProvider"
+  | "vscode.executeSignatureHelpProvider"
   | MarimoCommand;
 
 type ContextMap = {
@@ -332,10 +336,17 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
         );
       },
       openUntitledTextDocument(options: {
+        uri?: vscode.Uri;
         content?: string;
         language?: string;
       }) {
         return Effect.promise(() => api.openTextDocument(options));
+      },
+      openTextDocument(uri: vscode.Uri) {
+        return Effect.promise(() => api.openTextDocument(uri)).pipe(
+          // For now just void the result to simplify mocks/tests
+          Effect.andThen(Effect.void),
+        );
       },
     };
   },
@@ -470,6 +481,65 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       debug: yield* Debug,
       notebooks: yield* Notebooks,
       auth: yield* Auth,
+      languages: {
+        registerSignatureHelpProvider(
+          selector: vscode.DocumentSelector,
+          provider: vscode.SignatureHelpProvider,
+          ...triggerCharacters: readonly string[]
+        ) {
+          return Effect.acquireRelease(
+            Effect.sync(() =>
+              vscode.languages.registerSignatureHelpProvider(
+                selector,
+                provider,
+                ...triggerCharacters,
+              ),
+            ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          ).pipe(Effect.andThen(Effect.void));
+        },
+        registerDefinitionProvider(
+          selector: vscode.DocumentSelector,
+          provider: vscode.DefinitionProvider,
+        ) {
+          return Effect.acquireRelease(
+            Effect.sync(() =>
+              vscode.languages.registerDefinitionProvider(selector, provider),
+            ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          ).pipe(Effect.andThen(Effect.void));
+        },
+        registerHoverProvider(
+          selector: vscode.DocumentSelector,
+          provider: vscode.HoverProvider,
+        ) {
+          return Effect.acquireRelease(
+            Effect.sync(() =>
+              vscode.languages.registerHoverProvider(selector, provider),
+            ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          ).pipe(Effect.andThen(Effect.void));
+        },
+        registerCompletionItemProvider(
+          selector: vscode.DocumentSelector,
+          provider: vscode.CompletionItemProvider,
+          ...triggerCharacters: readonly string[]
+        ) {
+          return Effect.acquireRelease(
+            Effect.sync(() =>
+              vscode.languages.registerCompletionItemProvider(
+                selector,
+                provider,
+                ...triggerCharacters,
+              ),
+            ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          ).pipe(Effect.andThen(Effect.void));
+        },
+      },
+      CompletionItem: vscode.CompletionItem,
+      CompletionList: vscode.CompletionList,
+      MarkdownString: vscode.MarkdownString,
       // data types
       NotebookData: vscode.NotebookData,
       NotebookCellData: vscode.NotebookCellData,
@@ -483,6 +553,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       NotebookControllerAffinity: vscode.NotebookControllerAffinity,
       NotebookCellStatusBarAlignment: vscode.NotebookCellStatusBarAlignment,
       WorkspaceEdit: vscode.WorkspaceEdit,
+      Position: vscode.Position,
       EventEmitter: vscode.EventEmitter,
       DebugAdapterInlineImplementation: vscode.DebugAdapterInlineImplementation,
       ProgressLocation: vscode.ProgressLocation,
@@ -491,8 +562,10 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       TreeItemCollapsibleState: vscode.TreeItemCollapsibleState,
       ThemeColor: vscode.ThemeColor,
       StatusBarAlignment: vscode.StatusBarAlignment,
+      Location: vscode.Location,
       Uri: vscode.Uri,
-      MarkdownString: vscode.MarkdownString,
+      Range: vscode.Range,
+      CompletionItemKind: vscode.CompletionItemKind,
       version: vscode.version,
       extensions: {
         getExtension<T = unknown>(extensionId: string) {

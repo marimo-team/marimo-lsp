@@ -1052,6 +1052,51 @@ class NotebookEditor implements vscode.NotebookEditor {
   }
 }
 
+class CompletionItem implements vscode.CompletionItem {
+  label: string | vscode.CompletionItemLabel;
+  kind?: vscode.CompletionItemKind;
+  tags?: readonly vscode.CompletionItemTag[];
+  detail?: string;
+  documentation?: string | vscode.MarkdownString;
+  sortText?: string;
+  filterText?: string;
+  preselect?: boolean;
+  insertText?: string | vscode.SnippetString;
+  range?: Range | { inserting: vscode.Range; replacing: vscode.Range };
+  commitCharacters?: string[];
+  keepWhitespace?: boolean;
+  textEdit?: vscode.TextEdit;
+  additionalTextEdits?: vscode.TextEdit[];
+  command?: vscode.Command;
+  constructor(
+    label: string | vscode.CompletionItemLabel,
+    kind?: vscode.CompletionItemKind,
+  ) {
+    this.label = label;
+    this.kind = kind;
+  }
+}
+
+class CompletionList<T extends CompletionItem = CompletionItem>
+  implements vscode.CompletionList<T>
+{
+  isIncomplete: boolean;
+  items: T[];
+  constructor(items: T[], isIncomplete = false) {
+    this.items = items;
+    this.isIncomplete = isIncomplete;
+  }
+}
+
+class Location implements vscode.Location {
+  uri: Uri;
+  range: vscode.Range;
+  constructor(uri: Uri, range: vscode.Range) {
+    this.uri = uri;
+    this.range = range;
+  }
+}
+
 export function createTestNotebookDocument(
   uri: Uri | string,
   content?: vscode.NotebookData,
@@ -1477,6 +1522,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 ),
               );
             },
+            openTextDocument(_uri: vscode.Uri) {
+              return Effect.void;
+            },
           }),
           env: Env.make({
             appName: "Marimo Test",
@@ -1649,9 +1697,57 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           },
           Uri,
           MarkdownString,
+          CompletionItem,
+          CompletionList,
+          Position,
+          Range,
+          CompletionItemKind: {
+            Text: 0,
+            Method: 1,
+            Function: 2,
+            Constructor: 3,
+            Field: 4,
+            Variable: 5,
+            Class: 6,
+            Interface: 7,
+            Module: 8,
+            Property: 9,
+            Unit: 10,
+            Value: 11,
+            Enum: 12,
+            Keyword: 13,
+            Snippet: 14,
+            Color: 15,
+            File: 16,
+            Reference: 17,
+            Folder: 18,
+            EnumMember: 19,
+            Constant: 20,
+            Struct: 21,
+            Event: 22,
+            Operator: 23,
+            TypeParameter: 24,
+            User: 25,
+            Issue: 26,
+          },
+          Location,
           version: options.version ?? "1.86.0",
           extensions: {
             getExtension: () => Option.none(),
+          },
+          languages: {
+            registerHoverProvider() {
+              return Effect.void;
+            },
+            registerSignatureHelpProvider() {
+              return Effect.void;
+            },
+            registerDefinitionProvider() {
+              return Effect.void;
+            },
+            registerCompletionItemProvider() {
+              return Effect.void;
+            },
           },
           // helper
           utils: {

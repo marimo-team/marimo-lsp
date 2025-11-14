@@ -11,6 +11,7 @@ import type * as vscode from "vscode";
 import { CellStateManager } from "../services/CellStateManager.ts";
 import { Config } from "../services/Config.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
+import { LspProxy } from "../services/completions/LspProxy.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { DebugAdapter } from "../services/DebugAdapter.ts";
@@ -42,6 +43,7 @@ import { VariablesViewLive } from "../views/VariablesView.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
+import { NotebookLanguageFeaturesLive } from "./NotebookLanguageFeatures.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
 
 /**
@@ -54,6 +56,7 @@ const MainLive = Layer.empty
     Layer.merge(KernelManagerLive),
     Layer.merge(MarimoStatusBarLive),
     Layer.merge(MarimoFileDetectorLive),
+    Layer.merge(NotebookLanguageFeaturesLive),
     Layer.merge(RecentNotebooksLive),
     Layer.merge(VariablesViewLive),
     Layer.merge(DatasourcesViewLive),
@@ -61,6 +64,7 @@ const MainLive = Layer.empty
     Layer.merge(CellStatusBarProviderLive),
   )
   .pipe(
+    Layer.provide(LspProxy.Default),
     Layer.provide(GitHubClient.Default),
     Layer.provide(DebugAdapter.Default),
     Layer.provide(NotebookRenderer.Default),

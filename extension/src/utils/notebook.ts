@@ -1,4 +1,4 @@
-import { type Brand, Data, Effect } from "effect";
+import { Brand, Data, Effect } from "effect";
 import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import type { MarimoNotebookDocument } from "../services/types.ts";
@@ -36,6 +36,7 @@ export function getNotebookCellId(
   return cell.document.uri.toString() as NotebookCellId;
 }
 
+export const NotebookCellId = Brand.nominal<NotebookCellId>();
 export type NotebookCellId = Brand.Branded<string, "CellId">;
 export function extractCellId(msg: CellMessage) {
   return msg.cell_id as NotebookCellId;
