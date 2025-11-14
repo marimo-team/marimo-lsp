@@ -33,30 +33,6 @@ suite("marimo Extension Hello World Tests", () => {
     );
   });
 
-  test("Should register marimo commands (no-lsp)", async () => {
-    const commands = await vscode.commands.getCommands();
-    const marimoCommands = commands.filter((cmd) => cmd.startsWith("marimo."));
-    marimoCommands.sort();
-    assert.deepEqual(marimoCommands, [
-      "marimo.clearRecentNotebooks",
-      "marimo.createSetupCell",
-      "marimo.exportStaticHTML",
-      "marimo.newMarimoNotebook",
-      "marimo.openAsMarimoNotebook",
-      "marimo.publishMarimoNotebook",
-      "marimo.publishMarimoNotebookGist",
-      "marimo.refreshPackages",
-      "marimo.reportIssue",
-      "marimo.restartKernel",
-      "marimo.restartLsp",
-      "marimo.runStale",
-      "marimo.showDiagnostics",
-      "marimo.showMarimoMenu",
-      "marimo.toggleOnCellChangeAutoRun",
-      "marimo.toggleOnCellChangeLazy",
-    ]);
-  });
-
   test("Commands match package.json", async () => {
     const extension = getExtension();
     const packageJSON = extension.packageJSON;

@@ -77,6 +77,58 @@
         "language": "python"
       }
     ],
+    "walkthroughs": [
+      {
+        "id": "marimo-getting-started",
+        "title": "Get Started with marimo",
+        "description": "Learn how to create and run reactive Python notebooks in VS Code with marimo.",
+        "steps": [
+          {
+            "id": "check-prerequisites",
+            "title": "Check Prerequisites",
+            "description": "Ensure you have `uv` installed on your system. marimo uses `uvx` to run the language server and manage packages.\n\n[Install uv](https://docs.astral.sh/uv/getting-started/installation/)",
+            "media": {
+              "image": "images/getting-started.png",
+              "altText": "marimo notebook interface"
+            },
+            "completionEvents": [
+              "onCommand:marimo.newMarimoNotebook"
+            ]
+          },
+          {
+            "id": "start-tutorial",
+            "title": "Start the Tutorial",
+            "description": "Open one of our interactive tutorials to learn marimo's reactive programming model. Each tutorial is a marimo notebook you can edit and experiment with!\n\n[Open a Tutorial](command:marimo.openTutorial)\n\n[Watch YouTube Overview](https://www.youtube.com/watch?v=3N6lInzq5MI)",
+            "media": {
+              "markdown": "walkthroughs/start-tutorial.md"
+            },
+            "completionEvents": [
+              "onCommand:marimo.openTutorial"
+            ]
+          },
+          {
+            "id": "create-notebook",
+            "title": "Create a New Notebook",
+            "description": "Ready to create your own notebook? Use the command palette to create a new marimo notebook.\n\n[Create New marimo Notebook](command:marimo.newMarimoNotebook)",
+            "media": {
+              "markdown": "walkthroughs/create-notebook.md"
+            },
+            "completionEvents": [
+              "onCommand:marimo.newMarimoNotebook"
+            ]
+          },
+          {
+            "id": "keep-exploring",
+            "title": "Keep Exploring!",
+            "description": "marimo is reactive, reproducible, and reusable. Run a cell or interact with a UI element, and marimo automatically runs dependent cells. Learn more through our resources:\n\n- [Documentation](https://docs.marimo.io/)\n- [YouTube Channel](https://www.youtube.com/@marimo-team)\n- [Discord Community](http://marimo.io/discord)",
+            "media": {
+              "markdown": "walkthroughs/keep-exploring.md"
+            },
+            "completionEvents": []
+          }
+        ]
+      }
+    ],
     "notebooks": [
       {
         "type": "marimo-notebook",
@@ -111,6 +163,11 @@
         "title": "New marimo notebook",
         "shortTitle": "Marimo notebook",
         "category": "Create"
+      },
+      {
+        "command": "marimo.openTutorial",
+        "title": "Open tutorial",
+        "category": "marimo"
       },
       {
         "command": "marimo.createSetupCell",

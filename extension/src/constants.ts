@@ -7,6 +7,7 @@ export type MarimoCommand =
   | "marimo.exportStaticHTML"
   | "marimo.newMarimoNotebook"
   | "marimo.openAsMarimoNotebook"
+  | "marimo.openTutorial"
   | "marimo.publishMarimoNotebook"
   | "marimo.publishMarimoNotebookGist"
   | "marimo.refreshPackages"

@@ -49,40 +49,19 @@ describe("extension.activate", () => {
       yield* Effect.promise(() => activate(context));
 
       const snapshot = yield* vscode.snapshot();
-      expect(snapshot).toMatchInlineSnapshot(`
-        {
-          "commands": [
-            "marimo.clearRecentNotebooks",
-            "marimo.createSetupCell",
-            "marimo.exportStaticHTML",
-            "marimo.newMarimoNotebook",
-            "marimo.openAsMarimoNotebook",
-            "marimo.publishMarimoNotebook",
-            "marimo.publishMarimoNotebookGist",
-            "marimo.refreshPackages",
-            "marimo.reportIssue",
-            "marimo.restartKernel",
-            "marimo.restartLsp",
-            "marimo.runStale",
-            "marimo.showDiagnostics",
-            "marimo.showMarimoMenu",
-            "marimo.toggleOnCellChangeAutoRun",
-            "marimo.toggleOnCellChangeLazy",
-          ],
-          "controllers": [
-            "marimo-sandbox",
-          ],
-          "serializers": [
-            "marimo-notebook",
-          ],
-          "views": [
-            "marimo-explorer-datasources",
-            "marimo-explorer-packages",
-            "marimo-explorer-recents",
-            "marimo-explorer-variables",
-          ],
-        }
+
+      expect(snapshot.controllers).toMatchInlineSnapshot(`
+        [
+          "marimo-sandbox",
+        ]
       `);
+      expect(snapshot.serializers).toMatchInlineSnapshot(`
+        [
+          "marimo-notebook",
+        ]
+      `);
+      // We don't need to snapshot all commands and views, since we
+      // check them against package.json below.
 
       // Should exactly match package.json
       expect(new Set(pkg.contributes.commands.map((c) => c.command))).toEqual(
