@@ -6,6 +6,7 @@ import { TestLanguageClientLive } from "../__mocks__/TestLanguageClient.ts";
 import { TestPythonExtension } from "../__mocks__/TestPythonExtension.ts";
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
+import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
 import { makeActivate } from "../layers/Main.ts";
 
 const withTestCtx = Effect.fnUntraced(function* () {
@@ -50,16 +51,8 @@ describe("extension.activate", () => {
 
       const snapshot = yield* vscode.snapshot();
 
-      expect(snapshot.controllers).toMatchInlineSnapshot(`
-        [
-          "marimo-sandbox",
-        ]
-      `);
-      expect(snapshot.serializers).toMatchInlineSnapshot(`
-        [
-          "marimo-notebook",
-        ]
-      `);
+      expect(snapshot.controllers).toEqual([SANDBOX_CONTROLLER_ID]);
+      expect(snapshot.serializers).toEqual([NOTEBOOK_TYPE]);
       // We don't need to snapshot all commands and views, since we
       // check them against package.json below.
 

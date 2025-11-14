@@ -458,3 +458,84 @@ it.effect(
     }).pipe(Effect.provide(layer));
   }),
 );
+it.effect(
+  "should not set affinity when notebook has no script header or venv",
+  Effect.fnUntraced(function* () {
+    const { layer, vscode } = yield* withTestCtx({
+      initialEnvs: ["/usr/local/bin/python3.11"],
+    });
+
+    yield* Effect.gen(function* () {
+      const code = yield* VsCode;
+
+      // Create a notebook without script header
+      const notebook = createTestNotebookDocument(
+        code.Uri.file("/test/notebook_mo.py"),
+        {
+          cells: [],
+          metadata: {},
+        },
+      );
+
+      const editor = TestVsCode.makeNotebookEditor(notebook.uri.path);
+
+      // Open the notebook by setting it as active
+      yield* vscode.setActiveNotebookEditor(Option.some(editor));
+
+      // Give time for the affinity update to process
+      yield* TestClock.adjust("100 millis");
+
+      // Check affinity updates - should be empty
+      const affinityUpdates = yield* vscode.getAffinityUpdates();
+
+      expect(affinityUpdates).toEqual([]);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "should handle opening multiple notebooks",
+  Effect.fnUntraced(function* () {
+    const { layer, vscode } = yield* withTestCtx({
+      initialEnvs: ["/usr/local/bin/python3.11"],
+    });
+
+    yield* Effect.gen(function* () {
+      const code = yield* VsCode;
+
+      // Create first notebook
+      const notebook1 = createTestNotebookDocument(
+        code.Uri.file("/test/notebook1_mo.py"),
+        {
+          cells: [],
+          metadata: {},
+        },
+      );
+
+      // Create second notebook
+      const notebook2 = createTestNotebookDocument(
+        code.Uri.file("/test/notebook2_mo.py"),
+        {
+          cells: [],
+          metadata: {},
+        },
+      );
+
+      const editor1 = TestVsCode.makeNotebookEditor(notebook1.uri.path);
+      const editor2 = TestVsCode.makeNotebookEditor(notebook2.uri.path);
+
+      // Open first notebook
+      yield* vscode.setActiveNotebookEditor(Option.some(editor1));
+      yield* TestClock.adjust("100 millis");
+
+      // Open second notebook
+      yield* vscode.setActiveNotebookEditor(Option.some(editor2));
+      yield* TestClock.adjust("100 millis");
+
+      // Check affinity updates - should be empty since no script headers
+      const affinityUpdates = yield* vscode.getAffinityUpdates();
+
+      expect(affinityUpdates).toEqual([]);
+    }).pipe(Effect.provide(layer));
+  }),
+);

@@ -2,6 +2,7 @@ import * as NodePath from "node:path";
 import * as semver from "@std/semver";
 import { Effect, Option, Runtime, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
+import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
 import { SemVerFromString } from "../schemas.ts";
 import { getNotebookUri } from "../types.ts";
 import { getCellExecutableCode } from "../utils/getCellExecutableCode.ts";
@@ -29,7 +30,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
       const controller = yield* code.notebooks.createNotebookController(
-        "marimo-sandbox",
+        SANDBOX_CONTROLLER_ID,
         "marimo-notebook",
         "marimo sandbox",
       );
@@ -183,6 +184,14 @@ export class SandboxController extends Effect.Service<SandboxController>()(
               (disposable) => Effect.sync(() => disposable.dispose()),
             ),
           );
+        },
+        updateNotebookAffinity(
+          notebook: vscode.NotebookDocument,
+          affinity: vscode.NotebookControllerAffinity,
+        ) {
+          return Effect.sync(() => {
+            controller.updateNotebookAffinity(notebook, affinity);
+          });
         },
       };
     }),
