@@ -264,4 +264,7 @@ export class VenvPythonController {
       ),
     );
   }
+  getController() {
+    return this.#inner;
+  }
 }

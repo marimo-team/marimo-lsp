@@ -9,6 +9,7 @@ import {
   Option,
   PubSub,
   Ref,
+  Runtime,
   Stream,
   SubscriptionRef,
 } from "effect";
@@ -997,7 +998,7 @@ class NotebookDocument implements vscode.NotebookDocument {
     this.isDirty = false;
     this.isUntitled = false;
     this.isClosed = false;
-    this.metadata = {};
+    this.metadata = content?.metadata ?? {};
 
     const cellData = content?.cells ?? [];
     this.cellCount = cellData.length;
@@ -1100,6 +1101,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly removeNotebookDocument: (
     doc: vscode.NotebookDocument,
   ) => Effect.Effect<void>;
+  readonly affinityUpdates: Ref.Ref<
+    ReadonlyArray<{
+      controllerId: string;
+      notebookUri: string;
+      affinity: vscode.NotebookControllerAffinity;
+    }>
+  >;
 }> {
   static makeNotebookEditor(uri: string | Uri, data?: NotebookData) {
     return createTestNotebookEditor(createTestNotebookDocument(uri, data));
@@ -1125,6 +1133,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         ),
       };
     });
+  }
+
+  getAffinityUpdates() {
+    return Ref.get(this.affinityUpdates);
   }
 
   createMockUri(path: string): Uri {
@@ -1187,6 +1199,16 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const executions = yield* Ref.make<
       ReadonlyArray<{ command: string; args: ReadonlyArray<unknown> }>
     >([]);
+
+    const affinityUpdates = yield* Ref.make<
+      ReadonlyArray<{
+        controllerId: string;
+        notebookUri: string;
+        affinity: vscode.NotebookControllerAffinity;
+      }>
+    >([]);
+
+    const runtime = yield* Effect.runtime();
 
     const layer = Layer.scoped(
       VsCode,
@@ -1510,7 +1532,21 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                       };
                     },
                     executeHandler() {},
-                    updateNotebookAffinity() {},
+                    updateNotebookAffinity(
+                      notebook: vscode.NotebookDocument,
+                      affinity: vscode.NotebookControllerAffinity,
+                    ) {
+                      Runtime.runSync(runtime)(
+                        Ref.update(affinityUpdates, (updates) => [
+                          ...updates,
+                          {
+                            controllerId: id,
+                            notebookUri: notebook.uri.toString(),
+                            affinity,
+                          },
+                        ]),
+                      );
+                    },
                   };
                   yield* Ref.update(controllers, HashSet.add(controller));
                   return controller;
@@ -1625,6 +1661,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       serializers,
       statusBarProviders,
       documentChangesPubSub: documentChanges,
+      affinityUpdates,
       setActiveNotebookEditor: (editor) =>
         SubscriptionRef.set(activeNotebookEditor, editor),
       setActiveTextEditor: (editor) =>

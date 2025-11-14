@@ -1,3 +1,4 @@
+import * as NodePath from "node:path";
 import type * as py from "@vscode/python-extension";
 import {
   Effect,
@@ -10,6 +11,9 @@ import {
   SynchronizedRef,
 } from "effect";
 import type * as vscode from "vscode";
+import { NOTEBOOK_TYPE } from "../constants.ts";
+import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
+import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
 import {
   NotebookControllerFactory,
@@ -93,6 +97,32 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
           .pipe(Stream.mapEffect(refresh), Stream.runDrain),
       );
 
+      // Subscribe to notebook editor changes to update affinity
+      yield* Effect.forkScoped(
+        code.window.activeNotebookEditorChanges().pipe(
+          Stream.mapEffect(
+            Effect.fnUntraced(function* (editor) {
+              if (Option.isNone(editor)) {
+                return;
+              }
+
+              const notebook = editor.value.notebook;
+
+              // Only process marimo notebooks
+              if (notebook.notebookType !== NOTEBOOK_TYPE) {
+                return;
+              }
+
+              yield* updateNotebookAffinityEffect({
+                notebook,
+                handlesRef,
+              });
+            }),
+          ),
+          Stream.runDrain,
+        ),
+      );
+
       // Track sandbox controller selections
       yield* Effect.forkScoped(
         trackControllerSelections(sandboxController, selectionsRef),
@@ -127,6 +157,80 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
     }),
   },
 ) {}
+
+const updateNotebookAffinityEffect = Effect.fnUntraced(function* (options: {
+  notebook: vscode.NotebookDocument;
+  handlesRef: SynchronizedRef.SynchronizedRef<
+    HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
+  >;
+}) {
+  const { notebook, handlesRef } = options;
+  const handles = yield* SynchronizedRef.get(handlesRef);
+
+  // Check if header includes "/// script"
+  const header = notebook.metadata?.header;
+  if (typeof header.value === "string" && header.value.includes("/// script")) {
+    yield* Effect.logDebug(
+      "Setting affinity to sandbox controller (script header detected)",
+    ).pipe(Effect.annotateLogs({ notebookUri: notebook.uri.toString() }));
+
+    // Prefer sandbox controller
+    const sandboxHandle = Array.from(HashMap.values(handles)).find(
+      (handle) => handle.controller.id === SANDBOX_CONTROLLER_ID,
+    );
+    if (sandboxHandle) {
+      sandboxHandle.controller
+        .getController()
+        .updateNotebookAffinity(
+          notebook,
+          2 satisfies vscode.NotebookControllerAffinity.Preferred,
+        );
+    }
+    return;
+  }
+
+  // Check for venv next to notebook
+  const notebookDir = NodePath.dirname(notebook.uri.fsPath);
+  const venvPath = findVenvPath(NodePath.join(notebookDir, ".venv"));
+
+  if (Option.isSome(venvPath)) {
+    yield* Effect.logDebug(
+      "Setting affinity to venv controller (venv detected)",
+    ).pipe(
+      Effect.annotateLogs({
+        notebookUri: notebook.uri.toString(),
+        venvPath: venvPath.value,
+      }),
+    );
+
+    // Find controller with matching venv path
+    // The venv path should contain the Python executable
+    const venvControllers = Array.from(HashMap.values(handles)).filter(
+      (handle) => {
+        const controllerVenv = findVenvPath(handle.controller.executable);
+        return (
+          Option.isSome(controllerVenv) &&
+          controllerVenv.value === venvPath.value
+        );
+      },
+    );
+
+    for (const handle of venvControllers) {
+      handle.controller
+        .getController()
+        .updateNotebookAffinity(
+          notebook,
+          2 satisfies vscode.NotebookControllerAffinity.Preferred,
+        );
+    }
+    return;
+  }
+
+  // Otherwise, don't set any affinity (let VSCode use defaults)
+  yield* Effect.logDebug(
+    "No affinity preference set (no script header or venv)",
+  ).pipe(Effect.annotateLogs({ notebookUri: notebook.uri.toString() }));
+});
 
 const trackControllerSelections = (
   controller: AnyController,
