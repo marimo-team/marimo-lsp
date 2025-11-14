@@ -60,7 +60,7 @@ describe("extension.activate", () => {
           "marimo-notebook",
         ]
       `);
-      // We don't need to snapshot all commands and views, since we 
+      // We don't need to snapshot all commands and views, since we
       // check them against package.json below.
 
       // Should exactly match package.json
