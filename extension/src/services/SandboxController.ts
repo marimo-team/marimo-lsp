@@ -1,6 +1,6 @@
 import * as NodePath from "node:path";
 import * as semver from "@std/semver";
-import { Effect, Option, Runtime, Schema } from "effect";
+import { Effect, Option, Runtime, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
 import { SemVerFromString } from "../schemas.ts";
 import { getNotebookUri } from "../types.ts";
@@ -18,6 +18,7 @@ import { VsCode } from "./VsCode.ts";
 export class SandboxController extends Effect.Service<SandboxController>()(
   "SandboxController",
   {
+    dependencies: [Uv.Default, OutputChannel.Default],
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
@@ -166,8 +167,22 @@ export class SandboxController extends Effect.Service<SandboxController>()(
         );
 
       return {
+        id: controller.id,
         createNotebookCellExecution(cell: vscode.NotebookCell) {
           return controller.createNotebookCellExecution(cell);
+        },
+        selectedNotebookChanges() {
+          return Stream.asyncPush<{
+            notebook: vscode.NotebookDocument;
+            selected: boolean;
+          }>((emit) =>
+            Effect.acquireRelease(
+              Effect.sync(() =>
+                controller.onDidChangeSelectedNotebooks((e) => emit.single(e)),
+              ),
+              (disposable) => Effect.sync(() => disposable.dispose()),
+            ),
+          );
         },
       };
     }),
