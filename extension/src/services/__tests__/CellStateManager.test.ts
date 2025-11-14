@@ -157,6 +157,69 @@ describe("CellStateManager", () => {
   );
 
   it.effect(
+    "moving cell does not send delete_cell command",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+
+        const notebook = createTestNotebookDocument(
+          "/test/notebook.py",
+          new code.NotebookData([
+            new code.NotebookCellData(
+              code.NotebookCellKind.Code,
+              "x = 1",
+              "python",
+            ),
+            new code.NotebookCellData(
+              code.NotebookCellKind.Code,
+              "y = 2",
+              "python",
+            ),
+            new code.NotebookCellData(
+              code.NotebookCellKind.Code,
+              "z = 3",
+              "python",
+            ),
+          ]),
+        );
+
+        yield* ctx.vscode.addNotebookDocument(notebook);
+        yield* TestClock.adjust("10 millis");
+
+        const cellToMove = notebook.cellAt(0);
+
+        // Simulate moving cell from index 0 to index 2
+        // VSCode reports this as removed from position 0 and added at position 2
+        yield* ctx.vscode.notebookChange({
+          notebook,
+          metadata: undefined,
+          cellChanges: [],
+          contentChanges: [
+            {
+              range: new NotebookRange(0, 1), // Remove from index 0
+              removedCells: [cellToMove],
+              addedCells: [],
+            },
+            {
+              range: new NotebookRange(2, 2), // Add at index 2
+              removedCells: [],
+              addedCells: [cellToMove],
+            },
+          ],
+        });
+
+        yield* TestClock.adjust("10 millis");
+
+        const commands = yield* Ref.get(ctx.executions);
+        // Should NOT send delete_cell command for moved cells
+        expect(commands).toEqual([]);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
     "updates marimo.notebook.hasStaleCells context when cells become stale",
     Effect.fnUntraced(function* () {
       const ctx = yield* withTestCtx();

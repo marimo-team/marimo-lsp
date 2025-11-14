@@ -98,44 +98,70 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               const notebookUri = getNotebookUri(event.notebook);
 
               // Process cell deletions
-              for (const change of event.contentChanges) {
-                if (change.removedCells.length > 0) {
-                  for (const cell of change.removedCells) {
-                    // Clear local tracking
-                    yield* clearCellStaleTracking(notebookUri, cell.index, {
-                      staleStateRef,
-                    });
+              // When a cell is moved, VSCode reports it as removed AND added
+              // We need to filter out moved cells to find truly deleted cells
+              const removedCellIds = new Set<string>();
+              const addedCellIds = new Set<string>();
+              const removedCellsMap = new Map<string, vscode.NotebookCell>();
 
-                    // Notify backend about cell deletion
-                    yield* client
-                      .executeCommand({
-                        command: "marimo.api",
-                        params: {
-                          method: "delete_cell",
-                          params: {
-                            notebookUri,
-                            inner: {
-                              cellId: getNotebookCellId(cell),
-                            },
-                          },
-                        },
-                      })
-                      .pipe(
-                        Effect.catchAllCause((cause) =>
-                          // TODO: should we add this back to the UI on failure?
-                          Effect.logWarning(
-                            "Failed to notify backend about cell deletion",
-                            cause,
-                          ).pipe(
-                            Effect.annotateLogs({
-                              notebookUri,
-                              cellIndex: cell.index,
-                            }),
-                          ),
-                        ),
-                      );
-                  }
+              // Collect all removed and added cell IDs
+              for (const change of event.contentChanges) {
+                for (const cell of change.removedCells) {
+                  const cellId = getNotebookCellId(cell);
+                  removedCellIds.add(cellId);
+                  removedCellsMap.set(cellId, cell);
                 }
+                for (const cell of change.addedCells) {
+                  const cellId = getNotebookCellId(cell);
+                  addedCellIds.add(cellId);
+                }
+              }
+
+              // Find truly deleted cells (removed but not added)
+              const trulyDeletedCellIds = Array.from(removedCellIds).filter(
+                (cellId) => !addedCellIds.has(cellId),
+              );
+
+              // Process only truly deleted cells
+              for (const cellId of trulyDeletedCellIds) {
+                const cell = removedCellsMap.get(cellId);
+                if (!cell) {
+                  continue;
+                }
+
+                // Clear local tracking
+                yield* clearCellStaleTracking(notebookUri, cell.index, {
+                  staleStateRef,
+                });
+
+                // Notify backend about cell deletion
+                yield* client
+                  .executeCommand({
+                    command: "marimo.api",
+                    params: {
+                      method: "delete_cell",
+                      params: {
+                        notebookUri,
+                        inner: {
+                          cellId,
+                        },
+                      },
+                    },
+                  })
+                  .pipe(
+                    Effect.catchAllCause((cause) =>
+                      // TODO: should we add this back to the UI on failure?
+                      Effect.logWarning(
+                        "Failed to notify backend about cell deletion",
+                        cause,
+                      ).pipe(
+                        Effect.annotateLogs({
+                          notebookUri,
+                          cellIndex: cell.index,
+                        }),
+                      ),
+                    ),
+                  );
               }
 
               // Process cell changes (content or metadata edits)
