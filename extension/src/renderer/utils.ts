@@ -42,8 +42,7 @@ export function createRequestClient(
     async sendComponentValues(request) {
       context.postMessage({
         command: "set_ui_element_value",
-        // FIXME: The token is required by "set_ui_element_value" (but not needed)
-        params: { ...request, token: "" },
+        params: { ...request },
       });
       return null;
     },
