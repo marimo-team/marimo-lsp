@@ -28,6 +28,16 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
       release: `vscode-marimo@${extensionVersion}`,
       environment: process.env.NODE_ENV ?? "production",
       enabled: Boolean(telemetryEnabled),
+      // Disable automatic capture of unhandled errors
+      integrations: (integrations) => {
+        return integrations.filter((integration) => {
+          // Filter out integrations that automatically capture unhandled errors
+          return (
+            integration.name !== "OnUncaughtException" &&
+            integration.name !== "OnUnhandledRejection"
+          );
+        });
+      },
     });
 
     // Set global context
