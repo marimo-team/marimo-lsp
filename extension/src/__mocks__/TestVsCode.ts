@@ -1479,6 +1479,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             },
           }),
           env: Env.make({
+            appName: "Marimo Test",
+            appRoot: "/mocks",
+            appHost: "desktop",
+            machineId: "mock-machine-id",
             openExternal() {
               return Effect.succeed(true);
             },

@@ -1,5 +1,5 @@
 import * as NodeProcess from "node:process";
-import { Data, Effect, Option, pipe, Schema } from "effect";
+import { Data, Effect, Option, Schema } from "effect";
 import { EXTENSION_PACKAGE } from "../utils/extension.ts";
 import { Config } from "./Config.ts";
 import { getUvVersion } from "./LanguageClient.ts";
@@ -35,7 +35,11 @@ export class HealthService extends Effect.Service<HealthService>()(
           Effect.sync(getUvVersion),
         ]);
         const vscodeVersion = code.version;
-        const extensionVersion = yield* getExtensionVersion(code);
+        const extensionVersion = yield* getExtensionVersion(code).pipe(
+          Effect.catchTag("CouldNotGetInformationError", () =>
+            Effect.succeed("unknown"),
+          ),
+        );
         const lspStatus = yield* getLspStatus();
 
         const lines: string[] = [];
@@ -134,17 +138,17 @@ export class HealthService extends Effect.Service<HealthService>()(
 ) {}
 
 export function getExtensionVersion(code: VsCode) {
-  return code.extensions.getExtension(EXTENSION_PACKAGE.fullName).pipe(
-    // Try parsing metadata if it's there
-    Option.map((ext) =>
-      pipe(
-        ext.packageJSON,
-        Schema.decodeUnknown(Schema.Struct({ version: Schema.String })),
-        Effect.map((pkg) => pkg.version),
-        Effect.mapError((cause) => new CouldNotGetInformationError({ cause })),
-      ),
+  return Effect.gen(function* () {
+    const ext = yield* code.extensions.getExtension(EXTENSION_PACKAGE.fullName);
+    const pkg = yield* Schema.decodeUnknown(
+      Schema.Struct({ version: Schema.String }),
+    )(ext);
+    return pkg.version;
+  }).pipe(
+    Effect.catchTag("NoSuchElementException", () => Effect.succeed("unknown")),
+    Effect.catchTag(
+      "ParseError",
+      (cause) => new CouldNotGetInformationError({ cause }),
     ),
-    // Otherwise fallback to unknown
-    Option.getOrElse(() => Effect.succeed("unknown")),
   );
 }
