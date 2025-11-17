@@ -48,7 +48,6 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const datasources = yield* DatasourcesService;
 
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
-
     const queue = yield* Queue.unbounded<MarimoOperation>();
 
     yield* Effect.forkScoped(
@@ -71,127 +70,38 @@ export const KernelManagerLive = Layer.scopedDiscard(
     yield* Effect.forkScoped(
       Effect.gen(function* () {
         while (true) {
-          const { notebookUri, operation } = yield* Queue.take(queue);
+          const msg = yield* Queue.take(queue);
           yield* Effect.logDebug("Processing operation from queue").pipe(
-            Effect.annotateLogs({ op: operation.op }),
+            Effect.annotateLogs({ op: msg.operation.op }),
           );
-          yield* Effect.logTrace(operation.op, operation);
+          yield* Effect.logTrace(msg.operation.op, msg.operation);
 
-          const editor = Option.getOrThrowWith(
-            yield* editors.getLastNotebookEditor(notebookUri),
-            () => new Error(`Expected NotebookEditor for ${notebookUri}`),
-          );
-
-          const maybeController = yield* controllers.getActiveController(
-            editor.notebook,
-          );
-
-          if (Option.isNone(maybeController)) {
-            yield* Effect.logWarning(
-              "No active controller, skipping operation",
-            ).pipe(Effect.annotateLogs({ op: operation.op }));
-          }
-
-          const controller = yield* maybeController;
-
-          switch (operation.op) {
-            case "cell-op": {
-              yield* executions.handleCellOperation(operation, {
-                editor,
-                controller,
-              });
-              break;
-            }
-            case "interrupted": {
-              yield* executions.handleInterrupted(editor);
-              break;
-            }
-            case "completed-run": {
-              break;
-            }
-            case "missing-package-alert": {
-              // Handle in a separate fork (we don't want to block resolution)
-              runPromise(
-                handleMissingPackageAlert(
-                  operation,
-                  editor.notebook,
-                  controller,
-                ).pipe(
-                  Effect.provideService(Uv, uv),
-                  Effect.provideService(VsCode, code),
-                  Effect.provideService(Config, config),
-                ),
-              );
-              break;
-            }
-            // Update variable state
-            case "variables": {
-              yield* variables.updateVariables(notebookUri, operation);
-              break;
-            }
-            case "variable-values": {
-              yield* variables.updateVariableValues(notebookUri, operation);
-              break;
-            }
-            // Update datasource state
-            case "data-source-connections": {
-              yield* datasources.updateConnections(notebookUri, operation);
-              break;
-            }
-            case "datasets": {
-              yield* datasources.updateDatasets(notebookUri, operation);
-              break;
-            }
-            case "sql-table-preview": {
-              yield* datasources.updateTablePreview(notebookUri, operation);
-              break;
-            }
-            case "sql-table-list-preview": {
-              yield* datasources.updateTableListPreview(notebookUri, operation);
-              break;
-            }
-            case "data-column-preview": {
-              yield* datasources.updateColumnPreview(notebookUri, operation);
-              break;
-            }
-            // Forward to renderer (front end) (non-blocking)
-            case "remove-ui-elements":
-            case "function-call-result":
-            case "send-ui-element-message": {
-              runPromise(renderer.postMessage(operation, editor));
-              break;
-            }
-            case "update-cell-codes":
-            case "focus-cell": {
-              // Ignore
-              break;
-            }
-            default: {
-              yield* Effect.logWarning("Unknown operation").pipe(
-                Effect.annotateLogs({ op: operation.op }),
-              );
-              break;
-            }
-          }
-
-          yield* Effect.logDebug("Completed processing operation").pipe(
-            Effect.annotateLogs({ op: operation.op }),
+          yield* processOperation(msg, {
+            editors,
+            controllers,
+            executions,
+            variables,
+            datasources,
+            renderer,
+            runPromise,
+            uv,
+            code,
+            config,
+          }).pipe(
+            Effect.catchAllCause(
+              Effect.fnUntraced(function* (cause) {
+                const errorMessage = "Failed to process marimo operation.";
+                yield* Effect.logError(errorMessage, cause).pipe(
+                  Effect.annotateLogs({ op: msg.operation.op }),
+                );
+                yield* Effect.fork(
+                  showErrorAndPromptLogs(errorMessage, { code, channel }),
+                );
+              }),
+            ),
           );
         }
-      }).pipe(
-        Effect.catchAllCause(
-          Effect.fnUntraced(function* (cause) {
-            yield* Effect.logError(
-              `Failed to process marimo operation.`,
-              cause,
-            );
-            yield* showErrorAndPromptLogs(
-              "Failed to process marimo operation.",
-              { code, channel },
-            );
-          }),
-        ),
-      ),
+      }),
     );
 
     // renderer (i.e., front end) -> kernel
@@ -241,3 +151,135 @@ export const KernelManagerLive = Layer.scopedDiscard(
     );
   }),
 );
+
+function processOperation(
+  { notebookUri, operation }: MarimoOperation,
+  deps: {
+    editors: NotebookEditorRegistry;
+    controllers: ControllerRegistry;
+    executions: ExecutionRegistry;
+    variables: VariablesService;
+    datasources: DatasourcesService;
+    renderer: NotebookRenderer;
+    runPromise: <A, E>(effect: Effect.Effect<A, E, never>) => Promise<A>;
+    uv: Uv;
+    code: VsCode;
+    config: Config;
+  },
+) {
+  return Effect.gen(function* () {
+    const {
+      editors,
+      controllers,
+      executions,
+      variables,
+      datasources,
+      renderer,
+      runPromise,
+      uv,
+      code,
+      config,
+    } = deps;
+    const editor = Option.getOrThrowWith(
+      yield* editors.getLastNotebookEditor(notebookUri),
+      () => new Error(`Expected NotebookEditor for ${notebookUri}`),
+    );
+
+    const maybeController = yield* controllers.getActiveController(
+      editor.notebook,
+    );
+
+    if (Option.isNone(maybeController)) {
+      yield* Effect.logWarning("No active controller, skipping operation").pipe(
+        Effect.annotateLogs({ op: operation.op }),
+      );
+      return;
+    }
+
+    const controller = yield* maybeController;
+
+    switch (operation.op) {
+      case "cell-op": {
+        yield* executions.handleCellOperation(operation, {
+          editor,
+          controller,
+        });
+        break;
+      }
+      case "interrupted": {
+        yield* executions.handleInterrupted(editor);
+        break;
+      }
+      case "completed-run": {
+        break;
+      }
+      case "missing-package-alert": {
+        // Handle in a separate fork (we don't want to block resolution)
+        runPromise(
+          handleMissingPackageAlert(
+            operation,
+            editor.notebook,
+            controller,
+          ).pipe(
+            Effect.provideService(Uv, uv),
+            Effect.provideService(VsCode, code),
+            Effect.provideService(Config, config),
+          ),
+        );
+        break;
+      }
+      // Update variable state
+      case "variables": {
+        yield* variables.updateVariables(notebookUri, operation);
+        break;
+      }
+      case "variable-values": {
+        yield* variables.updateVariableValues(notebookUri, operation);
+        break;
+      }
+      // Update datasource state
+      case "data-source-connections": {
+        yield* datasources.updateConnections(notebookUri, operation);
+        break;
+      }
+      case "datasets": {
+        yield* datasources.updateDatasets(notebookUri, operation);
+        break;
+      }
+      case "sql-table-preview": {
+        yield* datasources.updateTablePreview(notebookUri, operation);
+        break;
+      }
+      case "sql-table-list-preview": {
+        yield* datasources.updateTableListPreview(notebookUri, operation);
+        break;
+      }
+      case "data-column-preview": {
+        yield* datasources.updateColumnPreview(notebookUri, operation);
+        break;
+      }
+      // Forward to renderer (front end) (non-blocking)
+      case "remove-ui-elements":
+      case "function-call-result":
+      case "send-ui-element-message": {
+        runPromise(renderer.postMessage(operation, editor));
+        break;
+      }
+      case "update-cell-codes":
+      case "focus-cell": {
+        // Ignore
+        break;
+      }
+      default: {
+        yield* Effect.logWarning("Unknown operation").pipe(
+          Effect.annotateLogs({ op: operation.op }),
+        );
+        break;
+      }
+    }
+
+    yield* Effect.logDebug("Completed processing operation").pipe(
+      Effect.annotateLogs({ op: operation.op }),
+    );
+  });
+}
