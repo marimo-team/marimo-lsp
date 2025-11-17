@@ -123,18 +123,24 @@ suite("marimo Extension Hello World Tests", () => {
     );
   });
 
-  test("marimo.newMarimoNotebook command creates untitled Python document", async () => {
+  test("marimo.newMarimoNotebook command creates Python document", async () => {
     const extension = getExtension();
     assert.ok(extension.isActive);
 
     const initialDocCount = vscode.workspace.textDocuments.length;
-    const fakeUri = vscode.Uri.parse("memfs:///fake/path/Notebook.py");
+    const fakeUri = vscode.Uri.parse("marimo-mock:///fake/path/Notebook.py");
 
+    /**
+     * VS Code's test environment is read-only,
+     * so we cannot write to disk. Instead, we create
+     * an in-memory filesystem to hold our single Python
+     * file for this test.
+     */
     {
       /** @type {Uint8Array | undefined} */
       let singleFileContent;
       const disposable = vscode.workspace.registerFileSystemProvider(
-        "memfs",
+        "marimo-mock",
         {
           onDidChangeFile: new vscode.EventEmitter().event,
           /** @param {vscode.Uri} uri */
