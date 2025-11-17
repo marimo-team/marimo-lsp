@@ -72,145 +72,155 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
             ),
           );
         },
-        handleCellOperation: Effect.fnUntraced(function* (
+        handleCellOperation: (
           msg: CellMessage,
           options: {
             editor: vscode.NotebookEditor;
             controller: VenvPythonController | SandboxController;
           },
-        ) {
-          const { editor, controller } = options;
-          const cellId = extractCellId(msg);
+        ) =>
+          Effect.gen(function* () {
+            const { editor, controller } = options;
+            const cellId = extractCellId(msg);
 
-          const cell = yield* Ref.modify(ref, (map) => {
-            const prev = Option.match(HashMap.get(map, cellId), {
-              onSome: (cell) => cell,
-              onNone: () => CellEntry.make(cellId, editor),
+            const cell = yield* Ref.modify(ref, (map) => {
+              const prev = Option.match(HashMap.get(map, cellId), {
+                onSome: (cell) => cell,
+                onNone: () => CellEntry.make(cellId, editor),
+              });
+              const update = CellEntry.transition(prev, msg);
+              return [update, HashMap.set(map, cellId, update)];
             });
-            const update = CellEntry.transition(prev, msg);
-            return [update, HashMap.set(map, cellId, update)];
-          });
 
-          const notebookUri = getNotebookUri(editor.notebook);
-          const notebookCell = getNotebookCell(editor.notebook, cell.id);
-
-          // If cell has stale inputs, mark it as stale
-          if (cell.state.staleInputs) {
-            yield* cellStateManager.markCellStale(
-              notebookUri,
-              notebookCell.index,
+            const notebookUri = getNotebookUri(editor.notebook);
+            const notebookCell = yield* getNotebookCell(
+              editor.notebook,
+              cell.id,
             );
-          }
 
-          switch (msg.status) {
-            case "queued": {
-              // Clear stale state when cell is queued for execution
-              yield* cellStateManager.clearCellStale(
+            // If cell has stale inputs, mark it as stale
+            if (cell.state.staleInputs) {
+              yield* cellStateManager.markCellStale(
                 notebookUri,
                 notebookCell.index,
               );
-
-              yield* Ref.update(ref, (map) => {
-                const handle = HashMap.get(map, cellId).pipe(
-                  Option.andThen((v) => v.pendingExecution),
-                );
-                if (
-                  Option.isSome(handle) &&
-                  handle.value.kind !== "completed"
-                ) {
-                  // Need to clear existing
-                  handle.value.end(true);
-                }
-                const update = CellEntry.withExecution(
-                  cell,
-                  new PendingExecutionHandle({
-                    runId: Option.getOrThrow(extractRunId(msg)),
-                    inner: controller.createNotebookCellExecution(notebookCell),
-                  }),
-                );
-                return HashMap.set(map, cellId, update);
-              });
-              yield* Effect.logDebug("Cell queued for execution").pipe(
-                Effect.annotateLogs({ cellId }),
-              );
-              return;
             }
 
-            case "running": {
-              if (Option.isNone(cell.pendingExecution)) {
-                yield* Effect.logWarning(
-                  "Got running message but no cell execution found.",
+            switch (msg.status) {
+              case "queued": {
+                // Clear stale state when cell is queued for execution
+                yield* cellStateManager.clearCellStale(
+                  notebookUri,
+                  notebookCell.index,
                 );
-              }
-              const update = yield* Ref.modify(ref, (map) => {
-                const update = CellEntry.start(cell, msg.timestamp ?? 0);
-                return [update, HashMap.set(map, cellId, update)];
-              });
-              yield* Effect.logDebug("Cell execution started").pipe(
-                Effect.annotateLogs({ cellId }),
-              );
-              yield* CellEntry.maybeUpdateCellOutput(update, code, options);
-              return;
-            }
 
-            case "idle": {
-              if (Option.isNone(cell.pendingExecution)) {
-                yield* Effect.logWarning(
-                  "Got idle message but no cell execution found.",
-                );
-              }
-              // MUST modify cell output before `ExecutionHandle.end`
-              yield* CellEntry.maybeUpdateCellOutput(cell, code, options);
-
-              {
-                // FIXME: stdin/stdout are flushed every 10ms, so wait 50ms
-                // to ensure all related events arrive before finalizing.
-                //
-                // marimo doesn't set a run_id for idle messages, so we can't compare
-                // against the incoming message to detect if a new execution has started.
-                //
-                // Ref: https://github.com/marimo-team/marimo/blob/3644b6f/marimo/_messaging/ops.py#L148-L151
-                //
-                // Instead, we capture the `lastRunId` before the timeout and compare it
-                // when finalizing. If a new execution starts before the timeout fires,
-                // the `lastRunId` will have changed and we skip finalization.
-                const lastRunId = cell.lastRunId;
-                const finalize = Ref.update(ref, (map) => {
-                  const fresh = HashMap.get(map, cellId);
-
-                  if (Option.isNone(fresh)) {
-                    return map;
-                  }
-
-                  const isDifferentRun = !Option.getEquivalence(
-                    EffectString.Equivalence,
-                  )(fresh.value.lastRunId, lastRunId);
-
-                  if (isDifferentRun) {
-                    return map;
-                  }
-
-                  return HashMap.set(
-                    map,
-                    cellId,
-                    CellEntry.end(fresh.value, true, msg.timestamp),
+                yield* Ref.update(ref, (map) => {
+                  const handle = HashMap.get(map, cellId).pipe(
+                    Option.andThen((v) => v.pendingExecution),
                   );
+                  if (
+                    Option.isSome(handle) &&
+                    handle.value.kind !== "completed"
+                  ) {
+                    // Need to clear existing
+                    handle.value.end(true);
+                  }
+                  const update = CellEntry.withExecution(
+                    cell,
+                    new PendingExecutionHandle({
+                      runId: Option.getOrThrow(extractRunId(msg)),
+                      inner:
+                        controller.createNotebookCellExecution(notebookCell),
+                    }),
+                  );
+                  return HashMap.set(map, cellId, update);
                 });
-
-                setTimeout(() => runFork(finalize), 50);
+                yield* Effect.logDebug("Cell queued for execution").pipe(
+                  Effect.annotateLogs({ cellId }),
+                );
+                return;
               }
 
-              yield* Effect.logDebug("Cell execution completed").pipe(
-                Effect.annotateLogs({ cellId }),
-              );
-              return;
-            }
+              case "running": {
+                if (Option.isNone(cell.pendingExecution)) {
+                  yield* Effect.logWarning(
+                    "Got running message but no cell execution found.",
+                  );
+                }
+                const update = yield* Ref.modify(ref, (map) => {
+                  const update = CellEntry.start(cell, msg.timestamp ?? 0);
+                  return [update, HashMap.set(map, cellId, update)];
+                });
+                yield* Effect.logDebug("Cell execution started").pipe(
+                  Effect.annotateLogs({ cellId }),
+                );
+                yield* CellEntry.maybeUpdateCellOutput(update, code, options);
+                return;
+              }
 
-            default: {
-              yield* CellEntry.maybeUpdateCellOutput(cell, code, options);
+              case "idle": {
+                if (Option.isNone(cell.pendingExecution)) {
+                  yield* Effect.logWarning(
+                    "Got idle message but no cell execution found.",
+                  );
+                }
+                // MUST modify cell output before `ExecutionHandle.end`
+                yield* CellEntry.maybeUpdateCellOutput(cell, code, options);
+
+                {
+                  // FIXME: stdin/stdout are flushed every 10ms, so wait 50ms
+                  // to ensure all related events arrive before finalizing.
+                  //
+                  // marimo doesn't set a run_id for idle messages, so we can't compare
+                  // against the incoming message to detect if a new execution has started.
+                  //
+                  // Ref: https://github.com/marimo-team/marimo/blob/3644b6f/marimo/_messaging/ops.py#L148-L151
+                  //
+                  // Instead, we capture the `lastRunId` before the timeout and compare it
+                  // when finalizing. If a new execution starts before the timeout fires,
+                  // the `lastRunId` will have changed and we skip finalization.
+                  const lastRunId = cell.lastRunId;
+                  const finalize = Ref.update(ref, (map) => {
+                    const fresh = HashMap.get(map, cellId);
+
+                    if (Option.isNone(fresh)) {
+                      return map;
+                    }
+
+                    const isDifferentRun = !Option.getEquivalence(
+                      EffectString.Equivalence,
+                    )(fresh.value.lastRunId, lastRunId);
+
+                    if (isDifferentRun) {
+                      return map;
+                    }
+
+                    return HashMap.set(
+                      map,
+                      cellId,
+                      CellEntry.end(fresh.value, true, msg.timestamp),
+                    );
+                  });
+                  setTimeout(() => runFork(finalize), 50);
+                }
+
+                yield* Effect.logDebug("Cell execution completed").pipe(
+                  Effect.annotateLogs({ cellId }),
+                );
+                return;
+              }
+
+              default: {
+                yield* CellEntry.maybeUpdateCellOutput(cell, code, options);
+              }
             }
-          }
-        }),
+          }).pipe(
+            Effect.catchTag("NotebookCellNotFoundError", (e) => {
+              return Effect.logWarning(
+                "Notebook cell not found for cell operation",
+              ).pipe(Effect.annotateLogs({ cellId: e.cellId, op: msg.op }));
+            }),
+          ),
       };
     }),
   },
@@ -372,7 +382,10 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
           "Creating ephemeral execution for marimo error without pending execution",
         ).pipe(Effect.annotateLogs({ cellId }));
 
-        const notebookCell = getNotebookCell(deps.editor.notebook, cellId);
+        const notebookCell = yield* getNotebookCell(
+          deps.editor.notebook,
+          cellId,
+        );
         const execution =
           deps.controller.createNotebookCellExecution(notebookCell);
 
