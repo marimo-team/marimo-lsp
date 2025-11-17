@@ -1621,6 +1621,12 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             Default: 1,
             Preferred: 2,
           },
+          NotebookEditorRevealType: {
+            Default: 0,
+            InCenter: 1,
+            InCenterIfOutsideViewport: 2,
+            AtTop: 3,
+          },
           WorkspaceEdit,
           EventEmitter,
           DebugAdapterInlineImplementation: class {},

@@ -476,6 +476,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       NotebookCellKind: vscode.NotebookCellKind,
       NotebookCellOutput: vscode.NotebookCellOutput,
       NotebookCellOutputItem: vscode.NotebookCellOutputItem,
+      NotebookEditorRevealType: vscode.NotebookEditorRevealType,
       NotebookEdit: vscode.NotebookEdit,
       NotebookRange: vscode.NotebookRange,
       NotebookCellStatusBarItem: vscode.NotebookCellStatusBarItem,

@@ -269,7 +269,8 @@ class RunningExecutionHandle extends Data.TaggedClass(
     code: VsCode;
   }) {
     const { cellId, state, code } = options;
-    const outputs = buildCellOutputs(cellId, state, code);
+    const notebook = this.inner.cell.notebook;
+    const outputs = buildCellOutputs(cellId, state, code, notebook);
     return Effect.tryPromise(() => this.inner.replaceOutput(outputs)).pipe(
       Effect.catchAllCause((cause) =>
         Effect.logError("Failed to update cell output", cause).pipe(
@@ -390,7 +391,12 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
           deps.controller.createNotebookCellExecution(notebookCell);
 
         execution.start();
-        const outputs = buildCellOutputs(cellId, state, code);
+        const outputs = buildCellOutputs(
+          cellId,
+          state,
+          code,
+          deps.editor.notebook,
+        );
         yield* Effect.tryPromise(() => execution.replaceOutput(outputs)).pipe(
           Effect.catchAllCause((cause) =>
             Effect.logError(
@@ -454,6 +460,7 @@ export function buildCellOutputs(
   cellId: NotebookCellId,
   state: CellRuntimeState,
   code: VsCode,
+  notebook?: vscode.NotebookDocument,
 ): vscode.NotebookCellOutput[] {
   const outputs: vscode.NotebookCellOutput[] = [];
 
@@ -467,7 +474,7 @@ export function buildCellOutputs(
   // Process console outputs (stdout, stderr, stdin)
   if (state.consoleOutputs) {
     for (const output of state.consoleOutputs) {
-      const item = buildOutputItem(output, cellId, state, code);
+      const item = buildOutputItem(output, cellId, state, code, notebook);
       if (!item) continue;
 
       switch (output.channel) {
@@ -486,7 +493,7 @@ export function buildCellOutputs(
 
   // Process main output and errors
   if (state.output && !isOutputEmpty(state.output)) {
-    const item = buildOutputItem(state.output, cellId, state, code);
+    const item = buildOutputItem(state.output, cellId, state, code, notebook);
     if (item) {
       if (state.output.channel === "marimo-error") {
         errorItems.push(item);
@@ -537,6 +544,31 @@ export function buildCellOutputs(
 }
 
 /**
+ * Creates a mapper function that converts cell URIs to HTML links with "cell-N" format
+ * Uses onclick to send a postMessage that the renderer can handle
+ */
+function createCellIdMapper(
+  notebook: vscode.NotebookDocument,
+): (cellId: string) => string | undefined {
+  return (cellUri: string) => {
+    const cells = notebook.getCells();
+
+    // Find the cell by matching its URI
+    const index = cells.findIndex((cell) => {
+      return cell.document.uri.toString() === cellUri;
+    });
+
+    if (index === -1) {
+      return undefined;
+    }
+
+    // Create an onclick handler that posts a message with the cell URI
+    // The extension will find the cell and navigate to it
+    return `<a href="#" onclick="event.preventDefault(); window.parent.postMessage({ type: 'navigate-to-cell', cellUri: '${cellUri}' }, '*'); return false;">cell-${index}</a>`;
+  };
+}
+
+/**
  * Builds a single NotebookCellOutputItem from a CellOutput
  */
 function buildOutputItem(
@@ -544,6 +576,7 @@ function buildOutputItem(
   cellId: NotebookCellId,
   state: CellRuntimeState,
   code: VsCode,
+  notebook?: vscode.NotebookDocument,
 ): vscode.NotebookCellOutputItem | null {
   // Handle stdout/stderr with proper VSCode helpers
   if (output.mimetype === "text/plain") {
@@ -574,8 +607,14 @@ function buildOutputItem(
   // Handle marimo errors
   if (output.channel === "marimo-error" && Array.isArray(output.data)) {
     // Convert marimo errors to VSCode Error objects
+    const cellIdMapper = notebook ? createCellIdMapper(notebook) : undefined;
     const errors = output.data.map((error) => {
-      return code.NotebookCellOutputItem.stderr(prettyErrorMessage(error));
+      const errorMessage = prettyErrorMessage(error, cellIdMapper);
+      // If the error message contains HTML (links), use text/html mime type
+      if (errorMessage.includes("<a href=")) {
+        return code.NotebookCellOutputItem.text(errorMessage, "text/html");
+      }
+      return code.NotebookCellOutputItem.stderr(errorMessage);
     });
     return errors[0] || null;
   }

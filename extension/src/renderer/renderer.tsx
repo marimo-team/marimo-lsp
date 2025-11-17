@@ -25,6 +25,20 @@ export const activate: vscode.ActivationFunction = (context) => {
 
   initialize(createRequestClient(context));
 
+  // Listen for postMessage events from HTML output (e.g., cell navigation links)
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (data && data.type === "navigate-to-cell") {
+      // Forward the navigation request to the extension
+      context.postMessage({
+        command: "navigate_to_cell",
+        params: {
+          cellUri: data.cellUri,
+        },
+      });
+    }
+  });
+
   context.onDidReceiveMessage((msg) => {
     switch (msg.op) {
       case "send-ui-element-message": {

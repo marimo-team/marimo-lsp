@@ -115,6 +115,7 @@ type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {
 type RendererCommandMap = {
   set_ui_element_value: MarimoApiMethodMap["set_ui_element_value"]["inner"];
   function_call_request: MarimoApiMethodMap["function_call_request"]["inner"];
+  navigate_to_cell: { cellUri: string };
 };
 type RendererCommandMessageOf<K extends keyof RendererCommandMap> = {
   [C in keyof RendererCommandMap]: {

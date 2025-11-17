@@ -38,9 +38,74 @@ describe("prettyErrorMessage", () => {
       name: "my_variable",
       cells: ["cell_1", "cell_2", "cell_3"],
     };
-    expect(prettyErrorMessage(error)).toMatchInlineSnapshot(
-      `"Variable "my_variable" is defined in multiple cells: cell_1, cell_2, cell_3"`,
-    );
+    expect(prettyErrorMessage(error)).toMatchInlineSnapshot(`
+      "This cell redefines variables from other cells.
+
+      'my_variable' was also defined by:
+        • cell_1
+        • cell_2
+        • cell_3"
+    `);
+  });
+
+  it("handles multiple-defs error with single cell", () => {
+    const error: MarimoError = {
+      type: "multiple-defs",
+      name: "x",
+      cells: ["cell_1"],
+    };
+    expect(prettyErrorMessage(error)).toMatchInlineSnapshot(`
+      "This cell redefines variables from other cells.
+
+      'x' was also defined by:
+        • cell_1"
+    `);
+  });
+
+  it("handles multiple-defs error with cell ID mapper (plain text)", () => {
+    const error: MarimoError = {
+      type: "multiple-defs",
+      name: "slider",
+      cells: ["cell_id_abc", "cell_id_def"],
+    };
+    const cellIdMapper = (cellId: string) => {
+      const map: Record<string, string> = {
+        cell_id_abc: "cell-0",
+        cell_id_def: "cell-2",
+      };
+      return map[cellId];
+    };
+    expect(prettyErrorMessage(error, cellIdMapper)).toMatchInlineSnapshot(`
+      "This cell redefines variables from other cells.
+
+      'slider' was also defined by:
+        • cell-0
+        • cell-2"
+    `);
+  });
+
+  it("handles multiple-defs error with HTML cell links", () => {
+    const error: MarimoError = {
+      type: "multiple-defs",
+      name: "slider",
+      cells: ["cell_id_abc", "cell_id_def"],
+    };
+    const cellIdMapper = (cellId: string) => {
+      const map: Record<string, string> = {
+        cell_id_abc:
+          '<a href="command:notebook.cell.focusInOutput?...">cell-0</a>',
+        cell_id_def:
+          '<a href="command:notebook.cell.focusInOutput?...">cell-2</a>',
+      };
+      return map[cellId];
+    };
+    const result = prettyErrorMessage(error, cellIdMapper);
+    expect(result).toContain("<div");
+    expect(result).toContain("<a href=");
+    expect(result).toContain("cell-0</a>");
+    expect(result).toContain("cell-2</a>");
+    expect(result).toContain("<code");
+    expect(result).toContain("slider</code>");
   });
 
   it("handles import-star error", () => {
