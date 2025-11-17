@@ -2,7 +2,7 @@ import * as NodeProcess from "node:process";
 import { Data, Effect, Option, pipe, Schema } from "effect";
 import { EXTENSION_PACKAGE } from "../utils/extension.ts";
 import { Config } from "./Config.ts";
-import { isUvInstalled } from "./LanguageClient.ts";
+import { getUvVersion } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
 
 export class CouldNotGetInformationError extends Data.TaggedError(
@@ -29,9 +29,10 @@ export class HealthService extends Effect.Service<HealthService>()(
         });
 
       const formatDiagnostics = Effect.gen(function* () {
-        const [lspCustomPath, uvDisabled] = yield* Effect.all([
+        const [lspCustomPath, uvDisabled, uvVersion] = yield* Effect.all([
           config.lsp.executable,
           Effect.map(config.uv.enabled, (enabled) => !enabled),
+          Effect.sync(getUvVersion),
         ]);
         const vscodeVersion = code.version;
         const extensionVersion = yield* getExtensionVersion(code);
@@ -46,7 +47,11 @@ export class HealthService extends Effect.Service<HealthService>()(
 
         // LSP Status
         lines.push("Language Server (LSP):");
-        lines.push(`\tUV installed: ${isUvInstalled() ? "Yes ✓" : "No ✗"}`);
+        if (Option.isSome(uvVersion)) {
+          lines.push(`\tUV: ${uvVersion.value} ✓`);
+        } else {
+          lines.push("\tUV: Not installed ✗");
+        }
 
         if (Option.isSome(lspCustomPath)) {
           const { command, args = [] } = lspCustomPath.value as {
