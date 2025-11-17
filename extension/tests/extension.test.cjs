@@ -3,6 +3,7 @@
 
 const assert = require("node:assert");
 const vscode = require("vscode");
+const tinyspy = require("tinyspy");
 
 function getExtension() {
   const ext = vscode.extensions.getExtension("marimo-team.vscode-marimo");
@@ -127,7 +128,80 @@ suite("marimo Extension Hello World Tests", () => {
     assert.ok(extension.isActive);
 
     const initialDocCount = vscode.workspace.textDocuments.length;
-    await vscode.commands.executeCommand("marimo.newMarimoNotebook");
+    const fakeUri = vscode.Uri.parse("memfs:///fake/path/Notebook.py");
+
+    {
+      /** @type {Uint8Array | undefined} */
+      let singleFileContent;
+      const disposable = vscode.workspace.registerFileSystemProvider(
+        "memfs",
+        {
+          onDidChangeFile: new vscode.EventEmitter().event,
+          /** @param {vscode.Uri} uri */
+          readFile(uri) {
+            if (uri.toString() !== fakeUri.toString()) {
+              throw vscode.FileSystemError.FileNotFound(uri);
+            }
+            if (!singleFileContent) {
+              throw vscode.FileSystemError.FileNotFound(uri);
+            }
+            return singleFileContent;
+          },
+          /**
+           * @param {vscode.Uri} uri
+           * @param {Uint8Array} content
+           */
+          writeFile(uri, content) {
+            if (uri.toString() !== fakeUri.toString()) {
+              throw vscode.FileSystemError.FileNotFound(uri);
+            }
+            singleFileContent = content;
+          },
+          watch() {
+            return { dispose() {} };
+          },
+          /** @param {vscode.Uri} uri */
+          stat(uri) {
+            if (!singleFileContent) {
+              throw vscode.FileSystemError.FileNotFound(uri);
+            }
+            return {
+              type: vscode.FileType.File,
+              ctime: 0,
+              mtime: 0,
+              size: singleFileContent.length,
+            };
+          },
+          createDirectory() {},
+          readDirectory() {
+            throw vscode.FileSystemError.NoPermissions();
+          },
+          delete() {
+            throw vscode.FileSystemError.NoPermissions();
+          },
+          rename() {
+            throw vscode.FileSystemError.NoPermissions();
+          },
+          copy() {
+            throw vscode.FileSystemError.NoPermissions();
+          },
+        },
+        {
+          isCaseSensitive: true,
+        },
+      );
+
+      const spy = tinyspy.spyOn(
+        vscode.window,
+        "showSaveDialog",
+        async () => fakeUri,
+      );
+
+      await vscode.commands.executeCommand("marimo.newMarimoNotebook");
+
+      spy.restore();
+      disposable.dispose();
+    }
 
     const finalDocCount = vscode.workspace.textDocuments.length;
     assert.strictEqual(
@@ -137,8 +211,9 @@ suite("marimo Extension Hello World Tests", () => {
     );
     const doc =
       vscode.workspace.textDocuments[vscode.workspace.textDocuments.length - 1];
-    assert.ok(
-      doc.uri.path.includes("Untitled"),
+    assert.equal(
+      fakeUri.fsPath,
+      doc.uri.fsPath,
       "New document should be untitled",
     );
     assert.ok(

@@ -616,11 +616,11 @@ class WorkspaceEdit implements vscode.WorkspaceEdit {
     edits:
       | ReadonlyArray<NotebookEdit | vscode.SnippetTextEdit | vscode.TextEdit>
       | ReadonlyArray<
-          [
-            edit: NotebookEdit | vscode.SnippetTextEdit | vscode.TextEdit,
-            metadata: unknown,
-          ]
-        >,
+        [
+          edit: NotebookEdit | vscode.SnippetTextEdit | vscode.TextEdit,
+          metadata: unknown,
+        ]
+      >,
   ): void {
     const key = uri.toString();
     function isTuples(
@@ -678,7 +678,7 @@ class EventEmitter<T> implements vscode.EventEmitter<T> {
     disposables?: vscode.Disposable[],
   ) => {
     if (this.#disposed) {
-      return { dispose: () => {} };
+      return { dispose: () => { } };
     }
     const bound = thisArgs ? listener.bind(thisArgs) : listener;
     this.#emitter.on("event", bound);
@@ -778,10 +778,10 @@ class TreeItem implements vscode.TreeItem {
   checkboxState?:
     | vscode.TreeItemCheckboxState
     | {
-        readonly state: vscode.TreeItemCheckboxState;
-        readonly tooltip?: string;
-        readonly accessibilityInformation?: vscode.AccessibilityInformation;
-      };
+      readonly state: vscode.TreeItemCheckboxState;
+      readonly tooltip?: string;
+      readonly accessibilityInformation?: vscode.AccessibilityInformation;
+    };
 
   constructor(
     label: string | vscode.TreeItemLabel,
@@ -898,13 +898,13 @@ class TextEditor implements vscode.TextEditor {
     return Promise.resolve(true);
   }
 
-  setDecorations(): void {}
+  setDecorations(): void { }
 
-  revealRange(): void {}
+  revealRange(): void { }
 
-  show(): void {}
+  show(): void { }
 
-  hide(): void {}
+  hide(): void { }
 }
 
 export function createTestTextDocument(
@@ -1113,7 +1113,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     return createTestNotebookEditor(createTestNotebookDocument(uri, data));
   }
   snapshot() {
-    return Effect.gen(this, function* () {
+    return Effect.gen(this, function*() {
       return {
         views: yield* Effect.map(Ref.get(this.views), (map) =>
           HashSet.toValues(map).toSorted(),
@@ -1154,7 +1154,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   notebookChange(event: vscode.NotebookDocumentChangeEvent) {
     return PubSub.publish(this.documentChangesPubSub, event);
   }
-  static make = Effect.fnUntraced(function* (
+  static make = Effect.fnUntraced(function*(
     options: {
       initialDocuments?: Array<vscode.NotebookDocument>;
       version?: string;
@@ -1212,7 +1212,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
 
     const layer = Layer.scoped(
       VsCode,
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         return VsCode.make({
           // namespaces
           window: Window.make({
@@ -1240,13 +1240,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             createOutputChannel(name) {
               return Effect.succeed({
                 name,
-                dispose() {},
-                append() {},
-                appendLine() {},
-                replace() {},
-                clear() {},
-                show() {},
-                hide() {},
+                dispose() { },
+                append() { },
+                appendLine() { },
+                replace() { },
+                clear() { },
+                show() { },
+                hide() { },
               });
             },
             createLogOutputChannel(name) {
@@ -1260,17 +1260,17 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                     dispose() {
                       emitter.dispose();
                     },
-                    append() {},
-                    appendLine() {},
-                    replace() {},
-                    clear() {},
-                    show() {},
-                    hide() {},
-                    trace() {},
-                    debug() {},
-                    info() {},
-                    warn() {},
-                    error() {},
+                    append() { },
+                    appendLine() { },
+                    replace() { },
+                    clear() { },
+                    show() { },
+                    hide() { },
+                    trace() { },
+                    debug() { },
+                    info() { },
+                    warn() { },
+                    error() { },
                   };
                 }),
                 (disposable) => Effect.sync(() => disposable.dispose()),
@@ -1296,7 +1296,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             },
             createTreeView<T>(viewId: string) {
               return Effect.acquireRelease(
-                Effect.gen(function* () {
+                Effect.gen(function*() {
                   yield* Ref.update(views, HashSet.add(viewId));
                   const expandElement = new EventEmitter<
                     vscode.TreeViewExpansionEvent<T>
@@ -1320,7 +1320,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                     visible: false,
                     onDidChangeVisibility: changeVisibility.event,
                     onDidChangeCheckboxState: changeCheckboxState.event,
-                    async reveal(): Promise<void> {},
+                    async reveal(): Promise<void> { },
                     dispose() {
                       expandElement.dispose();
                       collapseElement.dispose();
@@ -1331,7 +1331,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                   };
                 }),
                 (disposable) =>
-                  Effect.gen(function* () {
+                  Effect.gen(function*() {
                     yield* Ref.update(views, HashSet.remove(viewId));
                     yield* Effect.sync(() => disposable.dispose());
                   }),
@@ -1354,9 +1354,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                   backgroundColor: undefined,
                   command: undefined,
                   accessibilityInformation: undefined,
-                  show() {},
-                  hide() {},
-                  dispose() {},
+                  show() { },
+                  hide() { },
+                  dispose() { },
                 })),
                 (disposable) => Effect.sync(() => disposable.dispose()),
               );
@@ -1371,7 +1371,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 selection: new NotebookRange(0, 0),
                 selections: options?.selections ?? [],
                 viewColumn: options?.viewColumn,
-                revealRange() {},
+                revealRange() { },
               });
             },
             showTextDocument() {
@@ -1395,7 +1395,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               ]);
             },
             registerCommand(name) {
-              return Effect.gen(function* () {
+              return Effect.gen(function*() {
                 yield* Ref.update(commands, HashSet.add(name));
                 yield* Effect.addFinalizer(() =>
                   Ref.update(commands, HashSet.remove(name)),
@@ -1423,7 +1423,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 get: () => undefined,
                 has: () => false,
                 inspect: () => undefined,
-                async update() {},
+                async update() { },
               });
             },
             getWorkspaceFolders() {
@@ -1431,7 +1431,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             },
             registerNotebookSerializer(notebookType, impl) {
               return Effect.acquireRelease(
-                Effect.gen(function* () {
+                Effect.gen(function*() {
                   const serializer = { notebookType, serializer: impl };
                   yield* Ref.update(serializers, HashSet.add(serializer));
                   return serializer;
@@ -1490,13 +1490,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           debug: Debug.make({
             registerDebugConfigurationProvider() {
               return Effect.acquireRelease(
-                Effect.succeed({ dispose() {} }),
+                Effect.succeed({ dispose() { } }),
                 (disposable) => Effect.sync(() => disposable.dispose()),
               );
             },
             registerDebugAdapterDescriptorFactory() {
               return Effect.acquireRelease(
-                Effect.succeed({ dispose() {} }),
+                Effect.succeed({ dispose() { } }),
                 (disposable) => Effect.sync(() => disposable.dispose()),
               );
             },
@@ -1504,7 +1504,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           notebooks: Notebooks.make({
             createNotebookController(id, notebookType, label) {
               return Effect.acquireRelease(
-                Effect.gen(function* () {
+                Effect.gen(function*() {
                   const emitter = new EventEmitter();
                   const controller: vscode.NotebookController = {
                     id,
@@ -1514,20 +1514,20 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                     dispose: () => emitter.dispose(),
                     createNotebookCellExecution() {
                       return {
-                        start() {},
-                        end() {},
-                        async appendOutput() {},
-                        async clearOutput() {},
-                        async appendOutputItems() {},
+                        start() { },
+                        end() { },
+                        async appendOutput() { },
+                        async clearOutput() { },
+                        async appendOutputItems() { },
                         executionOrder: undefined,
                         token: {
                           isCancellationRequested: false,
                           onCancellationRequested() {
-                            return { dispose: () => {} };
+                            return { dispose: () => { } };
                           },
                         },
-                        async replaceOutput() {},
-                        async replaceOutputItems() {},
+                        async replaceOutput() { },
+                        async replaceOutputItems() { },
                         get cell(): vscode.NotebookCell {
                           throw new Error(
                             "CellExecution.cell not implemented in TestVsCode.",
@@ -1535,7 +1535,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                         },
                       };
                     },
-                    executeHandler() {},
+                    executeHandler() { },
                     updateNotebookAffinity(
                       notebook: vscode.NotebookDocument,
                       affinity: vscode.NotebookControllerAffinity,
@@ -1556,7 +1556,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                   return controller;
                 }),
                 (controller) =>
-                  Effect.gen(function* () {
+                  Effect.gen(function*() {
                     yield* Effect.sync(() => controller.dispose());
                     yield* Ref.update(controllers, HashSet.remove(controller));
                   }),
@@ -1577,7 +1577,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               provider: vscode.NotebookCellStatusBarItemProvider,
             ) {
               return Effect.acquireRelease(
-                Effect.gen(function* () {
+                Effect.gen(function*() {
                   const registration = { notebookType, provider };
                   yield* Ref.update(statusBarProviders, (providers) => [
                     ...providers,
@@ -1623,7 +1623,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           },
           WorkspaceEdit,
           EventEmitter,
-          DebugAdapterInlineImplementation: class {},
+          DebugAdapterInlineImplementation: class { },
           ProgressLocation: {
             SourceControl: 1,
             Window: 10,
