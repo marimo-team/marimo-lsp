@@ -43,9 +43,15 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
 
       yield* Effect.addFinalizer(() =>
         Ref.update(ref, (map) => {
-          HashMap.forEach(map, (entry) =>
-            Option.map(entry.pendingExecution, (e) => e.end(true)),
-          );
+          HashMap.forEach(map, (entry) => {
+            if (
+              Option.isSome(entry.pendingExecution) &&
+              entry.pendingExecution.value.kind !== "completed"
+            ) {
+              // Ensure all pending or running executions are ended
+              entry.pendingExecution.value.end(false);
+            }
+          });
           return HashMap.empty();
         }),
       );
@@ -108,13 +114,16 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                 const handle = HashMap.get(map, cellId).pipe(
                   Option.andThen((v) => v.pendingExecution),
                 );
-                if (Option.isSome(handle)) {
+                if (
+                  Option.isSome(handle) &&
+                  handle.value.kind !== "completed"
+                ) {
                   // Need to clear existing
                   handle.value.end(true);
                 }
                 const update = CellEntry.withExecution(
                   cell,
-                  new ExecutionHandle({
+                  new PendingExecutionHandle({
                     runId: Option.getOrThrow(extractRunId(msg)),
                     inner: controller.createNotebookCellExecution(notebookCell),
                   }),
@@ -207,35 +216,73 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
   },
 ) {}
 
-class ExecutionHandle extends Data.TaggedClass("ExecutionHandle")<{
+class PendingExecutionHandle extends Data.TaggedClass(
+  "PendingExecutionHandle",
+)<{
   readonly inner: vscode.NotebookCellExecution;
   readonly runId: RunId;
 }> {
+  readonly kind = "pending";
   start(startTime: number) {
-    return this.inner.start(startTime);
+    this.inner.start(startTime);
+    return new RunningExecutionHandle({
+      inner: this.inner,
+      runId: this.runId,
+    });
   }
   end(success: boolean, endTime?: number) {
-    return this.inner.end(success, endTime);
+    this.inner.end(success, endTime);
+    return new CompletedExecutionHandle({
+      inner: this.inner,
+      runId: this.runId,
+    });
   }
-  static updateCellOutput = Effect.fnUntraced(function* (
-    execution: ExecutionHandle,
-    options: {
-      cellId: NotebookCellId;
-      state: CellRuntimeState;
-      code: VsCode;
-    },
-  ) {
+}
+
+class RunningExecutionHandle extends Data.TaggedClass(
+  "RunningExecutionHandle",
+)<{
+  readonly inner: vscode.NotebookCellExecution;
+  readonly runId: RunId;
+}> {
+  readonly kind = "running";
+  end(success: boolean, endTime?: number) {
+    this.inner.end(success, endTime);
+    return new CompletedExecutionHandle({
+      inner: this.inner,
+      runId: this.runId,
+    });
+  }
+  updateCellOutput(options: {
+    cellId: NotebookCellId;
+    state: CellRuntimeState;
+    code: VsCode;
+  }) {
     const { cellId, state, code } = options;
     const outputs = buildCellOutputs(cellId, state, code);
-    yield* Effect.tryPromise(() => execution.inner.replaceOutput(outputs)).pipe(
+    return Effect.tryPromise(() => this.inner.replaceOutput(outputs)).pipe(
       Effect.catchAllCause((cause) =>
         Effect.logError("Failed to update cell output", cause).pipe(
           Effect.annotateLogs({ cellId }),
         ),
       ),
     );
-  });
+  }
 }
+
+class CompletedExecutionHandle extends Data.TaggedClass(
+  "CompletedExecutionHandle",
+)<{
+  readonly inner: vscode.NotebookCellExecution;
+  readonly runId: RunId;
+}> {
+  readonly kind = "completed";
+}
+
+type ExecutionHandle =
+  | PendingExecutionHandle
+  | RunningExecutionHandle
+  | CompletedExecutionHandle;
 
 class CellEntry extends Data.TaggedClass("CellEntry")<{
   readonly id: NotebookCellId;
@@ -267,7 +314,10 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
     });
   }
   static interrupt(cell: CellEntry) {
-    if (Option.isSome(cell.pendingExecution)) {
+    if (
+      Option.isSome(cell.pendingExecution) &&
+      cell.pendingExecution.value.kind !== "completed"
+    ) {
       cell.pendingExecution.value.end(false);
     }
     return new CellEntry({
@@ -276,13 +326,22 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
     });
   }
   static start(cell: CellEntry, timestamp: number) {
-    if (Option.isSome(cell.pendingExecution)) {
-      cell.pendingExecution.value.inner.start(timestamp * 1000);
+    let pendingExecution = cell.pendingExecution;
+    if (
+      Option.isSome(cell.pendingExecution) &&
+      cell.pendingExecution.value.kind === "pending"
+    ) {
+      pendingExecution = Option.some(
+        cell.pendingExecution.value.start(timestamp * 1000),
+      );
     }
-    return new CellEntry({ ...cell });
+    return new CellEntry({ ...cell, pendingExecution });
   }
   static end(cell: CellEntry, success: boolean, timestamp?: number) {
-    if (Option.isSome(cell.pendingExecution)) {
+    if (
+      Option.isSome(cell.pendingExecution) &&
+      cell.pendingExecution.value.kind !== "completed"
+    ) {
       cell.pendingExecution.value.inner.end(
         success,
         timestamp ? timestamp * 1000 : undefined,
@@ -302,6 +361,7 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
     },
   ) {
     const { pendingExecution, id: cellId, state } = cell;
+
     if (Option.isNone(pendingExecution)) {
       // If it is an error, the cell likely never got queued and errored during compilation.
       // Create an ephemeral execution to display the error.
@@ -336,17 +396,27 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
       );
       return;
     }
-    yield* ExecutionHandle.updateCellOutput(pendingExecution.value, {
-      cellId,
-      state,
-      code,
-    }).pipe(
-      Effect.catchAllCause((cause) =>
-        Effect.logError("Failed to update cell output", cause).pipe(
-          Effect.annotateLogs({ cellId }),
+
+    if (pendingExecution.value.kind !== "running") {
+      yield* Effect.logDebug(
+        "Pending execution is not running; skipping output update",
+      ).pipe(Effect.annotateLogs({ cellId, status: state.status }));
+      return;
+    }
+
+    yield* pendingExecution.value
+      .updateCellOutput({
+        cellId,
+        state,
+        code,
+      })
+      .pipe(
+        Effect.catchAllCause((cause) =>
+          Effect.logError("Failed to update cell output", cause).pipe(
+            Effect.annotateLogs({ cellId }),
+          ),
         ),
-      ),
-    );
+      );
   });
 }
 
