@@ -176,12 +176,14 @@ export const findLspExecutable = Effect.fnUntraced(function* () {
   };
 });
 
-export function isUvInstalled(): boolean {
+export function getUvVersion(): Option.Option<string> {
   try {
-    NodeChildProcess.execSync("uv --version", { stdio: "ignore" });
-    return true;
+    const version = NodeChildProcess.execSync("uv --version", {
+      encoding: "utf8",
+    });
+    return Option.some(version.trim());
   } catch {
-    return false;
+    return Option.none();
   }
 }
 
@@ -192,7 +194,10 @@ function maybeHandleLanguageClientStartError(error: LanguageClientStartError) {
 
     yield* Effect.logError("Failed to start marimo-lsp", error);
 
-    if (error.exec.command === "uv" && !isUvInstalled()) {
+    const uvVersion = getUvVersion();
+    const isUvInstalled = Option.isSome(uvVersion);
+
+    if (error.exec.command === "uv" && !isUvInstalled) {
       yield* Effect.logError("uv is not installed in PATH");
 
       const result = yield* code.window.showErrorMessage(
