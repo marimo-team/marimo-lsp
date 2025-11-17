@@ -74,7 +74,9 @@ export class HealthService extends Effect.Service<HealthService>()(
 
         // System Information
         lines.push("System Information:");
-        lines.push(`\tVS Code version: ${vscodeVersion}`);
+        lines.push(`\tHost: ${code.env.appHost}`);
+        lines.push(`\tIDE: ${code.env.appName}`);
+        lines.push(`\tIDE version: ${vscodeVersion}`);
         lines.push(`\tPlatform: ${NodeProcess.platform}`);
         lines.push(`\tArchitecture: ${NodeProcess.arch}`);
         lines.push(`\tNode version: ${NodeProcess.version}`);

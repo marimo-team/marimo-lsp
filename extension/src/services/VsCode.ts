@@ -345,6 +345,10 @@ export class Env extends Effect.Service<Env>()("Env", {
   sync: () => {
     const api = vscode.env;
     return {
+      appName: api.appName,
+      appRoot: api.appRoot,
+      appHost: api.appHost,
+      machineId: api.machineId,
       openExternal(target: vscode.Uri): Effect.Effect<boolean> {
         return Effect.promise(() => api.openExternal(target));
       },

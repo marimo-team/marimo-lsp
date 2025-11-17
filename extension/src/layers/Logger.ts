@@ -2,6 +2,7 @@ import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 import { Effect, Layer, Logger, type LogLevel } from "effect";
 import { OutputChannel } from "../services/OutputChannel.ts";
+import { Sentry } from "../services/Sentry.ts";
 
 const makeFileLogger = (logFilePath: string) =>
   Effect.gen(function* () {
@@ -49,9 +50,10 @@ export const LoggerLive = Layer.unwrapScoped(
       NodePath.join(__dirname, "../../logs/marimo.log"),
     );
     const vscodeLogger = yield* makeVsCodeLogger(outputChannel);
+    const sentry = yield* Sentry;
     return Logger.replace(
       Logger.defaultLogger,
-      Logger.zip(fileLogger, vscodeLogger),
+      Logger.zip(Logger.zip(fileLogger, vscodeLogger), sentry.errorLogger),
     );
   }),
 );
