@@ -26,6 +26,7 @@ import { OutputChannel } from "../services/OutputChannel.ts";
 import type { PythonExtension } from "../services/PythonExtension.ts";
 import { PackagesService } from "../services/packages/PackagesService.ts";
 import { SandboxController } from "../services/SandboxController.ts";
+import { Sentry } from "../services/Sentry.ts";
 import { ExtensionContext, Storage } from "../services/Storage.ts";
 import { Telemetry } from "../services/Telemetry.ts";
 import { Uv } from "../services/Uv.ts";
@@ -84,6 +85,7 @@ const MainLive = Layer.empty
     Layer.provide(Config.Default),
     Layer.provide(OutputChannel.Default),
     Layer.provide(Telemetry.Default),
+    Layer.provide(Sentry.Default),
   );
 
 export function makeActivate(

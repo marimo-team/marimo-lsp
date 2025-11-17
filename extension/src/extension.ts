@@ -4,6 +4,7 @@ import { makeActivate } from "./layers/Main.ts";
 import { LanguageClient } from "./services/LanguageClient.ts";
 import { OutputChannel } from "./services/OutputChannel.ts";
 import { PythonExtension } from "./services/PythonExtension.ts";
+import { Sentry } from "./services/Sentry.ts";
 import { VsCode } from "./services/VsCode.ts";
 
 export const activate = makeActivate(
@@ -11,6 +12,7 @@ export const activate = makeActivate(
     Layer.provideMerge(PythonExtension.Default),
     Layer.provideMerge(LanguageClient.Default),
     Layer.provide(LoggerLive),
+    Layer.provide(Sentry.Default),
     Layer.provide(OutputChannel.Default),
     Layer.provideMerge(VsCode.Default),
   ),
