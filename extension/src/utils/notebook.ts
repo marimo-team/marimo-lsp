@@ -1,9 +1,22 @@
-import type { Brand } from "effect";
+import { type Brand, Data, Effect } from "effect";
 import type * as vscode from "vscode";
-import { assert } from "../assert.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import type { MarimoNotebookDocument } from "../services/types.ts";
 import type { CellMessage } from "../types.ts";
+
+class NotebookCellNotFoundError extends Data.TaggedError(
+  "NotebookCellNotFoundError",
+)<{
+  readonly cellId: NotebookCellId;
+  readonly notebook: vscode.NotebookDocument;
+}> {
+  get message() {
+    const cellIds = this.notebook.getCells().map((c) => getNotebookCellId(c));
+    return `No cell id ${this.cellId} in notebook ${this.notebook.uri.toString()}. Available cells: ${cellIds.join(
+      ", ",
+    )}`;
+  }
+}
 
 export function isMarimoNotebookDocument(
   notebook: vscode.NotebookDocument,
@@ -38,14 +51,14 @@ export function extractCellId(msg: CellMessage) {
 export function getNotebookCell(
   notebook: vscode.NotebookDocument,
   cellId: NotebookCellId,
-): vscode.NotebookCell {
-  const cell = notebook.getCells().find((c) => getNotebookCellId(c) === cellId);
-  if (!cell) {
-    const cellIds = notebook.getCells().map((c) => getNotebookCellId(c));
-    assert(
-      cell,
-      `No cell id ${cellId} in notebook ${notebook.uri.toString()}. Available cells: ${cellIds.join(", ")}`,
-    );
-  }
-  return cell;
+) {
+  return Effect.gen(function* () {
+    const cell = notebook
+      .getCells()
+      .find((c) => getNotebookCellId(c) === cellId);
+    if (!cell) {
+      return yield* new NotebookCellNotFoundError({ cellId, notebook });
+    }
+    return cell;
+  });
 }
