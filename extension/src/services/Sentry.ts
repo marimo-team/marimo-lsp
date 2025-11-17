@@ -13,11 +13,13 @@ const SENTRY_DSN =
 export class Sentry extends Effect.Service<Sentry>()("Sentry", {
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
+
     const extensionVersion = yield* getExtensionVersion(code).pipe(
       Effect.catchTag("CouldNotGetInformationError", () =>
         Effect.succeed("unknown"),
       ),
     );
+
     const config = yield* code.workspace.getConfiguration("marimo");
     const telemetryEnabled = config.get<boolean>("telemetry") ?? true;
 
