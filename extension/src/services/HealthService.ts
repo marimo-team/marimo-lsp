@@ -142,13 +142,11 @@ export function getExtensionVersion(code: VsCode) {
     const ext = yield* code.extensions.getExtension(EXTENSION_PACKAGE.fullName);
     const pkg = yield* Schema.decodeUnknown(
       Schema.Struct({ version: Schema.String }),
-    )(ext);
+    )(ext.packageJSON).pipe(
+      Effect.mapError((cause) => new CouldNotGetInformationError({ cause })),
+    );
     return pkg.version;
   }).pipe(
     Effect.catchTag("NoSuchElementException", () => Effect.succeed("unknown")),
-    Effect.catchTag(
-      "ParseError",
-      (cause) => new CouldNotGetInformationError({ cause }),
-    ),
   );
 }
