@@ -200,18 +200,34 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
 
 const newMarimoNotebook = ({
   code,
-  serializer,
 }: {
   code: VsCode;
   serializer: NotebookSerializer;
 }) =>
   Effect.gen(function* () {
-    const notebook = yield* code.workspace.openUntitledNotebookDocument(
-      serializer.notebookType,
-      new code.NotebookData([
-        new code.NotebookCellData(code.NotebookCellKind.Code, "", "python"),
-      ]),
+    const uri = yield* code.window.showSaveDialog({
+      filters: { Python: ["py"] },
+    });
+
+    if (Option.isNone(uri)) {
+      return;
+    }
+
+    yield* code.workspace.fs.writeFile(
+      uri.value,
+      new TextEncoder().encode(
+        `import marimo
+
+app = marimo.App()
+
+@app.cell
+def _():
+    return
+`.trim(),
+      ),
     );
+
+    const notebook = yield* code.workspace.openNotebookDocument(uri.value);
     yield* code.window.showNotebookDocument(notebook);
 
     yield* Effect.logInfo("Created new marimo notebook").pipe(
