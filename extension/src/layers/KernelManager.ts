@@ -140,6 +140,34 @@ export const KernelManagerLive = Layer.scopedDiscard(
                 });
                 return;
               }
+              case "navigate_to_cell": {
+                const { cellUri } = message.params;
+                const editor = yield* code.window.getActiveNotebookEditor();
+
+                if (Option.isNone(editor)) {
+                  return yield* Effect.logWarning(
+                    "No active notebook editor to navigate to cell",
+                  );
+                }
+
+                const cellIndex = editor.value.notebook
+                  .getCells()
+                  .findIndex(
+                    (cell) => cell.document.uri.toString() === cellUri,
+                  );
+
+                yield* Effect.logDebug(
+                  `Navigating to cell at index ${cellIndex}`,
+                ).pipe(Effect.annotateLogs({ cellUri, cellIndex }));
+
+                if (cellIndex !== -1) {
+                  editor.value.revealRange(
+                    new code.NotebookRange(cellIndex, cellIndex + 1),
+                    code.NotebookEditorRevealType.InCenter,
+                  );
+                }
+                return;
+              }
               default: {
                 unreachable(message, "Unknown message from frontend");
               }
