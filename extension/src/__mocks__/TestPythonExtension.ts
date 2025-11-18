@@ -1,5 +1,6 @@
 import type * as py from "@vscode/python-extension";
 import { Data, Effect, HashSet, Layer, PubSub, Ref, Stream } from "effect";
+import { Uri } from "../__mocks__/TestVsCode.ts";
 import { PythonExtension } from "../services/PythonExtension.ts";
 
 export class TestPythonExtension extends Data.TaggedClass(
@@ -9,10 +10,10 @@ export class TestPythonExtension extends Data.TaggedClass(
   readonly addEnvironment: (env: py.Environment) => Effect.Effect<void>;
   readonly removeEnvironment: (env: py.Environment) => Effect.Effect<void>;
 }> {
-  static makeEnv(venvPath: string): py.Environment {
+  static makeGlobalEnv(path: string): py.Environment {
     return {
-      id: venvPath,
-      path: venvPath,
+      id: path,
+      path,
       environment: undefined,
       tools: [],
       version: undefined,
@@ -20,6 +21,18 @@ export class TestPythonExtension extends Data.TaggedClass(
         uri: undefined,
         bitness: undefined,
         sysPrefix: undefined,
+      },
+    };
+  }
+  static makeVenv(venvPath: string): py.Environment {
+    const env = TestPythonExtension.makeGlobalEnv(venvPath);
+    return {
+      ...env,
+      environment: {
+        type: "VirtualEnv",
+        name: undefined,
+        folderUri: Uri.file(venvPath),
+        workspaceFolder: undefined,
       },
     };
   }

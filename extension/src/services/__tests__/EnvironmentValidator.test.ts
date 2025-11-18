@@ -54,7 +54,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       const result = yield* Effect.either(
         validator.validate(
-          TestPythonExtension.makeEnv(NodePath.join(venv, "bin", "python")),
+          TestPythonExtension.makeVenv(NodePath.join(venv, "bin", "python")),
         ),
       );
 
@@ -91,7 +91,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       const result = yield* Effect.either(
         validator.validate(
-          TestPythonExtension.makeEnv(NodePath.join(venv, "bin", "python")),
+          TestPythonExtension.makeVenv(NodePath.join(venv, "bin", "python")),
         ),
       );
 
@@ -124,7 +124,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       const result = yield* Effect.either(
         validator.validate(
-          TestPythonExtension.makeEnv(NodePath.join(venv, "bin", "python")),
+          TestPythonExtension.makeVenv(NodePath.join(venv, "bin", "python")),
         ),
       );
 
@@ -167,7 +167,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       const result = yield* Effect.either(
         validator.validate(
-          TestPythonExtension.makeEnv(NodePath.join(venv, "bin", "python")),
+          TestPythonExtension.makeVenv(NodePath.join(venv, "bin", "python")),
         ),
       );
 
@@ -187,7 +187,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       const result = yield* Effect.either(
         validator.validate(
-          TestPythonExtension.makeEnv(NodePath.join(venv, "bin", "python")),
+          TestPythonExtension.makeVenv(NodePath.join(venv, "bin", "python")),
         ),
       );
       assert(Either.isLeft(result), "Expected validation to fail");
