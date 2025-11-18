@@ -49,20 +49,21 @@ icon in the editor title bar to open it as a notebook (see image above).
 
 ## Commands
 
-| Command                                               | Description                                                               |
-| ----------------------------------------------------- | ------------------------------------------------------------------------- |
-| `marimo: New marimo notebook`                         | Create a new marimo notebook                                              |
-| `marimo: Open as marimo notebook`                     | Open a Python file as a marimo notebook                                   |
-| `marimo: Toggle on-cell-change mode`                  | Switch between auto-run and lazy execution modes                          |
-| `marimo: Run stale cells`                             | Execute all cells that need to be re-run                                  |
-| `marimo: Restart notebook kernel`                     | Restart the notebook's Python kernel                                      |
-| `marimo: Create setup cell`                           | Create or navigate to an existing setup cell                              |
-| `marimo: Publish notebook as Gist`                    | Share your notebook as a GitHub Gist                                      |
-| `marimo: Publish notebook as...`                      | Export your notebook in various formats                                   |
-| `marimo: Export static HTML`                          | Export notebook with current outputs as HTML (without re-executing cells) |
-| `marimo: Restart marimo language server (marimo-lsp)` | Restart the LSP server if it becomes unresponsive                         |
-| `marimo: Report an issue or suggest a feature`        | Open GitHub to report bugs or request features                            |
-| `marimo: Show marimo diagnostics`                     | Display diagnostic information for troubleshooting                        |
+| Command                                                   | Description                                                               |
+| --------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `marimo: New marimo notebook`                             | Create a new marimo notebook                                              |
+| `marimo: Open as marimo notebook`                         | Open a Python file as a marimo notebook                                   |
+| `marimo: Toggle on-cell-change mode`                      | Switch between auto-run and lazy execution modes                          |
+| `marimo: Run stale cells`                                 | Execute all cells that need to be re-run                                  |
+| `marimo: Restart notebook kernel`                         | Restart the notebook's Python kernel                                      |
+| `marimo: Create setup cell`                               | Create or navigate to an existing setup cell                              |
+| `marimo: Publish notebook as Gist`                        | Share your notebook as a GitHub Gist                                      |
+| `marimo: Publish notebook as...`                          | Export your notebook in various formats                                   |
+| `marimo: Export static HTML`                              | Export notebook with current outputs as HTML (without re-executing cells) |
+| `marimo: Set Python interpreter to match notebook kernel` | Set the active Python interpreter to match the notebook's kernel          |
+| `marimo: Restart marimo language server (marimo-lsp)`     | Restart the LSP server if it becomes unresponsive                         |
+| `marimo: Report an issue or suggest a feature`            | Open GitHub to report bugs or request features                            |
+| `marimo: Show marimo diagnostics`                         | Display diagnostic information for troubleshooting                        |
 
 ## Configuration
 

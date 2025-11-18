@@ -227,6 +227,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
 ) {}
 
 export class VenvPythonController {
+  readonly _tag = "VenvPythonController";
   #inner: Omit<vscode.NotebookController, "dispose">;
   executable: string;
   constructor(

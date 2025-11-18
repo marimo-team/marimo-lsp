@@ -259,6 +259,12 @@
         "shortTitle": "Export static HTML",
         "category": "marimo",
         "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
+        "command": "marimo.updateActivePythonEnvironment",
+        "title": "Set Python interpreter to match notebook kernel",
+        "category": "marimo",
+        "enablement": "notebookType == 'marimo-notebook'"
       }
     ],
     "viewsContainers": {

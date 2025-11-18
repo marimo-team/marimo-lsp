@@ -63,7 +63,12 @@ export function installPackages(
             );
 
             // sync the virtual env
-            yield* uv.syncScript({ script: notebook.uri.fsPath });
+            yield* uv.syncScript({ script: notebook.uri.fsPath }).pipe(
+              // Should be added by `uvAddScriptSafe`
+              Effect.catchTag("UvMissingPep723MetadataError", () =>
+                Effect.die("Expected PEP 723 metadata to be present"),
+              ),
+            );
           }
           progress.report({
             message: `Successfully installed ${packages.join(", ")}`,

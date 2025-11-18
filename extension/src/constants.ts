@@ -18,7 +18,8 @@ export type MarimoCommand =
   | "marimo.showDiagnostics"
   | "marimo.showMarimoMenu"
   | "marimo.toggleOnCellChangeAutoRun"
-  | "marimo.toggleOnCellChangeLazy";
+  | "marimo.toggleOnCellChangeLazy"
+  | "marimo.updateActivePythonEnvironment";
 
 export type MarimoView =
   | "marimo-explorer-datasources"

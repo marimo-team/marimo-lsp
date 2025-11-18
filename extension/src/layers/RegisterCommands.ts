@@ -6,6 +6,7 @@ import {
   encodeCellMetadata,
   isStaleCellMetadata,
 } from "../schemas.ts";
+import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
@@ -14,6 +15,8 @@ import { HealthService } from "../services/HealthService.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
+import { PythonExtension } from "../services/PythonExtension.ts";
+import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { getNotebookUri } from "../types.ts";
 import { Links } from "../utils/links.ts";
@@ -25,6 +28,8 @@ import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 export const RegisterCommandsLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const gh = yield* GitHubClient;
+    const py = yield* PythonExtension;
+    const uv = yield* Uv;
     const code = yield* VsCode;
     const client = yield* LanguageClient;
     const channel = yield* OutputChannel;
@@ -32,6 +37,7 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     const serializer = yield* NotebookSerializer;
     const configService = yield* MarimoConfigurationService;
     const configContextManager = yield* ConfigContextManager;
+    const controllers = yield* ControllerRegistry;
     const healthService = yield* HealthService;
 
     yield* code.commands.registerCommand(
@@ -194,6 +200,11 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     yield* code.commands.registerCommand(
       "marimo.exportStaticHTML",
       exportNotebookAsHTML({ code, client, channel, serializer }),
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.updateActivePythonEnvironment",
+      updateActivePythonEnvironment({ code, py, uv, controllers }),
     );
   }),
 );
@@ -680,5 +691,63 @@ const exportNotebookAsHTML = ({
           }),
         );
       }),
+    );
+  });
+
+const updateActivePythonEnvironment = ({
+  py,
+  uv,
+  code,
+  controllers,
+}: {
+  py: PythonExtension;
+  uv: Uv;
+  code: VsCode;
+  controllers: ControllerRegistry;
+}) =>
+  Effect.gen(function* () {
+    const editor = yield* code.window.getActiveNotebookEditor();
+
+    if (Option.isNone(editor)) {
+      yield* code.window.showInformationMessage(
+        "No marimo notebook is currently open",
+      );
+      return;
+    }
+
+    const controller = yield* controllers.getActiveController(
+      editor.value.notebook,
+    );
+
+    if (Option.isNone(controller)) {
+      yield* code.window.showInformationMessage(
+        "No active controller for the current marimo notebook found. Please select a kernel first.",
+      );
+      return;
+    }
+
+    let executable: string;
+    if (controller.value._tag === "VenvPythonController") {
+      executable = controller.value.executable;
+    } else {
+      const script = editor.value.notebook.uri.fsPath;
+      const venvResult = yield* uv.syncScript({ script }).pipe(Effect.either);
+
+      if (Either.isLeft(venvResult)) {
+        return yield* showErrorAndPromptLogs(
+          "Failed to synchronize virtual environment for the current notebook.",
+          { code, channel: uv.channel },
+        );
+      }
+
+      executable = NodePath.join(venvResult.right, "bin", "python");
+    }
+
+    // update the active python environment
+    yield* py.updateActiveEnvironmentPath(executable);
+
+    // inform the user
+    yield* code.window.showInformationMessage(
+      `Active Python environment updated to: ${executable}`,
     );
   });
