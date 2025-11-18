@@ -1,4 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
+import type * as py from "@vscode/python-extension";
 import { Effect, Layer, Option, TestClock } from "effect";
 import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
@@ -10,13 +11,11 @@ import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { VsCode } from "../VsCode.ts";
 
 const withTestCtx = Effect.fnUntraced(function* (
-  options: { initialEnvs?: Array<string> } = {},
+  options: { initialEnvs?: Array<py.Environment> } = {},
 ) {
   const { initialEnvs = [] } = options;
   const vscode = yield* TestVsCode.make();
-  const py = yield* TestPythonExtension.make(
-    initialEnvs.map(TestPythonExtension.makeEnv),
-  );
+  const py = yield* TestPythonExtension.make(initialEnvs);
 
   const layer = Layer.empty.pipe(
     Layer.provideMerge(ControllerRegistry.Default),
@@ -52,7 +51,10 @@ it.effect(
   "should create controllers for initial python environments",
   Effect.fnUntraced(function* () {
     const { layer } = yield* withTestCtx({
-      initialEnvs: ["/usr/local/bin/python3.11", "/home/user/.venv/bin/python"],
+      initialEnvs: [
+        TestPythonExtension.makeVenv("/home/user/.venv/bin/python"),
+        TestPythonExtension.makeGlobalEnv("/usr/local/bin/python3.11"),
+      ],
     });
 
     const snapshot = yield* Effect.gen(function* () {
@@ -67,10 +69,6 @@ it.effect(
             "executable": "/home/user/.venv/bin/python",
             "id": "marimo-/home/user/.venv/bin/python",
           },
-          {
-            "executable": "/usr/local/bin/python3.11",
-            "id": "marimo-/usr/local/bin/python3.11",
-          },
         ],
         "selections": [],
       }
@@ -82,7 +80,7 @@ it.effect(
   "should add controller when new python environment is added",
   Effect.fnUntraced(function* () {
     const { layer, py } = yield* withTestCtx({
-      initialEnvs: ["/usr/local/bin/python3.11"],
+      initialEnvs: [TestPythonExtension.makeVenv("/usr/local/bin/python3.11")],
     });
 
     yield* Effect.gen(function* () {
@@ -102,8 +100,8 @@ it.effect(
         }
       `);
 
-      // Add new environment
-      const env2 = TestPythonExtension.makeEnv("/home/user/.venv/bin/python");
+      // Add new venv environment
+      const env2 = TestPythonExtension.makeVenv("/home/user/.venv/bin/python");
       yield* py.addEnvironment(env2);
 
       // Give time for the stream to process
@@ -130,13 +128,17 @@ it.effect(
   "should remove controller when python environment is removed",
   Effect.fnUntraced(function* () {
     const { layer, py } = yield* withTestCtx({
-      initialEnvs: ["/usr/local/bin/python3.11", "/home/user/.venv/bin/python"],
+      initialEnvs: [
+        TestPythonExtension.makeVenv("/usr/local/bin/python3.11"),
+        TestPythonExtension.makeVenv("/home/user/.venv/bin/python"),
+        TestPythonExtension.makeGlobalEnv("/opt/homebrew/bin/python3"),
+      ],
     });
 
     yield* Effect.gen(function* () {
       const registry = yield* ControllerRegistry;
 
-      // Initial state - should have two controllers
+      // Initial state - should have two controllers (global env filtered out)
       const snapshot1 = yield* registry.snapshot();
       expect(snapshot1).toMatchInlineSnapshot(`
         {
@@ -154,14 +156,14 @@ it.effect(
         }
       `);
 
-      // Remove environment
-      const env2 = TestPythonExtension.makeEnv("/home/user/.venv/bin/python");
+      // Remove venv environment
+      const env2 = TestPythonExtension.makeVenv("/home/user/.venv/bin/python");
       yield* py.removeEnvironment(env2);
 
       // Give time for the stream to process
       yield* TestClock.adjust("100 millis");
 
-      // Should now have one controller
+      // Should now have one controller (global env still filtered)
       const snapshot2 = yield* registry.snapshot();
       expect(snapshot2).toMatchInlineSnapshot(`
         {
@@ -186,7 +188,11 @@ it.effect(
   "should track controller selections for notebooks",
   Effect.fnUntraced(function* () {
     const { layer, vscode } = yield* withTestCtx({
-      initialEnvs: ["/usr/local/bin/python3.11", "/home/user/.venv/bin/python"],
+      initialEnvs: [
+        TestPythonExtension.makeVenv("/usr/local/bin/python3.11"),
+        TestPythonExtension.makeVenv("/home/user/.venv/bin/python"),
+        TestPythonExtension.makeGlobalEnv("/opt/homebrew/bin/python3"),
+      ],
     });
 
     yield* Effect.gen(function* () {
@@ -242,7 +248,10 @@ it.effect(
   "should not remove controller when it's in use by a notebook",
   Effect.fnUntraced(function* () {
     const { layer, py } = yield* withTestCtx({
-      initialEnvs: ["/usr/local/bin/python3.11", "/home/user/.venv/bin/python"],
+      initialEnvs: [
+        TestPythonExtension.makeVenv("/usr/local/bin/python3.11"),
+        TestPythonExtension.makeVenv("/home/user/.venv/bin/python"),
+      ],
     });
 
     yield* Effect.gen(function* () {
@@ -267,7 +276,7 @@ it.effect(
       `);
 
       // Try to remove env1 (would require simulating a notebook selection first)
-      const env1 = TestPythonExtension.makeEnv("/usr/local/bin/python3.11");
+      const env1 = TestPythonExtension.makeVenv("/usr/local/bin/python3.11");
       yield* py.removeEnvironment(env1);
 
       // Give time for the stream to process
@@ -298,17 +307,20 @@ it.effect(
   "should handle multiple environment additions and removals",
   Effect.fnUntraced(function* () {
     const { layer, py } = yield* withTestCtx({
-      initialEnvs: ["/usr/local/bin/python3.11"],
+      initialEnvs: [
+        TestPythonExtension.makeVenv("/usr/local/bin/python3.11"),
+        TestPythonExtension.makeGlobalEnv("/opt/homebrew/bin/python3"),
+      ],
     });
 
     yield* Effect.gen(function* () {
       const registry = yield* ControllerRegistry;
 
-      const env1 = TestPythonExtension.makeEnv("/usr/local/bin/python3.11");
-      const env2 = TestPythonExtension.makeEnv("/home/user/.venv/bin/python");
-      const env3 = TestPythonExtension.makeEnv("/opt/python3.12/bin/python");
+      const env1 = TestPythonExtension.makeVenv("/usr/local/bin/python3.11");
+      const env2 = TestPythonExtension.makeVenv("/home/user/.venv/bin/python");
+      const env3 = TestPythonExtension.makeVenv("/opt/python3.12/bin/python");
 
-      // Initial: 1 controller
+      // Initial: 1 controller (global env filtered out)
       let snapshot = yield* registry.snapshot();
       expect(snapshot).toMatchInlineSnapshot(`
         {
@@ -322,7 +334,7 @@ it.effect(
         }
       `);
 
-      // Add env2
+      // Add env2 (venv)
       yield* py.addEnvironment(env2);
       yield* TestClock.adjust("100 millis");
 
@@ -413,13 +425,13 @@ it.effect(
   "should update controller description when environment changes",
   Effect.fnUntraced(function* () {
     const { layer, py } = yield* withTestCtx({
-      initialEnvs: ["/usr/local/bin/python3.11"],
+      initialEnvs: [TestPythonExtension.makeVenv("/usr/local/bin/python3.11")],
     });
 
     yield* Effect.gen(function* () {
       const registry = yield* ControllerRegistry;
 
-      const env1 = TestPythonExtension.makeEnv("/usr/local/bin/python3.11");
+      const env1 = TestPythonExtension.makeVenv("/usr/local/bin/python3.11");
 
       // Initial snapshot
       const snapshot1 = yield* registry.snapshot();
@@ -462,7 +474,7 @@ it.effect(
   "should not set affinity when notebook has no script header or venv",
   Effect.fnUntraced(function* () {
     const { layer, vscode } = yield* withTestCtx({
-      initialEnvs: ["/usr/local/bin/python3.11"],
+      initialEnvs: [TestPythonExtension.makeVenv("/usr/local/bin/python3.11")],
     });
 
     yield* Effect.gen(function* () {
@@ -497,7 +509,7 @@ it.effect(
   "should handle opening multiple notebooks",
   Effect.fnUntraced(function* () {
     const { layer, vscode } = yield* withTestCtx({
-      initialEnvs: ["/usr/local/bin/python3.11"],
+      initialEnvs: [TestPythonExtension.makeVenv("/usr/local/bin/python3.11")],
     });
 
     yield* Effect.gen(function* () {
