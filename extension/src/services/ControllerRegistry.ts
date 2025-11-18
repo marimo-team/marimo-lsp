@@ -73,11 +73,18 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
 
       const refresh = Effect.fnUntraced(function* () {
         const envs = yield* pyExt.knownEnvironments();
+        // Filter out system Python interpreters (those without a virtual environment)
+        const filteredEnvs = envs.filter(
+          (env) => env.environment !== undefined,
+        );
         yield* Effect.logDebug("Refreshing controllers").pipe(
-          Effect.annotateLogs({ environmentCount: envs.length }),
+          Effect.annotateLogs({
+            environmentCount: envs.length,
+            filteredCount: filteredEnvs.length,
+          }),
         );
         yield* Effect.forEach(
-          envs,
+          filteredEnvs,
           (env) =>
             createOrUpdateController({
               env,
@@ -89,7 +96,11 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
             ),
           { discard: true },
         );
-        yield* pruneStaleControllers({ envs, handlesRef, selectionsRef });
+        yield* pruneStaleControllers({
+          envs: filteredEnvs,
+          handlesRef,
+          selectionsRef,
+        });
       });
 
       yield* refresh();
