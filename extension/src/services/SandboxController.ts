@@ -71,7 +71,14 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             }
 
             // always ensure the env is up to date
-            const venv = yield* uv.syncScript({ script: notebook.uri.fsPath });
+            const venv = yield* uv
+              .syncScript({ script: notebook.uri.fsPath })
+              .pipe(
+                // Should be added by findRequirements or uvAddScriptSafe
+                Effect.catchTag("UvMissingPep723MetadataError", () =>
+                  Effect.die("Expected PEP 723 metadata to be present"),
+                ),
+              );
             const executable = NodePath.join(venv, "bin", "python");
             yield* python.updateActiveEnvironmentPath(executable);
 

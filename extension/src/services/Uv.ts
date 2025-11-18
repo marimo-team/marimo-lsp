@@ -102,6 +102,11 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         }
         return uv({ args }).pipe(Effect.andThen(Effect.void));
       },
+      initScript({ script }: { script: string }) {
+        return uv({ args: ["init", "--script", script] }).pipe(
+          Effect.andThen(Effect.void),
+        );
+      },
       syncScript(options: { script: string }) {
         return Effect.andThen(
           uv({ args: ["sync", "--script", options.script] }),
@@ -114,7 +119,13 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
             assert(path, `Expected path from uv, got: stderr=${stderr}`);
             return path;
           },
-        ).pipe(Effect.catchTag("UvUnknownError", UvResolutionError.refine));
+        ).pipe(
+          Effect.catchTag(
+            "UvUnknownError",
+            UvMissingPep723MetadataError.refine.bind(null, options.script),
+          ),
+          Effect.catchTag("UvUnknownError", UvResolutionError.refine),
+        );
       },
       addScript(options: {
         script: string;
