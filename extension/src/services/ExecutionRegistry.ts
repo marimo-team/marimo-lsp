@@ -19,6 +19,7 @@ import type * as vscode from "vscode";
 import {
   type CellMessage,
   type CellRuntimeState,
+  createCellNavigationLink,
   getNotebookUri,
 } from "../types.ts";
 import { prettyErrorMessage } from "../utils/errors.ts";
@@ -544,8 +545,16 @@ export function buildCellOutputs(
 }
 
 /**
- * Creates a mapper function that converts cell URIs to HTML links with "cell-N" format
- * Uses onclick to send a postMessage that the renderer can handle
+ * Creates a mapper function that converts cell URIs to clickable HTML links.
+ *
+ * Transforms error message cell references like "vscode-notebook-cell://...#W1sZmlsZQ%3D%3D"
+ * into human-readable, clickable links like "<a ...>cell-2</a>".
+ *
+ * The links use onclick handlers to post messages to window.parent, which the renderer
+ * catches and forwards to the extension. See types.ts for the full navigation flow.
+ *
+ * @param notebook - The notebook document containing the cells
+ * @returns A function that maps cell URIs to HTML link strings
  */
 function createCellIdMapper(
   notebook: vscode.NotebookDocument,
@@ -553,18 +562,14 @@ function createCellIdMapper(
   return (cellUri: string) => {
     const cells = notebook.getCells();
 
-    // Find the cell by matching its URI
-    const index = cells.findIndex((cell) => {
-      return cell.document.uri.toString() === cellUri;
-    });
-
-    if (index === -1) {
+    // Find the cell by matching its URI to get the visual index (0-based)
+    const cellIndex = cells.findIndex(
+      (cell) => cell.document.uri.toString() === cellUri,
+    );
+    if (cellIndex === -1) {
       return undefined;
     }
-
-    // Create an onclick handler that posts a message with the cell URI
-    // The extension will find the cell and navigate to it
-    return `<a href="#" onclick="event.preventDefault(); window.parent.postMessage({ type: 'navigate-to-cell', cellUri: '${cellUri}' }, '*'); return false;">cell-${index}</a>`;
+    return createCellNavigationLink(cellUri, cellIndex + 1);
   };
 }
 

@@ -6,6 +6,7 @@ import styleText from "virtual:stylesheet";
 import * as ReactDOM from "react-dom/client";
 import type * as vscode from "vscode-notebook-renderer";
 import { assert, unreachable } from "../assert.ts";
+import type { MarimoHtmlPublishMessage } from "../types.ts";
 import { CellOutput } from "./CellOutput.tsx";
 import {
   type CellId,
@@ -25,19 +26,36 @@ export const activate: vscode.ActivationFunction = (context) => {
 
   initialize(createRequestClient(context));
 
-  // Listen for postMessage events from HTML output (e.g., cell navigation links)
-  window.addEventListener("message", (event) => {
-    const data = event.data;
-    if (data && data.type === "navigate-to-cell") {
-      // Forward the navigation request to the extension
-      context.postMessage({
-        command: "navigate_to_cell",
-        params: {
-          cellUri: data.cellUri,
-        },
-      });
-    }
-  });
+  /**
+   * Bridge for HTML output interactions.
+   *
+   * Notebook cell output HTML runs in an isolated context and can't directly execute VSCode
+   * commands or access the notebook editor. To enable interactive elements (like clickable
+   * cell references in error messages), we:
+   *
+   * 1. Embed onclick handlers in the HTML that post messages to window.parent
+   * 2. Catch those messages here in the renderer
+   * 3. Forward them to the extension via context.postMessage()
+   * 4. The extension handles them in KernelManager.ts
+   *
+   * This enables features like "This variable was defined in [cell-2]" where clicking
+   * "cell-2" navigates to that cell in the notebook.
+   */
+  window.addEventListener(
+    "message",
+    (event: MessageEvent<MarimoHtmlPublishMessage>) => {
+      switch (event.data.command) {
+        case "navigate_to_cell":
+          context.postMessage(event.data);
+          break;
+        default:
+          unreachable(
+            event.data.command,
+            `Unhandled HTML publish message: ${JSON.stringify(event.data)}`,
+          );
+      }
+    },
+  );
 
   context.onDidReceiveMessage((msg) => {
     switch (msg.op) {
