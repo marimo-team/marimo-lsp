@@ -68,7 +68,10 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
     const executor = yield* CommandExecutor.CommandExecutor;
     const channel = yield* code.window.createOutputChannel("marimo (uv)");
     const uv = createUv(executor, channel);
+
     return {
+      getCacheDir: () =>
+        uv({ args: ["cache", "dir"] }).pipe(Effect.map((e) => e.stdout.trim())),
       channel: {
         name: channel.name,
         show: channel.show.bind(channel),

@@ -24,6 +24,7 @@ import {
 } from "./NotebookControllerFactory.ts";
 import { PythonExtension } from "./PythonExtension.ts";
 import { SandboxController } from "./SandboxController.ts";
+import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
 type AnyController = VenvPythonController | SandboxController;
@@ -43,12 +44,22 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
     dependencies: [
       NotebookControllerFactory.Default,
       SandboxController.Default,
+      Uv.Default,
     ],
     scoped: Effect.gen(function* () {
+      const uv = yield* Uv;
       const code = yield* VsCode;
       const pyExt = yield* PythonExtension;
       const factory = yield* NotebookControllerFactory;
       const sandboxController = yield* SandboxController;
+
+      const uvCacheDir = yield* uv.getCacheDir().pipe(
+        Effect.map((path) => code.Uri.file(path)),
+        Effect.tapError((err) =>
+          Effect.logError("Failed to get uv cache directory", err),
+        ),
+        Effect.option,
+      );
 
       const handlesRef = yield* SynchronizedRef.make(
         HashMap.empty<NotebookControllerId, NotebookControllerHandle>(),
@@ -73,10 +84,16 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
 
       const refresh = Effect.fnUntraced(function* () {
         const envs = yield* pyExt.knownEnvironments();
-        // Filter out system Python interpreters (those without a virtual environment)
         const filteredEnvs = envs.filter(
-          (env) => env.environment !== undefined,
+          (env) =>
+            // We only want virtual environments, not global interpreters
+            !isGlobalInterpreter(env) &&
+            // Uv sandbox enviroments are handled by the sandbox controller and live
+            // in the uv cache directory. We want to skip those so users don't see
+            // duplicate controllers.
+            !isInUvCache(env, { code, uvCacheDir }),
         );
+
         yield* Effect.logDebug("Refreshing controllers").pipe(
           Effect.annotateLogs({
             environmentCount: envs.length,
@@ -391,3 +408,47 @@ const pruneStaleControllers = Effect.fnUntraced(function* (options: {
     }),
   );
 });
+
+/**
+ * Determines if the given Python environment is a global interpreter.
+ *
+ * From the docs:
+ *
+ * py.Enviroment.environment - carries details if it is an environment, otherwise
+ * `undefined` in case of global interpreters and others.
+ *
+ * @param env The Python environment to check.
+ * @returns True if the environment is global, false otherwise.
+ */
+function isGlobalInterpreter(env: py.Environment): boolean {
+  return env.environment === undefined;
+}
+
+/**
+ * Determines if the given Python environment is located within the uv cache directory.
+ *
+ * We keep all our sandboxed environments in the uv cache directory,
+ * so this function helps identify those environments.
+ *
+ * @param env The Python environment to check.
+ * @param uvCacheDir The uv cache directory URI.
+ * @returns True if the environment is in the uv cache, false otherwise.
+ */
+function isInUvCache(
+  env: py.Environment,
+  options: {
+    code: VsCode;
+    uvCacheDir: Option.Option<vscode.Uri>;
+  },
+) {
+  if (Option.isNone(options.uvCacheDir)) {
+    return false;
+  }
+
+  try {
+    const envPath = options.code.Uri.file(env.path).fsPath;
+    return envPath.startsWith(options.uvCacheDir.value.fsPath);
+  } catch {
+    return false;
+  }
+}
