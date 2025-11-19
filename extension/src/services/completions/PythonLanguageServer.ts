@@ -1,4 +1,4 @@
-import { Data, Effect, Either } from "effect";
+import { Data, Effect, Option } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
 
@@ -6,7 +6,7 @@ export class PythonLanguageServerStartError extends Data.TaggedError(
   "PythonLanguageServerStartError",
 )<{
   cause: unknown;
-}> { }
+}> {}
 
 /**
  * Manages a dedicated Python language server instance (using ty via uvx)
@@ -16,15 +16,15 @@ export class PythonLanguageServerStartError extends Data.TaggedError(
 export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()(
   "PythonLanguageServer",
   {
-    scoped: Effect.gen(function*() {
+    scoped: Effect.gen(function* () {
       yield* Effect.logInfo("Starting Python language server (ty) for marimo");
 
       // Virtual document store
       const documents = new Map<string, { version: number }>();
 
       const serverOptions: lsp.ServerOptions = {
-        command: "uvx",
-        args: ["ty", "server"],
+        command: "uvxxx",
+        args: ["tool", "run", "ty", "server"],
         options: {
           // Run in stdio mode
         },
@@ -38,30 +38,34 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
         initializationOptions: {},
       };
 
-      const client = new lsp.LanguageClient(
-        "marimo-python-ls",
-        "Marimo Python Language Server",
-        serverOptions,
-        clientOptions,
+      const getClient = yield* Effect.cached(
+        Effect.tryPromise({
+          try: async () => {
+            const client = new lsp.LanguageClient(
+              "marimo-python-ls",
+              "Marimo Python Language Server",
+              serverOptions,
+              clientOptions,
+            );
+            await client.start();
+            return client;
+          },
+          catch: (cause) => new PythonLanguageServerStartError({ cause }),
+        }).pipe(
+          Effect.tapError((error) =>
+            Effect.logError("Error starting Python language server", { error }),
+          ),
+          Effect.option,
+        ),
       );
 
-      yield* Effect.logInfo("Python language server started for marimo");
-
-      const result = yield* Effect.tryPromise({
-        try: () => client.start(),
-        catch: (cause) => new PythonLanguageServerStartError({ cause }),
-      }).pipe(Effect.either);
-
-      if (Either.isLeft(result)) {
-        yield* Effect.logError("Failed to start Python language server", {
-          error: result.left,
-        });
-      }
-
       yield* Effect.addFinalizer(() =>
-        Effect.gen(function*() {
+        Effect.gen(function* () {
           yield* Effect.logInfo("Stopping Python language server for marimo");
-          yield* Effect.promise(() => client.stop());
+          const client = yield* getClient;
+          if (Option.isSome(client)) {
+            yield* Effect.promise(() => client.value.stop());
+          }
         }),
       );
 
@@ -69,18 +73,20 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
         /**
          * Open a virtual Python document in the language server
          */
-        openDocument: Effect.fnUntraced(function*(
+        openDocument: Effect.fnUntraced(function* (
           uri: vscode.Uri,
           content: string,
         ) {
-          if (Either.isLeft(result)) {
+          documents.set(uri.toString(), { version: 1 });
+          const client = yield* getClient;
+
+          if (Option.isNone(client)) {
             // Language server failed to start
             return;
           }
-          documents.set(uri.toString(), { version: 1 });
 
           yield* Effect.promise(() =>
-            client.sendNotification("textDocument/didOpen", {
+            client.value.sendNotification("textDocument/didOpen", {
               textDocument: {
                 uri: uri.toString(),
                 languageId: "python",
@@ -94,21 +100,22 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
         /**
          * Update virtual document content
          */
-        updateDocument: Effect.fnUntraced(function*(
+        updateDocument: Effect.fnUntraced(function* (
           uri: vscode.Uri,
           content: string,
         ) {
-          if (Either.isLeft(result)) {
+          const doc = documents.get(uri.toString());
+          const version = (doc?.version ?? 0) + 1;
+          documents.set(uri.toString(), { version });
+
+          const client = yield* getClient;
+          if (Option.isNone(client)) {
             // Language server failed to start
             return;
           }
-          const doc = documents.get(uri.toString());
-          const version = (doc?.version ?? 0) + 1;
-
-          documents.set(uri.toString(), { version });
 
           yield* Effect.promise(() =>
-            client.sendNotification("textDocument/didChange", {
+            client.value.sendNotification("textDocument/didChange", {
               textDocument: { uri: uri.toString(), version },
               contentChanges: [{ text: content }],
             }),
@@ -118,15 +125,17 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
         /**
          * Close virtual document
          */
-        closeDocument: Effect.fnUntraced(function*(uri: string) {
-          if (Either.isLeft(result)) {
+        closeDocument: Effect.fnUntraced(function* (uri: string) {
+          documents.delete(uri);
+
+          const client = yield* getClient;
+          if (Option.isNone(client)) {
             // Language server failed to start
             return;
           }
-          documents.delete(uri);
 
           yield* Effect.promise(() =>
-            client.sendNotification("textDocument/didClose", {
+            client.value.sendNotification("textDocument/didClose", {
               textDocument: { uri: uri.toString() },
             }),
           );
@@ -135,17 +144,20 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
         /**
          * Get completions at a position
          */
-        getCompletions: Effect.fnUntraced(function*(
+        getCompletions: Effect.fnUntraced(function* (
           uri: vscode.Uri,
           position: lsp.Position,
           context?: lsp.CompletionContext,
         ) {
-          if (Either.isLeft(result)) {
+          const client = yield* getClient;
+
+          if (Option.isNone(client)) {
             // Language server failed to start
             return null;
           }
+
           return yield* Effect.promise(() =>
-            client.sendRequest<lsp.CompletionList | null>(
+            client.value.sendRequest<lsp.CompletionList | null>(
               "textDocument/completion",
               {
                 textDocument: { uri: uri.toString() },
@@ -159,16 +171,18 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
         /**
          * Get hover information
          */
-        getHover: Effect.fnUntraced(function*(
+        getHover: Effect.fnUntraced(function* (
           uri: vscode.Uri,
           position: lsp.Position,
         ) {
-          if (Either.isLeft(result)) {
+          const client = yield* getClient;
+          if (Option.isNone(client)) {
             // Language server failed to start
             return null;
           }
+
           return yield* Effect.promise(() =>
-            client.sendRequest<lsp.Hover | null>("textDocument/hover", {
+            client.value.sendRequest<lsp.Hover | null>("textDocument/hover", {
               textDocument: { uri: uri.toString() },
               position,
             }),
@@ -178,16 +192,17 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
         /**
          * Get definition locations
          */
-        getDefinition: Effect.fnUntraced(function*(
+        getDefinition: Effect.fnUntraced(function* (
           uri: vscode.Uri,
           position: lsp.Position,
         ) {
-          if (Either.isLeft(result)) {
+          const client = yield* getClient;
+          if (Option.isNone(client)) {
             // Language server failed to start
             return null;
           }
           return yield* Effect.promise(() =>
-            client.sendRequest<lsp.Location[] | null>(
+            client.value.sendRequest<lsp.Location[] | null>(
               "textDocument/definition",
               {
                 textDocument: { uri: uri.toString() },
@@ -200,17 +215,18 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
         /**
          * Get signature help
          */
-        getSignatureHelp: Effect.fnUntraced(function*(
+        getSignatureHelp: Effect.fnUntraced(function* (
           uri: vscode.Uri,
           position: lsp.Position,
           context?: lsp.SignatureHelpContext,
         ) {
-          if (Either.isLeft(result)) {
+          const client = yield* getClient;
+          if (Option.isNone(client)) {
             // Language server failed to start
             return null;
           }
           return yield* Effect.promise(() =>
-            client.sendRequest<lsp.SignatureHelp | null>(
+            client.value.sendRequest<lsp.SignatureHelp | null>(
               "textDocument/signatureHelp",
               {
                 textDocument: { uri: uri.toString() },
@@ -224,17 +240,19 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
         /**
          * Configure Python environment path for the language server
          */
-        setEnvironment: Effect.fnUntraced(function*(pythonPath: string) {
-          if (Either.isLeft(result)) {
+        setEnvironment: Effect.fnUntraced(function* (pythonPath: string) {
+          const client = yield* getClient;
+          if (Option.isNone(client)) {
             // Language server failed to start
-            return null;
+            return;
           }
+
           yield* Effect.logInfo("Configuring Python environment").pipe(
             Effect.annotateLogs({ pythonPath }),
           );
 
           yield* Effect.promise(() =>
-            client.sendNotification("workspace/didChangeConfiguration", {
+            client.value.sendNotification("workspace/didChangeConfiguration", {
               settings: {
                 python: {
                   pythonPath,
@@ -251,4 +269,4 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
       };
     }),
   },
-) { }
+) {}
