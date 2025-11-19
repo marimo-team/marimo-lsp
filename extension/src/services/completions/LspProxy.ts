@@ -455,7 +455,10 @@ function lspSignatureHelpToVscode(
     activeParameter: signatureHelp.activeParameter ?? 0,
     signatures: signatureHelp.signatures.map((sig) => {
       const signature = new code.SignatureInformation(sig.label);
-      signature.documentation = lspDocumentationToVscode(sig.documentation, code);
+      signature.documentation = lspDocumentationToVscode(
+        sig.documentation,
+        code,
+      );
 
       if (sig.parameters) {
         signature.parameters = sig.parameters.map((param) => {
