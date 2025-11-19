@@ -558,7 +558,6 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       Location: vscode.Location,
       Uri: vscode.Uri,
       Range: vscode.Range,
-      CompletionItemKind: vscode.CompletionItemKind,
       version: vscode.version,
       extensions: {
         getExtension<T = unknown>(extensionId: string) {
