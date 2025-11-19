@@ -1,5 +1,3 @@
-import * as NodeOs from "node:os";
-import * as NodePath from "node:path";
 import { Data, Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
 import { getNotebookUri, type NotebookUri } from "../../types.ts";
@@ -11,6 +9,7 @@ import {
 } from "../../utils/notebook.ts";
 import { VsCode } from "../VsCode.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
+import { PythonLanguageServer } from "./PythonLanguageServer.ts";
 
 /**
  * Information about a cell's position within the virtual document
@@ -32,7 +31,7 @@ interface CellOffsetInfo {
  * Information about a virtual document
  */
 interface VirtualDocInfo {
-  /** URI of the temp file */
+  /** URI string for the virtual document */
   uri: vscode.Uri;
   /** Full text content of the virtual document */
   content: string;
@@ -48,25 +47,22 @@ class CellNotFoundError extends Data.TaggedError("CellNotFoundError")<{
  * Service that maintains virtual Python documents for marimo notebooks.
  *
  * For each open marimo notebook, creates a virtual document containing
- * all cells in topological order. This allows Pylance to provide accurate
- * completions across cells.
+ * all cells in topological order. This allows the Python language server
+ * to provide accurate completions across cells.
  */
 export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvider>()(
   "VirtualDocumentProvider",
   {
-    dependencies: [VariablesService.Default],
+    dependencies: [VariablesService.Default, PythonLanguageServer.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const variablesService = yield* VariablesService;
+      const pythonLs = yield* PythonLanguageServer;
 
       // State: Map of notebook URI -> virtual document info
       const virtualDocsRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookUri, VirtualDocInfo>(),
       );
-
-      // Track which notebooks are dirty and need updating
-      const tmpDir = NodeOs.tmpdir();
-      const dirtyNotebooks = new Set<NotebookUri>();
 
       /**
        * Create a new virtual document for a notebook
@@ -82,26 +78,21 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
 
         const { content, cellOffsets } = buildVirtualDocumentContent(cells);
 
-        // Create temp file with hash of notebook URI for consistency
         const notebookUri = getNotebookUri(notebook);
         const hash = Buffer.from(notebookUri)
           .toString("base64")
           .replace(/[/+=]/g, "")
           .slice(0, 16);
 
-        const tmpPath = NodePath.join(tmpDir, `.marimo-virtual-${hash}.py`);
-        const uri = yield* code.utils.parseUri(`file://${tmpPath}`);
+        const basename =
+          notebookUri.split("/").pop()?.split(".")[0] ?? "notebook";
 
-        // Write content to temp file
-        yield* code.workspace.fs.writeFile(
-          uri,
-          new TextEncoder().encode(content),
-        );
+        const virtualUri = code.Uri.file(`/marimo/${basename}_{${hash}.py`);
 
-        // Open document to trigger language server analysis
-        yield* code.workspace.openTextDocument(uri);
+        // Open virtual document in Python language server
+        yield* pythonLs.openDocument(virtualUri, content);
 
-        return { uri, content, cellOffsets };
+        return { uri: virtualUri, content, cellOffsets };
       });
 
       /**
@@ -131,11 +122,8 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
 
         const { content, cellOffsets } = buildVirtualDocumentContent(cells);
 
-        // Update the SAME temp file
-        yield* code.workspace.fs.writeFile(
-          existingDoc.value.uri,
-          new TextEncoder().encode(content),
-        );
+        // Update virtual document in Python language server
+        yield* pythonLs.updateDocument(existingDoc.value.uri, content);
 
         // Update the stored info
         yield* SubscriptionRef.update(virtualDocsRef, (docs) =>
@@ -151,11 +139,11 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
       yield* Effect.forkScoped(
         code.workspace.notebookDocumentChanges().pipe(
           Stream.filter((event) => isMarimoNotebookDocument(event.notebook)),
-          Stream.tap((event) => {
-            const notebookUri = getNotebookUri(event.notebook);
-            dirtyNotebooks.add(notebookUri);
-            return Effect.void;
-          }),
+          Stream.mapEffect(
+            Effect.fnUntraced(function* (event) {
+              yield* updateVirtualDocument(event.notebook);
+            }),
+          ),
           Stream.runDrain,
         ),
       );
@@ -167,14 +155,6 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
         notebook: vscode.NotebookDocument,
       ) {
         const notebookUri = getNotebookUri(notebook);
-
-        // If dirty, update before returning
-        if (dirtyNotebooks.has(notebookUri)) {
-          yield* updateVirtualDocument(notebook);
-          dirtyNotebooks.delete(notebookUri);
-          yield* Effect.sleep(1000); // allow pylance to pick up changes
-        }
-
         const currentDocs = yield* SubscriptionRef.get(virtualDocsRef);
 
         const existingDoc = HashMap.get(currentDocs, notebookUri);

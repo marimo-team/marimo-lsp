@@ -537,9 +537,13 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
           ).pipe(Effect.andThen(Effect.void));
         },
       },
+      Hover: vscode.Hover,
+      CompletionTriggerKind: vscode.CompletionTriggerKind,
       CompletionItem: vscode.CompletionItem,
       CompletionList: vscode.CompletionList,
       MarkdownString: vscode.MarkdownString,
+      SignatureInformation: vscode.SignatureInformation,
+      ParameterInformation: vscode.ParameterInformation,
       // data types
       NotebookData: vscode.NotebookData,
       NotebookCellData: vscode.NotebookCellData,

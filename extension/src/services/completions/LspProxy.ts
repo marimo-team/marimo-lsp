@@ -1,14 +1,16 @@
 import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
+import * as lsp from "vscode-languageclient/node";
 import { VsCode } from "../VsCode.ts";
+import { PythonLanguageServer } from "./PythonLanguageServer.ts";
 import { VirtualDocumentProvider } from "./VirtualDocumentProvider.ts";
 
 export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
-  dependencies: [VirtualDocumentProvider.Default],
+  dependencies: [VirtualDocumentProvider.Default, PythonLanguageServer.Default],
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const virtualDocs = yield* VirtualDocumentProvider;
-    const channel = yield* code.window.createOutputChannel("marimo - LspProxy");
+    const pythonLs = yield* PythonLanguageServer;
 
     function findNotebookCellPair(document: vscode.TextDocument) {
       return Effect.gen(function* () {
@@ -35,13 +37,8 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
         context: vscode.CompletionContext,
       ) =>
         Effect.gen(function* () {
-          channel.appendLine(
-            `\nCompletion requested for ${document.uri.toString()} at ${position.line}:${position.character}`,
-          );
           const pair = yield* findNotebookCellPair(document);
-
           if (Option.isNone(pair)) {
-            channel.appendLine("  ❌ Document is not part of a notebook");
             return null;
           }
 
@@ -49,73 +46,16 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
           const info = yield* virtualDocs.getVirtualDocument(notebook);
           const mapper = yield* virtualDocs.getMapperForCell(cell);
 
-          channel.appendLine(`  📓 Notebook: ${notebook.uri.toString()}`);
-          channel.appendLine(`  📄 Cell index: ${cell.index}`);
-
-          // Log cell content with cursor indicator
-          channel.appendLine("\n  📝 Cell content at cursor:");
-          const cellLines = document.getText().split("\n");
-          const cellCursorLine = position.line;
-          const cellCursorChar = position.character;
-
-          // Show context around cursor (3 lines before and after)
-          const cellStartLine = Math.max(0, cellCursorLine - 3);
-          const cellEndLine = Math.min(
-            cellLines.length - 1,
-            cellCursorLine + 3,
-          );
-
-          for (let i = cellStartLine; i <= cellEndLine; i++) {
-            const lineNum = String(i + 1).padStart(4, " ");
-            channel.appendLine(`  ${lineNum} | ${cellLines[i]}`);
-
-            // Add cursor indicator
-            if (i === cellCursorLine) {
-              const padding = " ".repeat(cellCursorChar);
-              channel.appendLine(`       | ${padding}^`);
-            }
-          }
-          channel.appendLine("");
-
-          // Map cell position to virtual document position
           const virtualPosition = mapper.toVirtual(position);
-          channel.appendLine(
-            `  🎯 Mapped position: ${virtualPosition.line}:${virtualPosition.character}`,
-          );
 
-          // Log virtual document with cursor indicator
-          channel.appendLine("\n  📄 Virtual document at cursor:");
-          const lines = info.content.split("\n");
-          const cursorLine = virtualPosition.line;
-          const cursorChar = virtualPosition.character;
-
-          // Show context around cursor (3 lines before and after)
-          const startLine = Math.max(0, cursorLine - 3);
-          const endLine = Math.min(lines.length - 1, cursorLine + 3);
-
-          for (let i = startLine; i <= endLine; i++) {
-            const lineNum = String(i + 1).padStart(4, " ");
-            channel.appendLine(`  ${lineNum} | ${lines[i]}`);
-
-            // Add cursor indicator
-            if (i === cursorLine) {
-              const padding = " ".repeat(cursorChar);
-              channel.appendLine(`       | ${padding}^`);
-            }
-          }
-          channel.appendLine("");
-
-          // Query completions from virtual document
-          const maybeCompletions = yield* code.commands.executeCommand(
-            "vscode.executeCompletionItemProvider",
+          // Query completions from Python language server
+          const completions = yield* pythonLs.getCompletions(
             info.uri,
-            virtualPosition,
-            context.triggerCharacter,
-          );
-
-          const completions = maybeCompletions as vscode.CompletionList;
-          channel.appendLine(
-            `  ✅ Got ${completions?.items?.length || 0} completions`,
+            {
+              line: virtualPosition.line,
+              character: virtualPosition.character,
+            },
+            codeCompletionContextToLsp(context),
           );
 
           if (!completions?.items) {
@@ -123,56 +63,9 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
           }
 
           // Clone completion items and map ranges back to cell coordinates
-          const items = completions.items.map((item) => {
-            const newItem = new code.CompletionItem(item.label, item.kind);
-            // Add (marimo) suffix to detail to identify our completions
-            newItem.detail = item.detail
-              ? `${item.detail} (marimo)`
-              : "(marimo)";
-            newItem.documentation = item.documentation;
-            newItem.sortText = item.sortText;
-            newItem.filterText = item.filterText;
-            newItem.insertText = item.insertText;
-            newItem.commitCharacters = item.commitCharacters;
-            newItem.command = item.command;
-            newItem.preselect = item.preselect;
-
-            // Map range from virtual document coordinates to cell coordinates
-            if (item.range) {
-              // Check if it's an InsertReplaceEdit (has inserting/replacing)
-              if ("inserting" in item.range && "replacing" in item.range) {
-                const { inserting, replacing } = item.range;
-                newItem.range = {
-                  inserting: new code.Range(
-                    mapper.fromVirtual(inserting.start),
-                    mapper.fromVirtual(inserting.end),
-                  ),
-                  replacing: new code.Range(
-                    mapper.fromVirtual(replacing.start),
-                    mapper.fromVirtual(replacing.end),
-                  ),
-                };
-              } else {
-                // Regular Range
-                newItem.range = new code.Range(
-                  mapper.fromVirtual(item.range.start),
-                  mapper.fromVirtual(item.range.end),
-                );
-              }
-            }
-
-            return newItem;
-          });
-          // preview
-          channel.appendLine("  🔍 Sample cloned completion items:");
-          channel.appendLine(
-            items
-              .slice(0, Math.min(10, items.length))
-              .map((it) => `    - ${it.label} ${it.detail}`)
-              .join("\n"),
+          const items = completions.items.map((lspItem) =>
+            lspCompletionItemToVscode(lspItem, { code, mapper }),
           );
-
-          channel.appendLine(`  📦 Returning ${items.length} cloned items`);
 
           return new code.CompletionList(items, completions.isIncomplete);
         }),
@@ -182,9 +75,6 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
         position: vscode.Position,
       ) =>
         Effect.gen(function* () {
-          channel.appendLine(
-            `\nHover requested for ${document.uri.toString()} at ${position.line}:${position.character}`,
-          );
           const pair = yield* findNotebookCellPair(document);
 
           if (Option.isNone(pair)) {
@@ -195,25 +85,17 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
           const mapper = yield* virtualDocs.getMapperForCell(cell);
           const info = yield* virtualDocs.getVirtualDocument(notebook);
 
-          // Map cell position to virtual document position
           const virtualPosition = mapper.toVirtual(position);
+          const hover = yield* pythonLs.getHover(info.uri, {
+            line: virtualPosition.line,
+            character: virtualPosition.character,
+          });
 
-          // Query hover from virtual document
-          const hoversResponse = yield* code.commands.executeCommand(
-            "vscode.executeHoverProvider",
-            info.uri,
-            virtualPosition,
-          );
-
-          const hovers = hoversResponse as vscode.Hover[];
-
-          if (!hovers || hovers.length === 0) {
+          if (!hover) {
             return null;
           }
 
-          // Return first hover (VSCode typically returns array with one item)
-          // No need to map ranges for hover - it's display only
-          return hovers[0];
+          return lspHoverToVscode(hover, { code, mapper });
         }),
 
       provideDefinition: (
@@ -233,14 +115,11 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
           // Map cell position to virtual document position
           const virtualPosition = mapper.toVirtual(position);
 
-          // Query definition from virtual document
-          const result = yield* code.commands.executeCommand(
-            "vscode.executeDefinitionProvider",
-            info.uri,
-            virtualPosition,
-          );
-
-          const definitions = result as vscode.Location[];
+          // Query definition from Python language server
+          const definitions = yield* pythonLs.getDefinition(info.uri, {
+            line: virtualPosition.line,
+            character: virtualPosition.character,
+          });
 
           if (!definitions || definitions.length === 0) {
             return null;
@@ -251,9 +130,14 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
 
           for (const def of definitions) {
             // Check if definition is in the virtual document
-            if (def.uri.toString() === info.uri.toString()) {
+            if (def.uri === info.uri.toString()) {
               // Map back to cell position
-              const cellPosition = mapper.fromVirtual(def.range.start);
+              const cellPosition = mapper.fromVirtual(
+                new code.Position(
+                  def.range.start.line,
+                  def.range.start.character,
+                ),
+              );
               mappedDefinitions.push(
                 new code.Location(
                   cell.document.uri,
@@ -261,8 +145,23 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
                 ),
               );
             } else {
-              // Definition is in another file, return as-is
-              mappedDefinitions.push(def);
+              // Definition is in another file, convert LSP Location to VS Code Location
+              const uri = yield* code.utils.parseUri(def.uri);
+              mappedDefinitions.push(
+                new code.Location(
+                  uri,
+                  new code.Range(
+                    new code.Position(
+                      def.range.start.line,
+                      def.range.start.character,
+                    ),
+                    new code.Position(
+                      def.range.end.line,
+                      def.range.end.character,
+                    ),
+                  ),
+                ),
+              );
             }
           }
 
@@ -285,15 +184,23 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
           const mapper = yield* virtualDocs.getMapperForCell(cell);
           const info = yield* virtualDocs.getVirtualDocument(notebook);
 
-          const result = yield* code.commands.executeCommand(
-            "vscode.executeSignatureHelpProvider",
+          const virtualPosition = mapper.toVirtual(position);
+
+          // Query signature help from Python language server
+          const signatureHelp = yield* pythonLs.getSignatureHelp(
             info.uri,
-            mapper.toVirtual(position),
-            context.triggerCharacter,
+            {
+              line: virtualPosition.line,
+              character: virtualPosition.character,
+            },
+            codeSignatureHelpContextToLsp(context),
           );
 
-          const signatureHelp = result as vscode.SignatureHelp;
-          return signatureHelp;
+          if (!signatureHelp) {
+            return null;
+          }
+
+          return lspSignatureHelpToVscode(signatureHelp, { code });
         }),
     };
   }),
@@ -332,4 +239,233 @@ function findCell(
       .getCells()
       .find((cell) => cell.document.uri.toString() === document.uri.toString()),
   );
+}
+
+function codeSignatureHelpContextToLsp(
+  context: vscode.SignatureHelpContext,
+): lsp.SignatureHelpContext {
+  const triggerKindMapping = {
+    [1 satisfies vscode.SignatureHelpTriggerKind.Invoke]:
+      lsp.SignatureHelpTriggerKind.Invoked,
+    [2 satisfies vscode.SignatureHelpTriggerKind.TriggerCharacter]:
+      lsp.SignatureHelpTriggerKind.TriggerCharacter,
+    [3 satisfies vscode.SignatureHelpTriggerKind.ContentChange]:
+      lsp.SignatureHelpTriggerKind.ContentChange,
+  };
+
+  return {
+    triggerKind: triggerKindMapping[context.triggerKind],
+    triggerCharacter: context.triggerCharacter,
+    isRetrigger: context.isRetrigger,
+    activeSignatureHelp: context.activeSignatureHelp
+      ? {
+          signatures: context.activeSignatureHelp.signatures.map(
+            ({ documentation, parameters, ...sig }) => ({
+              ...sig,
+              parameters: parameters.map(({ documentation, ...param }) => ({
+                ...param,
+                documentation: codeDocumentationToLsp(documentation),
+              })),
+              documentation: codeDocumentationToLsp(documentation),
+            }),
+          ),
+          activeSignature: context.activeSignatureHelp.activeSignature,
+          activeParameter: context.activeSignatureHelp.activeParameter,
+        }
+      : undefined,
+  };
+}
+
+function codeCompletionContextToLsp(
+  context: vscode.CompletionContext,
+): lsp.CompletionContext {
+  const mapping = {
+    [0 satisfies vscode.CompletionTriggerKind.Invoke]:
+      lsp.CompletionTriggerKind.Invoked,
+    [1 satisfies vscode.CompletionTriggerKind.TriggerCharacter]:
+      lsp.CompletionTriggerKind.TriggerCharacter,
+    [2 satisfies vscode.CompletionTriggerKind.TriggerForIncompleteCompletions]:
+      lsp.CompletionTriggerKind.TriggerForIncompleteCompletions,
+  };
+  return {
+    triggerKind: mapping[context.triggerKind],
+    triggerCharacter: context.triggerCharacter,
+  };
+}
+
+/**
+ * Convert LSP CompletionItem to VS Code CompletionItem, mapping ranges from virtual
+ * document coordinates to cell coordinates
+ */
+function lspCompletionItemToVscode(
+  lspItem: lsp.CompletionItem,
+  options: {
+    code: VsCode;
+    mapper: { fromVirtual: (pos: vscode.Position) => vscode.Position };
+  },
+): vscode.CompletionItem {
+  const { code, mapper } = options;
+  const newItem = new code.CompletionItem(lspItem.label, lspItem.kind);
+
+  // Add (marimo) suffix to detail to identify our completions
+  newItem.detail = lspItem.detail ? `${lspItem.detail} (marimo)` : "(marimo)";
+
+  newItem.documentation =
+    typeof lspItem.documentation === "object" &&
+    "value" in lspItem.documentation
+      ? lspItem.documentation.value
+      : lspItem.documentation;
+
+  newItem.sortText = lspItem.sortText;
+  newItem.filterText = lspItem.filterText;
+  newItem.insertText = lspItem.insertText;
+  newItem.commitCharacters = lspItem.commitCharacters;
+  newItem.command = lspItem.command;
+  newItem.preselect = lspItem.preselect;
+
+  // Map textEdit range from virtual document coordinates to cell coordinates
+  if (lspItem.textEdit) {
+    // Check if it's an InsertReplaceEdit (has insert/replace)
+    if ("insert" in lspItem.textEdit && "replace" in lspItem.textEdit) {
+      const { insert, replace, newText } = lspItem.textEdit;
+      newItem.range = {
+        inserting: new code.Range(
+          mapper.fromVirtual(
+            new code.Position(insert.start.line, insert.start.character),
+          ),
+          mapper.fromVirtual(
+            new code.Position(insert.end.line, insert.end.character),
+          ),
+        ),
+        replacing: new code.Range(
+          mapper.fromVirtual(
+            new code.Position(replace.start.line, replace.start.character),
+          ),
+          mapper.fromVirtual(
+            new code.Position(replace.end.line, replace.end.character),
+          ),
+        ),
+      };
+      newItem.insertText = newText;
+    } else if ("range" in lspItem.textEdit) {
+      // Regular TextEdit
+      const { range, newText } = lspItem.textEdit;
+      newItem.range = new code.Range(
+        mapper.fromVirtual(
+          new code.Position(range.start.line, range.start.character),
+        ),
+        mapper.fromVirtual(
+          new code.Position(range.end.line, range.end.character),
+        ),
+      );
+      newItem.insertText = newText;
+    }
+  }
+
+  return newItem;
+}
+
+/**
+ * Convert VS Code documentation format to LSP MarkupContent format
+ */
+function codeDocumentationToLsp(
+  documentation: string | vscode.MarkdownString | undefined,
+): string | lsp.MarkupContent | undefined {
+  if (!documentation) {
+    return undefined;
+  }
+
+  if (typeof documentation === "object" && "value" in documentation) {
+    return {
+      kind: lsp.MarkupKind.Markdown,
+      value: documentation.value,
+    };
+  }
+
+  return documentation;
+}
+
+/**
+ * Convert LSP MarkupContent format to VS Code MarkdownString
+ */
+function lspDocumentationToVscode(
+  documentation: string | lsp.MarkupContent | lsp.MarkedString | undefined,
+): string | vscode.MarkdownString | undefined {
+  if (!documentation) {
+    return undefined;
+  }
+
+  if (typeof documentation === "object" && "value" in documentation) {
+    return documentation.value;
+  }
+
+  return documentation;
+}
+
+/**
+ * Convert LSP Hover to VS Code Hover, mapping ranges from virtual
+ * document coordinates to cell coordinates
+ */
+function lspHoverToVscode(
+  hover: lsp.Hover,
+  options: {
+    code: VsCode;
+    mapper: {
+      fromVirtual: (pos: vscode.Position) => vscode.Position;
+    };
+  },
+): vscode.Hover {
+  const { code, mapper } = options;
+
+  // Convert contents
+  const contents = Array.isArray(hover.contents)
+    ? hover.contents
+        .map((x) => lspDocumentationToVscode(x))
+        .filter((x) => x !== undefined)
+    : [lspDocumentationToVscode(hover.contents)].filter((x) => x !== undefined);
+
+  // Convert range if present
+  if (hover.range) {
+    const range = new code.Range(
+      mapper.fromVirtual(
+        new code.Position(hover.range.start.line, hover.range.start.character),
+      ),
+      mapper.fromVirtual(
+        new code.Position(hover.range.end.line, hover.range.end.character),
+      ),
+    );
+    return new code.Hover(contents, range);
+  }
+
+  return new code.Hover(contents);
+}
+
+/**
+ * Convert LSP SignatureHelp to VS Code SignatureHelp
+ */
+function lspSignatureHelpToVscode(
+  signatureHelp: lsp.SignatureHelp,
+  options: { code: VsCode },
+): vscode.SignatureHelp {
+  const { code } = options;
+  return {
+    activeSignature: signatureHelp.activeSignature ?? 0,
+    activeParameter: signatureHelp.activeParameter ?? 0,
+    signatures: signatureHelp.signatures.map((sig) => {
+      const signature = new code.SignatureInformation(sig.label);
+      signature.documentation = lspDocumentationToVscode(sig.documentation);
+
+      if (sig.parameters) {
+        signature.parameters = sig.parameters.map((param) => {
+          const paramInfo = new code.ParameterInformation(param.label);
+          paramInfo.documentation = lspDocumentationToVscode(
+            param.documentation,
+          );
+          return paramInfo;
+        });
+      }
+
+      return signature;
+    }),
+  };
 }

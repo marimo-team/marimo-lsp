@@ -1096,6 +1096,48 @@ class Location implements vscode.Location {
     this.range = range;
   }
 }
+/**
+ * A hover represents additional information for a symbol or word. Hovers are
+ * rendered in a tooltip-like widget.
+ */
+class Hover implements vscode.Hover {
+  contents: Array<MarkdownString | vscode.MarkedString>;
+  range?: Range;
+  constructor(
+    _contents:
+      | MarkdownString
+      | vscode.MarkedString
+      | Array<MarkdownString | vscode.MarkedString>,
+    range?: Range,
+  ) {
+    this.contents = [];
+    this.range = range;
+  }
+}
+
+class SignatureInformation implements vscode.SignatureInformation {
+  label: string;
+  documentation?: string | MarkdownString;
+  parameters: vscode.ParameterInformation[];
+  activeParameter?: number;
+  constructor(label: string, documentation?: string | MarkdownString) {
+    this.label = label;
+    this.documentation = documentation;
+    this.parameters = [];
+  }
+}
+
+class ParameterInformation implements vscode.ParameterInformation {
+  label: string | [number, number];
+  documentation?: string | MarkdownString;
+  constructor(
+    label: string | [number, number],
+    documentation?: string | MarkdownString,
+  ) {
+    this.label = label;
+    this.documentation = documentation;
+  }
+}
 
 export function createTestNotebookDocument(
   uri: Uri | string,
@@ -1731,6 +1773,14 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             Issue: 26,
           },
           Location,
+          Hover,
+          SignatureInformation,
+          ParameterInformation,
+          CompletionTriggerKind: {
+            Invoke: 0,
+            TriggerCharacter: 1,
+            TriggerForIncompleteCompletions: 2,
+          },
           version: options.version ?? "1.86.0",
           extensions: {
             getExtension: () => Option.none(),
