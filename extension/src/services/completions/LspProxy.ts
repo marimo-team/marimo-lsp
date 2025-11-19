@@ -397,7 +397,9 @@ function lspDocumentationToVscode(
     return md;
   }
 
-  return documentation;
+  const md = new code.MarkdownString(documentation);
+  md.isTrusted = true;
+  return md;
 }
 
 /**
