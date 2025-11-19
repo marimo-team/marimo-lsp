@@ -1104,13 +1104,13 @@ class Hover implements vscode.Hover {
   contents: Array<MarkdownString | vscode.MarkedString>;
   range?: Range;
   constructor(
-    _contents:
+    contents:
       | MarkdownString
       | vscode.MarkedString
       | Array<MarkdownString | vscode.MarkedString>,
     range?: Range,
   ) {
-    this.contents = [];
+    this.contents = Array.isArray(contents) ? contents : [contents];
     this.range = range;
   }
 }
