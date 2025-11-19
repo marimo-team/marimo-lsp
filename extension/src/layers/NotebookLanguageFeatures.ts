@@ -3,6 +3,7 @@ import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { LspProxy } from "../services/completions/LspProxy.ts";
 import { VsCode } from "../services/VsCode.ts";
+import { signalFromToken } from "../utils/signalFromToken.ts";
 
 /**
  * Language feature provider that uses virtual documents to provide LSP features
@@ -66,14 +67,3 @@ export const NotebookLanguageFeaturesLive = Layer.scopedDiscard(
     );
   }),
 );
-
-function signalFromToken(token: vscode.CancellationToken) {
-  const controller = new AbortController();
-  if (token.isCancellationRequested) {
-    controller.abort();
-  }
-  token.onCancellationRequested(() => {
-    controller.abort();
-  });
-  return controller.signal;
-}

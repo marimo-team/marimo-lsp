@@ -39,21 +39,52 @@ export class TestPythonExtension extends Data.TaggedClass(
   static make = Effect.fnUntraced(function* (envs: Array<py.Environment> = []) {
     const known = yield* Ref.make(HashSet.make(...envs));
     const pubsub = yield* PubSub.unbounded<py.EnvironmentsChangeEvent>();
+    const activePathPubsub =
+      yield* PubSub.unbounded<py.ActiveEnvironmentPathChangeEvent>();
+    const activeEnv = yield* Ref.make<py.EnvironmentPath>({
+      id: envs[0]?.id || "",
+      path: envs[0]?.path || "",
+    });
 
     return new TestPythonExtension({
       layer: Layer.scoped(
         PythonExtension,
         Effect.gen(function* () {
           return PythonExtension.make({
-            updateActiveEnvironmentPath() {
-              // TODO
-              return Effect.void;
+            updateActiveEnvironmentPath(executable: string) {
+              return Effect.gen(function* () {
+                const envPath: py.EnvironmentPath = {
+                  id: executable,
+                  path: executable,
+                };
+                yield* Ref.set(activeEnv, envPath);
+                yield* activePathPubsub.publish({
+                  ...envPath,
+                  resource: undefined,
+                });
+              });
             },
             knownEnvironments() {
               return Effect.map(Ref.get(known), (set) => HashSet.toValues(set));
             },
             environmentChanges() {
               return Stream.fromPubSub(pubsub);
+            },
+            activeEnvironmentPathChanges() {
+              return Stream.fromPubSub(activePathPubsub);
+            },
+            getActiveEnvironmentPath(_resource?: py.Resource) {
+              return Ref.get(activeEnv);
+            },
+            resolveEnvironment(path: string | py.EnvironmentPath) {
+              return Effect.gen(function* () {
+                const pathStr = typeof path === "string" ? path : path.path;
+                const knownSet = yield* Ref.get(known);
+                const env = Array.from(knownSet).find(
+                  (e: py.Environment) => e.path === pathStr,
+                );
+                return env as py.ResolvedEnvironment | undefined;
+              });
             },
           });
         }),

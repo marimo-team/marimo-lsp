@@ -32,6 +32,28 @@ export class PythonExtension extends Effect.Service<PythonExtension>()(
             ),
           );
         },
+        activeEnvironmentPathChanges() {
+          return Stream.asyncPush<py.ActiveEnvironmentPathChangeEvent>((emit) =>
+            Effect.acquireRelease(
+              Effect.sync(() =>
+                api.environments.onDidChangeActiveEnvironmentPath((evt) =>
+                  emit.single(evt),
+                ),
+              ),
+              (disposable) => Effect.sync(() => disposable.dispose()),
+            ),
+          );
+        },
+        getActiveEnvironmentPath(resource?: py.Resource) {
+          return Effect.sync(() =>
+            api.environments.getActiveEnvironmentPath(resource),
+          );
+        },
+        resolveEnvironment(path: string | py.EnvironmentPath) {
+          return Effect.promise(() =>
+            api.environments.resolveEnvironment(path),
+          );
+        },
       };
     }),
   },
