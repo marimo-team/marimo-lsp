@@ -1,11 +1,5 @@
 # marimo
 
-> **WARNING**: This extension is a complete rewrite of the previous marimo VS
-> Code extension. While we're excited to make it available for easier
-> installation and testing, it's still under active development. If you need a
-> stable experience, consider pinning to `v0.6.x`. We appreciate your feedback
-> as we continue to improve!
-
 A VS Code extension for [marimo](https://github.com/marimo-team/marimo), a
 reactive Python notebook that's reproducible, git-friendly, and deployable as
 scripts or apps.
