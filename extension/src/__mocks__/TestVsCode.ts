@@ -8,6 +8,7 @@ import {
   Layer,
   Option,
   PubSub,
+  Queue,
   Ref,
   Runtime,
   Stream,
@@ -1382,6 +1383,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             },
           }),
           commands: Commands.make({
+            subscribeToCommands() {
+              return Queue.unbounded();
+            },
             setContext(key, value) {
               return Ref.update(executions, (arr) => [
                 ...arr,

@@ -1,5 +1,14 @@
 import * as NodePath from "node:path";
-import { Cause, Chunk, Effect, Either, Layer, Option, Schema } from "effect";
+import {
+  Cause,
+  Chunk,
+  Effect,
+  Either,
+  Layer,
+  Option,
+  Schema,
+  Stream,
+} from "effect";
 import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
 import {
   decodeCellMetadata,
@@ -16,6 +25,7 @@ import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { PythonExtension } from "../services/PythonExtension.ts";
+import { type ITelemetry, Telemetry } from "../services/Telemetry.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { getNotebookUri } from "../types.ts";
@@ -39,10 +49,11 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     const configContextManager = yield* ConfigContextManager;
     const controllers = yield* ControllerRegistry;
     const healthService = yield* HealthService;
+    const telemetry = yield* Telemetry;
 
     yield* code.commands.registerCommand(
       "marimo.newMarimoNotebook",
-      newMarimoNotebook({ code, serializer }),
+      newMarimoNotebook({ code, serializer, telemetry }),
     );
 
     yield* code.commands.registerCommand(
@@ -206,14 +217,39 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
       "marimo.updateActivePythonEnvironment",
       updateActivePythonEnvironment({ code, py, uv, controllers }),
     );
+
+    // Telemetry for commands
+    const queue = yield* code.commands.subscribeToCommands();
+    yield* Effect.forkScoped(
+      queue.pipe(
+        Stream.runForEach(
+          Effect.fnUntraced(function* (result) {
+            if (Either.isLeft(result)) {
+              yield* telemetry.capture("executed_command", {
+                command: result.left,
+                success: false,
+              });
+            } else {
+              yield* telemetry.capture("executed_command", {
+                command: result.right,
+                success: true,
+              });
+            }
+          }),
+        ),
+        Stream.runDrain,
+      ),
+    );
   }),
 );
 
 const newMarimoNotebook = ({
   code,
+  telemetry,
 }: {
   code: VsCode;
   serializer: NotebookSerializer;
+  telemetry: ITelemetry;
 }) =>
   Effect.gen(function* () {
     const uri = yield* code.window.showSaveDialog({
@@ -246,6 +282,8 @@ def _():
         uri: notebook.uri.toString(),
       }),
     );
+
+    yield* telemetry.capture("new_notebook_created");
   });
 
 const createSetupCell = ({

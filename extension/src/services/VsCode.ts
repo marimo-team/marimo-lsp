@@ -4,6 +4,7 @@ import {
   Either,
   Fiber,
   Option,
+  PubSub,
   Runtime,
   type Scope,
   Stream,
@@ -232,8 +233,15 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
     const win = yield* Window;
     const api = vscode.commands;
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
+    // Pubsub of the commands run and their results
+    // Left is the command that failed, right is the command that succeeded
+    const commandPubSub =
+      yield* PubSub.unbounded<Either.Either<string, string>>();
 
     return {
+      subscribeToCommands() {
+        return PubSub.subscribe(commandPubSub);
+      },
       executeCommand(command: ExecutableCommand, ...args: unknown[]) {
         return Effect.promise(() => api.executeCommand(command, ...args));
       },
@@ -248,9 +256,17 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
             api.registerCommand(command, () =>
               runPromise(
                 effect.pipe(
+                  // Publish the command to the command pubsub
+                  Effect.tap(function* () {
+                    yield* PubSub.publish(commandPubSub, Either.right(command));
+                  }),
                   Effect.catchAllCause((cause) =>
                     Effect.gen(function* () {
                       yield* Effect.logError(cause);
+                      yield* PubSub.publish(
+                        commandPubSub,
+                        Either.left(command),
+                      );
                       yield* win.showWarningMessage(
                         `Something went wrong in ${JSON.stringify(command)}. See marimo logs for more info.`,
                       );
