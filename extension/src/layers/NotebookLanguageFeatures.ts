@@ -16,8 +16,13 @@ export const NotebookLanguageFeaturesLive = Layer.scopedDiscard(
     const runtime = yield* Effect.runtime();
     const runPromise = Runtime.runPromise(runtime);
 
+    const selector = {
+      language: "python",
+      notebookType: NOTEBOOK_TYPE,
+    } satisfies vscode.DocumentSelector;
+
     yield* code.languages.registerCompletionItemProvider(
-      { language: "python", notebookType: NOTEBOOK_TYPE },
+      selector,
       {
         provideCompletionItems(document, position, token, context) {
           return runPromise(
@@ -30,30 +35,24 @@ export const NotebookLanguageFeaturesLive = Layer.scopedDiscard(
       " ", // Trigger on space for general completions
     );
 
-    yield* code.languages.registerHoverProvider(
-      { language: "python", notebookType: NOTEBOOK_TYPE },
-      {
-        provideHover(document, position, token) {
-          return runPromise(proxy.provideHover(document, position), {
-            signal: signalFromToken(token),
-          });
-        },
+    yield* code.languages.registerHoverProvider(selector, {
+      provideHover(document, position, token) {
+        return runPromise(proxy.provideHover(document, position), {
+          signal: signalFromToken(token),
+        });
       },
-    );
+    });
 
-    yield* code.languages.registerDefinitionProvider(
-      { language: "python", notebookType: NOTEBOOK_TYPE },
-      {
-        provideDefinition(document, position, token) {
-          return runPromise(proxy.provideDefinition(document, position), {
-            signal: signalFromToken(token),
-          });
-        },
+    yield* code.languages.registerDefinitionProvider(selector, {
+      provideDefinition(document, position, token) {
+        return runPromise(proxy.provideDefinition(document, position), {
+          signal: signalFromToken(token),
+        });
       },
-    );
+    });
 
     yield* code.languages.registerSignatureHelpProvider(
-      { language: "python", notebookType: NOTEBOOK_TYPE },
+      selector,
       {
         provideSignatureHelp(document, position, token, context) {
           return runPromise(

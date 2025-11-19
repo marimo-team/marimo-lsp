@@ -129,35 +129,62 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
           const mappedDefinitions: vscode.Location[] = [];
 
           for (const def of definitions) {
+            // LSP can return either Location or LocationLink
+            // Location has: { uri, range }
+            // LocationLink has: { targetUri, targetRange, targetSelectionRange, originSelectionRange? }
+            const isLocationLink = "targetUri" in def;
+            const defUri: string = isLocationLink ? def.targetUri : def.uri;
+            const defRange: lsp.Range = isLocationLink
+              ? def.targetRange
+              : def.range;
+
             // Check if definition is in the virtual document
-            if (def.uri === info.uri.toString()) {
-              // Map back to cell position
-              const cellPosition = mapper.fromVirtual(
+            if (defUri === info.uri.toString()) {
+              // Find which cell contains this definition line
+              const defCell = yield* virtualDocs.findCellForVirtualLine(
+                notebook,
+                defRange.start.line,
+              );
+
+              if (Option.isNone(defCell)) {
+                // Cell not found, skip this definition
+                continue;
+              }
+
+              // Get the mapper for the cell containing the definition
+              const defMapper = yield* virtualDocs.getMapperForCell(
+                defCell.value,
+              );
+
+              // Map back to cell position using the correct cell's mapper
+              const cellPosition = defMapper.fromVirtual(
                 new code.Position(
-                  def.range.start.line,
-                  def.range.start.character,
+                  defRange.start.line,
+                  defRange.start.character,
                 ),
               );
+
               mappedDefinitions.push(
                 new code.Location(
-                  cell.document.uri,
+                  defCell.value.document.uri,
                   new code.Position(cellPosition.line, cellPosition.character),
                 ),
               );
             } else {
               // Definition is in another file, convert LSP Location to VS Code Location
-              const uri = yield* code.utils.parseUri(def.uri);
+              const uri = yield* code.utils.parseUri(defUri);
+
               mappedDefinitions.push(
                 new code.Location(
                   uri,
                   new code.Range(
                     new code.Position(
-                      def.range.start.line,
-                      def.range.start.character,
+                      defRange.start.line,
+                      defRange.start.character,
                     ),
                     new code.Position(
-                      def.range.end.line,
-                      def.range.end.character,
+                      defRange.end.line,
+                      defRange.end.character,
                     ),
                   ),
                 ),

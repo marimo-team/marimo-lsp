@@ -202,13 +202,12 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
             return null;
           }
           return yield* Effect.promise(() =>
-            client.value.sendRequest<lsp.Location[] | null>(
-              "textDocument/definition",
-              {
-                textDocument: { uri: uri.toString() },
-                position,
-              },
-            ),
+            client.value.sendRequest<
+              lsp.Location[] | lsp.LocationLink[] | null
+            >("textDocument/definition", {
+              textDocument: { uri: uri.toString() },
+              position,
+            }),
           );
         }),
 

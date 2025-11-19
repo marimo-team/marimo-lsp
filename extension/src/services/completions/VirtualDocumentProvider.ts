@@ -87,7 +87,7 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
         const basename =
           notebookUri.split("/").pop()?.split(".")[0] ?? "notebook";
 
-        const virtualUri = code.Uri.file(`/marimo/${basename}_{${hash}.py`);
+        const virtualUri = code.Uri.file(`/marimo/${basename}_${hash}.py`);
 
         // Open virtual document in Python language server
         yield* pythonLs.openDocument(virtualUri, content);
@@ -207,6 +207,29 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
               return new code.Position(cellLine, virtualPosition.character);
             },
           };
+        }),
+        /**
+         * Find the cell that contains a given line in the virtual document
+         */
+        findCellForVirtualLine: Effect.fnUntraced(function* (
+          notebook: vscode.NotebookDocument,
+          virtualLine: number,
+        ) {
+          const virtualDoc = yield* getVirtualDocument(notebook);
+
+          // Find the cell offset that contains this virtual line
+          const cellOffset = virtualDoc.cellOffsets.find(
+            (offset) =>
+              virtualLine >= offset.startLine && virtualLine < offset.endLine,
+          );
+
+          if (!cellOffset) {
+            return Option.none<vscode.NotebookCell>();
+          }
+
+          // Find the actual cell by index
+          const cell = notebook.getCells()[cellOffset.cellIndex];
+          return Option.fromNullable(cell);
         }),
       };
     }),
