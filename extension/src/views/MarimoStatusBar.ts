@@ -44,6 +44,10 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
               label: "$(settings) Edit settings",
               value: "settings",
             },
+            {
+              label: "$(output) Show marimo diagnostics",
+              value: "diagnostics",
+            },
           ] as const,
           {
             placeHolder: "marimo",
@@ -85,6 +89,10 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
           }
           case "reportIssue": {
             yield* openUrl(code, Links.issues);
+            break;
+          }
+          case "diagnostics": {
+            yield* code.commands.executeCommand("marimo.showDiagnostics");
             break;
           }
           default: {
