@@ -1053,6 +1053,93 @@ class NotebookEditor implements vscode.NotebookEditor {
   }
 }
 
+class CompletionItem implements vscode.CompletionItem {
+  label: string | vscode.CompletionItemLabel;
+  kind?: vscode.CompletionItemKind;
+  tags?: readonly vscode.CompletionItemTag[];
+  detail?: string;
+  documentation?: string | vscode.MarkdownString;
+  sortText?: string;
+  filterText?: string;
+  preselect?: boolean;
+  insertText?: string | vscode.SnippetString;
+  range?: Range | { inserting: vscode.Range; replacing: vscode.Range };
+  commitCharacters?: string[];
+  keepWhitespace?: boolean;
+  textEdit?: vscode.TextEdit;
+  additionalTextEdits?: vscode.TextEdit[];
+  command?: vscode.Command;
+  constructor(
+    label: string | vscode.CompletionItemLabel,
+    kind?: vscode.CompletionItemKind,
+  ) {
+    this.label = label;
+    this.kind = kind;
+  }
+}
+
+class CompletionList<T extends CompletionItem = CompletionItem>
+  implements vscode.CompletionList<T>
+{
+  isIncomplete: boolean;
+  items: T[];
+  constructor(items: T[], isIncomplete = false) {
+    this.items = items;
+    this.isIncomplete = isIncomplete;
+  }
+}
+
+class Location implements vscode.Location {
+  uri: Uri;
+  range: vscode.Range;
+  constructor(uri: Uri, range: vscode.Range) {
+    this.uri = uri;
+    this.range = range;
+  }
+}
+/**
+ * A hover represents additional information for a symbol or word. Hovers are
+ * rendered in a tooltip-like widget.
+ */
+class Hover implements vscode.Hover {
+  contents: Array<MarkdownString | vscode.MarkedString>;
+  range?: Range;
+  constructor(
+    contents:
+      | MarkdownString
+      | vscode.MarkedString
+      | Array<MarkdownString | vscode.MarkedString>,
+    range?: Range,
+  ) {
+    this.contents = Array.isArray(contents) ? contents : [contents];
+    this.range = range;
+  }
+}
+
+class SignatureInformation implements vscode.SignatureInformation {
+  label: string;
+  documentation?: string | MarkdownString;
+  parameters: vscode.ParameterInformation[];
+  activeParameter?: number;
+  constructor(label: string, documentation?: string | MarkdownString) {
+    this.label = label;
+    this.documentation = documentation;
+    this.parameters = [];
+  }
+}
+
+class ParameterInformation implements vscode.ParameterInformation {
+  label: string | [number, number];
+  documentation?: string | MarkdownString;
+  constructor(
+    label: string | [number, number],
+    documentation?: string | MarkdownString,
+  ) {
+    this.label = label;
+    this.documentation = documentation;
+  }
+}
+
 export function createTestNotebookDocument(
   uri: Uri | string,
   content?: vscode.NotebookData,
@@ -1653,9 +1740,36 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           },
           Uri,
           MarkdownString,
+          CompletionItem,
+          CompletionList,
+          Position,
+          Range,
+          Location,
+          Hover,
+          SignatureInformation,
+          ParameterInformation,
+          CompletionTriggerKind: {
+            Invoke: 0,
+            TriggerCharacter: 1,
+            TriggerForIncompleteCompletions: 2,
+          },
           version: options.version ?? "1.86.0",
           extensions: {
             getExtension: () => Option.none(),
+          },
+          languages: {
+            registerHoverProvider() {
+              return Effect.void;
+            },
+            registerSignatureHelpProvider() {
+              return Effect.void;
+            },
+            registerDefinitionProvider() {
+              return Effect.void;
+            },
+            registerCompletionItemProvider() {
+              return Effect.void;
+            },
           },
           // helper
           utils: {

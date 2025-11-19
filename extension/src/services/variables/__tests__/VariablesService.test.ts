@@ -86,9 +86,9 @@ it.effect(
     }).pipe(Effect.provide(layer));
 
     assert(Option.isSome(variables), "Expected variables");
-    expect(variables.value.variables.length).toBe(2);
-    expect(variables.value.variables[0].name).toBe("x");
-    expect(variables.value.variables[1].name).toBe("y");
+    expect(variables.value.length).toBe(2);
+    expect(variables.value[0].name).toBe("x");
+    expect(variables.value[1].name).toBe("y");
   }),
 );
 
@@ -114,9 +114,9 @@ it.effect(
     }).pipe(Effect.provide(layer));
 
     assert(Option.isSome(values), "Expected values");
-    expect(values.value.variables.length).toBe(2);
-    expect(values.value.variables[0].name).toBe("x");
-    expect(values.value.variables[0].value).toBe(42);
+    expect(values.value.length).toBe(2);
+    expect(values.value[0].name).toBe("x");
+    expect(values.value[0].value).toBe(42);
   }),
 );
 
@@ -146,8 +146,8 @@ it.effect(
 
     assert(Option.isSome(allData.variables), "Expected variables");
     assert(Option.isSome(allData.values), "Expected values");
-    expect(allData.variables.value.variables[0].name).toBe("x");
-    expect(allData.values.value.variables[0].value).toBe(100);
+    expect(allData.variables.value[0].name).toBe("x");
+    expect(allData.values.value[0].value).toBe(100);
   }),
 );
 
@@ -181,8 +181,8 @@ it.effect(
 
     assert(Option.isSome(result.vars1), "Expected vars1");
     assert(Option.isSome(result.vars2), "Expected vars2");
-    expect(result.vars1.value.variables[0].name).toBe("a");
-    expect(result.vars2.value.variables[0].name).toBe("b");
+    expect(result.vars1.value[0].name).toBe("a");
+    expect(result.vars2.value[0].name).toBe("b");
   }),
 );
 
@@ -366,10 +366,10 @@ it.effect(
     }).pipe(Effect.provide(layer));
 
     assert(Option.isSome(values), "Expected values");
-    expect(values.value.variables.length).toBe(2);
-    const xValue = values.value.variables.find((v) => v.name === "x");
-    const yValue = values.value.variables.find((v) => v.name === "y");
-    const zValue = values.value.variables.find((v) => v.name === "z");
+    expect(values.value.length).toBe(2);
+    const xValue = values.value.find((v) => v.name === "x");
+    const yValue = values.value.find((v) => v.name === "y");
+    const zValue = values.value.find((v) => v.name === "z");
 
     expect(xValue).toBeDefined();
     expect(xValue?.value).toBe(42);

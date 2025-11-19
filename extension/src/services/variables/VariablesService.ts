@@ -1,10 +1,21 @@
-import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
+import {
+  Brand,
+  Effect,
+  HashMap,
+  Option,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import type {
   NotebookUri,
   VariablesOp,
   VariableValuesOp,
 } from "../../types.ts";
 import { Log } from "../../utils/log.ts";
+import { NotebookCellId } from "../../utils/notebook.ts";
+
+const VariableName = Brand.nominal<VariableName>();
+export type VariableName = Brand.Branded<string, "VariableName">;
 
 /**
  * Manages variable state across all notebooks.
@@ -28,6 +39,34 @@ export class VariablesService extends Effect.Service<VariablesService>()(
       const variableValuesRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookUri, VariableValuesOp>(),
       );
+
+      /**
+       * Get variable declarations for a notebook
+       */
+      function getVariables(notebookUri: NotebookUri) {
+        return Effect.gen(function* () {
+          const map = yield* SubscriptionRef.get(variablesRef);
+          const op = HashMap.get(map, notebookUri);
+          return Option.map(op, (o) =>
+            o.variables.map(
+              (v) =>
+                ({
+                  name: VariableName(v.name),
+                  declaredBy: v.declared_by.map(NotebookCellId),
+                  usedBy: v.used_by.map(NotebookCellId),
+                }) as const,
+            ),
+          );
+        });
+      }
+
+      function getVariableValues(notebookUri: NotebookUri) {
+        return Effect.gen(function* () {
+          const map = yield* SubscriptionRef.get(variableValuesRef);
+          const op = HashMap.get(map, notebookUri);
+          return Option.map(op, (o) => [...o.variables] as const);
+        });
+      }
 
       return {
         /**
@@ -88,35 +127,21 @@ export class VariablesService extends Effect.Service<VariablesService>()(
         /**
          * Get variable declarations for a notebook
          */
-        getVariables(notebookUri: NotebookUri) {
-          return Effect.gen(function* () {
-            const map = yield* SubscriptionRef.get(variablesRef);
-            return HashMap.get(map, notebookUri);
-          });
-        },
+        getVariables,
 
         /**
          * Get variable values for a notebook
          */
-        getVariableValues(notebookUri: NotebookUri) {
-          return Effect.gen(function* () {
-            const map = yield* SubscriptionRef.get(variableValuesRef);
-            return HashMap.get(map, notebookUri);
-          });
-        },
+        getVariableValues,
 
         /**
          * Get all variables and their values for a notebook
          */
         getAllVariableData(notebookUri: NotebookUri) {
           return Effect.gen(function* () {
-            const variablesMap = yield* SubscriptionRef.get(variablesRef);
-            const valuesMap = yield* SubscriptionRef.get(variableValuesRef);
-
-            return {
-              variables: HashMap.get(variablesMap, notebookUri),
-              values: HashMap.get(valuesMap, notebookUri),
-            };
+            const variables = yield* getVariables(notebookUri);
+            const values = yield* getVariableValues(notebookUri);
+            return { variables, values };
           });
         },
 

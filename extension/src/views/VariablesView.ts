@@ -71,7 +71,7 @@ export const VariablesViewLive = Layer.scopedDiscard(
       // Create a map of variable values for quick lookup
       const valueMap = new Map<string, { value?: string; datatype?: string }>();
       if (Option.isSome(variablesData.values)) {
-        for (const varValue of variablesData.values.value.variables) {
+        for (const varValue of variablesData.values.value) {
           valueMap.set(varValue.name, {
             value: varValue.value ?? undefined,
             datatype: varValue.datatype ?? undefined,
@@ -82,7 +82,7 @@ export const VariablesViewLive = Layer.scopedDiscard(
       // Build the tree items from variable declarations
       const items: VariableTreeItem[] = [];
       if (Option.isSome(variablesData.variables)) {
-        for (const varDecl of variablesData.variables.value.variables) {
+        for (const varDecl of variablesData.variables.value) {
           const valueData = valueMap.get(varDecl.name);
           items.push({
             type: "variable",
