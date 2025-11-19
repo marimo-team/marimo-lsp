@@ -1564,9 +1564,6 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 ),
               );
             },
-            openTextDocument(_uri: vscode.Uri) {
-              return Effect.void;
-            },
           }),
           env: Env.make({
             appName: "Marimo Test",

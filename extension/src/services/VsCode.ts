@@ -218,10 +218,6 @@ type ExecutableCommand =
   | "workbench.action.openSettings"
   | "workbench.action.reloadWindow"
   | "simpleBrowser.show"
-  | "vscode.executeCompletionItemProvider"
-  | "vscode.executeDefinitionProvider"
-  | "vscode.executeHoverProvider"
-  | "vscode.executeSignatureHelpProvider"
   | MarimoCommand;
 
 type ContextMap = {
@@ -336,17 +332,10 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
         );
       },
       openUntitledTextDocument(options: {
-        uri?: vscode.Uri;
         content?: string;
         language?: string;
       }) {
         return Effect.promise(() => api.openTextDocument(options));
-      },
-      openTextDocument(uri: vscode.Uri) {
-        return Effect.promise(() => api.openTextDocument(uri)).pipe(
-          // For now just void the result to simplify mocks/tests
-          Effect.andThen(Effect.void),
-        );
       },
     };
   },
