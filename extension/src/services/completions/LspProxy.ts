@@ -309,12 +309,7 @@ function lspCompletionItemToVscode(
 
   // Add (marimo) suffix to detail to identify our completions
   newItem.detail = lspItem.detail ? `${lspItem.detail} (marimo)` : "(marimo)";
-
-  newItem.documentation =
-    typeof lspItem.documentation === "object" &&
-    "value" in lspItem.documentation
-      ? lspItem.documentation.value
-      : lspItem.documentation;
+  newItem.documentation = lspDocumentationToVscode(lspItem.documentation, code);
 
   newItem.sortText = lspItem.sortText;
   newItem.filterText = lspItem.filterText;
@@ -390,13 +385,16 @@ function codeDocumentationToLsp(
  */
 function lspDocumentationToVscode(
   documentation: string | lsp.MarkupContent | lsp.MarkedString | undefined,
+  code: VsCode,
 ): string | vscode.MarkdownString | undefined {
   if (!documentation) {
     return undefined;
   }
 
   if (typeof documentation === "object" && "value" in documentation) {
-    return documentation.value;
+    const md = new code.MarkdownString(documentation.value);
+    md.isTrusted = true;
+    return md;
   }
 
   return documentation;
@@ -420,9 +418,11 @@ function lspHoverToVscode(
   // Convert contents
   const contents = Array.isArray(hover.contents)
     ? hover.contents
-        .map((x) => lspDocumentationToVscode(x))
+        .map((x) => lspDocumentationToVscode(x, code))
         .filter((x) => x !== undefined)
-    : [lspDocumentationToVscode(hover.contents)].filter((x) => x !== undefined);
+    : [lspDocumentationToVscode(hover.contents, code)].filter(
+        (x) => x !== undefined,
+      );
 
   // Convert range if present
   if (hover.range) {
@@ -453,13 +453,14 @@ function lspSignatureHelpToVscode(
     activeParameter: signatureHelp.activeParameter ?? 0,
     signatures: signatureHelp.signatures.map((sig) => {
       const signature = new code.SignatureInformation(sig.label);
-      signature.documentation = lspDocumentationToVscode(sig.documentation);
+      signature.documentation = lspDocumentationToVscode(sig.documentation, code);
 
       if (sig.parameters) {
         signature.parameters = sig.parameters.map((param) => {
           const paramInfo = new code.ParameterInformation(param.label);
           paramInfo.documentation = lspDocumentationToVscode(
             param.documentation,
+            code,
           );
           return paramInfo;
         });
