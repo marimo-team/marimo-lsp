@@ -38,6 +38,23 @@ export function anonymousId(storage: Storage): Effect.Effect<string, never> {
   );
 }
 
+export interface ITelemetry {
+  capture(
+    event: "executed_command",
+    properties: { command: string; success: boolean },
+  ): Effect.Effect<void>;
+  capture(event: "new_notebook_created"): Effect.Effect<void>;
+  capture(
+    event: "notebook_opened",
+    properties: { cellCount: number },
+  ): Effect.Effect<void>;
+  capture(
+    event: "tutorial_opened",
+    properties: { tutorial: string },
+  ): Effect.Effect<void>;
+  identify(properties?: Record<string, unknown>): Effect.Effect<void>;
+}
+
 /**
  * Telemetry service that respects marimo's telemetry setting and uses PostHog for analytics.
  * Only tracks events when: marimo.telemetry is enabled
@@ -80,6 +97,8 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
         event: "extension_activated",
         properties: {
           extension_version: extensionVersion,
+          app_name: code.env.appName,
+          app_host: code.env.appHost,
         },
       });
       yield* Log.info("Anonymous telemetry enabled");
@@ -124,7 +143,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       Effect.promise(async () => client?.shutdown()),
     );
 
-    return {
+    const service: ITelemetry = {
       /**
        * Track an event with optional properties
        */
@@ -159,6 +178,8 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
           });
         }),
     };
+
+    return service;
   }),
   dependencies: [Storage.Default],
 }) {}

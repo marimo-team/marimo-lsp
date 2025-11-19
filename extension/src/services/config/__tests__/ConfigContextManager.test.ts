@@ -3,6 +3,7 @@ import {
   Effect,
   Layer,
   Option,
+  Queue,
   Stream,
   SubscriptionRef,
   TestClock,
@@ -81,6 +82,9 @@ const TestVsCodeLive = Layer.effect(
       commands: {
         setContext: (key: string, value: unknown) =>
           ctx.recordContextCall(key, value),
+        subscribeToCommands() {
+          return Queue.unbounded();
+        },
         executeCommand: () => Effect.void,
         registerCommand: () => Effect.void,
         _tag: "Commands",

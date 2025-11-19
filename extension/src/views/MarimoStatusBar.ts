@@ -4,6 +4,7 @@ import { Effect, Either, Layer, Option } from "effect";
 import { unreachable } from "../assert.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { ExtensionContext } from "../services/Storage.ts";
+import { type ITelemetry, Telemetry } from "../services/Telemetry.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { Links } from "../utils/links.ts";
 import { StatusBar } from "./StatusBar.ts";
@@ -17,6 +18,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
     const code = yield* VsCode;
     const context = yield* ExtensionContext;
     const serializer = yield* NotebookSerializer;
+    const telemetry = yield* Telemetry;
 
     // Register the command that shows the quick pick menu
     yield* code.commands.registerCommand(
@@ -64,7 +66,12 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
             break;
           }
           case "tutorials": {
-            yield* tutorialCommands({ code, context, serializer }).pipe(
+            yield* tutorialCommands({
+              code,
+              context,
+              serializer,
+              telemetry,
+            }).pipe(
               Effect.catchAll((error) =>
                 Effect.gen(function* () {
                   yield* Effect.logError("Failed to open tutorial", error);
@@ -106,7 +113,12 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
     yield* code.commands.registerCommand(
       "marimo.openTutorial",
       Effect.gen(function* () {
-        yield* tutorialCommands({ code, context, serializer }).pipe(
+        yield* tutorialCommands({
+          code,
+          context,
+          serializer,
+          telemetry,
+        }).pipe(
           Effect.catchAll((error) =>
             Effect.gen(function* () {
               yield* Effect.logError("Failed to open tutorial", error);
@@ -169,10 +181,12 @@ function tutorialCommands({
   code,
   context,
   serializer,
+  telemetry,
 }: {
   code: VsCode;
   context: Pick<import("vscode").ExtensionContext, "extensionUri">;
   serializer: NotebookSerializer;
+  telemetry: ITelemetry;
 }) {
   return Effect.gen(function* () {
     const selection = yield* code.window.showQuickPickItems(
@@ -191,6 +205,7 @@ function tutorialCommands({
     }
 
     const filename = selection.value.description;
+    const tutorialName = selection.value.label;
 
     // Build path to tutorial file
     const tutorialUri = code.Uri.joinPath(
@@ -259,5 +274,10 @@ function tutorialCommands({
         }),
       );
     }
+
+    // Track walkthrough step completion
+    yield* telemetry.capture("tutorial_opened", {
+      tutorial: tutorialName,
+    });
   });
 }
