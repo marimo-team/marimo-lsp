@@ -9,7 +9,7 @@ import { VsCode } from "../services/VsCode.ts";
  * (completions, hover, definitions, signature help) across topologically-sorted marimo cells.
  */
 export const NotebookLanguageFeaturesLive = Layer.scopedDiscard(
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const code = yield* VsCode;
     const proxy = yield* LspProxy;
 

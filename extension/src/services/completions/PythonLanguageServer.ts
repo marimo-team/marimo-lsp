@@ -23,7 +23,7 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
       const documents = new Map<string, { version: number }>();
 
       const serverOptions: lsp.ServerOptions = {
-        command: "uvxxx",
+        command: "uv",
         args: ["tool", "run", "ty", "server"],
         options: {
           // Run in stdio mode
