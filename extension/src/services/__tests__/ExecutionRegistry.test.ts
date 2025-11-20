@@ -727,6 +727,139 @@ describe("buildCellOutputs", () => {
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
+
+  it.effect(
+    "handles media channel in console outputs",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        consoleOutputs: [
+          {
+            mimetype: "image/png",
+            channel: "media",
+            data: "base64encodedimagedata",
+            timestamp: 0,
+          },
+        ],
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "ignores output/marimo-error/pdb channels in console outputs",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        consoleOutputs: [
+          {
+            mimetype: "text/plain",
+            channel: "stdout",
+            data: "Normal stdout",
+            timestamp: 0,
+          },
+          {
+            mimetype: "text/plain",
+            channel: "output",
+            data: "Should be ignored",
+            timestamp: 1,
+          },
+          {
+            mimetype: "application/vnd.marimo+error",
+            channel: "marimo-error",
+            data: "Should be ignored",
+            timestamp: 2,
+          },
+          {
+            mimetype: "text/plain",
+            channel: "pdb",
+            data: "Should be ignored",
+            timestamp: 3,
+          },
+        ],
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      // Should only have stdout output, the other channels should be ignored
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "separates console outputs from main output correctly",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        consoleOutputs: [
+          {
+            mimetype: "text/plain",
+            channel: "stdout",
+            data: "Console output",
+            timestamp: 0,
+          },
+        ],
+        output: {
+          mimetype: "text/html",
+          channel: "output",
+          data: "<div>Main output</div>",
+          timestamp: 1,
+        },
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      // Both outputs should be present but in separate channels
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "handles media channel with stdout in console outputs",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+      const state: CellRuntimeState = {
+        ...createCellRuntimeState(),
+        consoleOutputs: [
+          {
+            mimetype: "text/plain",
+            channel: "stdout",
+            data: "Text output\n",
+            timestamp: 0,
+          },
+          {
+            mimetype: "image/png",
+            channel: "media",
+            data: "imagedata",
+            timestamp: 1,
+          },
+        ],
+      };
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      // Both stdout and media should be in the stdout channel
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
 });
 
 it.scoped(
