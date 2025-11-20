@@ -8,6 +8,7 @@ import {
   Scope,
 } from "effect";
 import type * as vscode from "vscode";
+import { CellMetadataUIBindingService } from "../services/CellMetadataUIBindingService.ts";
 import { CellStateManager } from "../services/CellStateManager.ts";
 import { Config } from "../services/Config.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
@@ -40,6 +41,7 @@ import { RecentNotebooksLive } from "../views/RecentNotebooks.ts";
 import { StatusBar } from "../views/StatusBar.ts";
 import { TreeView } from "../views/TreeView.ts";
 import { VariablesViewLive } from "../views/VariablesView.ts";
+import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
@@ -62,6 +64,7 @@ const MainLive = Layer.empty
     Layer.merge(DatasourcesViewLive),
     Layer.merge(PackagesViewLive),
     Layer.merge(CellStatusBarProviderLive),
+    Layer.merge(CellMetadataBindingsLive),
   )
   .pipe(
     Layer.provide(LspProxy.Default),
@@ -74,6 +77,7 @@ const MainLive = Layer.empty
     Layer.provide(DatasourcesService.Default),
     Layer.provide(PackagesService.Default),
     Layer.provide(HealthService.Default),
+    Layer.provide(CellMetadataUIBindingService.Default),
   )
   .pipe(
     Layer.provide(MarimoConfigurationService.Default),

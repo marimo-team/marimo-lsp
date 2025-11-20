@@ -20,6 +20,7 @@ import {
 //
 // biome-ignore lint: See above
 import * as vscode from "vscode";
+import type { DynamicCommand, VscodeBuiltinCommand } from "../commands.ts";
 import type { MarimoCommand, MarimoContextKey } from "../constants.ts";
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 
@@ -212,14 +213,7 @@ export class Window extends Effect.Service<Window>()("Window", {
   }),
 }) {}
 
-type ExecutableCommand =
-  | "notebook.cell.execute"
-  | "vscode.openWith"
-  | "workbench.action.closeActiveEditor"
-  | "workbench.action.openSettings"
-  | "workbench.action.reloadWindow"
-  | "simpleBrowser.show"
-  | MarimoCommand;
+type ExecutableCommand = VscodeBuiltinCommand | MarimoCommand | DynamicCommand;
 
 type ContextMap = {
   "marimo.config.runtime.on_cell_change": "autorun" | "lazy";
@@ -250,7 +244,10 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
           api.executeCommand("setContext", key, value),
         );
       },
-      registerCommand(command: MarimoCommand, effect: Effect.Effect<void>) {
+      registerCommand(
+        command: MarimoCommand | DynamicCommand,
+        effect: Effect.Effect<void>,
+      ) {
         return Effect.acquireRelease(
           Effect.sync(() =>
             api.registerCommand(command, () =>

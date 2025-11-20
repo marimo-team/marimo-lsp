@@ -56,9 +56,13 @@ describe("extension.activate", () => {
       // We don't need to snapshot all commands and views, since we
       // check them against package.json below.
 
-      // Should exactly match package.json
+      // Should exactly match package.json (excluding dynamic commands)
+      // Dynamic commands are created at runtime and shouldn't be in package.json
+      const staticCommands = snapshot.commands.filter(
+        (cmd: string) => !cmd.startsWith("marimo.dynamic."),
+      );
       expect(new Set(pkg.contributes.commands.map((c) => c.command))).toEqual(
-        new Set(snapshot.commands),
+        new Set(staticCommands),
       );
       expect(
         new Set(

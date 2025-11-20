@@ -15,6 +15,7 @@ import {
   SubscriptionRef,
 } from "effect";
 import type * as vscode from "vscode";
+import type { DynamicCommand } from "../commands.ts";
 import type { MarimoCommand } from "../constants.ts";
 import {
   Auth,
@@ -1159,7 +1160,7 @@ export function createTestNotebookEditor(
 export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly layer: Layer.Layer<VsCode>;
   readonly views: Ref.Ref<HashSet.HashSet<string>>;
-  readonly commands: Ref.Ref<HashSet.HashSet<MarimoCommand>>;
+  readonly commands: Ref.Ref<HashSet.HashSet<MarimoCommand | DynamicCommand>>;
   readonly controllers: Ref.Ref<HashSet.HashSet<vscode.NotebookController>>;
   readonly executions: Ref.Ref<
     ReadonlyArray<{ command: string; args: ReadonlyArray<unknown> }>
@@ -1266,7 +1267,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const documentChanges =
       yield* PubSub.unbounded<vscode.NotebookDocumentChangeEvent>();
 
-    const commands = yield* Ref.make(HashSet.empty<MarimoCommand>());
+    const commands = yield* Ref.make(
+      HashSet.empty<MarimoCommand | DynamicCommand>(),
+    );
     const controllers = yield* Ref.make(
       HashSet.empty<vscode.NotebookController>(),
     );
