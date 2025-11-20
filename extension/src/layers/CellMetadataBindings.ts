@@ -6,7 +6,7 @@ import { VsCode } from "../services/VsCode.ts";
 import type { NotebookUri } from "../types.ts";
 
 const DEFAULT_ENGINE = "__marimo_duckdb";
-const DEFAULT_LABEL = "duckdb (default)";
+const DEFAULT_LABEL = "duckdb (In-Memory)";
 
 /**
  * Layer that registers all cell metadata UI bindings.
@@ -233,6 +233,9 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
           if (Option.isSome(connectionsOption)) {
             const connections = connectionsOption.value.connections;
             for (const [name, connection] of connections) {
+              if (name === DEFAULT_ENGINE) {
+                continue;
+              }
               options.push({
                 label: connection.display_name,
                 value: name,
