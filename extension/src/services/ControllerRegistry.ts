@@ -88,7 +88,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
           (env) =>
             // We only want virtual environments, not global interpreters
             !isGlobalInterpreter(env) &&
-            // Uv sandbox enviroments are handled by the sandbox controller and live
+            // Uv sandbox environments are handled by the sandbox controller and live
             // in the uv cache directory. We want to skip those so users don't see
             // duplicate controllers.
             !isInUvCache(env, { code, uvCacheDir }),
@@ -414,7 +414,7 @@ const pruneStaleControllers = Effect.fnUntraced(function* (options: {
  *
  * From the docs:
  *
- * py.Enviroment.environment - carries details if it is an environment, otherwise
+ * py.Environment.environment - carries details if it is an environment, otherwise
  * `undefined` in case of global interpreters and others.
  *
  * @param env The Python environment to check.

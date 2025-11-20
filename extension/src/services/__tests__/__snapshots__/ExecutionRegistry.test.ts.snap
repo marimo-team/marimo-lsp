@@ -397,8 +397,7 @@ exports[`buildCellOutputs > preserves whitespace-only output 1`] = `
   {
     "items": [
       {
-        "data": "   
-",
+        "data": "   ",
         "mime": "application/vnd.code.notebook.stdout",
       },
     ],

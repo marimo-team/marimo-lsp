@@ -667,7 +667,7 @@ describe("buildCellOutputs", () => {
           {
             mimetype: "text/plain",
             channel: "stdout",
-            data: "   \n",
+            data: "   ",
             timestamp: 0,
           },
         ],

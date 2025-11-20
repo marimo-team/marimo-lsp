@@ -31,7 +31,7 @@ requires = ["uv_build>=0.8.7,<0.9.0"]
 build-backend = "uv_build"
 
 [tool.ty.src]
-exclude = ["extension/**"] 
+exclude = ["extension/**"]
 
 [tool.ruff]
 extend-exclude = ["vscode/*", "extension/tutorials/*"]
