@@ -16,7 +16,7 @@ import {
   Runtime,
 } from "effect";
 import type * as vscode from "vscode";
-import { logNever } from "@/utils/assertNever.ts";
+import { logUnreachable } from "../assert.ts";
 import {
   type CellMessage,
   type CellRuntimeState,
@@ -506,8 +506,7 @@ export function buildCellOutputs(
           // PDB, output, and pdb not expected from console outputs
           break;
         default:
-          logNever(output.channel);
-          break;
+          logUnreachable(output.channel);
       }
     }
   }

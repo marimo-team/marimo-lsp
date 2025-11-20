@@ -80,6 +80,22 @@ export function unreachable(neverValue: never, context?: string): never {
   );
 }
 
+/**
+ * Logs a message when unreachable code is reached.
+ *
+ * @param neverValue - A `never`-typed value used to enforce exhaustiveness
+ *   in TypeScript. If ever passed at runtime, assumptions about control
+ *   flow are incorrect.
+ * @param context - Optional context for the error.
+ */
+export function logUnreachable(neverValue: never, context?: string): void {
+  console.error(
+    `Entered unreachable code` +
+      (context ? ` [${context}]` : "") +
+      `: ${safeRepr(neverValue)}`,
+  );
+}
+
 function safeRepr(x: unknown): string {
   try {
     if (typeof x === "string") {
