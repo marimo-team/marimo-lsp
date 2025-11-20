@@ -17,7 +17,7 @@ const withTestCtx = Effect.fnUntraced(function* () {
 });
 
 it.effect(
-  "should be false on intialization without active editor",
+  "should be false on initialization without active editor",
   Effect.fnUntraced(function* () {
     const ctx = yield* withTestCtx();
     // build the layer
@@ -91,14 +91,14 @@ if __name__ == "__main__":
 `,
   ],
 ] as const)(
-  "should be true on intialization with active editor: %s",
+  "should be true on initialization with active editor: %s",
   Effect.fnUntraced(function* ([_, pythonCode]) {
     const ctx = yield* withTestCtx();
 
     const editor = createTestTextEditor(
       createTestTextDocument("/test/notebook.py", "python", pythonCode),
     );
-    // set the active notebook editor prior to intialization
+    // set the active notebook editor prior to initialization
     yield* ctx.vscode.setActiveTextEditor(Option.some(editor));
 
     // build the layer

@@ -128,14 +128,14 @@ print(json.dumps(packages))`,
             });
           }
 
-          return new ValidPythonEnvironemnt({ inner: env });
+          return new ValidPythonEnvironment({ inner: env });
         }),
       };
     }),
   },
 ) {}
 
-export class ValidPythonEnvironemnt extends Data.TaggedClass(
+export class ValidPythonEnvironment extends Data.TaggedClass(
   "ValidPythonEnvironment",
 )<{
   inner: py.Environment;

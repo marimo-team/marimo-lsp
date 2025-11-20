@@ -281,7 +281,7 @@ describe("prettyErrorMessage", () => {
     const error: MarimoError = {
       type: "sql-error",
       msg: "syntax error",
-      sql_statement: "SELCT * FROM users",
+      sql_statement: "SELECT * FROM users",
       sql_line: null,
       sql_col: null,
       hint: "Check your SQL syntax",
@@ -290,7 +290,7 @@ describe("prettyErrorMessage", () => {
     };
     expect(prettyErrorMessage(error)).toMatchInlineSnapshot(`
 			"SQL Error: syntax error
-			Statement: SELCT * FROM users
+			Statement: SELECT * FROM users
 			Hint: Check your SQL syntax"
 		`);
   });

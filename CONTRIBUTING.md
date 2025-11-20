@@ -31,6 +31,16 @@ code .
 > Eventually this codebase will be merged into the main marimo repo, simplifying
 > setup.
 
+### Pre-commit Hooks
+
+To install pre-commit hooks:
+
+```sh
+uvx pre-commit install
+```
+
+This will run linting and formatting checks automatically before each commit.
+
 ### Common Commands
 
 This project uses [just](https://just.systems/) for common development tasks:

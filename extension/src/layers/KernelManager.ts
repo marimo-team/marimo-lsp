@@ -54,7 +54,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
       client.streamOf("marimo/operation").pipe(
         Stream.mapEffect(
           Effect.fnUntraced(function* (msg) {
-            yield* Effect.logTrace("Recieved marimo/operation").pipe(
+            yield* Effect.logTrace("Received marimo/operation").pipe(
               Effect.annotateLogs({
                 notebookUri: msg.notebookUri,
                 op: msg.operation.op,
