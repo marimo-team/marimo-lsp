@@ -88,6 +88,43 @@ exports[`buildCellOutputs > handles marimo error output 1`] = `
 ]
 `;
 
+exports[`buildCellOutputs > handles media channel in console outputs 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":null,"consoleOutputs":[{"mimetype":"image/png","channel":"media","data":"base64encodedimagedata","timestamp":0}],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
+        "mime": "application/vnd.marimo.ui+json",
+      },
+    ],
+    "metadata": {
+      "channel": "stdout",
+    },
+  },
+]
+`;
+
+exports[`buildCellOutputs > handles media channel with stdout in console outputs 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "Text output
+",
+        "mime": "application/vnd.code.notebook.stdout",
+      },
+      {
+        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":null,"consoleOutputs":[{"mimetype":"text/plain","channel":"stdout","data":"Text output\\n","timestamp":0},{"mimetype":"image/png","channel":"media","data":"imagedata","timestamp":1}],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
+        "mime": "application/vnd.marimo.ui+json",
+      },
+    ],
+    "metadata": {
+      "channel": "stdout",
+    },
+  },
+]
+`;
+
 exports[`buildCellOutputs > handles mix of empty and non-empty console outputs 1`] = `
 [
   {
@@ -146,7 +183,7 @@ exports[`buildCellOutputs > handles mixed output and console streams 1`] = `
   {
     "items": [
       {
-        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"text/html","channel":"output","data":"<div>Result: 42</div>","timestamp":2},"consoleOutputs":[{"mimetype":"text/plain","channel":"stdout","data":"Processing...\\n","timestamp":0},{"mimetype":"text/plain","channel":"stderr","data":"Warning: deprecated function\\n","timestamp":1}],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
+        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"text/html","channel":"output","data":"<div>Result: 42</div>","timestamp":2},"consoleOutputs":[],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
         "mime": "application/vnd.marimo.ui+json",
       },
     ],
@@ -314,7 +351,7 @@ exports[`buildCellOutputs > handles stdout + stderr + output together 1`] = `
   {
     "items": [
       {
-        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"application/json","channel":"output","data":{"result":"success","value":100},"timestamp":3},"consoleOutputs":[{"mimetype":"text/plain","channel":"stdout","data":"Starting computation...\\n","timestamp":0},{"mimetype":"text/plain","channel":"stderr","data":"Warning: using deprecated API\\n","timestamp":1},{"mimetype":"text/plain","channel":"stdout","data":"Computation complete\\n","timestamp":2}],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
+        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"application/json","channel":"output","data":{"result":"success","value":100},"timestamp":3},"consoleOutputs":[],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
         "mime": "application/vnd.marimo.ui+json",
       },
     ],
@@ -339,6 +376,22 @@ exports[`buildCellOutputs > handles stdout output 1`] = `
 ]
 `;
 
+exports[`buildCellOutputs > ignores output/marimo-error/pdb channels in console outputs 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "Normal stdout",
+        "mime": "application/vnd.code.notebook.stdout",
+      },
+    ],
+    "metadata": {
+      "channel": "stdout",
+    },
+  },
+]
+`;
+
 exports[`buildCellOutputs > preserves whitespace-only output 1`] = `
 [
   {
@@ -352,6 +405,31 @@ exports[`buildCellOutputs > preserves whitespace-only output 1`] = `
     "metadata": {
       "channel": "stdout",
     },
+  },
+]
+`;
+
+exports[`buildCellOutputs > separates console outputs from main output correctly 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "Console output",
+        "mime": "application/vnd.code.notebook.stdout",
+      },
+    ],
+    "metadata": {
+      "channel": "stdout",
+    },
+  },
+  {
+    "items": [
+      {
+        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"text/html","channel":"output","data":"<div>Main output</div>","timestamp":1},"consoleOutputs":[],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
+        "mime": "application/vnd.marimo.ui+json",
+      },
+    ],
+    "metadata": undefined,
   },
 ]
 `;

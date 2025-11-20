@@ -2,6 +2,7 @@ import * as React from "react";
 import {
   type CellId,
   type CellRuntimeState,
+  ConsoleOutput,
   OutputRenderer,
   TooltipProvider,
   useTheme,
@@ -28,6 +29,16 @@ export function CellOutput({ cellId, state }: CellOutputProps) {
       <TooltipProvider container={container.current}>
         {state.output && (
           <OutputRenderer cellId={cellId} message={state.output} />
+        )}
+        {state.consoleOutputs && state.consoleOutputs.length > 0 && (
+          <ConsoleOutput
+            cellId={cellId}
+            consoleOutputs={state.consoleOutputs}
+            debuggerActive={false}
+            onSubmitDebugger={() => {}}
+            stale={false}
+            cellName={""}
+          />
         )}
       </TooltipProvider>
     </div>

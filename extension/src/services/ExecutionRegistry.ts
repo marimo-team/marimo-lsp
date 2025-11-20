@@ -16,6 +16,7 @@ import {
   Runtime,
 } from "effect";
 import type * as vscode from "vscode";
+import { logUnreachable } from "../assert.ts";
 import {
   type CellMessage,
   type CellRuntimeState,
@@ -475,7 +476,15 @@ export function buildCellOutputs(
   // Process console outputs (stdout, stderr, stdin)
   if (state.consoleOutputs) {
     for (const output of state.consoleOutputs) {
-      const item = buildOutputItem(output, cellId, state, code, notebook);
+      // Remove main output so it is not displayed in the console output location
+      const stateWithoutOutputs = { ...state, output: null };
+      const item = buildOutputItem(
+        output,
+        cellId,
+        stateWithoutOutputs,
+        code,
+        notebook,
+      );
       if (!item) continue;
 
       switch (output.channel) {
@@ -488,13 +497,31 @@ export function buildCellOutputs(
         case "stdin":
           stdinItems.push(item);
           break;
+        case "media":
+          stdoutItems.push(item);
+          break;
+        case "output":
+        case "marimo-error":
+        case "pdb":
+          // PDB, output, and pdb not expected from console outputs
+          break;
+        default:
+          logUnreachable(output.channel);
       }
     }
   }
 
   // Process main output and errors
   if (state.output && !isOutputEmpty(state.output)) {
-    const item = buildOutputItem(state.output, cellId, state, code, notebook);
+    // Remove console outputs so they are not displayed in the cell output location
+    const stateWithoutConsoleOutputs = { ...state, consoleOutputs: [] };
+    const item = buildOutputItem(
+      state.output,
+      cellId,
+      stateWithoutConsoleOutputs,
+      code,
+      notebook,
+    );
     if (item) {
       if (state.output.channel === "marimo-error") {
         errorItems.push(item);
