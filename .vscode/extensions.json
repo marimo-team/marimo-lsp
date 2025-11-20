@@ -1,5 +1,3 @@
 {
-  "recommendations": [
-    "marimo-team.vscode-marimo"
-  ]
+  "recommendations": ["marimo-team.vscode-marimo"]
 }
