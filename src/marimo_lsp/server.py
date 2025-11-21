@@ -9,7 +9,7 @@ import lsprotocol.types as lsp
 import msgspec
 from marimo._convert.converters import MarimoConvert
 from pygls.lsp.server import LanguageServer
-from pygls.uris import to_fs_path
+from pygls.uris import to_fs_path, uri_scheme
 
 from marimo_lsp.api import handle_api_command
 from marimo_lsp.app_file_manager import sync_app_with_workspace
@@ -17,6 +17,7 @@ from marimo_lsp.completions import get_completions
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import ApiRequest, ConvertRequest
 from marimo_lsp.session_manager import LspSessionManager
+from marimo_lsp.diagnostics import build_graph, publish_diagnostics
 
 logger = get_logger()
 
@@ -91,6 +92,27 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             manager.close_session(params.notebook_document.uri)
             logger.info(f"Closed {params.notebook_document.uri}")
 
+    @server.feature(lsp.TEXT_DOCUMENT_DIAGNOSTIC)
+    def diagnostics(params: lsp.DocumentDiagnosticParams):
+        """Provide diagnostics for marimo notebooks.
+
+        The `textDocument/diagnostic` request is sent by the client to request
+        diagnostics for a specific text document. It is PULL-based, meaning the
+        server only sends diagnostics when requested by the client.
+        """
+        logger.info(f"textDocument/diagnostic {params.text_document.uri}")
+
+        notebook = server.workspace.get_notebook_document(
+            cell_uri=params.text_document.uri
+        )
+
+        if not notebook:
+            logger.debug("No target notebook found for diagnostics")
+            return
+
+        graph = build_graph(server, notebook)
+        publish_diagnostics(server, notebook, graph)
+
     @server.feature(
         lsp.TEXT_DOCUMENT_CODE_ACTION,
         lsp.CodeActionOptions(
@@ -102,8 +124,12 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         """Provide code actions for Python files to convert to marimo."""
         logger.info(f"textDocument/codeAction {params.text_document.uri}")
 
-        actions: list[lsp.CodeAction] = []
+        scheme = uri_scheme(params.text_document.uri)
+        if scheme and scheme.endswith("notebook-cell"):
+            # No code actions for notebook cells (for now)
+            return []
 
+        actions: list[lsp.CodeAction] = []
         filename = to_fs_path(params.text_document.uri)
         if filename and filename.endswith((".py", ".ipynb")):
             actions.append(
@@ -130,6 +156,11 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     def completions(ls: LanguageServer, params: lsp.CompletionParams):
         """Provide completions for marimo cells."""
         logger.info(f"textDocument/completion {params.text_document.uri}")
+
+        scheme = uri_scheme(params.text_document.uri)
+        if scheme and scheme.endswith("notebook-cell"):
+            # No completions for notebook cells (for now)
+            return []
 
         return get_completions(ls, params)
 
