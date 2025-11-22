@@ -1,4 +1,5 @@
 import { Brand, Effect, Layer, Option } from "effect";
+import { SQL_LANGUAGE_ID } from "../constants.ts";
 import type { CellMetadata } from "../schemas.ts";
 import { CellMetadataUIBindingService } from "../services/CellMetadataUIBindingService.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
@@ -55,7 +56,7 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
       alignment: code.NotebookCellStatusBarAlignment.Left,
 
       shouldShow: (cell) => {
-        return cell.document.languageId === "sql";
+        return cell.document.languageId === SQL_LANGUAGE_ID;
       },
 
       getValue: (metadata: CellMetadata) => {
@@ -146,7 +147,7 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
       alignment: code.NotebookCellStatusBarAlignment.Left,
 
       shouldShow: (cell) => {
-        return cell.document.languageId === "sql";
+        return cell.document.languageId === SQL_LANGUAGE_ID;
       },
 
       getValue: (metadata: CellMetadata) => {
@@ -183,7 +184,7 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
       alignment: code.NotebookCellStatusBarAlignment.Left,
 
       shouldShow: (cell) => {
-        return cell.document.languageId === "sql";
+        return cell.document.languageId === SQL_LANGUAGE_ID;
       },
 
       getValue: (metadata: CellMetadata) => {

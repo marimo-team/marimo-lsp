@@ -1,0 +1,12 @@
+{
+  "information_for_contributors": [
+    "This grammar file references VSCode's built-in Python grammar (MagicPython).",
+    "The mo-python language ID uses the same syntax highlighting as Python."
+  ],
+  "scopeName": "source.mo-python",
+  "patterns": [
+    {
+      "include": "source.python"
+    }
+  ]
+}

@@ -3,7 +3,11 @@ import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import packageJson from "../../../package.json";
 import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
-import { NOTEBOOK_TYPE } from "../../constants.ts";
+import {
+  MARKDOWN_LANGUAGE_ID,
+  NOTEBOOK_TYPE,
+  PYTHON_LANGUAGE_ID,
+} from "../../constants.ts";
 import { NotebookSerializer } from "../../services/NotebookSerializer.ts";
 
 const NotebookSerializerLive = Layer.empty.pipe(
@@ -29,12 +33,12 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
           {
             kind: 2,
             value: "import marimo as mo",
-            languageId: "python",
+            languageId: PYTHON_LANGUAGE_ID,
           },
           {
             kind: 2,
             value: "x = 1",
-            languageId: "python",
+            languageId: PYTHON_LANGUAGE_ID,
           },
         ],
       });
@@ -73,17 +77,17 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
           {
             kind: 2,
             value: "import marimo as mo",
-            languageId: "python",
+            languageId: PYTHON_LANGUAGE_ID,
           },
           {
             kind: 1,
             value: "# single line markdown",
-            languageId: "markdown",
+            languageId: MARKDOWN_LANGUAGE_ID,
           },
           {
             kind: 1,
             value: "- multiline\n-markdown",
-            languageId: "markdown",
+            languageId: MARKDOWN_LANGUAGE_ID,
           },
         ],
       });
@@ -164,19 +168,19 @@ if __name__ == "__main__":
 
       // First cell should be Python
       expect(notebook.cells[0].kind).toBe(2);
-      expect(notebook.cells[0].languageId).toBe("python");
+      expect(notebook.cells[0].languageId).toBe(PYTHON_LANGUAGE_ID);
       expect(notebook.cells[0].value).toBe("import marimo as mo");
 
       // Second cell should be Markdown (not Python)
       expect(notebook.cells[1].kind).toBe(1);
-      expect(notebook.cells[1].languageId).toBe("markdown");
+      expect(notebook.cells[1].languageId).toBe(MARKDOWN_LANGUAGE_ID);
       expect(notebook.cells[1].value).toBe(
         "# Hello World\n\nThis is a markdown cell.",
       );
 
       // Third cell should also be Markdown
       expect(notebook.cells[2].kind).toBe(1);
-      expect(notebook.cells[2].languageId).toBe("markdown");
+      expect(notebook.cells[2].languageId).toBe(MARKDOWN_LANGUAGE_ID);
       expect(notebook.cells[2].value).toBe("Single quotes");
     }),
   );
@@ -216,11 +220,11 @@ if __name__ == "__main__":
 
       // First cell should be Python
       expect(notebook.cells[0].kind).toBe(2);
-      expect(notebook.cells[0].languageId).toBe("python");
+      expect(notebook.cells[0].languageId).toBe(PYTHON_LANGUAGE_ID);
 
       // Second cell should remain Python (because it's an f-string)
       expect(notebook.cells[1].kind).toBe(2);
-      expect(notebook.cells[1].languageId).toBe("python");
+      expect(notebook.cells[1].languageId).toBe(PYTHON_LANGUAGE_ID);
       expect(notebook.cells[1].value).toContain("mo.md(f");
       expect(notebook.cells[1].value).toContain("{name}");
     }),
@@ -260,7 +264,7 @@ if __name__ == "__main__":
 
       // Should be deserialized as markdown
       expect(notebook.cells[1].kind).toBe(1);
-      expect(notebook.cells[1].languageId).toBe("markdown");
+      expect(notebook.cells[1].languageId).toBe(MARKDOWN_LANGUAGE_ID);
 
       // Re-serialize and check it goes back to mo.md()
       const serialized = yield* serializer.serializeEffect(notebook);

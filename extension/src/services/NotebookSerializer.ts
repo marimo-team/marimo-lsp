@@ -8,7 +8,12 @@ import {
   Schema,
 } from "effect";
 import type * as vscode from "vscode";
-import { NOTEBOOK_TYPE } from "../constants.ts";
+import {
+  MARKDOWN_LANGUAGE_ID,
+  NOTEBOOK_TYPE,
+  PYTHON_LANGUAGE_ID,
+  SQL_LANGUAGE_ID,
+} from "../constants.ts";
 import {
   type CellMetadata,
   decodeCellMetadata,
@@ -83,7 +88,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                   // Hard code to avoid taking dep on VsCode
                   kind: 1 satisfies vscode.NotebookCellKind.Markup,
                   value: result.code,
-                  languageId: "markdown",
+                  languageId: MARKDOWN_LANGUAGE_ID,
                   metadata: {
                     name: cell.name,
                     options: cell.options,
@@ -102,7 +107,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                 // Hard code to avoid taking dep on VsCode
                 kind: 2 satisfies vscode.NotebookCellKind.Code,
                 value: result.code,
-                languageId: "sql",
+                languageId: SQL_LANGUAGE_ID,
                 metadata: {
                   name: cell.name,
                   options: cell.options,
@@ -118,7 +123,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               // Hard code to avoid taking dep on VsCode
               kind: 2 satisfies vscode.NotebookCellKind.Code,
               value: cell.code,
-              languageId: "python",
+              languageId: PYTHON_LANGUAGE_ID,
               metadata: {
                 name: cell.name,
                 options: cell.options,
@@ -219,7 +224,7 @@ function notebookDataToMarimoNotebook(
       // Handle markup cells
       if (cell.kind === (1 satisfies vscode.NotebookCellKind.Markup)) {
         // Check if this is a markdown cell with metadata
-        if (cell.languageId === "markdown") {
+        if (cell.languageId === MARKDOWN_LANGUAGE_ID) {
           const result = markdownParser.transformOut(
             cell.value,
             cellMeta.pipe(
@@ -244,7 +249,7 @@ function notebookDataToMarimoNotebook(
       }
 
       // Handle SQL cells - transform back to Python mo.sql() wrapper
-      if (cell.languageId === "sql") {
+      if (cell.languageId === SQL_LANGUAGE_ID) {
         const result = sqlParser.transformOut(
           cell.value,
           cellMeta.pipe(
