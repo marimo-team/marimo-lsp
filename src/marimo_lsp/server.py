@@ -134,7 +134,8 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         updater = graph_registry.get_or_create(notebook.uri)
         updater.flush()
 
-        # Return empty diagnostics report (we use custom notifications instead)
+        # Diagnostics are pushed via publishDiagnostics notifications
+        # from _recompile(); the pull response is empty.
         return lsp.RelatedFullDocumentDiagnosticReport(kind="full", items=[])
 
     @server.feature(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
+import lsprotocol.types as lsp
 from marimo._ast.compiler import compile_cell
 from marimo._messaging.msgspec_encoder import asdict
 from marimo._messaging.notification import (
@@ -14,12 +15,11 @@ from marimo._messaging.notification import (
 from marimo._runtime.dataflow import DirectedGraph
 
 from marimo_lsp.loggers import get_logger
-from marimo_lsp.utils import get_stable_id
+from marimo_lsp.utils import decode_marimo_cell_metadata
 
 logger = get_logger()
 
 if TYPE_CHECKING:
-    import lsprotocol.types as lsp
     from marimo._types.ids import CellId_t
     from pygls.lsp.server import LanguageServer
 
@@ -39,6 +39,21 @@ def _snapshot_variables(graph: DirectedGraph) -> _VariablesSnapshot:
         )
         for variable, declared_by in graph.definitions.items()
     }
+
+
+def _compute_diagnostics(
+    _graph: DirectedGraph,
+    _cell_id_to_uri: dict[CellId_t, str],
+    _cell_names: dict[CellId_t, str],
+    _cell_index: dict[CellId_t, int],
+) -> dict[str, list[lsp.Diagnostic]]:
+    """Compute all diagnostics from the current graph state.
+
+    Returns a dict mapping cell document URIs to their diagnostics.
+    """
+    result: dict[str, list[lsp.Diagnostic]] = {}
+    # TODO: add diagnostic rules here
+    return result
 
 
 class NotebookGraphUpdater:
@@ -66,6 +81,7 @@ class NotebookGraphUpdater:
         self._graph: DirectedGraph = DirectedGraph()
         self._last_published: _VariablesSnapshot | None = None
         self._debounce_handle: asyncio.TimerHandle | None = None
+        self._cached_diagnostics: dict[str, list[lsp.Diagnostic]] = {}
 
     def schedule(self) -> None:
         """Schedule a debounced recompilation.
@@ -91,7 +107,7 @@ class NotebookGraphUpdater:
 
     # -- internal helpers -----------------------------------------------
 
-    def _recompile(self) -> None:
+    def _recompile(self) -> None:  # noqa: C901
         """Read all cells from workspace, compile changed ones, publish if needed."""
         self._debounce_handle = None
         notebook = self._server.workspace.get_notebook_document(
@@ -100,12 +116,19 @@ class NotebookGraphUpdater:
         if not notebook:
             return
 
+        cell_id_to_uri: dict[CellId_t, str] = {}
+        cell_names: dict[CellId_t, str] = {}
+        cell_index: dict[CellId_t, int] = {}
+
         current_ids: set[CellId_t] = set()
-        for cell in notebook.cells:
-            cell_id = get_stable_id(cell)
+        for idx, cell in enumerate(notebook.cells):
+            cell_id, _config, name = decode_marimo_cell_metadata(cell)
             if not cell_id:
                 continue
             current_ids.add(cell_id)
+            cell_id_to_uri[cell_id] = cell.document
+            cell_names[cell_id] = name
+            cell_index[cell_id] = idx
 
             doc = self._server.workspace.text_documents.get(cell.document)
             source = doc.source if doc else ""
@@ -132,11 +155,28 @@ class NotebookGraphUpdater:
             if removed_id in self._graph.cells:
                 self._graph.delete_cell(removed_id)
 
-        # Publish only if the variable structure changed
+        # Publish variables if the dependency structure changed
         snapshot = _snapshot_variables(self._graph)
         if snapshot != self._last_published:
             self._last_published = snapshot
             _publish_variables(self._server, notebook, self._graph)
+
+        # Recompute and push diagnostics to all affected cells
+        new_diagnostics = _compute_diagnostics(
+            self._graph, cell_id_to_uri, cell_names, cell_index
+        )
+
+        # Publish for every cell that has or previously had diagnostics
+        # (empty list clears stale diagnostics)
+        for uri in set(new_diagnostics) | set(self._cached_diagnostics):
+            self._server.text_document_publish_diagnostics(
+                lsp.PublishDiagnosticsParams(
+                    uri=uri,
+                    diagnostics=new_diagnostics.get(uri, []),
+                )
+            )
+
+        self._cached_diagnostics = new_diagnostics
 
 
 class GraphUpdaterRegistry:
