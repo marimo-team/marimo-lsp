@@ -15,7 +15,10 @@ from pygls.uris import to_fs_path, uri_scheme
 from marimo_lsp.api import handle_api_command
 from marimo_lsp.app_file_manager import sync_app_with_workspace
 from marimo_lsp.completions import get_completions
-from marimo_lsp.diagnostics import GraphManagerRegistry, publish_diagnostics
+from marimo_lsp.diagnostics import (
+    GraphManagerRegistry,
+    publish_diagnostics,
+)
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import ApiRequest, ConvertRequest
 from marimo_lsp.session_manager import LspSessionManager
@@ -143,17 +146,21 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             logger.debug("No target notebook found for diagnostics")
             return lsp.RelatedFullDocumentDiagnosticReport(kind="full", items=[])
 
-        # Get graph manager and publish only if stale
         graph_manager = graph_registry.get(notebook.uri)
-        if graph_manager and graph_manager.is_stale():
-            logger.info("Graph is stale; recomputing diagnostics")
+        if not graph_manager:
+            logger.debug("No graph manager found for notebook")
+            return lsp.RelatedFullDocumentDiagnosticReport(kind="full", items=[])
+
+        if graph_manager.is_stale():
+            logger.info("Graph is stale; publishing variable notification")
             publish_diagnostics(server, notebook, graph_manager.get_graph())
             graph_manager.mark_clean()
-        else:
-            logger.debug("Diagnostics are up-to-date; no action taken")
 
-        # Return empty diagnostics report (we use custom notifications instead)
-        return lsp.RelatedFullDocumentDiagnosticReport(kind="full", items=[])
+        all_diagnostics = graph_manager.get_diagnostics(notebook)
+
+        return lsp.RelatedFullDocumentDiagnosticReport(
+            kind="full", items=all_diagnostics.get(params.text_document.uri, [])
+        )
 
     @server.feature(
         lsp.TEXT_DOCUMENT_CODE_ACTION,
