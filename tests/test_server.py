@@ -593,6 +593,24 @@ x\
             {
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
+                    "op": "variables",
+                    "variables": [
+                        {
+                            "name": "x",
+                            "declared_by": ["file:///exec_test.py#cell1"],
+                            "used_by": [],
+                        },
+                        {
+                            "name": "sys",
+                            "declared_by": ["file:///exec_test.py#cell1"],
+                            "used_by": [],
+                        },
+                    ],
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
                     "op": "update-cell-codes",
                     "cell_ids": ["cell1"],
                     "codes": [
@@ -840,6 +858,19 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
     await asyncio.wait_for(completion_event.wait(), timeout=5.0)
     assert messages == snapshot(
         [
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "variables",
+                    "variables": [
+                        {
+                            "name": "x",
+                            "declared_by": ["file:///exec_test.py#cell1"],
+                            "used_by": ["file:///exec_test.py#cell2"],
+                        }
+                    ],
+                },
+            },
             {
                 "notebookUri": "file:///exec_test.py",
                 "operation": {

@@ -59,7 +59,7 @@ it.effect("should register a binding and create status bar provider", () =>
           alignment: 1, // Left
           shouldShow: () => true,
           getValue: () => "value",
-          setValue: (metadata, value) => ({ ...metadata }),
+          setValue: (metadata) => ({ ...metadata }),
           getLabel: (value) => `Label: ${value}`,
           getTooltip: () => "Test tooltip",
         };
@@ -87,7 +87,7 @@ it.effect("should show status bar item based on shouldShow predicate", () =>
           alignment: 1,
           shouldShow: (cell) => cell.document.languageId === "sql",
           getValue: () => "df",
-          setValue: (metadata, value) => ({ ...metadata }),
+          setValue: (metadata) => ({ ...metadata }),
           getLabel: (value) => `$(database) ${value}`,
           getTooltip: (value) => `Result: ${value}`,
         };
@@ -136,7 +136,7 @@ it.effect("should display value from cell metadata", () =>
           shouldShow: () => true,
           getValue: (metadata) =>
             metadata.languageMetadata?.sql?.dataframeName ?? "unnamed",
-          setValue: (metadata, value) => ({ ...metadata }),
+          setValue: (metadata) => ({ ...metadata }),
           getLabel: (value) => `$(database) ${value}`,
           getTooltip: () => "Tooltip",
         };

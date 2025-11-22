@@ -1,8 +1,8 @@
-import { Effect, Layer, Option, Stream } from "effect";
+import { Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import { dynamicCommand } from "../commands.ts";
-import { MarimoCommand, NOTEBOOK_TYPE } from "../constants.ts";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import {
   type CellMetadata,
   decodeCellMetadata,
