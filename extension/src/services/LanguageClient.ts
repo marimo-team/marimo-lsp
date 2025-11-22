@@ -14,6 +14,7 @@ import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 import { Config } from "./Config.ts";
 import { OutputChannel } from "./OutputChannel.ts";
 import { VsCode } from "./VsCode.ts";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 
 export class LanguageClientStartError extends Data.TaggedError(
   "LanguageClientStartError",
@@ -66,6 +67,10 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
           // create a dedicated output channel for marimo-lsp messages
           outputChannel,
           revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
+          documentSelector: [
+            { notebook: NOTEBOOK_TYPE, language: "sql" },
+            { notebook: NOTEBOOK_TYPE, language: "python" },
+          ],
         },
       );
 
