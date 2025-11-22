@@ -14,10 +14,10 @@ from pygls.uris import to_fs_path, uri_scheme
 from marimo_lsp.api import handle_api_command
 from marimo_lsp.app_file_manager import sync_app_with_workspace
 from marimo_lsp.completions import get_completions
+from marimo_lsp.diagnostics import build_graph, publish_diagnostics
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import ApiRequest, ConvertRequest
 from marimo_lsp.session_manager import LspSessionManager
-from marimo_lsp.diagnostics import build_graph, publish_diagnostics
 
 logger = get_logger()
 
