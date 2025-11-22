@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 import { Data, Effect, Either, Option, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
 import { unreachable } from "../assert.ts";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import type {
   MarimoCommand,
   MarimoNotification,
@@ -66,6 +67,10 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
           // create a dedicated output channel for marimo-lsp messages
           outputChannel,
           revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
+          documentSelector: [
+            { notebook: NOTEBOOK_TYPE, language: "sql" },
+            { notebook: NOTEBOOK_TYPE, language: "python" },
+          ],
         },
       );
 
