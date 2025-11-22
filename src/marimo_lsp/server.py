@@ -134,7 +134,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
 
         if not notebook:
             logger.debug("No target notebook found for diagnostics")
-            return
+            return lsp.RelatedFullDocumentDiagnosticReport(kind="full", items=[])
 
         # Get graph manager and publish only if stale
         graph_manager = graph_registry.get(notebook.uri)
@@ -144,6 +144,9 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             graph_manager.mark_clean()
         else:
             logger.debug("Diagnostics are up-to-date; no action taken")
+
+        # Return empty diagnostics report (we use custom notifications instead)
+        return lsp.RelatedFullDocumentDiagnosticReport(kind="full", items=[])
 
     @server.feature(
         lsp.TEXT_DOCUMENT_CODE_ACTION,
