@@ -208,11 +208,16 @@ function processOperation(
       code,
       config,
     } = deps;
-    const editor = Option.getOrThrowWith(
-      yield* editors.getLastNotebookEditor(notebookUri),
-      () => new Error(`Expected NotebookEditor for ${notebookUri}`),
-    );
+    const maybeEditor = yield* editors.getLastNotebookEditor(notebookUri);
 
+    if (Option.isNone(maybeEditor)) {
+      yield* Effect.logWarning(
+        "No active notebook editor, skipping operation",
+      ).pipe(Effect.annotateLogs({ op: operation.op }));
+      return;
+    }
+
+    const editor = Option.getOrThrow(maybeEditor);
     const maybeController = yield* controllers.getActiveController(
       editor.notebook,
     );
