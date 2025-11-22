@@ -9,11 +9,12 @@ import lsprotocol.types as lsp
 import msgspec
 from marimo._convert.converters import MarimoConvert
 from pygls.lsp.server import LanguageServer
-from pygls.uris import to_fs_path
+from pygls.uris import to_fs_path, uri_scheme
 
 from marimo_lsp.api import handle_api_command
 from marimo_lsp.app_file_manager import sync_app_with_workspace
 from marimo_lsp.completions import get_completions
+from marimo_lsp.diagnostics import GraphManagerRegistry, publish_diagnostics
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import ApiRequest, ConvertRequest
 from marimo_lsp.session_manager import LspSessionManager
@@ -40,6 +41,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         ),
     )
     manager = LspSessionManager()
+    graph_registry = GraphManagerRegistry()
 
     # Lsp Features
     @server.feature(lsp.SHUTDOWN)
@@ -58,6 +60,16 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             )
             logger.info(f"Synced session {params.notebook_document.uri}")
 
+        # Initialize graph manager (or reinitialize if already exists)
+        existing_manager = graph_registry.get(params.notebook_document.uri)
+        if existing_manager:
+            # Notebook already open, reinitialize
+            logger.debug(f"Reinitializing graph for {params.notebook_document.uri}")
+            graph_registry.remove(params.notebook_document.uri)
+
+        graph_manager = graph_registry.init(params.notebook_document, server)
+        publish_diagnostics(server, params.notebook_document, graph_manager.get_graph())
+
     @server.feature(lsp.NOTEBOOK_DOCUMENT_DID_CHANGE)
     async def did_change(params: lsp.DidChangeNotebookDocumentParams) -> None:
         logger.info(f"notebookDocument/didChange {params.notebook_document.uri}")
@@ -69,6 +81,17 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
                 app=session.app_file_manager.app,
             )
         logger.info(f"Synced session {params.notebook_document.uri}")
+
+        # Update graph incrementally based on changes
+        graph_manager = graph_registry.get(params.notebook_document.uri)
+        if graph_manager is None:
+            logger.debug(f"No graph manager for {params.notebook_document.uri}")
+            return
+
+        graph_manager.sync_with_notebook_document_change_event(
+            workspace=server.workspace,
+            change=params.change,
+        )
 
     @server.feature(lsp.NOTEBOOK_DOCUMENT_DID_SAVE)
     async def did_save(params: lsp.DidSaveNotebookDocumentParams) -> None:
@@ -85,11 +108,45 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     @server.feature(lsp.NOTEBOOK_DOCUMENT_DID_CLOSE)
     async def did_close(params: lsp.DidCloseNotebookDocumentParams) -> None:
         logger.info(f"notebookDocument/didClose {params.notebook_document.uri}")
+
+        # Clean up graph manager
+        graph_registry.remove(params.notebook_document.uri)
+
         # Only close untitled sessions, when closing documents...
         # Others can stay alive
         if params.notebook_document.uri.startswith("untitled:"):
             manager.close_session(params.notebook_document.uri)
             logger.info(f"Closed {params.notebook_document.uri}")
+
+    @server.feature(lsp.TEXT_DOCUMENT_DIAGNOSTIC)
+    def diagnostics(params: lsp.DocumentDiagnosticParams):
+        """Provide diagnostics for marimo notebooks.
+
+        The `textDocument/diagnostic` request is sent by the client to request
+        diagnostics for a specific text document. It is PULL-based, meaning the
+        server only sends diagnostics when requested by the client.
+        """
+        logger.info(f"textDocument/diagnostic {params.text_document.uri}")
+
+        notebook = server.workspace.get_notebook_document(
+            cell_uri=params.text_document.uri
+        )
+
+        if not notebook:
+            logger.debug("No target notebook found for diagnostics")
+            return lsp.RelatedFullDocumentDiagnosticReport(kind="full", items=[])
+
+        # Get graph manager and publish only if stale
+        graph_manager = graph_registry.get(notebook.uri)
+        if graph_manager and graph_manager.is_stale():
+            logger.info("Graph is stale; recomputing diagnostics")
+            publish_diagnostics(server, notebook, graph_manager.get_graph())
+            graph_manager.mark_clean()
+        else:
+            logger.debug("Diagnostics are up-to-date; no action taken")
+
+        # Return empty diagnostics report (we use custom notifications instead)
+        return lsp.RelatedFullDocumentDiagnosticReport(kind="full", items=[])
 
     @server.feature(
         lsp.TEXT_DOCUMENT_CODE_ACTION,
@@ -102,8 +159,12 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         """Provide code actions for Python files to convert to marimo."""
         logger.info(f"textDocument/codeAction {params.text_document.uri}")
 
-        actions: list[lsp.CodeAction] = []
+        scheme = uri_scheme(params.text_document.uri)
+        if scheme and scheme.endswith("notebook-cell"):
+            # No code actions for notebook cells (for now)
+            return []
 
+        actions: list[lsp.CodeAction] = []
         filename = to_fs_path(params.text_document.uri)
         if filename and filename.endswith((".py", ".ipynb")):
             actions.append(
@@ -130,6 +191,11 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     def completions(ls: LanguageServer, params: lsp.CompletionParams):
         """Provide completions for marimo cells."""
         logger.info(f"textDocument/completion {params.text_document.uri}")
+
+        scheme = uri_scheme(params.text_document.uri)
+        if scheme and scheme.endswith("notebook-cell"):
+            # No completions for notebook cells (for now)
+            return []
 
         return get_completions(ls, params)
 

@@ -593,6 +593,25 @@ x\
             {
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
+                    "op": "variables",
+                    "variables": IsList(
+                        {
+                            "name": "x",
+                            "declared_by": ["file:///exec_test.py#cell1"],
+                            "used_by": [],
+                        },
+                        {
+                            "name": "sys",
+                            "declared_by": ["file:///exec_test.py#cell1"],
+                            "used_by": [],
+                        },
+                        check_order=False,
+                    ),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
                     "op": "update-cell-codes",
                     "cell_ids": ["cell1"],
                     "codes": [
@@ -843,6 +862,19 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             {
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
+                    "op": "variables",
+                    "variables": [
+                        {
+                            "name": "x",
+                            "declared_by": ["file:///exec_test.py#cell1"],
+                            "used_by": ["file:///exec_test.py#cell2"],
+                        }
+                    ],
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
                     "op": "update-cell-codes",
                     "cell_ids": ["cell2"],
                     "codes": ["print(x)"],
@@ -1073,6 +1105,215 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                     "run_id": None,
                     "serialization": None,
                     "timestamp": IsFloat(),
+                },
+            },
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_incremental_graph_text_change(client: LanguageClient) -> None:
+    """Test that changing cell text updates the graph incrementally."""
+    variables_operations = []
+    open_event = asyncio.Event()
+
+    @client.feature("marimo/operation")
+    async def on_operation(params: Any) -> None:  # noqa: ANN401
+        if params.operation.op == "variables":
+            variables_operations.append(asdict(params))
+            open_event.set()
+
+    # Open notebook with two cells
+    client.notebook_document_did_open(
+        lsp.DidOpenNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocument(
+                uri="file:///incremental_test.py",
+                notebook_type="marimo-notebook",
+                version=1,
+                cells=[
+                    lsp.NotebookCell(
+                        kind=lsp.NotebookCellKind.Code,
+                        document="file:///incremental_test.py#cell1",
+                    ),
+                    lsp.NotebookCell(
+                        kind=lsp.NotebookCellKind.Code,
+                        document="file:///incremental_test.py#cell2",
+                    ),
+                ],
+            ),
+            cell_text_documents=[
+                lsp.TextDocumentItem(
+                    uri="file:///incremental_test.py#cell1",
+                    language_id="python",
+                    version=1,
+                    text="x = 1",
+                ),
+                lsp.TextDocumentItem(
+                    uri="file:///incremental_test.py#cell2",
+                    language_id="python",
+                    version=1,
+                    text="y = x + 1",
+                ),
+            ],
+        ),
+    )
+
+    await asyncio.wait_for(open_event.wait(), timeout=2.0)
+    assert variables_operations == snapshot(
+        [
+            {
+                "notebookUri": "file:///incremental_test.py",
+                "operation": {
+                    "op": "variables",
+                    "variables": [
+                        {
+                            "name": "x",
+                            "declared_by": ["file:///incremental_test.py#cell1"],
+                            "used_by": ["file:///incremental_test.py#cell2"],
+                        },
+                        {
+                            "name": "y",
+                            "declared_by": ["file:///incremental_test.py#cell2"],
+                            "used_by": [],
+                        },
+                    ],
+                },
+            }
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_cell_addition(client: LanguageClient) -> None:
+    """Test that adding a cell updates the graph correctly."""
+    variables_operations = []
+    open_event = asyncio.Event()
+
+    @client.feature("marimo/operation")
+    async def on_operation(params: Any) -> None:  # noqa: ANN401
+        if params.operation.op == "variables":
+            variables_operations.append(asdict(params))
+            open_event.set()
+
+    # Open with one cell
+    client.notebook_document_did_open(
+        lsp.DidOpenNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocument(
+                uri="file:///addition_test.py",
+                notebook_type="marimo-notebook",
+                version=1,
+                cells=[
+                    lsp.NotebookCell(
+                        kind=lsp.NotebookCellKind.Code,
+                        document="file:///addition_test.py#cell1",
+                    )
+                ],
+            ),
+            cell_text_documents=[
+                lsp.TextDocumentItem(
+                    uri="file:///addition_test.py#cell1",
+                    language_id="python",
+                    version=1,
+                    text="x = 1",
+                )
+            ],
+        ),
+    )
+
+    # Wait for initial variables operation
+    await asyncio.wait_for(open_event.wait(), timeout=2.0)
+    assert variables_operations == snapshot(
+        [
+            {
+                "notebookUri": "file:///addition_test.py",
+                "operation": {
+                    "op": "variables",
+                    "variables": [
+                        {
+                            "name": "x",
+                            "declared_by": ["file:///addition_test.py#cell1"],
+                            "used_by": [],
+                        }
+                    ],
+                },
+            }
+        ]
+    )
+
+    # Reset event for cell addition
+    open_event.clear()
+
+    # Add a second cell
+    client.notebook_document_did_change(
+        lsp.DidChangeNotebookDocumentParams(
+            notebook_document=lsp.VersionedNotebookDocumentIdentifier(
+                uri="file:///addition_test.py", version=2
+            ),
+            change=lsp.NotebookDocumentChangeEvent(
+                cells=lsp.NotebookDocumentCellChanges(
+                    structure=lsp.NotebookDocumentCellChangeStructure(
+                        array=lsp.NotebookCellArrayChange(
+                            start=1, delete_count=0, cells=[]
+                        ),
+                        did_open=[
+                            lsp.TextDocumentItem(
+                                uri="file:///addition_test.py#cell2",
+                                language_id="python",
+                                version=1,
+                                text="y = x + 1",
+                            )
+                        ],
+                    )
+                )
+            ),
+        ),
+    )
+
+    # Graph should be marked stale, but NOT published (lazy publishing)
+    # So we should still have only 1 operation
+    await asyncio.sleep(0.1)  # Give it time to process
+
+    # Now request diagnostics - should publish because graph is stale
+    client.text_document_diagnostic(
+        lsp.DocumentDiagnosticParams(
+            text_document=lsp.TextDocumentIdentifier(
+                uri="file:///addition_test.py#cell1"
+            )
+        )
+    )
+
+    await asyncio.wait_for(open_event.wait(), timeout=2.0)
+    assert variables_operations == snapshot(
+        [
+            {
+                "notebookUri": "file:///addition_test.py",
+                "operation": {
+                    "op": "variables",
+                    "variables": [
+                        {
+                            "name": "x",
+                            "declared_by": ["file:///addition_test.py#cell1"],
+                            "used_by": [],
+                        }
+                    ],
+                },
+            },
+            {
+                "notebookUri": "file:///addition_test.py",
+                "operation": {
+                    "op": "variables",
+                    "variables": [
+                        {
+                            "name": "x",
+                            "declared_by": ["file:///addition_test.py#cell1"],
+                            "used_by": ["file:///addition_test.py#cell2"],
+                        },
+                        {
+                            "name": "y",
+                            "declared_by": ["file:///addition_test.py#cell2"],
+                            "used_by": [],
+                        },
+                    ],
                 },
             },
         ]
