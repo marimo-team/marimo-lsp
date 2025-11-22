@@ -6,12 +6,17 @@ scripts/**
 *.vsix
 pnpm-lock.yaml
 tsconfig.json
+.turbo/**
 turbo.json
 vite.config.mjs
 .tsbuildinfo
 .vscode-test
 .claude
 tests
+
+# Ignore sourcemap files (use ** to match all subdirectories)
+**/*.js.map
+**/*.mjs.map
 
 # Include tutorial files in the extension package
 !tutorials/**
