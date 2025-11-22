@@ -46,12 +46,29 @@
         }
       }
     },
+    "languages": [
+      {
+        "id": "mo-python",
+        "aliases": [
+          "Python",
+          "mo-python"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mo-python",
+        "scopeName": "source.mo-python",
+        "path": "./syntaxes/python.tmLanguage.json"
+      }
+    ],
     "debuggers": [
       {
         "type": "marimo",
         "label": "Marimo Debugger",
         "languages": [
-          "python"
+          "mo-python"
         ],
         "configurationAttributes": {
           "launch": {
@@ -74,7 +91,7 @@
     ],
     "breakpoints": [
       {
-        "language": "python"
+        "language": "mo-python"
       }
     ],
     "walkthroughs": [

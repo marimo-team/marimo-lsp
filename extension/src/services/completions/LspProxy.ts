@@ -335,7 +335,7 @@ function lspCompletionItemToVscode(
   const newItem = new code.CompletionItem(lspItem.label, lspItem.kind);
 
   // Add (marimo) suffix to detail to identify our completions
-  newItem.detail = lspItem.detail ? `${lspItem.detail} (marimo)` : "(marimo)";
+  newItem.detail = lspItem.detail;
   newItem.documentation = lspDocumentationToVscode(lspItem.documentation, code);
 
   newItem.sortText = lspItem.sortText;

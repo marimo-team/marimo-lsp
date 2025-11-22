@@ -7,6 +7,7 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { PYTHON_LANGUAGE_ID } from "../../constants.ts";
 import type { CellMetadata } from "../../schemas.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
 
@@ -33,7 +34,7 @@ function createMockCell(uri: vscode.Uri, metadata: Partial<CellMetadata> = {}) {
     {
       kind: 1, // Code
       value: "",
-      languageId: "python",
+      languageId: PYTHON_LANGUAGE_ID,
       metadata: metadata,
     },
     0,

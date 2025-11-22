@@ -3,6 +3,7 @@ import type * as py from "@vscode/python-extension";
 import { Brand, Effect, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
 import { unreachable } from "../assert.ts";
+import { PYTHON_LANGUAGE_ID, SQL_LANGUAGE_ID } from "../constants.ts";
 import { getNotebookUri } from "../types.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
@@ -52,7 +53,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
           );
 
           // Add metadata
-          controller.supportedLanguages = ["python", "sql"];
+          controller.supportedLanguages = [PYTHON_LANGUAGE_ID, SQL_LANGUAGE_ID];
           controller.description = options.env.path;
 
           // Set up execution handler
