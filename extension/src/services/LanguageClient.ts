@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 import { Data, Effect, Either, Option, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
 import { unreachable } from "../assert.ts";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import type {
   MarimoCommand,
   MarimoNotification,
@@ -14,7 +15,6 @@ import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 import { Config } from "./Config.ts";
 import { OutputChannel } from "./OutputChannel.ts";
 import { VsCode } from "./VsCode.ts";
-import { NOTEBOOK_TYPE } from "../constants.ts";
 
 export class LanguageClientStartError extends Data.TaggedError(
   "LanguageClientStartError",
