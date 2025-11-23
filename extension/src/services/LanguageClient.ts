@@ -144,7 +144,9 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
           return Stream.asyncPush<MarimoNotificationOf<Notification>>((emit) =>
             Effect.acquireRelease(
               Effect.sync(() =>
-                client.onNotification(notification, (msg) => emit.single(msg)),
+                client.onNotification(notification, (msg) => {
+                  emit.single(msg);
+                }),
               ),
               (disposable) => Effect.sync(() => disposable.dispose()),
             ),
