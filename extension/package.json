@@ -68,6 +68,7 @@
         "type": "marimo",
         "label": "Marimo Debugger",
         "languages": [
+          "python",
           "mo-python"
         ],
         "configurationAttributes": {
@@ -90,6 +91,9 @@
       }
     ],
     "breakpoints": [
+      {
+        "language": "python"
+      },
       {
         "language": "mo-python"
       }
