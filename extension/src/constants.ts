@@ -33,19 +33,17 @@ export const SETUP_CELL_NAME = "setup";
 
 /**
  * Language ID for Python cells in marimo notebooks.
- * Using a custom language ID ("mo-python") prevents other Python language servers
- * from providing duplicate completions and diagnostics.
+ *
+ * Using a custom language ID ("mo-python") prevents other
+ * Python language servers from providing duplicate completions
+ * and diagnostics.
  */
 export const PYTHON_LANGUAGE_ID = "mo-python";
 
-/**
- * Language ID for SQL cells in marimo notebooks.
- */
+/** Language ID for SQL cells in marimo notebooks. */
 export const SQL_LANGUAGE_ID = "sql";
 
-/**
- * Language ID for Markdown cells in marimo notebooks.
- */
+/** Language ID for Markdown cells in marimo notebooks. */
 export const MARKDOWN_LANGUAGE_ID = "markdown";
 
 export type MarimoContextKey =
