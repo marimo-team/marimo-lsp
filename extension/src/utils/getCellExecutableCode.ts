@@ -2,7 +2,7 @@ import { SQLParser } from "@marimo-team/smart-cells";
 import { Option } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
-import { PYTHON_LANGUAGE_ID, SQL_LANGUAGE_ID } from "../constants.ts";
+import { LanguageId } from "../constants.ts";
 import { decodeCellMetadata } from "../schemas.ts";
 
 /**
@@ -13,13 +13,13 @@ export function getCellExecutableCode(cell: vscode.NotebookCell): string {
   const meta = decodeCellMetadata(cell.metadata);
 
   assert(
-    cell.document.languageId === SQL_LANGUAGE_ID ||
-      cell.document.languageId === PYTHON_LANGUAGE_ID,
+    cell.document.languageId === LanguageId.Sql ||
+      cell.document.languageId === LanguageId.Python,
     `Expected Python or SQL cell. Got "${languageId}".`,
   );
 
   // Transform SQL cells to Python mo.sql() wrapper
-  if (languageId === SQL_LANGUAGE_ID) {
+  if (languageId === LanguageId.Sql) {
     const sqlParser = new SQLParser();
     const result = sqlParser.transformOut(
       cell.document.getText(),

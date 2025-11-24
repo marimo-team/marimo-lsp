@@ -9,7 +9,7 @@ import {
   createTestNotebookEditor,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { NOTEBOOK_TYPE, PYTHON_LANGUAGE_ID } from "../../constants.ts";
+import { LanguageId, NOTEBOOK_TYPE } from "../../constants.ts";
 import {
   type CellMessage,
   type CellRuntimeState,
@@ -872,7 +872,7 @@ it.scoped(
           {
             kind: 1, // Code
             value: "x = 1",
-            languageId: PYTHON_LANGUAGE_ID,
+            languageId: LanguageId.Python,
           },
         ],
       },

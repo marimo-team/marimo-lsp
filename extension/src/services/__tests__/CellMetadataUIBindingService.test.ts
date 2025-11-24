@@ -7,7 +7,7 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { SQL_LANGUAGE_ID } from "../../constants.ts";
+import { LanguageId } from "../../constants.ts";
 import type { CellMetadata } from "../../schemas.ts";
 import {
   CellMetadataUIBindingService,
@@ -86,7 +86,7 @@ it.effect("should show status bar item based on shouldShow predicate", () =>
           id: "test.sql",
           type: "text",
           alignment: 1,
-          shouldShow: (cell) => cell.document.languageId === SQL_LANGUAGE_ID,
+          shouldShow: (cell) => cell.document.languageId === LanguageId.Sql,
           getValue: () => "df",
           setValue: (metadata) => ({ ...metadata }),
           getLabel: (value) => `$(database) ${value}`,

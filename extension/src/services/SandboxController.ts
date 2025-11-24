@@ -2,7 +2,7 @@ import * as NodePath from "node:path";
 import * as semver from "@std/semver";
 import { Effect, Option, Runtime, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
-import { PYTHON_LANGUAGE_ID, SQL_LANGUAGE_ID } from "../constants.ts";
+import { LanguageId } from "../constants.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
 import { SemVerFromString } from "../schemas.ts";
 import { getNotebookUri } from "../types.ts";
@@ -37,7 +37,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       );
 
       // Add metadata
-      controller.supportedLanguages = [PYTHON_LANGUAGE_ID, SQL_LANGUAGE_ID];
+      controller.supportedLanguages = [LanguageId.Python, LanguageId.Sql];
       controller.description = "marimo sandbox controller";
 
       // Set up execution handler
