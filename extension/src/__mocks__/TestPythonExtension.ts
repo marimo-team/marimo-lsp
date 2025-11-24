@@ -1,5 +1,14 @@
 import type * as py from "@vscode/python-extension";
-import { Data, Effect, HashSet, Layer, PubSub, Ref, Stream } from "effect";
+import {
+  Data,
+  Effect,
+  HashSet,
+  Layer,
+  Option,
+  PubSub,
+  Ref,
+  Stream,
+} from "effect";
 import { Uri } from "../__mocks__/TestVsCode.ts";
 import { PythonExtension } from "../services/PythonExtension.ts";
 
@@ -7,10 +16,12 @@ export class TestPythonExtension extends Data.TaggedClass(
   "TestPythonExtension",
 )<{
   readonly layer: Layer.Layer<PythonExtension>;
-  readonly addEnvironment: (env: py.Environment) => Effect.Effect<void>;
-  readonly removeEnvironment: (env: py.Environment) => Effect.Effect<void>;
+  readonly addEnvironment: (env: py.ResolvedEnvironment) => Effect.Effect<void>;
+  readonly removeEnvironment: (
+    env: py.ResolvedEnvironment,
+  ) => Effect.Effect<void>;
 }> {
-  static makeGlobalEnv(path: string): py.Environment {
+  static makeGlobalEnv(path: string): py.ResolvedEnvironment {
     return {
       id: path,
       path,
@@ -19,12 +30,12 @@ export class TestPythonExtension extends Data.TaggedClass(
       version: undefined,
       executable: {
         uri: undefined,
-        bitness: undefined,
-        sysPrefix: undefined,
+        bitness: "Unknown",
+        sysPrefix: "/usr/local/envs/blah/.venv",
       },
     };
   }
-  static makeVenv(venvPath: string): py.Environment {
+  static makeVenv(venvPath: string): py.ResolvedEnvironment {
     const env = TestPythonExtension.makeGlobalEnv(venvPath);
     return {
       ...env,
@@ -36,7 +47,9 @@ export class TestPythonExtension extends Data.TaggedClass(
       },
     };
   }
-  static make = Effect.fnUntraced(function* (envs: Array<py.Environment> = []) {
+  static make = Effect.fnUntraced(function* (
+    envs: Array<py.ResolvedEnvironment> = [],
+  ) {
     const known = yield* Ref.make(HashSet.make(...envs));
     const pubsub = yield* PubSub.unbounded<py.EnvironmentsChangeEvent>();
     const activePathPubsub =
@@ -80,10 +93,9 @@ export class TestPythonExtension extends Data.TaggedClass(
               return Effect.gen(function* () {
                 const pathStr = typeof path === "string" ? path : path.path;
                 const knownSet = yield* Ref.get(known);
-                const env = Array.from(knownSet).find(
-                  (e: py.Environment) => e.path === pathStr,
+                return Option.fromNullable(
+                  Array.from(knownSet).find((e) => e.path === pathStr),
                 );
-                return env as py.ResolvedEnvironment | undefined;
               });
             },
           });

@@ -1373,11 +1373,20 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 HashSet.toValues,
               );
             },
+            getVisibleTextEditors() {
+              return Effect.succeed([]);
+            },
             getActiveNotebookEditor() {
               return Ref.get(activeNotebookEditor);
             },
             activeNotebookEditorChanges() {
               return activeNotebookEditor.changes;
+            },
+            visibleNotebookEditorsChanges() {
+              return Stream.empty;
+            },
+            visibleTextEditorsChanges() {
+              return Stream.empty;
             },
             getActiveTextEditor() {
               return Ref.get(activeTextEditor);

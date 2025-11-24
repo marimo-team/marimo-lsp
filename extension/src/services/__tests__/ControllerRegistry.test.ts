@@ -11,7 +11,7 @@ import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { VsCode } from "../VsCode.ts";
 
 const withTestCtx = Effect.fnUntraced(function* (
-  options: { initialEnvs?: Array<py.Environment> } = {},
+  options: { initialEnvs?: Array<py.ResolvedEnvironment> } = {},
 ) {
   const { initialEnvs = [] } = options;
   const vscode = yield* TestVsCode.make();

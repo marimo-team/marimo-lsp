@@ -37,6 +37,7 @@ import { VariablesService } from "../services/variables/VariablesService.ts";
 import { DatasourcesViewLive } from "../views/DatasourcesView.ts";
 import { MarimoStatusBarLive } from "../views/MarimoStatusBar.ts";
 import { PackagesViewLive } from "../views/PackagesView.ts";
+import { PythonEnvironmentStatusBarLive } from "../views/PythonEnvironmentStatusBar.ts";
 import { RecentNotebooksLive } from "../views/RecentNotebooks.ts";
 import { StatusBar } from "../views/StatusBar.ts";
 import { TreeView } from "../views/TreeView.ts";
@@ -57,6 +58,7 @@ const MainLive = Layer.empty
     Layer.merge(RegisterCommandsLive),
     Layer.merge(KernelManagerLive),
     Layer.merge(MarimoStatusBarLive),
+    Layer.merge(PythonEnvironmentStatusBarLive),
     Layer.merge(MarimoFileDetectorLive),
     Layer.merge(NotebookLanguageFeaturesLive),
     Layer.merge(RecentNotebooksLive),

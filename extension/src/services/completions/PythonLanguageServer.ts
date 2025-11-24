@@ -381,35 +381,37 @@ function createTyMiddleware(
                     const resolved =
                       yield* pythonExtension.resolveEnvironment(path);
 
+                    const env = Option.getOrNull(resolved);
+
                     yield* Effect.logDebug(
-                      `Enriching ty config with Python env: ${resolved?.path || "null"} (${resolved?.version?.sysVersion || "unknown version"})`,
+                      `Enriching ty config with Python env: ${env?.path || "null"} (${env?.version?.sysVersion || "unknown version"})`,
                     );
 
                     const activeEnvironment =
-                      resolved == null
+                      env == null
                         ? null
                         : {
                             version:
-                              resolved.version == null
+                              env.version == null
                                 ? null
                                 : {
-                                    major: resolved.version.major,
-                                    minor: resolved.version.minor,
-                                    patch: resolved.version.micro,
-                                    sysVersion: resolved.version.sysVersion,
+                                    major: env.version.major,
+                                    minor: env.version.minor,
+                                    patch: env.version.micro,
+                                    sysVersion: env.version.sysVersion,
                                   },
                             environment:
-                              resolved.environment == null
+                              env.environment == null
                                 ? null
                                 : {
                                     folderUri:
-                                      resolved.environment.folderUri.toString(),
-                                    name: resolved.environment.name,
-                                    type: resolved.environment.type,
+                                      env.environment.folderUri.toString(),
+                                    name: env.environment.name,
+                                    type: env.environment.type,
                                   },
                             executable: {
-                              uri: resolved.executable.uri?.toString(),
-                              sysPrefix: resolved.executable.sysPrefix,
+                              uri: env.executable.uri?.toString(),
+                              sysPrefix: env.executable.sysPrefix,
                             },
                           };
 
