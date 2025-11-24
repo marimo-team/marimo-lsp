@@ -125,14 +125,10 @@ export const PythonEnvironmentStatusBarLive = Layer.scopedDiscard(
           currentlySelectedInterpreterPath = envPath;
         }
 
-        // Update the status bar with interpreter info
         yield* item.setText(displayName);
         yield* item.setTooltip(envPath);
         yield* item.setColor("");
-        // Clear background color by setting to undefined
-        yield* Effect.sync(() => {
-          item.raw.backgroundColor = undefined;
-        });
+        yield* item.setBackgroundColor(undefined);
 
         currentlySelectedInterpreterDisplay = displayName;
         statusBarCanBeDisplayed = true;

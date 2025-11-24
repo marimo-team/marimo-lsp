@@ -868,13 +868,15 @@ it.scoped(
     const editor = TestVsCode.makeNotebookEditor(
       "file:///test/notebook_mo.py",
       {
-        cells: [
-          {
-            kind: 1, // Code
-            value: "x = 1",
-            languageId: LanguageId.Python,
-          },
-        ],
+        data: {
+          cells: [
+            {
+              kind: 1, // Code
+              value: "x = 1",
+              languageId: LanguageId.Python,
+            },
+          ],
+        },
       },
     );
 
@@ -949,9 +951,7 @@ it.scoped(
       };
       const notebook = createTestNotebookDocument(
         "file:///test/notebook_mo.py",
-        {
-          cells: [cellData],
-        },
+        { data: { cells: [cellData] } },
       );
       const editor = createTestNotebookEditor(notebook);
       const cell = notebook.cellAt(0);

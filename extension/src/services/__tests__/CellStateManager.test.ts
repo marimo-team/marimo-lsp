@@ -51,9 +51,8 @@ describe("CellStateManager", () => {
         const code = yield* VsCode;
 
         // Create a test notebook with cells
-        const notebook = createTestNotebookDocument(
-          "/test/notebook.py",
-          new code.NotebookData([
+        const notebook = createTestNotebookDocument("/test/notebook.py", {
+          data: new code.NotebookData([
             new code.NotebookCellData(
               code.NotebookCellKind.Code,
               "x = 1",
@@ -65,7 +64,7 @@ describe("CellStateManager", () => {
               "python",
             ),
           ]),
-        );
+        });
 
         const cell0 = notebook.cellAt(0);
         const cell1 = notebook.cellAt(1);
@@ -94,9 +93,8 @@ describe("CellStateManager", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
-        const notebook = createTestNotebookDocument(
-          "/test/notebook.py",
-          new code.NotebookData([
+        const notebook = createTestNotebookDocument("/test/notebook.py", {
+          data: new code.NotebookData([
             new code.NotebookCellData(
               code.NotebookCellKind.Code,
               "x = 1",
@@ -113,7 +111,7 @@ describe("CellStateManager", () => {
               "python",
             ),
           ]),
-        );
+        });
 
         yield* ctx.vscode.addNotebookDocument(notebook);
         yield* TestClock.adjust("10 millis");
@@ -164,9 +162,8 @@ describe("CellStateManager", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
-        const notebook = createTestNotebookDocument(
-          "/test/notebook.py",
-          new code.NotebookData([
+        const notebook = createTestNotebookDocument("/test/notebook.py", {
+          data: new code.NotebookData([
             new code.NotebookCellData(
               code.NotebookCellKind.Code,
               "x = 1",
@@ -183,7 +180,7 @@ describe("CellStateManager", () => {
               "python",
             ),
           ]),
-        );
+        });
 
         yield* ctx.vscode.addNotebookDocument(notebook);
         yield* TestClock.adjust("10 millis");
@@ -227,9 +224,8 @@ describe("CellStateManager", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
-        const editor = TestVsCode.makeNotebookEditor(
-          "/test/notebook.py",
-          new code.NotebookData([
+        const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+          data: new code.NotebookData([
             new code.NotebookCellData(
               code.NotebookCellKind.Code,
               "x = 1",
@@ -241,7 +237,7 @@ describe("CellStateManager", () => {
               "python",
             ),
           ]),
-        );
+        });
 
         yield* ctx.vscode.addNotebookDocument(editor.notebook);
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));

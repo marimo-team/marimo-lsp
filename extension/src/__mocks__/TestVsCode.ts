@@ -16,7 +16,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 import type { DynamicCommand } from "../commands.ts";
-import type { MarimoCommand } from "../constants.ts";
+import { type MarimoCommand, NOTEBOOK_TYPE } from "../constants.ts";
 import {
   Auth,
   Commands,
@@ -1143,12 +1143,19 @@ class ParameterInformation implements vscode.ParameterInformation {
 
 export function createTestNotebookDocument(
   uri: Uri | string,
-  content?: vscode.NotebookData,
+  options: {
+    data?: vscode.NotebookData;
+    notebookType?: string;
+  } = {},
 ): vscode.NotebookDocument {
   if (typeof uri === "string") {
     uri = Uri.file(uri);
   }
-  return new NotebookDocument("marimo-notebook", uri, content);
+  return new NotebookDocument(
+    options.notebookType ?? NOTEBOOK_TYPE,
+    uri,
+    options.data,
+  );
 }
 
 export function createTestNotebookEditor(
@@ -1198,8 +1205,14 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     }>
   >;
 }> {
-  static makeNotebookEditor(uri: string | Uri, data?: NotebookData) {
-    return createTestNotebookEditor(createTestNotebookDocument(uri, data));
+  static makeNotebookEditor(
+    uri: string | Uri,
+    options: {
+      data?: NotebookData;
+      notebookType?: string;
+    } = {},
+  ) {
+    return createTestNotebookEditor(createTestNotebookDocument(uri, options));
   }
   snapshot() {
     return Effect.gen(this, function* () {
@@ -1256,8 +1269,12 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       Option.none<vscode.NotebookEditor>(),
     );
 
-    const visibleNotebookEditors = yield* Ref.make(
-      HashSet.empty<vscode.NotebookEditor>(),
+    const visibleNotebookEditors = yield* SubscriptionRef.make(
+      [] as ReadonlyArray<vscode.NotebookEditor>,
+    );
+
+    const visibleTextEditors = yield* SubscriptionRef.make(
+      [] as ReadonlyArray<vscode.TextEditor>,
     );
 
     const notebookDocuments = yield* Ref.make(
@@ -1368,13 +1385,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               );
             },
             getVisibleNotebookEditors() {
-              return Effect.map(
-                Ref.get(visibleNotebookEditors),
-                HashSet.toValues,
-              );
+              return SubscriptionRef.get(visibleNotebookEditors);
             },
             getVisibleTextEditors() {
-              return Effect.succeed([]);
+              return SubscriptionRef.get(visibleTextEditors);
             },
             getActiveNotebookEditor() {
               return Ref.get(activeNotebookEditor);
@@ -1383,10 +1397,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               return activeNotebookEditor.changes;
             },
             visibleNotebookEditorsChanges() {
-              return Stream.empty;
+              return visibleNotebookEditors.changes;
             },
             visibleTextEditorsChanges() {
-              return Stream.empty;
+              return visibleTextEditors.changes;
             },
             getActiveTextEditor() {
               return Ref.get(activeTextEditor);
@@ -1807,9 +1821,29 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       documentChangesPubSub: documentChanges,
       affinityUpdates,
       setActiveNotebookEditor: (editor) =>
-        SubscriptionRef.set(activeNotebookEditor, editor),
+        Effect.gen(function* () {
+          yield* SubscriptionRef.set(activeNotebookEditor, editor);
+          // Also update visible editors - when an editor becomes active, it's visible
+          if (Option.isSome(editor)) {
+            const current = yield* SubscriptionRef.get(visibleNotebookEditors);
+            yield* SubscriptionRef.set(visibleNotebookEditors, [
+              ...current,
+              editor.value,
+            ]);
+          }
+        }),
       setActiveTextEditor: (editor) =>
-        SubscriptionRef.set(activeTextEditor, editor),
+        Effect.gen(function* () {
+          yield* SubscriptionRef.set(activeTextEditor, editor);
+          // Also update visible editors - when an editor becomes active, it's visible
+          if (Option.isSome(editor)) {
+            const current = yield* SubscriptionRef.get(visibleTextEditors);
+            yield* SubscriptionRef.set(visibleTextEditors, [
+              ...current,
+              editor.value,
+            ]);
+          }
+        }),
       addNotebookDocument: (doc) =>
         Ref.update(notebookDocuments, (docs) => HashSet.add(docs, doc)),
       removeNotebookDocument: (doc) =>

@@ -483,10 +483,7 @@ it.effect(
       // Create a notebook without script header
       const notebook = createTestNotebookDocument(
         code.Uri.file("/test/notebook_mo.py"),
-        {
-          cells: [],
-          metadata: {},
-        },
+        { data: { cells: [], metadata: {} } },
       );
 
       const editor = TestVsCode.makeNotebookEditor(notebook.uri.path);
@@ -515,26 +512,12 @@ it.effect(
     yield* Effect.gen(function* () {
       const code = yield* VsCode;
 
-      // Create first notebook
-      const notebook1 = createTestNotebookDocument(
+      const editor1 = TestVsCode.makeNotebookEditor(
         code.Uri.file("/test/notebook1_mo.py"),
-        {
-          cells: [],
-          metadata: {},
-        },
       );
-
-      // Create second notebook
-      const notebook2 = createTestNotebookDocument(
+      const editor2 = TestVsCode.makeNotebookEditor(
         code.Uri.file("/test/notebook2_mo.py"),
-        {
-          cells: [],
-          metadata: {},
-        },
       );
-
-      const editor1 = TestVsCode.makeNotebookEditor(notebook1.uri.path);
-      const editor2 = TestVsCode.makeNotebookEditor(notebook2.uri.path);
 
       // Open first notebook
       yield* vscode.setActiveNotebookEditor(Option.some(editor1));
