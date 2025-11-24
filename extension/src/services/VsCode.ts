@@ -304,9 +304,12 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
       registerNotebookSerializer(
         notebookType: string,
         impl: vscode.NotebookSerializer,
+        options?: vscode.NotebookDocumentContentOptions,
       ) {
         return Effect.acquireRelease(
-          Effect.sync(() => api.registerNotebookSerializer(notebookType, impl)),
+          Effect.sync(() =>
+            api.registerNotebookSerializer(notebookType, impl, options),
+          ),
           (disposable) => Effect.sync(() => disposable.dispose()),
         ).pipe(Effect.andThen(Effect.void));
       },
