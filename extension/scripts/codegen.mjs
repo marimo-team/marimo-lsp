@@ -68,7 +68,7 @@ export const SETUP_CELL_NAME = "setup";
  * Language ID for Python cells in marimo notebooks.
  *
  * Using a custom language ID ("mo-python") prevents other
- * Python language servers from providing duplicate completions 
+ * Python language servers from providing duplicate completions
  * and diagnostics.
  */
 export const PYTHON_LANGUAGE_ID = "mo-python";
