@@ -1169,6 +1169,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     HashSet.HashSet<{
       notebookType: string;
       serializer: vscode.NotebookSerializer;
+      options: vscode.NotebookDocumentContentOptions | undefined;
     }>
   >;
   readonly statusBarProviders: Ref.Ref<
