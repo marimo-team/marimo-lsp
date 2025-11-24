@@ -7,6 +7,7 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { Constants } from "../Constants.ts";
 import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { VsCode } from "../VsCode.ts";
 
@@ -19,6 +20,7 @@ const withTestCtx = Effect.fnUntraced(function* (
 
   const layer = Layer.empty.pipe(
     Layer.provideMerge(ControllerRegistry.Default),
+    Layer.provide(Constants.Default),
     Layer.provide(TestLanguageClientLive),
     Layer.provideMerge(vscode.layer),
     Layer.provideMerge(py.layer),

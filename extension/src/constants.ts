@@ -31,21 +31,6 @@ export const NOTEBOOK_TYPE = "marimo-notebook";
 
 export const SETUP_CELL_NAME = "setup";
 
-export const LanguageId = {
-  /**
-   * Language ID for Python cells in marimo notebooks.
-   *
-   * Using a custom language ID ("mo-python") prevents other
-   * Python language servers from providing duplicate completions
-   * and diagnostics.
-   */
-  Python: "mo-python",
-  /** Language ID for SQL cells in marimo notebooks. */
-  Sql: "sql",
-  /** Language ID for Markdown cells in marimo notebooks. */
-  Markdown: "markdown",
-} as const;
-
 export type MarimoContextKey =
   | "marimo.config.runtime.on_cell_change"
   | "marimo.isPythonFileMarimoNotebook"

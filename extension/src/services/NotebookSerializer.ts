@@ -8,13 +8,14 @@ import {
   Schema,
 } from "effect";
 import type * as vscode from "vscode";
-import { LanguageId, NOTEBOOK_TYPE } from "../constants.ts";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import {
   type CellMetadata,
   decodeCellMetadata,
   MarimoNotebook,
 } from "../schemas.ts";
 import { isMarimoNotebookDocument } from "../utils/notebook.ts";
+import { Constants } from "./Constants.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -25,8 +26,10 @@ import { VsCode } from "./VsCode.ts";
 export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   "NotebookSerializer",
   {
+    dependencies: [Constants.Default],
     scoped: Effect.gen(function* () {
       const client = yield* LanguageClient;
+      const constants = yield* Constants;
       const code = yield* Effect.serviceOption(VsCode);
 
       const serializeEffect = Effect.fnUntraced(function* (
@@ -41,7 +44,10 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
           params: {
             method: "serialize",
             params: {
-              notebook: yield* notebookDataToMarimoNotebook(notebook),
+              notebook: yield* notebookDataToMarimoNotebook(
+                notebook,
+                constants,
+              ),
             },
           },
         });
@@ -83,7 +89,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                   // Hard code to avoid taking dep on VsCode
                   kind: 1 satisfies vscode.NotebookCellKind.Markup,
                   value: result.code,
-                  languageId: LanguageId.Markdown,
+                  languageId: constants.LanguageId.Markdown,
                   metadata: {
                     name: cell.name,
                     options: cell.options,
@@ -102,7 +108,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                 // Hard code to avoid taking dep on VsCode
                 kind: 2 satisfies vscode.NotebookCellKind.Code,
                 value: result.code,
-                languageId: LanguageId.Sql,
+                languageId: constants.LanguageId.Sql,
                 metadata: {
                   name: cell.name,
                   options: cell.options,
@@ -118,7 +124,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               // Hard code to avoid taking dep on VsCode
               kind: 2 satisfies vscode.NotebookCellKind.Code,
               value: cell.code,
-              languageId: LanguageId.Python,
+              languageId: constants.LanguageId.Python,
               metadata: {
                 name: cell.name,
                 options: cell.options,
@@ -201,6 +207,11 @@ const DEFAULT_CELL_NAME = "_";
 
 function notebookDataToMarimoNotebook(
   notebook: vscode.NotebookData,
+  {
+    LanguageId,
+  }: {
+    LanguageId: Constants["LanguageId"];
+  },
 ): Effect.Effect<typeof MarimoNotebook.Type, ParseResult.ParseError, never> {
   const { cells, metadata = {} } = notebook;
   const sqlParser = new SQLParser();

@@ -43,6 +43,12 @@
           "type": "boolean",
           "default": true,
           "description": "Anonymous usage data. This helps us prioritize features for the marimo VSCode extension."
+        },
+        "marimo.disableManagedLanguageFeatures": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Disable marimo's managed Python language features (completions, diagnostics, formatting). When enabled, notebook cells use the standard `python` language ID and rely on external language servers.",
+          "scope": "resource"
         }
       }
     },

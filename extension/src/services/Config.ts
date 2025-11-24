@@ -6,12 +6,30 @@ import { VsCode } from "./VsCode.ts";
  */
 export class Config extends Effect.Service<Config>()("Config", {
   effect: Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* Effect.serviceOption(VsCode);
+
+    if (Option.isNone(code)) {
+      yield* Effect.logWarning(
+        "VsCode API is not available. Using default configuration values.",
+      );
+      return {
+        uv: {
+          enabled: Effect.succeed(false),
+        },
+        lsp: {
+          executable: Effect.succeed(Option.none()),
+        },
+        getManagedLanguageFeaturesEnabled() {
+          return Effect.succeed(false);
+        },
+      };
+    }
+
     return {
       uv: {
         get enabled() {
           return Effect.andThen(
-            code.workspace.getConfiguration("marimo"),
+            code.value.workspace.getConfiguration("marimo"),
             (config) => !config.get<boolean>("disableUvIntegration", false),
           );
         },
@@ -19,7 +37,8 @@ export class Config extends Effect.Service<Config>()("Config", {
       lsp: {
         get executable() {
           return Effect.gen(function* () {
-            const config = yield* code.workspace.getConfiguration("marimo.lsp");
+            const config =
+              yield* code.value.workspace.getConfiguration("marimo.lsp");
             return Option.fromNullable(config.get<string[]>("path")).pipe(
               Option.filter((path) => path.length > 0),
               Option.map(([command, ...args]) => ({
@@ -29,6 +48,13 @@ export class Config extends Effect.Service<Config>()("Config", {
             );
           });
         },
+      },
+      getManagedLanguageFeaturesEnabled() {
+        return Effect.andThen(
+          code.value.workspace.getConfiguration("marimo"),
+          (config) =>
+            !config.get<boolean>("disableManagedLanguageFeatures", false),
+        );
       },
     };
   }),

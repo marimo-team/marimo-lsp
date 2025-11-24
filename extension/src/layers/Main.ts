@@ -48,6 +48,7 @@ import { KernelManagerLive } from "./KernelManager.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { NotebookLanguageFeaturesLive } from "./NotebookLanguageFeatures.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
+import { Constants } from "../services/Constants.ts";
 
 /**
  * Main application layer that wires together all services and layers
@@ -92,6 +93,7 @@ const MainLive = Layer.empty
     Layer.provide(TreeView.Default),
     Layer.provide(StatusBar.Default),
     Layer.provide(Storage.Default),
+    Layer.provide(Constants.Default),
     Layer.provide(Config.Default),
     Layer.provide(OutputChannel.Default),
     Layer.provide(Telemetry.Default),

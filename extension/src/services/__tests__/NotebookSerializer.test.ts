@@ -3,12 +3,14 @@ import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import packageJson from "../../../package.json";
 import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
-import { LanguageId, NOTEBOOK_TYPE } from "../../constants.ts";
+import { NOTEBOOK_TYPE } from "../../constants.ts";
+import { Constants } from "../../services/Constants.ts";
 import { NotebookSerializer } from "../../services/NotebookSerializer.ts";
 
 const NotebookSerializerLive = Layer.empty.pipe(
   Layer.provideMerge(NotebookSerializer.Default),
   Layer.provideMerge(TestLanguageClientLive),
+  Layer.provideMerge(Constants.Default),
 );
 
 it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
@@ -23,6 +25,7 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
   it.effect(
     "serializes notebook cells to marimo format",
     Effect.fnUntraced(function* () {
+      const { LanguageId } = yield* Constants;
       const serializer = yield* NotebookSerializer;
       const bytes = yield* serializer.serializeEffect({
         cells: [
@@ -67,6 +70,7 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
   it.effect(
     "serializes markdown notebook cells to marimo format",
     Effect.fnUntraced(function* () {
+      const { LanguageId } = yield* Constants;
       const serializer = yield* NotebookSerializer;
       const bytes = yield* serializer.serializeEffect({
         cells: [
@@ -127,6 +131,7 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
   it.effect(
     "deserializes mo.md() without f-strings to markdown cells",
     Effect.fnUntraced(function* () {
+      const { LanguageId } = yield* Constants;
       const serializer = yield* NotebookSerializer;
       const source = `import marimo
 
@@ -184,6 +189,7 @@ if __name__ == "__main__":
   it.effect(
     "keeps mo.md() with f-strings as Python cells",
     Effect.fnUntraced(function* () {
+      const { LanguageId } = yield* Constants;
       const serializer = yield* NotebookSerializer;
       const source = `import marimo
 
@@ -229,6 +235,7 @@ if __name__ == "__main__":
   it.effect(
     "round-trip markdown cells maintain mo.md() format",
     Effect.fnUntraced(function* () {
+      const { LanguageId } = yield* Constants;
       const serializer = yield* NotebookSerializer;
       const source = `import marimo
 

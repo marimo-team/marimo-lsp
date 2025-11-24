@@ -2,13 +2,16 @@ import { SQLParser } from "@marimo-team/smart-cells";
 import { Option } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
-import { LanguageId } from "../constants.ts";
 import { decodeCellMetadata } from "../schemas.ts";
+import type { Constants } from "../services/Constants.ts";
 
 /**
  * Get the executable code for a cell, transforming SQL cells to Python mo.sql() wrapper
  */
-export function getCellExecutableCode(cell: vscode.NotebookCell): string {
+export function getCellExecutableCode(
+  cell: vscode.NotebookCell,
+  LanguageId: Constants["LanguageId"],
+): string {
   const languageId = cell.document.languageId;
   const meta = decodeCellMetadata(cell.metadata);
 
