@@ -9,8 +9,11 @@ import {
   Schema,
   Stream,
 } from "effect";
-import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
-import { encodeCellMetadata, MarimoNotebookDocument } from "../schemas.ts";
+import { MarimoCommand, NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
+import {
+  MarimoNotebookDocument,
+  encodeCellMetadata,
+} from "../schemas.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
@@ -25,6 +28,7 @@ import { type ITelemetry, Telemetry } from "../services/Telemetry.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { getPythonBinName } from "../utils/getPythonBinName.ts";
+import { type MarimoConfig } from "../types.ts";
 import { Links } from "../utils/links.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
@@ -92,25 +96,40 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
       runStale({ code, channel }),
     );
 
-    yield* code.commands.registerCommand(
-      "marimo.toggleOnCellChangeAutoRun",
-      toggleOnCellChange({
-        code,
-        channel,
-        configService,
-        configContextManager,
-      }),
-    );
+    const onCellChangeCommands = [
+      "marimo.config.toggleOnCellChangeAutoRun",
+      "marimo.config.toggleOnCellChangeLazy",
+    ] satisfies ReadonlyArray<MarimoCommand>;
+    for (const command of onCellChangeCommands) {
+      yield* code.commands.registerCommand(
+        command,
+        toggleOnCellChange({
+          code,
+          serializer,
+          channel,
+          configService,
+          configContextManager,
+        }),
+      );
+    }
 
-    yield* code.commands.registerCommand(
-      "marimo.toggleOnCellChangeLazy",
-      toggleOnCellChange({
-        code,
-        channel,
-        configService,
-        configContextManager,
-      }),
-    );
+    const autoReloadCommands = [
+      "marimo.config.toggleAutoReloadOff",
+      "marimo.config.toggleAutoReloadLazy",
+      "marimo.config.toggleAutoReloadAutorun",
+    ] satisfies ReadonlyArray<MarimoCommand>;
+    for (const command of autoReloadCommands) {
+      yield* code.commands.registerCommand(
+        command,
+        toggleAutoReload({
+          code,
+          serializer,
+          channel,
+          configService,
+          configContextManager,
+        }),
+      );
+    }
 
     yield* code.commands.registerCommand(
       "marimo.restartKernel",
@@ -521,17 +540,33 @@ const runStale = ({
     ),
   );
 
-const toggleOnCellChange = ({
+/**
+ * Generic configuration toggle function for marimo config options.
+ * Creates a handler that shows a quick pick dialog with all available options.
+ */
+const createConfigToggle = <T extends string>({
   code,
   channel,
   configService,
+  configPath,
+  getCurrentValue,
+  choices,
+  getDisplayName,
 }: {
   code: VsCode;
   channel: OutputChannel;
   configService: MarimoConfigurationService;
-  configContextManager: ConfigContextManager;
+  configPath: string;
+  getCurrentValue: (config: MarimoConfig) => T;
+  choices: ReadonlyArray<{
+    label: string;
+    detail: string;
+    value: T;
+  }>;
+  getDisplayName: (value: T) => string;
 }) =>
   Effect.gen(function* () {
+    // Validate active notebook
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
       (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
@@ -539,7 +574,7 @@ const toggleOnCellChange = ({
 
     if (Option.isNone(notebook)) {
       yield* showErrorAndPromptLogs(
-        "Must have an open marimo notebook to toggle on cell change mode.",
+        `Must have an open marimo notebook to toggle ${configPath}.`,
         { code, channel },
       );
       return;
@@ -547,64 +582,143 @@ const toggleOnCellChange = ({
 
     // Fetch current configuration
     const config = yield* configService.getConfig(notebook.value.id);
+    const currentValue = getCurrentValue(config);
 
-    const currentMode = config.runtime?.on_cell_change ?? "autorun";
-
-    // Show quick pick to select mode
-    const choice = yield* code.window.showQuickPickItems([
-      {
-        label: "Auto-Run",
-        description: currentMode === "autorun" ? "$(check) Current" : undefined,
-        detail: "Automatically run cells when their ancestors change",
-        value: "autorun" as const,
-      },
-      {
-        label: "Lazy",
-        description: currentMode === "lazy" ? "$(check) Current" : undefined,
-        detail: "Mark cells stale when ancestors change, don't autorun",
-        value: "lazy" as const,
-      },
-    ]);
+    // Show quick pick with all choices, marking current
+    const choice = yield* code.window.showQuickPickItems(
+      choices.map((c) => ({
+        label: c.label,
+        description: c.value === currentValue ? "$(check) Current" : undefined,
+        detail: c.detail,
+        value: c.value,
+      })),
+    );
 
     if (Option.isNone(choice)) {
-      // User cancelled
-      return;
+      return; // User cancelled
     }
 
-    const newMode = choice.value.value;
+    const newValue = choice.value.value;
 
-    if (newMode === currentMode) {
-      yield* Effect.logInfo("Mode unchanged");
+    if (newValue === currentValue) {
+      yield* Effect.logInfo("Value unchanged");
       return;
     }
 
     // Update configuration
-    yield* Effect.logInfo("Updating on_cell_change mode").pipe(
+    yield* Effect.logInfo(`Updating ${configPath}`).pipe(
       Effect.annotateLogs({
         notebook: notebook.value.id,
-        from: currentMode,
-        to: newMode,
+        from: currentValue,
+        to: newValue,
       }),
     );
 
-    yield* configService.updateConfig(notebook.value.id, {
-      runtime: {
-        on_cell_change: newMode,
-      },
-    });
+    // Build nested config object from path (e.g., "runtime.on_cell_change" -> { runtime: { on_cell_change: value }})
+    const pathParts = configPath.split(".");
+    const partialConfig = pathParts.reduceRight(
+      (acc, part) => ({ [part]: acc }),
+      newValue as unknown as Record<string, unknown>,
+    );
+
+    yield* configService.updateConfig(notebook.value.id, partialConfig);
 
     yield* code.window.showInformationMessage(
-      `On cell change mode updated to: ${newMode === "autorun" ? "Auto-Run" : "Lazy"}`,
+      `${configPath} updated to: ${getDisplayName(newValue)}`,
     );
   }).pipe(
     Effect.tapErrorCause(Effect.logError),
     Effect.catchAllCause(() =>
-      showErrorAndPromptLogs("Failed to toggle on cell change mode.", {
+      showErrorAndPromptLogs(`Failed to toggle ${configPath}.`, {
         code,
         channel,
       }),
     ),
   );
+
+const toggleOnCellChange = ({
+  code,
+  serializer,
+  channel,
+  configService,
+  configContextManager,
+}: {
+  code: VsCode;
+  serializer: NotebookSerializer;
+  channel: OutputChannel;
+  configService: MarimoConfigurationService;
+  configContextManager: ConfigContextManager;
+}) =>
+  createConfigToggle({
+    code,
+    channel,
+    configService,
+    configPath: "runtime.on_cell_change",
+    getCurrentValue: (config) => config.runtime?.on_cell_change ?? "autorun",
+    choices: [
+      {
+        label: "Auto-Run",
+        detail: "Automatically run cells when their ancestors change",
+        value: "autorun" as const,
+      },
+      {
+        label: "Lazy",
+        detail: "Mark cells stale when ancestors change, don't autorun",
+        value: "lazy" as const,
+      },
+    ],
+    getDisplayName: (value) => (value === "autorun" ? "Auto-Run" : "Lazy"),
+  });
+
+const toggleAutoReload = ({
+  code,
+  serializer,
+  channel,
+  configService,
+  configContextManager,
+}: {
+  code: VsCode;
+  serializer: NotebookSerializer;
+  channel: OutputChannel;
+  configService: MarimoConfigurationService;
+  configContextManager: ConfigContextManager;
+}) =>
+  createConfigToggle({
+    code,
+    channel,
+    configService,
+    configPath: "runtime.auto_reload",
+    getCurrentValue: (config) => config.runtime?.auto_reload ?? "off",
+    choices: [
+      {
+        label: "Off",
+        detail: "Don't reload modules automatically",
+        value: "off" as const,
+      },
+      {
+        label: "Lazy",
+        detail: "Mark cells stale when modules change, don't autorun",
+        value: "lazy" as const,
+      },
+      {
+        label: "Auto-Run",
+        detail: "Reload modules and automatically run affected cells",
+        value: "autorun" as const,
+      },
+    ],
+    getDisplayName: (value) => {
+      switch (value) {
+        case "off":
+          return "Off";
+        case "lazy":
+          return "Lazy";
+        case "autorun":
+          return "Auto-Run";
+        default:
+          return value;
+      }
+    },
+  });
 
 const exportNotebookAsHTML = ({
   code,

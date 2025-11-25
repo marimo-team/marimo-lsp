@@ -243,7 +243,7 @@
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
-        "command": "marimo.toggleOnCellChangeAutoRun",
+        "command": "marimo.config.toggleOnCellChangeAutoRun",
         "title": "Toggle on-cell-change mode",
         "shortTitle": "On cell change: Auto-Run",
         "category": "marimo",
@@ -251,11 +251,35 @@
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
-        "command": "marimo.toggleOnCellChangeLazy",
+        "command": "marimo.config.toggleOnCellChangeLazy",
         "title": "Toggle on-cell-change mode",
         "shortTitle": "On cell change: Lazy",
         "category": "marimo",
         "icon": "$(symbol-interface)",
+        "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
+        "command": "marimo.config.toggleAutoReloadOff",
+        "title": "Toggle auto-reload mode",
+        "shortTitle": "Auto-reload: Off",
+        "category": "marimo",
+        "icon": "$(sync-ignored)",
+        "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
+        "command": "marimo.config.toggleAutoReloadLazy",
+        "title": "Toggle auto-reload mode",
+        "shortTitle": "Auto-reload: Lazy",
+        "category": "marimo",
+        "icon": "$(symbol-interface)",
+        "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
+        "command": "marimo.config.toggleAutoReloadAutorun",
+        "title": "Toggle auto-reload mode",
+        "shortTitle": "Auto-reload: Auto-Run",
+        "category": "marimo",
+        "icon": "$(zap)",
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
@@ -360,14 +384,29 @@
           "group": "navigation@2"
         },
         {
-          "command": "marimo.toggleOnCellChangeAutoRun",
-          "when": "notebookType == 'marimo-notebook' && marimo.config.runtime.on_cell_change != 'lazy'",
+          "command": "marimo.config.toggleOnCellChangeAutoRun",
+          "when": "notebookType == 'marimo-notebook' && marimo.notebook.hasKernel && marimo.config.runtime.on_cell_change != 'lazy'",
           "group": "navigation@3"
         },
         {
-          "command": "marimo.toggleOnCellChangeLazy",
-          "when": "notebookType == 'marimo-notebook' && marimo.config.runtime.on_cell_change == 'lazy'",
+          "command": "marimo.config.toggleOnCellChangeLazy",
+          "when": "notebookType == 'marimo-notebook' && marimo.notebook.hasKernel && marimo.config.runtime.on_cell_change == 'lazy'",
           "group": "navigation@3"
+        },
+        {
+          "command": "marimo.config.toggleAutoReloadOff",
+          "when": "notebookType == 'marimo-notebook' && marimo.notebook.hasKernel && marimo.config.runtime.auto_reload == 'off'",
+          "group": "navigation@4"
+        },
+        {
+          "command": "marimo.config.toggleAutoReloadLazy",
+          "when": "notebookType == 'marimo-notebook' && marimo.notebook.hasKernel && marimo.config.runtime.auto_reload == 'lazy'",
+          "group": "navigation@4"
+        },
+        {
+          "command": "marimo.config.toggleAutoReloadAutorun",
+          "when": "notebookType == 'marimo-notebook' && marimo.notebook.hasKernel && marimo.config.runtime.auto_reload == 'autorun'",
+          "group": "navigation@4"
         }
       ],
       "editor/title": [
