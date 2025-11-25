@@ -19,6 +19,10 @@ import { Constants } from "./Constants.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
 
+type BooleanMap<T> = {
+  [key in keyof T]: boolean;
+};
+
 /**
  * Handles serialization and deserialization of marimo notebooks,
  * converting between VS Code's notebook format and marimo's Python format.
@@ -142,50 +146,73 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
         // Register with VS Code if present
         const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
-        yield* code.value.workspace.registerNotebookSerializer(NOTEBOOK_TYPE, {
-          serializeNotebook(notebook, token) {
-            return runPromise(
-              Effect.gen(function* () {
-                const fiber = yield* Effect.fork(serializeEffect(notebook));
-                token.onCancellationRequested(() =>
-                  runPromise(Fiber.interrupt(fiber)),
-                );
-                return yield* Fiber.join(fiber);
-              }).pipe(
-                Effect.tapErrorCause((cause) =>
-                  Effect.logError(`Notebook serialize failed.`, cause),
+        yield* code.value.workspace.registerNotebookSerializer(
+          NOTEBOOK_TYPE,
+          {
+            serializeNotebook(notebook, token) {
+              return runPromise(
+                Effect.gen(function* () {
+                  const fiber = yield* Effect.fork(serializeEffect(notebook));
+                  token.onCancellationRequested(() =>
+                    runPromise(Fiber.interrupt(fiber)),
+                  );
+                  return yield* Fiber.join(fiber);
+                }).pipe(
+                  Effect.tapErrorCause((cause) =>
+                    Effect.logError(`Notebook serialize failed.`, cause),
+                  ),
+                  Effect.mapError(
+                    () =>
+                      new Error(
+                        `Failed to serialize notebook. See marimo logs for details.`,
+                      ),
+                  ),
                 ),
-                Effect.mapError(
-                  () =>
-                    new Error(
-                      `Failed to serialize notebook. See marimo logs for details.`,
-                    ),
+              );
+            },
+            deserializeNotebook(bytes, token) {
+              return runPromise(
+                Effect.gen(function* () {
+                  const fiber = yield* Effect.fork(deserializeEffect(bytes));
+                  token.onCancellationRequested(() =>
+                    runPromise(Fiber.interrupt(fiber)),
+                  );
+                  return yield* Fiber.join(fiber);
+                }).pipe(
+                  Effect.tapErrorCause((cause) =>
+                    Effect.logError(`Notebook deserialize failed.`, cause),
+                  ),
+                  Effect.mapError(
+                    () =>
+                      new Error(
+                        `Failed to deserialize notebook. See marimo logs for details.`,
+                      ),
+                  ),
                 ),
-              ),
-            );
+              );
+            },
           },
-          deserializeNotebook(bytes, token) {
-            return runPromise(
-              Effect.gen(function* () {
-                const fiber = yield* Effect.fork(deserializeEffect(bytes));
-                token.onCancellationRequested(() =>
-                  runPromise(Fiber.interrupt(fiber)),
-                );
-                return yield* Fiber.join(fiber);
-              }).pipe(
-                Effect.tapErrorCause((cause) =>
-                  Effect.logError(`Notebook deserialize failed.`, cause),
-                ),
-                Effect.mapError(
-                  () =>
-                    new Error(
-                      `Failed to deserialize notebook. See marimo logs for details.`,
-                    ),
-                ),
-              ),
-            );
+          {
+            transientOutputs: true,
+            transientCellMetadata: {
+              state: true,
+              name: false,
+              languageMetadata: false,
+              // N.B. This technically isn't transient (e.g. hide_code, disabled),
+              // but as `false` it marks the cell as dirty.
+              // But we don't support/use these options yet in the extension.
+              options: true,
+            } satisfies BooleanMap<CellMetadata>,
+            transientDocumentMetadata: {
+              app: false,
+              header: false,
+              version: false,
+              cells: true,
+              violations: false,
+              valid: false,
+            } satisfies BooleanMap<MarimoNotebook>,
           },
-        });
+        );
       }
 
       return {

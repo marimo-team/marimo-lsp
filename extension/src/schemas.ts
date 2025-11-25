@@ -45,6 +45,8 @@ export const MarimoNotebook = Schema.Struct({
   valid: Schema.Boolean,
 });
 
+export type MarimoNotebook = typeof MarimoNotebook.Type;
+
 export const SemVerFromString = Schema.transformOrFail(
   Schema.String,
   Schema.Struct({

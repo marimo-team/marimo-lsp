@@ -1176,6 +1176,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     HashSet.HashSet<{
       notebookType: string;
       serializer: vscode.NotebookSerializer;
+      options: vscode.NotebookDocumentContentOptions | undefined;
     }>
   >;
   readonly statusBarProviders: Ref.Ref<
@@ -1294,6 +1295,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       HashSet.empty<{
         notebookType: string;
         serializer: vscode.NotebookSerializer;
+        options: vscode.NotebookDocumentContentOptions | undefined;
       }>(),
     );
     const statusBarProviders = yield* Ref.make<
@@ -1546,10 +1548,14 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             getWorkspaceFolders() {
               return Effect.succeed(Option.none());
             },
-            registerNotebookSerializer(notebookType, impl) {
+            registerNotebookSerializer(notebookType, impl, options) {
               return Effect.acquireRelease(
                 Effect.gen(function* () {
-                  const serializer = { notebookType, serializer: impl };
+                  const serializer = {
+                    notebookType,
+                    serializer: impl,
+                    options: options ?? undefined,
+                  };
                   yield* Ref.update(serializers, HashSet.add(serializer));
                   return serializer;
                 }),
