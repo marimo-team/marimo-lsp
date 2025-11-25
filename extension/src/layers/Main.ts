@@ -46,6 +46,7 @@ import { VariablesViewLive } from "../views/VariablesView.ts";
 import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
+import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { NotebookLanguageFeaturesLive } from "./NotebookLanguageFeatures.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
@@ -61,6 +62,7 @@ const MainLive = Layer.empty
     Layer.merge(MarimoStatusBarLive),
     Layer.merge(PythonEnvironmentStatusBarLive),
     Layer.merge(MarimoFileDetectorLive),
+    Layer.merge(MarimoCodeLensProviderLive),
     Layer.merge(NotebookLanguageFeaturesLive),
     Layer.merge(RecentNotebooksLive),
     Layer.merge(VariablesViewLive),
