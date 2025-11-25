@@ -512,6 +512,18 @@ class Range implements vscode.Range {
   }
 }
 
+class CodeLens implements vscode.CodeLens {
+  readonly range: Range;
+  command?: vscode.Command;
+  readonly isResolved: boolean;
+
+  constructor(range: Range, command?: vscode.Command) {
+    this.range = range;
+    this.command = command;
+    this.isResolved = command !== undefined;
+  }
+}
+
 class Selection extends Range implements vscode.Selection {
   readonly anchor: Position;
   readonly active: Position;
@@ -1780,6 +1792,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           Hover,
           SignatureInformation,
           ParameterInformation,
+          CodeLens,
           CompletionTriggerKind: {
             Invoke: 0,
             TriggerCharacter: 1,
@@ -1800,6 +1813,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               return Effect.void;
             },
             registerCompletionItemProvider() {
+              return Effect.void;
+            },
+            registerCodeLensProvider() {
               return Effect.void;
             },
           },
