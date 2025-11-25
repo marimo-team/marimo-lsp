@@ -13,8 +13,9 @@ import type {
 } from "../types.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
-import { Config, DEFAULT_UV_BINARY } from "./Config.ts";
+import { Config } from "./Config.ts";
 import { OutputChannel } from "./OutputChannel.ts";
+import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
 export class LanguageClientStartError extends Data.TaggedError(
@@ -39,16 +40,16 @@ export class ExecuteCommandError extends Data.TaggedError(
 export class LanguageClient extends Effect.Service<LanguageClient>()(
   "LanguageClient",
   {
-    dependencies: [VsCode.Default, Config.Default],
+    dependencies: [VsCode.Default, Config.Default, Uv.Default],
     scoped: Effect.gen(function* () {
+      const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
       const channel = yield* OutputChannel;
 
-      const uvBinary = yield* config.uv.binary;
       const exec = yield* Option.match(yield* config.lsp.executable, {
         onSome: Effect.succeed,
-        onNone: () => findLspExecutable(uvBinary),
+        onNone: () => findLspExecutable(uv.bin.executable),
       });
 
       yield* Effect.logInfo("Got marimo-lsp executable").pipe(
@@ -208,7 +209,7 @@ function maybeHandleLanguageClientStartError(error: LanguageClientStartError) {
     const uvBinary = error.exec.command;
     const uvVersion = getUvVersion(uvBinary);
     const isUvInstalled = Option.isSome(uvVersion);
-    const isUsingDefaultUv = uvBinary === DEFAULT_UV_BINARY;
+    const isUsingDefaultUv = uvBinary === "uv";
 
     // Check if this is a uv-related error (either default "uv" or a custom path)
     if (!isUvInstalled) {

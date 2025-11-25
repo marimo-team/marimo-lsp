@@ -1,7 +1,6 @@
 import * as NodeChildProcess from "node:child_process";
 import { Effect, Layer, Stream } from "effect";
 import * as rpc from "vscode-jsonrpc/node";
-import { DEFAULT_UV_BINARY } from "../services/Config.ts";
 import {
   ExecuteCommandError,
   findLspExecutable,
@@ -13,7 +12,7 @@ export const TestLanguageClientLive = Layer.scoped(
   Effect.gen(function* () {
     const { conn } = yield* Effect.acquireRelease(
       Effect.gen(function* () {
-        const exec = yield* findLspExecutable(DEFAULT_UV_BINARY);
+        const exec = yield* findLspExecutable("uv");
         const proc = NodeChildProcess.spawn(exec.command, exec.args, {
           stdio: ["pipe", "pipe", "inherit"],
         });

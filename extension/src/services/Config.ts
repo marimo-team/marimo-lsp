@@ -1,9 +1,6 @@
 import { Effect, Option } from "effect";
 import { VsCode } from "./VsCode.ts";
 
-/** Default `uv` binary name */
-export const DEFAULT_UV_BINARY = "uv";
-
 /**
  * Provides access to the extension configuration settings.
  */
@@ -17,8 +14,8 @@ export class Config extends Effect.Service<Config>()("Config", {
       );
       return {
         uv: {
+          path: Effect.succeed(Option.none<string>()),
           enabled: Effect.succeed(false),
-          binary: Effect.succeed(DEFAULT_UV_BINARY),
         },
         lsp: {
           executable: Effect.succeed(Option.none()),
@@ -31,20 +28,19 @@ export class Config extends Effect.Service<Config>()("Config", {
 
     return {
       uv: {
-        get enabled() {
-          return Effect.andThen(
-            code.value.workspace.getConfiguration("marimo"),
-            (config) => !config.get<boolean>("disableUvIntegration", false),
-          );
-        },
-        get binary() {
-          return Effect.andThen(
+        get path() {
+          return Effect.map(
             code.value.workspace.getConfiguration("marimo.uv"),
             (config) =>
               Option.fromNullable(config.get<string>("path")).pipe(
                 Option.filter((p) => p.length > 0),
-                Option.getOrElse(() => DEFAULT_UV_BINARY),
               ),
+          );
+        },
+        get enabled() {
+          return Effect.andThen(
+            code.value.workspace.getConfiguration("marimo"),
+            (config) => !config.get<boolean>("disableUvIntegration", false),
           );
         },
       },
