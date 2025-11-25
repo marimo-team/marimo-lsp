@@ -11,6 +11,7 @@ import type * as vscode from "vscode";
 import { CellMetadataUIBindingService } from "../services/CellMetadataUIBindingService.ts";
 import { CellStateManager } from "../services/CellStateManager.ts";
 import { Config } from "../services/Config.ts";
+import { Constants } from "../services/Constants.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { LspProxy } from "../services/completions/LspProxy.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
@@ -48,7 +49,6 @@ import { KernelManagerLive } from "./KernelManager.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { NotebookLanguageFeaturesLive } from "./NotebookLanguageFeatures.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
-import { Constants } from "../services/Constants.ts";
 
 /**
  * Main application layer that wires together all services and layers

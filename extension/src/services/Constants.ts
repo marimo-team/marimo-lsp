@@ -19,10 +19,7 @@ export class Constants extends Effect.Service<Constants>()("Constants", {
     yield* Effect.logDebug(
       "Managed Language Features: " +
         (useManagedLanguageFeatures ? "Enabled" : "Disabled"),
-    );
-    yield* Effect.logDebug(
-      `Using Language ID for Python: ${constants.LanguageId.Python}`,
-    );
+    ).pipe(Effect.annotateLogs({ constants }));
 
     return constants;
   }),
