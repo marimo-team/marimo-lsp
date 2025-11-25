@@ -8,6 +8,7 @@ import { MarimoConfigurationService } from "./MarimoConfigurationService.ts";
  *
  * Tracks configuration state and updates VSCode context keys for UI:
  * - "marimo.config.runtime.on_cell_change" - Current on_cell_change mode ("autorun" | "lazy")
+ * - "marimo.config.runtime.auto_reload" - Current auto_reload mode ("off" | "lazy" | "autorun")
  *
  * Uses SubscriptionRef for reactive state management.
  */
@@ -23,8 +24,11 @@ export class ConfigContextManager extends Effect.Service<ConfigContextManager>()
         (config) => config.runtime?.on_cell_change,
       );
 
-      // Update context based on current state
-      // Run indefinitely
+      const autoReloadModeStream = configService.streamOf(
+        (config) => config.runtime?.auto_reload,
+      );
+
+      // Update on_cell_change context based on current state
       yield* Effect.forkScoped(
         onCellChangeModeStream.pipe(
           Stream.tap((mode) =>
@@ -40,12 +44,37 @@ export class ConfigContextManager extends Effect.Service<ConfigContextManager>()
         ),
       );
 
+      // Update auto_reload context based on current state
+      yield* Effect.forkScoped(
+        autoReloadModeStream.pipe(
+          Stream.tap((mode) =>
+            Log.debug("Updated autoReloadMode context", { mode }),
+          ),
+          Stream.tap((mode) =>
+            code.commands.setContext(
+              "marimo.config.runtime.auto_reload",
+              Option.getOrElse(
+                Option.map(mode, (m) => m ?? ("off" as const)),
+                () => "off" as const,
+              ),
+            ),
+          ),
+          Stream.runDrain,
+        ),
+      );
+
       return {
         /**
          * Stream of on_cell_change mode changes
          */
         streamOnCellChangeModeChanges() {
           return onCellChangeModeStream;
+        },
+        /**
+         * Stream of auto_reload mode changes
+         */
+        streamAutoReloadModeChanges() {
+          return autoReloadModeStream;
         },
       };
     }).pipe(Effect.annotateLogs("service", "ConfigContextManager")),

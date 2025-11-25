@@ -244,8 +244,10 @@ type ExecutableCommand = VscodeBuiltinCommand | MarimoCommand | DynamicCommand;
 
 type ContextMap = {
   "marimo.config.runtime.on_cell_change": "autorun" | "lazy";
+  "marimo.config.runtime.auto_reload": "off" | "lazy" | "autorun";
   "marimo.isPythonFileMarimoNotebook": boolean;
   "marimo.notebook.hasStaleCells": boolean;
+  "marimo.notebook.hasKernel": boolean;
 };
 
 export class Commands extends Effect.Service<Commands>()("Commands", {
