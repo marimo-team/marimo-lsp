@@ -5,6 +5,7 @@ import { type Middleware, ResponseError } from "vscode-languageclient/node";
 import { signalFromToken } from "../../utils/signalFromToken.ts";
 import { PythonExtension } from "../PythonExtension.ts";
 import { VsCode } from "../VsCode.ts";
+import { Uv } from "../Uv.ts";
 
 export class PythonLanguageServerStartError extends Data.TaggedError(
   "PythonLanguageServerStartError",
@@ -20,9 +21,11 @@ export class PythonLanguageServerStartError extends Data.TaggedError(
 export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()(
   "PythonLanguageServer",
   {
+    dependencies: [Uv.Default],
     scoped: Effect.gen(function* () {
       yield* Effect.logInfo("Starting Python language server (ty) for marimo");
 
+      const uv = yield* Uv;
       const code = yield* VsCode;
       const pyExt = yield* PythonExtension;
 
@@ -30,7 +33,7 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
       const documents = new Map<string, { version: number; content: string }>();
 
       const serverOptions: lsp.ServerOptions = {
-        command: "uv",
+        command: uv.bin.executable,
         args: ["tool", "run", "ty", "server"],
         options: {
           // Run in stdio mode
