@@ -29,11 +29,12 @@ export class HealthService extends Effect.Service<HealthService>()(
         });
 
       const formatDiagnostics = Effect.gen(function* () {
-        const [lspCustomPath, uvDisabled, uvVersion] = yield* Effect.all([
+        const [lspCustomPath, uvDisabled, uvBinary] = yield* Effect.all([
           config.lsp.executable,
           Effect.map(config.uv.enabled, (enabled) => !enabled),
-          Effect.sync(getUvVersion),
+          config.uv.binary,
         ]);
+        const uvVersion = getUvVersion(uvBinary);
         const vscodeVersion = code.version;
         const extensionVersion = yield* getExtensionVersion(code).pipe(
           Effect.catchTag("CouldNotGetInformationError", () =>
@@ -51,10 +52,11 @@ export class HealthService extends Effect.Service<HealthService>()(
 
         // LSP Status
         lines.push("Language Server (LSP):");
+        lines.push(`\tUV: ${uvBinary}`);
         if (Option.isSome(uvVersion)) {
           lines.push(`\tUV: ${uvVersion.value} ✓`);
         } else {
-          lines.push("\tUV: Not installed ✗");
+          lines.push("\tUV: Not found ✗");
         }
 
         if (Option.isSome(lspCustomPath)) {
@@ -84,6 +86,19 @@ export class HealthService extends Effect.Service<HealthService>()(
         lines.push(`\tPlatform: ${NodeProcess.platform}`);
         lines.push(`\tArchitecture: ${NodeProcess.arch}`);
         lines.push(`\tNode version: ${NodeProcess.version}`);
+        lines.push("");
+
+        // PATH (formatted for readability)
+        lines.push("PATH:");
+        const pathValue = NodeProcess.env.PATH;
+        if (pathValue) {
+          const separator = NodeProcess.platform === "win32" ? ";" : ":";
+          for (const entry of pathValue.split(separator)) {
+            lines.push(`\t${entry}`);
+          }
+        } else {
+          lines.push("\t(not set)");
+        }
 
         lines.push("");
 

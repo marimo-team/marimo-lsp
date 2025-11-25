@@ -4,6 +4,7 @@ import { NodeContext } from "@effect/platform-node";
 import { Data, Effect, Stream, String } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
+import { Config } from "./Config.ts";
 import { VsCode } from "./VsCode.ts";
 
 class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
@@ -62,12 +63,14 @@ class UvResolutionError extends Data.TaggedError("UvResolutionError")<{
 }
 
 export class Uv extends Effect.Service<Uv>()("Uv", {
-  dependencies: [NodeContext.layer],
+  dependencies: [NodeContext.layer, Config.Default],
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
+    const config = yield* Config;
     const executor = yield* CommandExecutor.CommandExecutor;
     const channel = yield* code.window.createOutputChannel("marimo (uv)");
-    const uv = createUv(executor, channel);
+    const uvBinary = yield* config.uv.binary;
+    const uv = createUv(uvBinary, executor, channel);
 
     return {
       getCacheDir: () =>
@@ -178,6 +181,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
 }) {}
 
 function createUv(
+  uvBinary: string,
   executor: CommandExecutor.CommandExecutor,
   channel: vscode.OutputChannel,
 ) {
@@ -185,7 +189,7 @@ function createUv(
     readonly args: ReadonlyArray<string>;
     readonly env?: Record<string, string>;
   }) {
-    const command = Command.make("uv", ...options.args).pipe(
+    const command = Command.make(uvBinary, ...options.args).pipe(
       Command.env({ NO_COLOR: "1", ...options.env }),
     );
     yield* Effect.logDebug("Running command").pipe(

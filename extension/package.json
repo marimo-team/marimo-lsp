@@ -33,6 +33,12 @@
           "markdownDescription": "Path to a custom `marimo-lsp` executable, e.g., `[\"/path/to/marimo-lsp\"]`. Leave empty to use the bundled version via uvx.",
           "scope": "resource"
         },
+        "marimo.uv.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the `uv` binary, e.g., `/Users/me/.local/bin/uv`. Leave empty to use `uv` from the system PATH.",
+          "scope": "resource"
+        },
         "marimo.disableUvIntegration": {
           "type": "boolean",
           "default": false,
