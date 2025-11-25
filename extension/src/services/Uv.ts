@@ -1,10 +1,22 @@
+import * as NodeFs from "node:fs";
+import * as NodeOs from "node:os";
+import * as NodePath from "node:path";
+import * as NodeProcess from "node:process";
 import { Command, CommandExecutor } from "@effect/platform";
 import type { PlatformError } from "@effect/platform/Error";
 import { NodeContext } from "@effect/platform-node";
-import { Data, Effect, Stream, String } from "effect";
+import { Data, Effect, Option, Stream, String } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
+import { Config } from "./Config.ts";
 import { VsCode } from "./VsCode.ts";
+
+export const UvBin = Data.taggedEnum<UvBin>();
+type UvBin = Data.TaggedEnum<{
+  Default: { readonly executable: "uv" | "uv.exe" };
+  Configured: { readonly executable: string };
+  Discovered: { readonly executable: string };
+}>;
 
 class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
   command: Command.Command;
@@ -62,14 +74,18 @@ class UvResolutionError extends Data.TaggedError("UvResolutionError")<{
 }
 
 export class Uv extends Effect.Service<Uv>()("Uv", {
-  dependencies: [NodeContext.layer],
+  dependencies: [NodeContext.layer, Config.Default],
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
+    const config = yield* Config;
     const executor = yield* CommandExecutor.CommandExecutor;
     const channel = yield* code.window.createOutputChannel("marimo (uv)");
-    const uv = createUv(executor, channel);
+
+    const uvBinary = yield* findUvBin(yield* config.uv.path);
+    const uv = createUv(uvBinary.executable, executor, channel);
 
     return {
+      bin: uvBinary,
       getCacheDir: () =>
         uv({ args: ["cache", "dir"] }).pipe(Effect.map((e) => e.stdout.trim())),
       channel: {
@@ -178,6 +194,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
 }) {}
 
 function createUv(
+  uvBinary: string,
   executor: CommandExecutor.CommandExecutor,
   channel: vscode.OutputChannel,
 ) {
@@ -185,7 +202,7 @@ function createUv(
     readonly args: ReadonlyArray<string>;
     readonly env?: Record<string, string>;
   }) {
-    const command = Command.make("uv", ...options.args).pipe(
+    const command = Command.make(uvBinary, ...options.args).pipe(
       Command.env({ NO_COLOR: "1", ...options.env }),
     );
     yield* Effect.logDebug("Running command").pipe(
@@ -234,3 +251,43 @@ function runString<E, R>(
     Stream.runFold(String.empty, String.concat),
   );
 }
+
+const findUvBin = Effect.fn("findUvBin")(function* (
+  userConfigPath: Option.Option<string>,
+) {
+  if (Option.isSome(userConfigPath)) {
+    yield* Effect.logDebug(
+      `Using user-configured uv path: ${userConfigPath.value}`,
+    );
+    return UvBin.Configured({ executable: userConfigPath.value });
+  }
+
+  // then check default install locations
+  const homedir = NodeOs.homedir();
+  const binName = NodeProcess.platform === "win32" ? "uv.exe" : "uv";
+  const defaultPaths =
+    NodeProcess.platform === "win32"
+      ? [
+          NodePath.join(homedir, ".local", "bin", binName),
+          NodePath.join(homedir, ".cargo", "bin", binName),
+        ]
+      : [
+          NodePath.join(homedir, ".local", "bin", binName),
+          NodePath.join(homedir, ".cargo", "bin", binName),
+          "/opt/homebrew/bin/uv", // Apple Silicon Homebrew
+        ];
+
+  // should probably use Command but for simplicity just check sync
+  for (const path of defaultPaths) {
+    const exists = yield* Effect.try(() => NodeFs.existsSync(path)).pipe(
+      Effect.orElse(() => Effect.succeed(false)),
+    );
+    if (exists) {
+      yield* Effect.logDebug(`Found uv binary at default location: ${path}`);
+      return UvBin.Discovered({ executable: path });
+    }
+  }
+
+  yield* Effect.logDebug("uv binary not found in default locations");
+  return UvBin.Default({ executable: binName });
+});

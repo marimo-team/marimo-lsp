@@ -1,6 +1,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
+import * as NodeProcess from "node:process";
 import { Data, Effect, Either, Option, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
 import { unreachable } from "../assert.ts";
@@ -14,6 +15,7 @@ import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 import { Config } from "./Config.ts";
 import { OutputChannel } from "./OutputChannel.ts";
+import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
 export class LanguageClientStartError extends Data.TaggedError(
@@ -38,15 +40,16 @@ export class ExecuteCommandError extends Data.TaggedError(
 export class LanguageClient extends Effect.Service<LanguageClient>()(
   "LanguageClient",
   {
-    dependencies: [VsCode.Default, Config.Default],
+    dependencies: [VsCode.Default, Config.Default, Uv.Default],
     scoped: Effect.gen(function* () {
+      const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
       const channel = yield* OutputChannel;
 
       const exec = yield* Option.match(yield* config.lsp.executable, {
         onSome: Effect.succeed,
-        onNone: findLspExecutable,
+        onNone: () => findLspExecutable(uv.bin.executable),
       });
 
       yield* Effect.logInfo("Got marimo-lsp executable").pipe(
@@ -157,7 +160,9 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
   },
 ) {}
 
-export const findLspExecutable = Effect.fnUntraced(function* () {
+export const findLspExecutable = Effect.fnUntraced(function* (
+  uvBinary: string,
+) {
   // Look for bundled wheel matching marimo_lsp-* pattern
   const sdistDir = NodeFs.readdirSync(__dirname).find((f) =>
     f.startsWith("marimo_lsp-"),
@@ -169,7 +174,7 @@ export const findLspExecutable = Effect.fnUntraced(function* () {
       Effect.annotateLogs({ sdist }),
     );
     return {
-      command: "uv",
+      command: uvBinary,
       args: ["tool", "run", "--python", "3.13", "--from", sdist, "marimo-lsp"],
     };
   }
@@ -178,14 +183,14 @@ export const findLspExecutable = Effect.fnUntraced(function* () {
   yield* Effect.logWarning("No bundled wheel found, using development mode");
 
   return {
-    command: "uv",
+    command: uvBinary,
     args: ["run", "--directory", __dirname, "marimo-lsp"],
   };
 });
 
-export function getUvVersion(): Option.Option<string> {
+export function getUvVersion(uvBinary: string): Option.Option<string> {
   try {
-    const version = NodeChildProcess.execSync("uv --version", {
+    const version = NodeChildProcess.execSync(`${uvBinary} --version`, {
       encoding: "utf8",
     });
     return Option.some(version.trim());
@@ -201,19 +206,29 @@ function maybeHandleLanguageClientStartError(error: LanguageClientStartError) {
 
     yield* Effect.logError("Failed to start marimo-lsp", error);
 
-    const uvVersion = getUvVersion();
+    const uvBinary = error.exec.command;
+    const uvVersion = getUvVersion(uvBinary);
     const isUvInstalled = Option.isSome(uvVersion);
+    const isUsingDefaultUv = uvBinary === "uv";
 
-    if (error.exec.command === "uv" && !isUvInstalled) {
-      yield* Effect.logError("uv is not installed in PATH");
-
-      const result = yield* code.window.showErrorMessage(
-        "The marimo VS Code extension requires `uv` to be installed in your system PATH.",
-        {
-          modal: true,
-          items: ["Install uv", "Try Again"],
-        },
+    // Check if this is a uv-related error (either default "uv" or a custom path)
+    if (!isUvInstalled) {
+      const currentPath = NodeProcess.env.PATH ?? "(not set)";
+      yield* Effect.logError(
+        `uv is not available. Command: '${uvBinary}'. PATH: ${currentPath}`,
       );
+
+      // Different error messages based on whether using default or custom uv path
+      const errorMessage = isUsingDefaultUv
+        ? "The marimo VS Code extension requires `uv` to be installed in your system PATH."
+        : `The configured uv binary was not found at: ${uvBinary}`;
+
+      const result = yield* code.window.showErrorMessage(errorMessage, {
+        modal: true,
+        items: isUsingDefaultUv
+          ? ["Install uv", "Try Again"]
+          : ["Open Settings", "Try Again"],
+      });
 
       if (Option.isNone(result)) {
         // dismissed
@@ -228,6 +243,13 @@ function maybeHandleLanguageClientStartError(error: LanguageClientStartError) {
             ),
           );
           yield* code.env.openExternal(uri);
+          return yield* Effect.fail(error);
+        }
+        case "Open Settings": {
+          yield* code.commands.executeCommand(
+            "workbench.action.openSettings",
+            "marimo.uv.path",
+          );
           return yield* Effect.fail(error);
         }
         case "Try Again": {

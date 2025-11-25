@@ -14,6 +14,7 @@ export class Config extends Effect.Service<Config>()("Config", {
       );
       return {
         uv: {
+          path: Effect.succeed(Option.none<string>()),
           enabled: Effect.succeed(false),
         },
         lsp: {
@@ -27,6 +28,15 @@ export class Config extends Effect.Service<Config>()("Config", {
 
     return {
       uv: {
+        get path() {
+          return Effect.map(
+            code.value.workspace.getConfiguration("marimo.uv"),
+            (config) =>
+              Option.fromNullable(config.get<string>("path")).pipe(
+                Option.filter((p) => p.length > 0),
+              ),
+          );
+        },
         get enabled() {
           return Effect.andThen(
             code.value.workspace.getConfiguration("marimo"),

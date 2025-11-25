@@ -12,7 +12,7 @@ export const TestLanguageClientLive = Layer.scoped(
   Effect.gen(function* () {
     const { conn } = yield* Effect.acquireRelease(
       Effect.gen(function* () {
-        const exec = yield* findLspExecutable();
+        const exec = yield* findLspExecutable("uv");
         const proc = NodeChildProcess.spawn(exec.command, exec.args, {
           stdio: ["pipe", "pipe", "inherit"],
         });
