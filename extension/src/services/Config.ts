@@ -40,10 +40,11 @@ export class Config extends Effect.Service<Config>()("Config", {
         get binary() {
           return Effect.andThen(
             code.value.workspace.getConfiguration("marimo.uv"),
-            (config) => {
-              const path = config.get<string>("path", "");
-              return path === "" ? DEFAULT_UV_BINARY : path;
-            },
+            (config) =>
+              Option.fromNullable(config.get<string>("path")).pipe(
+                Option.filter((p) => p.length > 0),
+                Option.getOrElse(() => DEFAULT_UV_BINARY),
+              ),
           );
         },
       },
