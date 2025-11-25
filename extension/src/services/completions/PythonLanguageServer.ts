@@ -4,8 +4,8 @@ import * as lsp from "vscode-languageclient/node";
 import { type Middleware, ResponseError } from "vscode-languageclient/node";
 import { signalFromToken } from "../../utils/signalFromToken.ts";
 import { PythonExtension } from "../PythonExtension.ts";
-import { VsCode } from "../VsCode.ts";
 import { Uv } from "../Uv.ts";
+import { VsCode } from "../VsCode.ts";
 
 export class PythonLanguageServerStartError extends Data.TaggedError(
   "PythonLanguageServerStartError",
