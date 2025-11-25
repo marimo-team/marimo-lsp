@@ -66,7 +66,7 @@ export const MarimoCodeLensProviderLive = Layer.scopedDiscard(
         // Create a range at the start of the line
         const range = new code.Range(lineNumber, 0, lineNumber, 0);
         const codeLens = new code.CodeLens(range, {
-          title: "Run as notebook",
+          title: "Open as notebook",
           command: "marimo.openAsMarimoNotebook",
           arguments: [],
         });
