@@ -11,6 +11,21 @@ export function formatControllerLabel(
   code: VsCode,
   env: py.Environment,
 ): string {
+  const versionString = formatPythonVersion(env);
+  const envName = resolvePythonEnvironmentName(code, env);
+
+  if (envName) {
+    return `${envName} (${versionString})`;
+  }
+  return versionString;
+}
+
+/**
+ * Format just the Python version from an environment
+ *
+ * E.g. "Python 3.10.2" or "Python"
+ */
+export function formatPythonVersion(env: py.Environment): string {
   const versionParts: Array<number> = [];
   if (env.version) {
     if (typeof env.version.major === "number") {
@@ -23,15 +38,42 @@ export function formatControllerLabel(
       }
     }
   }
-  const formatted =
-    versionParts.length > 0 ? `Python ${versionParts.join(".")}` : "Python";
+  return versionParts.length > 0
+    ? `Python ${versionParts.join(".")}`
+    : "Python";
+}
 
-  // Format similar to vscode-jupyter: "EnvName (Python 3.10.2)" or just "Python 3.10.2"
+/**
+ * Format a compact status bar label for a Python environment
+ *
+ * E.g. "3.10.2 (myenv)" or "3.11.5"
+ */
+export function formatPythonStatusBarLabel(
+  code: VsCode,
+  env: py.Environment,
+): string {
+  const versionParts: Array<number> = [];
+  if (env.version) {
+    if (typeof env.version.major === "number") {
+      versionParts.push(env.version.major);
+      if (typeof env.version.minor === "number") {
+        versionParts.push(env.version.minor);
+        if (typeof env.version.micro === "number") {
+          versionParts.push(env.version.micro);
+        }
+      }
+    }
+  }
+  const versionString =
+    versionParts.length > 0 ? versionParts.join(".") : "Python";
+
+  // Check if there's a named environment
   const envName = resolvePythonEnvironmentName(code, env);
   if (envName) {
-    return `${envName} (${formatted})`;
+    return `${versionString} (${envName})`;
   }
-  return formatted;
+
+  return versionString;
 }
 
 /**

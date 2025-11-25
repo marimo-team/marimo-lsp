@@ -1,5 +1,5 @@
 import * as py from "@vscode/python-extension";
-import { Effect, Stream } from "effect";
+import { Effect, Option, Stream } from "effect";
 
 /**
  * Provides access to the VS Code Python extension API for
@@ -52,7 +52,7 @@ export class PythonExtension extends Effect.Service<PythonExtension>()(
         resolveEnvironment(path: string | py.EnvironmentPath) {
           return Effect.promise(() =>
             api.environments.resolveEnvironment(path),
-          );
+          ).pipe(Effect.map(Option.fromNullable));
         },
       };
     }),

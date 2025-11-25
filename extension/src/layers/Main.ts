@@ -11,6 +11,7 @@ import type * as vscode from "vscode";
 import { CellMetadataUIBindingService } from "../services/CellMetadataUIBindingService.ts";
 import { CellStateManager } from "../services/CellStateManager.ts";
 import { Config } from "../services/Config.ts";
+import { Constants } from "../services/Constants.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { LspProxy } from "../services/completions/LspProxy.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
@@ -37,6 +38,7 @@ import { VariablesService } from "../services/variables/VariablesService.ts";
 import { DatasourcesViewLive } from "../views/DatasourcesView.ts";
 import { MarimoStatusBarLive } from "../views/MarimoStatusBar.ts";
 import { PackagesViewLive } from "../views/PackagesView.ts";
+import { PythonEnvironmentStatusBarLive } from "../views/PythonEnvironmentStatusBar.ts";
 import { RecentNotebooksLive } from "../views/RecentNotebooks.ts";
 import { StatusBar } from "../views/StatusBar.ts";
 import { TreeView } from "../views/TreeView.ts";
@@ -57,6 +59,7 @@ const MainLive = Layer.empty
     Layer.merge(RegisterCommandsLive),
     Layer.merge(KernelManagerLive),
     Layer.merge(MarimoStatusBarLive),
+    Layer.merge(PythonEnvironmentStatusBarLive),
     Layer.merge(MarimoFileDetectorLive),
     Layer.merge(NotebookLanguageFeaturesLive),
     Layer.merge(RecentNotebooksLive),
@@ -90,6 +93,7 @@ const MainLive = Layer.empty
     Layer.provide(TreeView.Default),
     Layer.provide(StatusBar.Default),
     Layer.provide(Storage.Default),
+    Layer.provide(Constants.Default),
     Layer.provide(Config.Default),
     Layer.provide(OutputChannel.Default),
     Layer.provide(Telemetry.Default),

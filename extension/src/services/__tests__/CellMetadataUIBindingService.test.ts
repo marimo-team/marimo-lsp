@@ -12,10 +12,12 @@ import {
   CellMetadataUIBindingService,
   type MetadataBinding,
 } from "../CellMetadataUIBindingService.ts";
+import { Constants } from "../Constants.ts";
 
 const withTestCtx = Effect.gen(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = CellMetadataUIBindingService.Default.pipe(
+    Layer.provideMerge(Constants.Default),
     Layer.provide(vscode.layer),
   );
   return { vscode, layer };
@@ -74,52 +76,48 @@ it.effect("should register a binding and create status bar provider", () =>
   ),
 );
 
-it.effect("should show status bar item based on shouldShow predicate", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const ctx = yield* withTestCtx;
-      yield* Effect.gen(function* () {
-        const service = yield* CellMetadataUIBindingService;
+it.scoped(
+  "should show status bar item based on shouldShow predicate",
+  Effect.fnUntraced(function* () {
+    const ctx = yield* withTestCtx;
+    yield* Effect.gen(function* () {
+      const service = yield* CellMetadataUIBindingService;
+      const { LanguageId } = yield* Constants;
 
-        const binding: MetadataBinding = {
-          id: "test.sql",
-          type: "text",
-          alignment: 1,
-          shouldShow: (cell) => cell.document.languageId === "sql",
-          getValue: () => "df",
-          setValue: (metadata) => ({ ...metadata }),
-          getLabel: (value) => `$(database) ${value}`,
-          getTooltip: (value) => `Result: ${value}`,
-        };
+      const binding: MetadataBinding = {
+        id: "test.sql",
+        type: "text",
+        alignment: 1,
+        shouldShow: (cell) => cell.document.languageId === LanguageId.Sql,
+        getValue: () => "df",
+        setValue: (metadata) => ({ ...metadata }),
+        getLabel: (value) => `$(database) ${value}`,
+        getTooltip: (value) => `Result: ${value}`,
+      };
 
-        yield* service.registerBinding(binding);
+      yield* service.registerBinding(binding);
 
-        const sqlCell = createMockCell(notebookUri, "sql", {});
-        const pythonCell = createMockCell(notebookUri, "python", {});
+      const sqlCell = createMockCell(notebookUri, "sql", {});
+      const pythonCell = createMockCell(notebookUri, "python", {});
 
-        const providers =
-          yield* ctx.vscode.getRegisteredStatusBarItemProviders();
-        const provider = providers[0]?.provider;
+      const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
+      const provider = providers[0]?.provider;
 
-        if (provider) {
-          const sqlItems = provider.provideCellStatusBarItems(
-            sqlCell,
-            noopToken,
-          );
-          const sqlArray = Array.isArray(sqlItems) ? sqlItems : [];
-          expect(sqlArray.length).toBe(1);
-          expect(sqlArray[0]?.text).toContain("$(database) df");
+      if (provider) {
+        const sqlItems = provider.provideCellStatusBarItems(sqlCell, noopToken);
+        const sqlArray = Array.isArray(sqlItems) ? sqlItems : [];
+        expect(sqlArray.length).toBe(1);
+        expect(sqlArray[0]?.text).toContain("$(database) df");
 
-          const pythonItems = provider.provideCellStatusBarItems(
-            pythonCell,
-            noopToken,
-          );
-          const pythonArray = Array.isArray(pythonItems) ? pythonItems : [];
-          expect(pythonArray.length).toBe(0);
-        }
-      }).pipe(Effect.provide(ctx.layer));
-    }),
-  ),
+        const pythonItems = provider.provideCellStatusBarItems(
+          pythonCell,
+          noopToken,
+        );
+        const pythonArray = Array.isArray(pythonItems) ? pythonItems : [];
+        expect(pythonArray.length).toBe(0);
+      }
+    }).pipe(Effect.provide(ctx.layer));
+  }),
 );
 
 it.effect("should display value from cell metadata", () =>

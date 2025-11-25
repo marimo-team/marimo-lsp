@@ -9,6 +9,7 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import type { CellMetadata } from "../../schemas.ts";
 import { CellMetadataUIBindingService } from "../../services/CellMetadataUIBindingService.ts";
+import { Constants } from "../../services/Constants.ts";
 import { DatasourcesService } from "../../services/datasources/DatasourcesService.ts";
 import { CellMetadataBindingsLive } from "../CellMetadataBindings.ts";
 
@@ -18,6 +19,7 @@ const withTestCtx = Effect.gen(function* () {
     Layer.provideMerge(CellMetadataBindingsLive),
     Layer.provide(CellMetadataUIBindingService.Default),
     Layer.provide(DatasourcesService.Default),
+    Layer.provide(Constants.Default),
     Layer.provide(vscode.layer),
   );
   return { vscode, layer };

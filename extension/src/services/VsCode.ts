@@ -122,6 +122,9 @@ export class Window extends Effect.Service<Window>()("Window", {
       getVisibleNotebookEditors() {
         return Effect.succeed(api.visibleNotebookEditors);
       },
+      getVisibleTextEditors() {
+        return Effect.succeed(api.visibleTextEditors);
+      },
       getActiveTextEditor() {
         return Effect.succeed(Option.fromNullable(api.activeTextEditor));
       },
@@ -150,6 +153,30 @@ export class Window extends Effect.Service<Window>()("Window", {
               api.onDidChangeActiveNotebookEditor((e) =>
                 emit.single(Option.fromNullable(e)),
               ),
+            ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          ),
+        );
+      },
+      visibleNotebookEditorsChanges(): Stream.Stream<
+        ReadonlyArray<vscode.NotebookEditor>
+      > {
+        return Stream.asyncPush((emit) =>
+          Effect.acquireRelease(
+            Effect.sync(() =>
+              api.onDidChangeVisibleNotebookEditors((e) => emit.single(e)),
+            ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          ),
+        );
+      },
+      visibleTextEditorsChanges(): Stream.Stream<
+        ReadonlyArray<vscode.TextEditor>
+      > {
+        return Stream.asyncPush((emit) =>
+          Effect.acquireRelease(
+            Effect.sync(() =>
+              api.onDidChangeVisibleTextEditors((e) => emit.single(e)),
             ),
             (disposable) => Effect.sync(() => disposable.dispose()),
           ),

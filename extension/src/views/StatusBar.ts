@@ -122,9 +122,11 @@ export class StatusBar extends Effect.Service<StatusBar>()("StatusBar", {
             /**
              * Sets the background color. Use sparingly.
              */
-            setBackgroundColor(color: string) {
+            setBackgroundColor(color?: string) {
               return Effect.sync(() => {
-                item.backgroundColor = new code.ThemeColor(color);
+                item.backgroundColor = color
+                  ? new code.ThemeColor(color)
+                  : undefined;
               });
             },
 
@@ -149,14 +151,6 @@ export class StatusBar extends Effect.Service<StatusBar>()("StatusBar", {
              */
             hide() {
               return Effect.sync(() => item.hide());
-            },
-
-            /**
-             * Direct access to the underlying VS Code StatusBarItem.
-             * Use with caution - prefer the provided methods.
-             */
-            get raw() {
-              return item;
             },
           };
         });

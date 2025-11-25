@@ -1,6 +1,7 @@
 import { Effect, Layer, Runtime } from "effect";
 import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
+import { Constants } from "../services/Constants.ts";
 import { LspProxy } from "../services/completions/LspProxy.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { signalFromToken } from "../utils/signalFromToken.ts";
@@ -13,12 +14,13 @@ export const NotebookLanguageFeaturesLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const proxy = yield* LspProxy;
+    const constants = yield* Constants;
 
     const runtime = yield* Effect.runtime();
     const runPromise = Runtime.runPromise(runtime);
 
     const selector = {
-      language: "python",
+      language: constants.LanguageId.Python,
       notebookType: NOTEBOOK_TYPE,
     } satisfies vscode.DocumentSelector;
 

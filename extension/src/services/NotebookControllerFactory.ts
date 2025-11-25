@@ -3,6 +3,7 @@ import type * as py from "@vscode/python-extension";
 import { Brand, Effect, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
 import { unreachable } from "../assert.ts";
+import { Constants } from "../services/Constants.ts";
 import { getNotebookUri } from "../types.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
@@ -35,6 +36,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
       const marimo = yield* LanguageClient;
       const validator = yield* EnvironmentValidator;
       const serializer = yield* NotebookSerializer;
+      const { LanguageId } = yield* Constants;
 
       const runtime = yield* Effect.runtime();
       const runPromise = Runtime.runPromise(runtime);
@@ -52,7 +54,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
           );
 
           // Add metadata
-          controller.supportedLanguages = ["python", "sql"];
+          controller.supportedLanguages = [LanguageId.Python, LanguageId.Sql];
           controller.description = options.env.path;
 
           // Set up execution handler
@@ -76,7 +78,9 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                       executable: validEnv.executable,
                       inner: {
                         cellIds: cells.map((cell) => getNotebookCellId(cell)),
-                        codes: cells.map((cell) => getCellExecutableCode(cell)),
+                        codes: cells.map((cell) =>
+                          getCellExecutableCode(cell, LanguageId),
+                        ),
                       },
                     },
                   },

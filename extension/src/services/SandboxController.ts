@@ -9,6 +9,7 @@ import { getCellExecutableCode } from "../utils/getCellExecutableCode.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
 import { getNotebookCellId } from "../utils/notebook.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
+import { Constants } from "./Constants.ts";
 import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { OutputChannel } from "./OutputChannel.ts";
@@ -26,6 +27,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       const channel = yield* OutputChannel;
       const client = yield* LanguageClient;
       const python = yield* PythonExtension;
+      const { LanguageId } = yield* Constants;
 
       const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
@@ -36,7 +38,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       );
 
       // Add metadata
-      controller.supportedLanguages = ["python", "sql"];
+      controller.supportedLanguages = [LanguageId.Python, LanguageId.Sql];
       controller.description = "marimo sandbox controller";
 
       // Set up execution handler
@@ -91,7 +93,9 @@ export class SandboxController extends Effect.Service<SandboxController>()(
                   executable,
                   inner: {
                     cellIds: cells.map((cell) => getNotebookCellId(cell)),
-                    codes: cells.map((cell) => getCellExecutableCode(cell)),
+                    codes: cells.map((cell) =>
+                      getCellExecutableCode(cell, LanguageId),
+                    ),
                   },
                 },
               },

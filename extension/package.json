@@ -43,15 +43,39 @@
           "type": "boolean",
           "default": true,
           "description": "Anonymous usage data. This helps us prioritize features for the marimo VSCode extension."
+        },
+        "marimo.disableManagedLanguageFeatures": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Disable marimo's managed Python language features (completions, diagnostics, formatting). When enabled, notebook cells use the standard `python` language ID and rely on external language servers.",
+          "scope": "resource"
         }
       }
     },
+    "languages": [
+      {
+        "id": "mo-python",
+        "aliases": [
+          "Python",
+          "mo-python"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mo-python",
+        "scopeName": "source.mo-python",
+        "path": "./syntaxes/python.tmLanguage.json"
+      }
+    ],
     "debuggers": [
       {
         "type": "marimo",
         "label": "Marimo Debugger",
         "languages": [
-          "python"
+          "python",
+          "mo-python"
         ],
         "configurationAttributes": {
           "launch": {
@@ -75,6 +99,9 @@
     "breakpoints": [
       {
         "language": "python"
+      },
+      {
+        "language": "mo-python"
       }
     ],
     "walkthroughs": [

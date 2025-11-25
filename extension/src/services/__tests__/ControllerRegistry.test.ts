@@ -7,11 +7,12 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { Constants } from "../Constants.ts";
 import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { VsCode } from "../VsCode.ts";
 
 const withTestCtx = Effect.fnUntraced(function* (
-  options: { initialEnvs?: Array<py.Environment> } = {},
+  options: { initialEnvs?: Array<py.ResolvedEnvironment> } = {},
 ) {
   const { initialEnvs = [] } = options;
   const vscode = yield* TestVsCode.make();
@@ -19,6 +20,7 @@ const withTestCtx = Effect.fnUntraced(function* (
 
   const layer = Layer.empty.pipe(
     Layer.provideMerge(ControllerRegistry.Default),
+    Layer.provide(Constants.Default),
     Layer.provide(TestLanguageClientLive),
     Layer.provideMerge(vscode.layer),
     Layer.provideMerge(py.layer),
@@ -483,10 +485,7 @@ it.effect(
       // Create a notebook without script header
       const notebook = createTestNotebookDocument(
         code.Uri.file("/test/notebook_mo.py"),
-        {
-          cells: [],
-          metadata: {},
-        },
+        { data: { cells: [], metadata: {} } },
       );
 
       const editor = TestVsCode.makeNotebookEditor(notebook.uri.path);
@@ -515,26 +514,12 @@ it.effect(
     yield* Effect.gen(function* () {
       const code = yield* VsCode;
 
-      // Create first notebook
-      const notebook1 = createTestNotebookDocument(
+      const editor1 = TestVsCode.makeNotebookEditor(
         code.Uri.file("/test/notebook1_mo.py"),
-        {
-          cells: [],
-          metadata: {},
-        },
       );
-
-      // Create second notebook
-      const notebook2 = createTestNotebookDocument(
+      const editor2 = TestVsCode.makeNotebookEditor(
         code.Uri.file("/test/notebook2_mo.py"),
-        {
-          cells: [],
-          metadata: {},
-        },
       );
-
-      const editor1 = TestVsCode.makeNotebookEditor(notebook1.uri.path);
-      const editor2 = TestVsCode.makeNotebookEditor(notebook2.uri.path);
 
       // Open first notebook
       yield* vscode.setActiveNotebookEditor(Option.some(editor1));

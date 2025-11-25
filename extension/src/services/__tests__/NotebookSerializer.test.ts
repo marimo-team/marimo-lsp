@@ -4,11 +4,13 @@ import { Effect, Layer } from "effect";
 import packageJson from "../../../package.json";
 import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
+import { Constants } from "../../services/Constants.ts";
 import { NotebookSerializer } from "../../services/NotebookSerializer.ts";
 
 const NotebookSerializerLive = Layer.empty.pipe(
   Layer.provideMerge(NotebookSerializer.Default),
   Layer.provideMerge(TestLanguageClientLive),
+  Layer.provideMerge(Constants.Default),
 );
 
 it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
@@ -23,18 +25,19 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
   it.effect(
     "serializes notebook cells to marimo format",
     Effect.fnUntraced(function* () {
+      const { LanguageId } = yield* Constants;
       const serializer = yield* NotebookSerializer;
       const bytes = yield* serializer.serializeEffect({
         cells: [
           {
             kind: 2,
             value: "import marimo as mo",
-            languageId: "python",
+            languageId: LanguageId.Python,
           },
           {
             kind: 2,
             value: "x = 1",
-            languageId: "python",
+            languageId: LanguageId.Python,
           },
         ],
       });
@@ -67,23 +70,24 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
   it.effect(
     "serializes markdown notebook cells to marimo format",
     Effect.fnUntraced(function* () {
+      const { LanguageId } = yield* Constants;
       const serializer = yield* NotebookSerializer;
       const bytes = yield* serializer.serializeEffect({
         cells: [
           {
             kind: 2,
             value: "import marimo as mo",
-            languageId: "python",
+            languageId: LanguageId.Python,
           },
           {
             kind: 1,
             value: "# single line markdown",
-            languageId: "markdown",
+            languageId: LanguageId.Markdown,
           },
           {
             kind: 1,
             value: "- multiline\n-markdown",
-            languageId: "markdown",
+            languageId: LanguageId.Markdown,
           },
         ],
       });
@@ -127,6 +131,7 @@ it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
   it.effect(
     "deserializes mo.md() without f-strings to markdown cells",
     Effect.fnUntraced(function* () {
+      const { LanguageId } = yield* Constants;
       const serializer = yield* NotebookSerializer;
       const source = `import marimo
 
@@ -164,19 +169,19 @@ if __name__ == "__main__":
 
       // First cell should be Python
       expect(notebook.cells[0].kind).toBe(2);
-      expect(notebook.cells[0].languageId).toBe("python");
+      expect(notebook.cells[0].languageId).toBe(LanguageId.Python);
       expect(notebook.cells[0].value).toBe("import marimo as mo");
 
       // Second cell should be Markdown (not Python)
       expect(notebook.cells[1].kind).toBe(1);
-      expect(notebook.cells[1].languageId).toBe("markdown");
+      expect(notebook.cells[1].languageId).toBe(LanguageId.Markdown);
       expect(notebook.cells[1].value).toBe(
         "# Hello World\n\nThis is a markdown cell.",
       );
 
       // Third cell should also be Markdown
       expect(notebook.cells[2].kind).toBe(1);
-      expect(notebook.cells[2].languageId).toBe("markdown");
+      expect(notebook.cells[2].languageId).toBe(LanguageId.Markdown);
       expect(notebook.cells[2].value).toBe("Single quotes");
     }),
   );
@@ -184,6 +189,7 @@ if __name__ == "__main__":
   it.effect(
     "keeps mo.md() with f-strings as Python cells",
     Effect.fnUntraced(function* () {
+      const { LanguageId } = yield* Constants;
       const serializer = yield* NotebookSerializer;
       const source = `import marimo
 
@@ -216,11 +222,11 @@ if __name__ == "__main__":
 
       // First cell should be Python
       expect(notebook.cells[0].kind).toBe(2);
-      expect(notebook.cells[0].languageId).toBe("python");
+      expect(notebook.cells[0].languageId).toBe(LanguageId.Python);
 
       // Second cell should remain Python (because it's an f-string)
       expect(notebook.cells[1].kind).toBe(2);
-      expect(notebook.cells[1].languageId).toBe("python");
+      expect(notebook.cells[1].languageId).toBe(LanguageId.Python);
       expect(notebook.cells[1].value).toContain("mo.md(f");
       expect(notebook.cells[1].value).toContain("{name}");
     }),
@@ -229,6 +235,7 @@ if __name__ == "__main__":
   it.effect(
     "round-trip markdown cells maintain mo.md() format",
     Effect.fnUntraced(function* () {
+      const { LanguageId } = yield* Constants;
       const serializer = yield* NotebookSerializer;
       const source = `import marimo
 
@@ -260,7 +267,7 @@ if __name__ == "__main__":
 
       // Should be deserialized as markdown
       expect(notebook.cells[1].kind).toBe(1);
-      expect(notebook.cells[1].languageId).toBe("markdown");
+      expect(notebook.cells[1].languageId).toBe(LanguageId.Markdown);
 
       // Re-serialize and check it goes back to mo.md()
       const serialized = yield* serializer.serializeEffect(notebook);

@@ -61,11 +61,20 @@ icon in the editor title bar to open it as a notebook (see image above).
 
 ## Configuration
 
-| Setting                       | Type      | Default | Description                                                                                                                  |
-| ----------------------------- | --------- | ------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `marimo.lsp.path`             | `array`   | `[]`    | Path to a custom `marimo-lsp` executable, e.g., `["/path/to/marimo-lsp"]`. Leave empty to use the bundled version via `uvx`. |
-| `marimo.disableUvIntegration` | `boolean` | `false` | Disable uv integration features such as automatic package installation prompts.                                              |
-| `marimo.telemetry`            | `boolean` | `true`  | Anonymous usage data. This helps us prioritize features for the marimo VSCode extension.                                      |
+| Setting                                 | Type      | Default | Description                                                                                                                                                                                         |
+| --------------------------------------- | --------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `marimo.lsp.path`                       | `array`   | `[]`    | Path to a custom `marimo-lsp` executable, e.g., `["/path/to/marimo-lsp"]`. Leave empty to use the bundled version via `uvx`.                                                                        |
+| `marimo.disableUvIntegration`           | `boolean` | `false` | Disable uv integration features such as automatic package installation prompts.                                                                                                                     |
+| `marimo.disableManagedLanguageFeatures` | `boolean` | `false` | Disable marimo's managed Python language features (completions, diagnostics, formatting). When enabled, notebook cells use the standard `python` language ID and rely on external language servers. |
+| `marimo.telemetry`                      | `boolean` | `true`  | Anonymous usage data. This helps us prioritize features for the marimo VSCode extension.                                                                                                            |
+
+### Language Features
+
+By default, marimo provides managed Python language features (completions, diagnostics, formatting) for notebook cells using a dedicated language server. This prevents conflicts with external Python language servers and ensures a consistent editing experience.
+
+**Why managed mode?** Notebook cells use a custom language ID (`mo-python`) to isolate them from external language servers like Pylance or Jedi. This prevents duplicate completions, conflicting diagnostics, and other interference while editing marimo notebooks.
+
+**When to disable managed mode:** If you prefer to use your own Python language server configuration (e.g., Pylance, pyright, or another LSP), enable `marimo.notebook.disableManagedLanguageFeatures`. This switches cells to use the standard `python` language ID, allowing external language servers to provide completions and diagnostics. Note that this may result in some language features not working as expected in the notebook context.
 
 ## Support
 
