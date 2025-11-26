@@ -8,13 +8,13 @@ import { VirtualDocumentProvider } from "./VirtualDocumentProvider.ts";
 
 export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
   dependencies: [VirtualDocumentProvider.Default],
-  scoped: Effect.gen(function*() {
+  scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const virtualDocs = yield* VirtualDocumentProvider;
     const pythonLs = yield* PythonLanguageServer;
 
     function findNotebookCellPair(document: vscode.TextDocument) {
-      return Effect.gen(function*() {
+      return Effect.gen(function* () {
         const maybeNotebook = yield* findNotebook(document, { code });
         if (Option.isNone(maybeNotebook)) {
           return Option.none();
@@ -37,7 +37,7 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
         position: vscode.Position,
         context: vscode.CompletionContext,
       ) =>
-        Effect.gen(function*() {
+        Effect.gen(function* () {
           const pair = yield* findNotebookCellPair(document);
           if (Option.isNone(pair)) {
             return null;
@@ -75,7 +75,7 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
         document: vscode.TextDocument,
         position: vscode.Position,
       ) =>
-        Effect.gen(function*() {
+        Effect.gen(function* () {
           const pair = yield* findNotebookCellPair(document);
 
           if (Option.isNone(pair)) {
@@ -103,7 +103,7 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
         document: vscode.TextDocument,
         position: vscode.Position,
       ) =>
-        Effect.gen(function*() {
+        Effect.gen(function* () {
           const pair = yield* findNotebookCellPair(document);
           if (Option.isNone(pair)) {
             return null;
@@ -201,7 +201,7 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
         position: vscode.Position,
         context: vscode.SignatureHelpContext,
       ) =>
-        Effect.gen(function*() {
+        Effect.gen(function* () {
           const pair = yield* findNotebookCellPair(document);
 
           if (Option.isNone(pair)) {
@@ -253,7 +253,7 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
        * Maps tokens from the virtual document coordinates back to cell coordinates.
        */
       provideDocumentSemanticTokens: (document: vscode.TextDocument) =>
-        Effect.gen(function*() {
+        Effect.gen(function* () {
           const pair = yield* findNotebookCellPair(document);
           if (Option.isNone(pair)) {
             return null;
@@ -291,7 +291,7 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
         }),
     };
   }),
-}) { }
+}) {}
 
 /**
  * Find the notebook that contains this document
@@ -346,19 +346,19 @@ function codeSignatureHelpContextToLsp(
     isRetrigger: context.isRetrigger,
     activeSignatureHelp: context.activeSignatureHelp
       ? {
-        signatures: context.activeSignatureHelp.signatures.map(
-          ({ documentation, parameters, ...sig }) => ({
-            ...sig,
-            parameters: parameters.map(({ documentation, ...param }) => ({
-              ...param,
+          signatures: context.activeSignatureHelp.signatures.map(
+            ({ documentation, parameters, ...sig }) => ({
+              ...sig,
+              parameters: parameters.map(({ documentation, ...param }) => ({
+                ...param,
+                documentation: codeDocumentationToLsp(documentation),
+              })),
               documentation: codeDocumentationToLsp(documentation),
-            })),
-            documentation: codeDocumentationToLsp(documentation),
-          }),
-        ),
-        activeSignature: context.activeSignatureHelp.activeSignature,
-        activeParameter: context.activeSignatureHelp.activeParameter,
-      }
+            }),
+          ),
+          activeSignature: context.activeSignatureHelp.activeSignature,
+          activeParameter: context.activeSignatureHelp.activeParameter,
+        }
       : undefined,
   };
 }
@@ -507,11 +507,11 @@ function lspHoverToVscode(
   // Convert contents
   const contents = Array.isArray(hover.contents)
     ? hover.contents
-      .map((x) => lspDocumentationToVscode(x, code))
-      .filter((x) => x !== undefined)
+        .map((x) => lspDocumentationToVscode(x, code))
+        .filter((x) => x !== undefined)
     : [lspDocumentationToVscode(hover.contents, code)].filter(
-      (x) => x !== undefined,
-    );
+        (x) => x !== undefined,
+      );
 
   // Convert range if present
   if (hover.range) {
