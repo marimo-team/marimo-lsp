@@ -3,7 +3,12 @@ import { extractTokensForCell } from "../semanticTokens.ts";
 
 describe("extractTokensForCell", () => {
   it("returns null for empty input", () => {
-    expect(extractTokensForCell(new Uint32Array([]), 0, 5)).toBeNull();
+    expect(
+      extractTokensForCell(new Uint32Array([]), {
+        cellStartLine: 0,
+        cellLineCount: 5,
+      }),
+    ).toBeNull();
   });
 
   it("returns null when no tokens in cell range", () => {
@@ -12,7 +17,9 @@ describe("extractTokensForCell", () => {
       { line: 0, char: 4, length: 3, type: 2 },
     ]);
 
-    expect(extractTokensForCell(tokens, 5, 3)).toBeNull();
+    expect(
+      extractTokensForCell(tokens, { cellStartLine: 5, cellLineCount: 3 }),
+    ).toBeNull();
   });
 
   it("extracts tokens and remaps line numbers", () => {
@@ -24,7 +31,10 @@ describe("extractTokensForCell", () => {
       { line: 2, char: 4, length: 6, type: 4 },
     ]);
 
-    const result = extractTokensForCell(tokens, 1, 2);
+    const result = extractTokensForCell(tokens, {
+      cellStartLine: 1,
+      cellLineCount: 2,
+    });
     assert(result, "Expected tokens but got null");
     expect(decodeTokens(result)).toMatchInlineSnapshot(`
       [
@@ -57,7 +67,10 @@ describe("extractTokensForCell", () => {
       { line: 0, char: 8, length: 1, type: 3 },
     ]);
 
-    const result = extractTokensForCell(tokens, 0, 1);
+    const result = extractTokensForCell(tokens, {
+      cellStartLine: 0,
+      cellLineCount: 1,
+    });
     assert(result, "Expected tokens but got null");
     expect(decodeTokens(result)).toMatchInlineSnapshot(`
       [
@@ -91,7 +104,10 @@ describe("extractTokensForCell", () => {
       { line: 3, char: 0, length: 5, type: 4 },
     ]);
 
-    const result = extractTokensForCell(tokens, 1, 2);
+    const result = extractTokensForCell(tokens, {
+      cellStartLine: 1,
+      cellLineCount: 2,
+    });
     assert(result, "Expected tokens but got null");
     expect(decodeTokens(result)).toMatchInlineSnapshot(`
       [
@@ -118,7 +134,10 @@ describe("extractTokensForCell", () => {
       { line: 2, char: 0, length: 5, type: 3 },
     ]);
 
-    const result = extractTokensForCell(tokens, 2, 1);
+    const result = extractTokensForCell(tokens, {
+      cellStartLine: 2,
+      cellLineCount: 1,
+    });
     assert(result, "Expected tokens but got null");
     expect(decodeTokens(result)).toMatchInlineSnapshot(`
       [
