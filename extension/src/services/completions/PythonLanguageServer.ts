@@ -334,6 +334,7 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
             ),
           );
         }),
+
         /**
          * Get the semantic tokens legend from the language server.
          * This must be called once during initialization to know how to

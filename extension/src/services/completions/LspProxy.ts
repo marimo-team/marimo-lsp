@@ -238,14 +238,13 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
       getSemanticTokensLegend: () =>
         Effect.map(
           pythonLs.getSemanticTokensLegend(),
-          Option.match({
-            onNone: () => null,
-            onSome: (legend) =>
+          Option.map(
+            (legend) =>
               new code.SemanticTokensLegend(
                 legend.tokenTypes,
                 legend.tokenModifiers,
               ),
-          }),
+          ),
         ),
 
       /**
