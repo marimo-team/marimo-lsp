@@ -1,19 +1,20 @@
 import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
+import { extractTokensForCell } from "../../utils/semanticTokens.ts";
 import { VsCode } from "../VsCode.ts";
 import { PythonLanguageServer } from "./PythonLanguageServer.ts";
 import { VirtualDocumentProvider } from "./VirtualDocumentProvider.ts";
 
 export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
-  dependencies: [VirtualDocumentProvider.Default, PythonLanguageServer.Default],
-  scoped: Effect.gen(function* () {
+  dependencies: [VirtualDocumentProvider.Default],
+  scoped: Effect.gen(function*() {
     const code = yield* VsCode;
     const virtualDocs = yield* VirtualDocumentProvider;
     const pythonLs = yield* PythonLanguageServer;
 
     function findNotebookCellPair(document: vscode.TextDocument) {
-      return Effect.gen(function* () {
+      return Effect.gen(function*() {
         const maybeNotebook = yield* findNotebook(document, { code });
         if (Option.isNone(maybeNotebook)) {
           return Option.none();
@@ -36,7 +37,7 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
         position: vscode.Position,
         context: vscode.CompletionContext,
       ) =>
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const pair = yield* findNotebookCellPair(document);
           if (Option.isNone(pair)) {
             return null;
@@ -74,7 +75,7 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
         document: vscode.TextDocument,
         position: vscode.Position,
       ) =>
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const pair = yield* findNotebookCellPair(document);
 
           if (Option.isNone(pair)) {
@@ -102,7 +103,7 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
         document: vscode.TextDocument,
         position: vscode.Position,
       ) =>
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const pair = yield* findNotebookCellPair(document);
           if (Option.isNone(pair)) {
             return null;
@@ -200,7 +201,7 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
         position: vscode.Position,
         context: vscode.SignatureHelpContext,
       ) =>
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const pair = yield* findNotebookCellPair(document);
 
           if (Option.isNone(pair)) {
@@ -229,9 +230,68 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
 
           return lspSignatureHelpToVscode(signatureHelp, { code });
         }),
+
+      /**
+       * Get the semantic tokens legend for `mo-python` cells.
+       * This returns the token types and modifiers supported by the language server.
+       */
+      getSemanticTokensLegend: () =>
+        Effect.map(
+          pythonLs.getSemanticTokensLegend(),
+          Option.match({
+            onNone: () => null,
+            onSome: (legend) =>
+              new code.SemanticTokensLegend(
+                legend.tokenTypes,
+                legend.tokenModifiers,
+              ),
+          }),
+        ),
+
+      /**
+       * Provide semantic tokens for a notebook cell.
+       * Maps tokens from the virtual document coordinates back to cell coordinates.
+       */
+      provideDocumentSemanticTokens: (document: vscode.TextDocument) =>
+        Effect.gen(function*() {
+          const pair = yield* findNotebookCellPair(document);
+          if (Option.isNone(pair)) {
+            return null;
+          }
+
+          const { notebook, cell } = pair.value;
+          const info = yield* virtualDocs.getVirtualDocument(notebook);
+          const mapper = yield* virtualDocs.getMapperForCell(cell);
+
+          // Get full semantic tokens for the virtual document
+          const tokensOption = yield* pythonLs.getSemanticTokensFull(info.uri);
+          if (
+            Option.isNone(tokensOption) ||
+            tokensOption.value.data.length === 0
+          ) {
+            return null;
+          }
+
+          const tokens = tokensOption.value;
+
+          const cellTokens = extractTokensForCell(
+            tokens.data,
+            // Range in virtual document
+            {
+              cellStartLine: mapper.toVirtual(new code.Position(0, 0)).line,
+              cellLineCount: document.lineCount,
+            },
+          );
+
+          if (!cellTokens) {
+            return null;
+          }
+
+          return new code.SemanticTokens(cellTokens);
+        }),
     };
   }),
-}) {}
+}) { }
 
 /**
  * Find the notebook that contains this document
@@ -286,19 +346,19 @@ function codeSignatureHelpContextToLsp(
     isRetrigger: context.isRetrigger,
     activeSignatureHelp: context.activeSignatureHelp
       ? {
-          signatures: context.activeSignatureHelp.signatures.map(
-            ({ documentation, parameters, ...sig }) => ({
-              ...sig,
-              parameters: parameters.map(({ documentation, ...param }) => ({
-                ...param,
-                documentation: codeDocumentationToLsp(documentation),
-              })),
+        signatures: context.activeSignatureHelp.signatures.map(
+          ({ documentation, parameters, ...sig }) => ({
+            ...sig,
+            parameters: parameters.map(({ documentation, ...param }) => ({
+              ...param,
               documentation: codeDocumentationToLsp(documentation),
-            }),
-          ),
-          activeSignature: context.activeSignatureHelp.activeSignature,
-          activeParameter: context.activeSignatureHelp.activeParameter,
-        }
+            })),
+            documentation: codeDocumentationToLsp(documentation),
+          }),
+        ),
+        activeSignature: context.activeSignatureHelp.activeSignature,
+        activeParameter: context.activeSignatureHelp.activeParameter,
+      }
       : undefined,
   };
 }
@@ -447,11 +507,11 @@ function lspHoverToVscode(
   // Convert contents
   const contents = Array.isArray(hover.contents)
     ? hover.contents
-        .map((x) => lspDocumentationToVscode(x, code))
-        .filter((x) => x !== undefined)
+      .map((x) => lspDocumentationToVscode(x, code))
+      .filter((x) => x !== undefined)
     : [lspDocumentationToVscode(hover.contents, code)].filter(
-        (x) => x !== undefined,
-      );
+      (x) => x !== undefined,
+    );
 
   // Convert range if present
   if (hover.range) {

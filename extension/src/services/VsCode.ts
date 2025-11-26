@@ -579,6 +579,22 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
             (disposable) => Effect.sync(() => disposable.dispose()),
           ).pipe(Effect.andThen(Effect.void));
         },
+        registerDocumentSemanticTokensProvider(
+          selector: vscode.DocumentSelector,
+          provider: vscode.DocumentSemanticTokensProvider,
+          legend: vscode.SemanticTokensLegend,
+        ) {
+          return Effect.acquireRelease(
+            Effect.sync(() =>
+              vscode.languages.registerDocumentSemanticTokensProvider(
+                selector,
+                provider,
+                legend,
+              ),
+            ),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          ).pipe(Effect.andThen(Effect.void));
+        },
       },
       Hover: vscode.Hover,
       CompletionTriggerKind: vscode.CompletionTriggerKind,
@@ -588,6 +604,8 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       SignatureInformation: vscode.SignatureInformation,
       ParameterInformation: vscode.ParameterInformation,
       CodeLens: vscode.CodeLens,
+      SemanticTokensLegend: vscode.SemanticTokensLegend,
+      SemanticTokens: vscode.SemanticTokens,
       // data types
       NotebookData: vscode.NotebookData,
       NotebookCellData: vscode.NotebookCellData,

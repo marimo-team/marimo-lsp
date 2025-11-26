@@ -67,5 +67,32 @@ export const NotebookLanguageFeaturesLive = Layer.scopedDiscard(
       "(", // Trigger on open parenthesis
       ",", // Trigger on comma
     );
+
+    // Register semantic tokens provider for enhanced syntax highlighting
+    // This provides semantic highlighting (e.g., distinguishing variables from
+    // functions, classes, etc.) that goes beyond basic TextMate grammar highlighting.
+    yield* Effect.gen(function* () {
+      const legend = yield* proxy.getSemanticTokensLegend();
+      if (legend) {
+        yield* code.languages.registerDocumentSemanticTokensProvider(
+          selector,
+          {
+            provideDocumentSemanticTokens(document, token) {
+              return runPromise(proxy.provideDocumentSemanticTokens(document), {
+                signal: signalFromToken(token),
+              });
+            },
+          },
+          legend,
+        );
+        yield* Effect.logInfo(
+          `Registered semantic tokens provider for ${constants.LanguageId.Python}`,
+        );
+      } else {
+        yield* Effect.logWarning(
+          "Semantic tokens not available from language server",
+        );
+      }
+    });
   }),
 );

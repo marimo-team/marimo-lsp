@@ -53,7 +53,7 @@ class CellNotFoundError extends Data.TaggedError("CellNotFoundError")<{
 export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvider>()(
   "VirtualDocumentProvider",
   {
-    dependencies: [VariablesService.Default, PythonLanguageServer.Default],
+    dependencies: [VariablesService.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const variablesService = yield* VariablesService;

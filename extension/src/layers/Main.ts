@@ -14,6 +14,7 @@ import { Config } from "../services/Config.ts";
 import { Constants } from "../services/Constants.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { LspProxy } from "../services/completions/LspProxy.ts";
+import type { PythonLanguageServer } from "../services/completions/PythonLanguageServer.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { DebugAdapter } from "../services/DebugAdapter.ts";
@@ -103,7 +104,9 @@ const MainLive = Layer.empty
   );
 
 export function makeActivate(
-  layer: Layer.Layer<LanguageClient | VsCode | PythonExtension>,
+  layer: Layer.Layer<
+    LanguageClient | VsCode | PythonExtension | PythonLanguageServer
+  >,
   minimumLogLevel: LogLevel.LogLevel,
 ): (
   context: Pick<

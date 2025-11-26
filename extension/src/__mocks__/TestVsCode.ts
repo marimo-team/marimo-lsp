@@ -524,6 +524,26 @@ class CodeLens implements vscode.CodeLens {
   }
 }
 
+class SemanticTokensLegend implements vscode.SemanticTokensLegend {
+  readonly tokenTypes: string[];
+  readonly tokenModifiers: string[];
+
+  constructor(tokenTypes: string[], tokenModifiers: string[] = []) {
+    this.tokenTypes = tokenTypes;
+    this.tokenModifiers = tokenModifiers;
+  }
+}
+
+class SemanticTokens implements vscode.SemanticTokens {
+  readonly resultId: string | undefined;
+  readonly data: Uint32Array;
+
+  constructor(data: Uint32Array, resultId?: string) {
+    this.data = data;
+    this.resultId = resultId;
+  }
+}
+
 class Selection extends Range implements vscode.Selection {
   readonly anchor: Position;
   readonly active: Position;
@@ -1793,6 +1813,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           SignatureInformation,
           ParameterInformation,
           CodeLens,
+          SemanticTokensLegend,
+          SemanticTokens,
           CompletionTriggerKind: {
             Invoke: 0,
             TriggerCharacter: 1,
@@ -1816,6 +1838,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               return Effect.void;
             },
             registerCodeLensProvider() {
+              return Effect.void;
+            },
+            registerDocumentSemanticTokensProvider() {
               return Effect.void;
             },
           },
