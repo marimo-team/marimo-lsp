@@ -71,23 +71,36 @@ export const NotebookLanguageFeaturesLive = Layer.scopedDiscard(
     // Register semantic tokens provider for enhanced syntax highlighting
     // This provides semantic highlighting (e.g., distinguishing variables from
     // functions, classes, etc.) that goes beyond basic TextMate grammar highlighting.
-    const legend = yield* proxy.getSemanticTokensLegend();
-    if (Option.isSome(legend)) {
-      yield* code.languages.registerDocumentSemanticTokensProvider(
-        selector,
-        {
-          provideDocumentSemanticTokens(document, token) {
-            return runPromise(proxy.provideDocumentSemanticTokens(document), {
-              signal: signalFromToken(token),
-            });
-          },
-        },
-        legend.value,
-      );
-    } else {
-      yield* Effect.logWarning(
-        "Semantic tokens legend not available; skipping registration of semantic tokens provider.",
-      );
-    }
+    //
+    // We run this in a forked effect since it relies on starting the language server
+    // to obtain the semantic tokens legend, and we don't want to block.
+    yield* Effect.fork(
+      Effect.gen(function* () {
+        const legend = yield* proxy.getSemanticTokensLegend();
+        if (Option.isSome(legend)) {
+          yield* code.languages.registerDocumentSemanticTokensProvider(
+            selector,
+            {
+              provideDocumentSemanticTokens(document, token) {
+                return runPromise(
+                  proxy.provideDocumentSemanticTokens(document),
+                  {
+                    signal: signalFromToken(token),
+                  },
+                );
+              },
+            },
+            legend.value,
+          );
+          yield* Effect.logInfo(
+            "Registered semantic tokens provider for notebook language features.",
+          );
+        } else {
+          yield* Effect.logWarning(
+            "Semantic tokens legend not available; skipping registration of semantic tokens provider.",
+          );
+        }
+      }),
+    );
   }),
 );
