@@ -31,6 +31,7 @@ import type { PythonExtension } from "../services/PythonExtension.ts";
 import { PackagesService } from "../services/packages/PackagesService.ts";
 import { SandboxController } from "../services/SandboxController.ts";
 import { Sentry } from "../services/Sentry.ts";
+import { SessionStateManager } from "../services/SessionStateManager.ts";
 import { ExtensionContext, Storage } from "../services/Storage.ts";
 import { Telemetry } from "../services/Telemetry.ts";
 import { Uv } from "../services/Uv.ts";
@@ -89,6 +90,7 @@ const MainLive = Layer.empty
     Layer.provide(MarimoConfigurationService.Default),
     Layer.provide(ConfigContextManager.Default),
     Layer.provide(CellStateManager.Default),
+    Layer.provide(SessionStateManager.Default),
     Layer.provide(ControllerRegistry.Default),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(SandboxController.Default),

@@ -17,8 +17,11 @@ export type MarimoCommand =
   | "marimo.runStale"
   | "marimo.showDiagnostics"
   | "marimo.showMarimoMenu"
-  | "marimo.toggleOnCellChangeAutoRun"
-  | "marimo.toggleOnCellChangeLazy"
+  | "marimo.config.toggleAutoReloadAutorun"
+  | "marimo.config.toggleAutoReloadLazy"
+  | "marimo.config.toggleAutoReloadOff"
+  | "marimo.config.toggleOnCellChangeAutoRun"
+  | "marimo.config.toggleOnCellChangeLazy"
   | "marimo.updateActivePythonEnvironment";
 
 export type MarimoView =
@@ -47,6 +50,8 @@ export const LanguageId = {
 } as const;
 
 export type MarimoContextKey =
+  | "marimo.config.runtime.auto_reload"
   | "marimo.config.runtime.on_cell_change"
   | "marimo.isPythonFileMarimoNotebook"
+  | "marimo.notebook.hasKernel"
   | "marimo.notebook.hasStaleCells";

@@ -42,7 +42,9 @@ const [notebook] = pkg.contributes.notebooks;
 
 const contextKeys = [
   "marimo.notebook.hasStaleCells",
+  "marimo.notebook.hasKernel",
   "marimo.config.runtime.on_cell_change",
+  "marimo.config.runtime.auto_reload",
   "marimo.isPythonFileMarimoNotebook",
 ];
 
