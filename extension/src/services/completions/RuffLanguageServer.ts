@@ -1,11 +1,12 @@
 import { Data, Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
+import type * as lsp from "vscode-languageclient/node";
 import type { Middleware } from "vscode-languageclient/node";
-import * as lsp from "vscode-languageclient/node";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
+import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
 import { Config } from "../Config.ts";
-import { VsCode } from "../VsCode.ts";
 import { Uv } from "../Uv.ts";
+import { VsCode } from "../VsCode.ts";
 
 export class RuffLanguageServerStartError extends Data.TaggedError(
   "RuffLanguageServerStartError",
@@ -118,7 +119,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       const getClient = yield* Effect.cached(
         Effect.tryPromise({
           try: async () => {
-            const client = new lsp.LanguageClient(
+            const client = new NamespacedLanguageClient(
               "marimo-ruff",
               "marimo (ruff)",
               serverOptions,
