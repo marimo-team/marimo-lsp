@@ -53,15 +53,19 @@ async def run(
 ):
     logger.info(f"run for {args.notebook_uri}")
     session = manager.get_session(args.notebook_uri)
+    kernel_manager = cast("LspKernelManager", session.kernel_manager) if session else None
+    # Recreate session if executable or env changed
     if (
         session is None
-        or cast("LspKernelManager", session.kernel_manager).executable
-        != args.executable
+        or kernel_manager is None
+        or kernel_manager.executable != args.executable
+        or kernel_manager.env != (args.env or {})
     ):
         session = manager.create_session(
             server=ls,
             executable=args.executable,
             notebook_uri=args.notebook_uri,
+            env=args.env,
         )
         logger.info(f"Created and synced session {args.notebook_uri}")
 

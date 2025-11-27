@@ -64,15 +64,27 @@ class LspSessionManager:
         self._instantiated.pop(notebook_uri, None)
 
     def create_session(
-        self, *, server: LanguageServer, notebook_uri: str, executable: str
+        self,
+        *,
+        server: LanguageServer,
+        notebook_uri: str,
+        executable: str,
+        env: dict[str, str] | None = None,
     ) -> Session:
         """Create a new session for a notebook.
 
-        Note: Sessions are created with (notebook_uri, executable) but only
+        Note: Sessions are created with (notebook_uri, executable, env) but only
         currently tracked by notebook_uri. This means changing Python interpreters
         won't automatically close the old session - it continues with the old
         interpreter until explicitly closed. We always close any existing
         session for the notebook_uri before creating a new one.
+
+        Args:
+            server: The LSP server instance.
+            notebook_uri: The URI of the notebook.
+            executable: Path to the Python executable.
+            env: Optional environment variables to set when launching the kernel
+                 (e.g., PYTHONPATH for Bazel environments).
         """
         if notebook_uri in self._sessions:
             self.close_session(notebook_uri)
@@ -87,6 +99,7 @@ class LspSessionManager:
             app_file_manager=app_file_manager,
             config_manager=config_manager,
             connection_info=connection_info,
+            env=env or {},
         )
 
         logger.info(f"Creating new session for {notebook_uri}")

@@ -16,6 +16,7 @@ import {
   isStaleCellMetadata,
 } from "../schemas.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
+import { CustomPythonPathService } from "../services/CustomPythonPathService.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
@@ -50,6 +51,7 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     const controllers = yield* ControllerRegistry;
     const healthService = yield* HealthService;
     const telemetry = yield* Telemetry;
+    const customPythonPathService = yield* CustomPythonPathService;
 
     yield* code.commands.registerCommand(
       "marimo.newMarimoNotebook",
@@ -216,6 +218,46 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     yield* code.commands.registerCommand(
       "marimo.updateActivePythonEnvironment",
       updateActivePythonEnvironment({ code, py, uv, controllers }),
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.addCustomPythonPath",
+      customPythonPathService.promptAdd.pipe(
+        Effect.tap((result) =>
+          Option.isSome(result)
+            ? code.window.showInformationMessage(
+                `Added custom Python path: ${result.value.nickname}`,
+              )
+            : Effect.void,
+        ),
+        Effect.catchAllCause((cause) =>
+          Effect.gen(function* () {
+            yield* Effect.logError("Failed to add custom Python path", cause);
+            yield* showErrorAndPromptLogs(
+              "Failed to add custom Python path. Check the logs for details.",
+              { code, channel },
+            );
+          }),
+        ),
+      ),
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.manageCustomPythonPaths",
+      customPythonPathService.promptManage.pipe(
+        Effect.catchAllCause((cause) =>
+          Effect.gen(function* () {
+            yield* Effect.logError(
+              "Failed to manage custom Python paths",
+              cause,
+            );
+            yield* showErrorAndPromptLogs(
+              "Failed to manage custom Python paths. Check the logs for details.",
+              { code, channel },
+            );
+          }),
+        ),
+      ),
     );
 
     // Telemetry for commands

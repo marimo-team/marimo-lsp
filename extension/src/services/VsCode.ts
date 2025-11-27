@@ -206,7 +206,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         // Could return the vscode.TextEditor, but skipping it simplifies mocks/tests
         return Effect.asVoid(Effect.promise(() => api.showTextDocument(doc)));
       },
-      withProgress(
+      withProgress<T>(
         options: {
           location: vscode.ProgressLocation;
           title: string;
@@ -217,8 +217,8 @@ export class Window extends Effect.Service<Window>()("Window", {
             message: string;
             increment?: number;
           }>,
-        ) => Effect.Effect<void>,
-      ) {
+        ) => Effect.Effect<T>,
+      ): Effect.Effect<T> {
         return Effect.promise((signal) =>
           api.withProgress(options, (progress, token) =>
             runPromise(
@@ -229,7 +229,7 @@ export class Window extends Effect.Service<Window>()("Window", {
                   Effect.sync(() => token.onCancellationRequested(kill)),
                   (disposable) => Effect.sync(() => disposable.dispose()),
                 );
-                yield* Fiber.join(fiber);
+                return yield* Fiber.join(fiber);
               }).pipe(Effect.scoped),
               { signal },
             ),

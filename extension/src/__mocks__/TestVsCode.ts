@@ -1525,8 +1525,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             showTextDocument() {
               return Effect.void;
             },
-            withProgress() {
-              return Effect.void;
+            withProgress(_options, fn) {
+              // Execute the function immediately and return its result
+              return fn({
+                report: () => {},
+              });
             },
           }),
           commands: Commands.make({

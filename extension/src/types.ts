@@ -41,6 +41,8 @@ interface NotebookScoped<T> {
 
 interface SessionScoped<T> extends NotebookScoped<T> {
   executable: string;
+  /** Optional environment variables (e.g., PYTHONPATH for Bazel) */
+  env?: Record<string, string>;
 }
 
 type RunRequest = Schemas["RunRequest"];

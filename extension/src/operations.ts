@@ -1,7 +1,10 @@
 import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 import { Config } from "./services/Config.ts";
-import type { VenvPythonController } from "./services/NotebookControllerFactory.ts";
+import type {
+  CustomPythonController,
+  VenvPythonController,
+} from "./services/NotebookControllerFactory.ts";
 import type { SandboxController } from "./services/SandboxController.ts";
 import { VsCode } from "./services/VsCode.ts";
 import type { MessageOperationOf } from "./types.ts";
@@ -11,7 +14,7 @@ import { installPackages } from "./utils/installPackages.ts";
 export const handleMissingPackageAlert = Effect.fnUntraced(function* (
   operation: MessageOperationOf<"missing-package-alert">,
   notebook: vscode.NotebookDocument,
-  controller: VenvPythonController | SandboxController,
+  controller: VenvPythonController | SandboxController | CustomPythonController,
 ) {
   const code = yield* VsCode;
   const config = yield* Config;

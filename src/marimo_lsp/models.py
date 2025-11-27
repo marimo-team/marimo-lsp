@@ -32,6 +32,9 @@ class SessionCommand(NotebookCommand[T]):
     executable: str
     """The target environment Python executable."""
 
+    env: dict[str, str] | None = None
+    """Optional environment variables to set when launching the kernel (e.g., PYTHONPATH for Bazel)."""
+
 
 class SerializeRequest(msgspec.Struct, rename="camel"):
     """

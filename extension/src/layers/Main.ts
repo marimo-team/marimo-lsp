@@ -13,6 +13,7 @@ import { CellStateManager } from "../services/CellStateManager.ts";
 import { Config } from "../services/Config.ts";
 import { Constants } from "../services/Constants.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
+import { CustomPythonPathService } from "../services/CustomPythonPathService.ts";
 import { LspProxy } from "../services/completions/LspProxy.ts";
 import type { PythonLanguageServer } from "../services/completions/PythonLanguageServer.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
@@ -92,6 +93,7 @@ const MainLive = Layer.empty
     Layer.provide(ControllerRegistry.Default),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(SandboxController.Default),
+    Layer.provide(CustomPythonPathService.Default),
     Layer.provide(Uv.Default),
     Layer.provide(TreeView.Default),
     Layer.provide(StatusBar.Default),

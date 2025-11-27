@@ -298,6 +298,16 @@
         "title": "Set Python interpreter to match notebook kernel",
         "category": "marimo",
         "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
+        "command": "marimo.addCustomPythonPath",
+        "title": "Add custom Python path",
+        "category": "marimo"
+      },
+      {
+        "command": "marimo.manageCustomPythonPaths",
+        "title": "Manage custom Python paths",
+        "category": "marimo"
       }
     ],
     "viewsContainers": {

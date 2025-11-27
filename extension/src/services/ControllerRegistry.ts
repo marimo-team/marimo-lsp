@@ -6,6 +6,7 @@ import {
   HashMap,
   Option,
   Ref,
+  Runtime,
   Schema,
   Scope,
   Stream,
@@ -18,6 +19,13 @@ import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
 import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import {
+  type CustomPythonPath,
+  CustomPythonPathService,
+} from "./CustomPythonPathService.ts";
+import {
+  AddCustomPathController,
+  type CustomPythonController,
+  createCustomControllerId,
   NotebookControllerFactory,
   type NotebookControllerId,
   VenvPythonController,
@@ -27,10 +35,13 @@ import { SandboxController } from "./SandboxController.ts";
 import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
-type AnyController = VenvPythonController | SandboxController;
+type AnyController =
+  | VenvPythonController
+  | SandboxController
+  | CustomPythonController;
 
 interface NotebookControllerHandle {
-  readonly controller: VenvPythonController;
+  readonly controller: VenvPythonController | CustomPythonController;
   readonly scope: Scope.CloseableScope;
 }
 
@@ -44,6 +55,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
     dependencies: [
       NotebookControllerFactory.Default,
       SandboxController.Default,
+      CustomPythonPathService.Default,
       Uv.Default,
     ],
     scoped: Effect.gen(function* () {
@@ -52,6 +64,10 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       const pyExt = yield* PythonExtension;
       const factory = yield* NotebookControllerFactory;
       const sandboxController = yield* SandboxController;
+      const customPythonPathService = yield* CustomPythonPathService;
+
+      const runtime = yield* Effect.runtime();
+      const runPromise = Runtime.runPromise(runtime);
 
       const uvCacheDir = yield* uv.getCacheDir().pipe(
         Effect.map((path) => code.Uri.file(path)),
@@ -125,6 +141,114 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         pyExt
           .environmentChanges()
           .pipe(Stream.mapEffect(refresh), Stream.runDrain),
+      );
+
+      // Load and create controllers for custom Python paths
+      const customPaths = yield* customPythonPathService.getAll;
+      yield* Effect.forEach(
+        customPaths,
+        (customPath) =>
+          createCustomController({
+            customPath,
+            handlesRef,
+            selectionsRef,
+          }).pipe(
+            Effect.provideService(VsCode, code),
+            Effect.provideService(NotebookControllerFactory, factory),
+          ),
+        { discard: true },
+      );
+      yield* Effect.logInfo("Loaded custom Python path controllers").pipe(
+        Effect.annotateLogs({ count: customPaths.length }),
+      );
+
+      // Create the "Add Custom Python Path..." controller that appears in the kernel dropdown
+      const addCustomPathController =
+        yield* factory.createAddCustomPathController();
+      yield* Effect.logInfo("Created 'Add Custom Python Path' controller");
+
+      // When user selects the "Add Custom Python Path..." controller, open the dialog
+      yield* Effect.forkScoped(
+        addCustomPathController.selectedNotebookChanges().pipe(
+          Stream.filter((e) => e.selected), // Only when selected, not deselected
+          Stream.mapEffect(
+            Effect.fnUntraced(function* (event) {
+              yield* Effect.logInfo(
+                "Add Custom Python Path controller selected",
+              ).pipe(
+                Effect.annotateLogs({
+                  notebook: event.notebook.uri.toString(),
+                }),
+              );
+
+              // Trigger the add custom path dialog
+              const result = yield* customPythonPathService.promptAdd;
+
+              if (Option.isSome(result)) {
+                yield* Effect.logInfo(
+                  "Custom path added from kernel dropdown",
+                ).pipe(Effect.annotateLogs({ path: result.value }));
+
+                // After adding, select the newly created controller for this notebook
+                const newControllerId = createCustomControllerId(
+                  result.value.id,
+                );
+                const handles = yield* SynchronizedRef.get(handlesRef);
+                const newHandle = HashMap.get(handles, newControllerId);
+
+                if (Option.isSome(newHandle)) {
+                  yield* newHandle.value.controller.updateNotebookAffinity(
+                    event.notebook,
+                    code.NotebookControllerAffinity.Default,
+                  );
+                }
+              } else {
+                yield* Effect.logDebug("Custom path dialog cancelled");
+              }
+            }),
+          ),
+          Stream.runDrain,
+        ),
+      );
+
+
+      // Listen for custom Python path changes
+      yield* Effect.forkScoped(
+        customPythonPathService.changes().pipe(
+          Stream.mapEffect(
+            Effect.fnUntraced(function* (event) {
+              switch (event.type) {
+                case "added": {
+                  yield* createCustomController({
+                    customPath: event.path,
+                    handlesRef,
+                    selectionsRef,
+                  }).pipe(
+                    Effect.provideService(VsCode, code),
+                    Effect.provideService(NotebookControllerFactory, factory),
+                  );
+                  break;
+                }
+                case "updated": {
+                  yield* updateCustomController({
+                    customPath: event.path,
+                    handlesRef,
+                  });
+                  break;
+                }
+                case "removed": {
+                  yield* removeCustomController({
+                    customPathId: event.id,
+                    handlesRef,
+                    selectionsRef,
+                  });
+                  break;
+                }
+              }
+            }),
+          ),
+          Stream.runDrain,
+        ),
       );
 
       // Subscribe to notebook editor changes to update affinity
@@ -365,8 +489,14 @@ const pruneStaleControllers = Effect.fnUntraced(function* (options: {
       const selections = yield* Ref.get(selectionsRef);
 
       // Check which controllers can be disposed
+      // Only prune venv controllers, not custom ones (custom are managed separately)
       const toRemove: Array<NotebookControllerHandle> = [];
       for (const [controllerId, handle] of map) {
+        // Skip custom controllers - they're managed by CustomPythonPathService
+        if (handle.controller._tag === "CustomPythonController") {
+          continue;
+        }
+
         if (desiredControllerIds.has(controllerId)) {
           continue;
         }
@@ -405,6 +535,160 @@ const pruneStaleControllers = Effect.fnUntraced(function* (options: {
       );
 
       return update;
+    }),
+  );
+});
+
+/**
+ * Create a controller for a custom Python path.
+ */
+const createCustomController = Effect.fnUntraced(function* (options: {
+  customPath: CustomPythonPath;
+  handlesRef: SynchronizedRef.SynchronizedRef<
+    HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
+  >;
+  selectionsRef: Ref.Ref<
+    HashMap.HashMap<vscode.NotebookDocument, AnyController>
+  >;
+}) {
+  const { customPath, handlesRef, selectionsRef } = options;
+  const factory = yield* NotebookControllerFactory;
+  const controllerId = createCustomControllerId(customPath.id);
+
+  yield* Effect.logDebug("Creating custom Python controller").pipe(
+    Effect.annotateLogs({
+      controllerId,
+      nickname: customPath.nickname,
+      pythonPath: customPath.pythonPath,
+    }),
+  );
+
+  yield* SynchronizedRef.updateEffect(
+    handlesRef,
+    Effect.fnUntraced(function* (map) {
+      const existing = HashMap.get(map, controllerId);
+
+      // If controller already exists, just update its description
+      if (Option.isSome(existing)) {
+        yield* existing.value.controller.mutateDescription(
+          customPath.pythonPath,
+        );
+        if (existing.value.controller._tag === "CustomPythonController") {
+          yield* existing.value.controller.mutateLabel(customPath.nickname);
+        }
+        return map;
+      }
+
+      // Create a disposable scope
+      const scope = yield* Scope.make();
+      const controller = yield* Scope.extend(
+        Effect.gen(function* () {
+          const controller = yield* factory.createCustomController({
+            id: controllerId,
+            label: customPath.nickname,
+            description: customPath.pythonPath,
+            pythonPath: customPath.pythonPath,
+            env: customPath.env,
+          });
+
+          yield* Effect.forkScoped(
+            trackControllerSelections(controller, selectionsRef),
+          );
+
+          return controller;
+        }),
+        scope,
+      );
+
+      yield* Effect.annotateLogs(
+        Effect.logTrace("Created new custom Python controller"),
+        { controllerId: controller.id },
+      );
+
+      return HashMap.set(map, controllerId, { controller, scope });
+    }),
+  );
+});
+
+/**
+ * Update a custom Python controller's label and description.
+ */
+const updateCustomController = Effect.fnUntraced(function* (options: {
+  customPath: CustomPythonPath;
+  handlesRef: SynchronizedRef.SynchronizedRef<
+    HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
+  >;
+}) {
+  const { customPath, handlesRef } = options;
+  const controllerId = createCustomControllerId(customPath.id);
+
+  yield* Effect.logDebug("Updating custom Python controller").pipe(
+    Effect.annotateLogs({
+      controllerId,
+      nickname: customPath.nickname,
+      pythonPath: customPath.pythonPath,
+    }),
+  );
+
+  const handles = yield* SynchronizedRef.get(handlesRef);
+  const existing = HashMap.get(handles, controllerId);
+
+  if (
+    Option.isSome(existing) &&
+    existing.value.controller._tag === "CustomPythonController"
+  ) {
+    yield* existing.value.controller.mutateLabel(customPath.nickname);
+    yield* existing.value.controller.mutateDescription(customPath.pythonPath);
+  }
+});
+
+/**
+ * Remove a custom Python controller.
+ */
+const removeCustomController = Effect.fnUntraced(function* (options: {
+  customPathId: string;
+  handlesRef: SynchronizedRef.SynchronizedRef<
+    HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
+  >;
+  selectionsRef: Ref.Ref<
+    HashMap.HashMap<vscode.NotebookDocument, AnyController>
+  >;
+}) {
+  const { customPathId, handlesRef, selectionsRef } = options;
+  const controllerId = createCustomControllerId(customPathId);
+
+  yield* Effect.logDebug("Removing custom Python controller").pipe(
+    Effect.annotateLogs({ controllerId }),
+  );
+
+  yield* SynchronizedRef.updateEffect(
+    handlesRef,
+    Effect.fnUntraced(function* (map) {
+      const existing = HashMap.get(map, controllerId);
+
+      if (Option.isNone(existing)) {
+        yield* Effect.logWarning(
+          "Custom controller not found for removal",
+        ).pipe(Effect.annotateLogs({ controllerId }));
+        return map;
+      }
+
+      const selections = yield* Ref.get(selectionsRef);
+      const inUse = HashMap.some(
+        selections,
+        (selected) => selected.id === existing.value.controller.id,
+      );
+
+      if (inUse) {
+        yield* Effect.logWarning(
+          "Custom controller in use, still removing",
+        ).pipe(Effect.annotateLogs({ controllerId }));
+      }
+
+      // Close the scope to dispose the controller
+      yield* Scope.close(existing.value.scope, Exit.void);
+
+      return HashMap.remove(map, controllerId);
     }),
   );
 });
