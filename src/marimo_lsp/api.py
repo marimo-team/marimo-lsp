@@ -53,7 +53,9 @@ async def run(
 ):
     logger.info(f"run for {args.notebook_uri}")
     session = manager.get_session(args.notebook_uri)
-    kernel_manager = cast("LspKernelManager", session.kernel_manager) if session else None
+    kernel_manager = (
+        cast("LspKernelManager", session.kernel_manager) if session else None
+    )
     # Recreate session if executable or env changed
     if (
         session is None

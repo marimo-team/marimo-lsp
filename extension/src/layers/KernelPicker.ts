@@ -4,8 +4,8 @@
  */
 import { Effect, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
-import { CustomPythonPathService } from "../services/CustomPythonPathService.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
+import { CustomPythonPathService } from "../services/CustomPythonPathService.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 
@@ -15,7 +15,7 @@ interface KernelQuickPickItem extends vscode.QuickPickItem {
     | "sandbox"
     | "add"
     | "separator"
-    | "native"; /** Use native kernel picker */
+    | "native" /** Use native kernel picker */;
   /** For custom paths, the path ID for deletion */
   customPathId?: string;
 }
@@ -223,9 +223,7 @@ export const KernelPickerLive = Layer.scopedDiscard(
         });
       }
     }).pipe(
-      Effect.catchAll((error) =>
-        Effect.logError("Kernel picker error", error),
-      ),
+      Effect.catchAll((error) => Effect.logError("Kernel picker error", error)),
     );
 
     // Register the command to show the picker (for command palette)
@@ -273,7 +271,9 @@ function showQuickPickWithButtons<T extends vscode.QuickPickItem>(
         const selected = quickPick.selectedItems[0];
         resolved = true;
         quickPick.hide();
-        resume(Effect.succeed(selected ? { type: "select", item: selected } : null));
+        resume(
+          Effect.succeed(selected ? { type: "select", item: selected } : null),
+        );
       }
     });
 

@@ -631,7 +631,8 @@ print(json.dumps(packages))`,
           type: "select" | "edit" | "delete";
           item: ManageQuickPickItem;
         } | null>((resume) => {
-          const quickPick = code.window.createQuickPickRaw<ManageQuickPickItem>();
+          const quickPick =
+            code.window.createQuickPickRaw<ManageQuickPickItem>();
           quickPick.items = items;
           quickPick.placeholder = "Select a custom Python path to manage";
           quickPick.title = "Manage Custom Python Paths";

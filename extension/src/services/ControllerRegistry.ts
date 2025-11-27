@@ -167,7 +167,6 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       // - Command palette: "marimo: Manage custom Python paths"
       // - marimo status bar menu
 
-
       // Listen for custom Python path changes
       yield* Effect.forkScoped(
         customPythonPathService.changes().pipe(

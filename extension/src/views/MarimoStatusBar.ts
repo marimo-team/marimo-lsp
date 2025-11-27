@@ -115,7 +115,9 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
             break;
           }
           case "manageCustomPaths": {
-            yield* code.commands.executeCommand("marimo.manageCustomPythonPaths");
+            yield* code.commands.executeCommand(
+              "marimo.manageCustomPythonPaths",
+            );
             break;
           }
           default: {

@@ -350,7 +350,6 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
             options.env ?? {},
           );
         }),
-
       };
     }),
   },
