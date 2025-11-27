@@ -351,70 +351,10 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
           );
         }),
 
-        /**
-         * Create a special controller that opens the "Add Custom Python Path" dialog.
-         * This appears in the kernel dropdown and lets users add a new custom path inline.
-         * The dialog is triggered via `selectedNotebookChanges()` when this controller is selected.
-         */
-        createAddCustomPathController: Effect.fnUntraced(function* () {
-          const controllerId = NotebookControllerId("marimo-add-custom-path");
-
-          const controller = yield* code.notebooks.createNotebookController(
-            controllerId,
-            serializer.notebookType,
-            "$(add) Add Custom Python Path...",
-          );
-
-          controller.supportedLanguages = [LanguageId.Python, LanguageId.Sql];
-          controller.description = "Add a new custom Python executable";
-
-          // Execute handler shows a message if user tries to run cells with this "controller"
-          controller.executeHandler = (_cells, _notebook, _controller) => {
-            // This shouldn't normally be called since we intercept selection
-            // but just in case, show a helpful message
-            runPromise(
-              code.window.showInformationMessage(
-                "Please select a Python environment first. Use 'Add Custom Python Path...' to add one.",
-              ),
-            );
-          };
-
-          return new AddCustomPathController(controller);
-        }),
-
       };
     }),
   },
 ) {}
-
-/**
- * Special controller that triggers the "Add Custom Python Path" dialog.
- */
-export class AddCustomPathController {
-  readonly _tag = "AddCustomPathController";
-  #inner: Omit<vscode.NotebookController, "dispose">;
-  constructor(inner: Omit<vscode.NotebookController, "dispose">) {
-    this.#inner = inner;
-  }
-  static readonly ID = NotebookControllerId("marimo-add-custom-path");
-  get id(): NotebookControllerId {
-    return this.#inner.id as NotebookControllerId;
-  }
-  selectedNotebookChanges() {
-    return Stream.asyncPush<{
-      notebook: vscode.NotebookDocument;
-      selected: boolean;
-    }>((emit) =>
-      Effect.acquireRelease(
-        Effect.sync(() =>
-          this.#inner.onDidChangeSelectedNotebooks((e) => emit.single(e)),
-        ),
-        (disposable) => Effect.sync(() => disposable.dispose()),
-      ),
-    );
-  }
-}
-
 
 export class VenvPythonController {
   readonly _tag = "VenvPythonController";

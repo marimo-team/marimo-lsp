@@ -2,6 +2,7 @@ import { Command, CommandExecutor } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import * as semver from "@std/semver";
 import { Effect, Option, PubSub, Schema, Stream } from "effect";
+import type * as vscode from "vscode";
 import { SemVerFromString } from "../schemas.ts";
 import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
 import { createStorageKey, Storage } from "./Storage.ts";
@@ -482,6 +483,20 @@ print(json.dumps(packages))`,
           inputResult.value,
         );
 
+        // Check if this exact Python path is already registered
+        const existingPaths = yield* getAll;
+        const existingPath = existingPaths.find(
+          (p) => p.pythonPath === pythonPath,
+        );
+
+        if (existingPath) {
+          yield* code.window.showInformationMessage(
+            `This Python path is already registered as "${existingPath.nickname}".\n\nPath: ${pythonPath}`,
+            { modal: true },
+          );
+          return Option.none<CustomPythonPath>();
+        }
+
         // Auto-detect env vars if not explicitly provided
         const autoEnv = autoDetectEnv(pythonPath);
         const env = { ...autoEnv, ...explicitEnv }; // Explicit overrides auto-detected
@@ -565,6 +580,7 @@ print(json.dumps(packages))`,
 
       /**
        * Show a quick pick menu to manage custom Python paths (view, edit, delete).
+       * Uses inline buttons for easy deletion.
        */
       const promptManage = Effect.gen(function* () {
         const paths = yield* getAll;
@@ -581,79 +597,116 @@ print(json.dumps(packages))`,
           return;
         }
 
-        type QuickPickItem = {
-          label: string;
-          description?: string;
-          detail?: string;
-          action: "edit" | "delete" | "add";
+        type ManageQuickPickItem = vscode.QuickPickItem & {
+          action: "edit" | "add";
           pathId?: string;
         };
 
-        const items: QuickPickItem[] = [
+        const deleteButton: vscode.QuickInputButton = {
+          iconPath: new code.ThemeIcon("trash"),
+          tooltip: "Delete this custom Python path",
+        };
+
+        const editButton: vscode.QuickInputButton = {
+          iconPath: new code.ThemeIcon("edit"),
+          tooltip: "Edit this custom Python path",
+        };
+
+        const items: ManageQuickPickItem[] = [
           {
             label: "$(add) Add New Custom Python Path",
             action: "add",
           },
           ...paths.map((p) => ({
-            label: p.nickname,
+            label: `$(terminal) ${p.nickname}`,
             description: p.pythonPath,
-            detail: `ID: ${p.id}`,
             action: "edit" as const,
             pathId: p.id,
+            buttons: [editButton, deleteButton],
           })),
         ];
 
-        const selected = yield* code.window.showQuickPickItems(items, {
-          placeHolder: "Select a custom Python path to manage",
+        // Use createQuickPick for button support
+        const result = yield* Effect.async<{
+          type: "select" | "edit" | "delete";
+          item: ManageQuickPickItem;
+        } | null>((resume) => {
+          const quickPick = code.window.createQuickPickRaw<ManageQuickPickItem>();
+          quickPick.items = items;
+          quickPick.placeholder = "Select a custom Python path to manage";
+          quickPick.title = "Manage Custom Python Paths";
+
+          let resolved = false;
+
+          quickPick.onDidTriggerItemButton((e) => {
+            if (!resolved) {
+              resolved = true;
+              quickPick.hide();
+              if (e.button === deleteButton) {
+                resume(Effect.succeed({ type: "delete", item: e.item }));
+              } else if (e.button === editButton) {
+                resume(Effect.succeed({ type: "edit", item: e.item }));
+              }
+            }
+          });
+
+          quickPick.onDidAccept(() => {
+            if (!resolved) {
+              const selected = quickPick.selectedItems[0];
+              resolved = true;
+              quickPick.hide();
+              resume(
+                Effect.succeed(
+                  selected ? { type: "select", item: selected } : null,
+                ),
+              );
+            }
+          });
+
+          quickPick.onDidHide(() => {
+            if (!resolved) {
+              resolved = true;
+              resume(Effect.succeed(null));
+            }
+            quickPick.dispose();
+          });
+
+          quickPick.show();
         });
 
-        if (Option.isNone(selected)) {
+        if (!result) {
           return;
         }
 
-        const item = selected.value;
-
-        if (item.action === "add") {
+        // Handle add action
+        if (result.item.action === "add" && result.type === "select") {
           yield* promptAdd;
           return;
         }
 
-        if (!item.pathId) {
+        if (!result.item.pathId) {
           return;
         }
 
-        // Show action menu for the selected path
-        const actionChoice = yield* code.window.showQuickPickItems(
-          [
-            { label: "$(edit) Edit", action: "edit" as const },
-            { label: "$(trash) Delete", action: "delete" as const },
-          ],
-          {
-            placeHolder: `Action for "${item.label}"`,
-          },
-        );
-
-        if (Option.isNone(actionChoice)) {
-          return;
-        }
-
-        if (actionChoice.value.action === "delete") {
+        // Handle delete button click
+        if (result.type === "delete") {
           const confirm = yield* code.window.showWarningMessage(
-            `Are you sure you want to delete "${item.label}"?`,
+            `Are you sure you want to delete "${result.item.label.replace("$(terminal) ", "")}"?`,
             { modal: true, items: ["Delete"] },
           );
 
           if (Option.isSome(confirm)) {
-            yield* remove(item.pathId);
+            yield* remove(result.item.pathId);
             yield* code.window.showInformationMessage(
-              `Deleted custom Python path: ${item.label}`,
+              `Deleted custom Python path: ${result.item.label.replace("$(terminal) ", "")}`,
             );
           }
           return;
         }
 
-        if (actionChoice.value.action === "edit") {
-          const currentPath = yield* getById(item.pathId);
+        // Handle edit (either via button or selecting the item)
+        if (result.type === "edit" || result.type === "select") {
+          const currentPath = yield* getById(result.item.pathId);
           if (Option.isNone(currentPath)) {
             return;
           }
@@ -678,7 +731,7 @@ print(json.dumps(packages))`,
             return;
           }
 
-          yield* update(item.pathId, {
+          yield* update(result.item.pathId, {
             nickname: newNickname.value.trim() || currentPath.value.nickname,
             pythonPath:
               newPythonPath.value.trim() || currentPath.value.pythonPath,

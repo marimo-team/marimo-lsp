@@ -50,6 +50,14 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
               label: "$(output) Show marimo diagnostics",
               value: "diagnostics",
             },
+            {
+              label: "$(add) Add custom Python path",
+              value: "addCustomPath",
+            },
+            {
+              label: "$(settings-gear) Manage custom Python paths",
+              value: "manageCustomPaths",
+            },
           ] as const,
           {
             placeHolder: "marimo",
@@ -100,6 +108,14 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
           }
           case "diagnostics": {
             yield* code.commands.executeCommand("marimo.showDiagnostics");
+            break;
+          }
+          case "addCustomPath": {
+            yield* code.commands.executeCommand("marimo.addCustomPythonPath");
+            break;
+          }
+          case "manageCustomPaths": {
+            yield* code.commands.executeCommand("marimo.manageCustomPythonPaths");
             break;
           }
           default: {

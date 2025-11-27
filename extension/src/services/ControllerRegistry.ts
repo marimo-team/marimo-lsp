@@ -23,7 +23,6 @@ import {
   CustomPythonPathService,
 } from "./CustomPythonPathService.ts";
 import {
-  AddCustomPathController,
   type CustomPythonController,
   createCustomControllerId,
   NotebookControllerFactory,
@@ -162,54 +161,11 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         Effect.annotateLogs({ count: customPaths.length }),
       );
 
-      // Create the "Add Custom Python Path..." controller that appears in the kernel dropdown
-      const addCustomPathController =
-        yield* factory.createAddCustomPathController();
-      yield* Effect.logInfo("Created 'Add Custom Python Path' controller");
-
-      // When user selects the "Add Custom Python Path..." controller, open the dialog
-      yield* Effect.forkScoped(
-        addCustomPathController.selectedNotebookChanges().pipe(
-          Stream.filter((e) => e.selected), // Only when selected, not deselected
-          Stream.mapEffect(
-            Effect.fnUntraced(function* (event) {
-              yield* Effect.logInfo(
-                "Add Custom Python Path controller selected",
-              ).pipe(
-                Effect.annotateLogs({
-                  notebook: event.notebook.uri.toString(),
-                }),
-              );
-
-              // Trigger the add custom path dialog
-              const result = yield* customPythonPathService.promptAdd;
-
-              if (Option.isSome(result)) {
-                yield* Effect.logInfo(
-                  "Custom path added from kernel dropdown",
-                ).pipe(Effect.annotateLogs({ path: result.value }));
-
-                // After adding, select the newly created controller for this notebook
-                const newControllerId = createCustomControllerId(
-                  result.value.id,
-                );
-                const handles = yield* SynchronizedRef.get(handlesRef);
-                const newHandle = HashMap.get(handles, newControllerId);
-
-                if (Option.isSome(newHandle)) {
-                  yield* newHandle.value.controller.updateNotebookAffinity(
-                    event.notebook,
-                    code.NotebookControllerAffinity.Default,
-                  );
-                }
-              } else {
-                yield* Effect.logDebug("Custom path dialog cancelled");
-              }
-            }),
-          ),
-          Stream.runDrain,
-        ),
-      );
+      // Note: "Add Custom Python Path" and "Manage Custom Python Paths" are NOT kernel controllers
+      // They are available via:
+      // - Command palette: "marimo: Add custom Python path"
+      // - Command palette: "marimo: Manage custom Python paths"
+      // - marimo status bar menu
 
 
       // Listen for custom Python path changes

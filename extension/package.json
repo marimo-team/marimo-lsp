@@ -305,6 +305,13 @@
         "category": "marimo"
       },
       {
+        "command": "marimo.showKernelPicker",
+        "title": "Select kernel",
+        "shortTitle": "Kernel",
+        "category": "marimo",
+        "icon": "$(server-environment)"
+      },
+      {
         "command": "marimo.manageCustomPythonPaths",
         "title": "Manage custom Python paths",
         "category": "marimo"

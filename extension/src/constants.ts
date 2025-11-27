@@ -3,6 +3,7 @@
 
 export type MarimoCommand =
   | "marimo.addCustomPythonPath"
+  | "marimo.showKernelPicker"
   | "marimo.clearRecentNotebooks"
   | "marimo.createSetupCell"
   | "marimo.exportStaticHTML"

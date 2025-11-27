@@ -104,6 +104,13 @@ export class Window extends Effect.Service<Window>()("Window", {
           Option.fromNullable,
         );
       },
+      /**
+       * Create a raw QuickPick for advanced use cases (e.g., item buttons).
+       * The caller is responsible for showing, hiding, and disposing.
+       */
+      createQuickPickRaw<T extends vscode.QuickPickItem>() {
+        return api.createQuickPick<T>();
+      },
       createOutputChannel(name: string) {
         return Effect.acquireRelease(
           Effect.sync(() => api.createOutputChannel(name)),
