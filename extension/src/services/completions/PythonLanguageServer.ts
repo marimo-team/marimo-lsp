@@ -380,29 +380,6 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
               ),
             );
           }).pipe(Effect.map(Option.fromNullable)),
-
-        /**
-         * Get semantic tokens for a range within the document
-         */
-        getSemanticTokensRange: Effect.fnUntraced(function* (
-          uri: vscode.Uri,
-          range: lsp.Range,
-        ) {
-          const client = yield* getClient;
-          if (Option.isNone(client)) {
-            return null;
-          }
-
-          return yield* Effect.promise(() =>
-            client.value.sendRequest<lsp.SemanticTokens | null>(
-              "textDocument/semanticTokens/range",
-              {
-                textDocument: { uri: uri.toString() },
-                range,
-              },
-            ),
-          );
-        }),
       };
     }),
   },

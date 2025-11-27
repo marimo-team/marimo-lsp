@@ -19,6 +19,5 @@ export const TestPythonLanguageServerLive = Layer.succeed(
     getSignatureHelp: () => Effect.succeed(null),
     getSemanticTokensLegend: () => Effect.succeed(Option.none()),
     getSemanticTokensFull: () => Effect.succeed(Option.none()),
-    getSemanticTokensRange: () => Effect.succeed(null),
   }),
 );
