@@ -20,8 +20,9 @@
  * them with line numbers relative to the cell start.
  *
  * @param data - The encoded semantic tokens from the full virtual document
- * @param cellStartLine - The line in the virtual document where this cell starts
- * @param cellLineCount - Number of lines in this cell
+ * @param options - Options for extracting tokens
+ * @param options.cellStartLine - The line in the virtual document where this cell starts
+ * @param options.cellLineCount - Number of lines in this cell
  * @returns Encoded tokens for just this cell, or null if no tokens in range
  */
 export function extractTokensForCell(
