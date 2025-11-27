@@ -4,8 +4,8 @@ import type { Middleware } from "vscode-languageclient/node";
 import * as lsp from "vscode-languageclient/node";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { Config } from "../Config.ts";
-import { VsCode } from "../VsCode.ts";
 import { Uv } from "../Uv.ts";
+import { VsCode } from "../VsCode.ts";
 
 export class RuffLanguageServerStartError extends Data.TaggedError(
   "RuffLanguageServerStartError",
