@@ -1,12 +1,13 @@
 import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
+import { extractTokensForCell } from "../../utils/semanticTokens.ts";
 import { VsCode } from "../VsCode.ts";
 import { PythonLanguageServer } from "./PythonLanguageServer.ts";
 import { VirtualDocumentProvider } from "./VirtualDocumentProvider.ts";
 
 export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
-  dependencies: [VirtualDocumentProvider.Default, PythonLanguageServer.Default],
+  dependencies: [VirtualDocumentProvider.Default],
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const virtualDocs = yield* VirtualDocumentProvider;
@@ -228,6 +229,64 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
           }
 
           return lspSignatureHelpToVscode(signatureHelp, { code });
+        }),
+
+      /**
+       * Get the semantic tokens legend for `mo-python` cells.
+       * This returns the token types and modifiers supported by the language server.
+       */
+      getSemanticTokensLegend: () =>
+        Effect.map(
+          pythonLs.getSemanticTokensLegend(),
+          Option.map(
+            (legend) =>
+              new code.SemanticTokensLegend(
+                legend.tokenTypes,
+                legend.tokenModifiers,
+              ),
+          ),
+        ),
+
+      /**
+       * Provide semantic tokens for a notebook cell.
+       * Maps tokens from the virtual document coordinates back to cell coordinates.
+       */
+      provideDocumentSemanticTokens: (document: vscode.TextDocument) =>
+        Effect.gen(function* () {
+          const pair = yield* findNotebookCellPair(document);
+          if (Option.isNone(pair)) {
+            return null;
+          }
+
+          const { notebook, cell } = pair.value;
+          const info = yield* virtualDocs.getVirtualDocument(notebook);
+          const mapper = yield* virtualDocs.getMapperForCell(cell);
+
+          // Get full semantic tokens for the virtual document
+          const tokensOption = yield* pythonLs.getSemanticTokensFull(info.uri);
+          if (
+            Option.isNone(tokensOption) ||
+            tokensOption.value.data.length === 0
+          ) {
+            return null;
+          }
+
+          const tokens = tokensOption.value;
+
+          const cellTokens = extractTokensForCell(
+            tokens.data,
+            // Range in virtual document
+            {
+              cellStartLine: mapper.toVirtual(new code.Position(0, 0)).line,
+              cellLineCount: document.lineCount,
+            },
+          );
+
+          if (!cellTokens) {
+            return null;
+          }
+
+          return new code.SemanticTokens(cellTokens);
         }),
     };
   }),

@@ -334,6 +334,52 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
             ),
           );
         }),
+
+        /**
+         * Get the semantic tokens legend from the language server.
+         * This must be called once during initialization to know how to
+         * interpret semantic token data.
+         */
+        getSemanticTokensLegend: () =>
+          Effect.gen(function* () {
+            const client = yield* getClient;
+            if (Option.isNone(client)) {
+              return null;
+            }
+
+            // Get the server capabilities to find the semantic tokens legend
+            const semanticTokensProvider =
+              client.value.initializeResult?.capabilities
+                ?.semanticTokensProvider;
+
+            if (!semanticTokensProvider) {
+              return null;
+            }
+
+            // The legend is part of the provider options
+            if ("legend" in semanticTokensProvider) {
+              return semanticTokensProvider.legend;
+            }
+
+            return null;
+          }).pipe(Effect.map(Option.fromNullable)),
+
+        /**
+         * Get semantic tokens for the full document
+         */
+        getSemanticTokensFull: (uri: vscode.Uri) =>
+          Effect.gen(function* () {
+            const client = yield* getClient;
+            if (Option.isNone(client)) {
+              return null;
+            }
+            return yield* Effect.promise(() =>
+              client.value.sendRequest<lsp.SemanticTokens | null>(
+                "textDocument/semanticTokens/full",
+                { textDocument: { uri: uri.toString() } },
+              ),
+            );
+          }).pipe(Effect.map(Option.fromNullable)),
       };
     }),
   },
