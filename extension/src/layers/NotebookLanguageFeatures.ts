@@ -74,7 +74,7 @@ export const NotebookLanguageFeaturesLive = Layer.scopedDiscard(
     //
     // We run this in a forked effect since it relies on starting the language server
     // to obtain the semantic tokens legend, and we don't want to block.
-    yield* Effect.fork(
+    yield* Effect.forkScoped(
       Effect.gen(function* () {
         const legend = yield* proxy.getSemanticTokensLegend();
         if (Option.isSome(legend)) {
