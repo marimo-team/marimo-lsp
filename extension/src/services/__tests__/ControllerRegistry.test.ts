@@ -1,6 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import type * as py from "@vscode/python-extension";
 import { Effect, Layer, Option, TestClock } from "effect";
+import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";
 import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import {
@@ -22,6 +23,7 @@ const withTestCtx = Effect.fnUntraced(function* (
     Layer.provideMerge(ControllerRegistry.Default),
     Layer.provide(Constants.Default),
     Layer.provide(TestLanguageClientLive),
+    Layer.provide(TestExtensionContextLive),
     Layer.provideMerge(vscode.layer),
     Layer.provideMerge(py.layer),
   );

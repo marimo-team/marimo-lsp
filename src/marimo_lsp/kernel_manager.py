@@ -31,13 +31,27 @@ def launch_kernel(
     executable: str,
     args: ipc.KernelArgs,
     cwd: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> PopenProcessLike:
-    """Launch kernel as a subprocess."""
+    """Launch kernel as a subprocess.
+
+    Args:
+        executable: Path to the Python executable.
+        args: Kernel arguments to pass via stdin.
+        cwd: Working directory for the kernel process.
+        env: Optional environment variables to set (merged with os.environ).
+             Useful for Bazel environments that need PYTHONPATH set.
+    """
     cmd = [executable, "-m", "marimo._ipc.launch_kernel"]
     logger.info(f"Launching kernel subprocess: {' '.join(cmd)}")
     logger.debug(f"Connection info: {args.connection_info}")
     if cwd:
         logger.debug(f"Setting kernel working directory to: {cwd}")
+
+    # Merge custom env with the current environment
+    process_env = {**os.environ, **(env or {})}
+    if env:
+        logger.info(f"Custom environment variables: {list(env.keys())}")
 
     process = subprocess.Popen(  # noqa: S603
         cmd,
@@ -45,6 +59,7 @@ def launch_kernel(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         cwd=cwd,
+        env=process_env,
     )
 
     assert process.stdin, "Expect subprocess stdin pipe"
@@ -92,6 +107,7 @@ class LspKernelManager(KernelManager):
         app_file_manager: LspAppFileManager,
         config_manager: MarimoConfigManager,
         connection_info: ConnectionInfo,
+        env: dict[str, str] | None = None,
     ) -> None:
         super().__init__(
             # NB: Leaky abstraction. Mode affects internal behavior of
@@ -119,6 +135,7 @@ class LspKernelManager(KernelManager):
         )
         self.executable = executable
         self.connection_info = connection_info
+        self.env = env or {}
 
     def start_kernel(self) -> None:
         """Start an instance of the marimo kernel using ZeroMQ IPC."""
@@ -139,6 +156,7 @@ class LspKernelManager(KernelManager):
                 profile_path=self.profile_path,
             ),
             cwd=str(notebook_dir) if notebook_dir else None,
+            env=self.env,
         )
 
 

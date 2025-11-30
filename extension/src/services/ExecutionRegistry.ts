@@ -30,7 +30,10 @@ import {
   type NotebookCellId,
 } from "../utils/notebook.ts";
 import { CellStateManager } from "./CellStateManager.ts";
-import type { VenvPythonController } from "./NotebookControllerFactory.ts";
+import type {
+  CustomPythonController,
+  VenvPythonController,
+} from "./NotebookControllerFactory.ts";
 import type { SandboxController } from "./SandboxController.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -78,7 +81,10 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
           msg: CellMessage,
           options: {
             editor: vscode.NotebookEditor;
-            controller: VenvPythonController | SandboxController;
+            controller:
+              | VenvPythonController
+              | SandboxController
+              | CustomPythonController;
           },
         ) =>
           Effect.gen(function* () {
@@ -370,7 +376,10 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
     code: VsCode,
     deps?: {
       editor: vscode.NotebookEditor;
-      controller: VenvPythonController | SandboxController;
+      controller:
+        | VenvPythonController
+        | SandboxController
+        | CustomPythonController;
     },
   ) {
     const { pendingExecution, id: cellId, state } = cell;

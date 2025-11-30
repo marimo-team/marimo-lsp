@@ -2,9 +2,12 @@
 // Do not edit directly - modify package.json and run the codegen script instead
 
 export type MarimoCommand =
+  | "marimo.addCustomPythonPath"
+  | "marimo.showKernelPicker"
   | "marimo.clearRecentNotebooks"
   | "marimo.createSetupCell"
   | "marimo.exportStaticHTML"
+  | "marimo.manageCustomPythonPaths"
   | "marimo.newMarimoNotebook"
   | "marimo.openAsMarimoNotebook"
   | "marimo.openTutorial"

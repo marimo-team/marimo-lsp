@@ -13,6 +13,7 @@ import { CellStateManager } from "../services/CellStateManager.ts";
 import { Config } from "../services/Config.ts";
 import { Constants } from "../services/Constants.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
+import { CustomPythonPathService } from "../services/CustomPythonPathService.ts";
 import { LspProxy } from "../services/completions/LspProxy.ts";
 import type { PythonLanguageServer } from "../services/completions/PythonLanguageServer.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
@@ -47,6 +48,7 @@ import { VariablesViewLive } from "../views/VariablesView.ts";
 import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
+import { KernelPickerLive } from "./KernelPicker.ts";
 import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { NotebookLanguageFeaturesLive } from "./NotebookLanguageFeatures.ts";
@@ -60,6 +62,7 @@ const MainLive = Layer.empty
   .pipe(
     Layer.merge(RegisterCommandsLive),
     Layer.merge(KernelManagerLive),
+    Layer.merge(KernelPickerLive),
     Layer.merge(MarimoStatusBarLive),
     Layer.merge(PythonEnvironmentStatusBarLive),
     Layer.merge(MarimoFileDetectorLive),
@@ -92,6 +95,7 @@ const MainLive = Layer.empty
     Layer.provide(ControllerRegistry.Default),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(SandboxController.Default),
+    Layer.provide(CustomPythonPathService.Default),
     Layer.provide(Uv.Default),
     Layer.provide(TreeView.Default),
     Layer.provide(StatusBar.Default),

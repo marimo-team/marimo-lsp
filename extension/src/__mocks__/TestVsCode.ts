@@ -1379,6 +1379,20 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             showQuickPickItems() {
               return Effect.succeed(Option.none());
             },
+            createQuickPickRaw<T extends vscode.QuickPickItem>() {
+              return {
+                items: [] as T[],
+                selectedItems: [] as readonly T[],
+                placeholder: "",
+                title: "",
+                onDidTriggerItemButton: () => ({ dispose: () => {} }),
+                onDidAccept: () => ({ dispose: () => {} }),
+                onDidHide: () => ({ dispose: () => {} }),
+                show: () => {},
+                hide: () => {},
+                dispose: () => {},
+              } as unknown as vscode.QuickPick<T>;
+            },
             createOutputChannel(name) {
               return Effect.succeed({
                 name,
@@ -1525,8 +1539,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             showTextDocument() {
               return Effect.void;
             },
-            withProgress() {
-              return Effect.void;
+            withProgress(_options, fn) {
+              // Execute the function immediately and return its result
+              return fn({
+                report: () => {},
+              });
             },
           }),
           commands: Commands.make({

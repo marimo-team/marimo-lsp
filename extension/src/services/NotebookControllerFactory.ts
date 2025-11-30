@@ -20,6 +20,12 @@ import { VsCode } from "./VsCode.ts";
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
 export type NotebookControllerId = Brand.Branded<string, "ControllerId">;
 
+/**
+ * Create a controller ID for a custom Python path.
+ */
+export const createCustomControllerId = (customPathId: string) =>
+  NotebookControllerId(`marimo-custom-${customPathId}`);
+
 export class NotebookControllerFactory extends Effect.Service<NotebookControllerFactory>()(
   "NotebookControllerFactory",
   {
@@ -42,6 +48,10 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
       const runPromise = Runtime.runPromise(runtime);
 
       return {
+        /**
+         * Create a notebook controller for a Python environment discovered by the Python extension.
+         * This validates the environment before execution.
+         */
         createNotebookController: Effect.fnUntraced(function* (options: {
           id: NotebookControllerId;
           label: string;
@@ -225,6 +235,121 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
 
           return new VenvPythonController(controller, options.env.path);
         }),
+
+        /**
+         * Create a notebook controller for a custom Python path (user-specified).
+         * This skips environment validation from the Python extension and uses the path directly.
+         */
+        createCustomController: Effect.fnUntraced(function* (options: {
+          id: NotebookControllerId;
+          /** User-friendly label shown in the kernel dropdown */
+          label: string;
+          /** Description shown below the label (usually the path) */
+          description: string;
+          /** Absolute path to the Python executable */
+          pythonPath: string;
+          /** Optional environment variables (e.g., PYTHONPATH for Bazel) */
+          env?: Record<string, string>;
+        }) {
+          const controller = yield* code.notebooks.createNotebookController(
+            options.id,
+            serializer.notebookType,
+            options.label,
+          );
+
+          // Add metadata
+          controller.supportedLanguages = [LanguageId.Python, LanguageId.Sql];
+          controller.description = options.description;
+
+          // Set up execution handler - for custom paths, we skip validation
+          // and use the path directly, trusting the user
+          controller.executeHandler = (cells, notebook, controller) =>
+            runPromise(
+              Effect.gen(function* () {
+                yield* Effect.logInfo(
+                  "Running cells with custom Python path",
+                ).pipe(
+                  Effect.annotateLogs({
+                    controller: controller.id,
+                    cellCount: cells.length,
+                    notebook: notebook.uri.toString(),
+                    pythonPath: options.pythonPath,
+                    env: options.env,
+                  }),
+                );
+                yield* marimo.executeCommand({
+                  command: "marimo.api",
+                  params: {
+                    method: "run",
+                    params: {
+                      notebookUri: getNotebookUri(notebook),
+                      executable: options.pythonPath,
+                      env: options.env,
+                      inner: {
+                        cellIds: cells.map((cell) => getNotebookCellId(cell)),
+                        codes: cells.map((cell) =>
+                          getCellExecutableCode(cell, LanguageId),
+                        ),
+                      },
+                    },
+                  },
+                });
+              }).pipe(
+                Effect.catchTags({
+                  ExecuteCommandError: Effect.fnUntraced(function* (error) {
+                    yield* Effect.logError(
+                      "Failed to execute command",
+                      error,
+                    ).pipe(
+                      Effect.annotateLogs({ command: error.command.command }),
+                    );
+                    yield* code.window.showErrorMessage(
+                      "Failed to execute marimo command. Please check the logs for details.",
+                      { modal: true },
+                    );
+                  }),
+                }),
+              ),
+            );
+
+          // Set up interrupt handler
+          controller.interruptHandler = (notebook) =>
+            runPromise(
+              Effect.gen(function* () {
+                yield* Effect.logInfo("Interrupting execution").pipe(
+                  Effect.annotateLogs({
+                    controllerId: controller.id,
+                    notebook: notebook.uri.toString(),
+                  }),
+                );
+                yield* marimo.executeCommand({
+                  command: "marimo.api",
+                  params: {
+                    method: "interrupt",
+                    params: {
+                      notebookUri: getNotebookUri(notebook),
+                      inner: {},
+                    },
+                  },
+                });
+              }).pipe(
+                Effect.catchAllCause((cause) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logError(cause);
+                    yield* code.window.showErrorMessage(
+                      "Failed to interrupt execution. Please check the logs for details.",
+                    );
+                  }),
+                ),
+              ),
+            );
+
+          return new CustomPythonController(
+            controller,
+            options.pythonPath,
+            options.env ?? {},
+          );
+        }),
       };
     }),
   },
@@ -250,6 +375,64 @@ export class VenvPythonController {
   mutateDescription(description: string) {
     return Effect.sync(() => {
       this.#inner.description = description;
+      return this;
+    });
+  }
+  createNotebookCellExecution(cell: vscode.NotebookCell) {
+    return this.#inner.createNotebookCellExecution(cell);
+  }
+  selectedNotebookChanges() {
+    return Stream.asyncPush<{
+      notebook: vscode.NotebookDocument;
+      selected: boolean;
+    }>((emit) =>
+      Effect.acquireRelease(
+        Effect.sync(() =>
+          this.#inner.onDidChangeSelectedNotebooks((e) => emit.single(e)),
+        ),
+        (disposable) => Effect.sync(() => disposable.dispose()),
+      ),
+    );
+  }
+  updateNotebookAffinity(
+    notebook: vscode.NotebookDocument,
+    affinity: vscode.NotebookControllerAffinity,
+  ) {
+    return Effect.sync(() => {
+      this.#inner.updateNotebookAffinity(notebook, affinity);
+    });
+  }
+}
+
+/**
+ * Controller for custom Python paths (user-specified, not from Python extension).
+ */
+export class CustomPythonController {
+  readonly _tag = "CustomPythonController";
+  #inner: Omit<vscode.NotebookController, "dispose">;
+  executable: string;
+  env: Record<string, string>;
+  constructor(
+    inner: Omit<vscode.NotebookController, "dispose">,
+    executable: string,
+    env: Record<string, string>,
+  ) {
+    this.#inner = inner;
+    this.executable = executable;
+    this.env = env;
+  }
+  get id(): NotebookControllerId {
+    return this.#inner.id as NotebookControllerId;
+  }
+  mutateDescription(description: string) {
+    return Effect.sync(() => {
+      this.#inner.description = description;
+      return this;
+    });
+  }
+  mutateLabel(label: string) {
+    return Effect.sync(() => {
+      this.#inner.label = label;
       return this;
     });
   }

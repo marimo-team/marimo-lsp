@@ -104,6 +104,13 @@ export class Window extends Effect.Service<Window>()("Window", {
           Option.fromNullable,
         );
       },
+      /**
+       * Create a raw QuickPick for advanced use cases (e.g., item buttons).
+       * The caller is responsible for showing, hiding, and disposing.
+       */
+      createQuickPickRaw<T extends vscode.QuickPickItem>() {
+        return api.createQuickPick<T>();
+      },
       createOutputChannel(name: string) {
         return Effect.acquireRelease(
           Effect.sync(() => api.createOutputChannel(name)),
@@ -206,7 +213,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         // Could return the vscode.TextEditor, but skipping it simplifies mocks/tests
         return Effect.asVoid(Effect.promise(() => api.showTextDocument(doc)));
       },
-      withProgress(
+      withProgress<T>(
         options: {
           location: vscode.ProgressLocation;
           title: string;
@@ -217,8 +224,8 @@ export class Window extends Effect.Service<Window>()("Window", {
             message: string;
             increment?: number;
           }>,
-        ) => Effect.Effect<void>,
-      ) {
+        ) => Effect.Effect<T>,
+      ): Effect.Effect<T> {
         return Effect.promise((signal) =>
           api.withProgress(options, (progress, token) =>
             runPromise(
@@ -229,7 +236,7 @@ export class Window extends Effect.Service<Window>()("Window", {
                   Effect.sync(() => token.onCancellationRequested(kill)),
                   (disposable) => Effect.sync(() => disposable.dispose()),
                 );
-                yield* Fiber.join(fiber);
+                return yield* Fiber.join(fiber);
               }).pipe(Effect.scoped),
               { signal },
             ),
