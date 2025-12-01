@@ -51,6 +51,10 @@ export const CellMetadata = Schema.partial(
         markdown: MarkdownMetadata,
       }),
     ),
+
+    // Stable ID for tracking cells across re-deserializations
+    // This is ephemeral (not persisted to .py file) and regenerated on file open
+    stableId: Schema.String,
   }),
 );
 
@@ -68,14 +72,11 @@ export const encodeCellMetadata = Schema.encodeSync(CellMetadata);
 
 export class MarimoNotebookCell {
   #raw: vscode.NotebookCell;
-  #meta: Option.Option<CellMetadata>;
+  // we parse lazily
+  #cachedMeta: undefined | Option.Option<CellMetadata>;
 
-  private constructor(
-    raw: vscode.NotebookCell,
-    meta: Option.Option<CellMetadata>,
-  ) {
+  private constructor(raw: vscode.NotebookCell) {
     this.#raw = raw;
-    this.#meta = meta;
   }
 
   /**
@@ -100,7 +101,7 @@ export class MarimoNotebookCell {
    * Creates a MarimoNotebookCell from a VS Code NotebookCell.
    */
   static from(cell: vscode.NotebookCell) {
-    return new MarimoNotebookCell(cell, decodeCellMetadata(cell.metadata));
+    return new MarimoNotebookCell(cell);
   }
 
   /**
@@ -114,14 +115,18 @@ export class MarimoNotebookCell {
    * The decoded metadata for this cell.
    */
   get metadata() {
-    return this.#meta;
+    if (this.#cachedMeta) {
+      return this.#cachedMeta;
+    }
+    this.#cachedMeta = decodeCellMetadata(this.#raw.metadata);
+    return this.#cachedMeta;
   }
 
   /**
    * Whether the cell is marked as stale.
    */
   get isStale() {
-    return this.#meta.pipe(
+    return this.metadata.pipe(
       Option.map((meta) => meta.state === "stale"),
       Option.getOrElse(() => false),
     );
@@ -131,7 +136,7 @@ export class MarimoNotebookCell {
    * The cell's language metadata, if present.
    */
   get languageMetadata() {
-    return this.#meta.pipe(
+    return this.metadata.pipe(
       Option.flatMap((meta) => Option.fromNullable(meta.languageMetadata)),
     );
   }
@@ -140,7 +145,7 @@ export class MarimoNotebookCell {
    * The cell's name, if present.
    */
   get name() {
-    return this.#meta.pipe(
+    return this.metadata.pipe(
       Option.flatMap((meta) => Option.fromNullable(meta.name)),
     );
   }
@@ -148,6 +153,12 @@ export class MarimoNotebookCell {
   /**
    * The underlying cell kind.
    */
+  get stableId() {
+    return this.metadata.pipe(
+      Option.flatMap((meta) => Option.fromNullable(meta.stableId)),
+    );
+  }
+
   get kind() {
     return this.#raw.kind;
   }

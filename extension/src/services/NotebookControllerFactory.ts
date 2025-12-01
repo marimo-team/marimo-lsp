@@ -16,6 +16,7 @@ import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookSerializer } from "./NotebookSerializer.ts";
 import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
+import { MarimoNotebookCell } from "../schemas.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
 export type NotebookControllerId = Brand.Branded<string, "ControllerId">;

@@ -30,12 +30,12 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   "NotebookSerializer",
   {
     dependencies: [Constants.Default],
-    scoped: Effect.gen(function* () {
+    scoped: Effect.gen(function*() {
       const client = yield* LanguageClient;
       const constants = yield* Constants;
       const code = yield* Effect.serviceOption(VsCode);
 
-      const serializeEffect = Effect.fnUntraced(function* (
+      const serializeEffect = Effect.fnUntraced(function*(
         notebook: vscode.NotebookData,
       ) {
         yield* Effect.logDebug("Serializing notebook").pipe(
@@ -62,7 +62,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
         return bytes;
       });
 
-      const deserializeEffect = Effect.fnUntraced(function* (
+      const deserializeEffect = Effect.fnUntraced(function*(
         bytes: Uint8Array,
       ) {
         yield* Effect.logDebug("Deserializing notebook").pipe(
@@ -99,6 +99,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                     languageMetadata: {
                       markdown: result.metadata,
                     },
+                    stableId: crypto.randomUUID(),
                   } satisfies CellMetadata,
                 };
               }
@@ -118,6 +119,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                   languageMetadata: {
                     sql: result.metadata,
                   },
+                  stableId: crypto.randomUUID(),
                 } satisfies CellMetadata,
               };
             }
@@ -131,6 +133,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               metadata: {
                 name: cell.name,
                 options: cell.options,
+                stableId: crypto.randomUUID(),
               } satisfies CellMetadata,
             };
           }),
@@ -150,7 +153,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
           {
             serializeNotebook(notebook, token) {
               return runPromise(
-                Effect.gen(function* () {
+                Effect.gen(function*() {
                   const fiber = yield* Effect.fork(serializeEffect(notebook));
                   token.onCancellationRequested(() =>
                     runPromise(Fiber.interrupt(fiber)),
@@ -171,7 +174,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
             },
             deserializeNotebook(bytes, token) {
               return runPromise(
-                Effect.gen(function* () {
+                Effect.gen(function*() {
                   const fiber = yield* Effect.fork(deserializeEffect(bytes));
                   token.onCancellationRequested(() =>
                     runPromise(Fiber.interrupt(fiber)),
@@ -201,6 +204,8 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               // but as `false` it marks the cell as dirty.
               // But we don't support/use these options yet in the extension.
               options: true,
+              // Stable ID is ephemeral - not persisted to .py file, regenerated on open
+              stableId: true,
             } satisfies BooleanMap<CellMetadata>,
             transientDocumentMetadata: {
               app: false,
@@ -221,7 +226,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       };
     }),
   },
-) {}
+) { }
 
 const decodeDeserializeResponse = Schema.decodeUnknown(MarimoNotebook);
 const decodeSerializeResponse = Schema.decodeUnknown(
