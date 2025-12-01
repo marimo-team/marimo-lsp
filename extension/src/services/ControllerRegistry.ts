@@ -6,17 +6,12 @@ import {
   HashMap,
   Option,
   Ref,
-  Schema,
   Scope,
   Stream,
   SynchronizedRef,
 } from "effect";
 import type * as vscode from "vscode";
-import {
-  MarimoNotebook,
-  MarimoNotebookDocument,
-  type NotebookId,
-} from "../schemas.ts";
+import { MarimoNotebookDocument, type NotebookId } from "../schemas.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
 import {

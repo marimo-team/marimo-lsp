@@ -1,10 +1,10 @@
 import { Data, Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
 import {
-  type NotebookCellId,
-  type NotebookId,
   type MarimoNotebookCell,
   MarimoNotebookDocument,
+  type NotebookCellId,
+  type NotebookId,
 } from "../../schemas.ts";
 import { getTopologicalCellIds } from "../../utils/getTopologicalCellIds.ts";
 import { VsCode } from "../VsCode.ts";
