@@ -1,10 +1,10 @@
-import { Brand, Effect, Layer, Option } from "effect";
+import { Effect, Layer, Option } from "effect";
 import type { CellMetadata } from "../schemas.ts";
 import { CellMetadataUIBindingService } from "../services/CellMetadataUIBindingService.ts";
 import { Constants } from "../services/Constants.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
 import { VsCode } from "../services/VsCode.ts";
-import type { NotebookUri } from "../types.ts";
+import { getNotebookUri } from "../types.ts";
 
 const DEFAULT_ENGINE = "__marimo_duckdb";
 const DEFAULT_LABEL = "duckdb (In-Memory)";
@@ -221,8 +221,7 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
 
       getOptions: (cell) => {
         return Effect.gen(function* () {
-          const NotebookUri = Brand.nominal<NotebookUri>();
-          const notebookUri = NotebookUri(cell.notebook.uri.toString());
+          const notebookUri = getNotebookUri(cell.notebook);
           const connectionsOption =
             yield* datasources.getConnections(notebookUri);
 

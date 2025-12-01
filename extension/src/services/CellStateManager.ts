@@ -1,12 +1,13 @@
 import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
-import { decodeCellMetadata, encodeCellMetadata } from "../schemas.ts";
+import {
+  decodeCellMetadata,
+  encodeCellMetadata,
+  MarimoNotebookDocument,
+} from "../schemas.ts";
 import { getNotebookUri, type NotebookUri } from "../types.ts";
 import { Log } from "../utils/log.ts";
-import {
-  getNotebookCellId,
-  isMarimoNotebookDocument,
-} from "../utils/notebook.ts";
+import { getNotebookCellId } from "../utils/notebook.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
 import { VsCode } from "./VsCode.ts";
@@ -82,13 +83,16 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
       // Listen to notebook document changes
       yield* Effect.forkScoped(
         code.workspace.notebookDocumentChanges().pipe(
-          Stream.mapEffect(
+          Stream.filterMap((event) =>
+            Option.map(
+              MarimoNotebookDocument.decodeUnknownNotebookDocument(
+                event.notebook,
+              ),
+              (notebook) => ({ ...event, notebook }),
+            ),
+          ),
+          Stream.runForEach(
             Effect.fnUntraced(function* (event) {
-              // Only process marimo notebooks
-              if (!isMarimoNotebookDocument(event.notebook)) {
-                return;
-              }
-
               yield* Effect.logTrace("onDidChangeNotebookDocument", {
                 notebook: event.notebook.uri.fsPath,
                 numCellChanges: event.cellChanges.length,
@@ -203,7 +207,6 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               }
             }),
           ),
-          Stream.runDrain,
         ),
       );
 
@@ -213,8 +216,11 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
          */
         markCellStale(notebookUri: NotebookUri, cellIndex: number) {
           return Effect.gen(function* () {
-            const notebook =
-              yield* editorRegistry.getLastNotebookEditor(notebookUri);
+            const notebook = Option.filterMap(
+              yield* editorRegistry.getLastNotebookEditor(notebookUri),
+              ({ notebook }) =>
+                MarimoNotebookDocument.decodeUnknownNotebookDocument(notebook),
+            );
 
             if (Option.isNone(notebook)) {
               yield* Log.warn("Notebook not found", { notebookUri });
@@ -224,7 +230,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
             yield* markCellStale(notebookUri, cellIndex, {
               code,
               staleStateRef,
-              notebook: notebook.value.notebook,
+              notebook: notebook.value,
             });
           });
         },
@@ -309,7 +315,7 @@ function markCellStale(
     staleStateRef: SubscriptionRef.SubscriptionRef<
       HashMap.HashMap<NotebookUri, HashMap.HashMap<number, boolean>>
     >;
-    notebook: vscode.NotebookDocument;
+    notebook: MarimoNotebookDocument;
   },
 ) {
   return Effect.gen(function* () {
@@ -335,9 +341,8 @@ function markCellStale(
     }
 
     const edit = new code.WorkspaceEdit();
-    const newMetadata = encodeCellMetadata({
-      ...cell.metadata,
-      state: "stale",
+    const newMetadata = cell.encodeCellMetadata({
+      overrides: { state: "stale" },
     });
     edit.set(notebook.uri, [
       code.NotebookEdit.updateCellMetadata(cellIndex, newMetadata),

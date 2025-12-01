@@ -1,5 +1,6 @@
 import { Option, Schema } from "effect";
 import type * as vscode from "vscode";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 
 const SQLMetadata = Schema.Struct({
   dataframeName: Schema.String,
@@ -77,15 +78,21 @@ export class MarimoNotebookCell {
     this.#meta = meta;
   }
 
-  static fromVsCode(cell: vscode.NotebookCell) {
-    return new MarimoNotebookCell(cell, decodeCellMetadata(cell));
+  encodeCellMetadata(options: { overrides: Partial<CellMetadata> }) {
+    // Encode the "raw metadata"
+    return encodeCellMetadata({ ...this.#raw.metadata, ...options.overrides });
   }
 
-  get isDisabled() {
-    return this.#meta.pipe(
-      Option.map((meta) => meta.options?.disabled === true),
-      Option.getOrElse(() => false),
-    );
+  static fromVsCode(cell: vscode.NotebookCell) {
+    return new MarimoNotebookCell(cell, decodeCellMetadata(cell.metadata));
+  }
+
+  get notebook() {
+    return new MarimoNotebookDocument(this.#raw.notebook);
+  }
+
+  get metadata() {
+    return this.#meta;
   }
 
   get isStale() {
@@ -107,11 +114,70 @@ export class MarimoNotebookCell {
     );
   }
 
+  get kind() {
+    return this.#raw.kind;
+  }
+
   get index() {
     return this.#raw.index;
   }
 
   get document() {
     return this.#raw.document;
+  }
+
+  get outputs() {
+    return this.#raw.outputs;
+  }
+}
+
+export class MarimoNotebookDocument {
+  #raw: vscode.NotebookDocument;
+
+  constructor(raw: vscode.NotebookDocument) {
+    this.#raw = raw;
+  }
+
+  static decodeUnknownNotebookDocument(
+    raw: vscode.NotebookDocument,
+  ): Option.Option<MarimoNotebookDocument> {
+    return raw.notebookType === NOTEBOOK_TYPE
+      ? Option.some(new MarimoNotebookDocument(raw))
+      : Option.none();
+  }
+
+  get rawMetadata() {
+    return this.#raw.metadata;
+  }
+
+  get notebookType() {
+    return NOTEBOOK_TYPE;
+  }
+
+  get uri() {
+    return this.#raw.uri;
+  }
+
+  getCells() {
+    return this.#raw
+      .getCells()
+      .map((cell) => MarimoNotebookCell.fromVsCode(cell));
+  }
+
+  cellAt(index: number) {
+    return MarimoNotebookCell.fromVsCode(this.#raw.cellAt(index));
+  }
+
+  get cellCount() {
+    return this.#raw.cellCount;
+  }
+
+  /**
+   * Get a handle to the underlying untyped document
+   *
+   * This should only be accessed when using VS Code APIs that require a "raw" document.
+   */
+  get unsafeRawNotebookDocument() {
+    return this.#raw;
   }
 }

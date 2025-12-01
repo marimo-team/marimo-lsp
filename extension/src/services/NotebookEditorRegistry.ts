@@ -1,8 +1,8 @@
 import { Effect, HashMap, Option, Ref, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
+import { MarimoNotebookDocument } from "../schemas.ts";
 import { getNotebookUri, type NotebookUri } from "../types.ts";
 import { Log } from "../utils/log.ts";
-import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import { Telemetry } from "./Telemetry.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -25,15 +25,19 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         code.window.activeNotebookEditorChanges().pipe(
           Stream.mapEffect(
             Effect.fnUntraced(function* (editor) {
-              if (Option.isNone(editor)) {
+              const notebook = Option.filterMap(editor, (editor) =>
+                MarimoNotebookDocument.decodeUnknownNotebookDocument(
+                  editor.notebook,
+                ),
+              );
+              if (Option.isNone(editor) || Option.isNone(notebook)) {
                 yield* SubscriptionRef.set(activeNotebookRef, Option.none());
                 return;
               }
-
               const notebookUri = getNotebookUri(editor.value.notebook);
 
               // Only track marimo notebooks
-              if (!isMarimoNotebookDocument(editor.value.notebook)) {
+              if (Option.isNone(notebook)) {
                 yield* SubscriptionRef.set(activeNotebookRef, Option.none());
                 return;
               }

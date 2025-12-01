@@ -1,9 +1,8 @@
 import { Effect, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
-import { decodeCellMetadata, isStaleCellMetadata } from "../schemas.ts";
+import { MarimoNotebookCell, MarimoNotebookDocument } from "../schemas.ts";
 import { VsCode } from "../services/VsCode.ts";
-import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 
 const DEFAULT_NAME = "_";
 
@@ -22,23 +21,28 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
     // Listen to notebook document changes and emit events
     yield* Effect.forkScoped(
       code.workspace.notebookDocumentChanges().pipe(
-        Stream.map((event) => {
-          // Only marimo notebooks
-          if (!isMarimoNotebookDocument(event.notebook)) {
-            return undefined;
-          }
+        Stream.runForEach(
+          Effect.fnUntraced(function* (event) {
+            const notebook =
+              MarimoNotebookDocument.decodeUnknownNotebookDocument(
+                event.notebook,
+              );
 
-          // Only process metadata changes
-          const hasMetadataChanges = event.cellChanges.some(
-            (change) => change.metadata !== undefined,
-          );
+            if (Option.isNone(notebook)) {
+              // not a marimo notebook
+              return;
+            }
 
-          if (hasMetadataChanges) {
-            onDidChangeCellStatusBarItems.fire();
-          }
-          return undefined;
-        }),
-        Stream.runDrain,
+            // Only process metadata changes
+            const hasMetadataChanges = event.cellChanges.some(
+              (change) => change.metadata !== undefined,
+            );
+
+            if (hasMetadataChanges) {
+              onDidChangeCellStatusBarItems.fire();
+            }
+          }),
+        ),
       ),
     );
 
@@ -47,7 +51,7 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
      */
     function createProvider(
       provide: (
-        cell: vscode.NotebookCell,
+        cell: MarimoNotebookCell,
       ) => vscode.NotebookCellStatusBarItem | undefined,
     ): vscode.NotebookCellStatusBarItemProvider {
       return {
@@ -56,7 +60,7 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
           cell: vscode.NotebookCell,
           _token: vscode.CancellationToken,
         ): vscode.ProviderResult<vscode.NotebookCellStatusBarItem[]> {
-          const item = provide(cell);
+          const item = provide(MarimoNotebookCell.fromVsCode(cell));
           return item ? [item] : [];
         },
       };
@@ -66,9 +70,7 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
      * Provider for staleness indicator
      */
     const stalenessProvider = createProvider((cell) => {
-      const metadata = decodeCellMetadata(cell.metadata);
-
-      if (Option.isNone(metadata) || !isStaleCellMetadata(metadata.value)) {
+      if (!cell.isStale) {
         return undefined;
       }
 
@@ -85,19 +87,12 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
     /**
      * Provider for cell name indicator
      */
-    const nameProvider = createProvider((cell) => {
-      const metadata = decodeCellMetadata(cell.metadata);
-
-      if (Option.isNone(metadata)) {
+    const nameProvider = createProvider(({ name }) => {
+      if (Option.isNone(name) || name.value === DEFAULT_NAME) {
         return undefined;
       }
 
-      const name = metadata.value.name;
-      if (!name || name === DEFAULT_NAME) {
-        return undefined;
-      }
-
-      if (name === SETUP_CELL_NAME) {
+      if (name.value === SETUP_CELL_NAME) {
         const item = new code.NotebookCellStatusBarItem(
           `$(gear) ${SETUP_CELL_NAME}`,
           code.NotebookCellStatusBarAlignment.Left,
@@ -107,10 +102,10 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
       }
 
       const item = new code.NotebookCellStatusBarItem(
-        `$(symbol-variable) ${name}`,
+        `$(symbol-variable) ${name.value}`,
         code.NotebookCellStatusBarAlignment.Left,
       );
-      item.tooltip = `Cell name: ${name}`;
+      item.tooltip = `Cell name: ${name.value}`;
 
       return item;
     });
