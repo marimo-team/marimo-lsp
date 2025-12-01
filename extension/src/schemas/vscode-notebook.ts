@@ -1,4 +1,5 @@
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
+import type * as vscode from "vscode";
 
 const SQLMetadata = Schema.Struct({
   dataframeName: Schema.String,
@@ -64,11 +65,53 @@ export const decodeCellMetadata = Schema.decodeUnknownOption(CellMetadata);
  */
 export const encodeCellMetadata = Schema.encodeSync(CellMetadata);
 
-/**
- * Type guard to check if cell has stale state
- */
-export function isStaleCellMetadata(
-  metadata: CellMetadata,
-): metadata is CellMetadata & { state: "stale" } {
-  return metadata.state === "stale";
+export class MarimoNotebookCell {
+  #raw: vscode.NotebookCell;
+  #meta: Option.Option<CellMetadata>;
+
+  private constructor(
+    raw: vscode.NotebookCell,
+    meta: Option.Option<CellMetadata>,
+  ) {
+    this.#raw = raw;
+    this.#meta = meta;
+  }
+
+  static fromVsCode(cell: vscode.NotebookCell) {
+    return new MarimoNotebookCell(cell, decodeCellMetadata(cell));
+  }
+
+  get isDisabled() {
+    return this.#meta.pipe(
+      Option.map((meta) => meta.options?.disabled === true),
+      Option.getOrElse(() => false),
+    );
+  }
+
+  get isStale() {
+    return this.#meta.pipe(
+      Option.map((meta) => meta.state === "stale"),
+      Option.getOrElse(() => false),
+    );
+  }
+
+  get languageMetadata() {
+    return this.#meta.pipe(
+      Option.flatMap((meta) => Option.fromNullable(meta.languageMetadata)),
+    );
+  }
+
+  get name() {
+    return this.#meta.pipe(
+      Option.flatMap((meta) => Option.fromNullable(meta.name)),
+    );
+  }
+
+  get index() {
+    return this.#raw.index;
+  }
+
+  get document() {
+    return this.#raw.document;
+  }
 }
