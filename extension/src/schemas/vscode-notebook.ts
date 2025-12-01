@@ -78,23 +78,48 @@ export class MarimoNotebookCell {
     this.#meta = meta;
   }
 
-  encodeCellMetadata(options: { overrides: Partial<CellMetadata> }) {
-    // Encode the "raw metadata"
-    return encodeCellMetadata({ ...this.#raw.metadata, ...options.overrides });
+  /**
+   * Builds the encoded metadata object for this cell.
+   *
+   * Applies optional overrides (currently only the `state` property),
+   * then produces the encoded metadata object used by the serialization
+   * layer. This method does not perform string serialization; it only
+   * constructs the encoded metadata representation.
+   *
+   * @param options - Optional metadata override configuration.
+   * @returns The encoded metadata object.
+   */
+  buildEncodedMetadata(options?: {
+    // TODO: Just shallow. Support deeper / fully recursive overrides when needed
+    overrides?: Pick<Partial<CellMetadata>, "state">;
+  }) {
+    return encodeCellMetadata({ ...this.#raw.metadata, ...options?.overrides });
   }
 
-  static fromVsCode(cell: vscode.NotebookCell) {
+  /**
+   * Creates a MarimoNotebookCell from a VS Code NotebookCell.
+   */
+  static from(cell: vscode.NotebookCell) {
     return new MarimoNotebookCell(cell, decodeCellMetadata(cell.metadata));
   }
 
+  /**
+   * The notebook this cell belongs to.
+   */
   get notebook() {
     return new MarimoNotebookDocument(this.#raw.notebook);
   }
 
+  /**
+   * The decoded metadata for this cell.
+   */
   get metadata() {
     return this.#meta;
   }
 
+  /**
+   * Whether the cell is marked as stale.
+   */
   get isStale() {
     return this.#meta.pipe(
       Option.map((meta) => meta.state === "stale"),
@@ -102,30 +127,48 @@ export class MarimoNotebookCell {
     );
   }
 
+  /**
+   * The cell's language metadata, if present.
+   */
   get languageMetadata() {
     return this.#meta.pipe(
       Option.flatMap((meta) => Option.fromNullable(meta.languageMetadata)),
     );
   }
 
+  /**
+   * The cell's name, if present.
+   */
   get name() {
     return this.#meta.pipe(
       Option.flatMap((meta) => Option.fromNullable(meta.name)),
     );
   }
 
+  /**
+   * The underlying cell kind.
+   */
   get kind() {
     return this.#raw.kind;
   }
 
+  /**
+   * The cell's index within the notebook.
+   */
   get index() {
     return this.#raw.index;
   }
 
+  /**
+   * The cell's text document.
+   */
   get document() {
     return this.#raw.document;
   }
 
+  /**
+   * The cell's output items.
+   */
   get outputs() {
     return this.#raw.outputs;
   }
@@ -159,13 +202,11 @@ export class MarimoNotebookDocument {
   }
 
   getCells() {
-    return this.#raw
-      .getCells()
-      .map((cell) => MarimoNotebookCell.fromVsCode(cell));
+    return this.#raw.getCells().map((cell) => MarimoNotebookCell.from(cell));
   }
 
   cellAt(index: number) {
-    return MarimoNotebookCell.fromVsCode(this.#raw.cellAt(index));
+    return MarimoNotebookCell.from(this.#raw.cellAt(index));
   }
 
   get cellCount() {

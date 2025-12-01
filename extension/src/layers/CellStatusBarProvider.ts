@@ -60,7 +60,7 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
           cell: vscode.NotebookCell,
           _token: vscode.CancellationToken,
         ): vscode.ProviderResult<vscode.NotebookCellStatusBarItem[]> {
-          const item = provide(MarimoNotebookCell.fromVsCode(cell));
+          const item = provide(MarimoNotebookCell.from(cell));
           return item ? [item] : [];
         },
       };

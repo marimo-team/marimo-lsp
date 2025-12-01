@@ -341,11 +341,11 @@ function markCellStale(
     }
 
     const edit = new code.WorkspaceEdit();
-    const newMetadata = cell.encodeCellMetadata({
-      overrides: { state: "stale" },
-    });
     edit.set(notebook.uri, [
-      code.NotebookEdit.updateCellMetadata(cellIndex, newMetadata),
+      code.NotebookEdit.updateCellMetadata(
+        cellIndex,
+        cell.buildEncodedMetadata({ overrides: { state: "stale" } }),
+      ),
     ]);
     yield* code.workspace.applyEdit(edit);
 

@@ -61,3 +61,6 @@ ignore = [
   "PLR",
   "FIX",
 ]
+
+[tool.typos.default.extend-words]
+somes = "somes"

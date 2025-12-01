@@ -156,7 +156,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
               rawCell: vscode.NotebookCell,
               _token: vscode.CancellationToken,
             ): vscode.ProviderResult<vscode.NotebookCellStatusBarItem[]> {
-              const cell = MarimoNotebookCell.fromVsCode(rawCell);
+              const cell = MarimoNotebookCell.from(rawCell);
 
               if (!binding.shouldShow(cell)) {
                 return [];
