@@ -132,7 +132,7 @@ export class MarimoNotebookCell {
   }
 
   get notebook() {
-    return new MarimoNotebookDocument(this.#raw.notebook);
+    return MarimoNotebookDocument.from(this.#raw.notebook);
   }
 
   /**
@@ -223,7 +223,7 @@ export class MarimoNotebookDocument {
   // we parse lazily, just the header for now... could expand when we need it
   #cachedMeta: undefined | Option.Option<Pick<MarimoNotebook, "header">>;
 
-  constructor(raw: vscode.NotebookDocument) {
+  private constructor(raw: vscode.NotebookDocument) {
     this.#raw = raw;
   }
 
