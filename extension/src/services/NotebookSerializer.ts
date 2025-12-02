@@ -200,12 +200,9 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               state: true,
               name: false,
               languageMetadata: false,
-              // N.B. This technically isn't transient (e.g. hide_code, disabled),
-              // but as `false` it marks the cell as dirty.
-              // But we don't support/use these options yet in the extension.
-              options: true,
               // Stable ID is ephemeral - not persisted to .py file, regenerated on open
               stableId: true,
+              options: false,
             } satisfies BooleanMap<CellMetadata>,
             transientDocumentMetadata: {
               app: false,
