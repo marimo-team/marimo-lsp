@@ -256,6 +256,7 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
   const cellMap = new Map<
     NotebookCellId,
     {
+      readonly id: NotebookCellId;
       readonly index: number;
       readonly document: vscode.TextDocument;
     }
@@ -275,6 +276,7 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
  */
 function buildVirtualDocumentContent(
   cells: Array<{
+    readonly id: NotebookCellId;
     readonly index: number;
     readonly document: vscode.TextDocument;
   }>,
@@ -292,7 +294,7 @@ function buildVirtualDocumentContent(
     const lineCount = lines.length;
 
     cellOffsets.push({
-      cellId: cell.document.uri.toString(),
+      cellId: cell.id,
       cellIndex: cell.index,
       startLine: currentLine,
       endLine: currentLine + lineCount,
