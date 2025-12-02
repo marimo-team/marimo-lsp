@@ -1,7 +1,8 @@
 import { Data, Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
-import type { NotebookCellId, NotebookId } from "../../schemas.ts";
 import {
+  type NotebookCellId,
+  type NotebookId,
   type MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../../schemas.ts";
@@ -234,7 +235,7 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
   variablesService: VariablesService,
 ) {
   const inOrderCells: Array<{
-    readonly uid: NotebookCellId;
+    readonly id: NotebookCellId;
     readonly index: number;
     readonly document: vscode.TextDocument;
   }> = notebook.getCells();
@@ -247,7 +248,7 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
   }
 
   const sortedCellIds = getTopologicalCellIds(
-    inOrderCells.map((cell) => cell.uid),
+    inOrderCells.map((cell) => cell.id),
     variables.value,
   );
 
@@ -255,13 +256,12 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
   const cellMap = new Map<
     NotebookCellId,
     {
-      readonly uid: NotebookCellId;
       readonly index: number;
       readonly document: vscode.TextDocument;
     }
   >();
   for (const cell of inOrderCells) {
-    cellMap.set(cell.uid, cell);
+    cellMap.set(cell.id, cell);
   }
 
   // biome-ignore lint/style/noNonNullAssertion: We checked existence above

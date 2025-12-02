@@ -496,11 +496,11 @@ function handleRedeserialization(
 
     // Notify backend about truly deleted cells (using stable ID)
     for (const deletedCell of matchResult.unmatched) {
-      const stableId = decodeCellMetadata(deletedCell.metadata).pipe(
-        Option.flatMap((meta) => Option.fromNullable(meta.stableId)),
-      );
+      const stableId = deletedCell.maybeId;
 
-      if (Option.isNone(stableId)) continue;
+      if (Option.isNone(stableId)) {
+        continue;
+      }
 
       yield* client
         .executeCommand({
