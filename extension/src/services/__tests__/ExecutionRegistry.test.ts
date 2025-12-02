@@ -10,7 +10,7 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import { type NotebookCellId, MarimoNotebookDocument } from "../../schemas.ts";
+import { MarimoNotebookDocument, type NotebookCellId } from "../../schemas.ts";
 import type { CellMessage, CellRuntimeState } from "../../types.ts";
 import { CellStateManager } from "../CellStateManager.ts";
 import { buildCellOutputs, ExecutionRegistry } from "../ExecutionRegistry.ts";

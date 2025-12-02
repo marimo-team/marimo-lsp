@@ -6,13 +6,13 @@ import {
   NotebookRange,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { MarimoNotebookDocument } from "../../schemas.ts";
 import type { MarimoCommand } from "../../types.ts";
 import { CellStateManager } from "../CellStateManager.ts";
 import { LanguageClient } from "../LanguageClient.ts";
 import { VsCode } from "../VsCode.ts";
-import { MarimoNotebookDocument } from "../../schemas.ts";
 
-const withTestCtx = Effect.fnUntraced(function*() {
+const withTestCtx = Effect.fnUntraced(function* () {
   const vscode = yield* TestVsCode.make();
   const executions = yield* Ref.make<ReadonlyArray<MarimoCommand>>([]);
   const layer = Layer.empty.pipe(
@@ -25,7 +25,7 @@ const withTestCtx = Effect.fnUntraced(function*() {
         LanguageClient.make({
           channel: {
             name: "marimo-lsp",
-            show() { },
+            show() {},
           },
           restart: Effect.void,
           executeCommand(cmd) {
@@ -44,10 +44,10 @@ const withTestCtx = Effect.fnUntraced(function*() {
 describe("CellStateManager", () => {
   it.effect(
     "getNotebookCellId returns consistent cell IDs",
-    Effect.fnUntraced(function*() {
+    Effect.fnUntraced(function* () {
       const ctx = yield* withTestCtx();
 
-      yield* Effect.gen(function*() {
+      yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
         // Create a test notebook with cells
@@ -65,7 +65,7 @@ describe("CellStateManager", () => {
                 "python",
               ),
             ]),
-          })
+          }),
         );
 
         const cell0 = notebook.cellAt(0);
@@ -89,10 +89,10 @@ describe("CellStateManager", () => {
 
   it.effect(
     "deleting cell from notebook sends delete_cell command",
-    Effect.fnUntraced(function*() {
+    Effect.fnUntraced(function* () {
       const ctx = yield* withTestCtx();
 
-      yield* Effect.gen(function*() {
+      yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
         const notebook = createTestNotebookDocument("/test/notebook.py", {
@@ -158,10 +158,10 @@ describe("CellStateManager", () => {
 
   it.effect(
     "moving cell does not send delete_cell command",
-    Effect.fnUntraced(function*() {
+    Effect.fnUntraced(function* () {
       const ctx = yield* withTestCtx();
 
-      yield* Effect.gen(function*() {
+      yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
         const notebook = createTestNotebookDocument("/test/notebook.py", {
@@ -220,10 +220,10 @@ describe("CellStateManager", () => {
 
   it.effect(
     "updates marimo.notebook.hasStaleCells context when cells become stale",
-    Effect.fnUntraced(function*() {
+    Effect.fnUntraced(function* () {
       const ctx = yield* withTestCtx();
 
-      yield* Effect.gen(function*() {
+      yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
         const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {

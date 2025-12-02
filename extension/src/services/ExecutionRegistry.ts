@@ -18,17 +18,17 @@ import {
 import type * as vscode from "vscode";
 import { logUnreachable } from "../assert.ts";
 import {
+  extractCellIdFromCellMessage,
+  findNotebookCell,
+  MarimoNotebookDocument,
+  type NotebookCellId,
+} from "../schemas.ts";
+import {
   type CellMessage,
   type CellRuntimeState,
   createCellNavigationLink,
 } from "../types.ts";
 import { prettyErrorMessage } from "../utils/errors.ts";
-import {
-  type NotebookCellId,
-  MarimoNotebookDocument,
-  extractCellIdFromCellMessage,
-  findNotebookCell,
-} from "../schemas.ts";
 import { CellStateManager } from "./CellStateManager.ts";
 import type { VenvPythonController } from "./NotebookControllerFactory.ts";
 import type { SandboxController } from "./SandboxController.ts";

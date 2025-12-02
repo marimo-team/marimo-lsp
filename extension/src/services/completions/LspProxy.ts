@@ -306,9 +306,7 @@ function findNotebook(
   return options.code.workspace.getNotebookDocuments().pipe(
     Effect.map((notebooks) =>
       EffectArray.getSomes(
-        notebooks.map((notebook) =>
-          MarimoNotebookDocument.tryFrom(notebook),
-        ),
+        notebooks.map((notebook) => MarimoNotebookDocument.tryFrom(notebook)),
       ),
     ),
     Effect.map((notebooks) =>

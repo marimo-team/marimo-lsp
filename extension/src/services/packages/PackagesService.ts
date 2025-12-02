@@ -43,7 +43,7 @@ interface DependencyTreeState {
 export class PackagesService extends Effect.Service<PackagesService>()(
   "PackagesService",
   {
-    scoped: Effect.gen(function*() {
+    scoped: Effect.gen(function* () {
       const client = yield* LanguageClient;
       const controllers = yield* ControllerRegistry;
       const editors = yield* NotebookEditorRegistry;
@@ -67,7 +67,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
           notebookUri: NotebookId,
           packages: PackageDescriptionType[],
         ) {
-          return Effect.gen(function*() {
+          return Effect.gen(function* () {
             yield* SubscriptionRef.update(packageListsRef, (map) =>
               HashMap.set(map, notebookUri, {
                 packages,
@@ -103,7 +103,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          * Set package list error state
          */
         setPackageListError(notebookUri: NotebookId, error: string) {
-          return Effect.gen(function*() {
+          return Effect.gen(function* () {
             yield* SubscriptionRef.update(packageListsRef, (map) =>
               HashMap.set(
                 map,
@@ -125,7 +125,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
           notebookUri: NotebookId,
           tree: DependencyTreeNode | null,
         ) {
-          return Effect.gen(function*() {
+          return Effect.gen(function* () {
             yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
               HashMap.set(map, notebookUri, {
                 tree,
@@ -161,7 +161,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          * Set dependency tree error state
          */
         setDependencyTreeError(notebookUri: NotebookId, error: string) {
-          return Effect.gen(function*() {
+          return Effect.gen(function* () {
             yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
               HashMap.set(
                 map,
@@ -202,7 +202,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          * Caches the result in dependencyTreesRef and re-uses if already cached
          */
         fetchDependencyTree(notebookUri: NotebookId) {
-          return Effect.gen(function*() {
+          return Effect.gen(function* () {
             // Check if we already have a cached tree
             const cached = yield* SubscriptionRef.get(dependencyTreesRef);
             const existing = HashMap.get(cached, notebookUri);
@@ -281,7 +281,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                   Schema.decodeUnknown(DependencyTreeResponse)(raw),
                 ),
                 Effect.catchAll((error) =>
-                  Effect.gen(function*() {
+                  Effect.gen(function* () {
                     const errorMsg = String(error);
                     yield* Log.warn(
                       "Dependency tree failed, falling back to package list",
@@ -306,7 +306,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                       })
                       .pipe(
                         Effect.catchAll((fallbackError) =>
-                          Effect.gen(function*() {
+                          Effect.gen(function* () {
                             const fallbackErrorMsg = String(fallbackError);
                             yield* SubscriptionRef.update(
                               dependencyTreesRef,
@@ -374,7 +374,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          * Clear all package data for a notebook
          */
         clearNotebook(notebookUri: NotebookId) {
-          return Effect.gen(function*() {
+          return Effect.gen(function* () {
             yield* SubscriptionRef.update(
               packageListsRef,
               HashMap.remove(notebookUri),
@@ -403,4 +403,4 @@ export class PackagesService extends Effect.Service<PackagesService>()(
       };
     }),
   },
-) { }
+) {}

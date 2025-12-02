@@ -7,10 +7,10 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { MarimoNotebookDocument } from "../../schemas.ts";
 import { Constants } from "../Constants.ts";
 import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { VsCode } from "../VsCode.ts";
-import { MarimoNotebookDocument } from "../../schemas.ts";
 
 const withTestCtx = Effect.fnUntraced(function* (
   options: { initialEnvs?: Array<py.ResolvedEnvironment> } = {},
