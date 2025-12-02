@@ -581,19 +581,15 @@ export function buildCellOutputs(
  * @returns A function that maps cell URIs to HTML link strings
  */
 function createCellIdMapper(
-  notebook: vscode.NotebookDocument,
-): (cellId: string) => string | undefined {
-  return (cellUri: string) => {
-    const cells = notebook.getCells();
-
+  notebook: MarimoNotebookDocument,
+): (cellId: NotebookCellId) => string | undefined {
+  return (cellId: NotebookCellId) => {
     // Find the cell by matching its URI to get the visual index (0-based)
-    const cellIndex = cells.findIndex(
-      (cell) => cell.document.uri.toString() === cellUri,
-    );
+    const cellIndex = notebook.getCells().findIndex((c) => c.id === cellId);
     if (cellIndex === -1) {
       return undefined;
     }
-    return createCellNavigationLink(cellUri, cellIndex + 1);
+    return createCellNavigationLink(cellId, cellIndex + 1);
   };
 }
 
@@ -636,7 +632,9 @@ function buildOutputItem(
   // Handle marimo errors
   if (output.channel === "marimo-error" && Array.isArray(output.data)) {
     // Convert marimo errors to VSCode Error objects
-    const cellIdMapper = notebook ? createCellIdMapper(notebook) : undefined;
+    const cellIdMapper = notebook
+      ? createCellIdMapper(MarimoNotebookDocument.from(notebook))
+      : undefined;
     const errors = output.data.map((error) => {
       const errorMessage = prettyErrorMessage(error, cellIdMapper);
       // If the error message contains HTML (links), use text/html mime type

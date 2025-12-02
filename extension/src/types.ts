@@ -1,7 +1,7 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
-import type { MarimoNotebook, NotebookId } from "./schemas.ts";
+import type { MarimoNotebook, NotebookCellId, NotebookId } from "./schemas.ts";
 
 export type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 
@@ -122,7 +122,7 @@ type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {
 type RendererCommandMap = {
   set_ui_element_value: MarimoApiMethodMap["set_ui_element_value"]["inner"];
   function_call_request: MarimoApiMethodMap["function_call_request"]["inner"];
-  navigate_to_cell: { cellUri: string };
+  navigate_to_cell: { cellId: NotebookCellId };
 };
 type RendererCommandMessageOf<K extends keyof RendererCommandMap> = {
   [C in keyof RendererCommandMap]: {
@@ -185,12 +185,12 @@ export type MarimoHtmlPublishMessage = MarimoHtmlPublishOf<MarimoHtmlPublish>;
  * @returns HTML string with embedded onclick handler
  */
 export function createCellNavigationLink(
-  cellUri: string,
+  cellId: NotebookCellId,
   cellIndex: number,
 ): string {
   const msg: MarimoHtmlPublishOf<"navigate_to_cell"> = {
     command: "navigate_to_cell",
-    params: { cellUri },
+    params: { cellId },
   };
   const encoded = JSON.stringify(msg).replace(/"/g, "&quot;");
   return `<a href="#" data-message="${encoded}" onclick="event.preventDefault(); window.parent.postMessage(JSON.parse(this.getAttribute('data-message')), '*'); return false;">cell-${cellIndex}</a>`;

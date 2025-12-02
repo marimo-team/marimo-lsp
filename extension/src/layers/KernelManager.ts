@@ -141,7 +141,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
                 return;
               }
               case "navigate_to_cell": {
-                const { cellUri } = message.params;
+                const { cellId } = message.params;
                 const editor = yield* code.window.getActiveNotebookEditor();
 
                 if (Option.isNone(editor)) {
@@ -150,15 +150,15 @@ export const KernelManagerLive = Layer.scopedDiscard(
                   );
                 }
 
-                const cellIndex = editor.value.notebook
+                const cellIndex = MarimoNotebookDocument.from(
+                  editor.value.notebook,
+                )
                   .getCells()
-                  .findIndex(
-                    (cell) => cell.document.uri.toString() === cellUri,
-                  );
+                  .findIndex((cell) => cell.id === cellId);
 
                 yield* Effect.logDebug(
                   `Navigating to cell at index ${cellIndex}`,
-                ).pipe(Effect.annotateLogs({ cellUri, cellIndex }));
+                ).pipe(Effect.annotateLogs({ cellId, cellIndex }));
 
                 if (cellIndex !== -1) {
                   editor.value.revealRange(
