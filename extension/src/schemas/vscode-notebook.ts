@@ -209,11 +209,11 @@ export class MarimoNotebookCell {
   }
 
   /**
-   * Get a handle to the underlying untyped cell
+   * A handle to the underlying untyped cell
    *
-   * This should only be accessed when using VS Code APIs that require the underlying type.
+   * This should _only_ be accessed when using VS Code APIs that require the underlying type.
    */
-  get unsafeRawNotebookCell() {
+  get rawNotebookCell() {
     return this.#raw;
   }
 }
@@ -316,11 +316,11 @@ export class MarimoNotebookDocument {
   }
 
   /**
-   * Get a handle to the underlying untyped document
+   * A handle to the underlying (untyped) document
    *
-   * This should only be accessed when using VS Code APIs that require a "raw" document.
+   * This should _only_ be accessed when using VS Code APIs that require a "raw" document.
    */
-  get unsafeRawNotebookDocument() {
+  get rawNotebookDocument() {
     return this.#raw;
   }
 }

@@ -187,9 +187,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       return {
         id: controller.id,
         createNotebookCellExecution(cell: MarimoNotebookCell) {
-          return controller.createNotebookCellExecution(
-            cell.unsafeRawNotebookCell,
-          );
+          return controller.createNotebookCellExecution(cell.rawNotebookCell);
         },
         selectedNotebookChanges() {
           return Stream.asyncPush<{

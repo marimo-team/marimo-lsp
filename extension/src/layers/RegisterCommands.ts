@@ -316,7 +316,7 @@ const createSetupCell = ({
       // Show message and focus on existing setup cell
       yield* code.window.showInformationMessage("Setup cell already exists");
       yield* code.window.showNotebookDocument(
-        notebook.value.unsafeRawNotebookDocument,
+        notebook.value.rawNotebookDocument,
         {
           selections: [
             new code.NotebookRange(existing.index, existing.index + 1),

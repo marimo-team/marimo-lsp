@@ -257,7 +257,7 @@ export class VenvPythonController {
     });
   }
   createNotebookCellExecution(cell: MarimoNotebookCell) {
-    return this.#inner.createNotebookCellExecution(cell.unsafeRawNotebookCell);
+    return this.#inner.createNotebookCellExecution(cell.rawNotebookCell);
   }
   selectedNotebookChanges() {
     return Stream.asyncPush<{

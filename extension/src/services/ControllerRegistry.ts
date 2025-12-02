@@ -196,7 +196,7 @@ const updateNotebookAffinityEffect = Effect.fnUntraced(function* (options: {
 
     // Prefer sandbox controller
     yield* sandboxController.updateNotebookAffinity(
-      notebook.unsafeRawNotebookDocument,
+      notebook.rawNotebookDocument,
       code.NotebookControllerAffinity.Preferred,
     );
 
@@ -228,7 +228,7 @@ const updateNotebookAffinityEffect = Effect.fnUntraced(function* (options: {
 
     for (const handle of HashMap.values(venvControllers)) {
       yield* handle.controller.updateNotebookAffinity(
-        notebook.unsafeRawNotebookDocument,
+        notebook.rawNotebookDocument,
         code.NotebookControllerAffinity.Preferred,
       );
     }

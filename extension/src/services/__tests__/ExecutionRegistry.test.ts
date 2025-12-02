@@ -949,9 +949,7 @@ it.scoped(
           data: { cells: [cellData] },
         }),
       );
-      const editor = createTestNotebookEditor(
-        notebook.unsafeRawNotebookDocument,
-      );
+      const editor = createTestNotebookEditor(notebook.rawNotebookDocument);
       const cell = notebook.cellAt(0);
       const code = yield* VsCode;
 
