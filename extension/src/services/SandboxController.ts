@@ -3,11 +3,13 @@ import * as semver from "@std/semver";
 import { Effect, Option, Runtime, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
-import { SemVerFromString } from "../schemas.ts";
-import { getNotebookUri } from "../types.ts";
+import {
+  MarimoNotebookCell,
+  MarimoNotebookDocument,
+  SemVerFromString,
+} from "../schemas.ts";
 import { getCellExecutableCode } from "../utils/getCellExecutableCode.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
-import { getNotebookCellId } from "../utils/notebook.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { Constants } from "./Constants.ts";
 import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
@@ -42,9 +44,12 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       controller.description = "marimo sandbox controller";
 
       // Set up execution handler
-      controller.executeHandler = (cells, notebook) =>
+      controller.executeHandler = (rawCells, rawNotebook) =>
         runPromise<void, never>(
           Effect.gen(function* () {
+            const notebook = MarimoNotebookDocument.from(rawNotebook);
+            const cells = rawCells.map((cell) => MarimoNotebookCell.from(cell));
+
             // sandboxing only works with titled (saved) notebooks
             if (notebook.isUntitled) {
               const choice = yield* code.window.showInformationMessage(
@@ -59,7 +64,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
                 return;
               }
 
-              yield* Effect.promise(() => notebook.save());
+              yield* notebook.save();
               return;
             }
 
@@ -89,10 +94,10 @@ export class SandboxController extends Effect.Service<SandboxController>()(
               params: {
                 method: "run",
                 params: {
-                  notebookUri: getNotebookUri(notebook),
+                  notebookUri: notebook.id,
                   executable,
                   inner: {
-                    cellIds: cells.map((cell) => getNotebookCellId(cell)),
+                    cellIds: cells.map((cell) => cell.id),
                     codes: cells.map((cell) =>
                       getCellExecutableCode(cell, LanguageId),
                     ),
@@ -142,17 +147,18 @@ export class SandboxController extends Effect.Service<SandboxController>()(
                 { code, channel },
               ),
             ),
-            Effect.annotateLogs({ notebook: notebook.uri.fsPath }),
+            Effect.annotateLogs({ notebook: rawNotebook.uri.fsPath }),
           ),
         );
 
       controller.interruptHandler = (doc) =>
         runPromise(
           Effect.gen(function* () {
+            const notebook = MarimoNotebookDocument.from(doc);
             yield* Effect.logInfo("Interrupting execution").pipe(
               Effect.annotateLogs({
                 controllerId: controller.id,
-                notebook: getNotebookUri(doc),
+                notebook: notebook.id,
               }),
             );
             yield* client.executeCommand({
@@ -160,7 +166,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
               params: {
                 method: "interrupt",
                 params: {
-                  notebookUri: getNotebookUri(doc),
+                  notebookUri: notebook.id,
                   inner: {},
                 },
               },
@@ -180,8 +186,10 @@ export class SandboxController extends Effect.Service<SandboxController>()(
 
       return {
         id: controller.id,
-        createNotebookCellExecution(cell: vscode.NotebookCell) {
-          return controller.createNotebookCellExecution(cell);
+        createNotebookCellExecution(cell: MarimoNotebookCell) {
+          return controller.createNotebookCellExecution(
+            cell.unsafeRawNotebookCell,
+          );
         },
         selectedNotebookChanges() {
           return Stream.asyncPush<{
@@ -209,7 +217,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
   },
 ) {}
 
-const findRequirements = (uv: Uv, notebook: vscode.NotebookDocument) =>
+const findRequirements = (uv: Uv, notebook: MarimoNotebookDocument) =>
   Effect.gen(function* () {
     const packages = yield* uv.currentDeps({
       script: notebook.uri.fsPath,

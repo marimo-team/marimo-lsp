@@ -141,7 +141,7 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
           Effect.fnUntraced(function* (maybeEditor) {
             const notebook = maybeEditor.pipe(
               Option.flatMap((editor) =>
-                MarimoNotebookDocument.decodeUnknownNotebookDocument(
+                MarimoNotebookDocument.tryFrom(
                   editor.notebook,
                 ),
               ),
@@ -180,7 +180,7 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
       const openNotebooks = yield* code.workspace.getNotebookDocuments();
       for (const unknownNotebook of openNotebooks) {
         const notebook =
-          MarimoNotebookDocument.decodeUnknownNotebookDocument(unknownNotebook);
+          MarimoNotebookDocument.tryFrom(unknownNotebook);
         if (Option.isSome(notebook) && notebook.value.uri.scheme === "file") {
           yield* addRecentNotebook(notebook.value.uri, notebook.value);
         }

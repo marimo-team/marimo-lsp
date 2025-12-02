@@ -1,5 +1,5 @@
 import { Effect, Option } from "effect";
-import type * as vscode from "vscode";
+import type { MarimoNotebookDocument } from "./schemas.ts";
 import { Config } from "./services/Config.ts";
 import type { VenvPythonController } from "./services/NotebookControllerFactory.ts";
 import type { SandboxController } from "./services/SandboxController.ts";
@@ -10,7 +10,7 @@ import { installPackages } from "./utils/installPackages.ts";
 
 export const handleMissingPackageAlert = Effect.fnUntraced(function* (
   operation: MessageOperationOf<"missing-package-alert">,
-  notebook: vscode.NotebookDocument,
+  notebook: MarimoNotebookDocument,
   controller: VenvPythonController | SandboxController,
 ) {
   const code = yield* VsCode;
@@ -32,7 +32,7 @@ export const handleMissingPackageAlert = Effect.fnUntraced(function* (
     return;
   }
 
-  let options: { script: vscode.NotebookDocument } | { venvPath: string };
+  let options: { script: MarimoNotebookDocument } | { venvPath: string };
 
   if ("executable" in controller) {
     const venvPath = findVenvPath(controller.executable);

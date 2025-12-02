@@ -307,7 +307,7 @@ function findNotebook(
     Effect.map((notebooks) =>
       EffectArray.getSomes(
         notebooks.map((notebook) =>
-          MarimoNotebookDocument.decodeUnknownNotebookDocument(notebook),
+          MarimoNotebookDocument.tryFrom(notebook),
         ),
       ),
     ),

@@ -1,9 +1,9 @@
 import { Effect, HashMap, SubscriptionRef } from "effect";
+import type { NotebookId } from "../../schemas.ts";
 import type {
   DataColumnPreviewOp,
   DataSourceConnectionsOp,
   DatasetsOp,
-  NotebookUri,
   SqlTableListPreviewOp,
   SqlTablePreviewOp,
 } from "../../types.ts";
@@ -88,27 +88,27 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
     scoped: Effect.gen(function* () {
       // Track data source connections: NotebookUri -> DataSourceConnectionMap
       const connectionsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, DataSourceConnectionMap>(),
+        HashMap.empty<NotebookId, DataSourceConnectionMap>(),
       );
 
       // Track datasets: NotebookUri -> DatasetsMap
       const datasetsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, DatasetsMap>(),
+        HashMap.empty<NotebookId, DatasetsMap>(),
       );
 
       // Track SQL table previews: NotebookUri -> Map<request_id, table>
       const tablePreviewsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, Map<string, DataTable | null>>(),
+        HashMap.empty<NotebookId, Map<string, DataTable | null>>(),
       );
 
       // Track SQL table list previews: NotebookUri -> Map<request_id, tables[]>
       const tableListPreviewsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, Map<string, DataTable[]>>(),
+        HashMap.empty<NotebookId, Map<string, DataTable[]>>(),
       );
 
       // Track column previews: NotebookUri -> Map<table_name, ColumnStats>
       const columnPreviewsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, Map<string, unknown>>(),
+        HashMap.empty<NotebookId, Map<string, unknown>>(),
       );
 
       /**
@@ -180,7 +180,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
          * Update data source connections for a notebook
          */
         updateConnections(
-          notebookUri: NotebookUri,
+          notebookUri: NotebookId,
           operation: DataSourceConnectionsOp,
         ) {
           return Effect.gen(function* () {
@@ -200,7 +200,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         /**
          * Update datasets for a notebook
          */
-        updateDatasets(notebookUri: NotebookUri, operation: DatasetsOp) {
+        updateDatasets(notebookUri: NotebookId, operation: DatasetsOp) {
           return Effect.gen(function* () {
             const datasetsMap = convertDatasetsToMap(operation);
 
@@ -220,7 +220,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
          * Update SQL table preview for a notebook
          */
         updateTablePreview(
-          notebookUri: NotebookUri,
+          notebookUri: NotebookId,
           operation: SqlTablePreviewOp,
         ) {
           return Effect.gen(function* () {
@@ -246,7 +246,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
          * Update SQL table list preview for a notebook
          */
         updateTableListPreview(
-          notebookUri: NotebookUri,
+          notebookUri: NotebookId,
           operation: SqlTableListPreviewOp,
         ) {
           return Effect.gen(function* () {
@@ -272,7 +272,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
          * Update column preview for a notebook
          */
         updateColumnPreview(
-          notebookUri: NotebookUri,
+          notebookUri: NotebookId,
           operation: DataColumnPreviewOp,
         ) {
           return Effect.gen(function* () {
@@ -298,7 +298,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         /**
          * Get data source connections for a notebook
          */
-        getConnections(notebookUri: NotebookUri) {
+        getConnections(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             const map = yield* SubscriptionRef.get(connectionsRef);
             return HashMap.get(map, notebookUri);
@@ -308,7 +308,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         /**
          * Get datasets for a notebook
          */
-        getDatasets(notebookUri: NotebookUri) {
+        getDatasets(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             const map = yield* SubscriptionRef.get(datasetsRef);
             return HashMap.get(map, notebookUri);
@@ -318,7 +318,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         /**
          * Get table preview for a notebook and request ID
          */
-        getTablePreview(notebookUri: NotebookUri, requestId: string) {
+        getTablePreview(notebookUri: NotebookId, requestId: string) {
           return Effect.gen(function* () {
             const map = yield* SubscriptionRef.get(tablePreviewsRef);
             const previewMap = HashMap.get(map, notebookUri);
@@ -332,7 +332,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         /**
          * Get table list preview for a notebook and request ID
          */
-        getTableListPreview(notebookUri: NotebookUri, requestId: string) {
+        getTableListPreview(notebookUri: NotebookId, requestId: string) {
           return Effect.gen(function* () {
             const map = yield* SubscriptionRef.get(tableListPreviewsRef);
             const previewMap = HashMap.get(map, notebookUri);
@@ -346,7 +346,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         /**
          * Get column preview for a notebook and table name
          */
-        getColumnPreview(notebookUri: NotebookUri, tableName: string) {
+        getColumnPreview(notebookUri: NotebookId, tableName: string) {
           return Effect.gen(function* () {
             const map = yield* SubscriptionRef.get(columnPreviewsRef);
             const previewMap = HashMap.get(map, notebookUri);
@@ -360,7 +360,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         /**
          * Clear all datasource data for a notebook
          */
-        clearNotebook(notebookUri: NotebookUri) {
+        clearNotebook(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(connectionsRef, (map) =>
               HashMap.remove(map, notebookUri),

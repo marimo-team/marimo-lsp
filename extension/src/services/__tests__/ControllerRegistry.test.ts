@@ -10,6 +10,7 @@ import {
 import { Constants } from "../Constants.ts";
 import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { VsCode } from "../VsCode.ts";
+import { MarimoNotebookDocument } from "../../schemas.ts";
 
 const withTestCtx = Effect.fnUntraced(function* (
   options: { initialEnvs?: Array<py.ResolvedEnvironment> } = {},
@@ -38,8 +39,8 @@ it.effect(
       const code = yield* VsCode;
       const registry = yield* ControllerRegistry;
 
-      const notebook = createTestNotebookDocument(
-        code.Uri.file("/test/notebook_mo.py"),
+      const notebook = MarimoNotebookDocument.from(
+        createTestNotebookDocument(code.Uri.file("/test/notebook_mo.py")),
       );
 
       return yield* registry.getActiveController(notebook);
@@ -201,11 +202,11 @@ it.effect(
       const code = yield* VsCode;
       const registry = yield* ControllerRegistry;
 
-      const notebook1 = createTestNotebookDocument(
-        code.Uri.file("/test/notebook1_mo.py"),
+      const notebook1 = MarimoNotebookDocument.from(
+        createTestNotebookDocument(code.Uri.file("/test/notebook1_mo.py")),
       );
-      const notebook2 = createTestNotebookDocument(
-        code.Uri.file("/test/notebook2_mo.py"),
+      const notebook2 = MarimoNotebookDocument.from(
+        createTestNotebookDocument(code.Uri.file("/test/notebook2_mo.py")),
       );
 
       // Get controllers from vscode snapshot

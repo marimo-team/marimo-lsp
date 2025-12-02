@@ -3,20 +3,18 @@ import type * as py from "@vscode/python-extension";
 import { Brand, Effect, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
 import { unreachable } from "../assert.ts";
+import { MarimoNotebookCell, MarimoNotebookDocument } from "../schemas.ts";
 import { Constants } from "../services/Constants.ts";
-import { getNotebookUri } from "../types.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
 import { getCellExecutableCode } from "../utils/getCellExecutableCode.ts";
 import { installPackages } from "../utils/installPackages.ts";
-import { getNotebookCellId } from "../utils/notebook.ts";
 import { Config } from "./Config.ts";
 import { EnvironmentValidator } from "./EnvironmentValidator.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookSerializer } from "./NotebookSerializer.ts";
 import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
-import { MarimoNotebookCell } from "../schemas.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
 export type NotebookControllerId = Brand.Branded<string, "ControllerId">;
@@ -59,14 +57,17 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
           controller.description = options.env.path;
 
           // Set up execution handler
-          controller.executeHandler = (cells, notebook, controller) =>
+          controller.executeHandler = (rawCells, rawNotebook, controller) =>
             runPromise(
               Effect.gen(function* () {
+                const cells = rawCells.map((c) => MarimoNotebookCell.from(c));
+                const notebook = MarimoNotebookDocument.from(rawNotebook);
+
                 yield* Effect.logInfo("Running cells").pipe(
                   Effect.annotateLogs({
                     controller: controller.id,
                     cellCount: cells.length,
-                    notebook: notebook.uri.toString(),
+                    notebook: rawNotebook.uri.toString(),
                   }),
                 );
                 const validEnv = yield* validator.validate(options.env);
@@ -75,10 +76,10 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                   params: {
                     method: "run",
                     params: {
-                      notebookUri: getNotebookUri(notebook),
+                      notebookUri: notebook.id,
                       executable: validEnv.executable,
                       inner: {
-                        cellIds: cells.map((cell) => getNotebookCellId(cell)),
+                        cellIds: cells.map((cell) => cell.id),
                         codes: cells.map((cell) =>
                           getCellExecutableCode(cell, LanguageId),
                         ),
@@ -193,9 +194,10 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
             );
 
           // Set up interrupt handler
-          controller.interruptHandler = (notebook) =>
+          controller.interruptHandler = (rawNotebook) =>
             runPromise(
               Effect.gen(function* () {
+                const notebook = MarimoNotebookDocument.from(rawNotebook);
                 yield* Effect.logInfo("Interrupting execution").pipe(
                   Effect.annotateLogs({
                     controllerId: controller.id,
@@ -207,7 +209,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                   params: {
                     method: "interrupt",
                     params: {
-                      notebookUri: getNotebookUri(notebook),
+                      notebookUri: notebook.id,
                       inner: {},
                     },
                   },
@@ -254,8 +256,8 @@ export class VenvPythonController {
       return this;
     });
   }
-  createNotebookCellExecution(cell: vscode.NotebookCell) {
-    return this.#inner.createNotebookCellExecution(cell);
+  createNotebookCellExecution(cell: MarimoNotebookCell) {
+    return this.#inner.createNotebookCellExecution(cell.unsafeRawNotebookCell);
   }
   selectedNotebookChanges() {
     return Stream.asyncPush<{

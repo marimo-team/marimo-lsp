@@ -7,12 +7,12 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import type { MarimoCommand } from "../../types.ts";
-import { getNotebookCellId } from "../../utils/notebook.ts";
 import { CellStateManager } from "../CellStateManager.ts";
 import { LanguageClient } from "../LanguageClient.ts";
 import { VsCode } from "../VsCode.ts";
+import { MarimoNotebookDocument } from "../../schemas.ts";
 
-const withTestCtx = Effect.fnUntraced(function* () {
+const withTestCtx = Effect.fnUntraced(function*() {
   const vscode = yield* TestVsCode.make();
   const executions = yield* Ref.make<ReadonlyArray<MarimoCommand>>([]);
   const layer = Layer.empty.pipe(
@@ -25,7 +25,7 @@ const withTestCtx = Effect.fnUntraced(function* () {
         LanguageClient.make({
           channel: {
             name: "marimo-lsp",
-            show() {},
+            show() { },
           },
           restart: Effect.void,
           executeCommand(cmd) {
@@ -44,34 +44,36 @@ const withTestCtx = Effect.fnUntraced(function* () {
 describe("CellStateManager", () => {
   it.effect(
     "getNotebookCellId returns consistent cell IDs",
-    Effect.fnUntraced(function* () {
+    Effect.fnUntraced(function*() {
       const ctx = yield* withTestCtx();
 
-      yield* Effect.gen(function* () {
+      yield* Effect.gen(function*() {
         const code = yield* VsCode;
 
         // Create a test notebook with cells
-        const notebook = createTestNotebookDocument("/test/notebook.py", {
-          data: new code.NotebookData([
-            new code.NotebookCellData(
-              code.NotebookCellKind.Code,
-              "x = 1",
-              "python",
-            ),
-            new code.NotebookCellData(
-              code.NotebookCellKind.Code,
-              "y = 2",
-              "python",
-            ),
-          ]),
-        });
+        const notebook = MarimoNotebookDocument.from(
+          createTestNotebookDocument("/test/notebook.py", {
+            data: new code.NotebookData([
+              new code.NotebookCellData(
+                code.NotebookCellKind.Code,
+                "x = 1",
+                "python",
+              ),
+              new code.NotebookCellData(
+                code.NotebookCellKind.Code,
+                "y = 2",
+                "python",
+              ),
+            ]),
+          })
+        );
 
         const cell0 = notebook.cellAt(0);
         const cell1 = notebook.cellAt(1);
 
         // Get cell IDs
-        const cellId0 = getNotebookCellId(cell0);
-        const cellId1 = getNotebookCellId(cell1);
+        const cellId0 = cell0.id;
+        const cellId1 = cell1.id;
 
         // Verify cell IDs are strings and different
         expect(typeof cellId0).toBe("string");
@@ -79,18 +81,18 @@ describe("CellStateManager", () => {
         expect(cellId0).not.toBe(cellId1);
 
         // Verify calling getNotebookCellId again returns the same ID
-        expect(getNotebookCellId(cell0)).toBe(cellId0);
-        expect(getNotebookCellId(cell1)).toBe(cellId1);
+        expect(cell0.id).toBe(cellId0);
+        expect(cell1.id).toBe(cellId1);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
 
   it.effect(
     "deleting cell from notebook sends delete_cell command",
-    Effect.fnUntraced(function* () {
+    Effect.fnUntraced(function*() {
       const ctx = yield* withTestCtx();
 
-      yield* Effect.gen(function* () {
+      yield* Effect.gen(function*() {
         const code = yield* VsCode;
 
         const notebook = createTestNotebookDocument("/test/notebook.py", {
@@ -156,10 +158,10 @@ describe("CellStateManager", () => {
 
   it.effect(
     "moving cell does not send delete_cell command",
-    Effect.fnUntraced(function* () {
+    Effect.fnUntraced(function*() {
       const ctx = yield* withTestCtx();
 
-      yield* Effect.gen(function* () {
+      yield* Effect.gen(function*() {
         const code = yield* VsCode;
 
         const notebook = createTestNotebookDocument("/test/notebook.py", {
@@ -218,10 +220,10 @@ describe("CellStateManager", () => {
 
   it.effect(
     "updates marimo.notebook.hasStaleCells context when cells become stale",
-    Effect.fnUntraced(function* () {
+    Effect.fnUntraced(function*() {
       const ctx = yield* withTestCtx();
 
-      yield* Effect.gen(function* () {
+      yield* Effect.gen(function*() {
         const code = yield* VsCode;
 
         const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {

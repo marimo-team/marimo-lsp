@@ -21,14 +21,14 @@ import {
   type CellMessage,
   type CellRuntimeState,
   createCellNavigationLink,
-  getNotebookUri,
 } from "../types.ts";
 import { prettyErrorMessage } from "../utils/errors.ts";
 import {
-  extractCellId,
-  getNotebookCell,
   type NotebookCellId,
-} from "../utils/notebook.ts";
+  MarimoNotebookDocument,
+  extractCellIdFromCellMessage,
+  findNotebookCell,
+} from "../schemas.ts";
 import { CellStateManager } from "./CellStateManager.ts";
 import type { VenvPythonController } from "./NotebookControllerFactory.ts";
 import type { SandboxController } from "./SandboxController.ts";
@@ -83,7 +83,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
         ) =>
           Effect.gen(function* () {
             const { editor, controller } = options;
-            const cellId = extractCellId(msg);
+            const cellId = extractCellIdFromCellMessage(msg);
 
             const cell = yield* Ref.modify(ref, (map) => {
               const prev = Option.match(HashMap.get(map, cellId), {
@@ -94,16 +94,13 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
               return [update, HashMap.set(map, cellId, update)];
             });
 
-            const notebookUri = getNotebookUri(editor.notebook);
-            const notebookCell = yield* getNotebookCell(
-              editor.notebook,
-              cell.id,
-            );
+            const notebook = MarimoNotebookDocument.from(editor.notebook);
+            const notebookCell = yield* findNotebookCell(notebook, cell.id);
 
             // If cell has stale inputs, mark it as stale
             if (cell.state.staleInputs) {
               yield* cellStateManager.markCellStale(
-                notebookUri,
+                notebook.id,
                 notebookCell.index,
               );
             }
@@ -112,7 +109,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
               case "queued": {
                 // Clear stale state when cell is queued for execution
                 yield* cellStateManager.clearCellStale(
-                  notebookUri,
+                  notebook.id,
                   notebookCell.index,
                 );
 
@@ -385,8 +382,8 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
           "Creating ephemeral execution for marimo error without pending execution",
         ).pipe(Effect.annotateLogs({ cellId }));
 
-        const notebookCell = yield* getNotebookCell(
-          deps.editor.notebook,
+        const notebookCell = yield* findNotebookCell(
+          MarimoNotebookDocument.from(deps.editor.notebook),
           cellId,
         );
         const execution =

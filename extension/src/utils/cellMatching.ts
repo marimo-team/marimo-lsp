@@ -1,14 +1,13 @@
 import { Option } from "effect";
-import type * as vscode from "vscode";
-import { decodeCellMetadata } from "../schemas.ts";
+import type { MarimoNotebookCell } from "../schemas.ts";
 
 export interface CellMatchResult {
   /** Mapping from old cell stableId to new cell */
-  matched: Map<string, vscode.NotebookCell>;
+  matched: Map<string, MarimoNotebookCell>;
   /** Old cells with no match (truly deleted) */
-  unmatched: vscode.NotebookCell[];
+  unmatched: Array<MarimoNotebookCell>;
   /** New cells with no match (truly added) */
-  newCells: vscode.NotebookCell[];
+  newCells: Array<MarimoNotebookCell>;
 }
 
 /**
@@ -20,10 +19,10 @@ export interface CellMatchResult {
  * 3. Unmatched cells are considered truly deleted/added
  */
 export function matchCells(
-  removedCells: vscode.NotebookCell[],
-  addedCells: vscode.NotebookCell[],
+  removedCells: Array<MarimoNotebookCell>,
+  addedCells: Array<MarimoNotebookCell>,
 ): CellMatchResult {
-  const matched = new Map<string, vscode.NotebookCell>();
+  const matched = new Map<string, MarimoNotebookCell>();
   const remainingRemoved = [...removedCells];
   const remainingAdded = [...addedCells];
 
@@ -31,9 +30,11 @@ export function matchCells(
   for (let i = remainingRemoved.length - 1; i >= 0; i--) {
     const removed = remainingRemoved[i];
     const removedContent = removed.document.getText();
-    const stableId = getStableIdFromCell(removed);
+    const stableId = removed.maybeId;
 
-    if (Option.isNone(stableId)) continue;
+    if (Option.isNone(stableId)) {
+      continue;
+    }
 
     const matchIndex = remainingAdded.findIndex(
       (added) => added.document.getText() === removedContent,
@@ -50,12 +51,15 @@ export function matchCells(
   for (let i = remainingRemoved.length - 1; i >= 0; i--) {
     const removed = remainingRemoved[i];
     const removedNormalized = normalizeContent(removed.document.getText());
-    const stableId = getStableIdFromCell(removed);
+    const stableId = removed.maybeId;
 
-    if (Option.isNone(stableId)) continue;
+    if (Option.isNone(stableId)) {
+      continue;
+    }
 
     const matchIndex = remainingAdded.findIndex(
-      (added) => normalizeContent(added.document.getText()) === removedNormalized,
+      (added) =>
+        normalizeContent(added.document.getText()) === removedNormalized,
     );
 
     if (matchIndex !== -1) {
@@ -74,12 +78,4 @@ export function matchCells(
 
 function normalizeContent(content: string): string {
   return content.trim().replace(/\s+/g, " ");
-}
-
-function getStableIdFromCell(
-  cell: vscode.NotebookCell,
-): Option.Option<string> {
-  return decodeCellMetadata(cell.metadata).pipe(
-    Option.flatMap((meta) => Option.fromNullable(meta.stableId)),
-  );
 }

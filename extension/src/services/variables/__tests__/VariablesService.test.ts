@@ -1,10 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
-import { Brand, Effect, Layer, Option, Ref, Stream, TestClock } from "effect";
-import type {
-  NotebookUri,
-  VariablesOp,
-  VariableValuesOp,
-} from "../../../types.ts";
+import { Effect, Layer, Option, Ref, Stream, TestClock } from "effect";
+import type { NotebookId } from "../../../schemas.ts";
+import type { VariablesOp, VariableValuesOp } from "../../../types.ts";
 import { VariablesService } from "../VariablesService.ts";
 
 const withTestCtx = () =>
@@ -16,8 +13,8 @@ const withTestCtx = () =>
   });
 
 // Helper to create NotebookUri
-function makeNotebookUri(path: string): NotebookUri {
-  return Brand.nominal<NotebookUri>()(path);
+function makeNotebookUri(path: string): NotebookId {
+  return path as NotebookId;
 }
 const NOTEBOOK_URI = makeNotebookUri("file:///test/notebook.py");
 

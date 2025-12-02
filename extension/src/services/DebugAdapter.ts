@@ -108,7 +108,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
               const notebook = Option.flatMap(
                 yield* code.window.getActiveNotebookEditor(),
                 (editor) =>
-                  MarimoNotebookDocument.decodeUnknownNotebookDocument(
+                  MarimoNotebookDocument.tryFrom(
                     editor.notebook,
                   ),
               );

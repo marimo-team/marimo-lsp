@@ -9,7 +9,8 @@ import {
   TestClock,
 } from "effect";
 import { partialService } from "../../../__tests__/__utils__/partial.ts";
-import type { MarimoConfig, NotebookUri } from "../../../types.ts";
+import type { NotebookId } from "../../../schemas.ts";
+import type { MarimoConfig } from "../../../types.ts";
 import { LanguageClient } from "../../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../NotebookEditorRegistry.ts";
 import type { VsCode } from "../../VsCode.ts";
@@ -17,9 +18,9 @@ import { VsCode as VsCodeService } from "../../VsCode.ts";
 import { ConfigContextManager } from "../ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";
 
-const NOTEBOOK_URI = "file:///test/notebook.py" as NotebookUri;
-const NOTEBOOK_URI_1 = "file:///test/notebook1.py" as NotebookUri;
-const NOTEBOOK_URI_2 = "file:///test/notebook2.py" as NotebookUri;
+const NOTEBOOK_URI = "file:///test/notebook.py" as NotebookId;
+const NOTEBOOK_URI_1 = "file:///test/notebook1.py" as NotebookId;
+const NOTEBOOK_URI_2 = "file:///test/notebook2.py" as NotebookId;
 
 const AUTORUN_CONFIG = {
   runtime: {
@@ -37,18 +38,18 @@ const LAZY_CONFIG = {
 class TestContext extends Effect.Service<TestContext>()("TestContext", {
   scoped: Effect.gen(function* () {
     const activeNotebookRef = yield* SubscriptionRef.make(
-      Option.none<NotebookUri>(),
+      Option.none<NotebookId>(),
     );
-    const configStore = new Map<NotebookUri, MarimoConfig>();
+    const configStore = new Map<NotebookId, MarimoConfig>();
     const contextCalls: Array<{ key: string; value: unknown }> = [];
 
     return {
       activeNotebookRef,
       configStore,
       contextCalls,
-      setActiveNotebook: (uri: Option.Option<NotebookUri>) =>
+      setActiveNotebook: (uri: Option.Option<NotebookId>) =>
         SubscriptionRef.set(activeNotebookRef, uri),
-      setConfig: (uri: NotebookUri, config: MarimoConfig) => {
+      setConfig: (uri: NotebookId, config: MarimoConfig) => {
         configStore.set(uri, config);
         return Effect.void;
       },

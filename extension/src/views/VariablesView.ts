@@ -1,13 +1,13 @@
 import { Effect, HashMap, Layer, Option, Ref, Stream } from "effect";
+import type { NotebookId } from "../schemas.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
-import type { NotebookUri } from "../types.ts";
 import { Log } from "../utils/log.ts";
 import { TreeView } from "./TreeView.ts";
 
 interface VariableTreeItem {
   type: "variable";
-  notebookUri: NotebookUri;
+  notebookUri: NotebookId;
   name: string;
   value?: string;
   datatype?: string;

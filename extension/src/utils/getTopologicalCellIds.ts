@@ -1,5 +1,5 @@
+import type { NotebookCellId } from "../schemas.ts";
 import type { VariableName } from "../services/variables/VariablesService.ts";
-import type { NotebookCellId } from "./notebook.ts";
 
 /**
  * Get topologically sorted cell IDs based on variable dependencies.

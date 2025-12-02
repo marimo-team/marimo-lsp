@@ -12,8 +12,11 @@ import {
   SynchronizedRef,
 } from "effect";
 import type * as vscode from "vscode";
-import { MarimoNotebook, MarimoNotebookDocument } from "../schemas.ts";
-import { getNotebookUri } from "../types.ts";
+import {
+  MarimoNotebook,
+  MarimoNotebookDocument,
+  type NotebookId,
+} from "../schemas.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
 import {
@@ -64,7 +67,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         HashMap.empty<NotebookControllerId, NotebookControllerHandle>(),
       );
       const selectionsRef = yield* Ref.make(
-        HashMap.empty<vscode.NotebookDocument, AnyController>(),
+        HashMap.empty<NotebookId, AnyController>(),
       );
 
       yield* Effect.addFinalizer(() =>
@@ -131,7 +134,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         code.window.activeNotebookEditorChanges().pipe(
           Stream.filterMap((maybeEditor) => maybeEditor),
           Stream.filterMap(({ notebook }) =>
-            MarimoNotebookDocument.decodeUnknownNotebookDocument(notebook),
+            MarimoNotebookDocument.tryFrom(notebook),
           ),
           Stream.runForEach((notebook) =>
             updateNotebookAffinityEffect({
@@ -150,8 +153,8 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       );
 
       return {
-        getActiveController(notebook: vscode.NotebookDocument) {
-          return Effect.map(Ref.get(selectionsRef), HashMap.get(notebook));
+        getActiveController(notebook: MarimoNotebookDocument) {
+          return Effect.map(Ref.get(selectionsRef), HashMap.get(notebook.id));
         },
         // for testing only
         snapshot() {
@@ -166,8 +169,8 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
                 }))
                 .toSorted((a, b) => a.id.localeCompare(b.id)),
               selections: HashMap.toEntries(selections)
-                .map(([notebook, controller]) => ({
-                  notebookUri: getNotebookUri(notebook),
+                .map(([notebookUri, controller]) => ({
+                  notebookUri: notebookUri,
                   controllerId: controller.id,
                 }))
                 .toSorted((a, b) => a.notebookUri.localeCompare(b.notebookUri)),
@@ -190,12 +193,8 @@ const updateNotebookAffinityEffect = Effect.fnUntraced(function* (options: {
   const { notebook, sandboxController, handlesRef, code } = options;
   const handles = yield* SynchronizedRef.get(handlesRef);
 
-  const { header } = yield* Schema.decodeUnknownOption(
-    MarimoNotebook.pick("header"),
-  )(notebook.rawMetadata);
-
   // Check if header includes "/// script"
-  if (header?.value?.includes("/// script")) {
+  if (notebook.header.includes("/// script")) {
     yield* Effect.logDebug(
       "Setting affinity to sandbox controller (script header detected)",
     ).pipe(Effect.annotateLogs({ notebookUri: notebook.uri.toString() }));
@@ -244,14 +243,12 @@ const updateNotebookAffinityEffect = Effect.fnUntraced(function* (options: {
   // Otherwise, don't set any affinity (let VSCode use defaults)
   yield* Effect.logDebug(
     "No affinity preference set (no script header or venv)",
-  ).pipe(Effect.annotateLogs({ notebookUri: getNotebookUri(notebook) }));
+  ).pipe(Effect.annotateLogs({ notebookUri: notebook.id }));
 });
 
 const trackControllerSelections = (
   controller: AnyController,
-  selectionsRef: Ref.Ref<
-    HashMap.HashMap<vscode.NotebookDocument, AnyController>
-  >,
+  selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, AnyController>>,
 ) =>
   controller.selectedNotebookChanges().pipe(
     Stream.mapEffect(
@@ -261,7 +258,8 @@ const trackControllerSelections = (
           // because another controller will overwrite it when selected
           return;
         }
-        yield* Ref.update(selectionsRef, HashMap.set(e.notebook, controller));
+        const notebook = MarimoNotebookDocument.from(e.notebook);
+        yield* Ref.update(selectionsRef, HashMap.set(notebook.id, controller));
         yield* Effect.logDebug("Updated controller for notebook").pipe(
           Effect.annotateLogs({
             controllerId: controller.id,
@@ -278,9 +276,7 @@ const createOrUpdateController = Effect.fnUntraced(function* (options: {
   handlesRef: SynchronizedRef.SynchronizedRef<
     HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
   >;
-  selectionsRef: Ref.Ref<
-    HashMap.HashMap<vscode.NotebookDocument, AnyController>
-  >;
+  selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, AnyController>>;
 }) {
   const { env, selectionsRef, handlesRef } = options;
   const code = yield* VsCode;
@@ -341,9 +337,7 @@ const pruneStaleControllers = Effect.fnUntraced(function* (options: {
   handlesRef: SynchronizedRef.SynchronizedRef<
     HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
   >;
-  selectionsRef: Ref.Ref<
-    HashMap.HashMap<vscode.NotebookDocument, AnyController>
-  >;
+  selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, AnyController>>;
 }) {
   const { envs, handlesRef, selectionsRef } = options;
   yield* Effect.logDebug("Checking for stale controllers");

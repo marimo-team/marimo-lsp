@@ -3,12 +3,12 @@ import type * as vscode from "vscode";
 import {
   decodeCellMetadata,
   encodeCellMetadata,
+  MarimoNotebookCell,
   MarimoNotebookDocument,
+  type NotebookId,
 } from "../schemas.ts";
-import { getNotebookUri, type NotebookUri } from "../types.ts";
 import { matchCells } from "../utils/cellMatching.ts";
 import { Log } from "../utils/log.ts";
-import { getNotebookCellId } from "../utils/notebook.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
 import { VsCode } from "./VsCode.ts";
@@ -34,7 +34,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
       // Track stale state: NotebookUri -> (CellIndex -> isStale)
       const staleStateRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, HashMap.HashMap<number, boolean>>(),
+        HashMap.empty<NotebookId, HashMap.HashMap<number, boolean>>(),
       );
 
       // Helper to update context based on current state
@@ -86,9 +86,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         code.workspace.notebookDocumentChanges().pipe(
           Stream.filterMap((event) =>
             Option.map(
-              MarimoNotebookDocument.decodeUnknownNotebookDocument(
-                event.notebook,
-              ),
+              MarimoNotebookDocument.tryFrom(event.notebook),
               (notebook) => ({ ...event, notebook }),
             ),
           ),
@@ -100,11 +98,9 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                 newMetadata: event.metadata,
               });
 
-              const notebookUri = getNotebookUri(event.notebook);
-
               // Collect all removed and added cells from content changes
-              const allRemovedCells: vscode.NotebookCell[] = [];
-              const allAddedCells: vscode.NotebookCell[] = [];
+              const allRemovedCells: Array<vscode.NotebookCell> = [];
+              const allAddedCells: Array<vscode.NotebookCell> = [];
 
               for (const change of event.contentChanges) {
                 allRemovedCells.push(...change.removedCells);
@@ -123,9 +119,14 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               if (isLikelyRedeserialization) {
                 yield* handleRedeserialization(
                   event.notebook,
-                  allRemovedCells,
-                  allAddedCells,
-                  { code, notebookUri, client, staleStateRef },
+                  allRemovedCells.map((cell) => MarimoNotebookCell.from(cell)),
+                  allAddedCells.map((cell) => MarimoNotebookCell.from(cell)),
+                  {
+                    code,
+                    notebookUri: event.notebook.id,
+                    client,
+                    staleStateRef,
+                  },
                 );
                 // Skip normal processing - re-deserialization handled everything
                 return;
@@ -136,16 +137,16 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               // We need to filter out moved cells to find truly deleted cells
               const removedCellIds = new Set<string>();
               const addedCellIds = new Set<string>();
-              const removedCellsMap = new Map<string, vscode.NotebookCell>();
+              const removedCellsMap = new Map<string, MarimoNotebookCell>();
 
-              for (const cell of allRemovedCells) {
-                const cellId = getNotebookCellId(cell);
-                removedCellIds.add(cellId);
-                removedCellsMap.set(cellId, cell);
+              for (const rawCell of allRemovedCells) {
+                const cell = MarimoNotebookCell.from(rawCell);
+                removedCellIds.add(cell.id);
+                removedCellsMap.set(cell.id, cell);
               }
-              for (const cell of allAddedCells) {
-                const cellId = getNotebookCellId(cell);
-                addedCellIds.add(cellId);
+              for (const rawCell of allAddedCells) {
+                const cell = MarimoNotebookCell.from(rawCell);
+                addedCellIds.add(cell.id);
               }
 
               // Find truly deleted cells (removed but not added)
@@ -161,7 +162,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                 }
 
                 // Clear local tracking
-                yield* clearCellStaleTracking(notebookUri, cell.index, {
+                yield* clearCellStaleTracking(event.notebook.id, cell.index, {
                   staleStateRef,
                 });
 
@@ -172,7 +173,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                     params: {
                       method: "delete_cell",
                       params: {
-                        notebookUri,
+                        notebookUri: event.notebook.id,
                         inner: {
                           cellId,
                         },
@@ -187,7 +188,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                         cause,
                       ).pipe(
                         Effect.annotateLogs({
-                          notebookUri,
+                          notebookUri: event.notebook.id,
                           cellIndex: cell.index,
                         }),
                       ),
@@ -203,12 +204,12 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                 // Check if document (content) changed
                 if (cellChange.document) {
                   yield* Log.trace("Cell content changed", {
-                    notebookUri,
+                    notebookUri: event.notebook.id,
                     cellIndex,
                   });
 
                   // Mark cell as stale
-                  yield* markCellStale(notebookUri, cellIndex, {
+                  yield* markCellStale(event.notebook.id, cellIndex, {
                     code,
                     staleStateRef,
                     notebook: event.notebook,
@@ -227,7 +228,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                   Option.isSome(metadata) &&
                   metadata.value.state !== "stale"
                 ) {
-                  yield* clearCellStaleTracking(notebookUri, cellIndex, {
+                  yield* clearCellStaleTracking(event.notebook.id, cellIndex, {
                     staleStateRef,
                   });
                 }
@@ -241,12 +242,11 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         /**
          * Mark a cell as stale and update its metadata
          */
-        markCellStale(notebookUri: NotebookUri, cellIndex: number) {
+        markCellStale(notebookUri: NotebookId, cellIndex: number) {
           return Effect.gen(function* () {
             const notebook = Option.filterMap(
               yield* editorRegistry.getLastNotebookEditor(notebookUri),
-              ({ notebook }) =>
-                MarimoNotebookDocument.decodeUnknownNotebookDocument(notebook),
+              ({ notebook }) => MarimoNotebookDocument.tryFrom(notebook),
             );
 
             if (Option.isNone(notebook)) {
@@ -265,7 +265,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         /**
          * Clear stale state from a cell
          */
-        clearCellStale(notebookUri: NotebookUri, cellIndex: number) {
+        clearCellStale(notebookUri: NotebookId, cellIndex: number) {
           return Effect.gen(function* () {
             const notebook =
               yield* editorRegistry.getLastNotebookEditor(notebookUri);
@@ -309,7 +309,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         /**
          * Get all stale cell indices for a notebook
          */
-        getStaleCells(notebookUri: NotebookUri) {
+        getStaleCells(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             const staleMap = yield* SubscriptionRef.get(staleStateRef);
             const cellMap = HashMap.get(staleMap, notebookUri);
@@ -335,12 +335,12 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
  * Mark a cell as stale in tracking and metadata
  */
 function markCellStale(
-  notebookUri: NotebookUri,
+  notebookUri: NotebookId,
   cellIndex: number,
   deps: {
     code: VsCode;
     staleStateRef: SubscriptionRef.SubscriptionRef<
-      HashMap.HashMap<NotebookUri, HashMap.HashMap<number, boolean>>
+      HashMap.HashMap<NotebookId, HashMap.HashMap<number, boolean>>
     >;
     notebook: MarimoNotebookDocument;
   },
@@ -384,11 +384,11 @@ function markCellStale(
  * Clear stale tracking for a cell (doesn't modify metadata)
  */
 function clearCellStaleTracking(
-  notebookUri: NotebookUri,
+  notebookUri: NotebookId,
   cellIndex: number,
   deps: {
     staleStateRef: SubscriptionRef.SubscriptionRef<
-      HashMap.HashMap<NotebookUri, HashMap.HashMap<number, boolean>>
+      HashMap.HashMap<NotebookId, HashMap.HashMap<number, boolean>>
     >;
   },
 ) {
@@ -430,14 +430,14 @@ function clearCellStaleTracking(
  */
 function handleRedeserialization(
   notebook: MarimoNotebookDocument,
-  removedCells: vscode.NotebookCell[],
-  addedCells: vscode.NotebookCell[],
+  removedCells: Array<MarimoNotebookCell>,
+  addedCells: Array<MarimoNotebookCell>,
   deps: {
     code: VsCode;
-    notebookUri: NotebookUri;
+    notebookUri: NotebookId;
     client: LanguageClient;
     staleStateRef: SubscriptionRef.SubscriptionRef<
-      HashMap.HashMap<NotebookUri, HashMap.HashMap<number, boolean>>
+      HashMap.HashMap<NotebookId, HashMap.HashMap<number, boolean>>
     >;
   },
 ) {
@@ -475,7 +475,7 @@ function handleRedeserialization(
     // For truly new cells, ensure they have stable IDs
     // (they should already have them from deserialization, but just in case)
     for (const newCell of matchResult.newCells) {
-      if (!newCell.metadata?.stableId) {
+      if (Option.isNone(newCell.maybeId)) {
         const existingMeta = newCell.metadata ?? {};
         const newMetadata = encodeCellMetadata({
           ...existingMeta,
