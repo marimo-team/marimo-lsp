@@ -1,7 +1,5 @@
 import { Brand, Data, Effect } from "effect";
 import type * as vscode from "vscode";
-import { NOTEBOOK_TYPE } from "../constants.ts";
-import type { MarimoNotebookDocument } from "../services/types.ts";
 import type { CellMessage } from "../types.ts";
 
 class NotebookCellNotFoundError extends Data.TaggedError(
@@ -16,12 +14,6 @@ class NotebookCellNotFoundError extends Data.TaggedError(
       ", ",
     )}`;
   }
-}
-
-export function isMarimoNotebookDocument(
-  notebook: vscode.NotebookDocument,
-): notebook is MarimoNotebookDocument {
-  return notebook.notebookType === NOTEBOOK_TYPE;
 }
 
 /**

@@ -12,11 +12,10 @@ import {
   SynchronizedRef,
 } from "effect";
 import type * as vscode from "vscode";
-import { MarimoNotebook } from "../schemas.ts";
+import { MarimoNotebook, MarimoNotebookDocument } from "../schemas.ts";
 import { getNotebookUri } from "../types.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
-import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import {
   NotebookControllerFactory,
   type NotebookControllerId,
@@ -130,25 +129,18 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       // Subscribe to notebook editor changes to update affinity
       yield* Effect.forkScoped(
         code.window.activeNotebookEditorChanges().pipe(
-          Stream.mapEffect(
-            Effect.fnUntraced(function* (editor) {
-              // Only process marimo notebooks
-              if (
-                Option.isNone(editor) ||
-                !isMarimoNotebookDocument(editor.value.notebook)
-              ) {
-                return;
-              }
-
-              yield* updateNotebookAffinityEffect({
-                notebook: editor.value.notebook,
-                sandboxController,
-                handlesRef,
-                code,
-              });
+          Stream.filterMap((maybeEditor) => maybeEditor),
+          Stream.filterMap(({ notebook }) =>
+            MarimoNotebookDocument.decodeUnknownNotebookDocument(notebook),
+          ),
+          Stream.runForEach((notebook) =>
+            updateNotebookAffinityEffect({
+              notebook,
+              sandboxController,
+              handlesRef,
+              code,
             }),
           ),
-          Stream.runDrain,
         ),
       );
 
@@ -188,7 +180,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
 ) {}
 
 const updateNotebookAffinityEffect = Effect.fnUntraced(function* (options: {
-  notebook: vscode.NotebookDocument;
+  notebook: MarimoNotebookDocument;
   sandboxController: SandboxController;
   handlesRef: SynchronizedRef.SynchronizedRef<
     HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
@@ -200,7 +192,7 @@ const updateNotebookAffinityEffect = Effect.fnUntraced(function* (options: {
 
   const { header } = yield* Schema.decodeUnknownOption(
     MarimoNotebook.pick("header"),
-  )(notebook.metadata);
+  )(notebook.rawMetadata);
 
   // Check if header includes "/// script"
   if (header?.value?.includes("/// script")) {
@@ -210,7 +202,7 @@ const updateNotebookAffinityEffect = Effect.fnUntraced(function* (options: {
 
     // Prefer sandbox controller
     yield* sandboxController.updateNotebookAffinity(
-      notebook,
+      notebook.unsafeRawNotebookDocument,
       code.NotebookControllerAffinity.Preferred,
     );
 
@@ -242,7 +234,7 @@ const updateNotebookAffinityEffect = Effect.fnUntraced(function* (options: {
 
     for (const handle of HashMap.values(venvControllers)) {
       yield* handle.controller.updateNotebookAffinity(
-        notebook,
+        notebook.unsafeRawNotebookDocument,
         code.NotebookControllerAffinity.Preferred,
       );
     }

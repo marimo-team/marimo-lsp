@@ -1,10 +1,13 @@
 import { Data, Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
+import {
+  type MarimoNotebookCell,
+  MarimoNotebookDocument,
+} from "../../schemas.ts";
 import { getNotebookUri, type NotebookUri } from "../../types.ts";
 import { getTopologicalCellIds } from "../../utils/getTopologicalCellIds.ts";
 import {
   getNotebookCellId,
-  isMarimoNotebookDocument,
   type NotebookCellId,
 } from "../../utils/notebook.ts";
 import { VsCode } from "../VsCode.ts";
@@ -68,7 +71,7 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
        * Create a new virtual document for a notebook
        */
       const createVirtualDocument = Effect.fnUntraced(function* (
-        notebook: vscode.NotebookDocument,
+        notebook: MarimoNotebookDocument,
       ) {
         // Get cells in topological order
         const cells = yield* getCellsInTopologicalOrder(
@@ -99,7 +102,7 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
        * Update virtual document when notebook changes
        */
       const updateVirtualDocument = Effect.fnUntraced(function* (
-        notebook: vscode.NotebookDocument,
+        notebook: MarimoNotebookDocument,
       ) {
         const notebookUri = getNotebookUri(notebook);
         const currentDocs = yield* SubscriptionRef.get(virtualDocsRef);
@@ -138,13 +141,12 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
       // Watch for notebook changes and mark as dirty
       yield* Effect.forkScoped(
         code.workspace.notebookDocumentChanges().pipe(
-          Stream.filter((event) => isMarimoNotebookDocument(event.notebook)),
-          Stream.mapEffect(
-            Effect.fnUntraced(function* (event) {
-              yield* updateVirtualDocument(event.notebook);
-            }),
+          Stream.filterMap((event) =>
+            MarimoNotebookDocument.decodeUnknownNotebookDocument(
+              event.notebook,
+            ),
           ),
-          Stream.runDrain,
+          Stream.runForEach((notebook) => updateVirtualDocument(notebook)),
         ),
       );
 
@@ -152,7 +154,7 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
        * Get or create a virtual document for a notebook
        */
       const getVirtualDocument = Effect.fnUntraced(function* (
-        notebook: vscode.NotebookDocument,
+        notebook: MarimoNotebookDocument,
       ) {
         const notebookUri = getNotebookUri(notebook);
         const currentDocs = yield* SubscriptionRef.get(virtualDocsRef);
@@ -181,12 +183,11 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
          * Get position mapper for a specific cell in a notebook
          */
         getMapperForCell: Effect.fnUntraced(function* (
-          cell: vscode.NotebookCell,
+          cell: MarimoNotebookCell,
         ) {
-          const notebook = cell.notebook;
-          const virtualDoc = yield* getVirtualDocument(notebook);
-
           const cellId = getNotebookCellId(cell);
+
+          const virtualDoc = yield* getVirtualDocument(cell.notebook);
           const cellOffset = virtualDoc.cellOffsets.find(
             (offset) => offset.cellId === cellId,
           );
@@ -212,7 +213,7 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
          * Find the cell that contains a given line in the virtual document
          */
         findCellForVirtualLine: Effect.fnUntraced(function* (
-          notebook: vscode.NotebookDocument,
+          notebook: MarimoNotebookDocument,
           virtualLine: number,
         ) {
           const virtualDoc = yield* getVirtualDocument(notebook);
@@ -224,7 +225,7 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
           );
 
           if (!cellOffset) {
-            return Option.none<vscode.NotebookCell>();
+            return Option.none<MarimoNotebookCell>();
           }
 
           // Find the actual cell by index
@@ -240,11 +241,14 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
  * Get cells in topological order using VariablesService
  */
 const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
-  notebook: vscode.NotebookDocument,
+  notebook: MarimoNotebookDocument,
   variablesService: VariablesService,
 ) {
   const notebookUri = getNotebookUri(notebook);
-  const inOrderCells = notebook.getCells();
+  const inOrderCells: Array<{
+    readonly index: number;
+    readonly document: vscode.TextDocument;
+  }> = notebook.getCells();
 
   const variables = yield* variablesService.getVariables(notebookUri);
 
@@ -259,7 +263,13 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
   );
 
   // Map cell IDs back to cells
-  const cellMap = new Map<NotebookCellId, vscode.NotebookCell>();
+  const cellMap = new Map<
+    NotebookCellId,
+    {
+      readonly index: number;
+      readonly document: vscode.TextDocument;
+    }
+  >();
   for (const cell of inOrderCells) {
     const cellId = getNotebookCellId(cell);
     cellMap.set(cellId, cell);
@@ -274,7 +284,12 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
  * @param cells - Array of notebook cells
  * @returns Virtual document content as a single string
  */
-function buildVirtualDocumentContent(cells: Array<vscode.NotebookCell>): {
+function buildVirtualDocumentContent(
+  cells: Array<{
+    readonly index: number;
+    readonly document: vscode.TextDocument;
+  }>,
+): {
   content: string;
   cellOffsets: ReadonlyArray<CellOffsetInfo>;
 } {

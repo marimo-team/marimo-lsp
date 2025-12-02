@@ -5,10 +5,10 @@ import { dynamicCommand } from "../commands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import {
   type CellMetadata,
-  decodeCellMetadata,
   encodeCellMetadata,
+  MarimoNotebookCell,
+  MarimoNotebookDocument,
 } from "../schemas.ts";
-import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import { VsCode } from "./VsCode.ts";
 
 /**
@@ -29,7 +29,7 @@ export interface MetadataBinding {
    * Predicate to determine if this binding applies to the cell
    * (e.g., check if cell language is SQL)
    */
-  shouldShow: (cell: vscode.NotebookCell) => boolean;
+  shouldShow: (cell: MarimoNotebookCell) => boolean;
 
   /**
    * Get the current value from cell metadata
@@ -80,7 +80,7 @@ export interface MetadataBinding {
    * For option bindings: get available options
    */
   getOptions?: (
-    cell: vscode.NotebookCell,
+    cell: MarimoNotebookCell,
   ) => Effect.Effect<Array<{ label: string; value: string }>, never, never>;
 }
 
@@ -110,23 +110,28 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
       // Listen to notebook document changes and emit events
       yield* Effect.forkScoped(
         code.workspace.notebookDocumentChanges().pipe(
-          Stream.map((event) => {
-            // Only marimo notebooks
-            if (!isMarimoNotebookDocument(event.notebook)) {
-              return undefined;
-            }
+          Stream.runForEach(
+            Effect.fnUntraced(function* (event) {
+              const notebook =
+                MarimoNotebookDocument.decodeUnknownNotebookDocument(
+                  event.notebook,
+                );
 
-            // Only process metadata changes
-            const hasMetadataChanges = event.cellChanges.some(
-              (change) => change.metadata !== undefined,
-            );
+              // Only process marimo notebooks
+              if (Option.isNone(notebook)) {
+                return;
+              }
 
-            if (hasMetadataChanges) {
-              onDidChangeCellStatusBarItems.fire();
-            }
-            return undefined;
-          }),
-          Stream.runDrain,
+              // Only process metadata changes
+              const hasMetadataChanges = event.cellChanges.some(
+                (change) => change.metadata !== undefined,
+              );
+
+              if (hasMetadataChanges) {
+                onDidChangeCellStatusBarItems.fire();
+              }
+            }),
+          ),
         ),
       );
 
@@ -148,16 +153,17 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
           const provider: vscode.NotebookCellStatusBarItemProvider = {
             onDidChangeCellStatusBarItems: onDidChangeCellStatusBarItems.event,
             provideCellStatusBarItems(
-              cell: vscode.NotebookCell,
+              rawCell: vscode.NotebookCell,
               _token: vscode.CancellationToken,
             ): vscode.ProviderResult<vscode.NotebookCellStatusBarItem[]> {
+              const cell = MarimoNotebookCell.from(rawCell);
+
               if (!binding.shouldShow(cell)) {
                 return [];
               }
 
-              const metadata = decodeCellMetadata(cell.metadata);
-              const value = Option.isSome(metadata)
-                ? binding.getValue(metadata.value)
+              const value = Option.isSome(cell.metadata)
+                ? binding.getValue(cell.metadata.value)
                 : undefined;
 
               const item = new code.NotebookCellStatusBarItem(
@@ -183,13 +189,22 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
        */
       function createBindingCommand(binding: MetadataBinding) {
         return Effect.gen(function* () {
-          // Get the active cell
           const editor = yield* code.window.getActiveNotebookEditor();
+
           if (Option.isNone(editor)) {
             return;
           }
 
-          const activeCell = editor.value.notebook.cellAt(
+          // Get the active cell
+          const notebook = MarimoNotebookDocument.decodeUnknownNotebookDocument(
+            editor.value.notebook,
+          );
+
+          if (Option.isNone(notebook)) {
+            return;
+          }
+
+          const activeCell = notebook.value.cellAt(
             editor.value.selection.start,
           );
 
@@ -197,9 +212,8 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
             return;
           }
 
-          const metadata = decodeCellMetadata(activeCell.metadata);
-          const currentValue = Option.isSome(metadata)
-            ? binding.getValue(metadata.value)
+          const currentValue = Option.isSome(activeCell.metadata)
+            ? binding.getValue(activeCell.metadata.value)
             : undefined;
 
           let newValue: string | boolean | undefined;
@@ -266,7 +280,9 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
           assert(newValue !== undefined, "newValue should not be undefined");
 
           // Update the cell metadata
-          const currentMetadata = Option.isSome(metadata) ? metadata.value : {};
+          const currentMetadata = Option.isSome(activeCell.metadata)
+            ? activeCell.metadata.value
+            : {};
           let updatedMetadata = binding.setValue(currentMetadata, newValue);
           // Mark stale
           updatedMetadata = {

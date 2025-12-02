@@ -1,8 +1,8 @@
 import { Effect, Layer, Option, Ref, Schema, Stream } from "effect";
-import type { NotebookDocument, Uri, WorkspaceFolder } from "vscode";
+import type { Uri, WorkspaceFolder } from "vscode";
+import { MarimoNotebookDocument } from "../schemas.ts";
 import { createStorageKey, Storage } from "../services/Storage.ts";
 import { VsCode } from "../services/VsCode.ts";
-import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import { type TreeItem, TreeView } from "./TreeView.ts";
 
 interface RecentNotebook {
@@ -101,7 +101,7 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
     // Helper to add a notebook to recent list
     const addRecentNotebook = Effect.fnUntraced(function* (
       uri: Uri,
-      document: NotebookDocument,
+      document: MarimoNotebookDocument,
     ) {
       const uriString = uri.toString();
       // TODO: NodePath? or windows support?
@@ -139,14 +139,18 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
       code.window.activeNotebookEditorChanges().pipe(
         Stream.mapEffect(
           Effect.fnUntraced(function* (maybeEditor) {
-            if (Option.isSome(maybeEditor)) {
-              const editor = maybeEditor.value;
-              if (
-                isMarimoNotebookDocument(editor.notebook) &&
-                editor.notebook.uri.scheme === "file"
-              ) {
-                yield* addRecentNotebook(editor.notebook.uri, editor.notebook);
-              }
+            const notebook = maybeEditor.pipe(
+              Option.flatMap((editor) =>
+                MarimoNotebookDocument.decodeUnknownNotebookDocument(
+                  editor.notebook,
+                ),
+              ),
+            );
+            if (
+              Option.isSome(notebook) &&
+              notebook.value.uri.scheme === "file"
+            ) {
+              yield* addRecentNotebook(notebook.value.uri, notebook.value);
             }
           }),
         ),
@@ -174,12 +178,11 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
     // Initialize with currently open notebooks
     yield* Effect.gen(function* () {
       const openNotebooks = yield* code.workspace.getNotebookDocuments();
-      for (const notebook of openNotebooks) {
-        if (
-          isMarimoNotebookDocument(notebook) &&
-          notebook.uri.scheme === "file"
-        ) {
-          yield* addRecentNotebook(notebook.uri, notebook);
+      for (const unknownNotebook of openNotebooks) {
+        const notebook =
+          MarimoNotebookDocument.decodeUnknownNotebookDocument(unknownNotebook);
+        if (Option.isSome(notebook) && notebook.value.uri.scheme === "file") {
+          yield* addRecentNotebook(notebook.value.uri, notebook.value);
         }
       }
     });

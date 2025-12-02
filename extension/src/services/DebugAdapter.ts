@@ -1,5 +1,6 @@
 import { Effect, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
+import { MarimoNotebookDocument } from "../schemas.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookSerializer } from "./NotebookSerializer.ts";
@@ -19,7 +20,6 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
       const code = yield* VsCode;
       const client = yield* LanguageClient;
       const channel = yield* OutputChannel;
-      const serializer = yield* NotebookSerializer;
 
       const runtime = yield* Effect.runtime();
       const runFork = Runtime.runFork(runtime);
@@ -108,9 +108,9 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
               const notebook = Option.flatMap(
                 yield* code.window.getActiveNotebookEditor(),
                 (editor) =>
-                  serializer.isMarimoNotebookDocument(editor.notebook)
-                    ? Option.some(editor.notebook)
-                    : Option.none(),
+                  MarimoNotebookDocument.decodeUnknownNotebookDocument(
+                    editor.notebook,
+                  ),
               );
               if (Option.isNone(notebook)) {
                 yield* Effect.logWarning("No active marimo notebook found");

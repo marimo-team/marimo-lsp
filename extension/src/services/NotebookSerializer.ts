@@ -14,7 +14,6 @@ import {
   decodeCellMetadata,
   MarimoNotebook,
 } from "../schemas.ts";
-import { isMarimoNotebookDocument } from "../utils/notebook.ts";
 import { Constants } from "./Constants.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { VsCode } from "./VsCode.ts";
@@ -217,7 +216,6 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
 
       return {
         notebookType: NOTEBOOK_TYPE,
-        isMarimoNotebookDocument: isMarimoNotebookDocument,
         serializeEffect,
         deserializeEffect,
       };

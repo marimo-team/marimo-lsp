@@ -1,6 +1,10 @@
-import { Effect, Option } from "effect";
+import { Effect, Array as EffectArray, Option } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
+import {
+  type MarimoNotebookCell,
+  MarimoNotebookDocument,
+} from "../../schemas.ts";
 import { extractTokensForCell } from "../../utils/semanticTokens.ts";
 import { VsCode } from "../VsCode.ts";
 import { PythonLanguageServer } from "./PythonLanguageServer.ts";
@@ -298,8 +302,15 @@ export class LspProxy extends Effect.Service<LspProxy>()("LspProxy", {
 function findNotebook(
   document: vscode.TextDocument,
   options: { code: VsCode },
-): Effect.Effect<Option.Option<vscode.NotebookDocument>> {
+): Effect.Effect<Option.Option<MarimoNotebookDocument>> {
   return options.code.workspace.getNotebookDocuments().pipe(
+    Effect.map((notebooks) =>
+      EffectArray.getSomes(
+        notebooks.map((notebook) =>
+          MarimoNotebookDocument.decodeUnknownNotebookDocument(notebook),
+        ),
+      ),
+    ),
     Effect.map((notebooks) =>
       notebooks.find(
         (nb) =>
@@ -317,9 +328,9 @@ function findNotebook(
  * Find the cell in a notebook that matches this document
  */
 function findCell(
-  notebook: vscode.NotebookDocument,
+  notebook: MarimoNotebookDocument,
   document: vscode.TextDocument,
-): Option.Option<vscode.NotebookCell> {
+): Option.Option<MarimoNotebookCell> {
   return Option.fromNullable(
     notebook
       .getCells()

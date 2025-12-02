@@ -10,11 +10,7 @@ import {
   Stream,
 } from "effect";
 import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
-import {
-  decodeCellMetadata,
-  encodeCellMetadata,
-  isStaleCellMetadata,
-} from "../schemas.ts";
+import { encodeCellMetadata, MarimoNotebookDocument } from "../schemas.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
@@ -93,14 +89,13 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
 
     yield* code.commands.registerCommand(
       "marimo.runStale",
-      runStale({ code, serializer, channel }),
+      runStale({ code, channel }),
     );
 
     yield* code.commands.registerCommand(
       "marimo.toggleOnCellChangeAutoRun",
       toggleOnCellChange({
         code,
-        serializer,
         channel,
         configService,
         configContextManager,
@@ -111,7 +106,6 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
       "marimo.toggleOnCellChangeLazy",
       toggleOnCellChange({
         code,
-        serializer,
         channel,
         configService,
         configContextManager,
@@ -210,7 +204,7 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
 
     yield* code.commands.registerCommand(
       "marimo.exportStaticHTML",
-      exportNotebookAsHTML({ code, client, channel, serializer }),
+      exportNotebookAsHTML({ code, client, channel }),
     );
 
     yield* code.commands.registerCommand(
@@ -288,7 +282,6 @@ def _():
 
 const createSetupCell = ({
   code,
-  serializer,
 }: {
   code: VsCode;
   serializer: NotebookSerializer;
@@ -297,9 +290,7 @@ const createSetupCell = ({
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
       (editor) =>
-        serializer.isMarimoNotebookDocument(editor.notebook)
-          ? Option.some(editor.notebook)
-          : Option.none(),
+        MarimoNotebookDocument.decodeUnknownNotebookDocument(editor.notebook),
     );
 
     if (Option.isNone(notebook)) {
@@ -312,18 +303,20 @@ const createSetupCell = ({
     // Check if setup cell already exists
     const cells = notebook.value.getCells();
     const existing = cells.find((cell) => {
-      const metadata = decodeCellMetadata(cell.metadata);
-      return Option.isSome(metadata) && metadata.value.name === SETUP_CELL_NAME;
+      return Option.isSome(cell.name) && cell.name.value === SETUP_CELL_NAME;
     });
 
     if (existing) {
       // Show message and focus on existing setup cell
       yield* code.window.showInformationMessage("Setup cell already exists");
-      yield* code.window.showNotebookDocument(notebook.value, {
-        selections: [
-          new code.NotebookRange(existing.index, existing.index + 1),
-        ],
-      });
+      yield* code.window.showNotebookDocument(
+        notebook.value.unsafeRawNotebookDocument,
+        {
+          selections: [
+            new code.NotebookRange(existing.index, existing.index + 1),
+          ],
+        },
+      );
       return;
     }
 
@@ -390,9 +383,7 @@ const createGist = ({
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
       (editor) =>
-        serializer.isMarimoNotebookDocument(editor.notebook)
-          ? Option.some(editor.notebook)
-          : Option.none(),
+        MarimoNotebookDocument.decodeUnknownNotebookDocument(editor.notebook),
     );
 
     if (Option.isNone(notebook)) {
@@ -412,7 +403,7 @@ const createGist = ({
     }
 
     const bytes = yield* serializer.serializeEffect({
-      metadata: notebook.value.metadata,
+      metadata: notebook.value.rawMetadata,
       cells: notebook.value
         .getCells()
         .map(
@@ -476,20 +467,16 @@ const createGist = ({
 
 const runStale = ({
   code,
-  serializer,
   channel,
 }: {
   code: VsCode;
-  serializer: NotebookSerializer;
   channel: OutputChannel;
 }) =>
   Effect.gen(function* () {
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
       (editor) =>
-        serializer.isMarimoNotebookDocument(editor.notebook)
-          ? Option.some(editor.notebook)
-          : Option.none(),
+        MarimoNotebookDocument.decodeUnknownNotebookDocument(editor.notebook),
     );
 
     if (Option.isNone(notebook)) {
@@ -500,10 +487,7 @@ const runStale = ({
       return;
     }
 
-    const staleCells = notebook.value.getCells().filter((cell) => {
-      const metadata = decodeCellMetadata(cell.metadata);
-      return Option.isSome(metadata) && isStaleCellMetadata(metadata.value);
-    });
+    const staleCells = notebook.value.getCells().filter((cell) => cell.isStale);
 
     if (staleCells.length === 0) {
       yield* Effect.logInfo("No stale cells found");
@@ -534,12 +518,10 @@ const runStale = ({
 
 const toggleOnCellChange = ({
   code,
-  serializer,
   channel,
   configService,
 }: {
   code: VsCode;
-  serializer: NotebookSerializer;
   channel: OutputChannel;
   configService: MarimoConfigurationService;
   configContextManager: ConfigContextManager;
@@ -548,9 +530,7 @@ const toggleOnCellChange = ({
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
       (editor) =>
-        serializer.isMarimoNotebookDocument(editor.notebook)
-          ? Option.some(editor.notebook)
-          : Option.none(),
+        MarimoNotebookDocument.decodeUnknownNotebookDocument(editor.notebook),
     );
 
     if (Option.isNone(notebook)) {
@@ -628,20 +608,16 @@ const exportNotebookAsHTML = ({
   code,
   client,
   channel,
-  serializer,
 }: {
   code: VsCode;
   client: LanguageClient;
   channel: OutputChannel;
-  serializer: NotebookSerializer;
 }) =>
   Effect.gen(function* () {
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
       (editor) =>
-        serializer.isMarimoNotebookDocument(editor.notebook)
-          ? Option.some(editor.notebook)
-          : Option.none(),
+        MarimoNotebookDocument.decodeUnknownNotebookDocument(editor.notebook),
     );
 
     if (Option.isNone(notebook)) {

@@ -1,4 +1,6 @@
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
+import type * as vscode from "vscode";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 
 const SQLMetadata = Schema.Struct({
   dataframeName: Schema.String,
@@ -64,11 +66,159 @@ export const decodeCellMetadata = Schema.decodeUnknownOption(CellMetadata);
  */
 export const encodeCellMetadata = Schema.encodeSync(CellMetadata);
 
-/**
- * Type guard to check if cell has stale state
- */
-export function isStaleCellMetadata(
-  metadata: CellMetadata,
-): metadata is CellMetadata & { state: "stale" } {
-  return metadata.state === "stale";
+export class MarimoNotebookCell {
+  #raw: vscode.NotebookCell;
+  #meta: Option.Option<CellMetadata>;
+
+  private constructor(
+    raw: vscode.NotebookCell,
+    meta: Option.Option<CellMetadata>,
+  ) {
+    this.#raw = raw;
+    this.#meta = meta;
+  }
+
+  /**
+   * Builds the encoded metadata object for this cell.
+   *
+   * Applies optional overrides (currently only the `state` property),
+   * then produces the encoded metadata object used by the serialization
+   * layer. This method does not perform string serialization; it only
+   * constructs the encoded metadata representation.
+   *
+   * @param options - Optional metadata override configuration.
+   * @returns The encoded metadata object.
+   */
+  buildEncodedMetadata(options?: {
+    // TODO: Just shallow. Support deeper / fully recursive overrides when needed
+    overrides?: Pick<Partial<CellMetadata>, "state">;
+  }) {
+    return encodeCellMetadata({ ...this.#raw.metadata, ...options?.overrides });
+  }
+
+  /**
+   * Creates a MarimoNotebookCell from a VS Code NotebookCell.
+   */
+  static from(cell: vscode.NotebookCell) {
+    return new MarimoNotebookCell(cell, decodeCellMetadata(cell.metadata));
+  }
+
+  /**
+   * The notebook this cell belongs to.
+   */
+  get notebook() {
+    return new MarimoNotebookDocument(this.#raw.notebook);
+  }
+
+  /**
+   * The decoded metadata for this cell.
+   */
+  get metadata() {
+    return this.#meta;
+  }
+
+  /**
+   * Whether the cell is marked as stale.
+   */
+  get isStale() {
+    return this.#meta.pipe(
+      Option.map((meta) => meta.state === "stale"),
+      Option.getOrElse(() => false),
+    );
+  }
+
+  /**
+   * The cell's language metadata, if present.
+   */
+  get languageMetadata() {
+    return this.#meta.pipe(
+      Option.flatMap((meta) => Option.fromNullable(meta.languageMetadata)),
+    );
+  }
+
+  /**
+   * The cell's name, if present.
+   */
+  get name() {
+    return this.#meta.pipe(
+      Option.flatMap((meta) => Option.fromNullable(meta.name)),
+    );
+  }
+
+  /**
+   * The underlying cell kind.
+   */
+  get kind() {
+    return this.#raw.kind;
+  }
+
+  /**
+   * The cell's index within the notebook.
+   */
+  get index() {
+    return this.#raw.index;
+  }
+
+  /**
+   * The cell's text document.
+   */
+  get document() {
+    return this.#raw.document;
+  }
+
+  /**
+   * The cell's output items.
+   */
+  get outputs() {
+    return this.#raw.outputs;
+  }
+}
+
+export class MarimoNotebookDocument {
+  #raw: vscode.NotebookDocument;
+
+  constructor(raw: vscode.NotebookDocument) {
+    this.#raw = raw;
+  }
+
+  static decodeUnknownNotebookDocument(
+    raw: vscode.NotebookDocument,
+  ): Option.Option<MarimoNotebookDocument> {
+    return raw.notebookType === NOTEBOOK_TYPE
+      ? Option.some(new MarimoNotebookDocument(raw))
+      : Option.none();
+  }
+
+  get rawMetadata() {
+    return this.#raw.metadata;
+  }
+
+  get notebookType() {
+    return NOTEBOOK_TYPE;
+  }
+
+  get uri() {
+    return this.#raw.uri;
+  }
+
+  getCells() {
+    return this.#raw.getCells().map((cell) => MarimoNotebookCell.from(cell));
+  }
+
+  cellAt(index: number) {
+    return MarimoNotebookCell.from(this.#raw.cellAt(index));
+  }
+
+  get cellCount() {
+    return this.#raw.cellCount;
+  }
+
+  /**
+   * Get a handle to the underlying untyped document
+   *
+   * This should only be accessed when using VS Code APIs that require a "raw" document.
+   */
+  get unsafeRawNotebookDocument() {
+    return this.#raw;
+  }
 }

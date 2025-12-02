@@ -27,7 +27,7 @@ export type MarimoView =
   | "marimo-explorer-recents"
   | "marimo-explorer-variables";
 
-export const NOTEBOOK_TYPE = "marimo-notebook";
+export const NOTEBOOK_TYPE = "marimo-notebook" as const;
 
 export const SETUP_CELL_NAME = "setup";
 
