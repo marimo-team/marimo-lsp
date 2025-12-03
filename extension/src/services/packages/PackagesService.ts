@@ -387,14 +387,18 @@ export class PackagesService extends Effect.Service<PackagesService>()(
         },
 
         /**
-         * Stream of package list changes
+         * Stream of package list changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
          */
         streamPackageListChanges() {
           return packageListsRef.changes;
         },
 
         /**
-         * Stream of dependency tree changes
+         * Stream of dependency tree changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
          */
         streamDependencyTreeChanges() {
           return dependencyTreesRef.changes;

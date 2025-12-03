@@ -153,14 +153,20 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
         },
 
         /**
-         * Stream of configuration changes
+         * Stream of configuration changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
+         * Filters consecutive duplicates via Stream.changes.
          */
         streamConfigChanges() {
           return configRef.changes.pipe(Stream.changes);
         },
 
         /**
-         * Stream of configuration changes for the active notebook
+         * Stream of configuration changes for the active notebook.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
+         * Filters consecutive duplicates via Stream.changes.
          */
         streamActiveConfigChanges() {
           return Stream.zipLatest(
@@ -178,7 +184,10 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
         },
 
         /**
-         * Stream of configuration changes for the active notebook
+         * Stream of mapped configuration values for the active notebook.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
+         * Filters consecutive duplicates via Stream.changes.
          */
         streamOf<R>(
           mapper: (config: MarimoConfig) => R,
