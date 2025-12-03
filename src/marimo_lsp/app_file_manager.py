@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import pathlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from marimo._ast.app import App, InternalApp
 from marimo._types.ids import CellId_t
+from marimo_lsp.loggers import get_logger
 from pygls.uris import to_fs_path
 
 if TYPE_CHECKING:
+    import lsprotocol.types as lsp
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace
+
+
+logger = get_logger()
 
 
 class LspAppFileManager:
@@ -122,15 +127,19 @@ def sync_app_with_workspace(
     names: list[str] = []
 
     for cell in notebook.cells:
-        # Extract cell ID from document URI fragment (e.g., "file:///test.py#cell1" -> "cell1")
-        cell_ids.append(CellId_t(cell.metadata["stableId"]))
+        cell_id, config, name = parse_cell_metadata(cell)
+        if cell_id is None:
+            logger.info(f"no cell id for {cell.document}")
+            continue  # we don't have a stable ID for this cell yet
+
+        cell_ids.append(cell_id)
+        configs.append(config)
+        names.append(name)
         document = workspace.text_documents.get(cell.document)
         if document:
             codes.append(document.source or "")
         else:
             codes.append("")
-        configs.append((cell.metadata or {}).get("config", {}))
-        names.append((cell.metadata or {}).get("name", "_"))
 
     return app.with_data(
         cell_ids=cell_ids,
@@ -138,3 +147,13 @@ def sync_app_with_workspace(
         configs=configs,
         names=names,
     )
+
+
+def parse_cell_metadata(cell: lsp.NotebookCell) -> tuple[CellId_t | None, dict, str]:
+    """Parse marimo cell metadata from LSP notebook cell."""
+    meta = cast("dict", cell.metadata) if cell.metadata else {}
+    stable_id = meta.get("stableId", None)
+    config = meta.get("config", {})
+    name = meta.get("name", "_")
+
+    return CellId_t(stable_id) if stable_id else None, config, name

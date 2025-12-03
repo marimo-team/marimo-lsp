@@ -11,71 +11,136 @@ export interface CellMatchResult {
 }
 
 /**
- * Match removed cells to added cells based on content.
+ * Match removed cells to added cells to preserve stable IDs and outputs.
  *
- * Strategy:
- * 1. First try exact content match
- * 2. For remaining, try normalized content match (trimmed, whitespace normalized)
- * 3. Unmatched cells are considered truly deleted/added
+ * Uses VS Code's notebook diff strategy:
+ * 1. Find common prefix - cells that match from the beginning
+ * 2. Find common suffix - cells that match from the end
+ * 3. Middle section - match by position (content changed but same cell)
+ *
+ * This handles the common case of editing a cell's content while preserving
+ * its identity, as well as insertions and deletions.
  */
 export function matchCells(
   removedCells: Array<MarimoNotebookCell>,
   addedCells: Array<MarimoNotebookCell>,
 ): CellMatchResult {
   const matched = new Map<NotebookCellId, MarimoNotebookCell>();
-  const remainingRemoved = [...removedCells];
-  const remainingAdded = [...addedCells];
 
-  // Pass 1: Exact content match
-  for (let i = remainingRemoved.length - 1; i >= 0; i--) {
-    const removed = remainingRemoved[i];
-    const removedContent = removed.document.getText();
-    const stableId = removed.maybeId;
+  const oldLen = removedCells.length;
+  const newLen = addedCells.length;
 
-    if (Option.isNone(stableId)) {
-      continue;
-    }
+  // Find common prefix (matching cells from the start)
+  const prefixLen = commonPrefix(removedCells, addedCells);
 
-    const matchIndex = remainingAdded.findIndex(
-      (added) => added.document.getText() === removedContent,
-    );
-
-    if (matchIndex !== -1) {
-      matched.set(stableId.value, remainingAdded[matchIndex]);
-      remainingRemoved.splice(i, 1);
-      remainingAdded.splice(matchIndex, 1);
+  // Match prefix cells
+  for (let i = 0; i < prefixLen; i++) {
+    const stableId = removedCells[i].maybeId;
+    if (Option.isSome(stableId)) {
+      matched.set(stableId.value, addedCells[i]);
     }
   }
 
-  // Pass 2: Normalized content match (for whitespace-only changes)
-  for (let i = remainingRemoved.length - 1; i >= 0; i--) {
-    const removed = remainingRemoved[i];
-    const removedNormalized = normalizeContent(removed.document.getText());
-    const stableId = removed.maybeId;
+  // Find common suffix (matching cells from the end)
+  // Don't overlap with prefix
+  const maxSuffix = Math.min(oldLen - prefixLen, newLen - prefixLen);
+  const suffixLen = commonSuffix(
+    removedCells,
+    addedCells,
+    prefixLen,
+    maxSuffix,
+  );
 
-    if (Option.isNone(stableId)) {
-      continue;
-    }
-
-    const matchIndex = remainingAdded.findIndex(
-      (added) =>
-        normalizeContent(added.document.getText()) === removedNormalized,
-    );
-
-    if (matchIndex !== -1) {
-      matched.set(stableId.value, remainingAdded[matchIndex]);
-      remainingRemoved.splice(i, 1);
-      remainingAdded.splice(matchIndex, 1);
+  // Match suffix cells
+  for (let i = 0; i < suffixLen; i++) {
+    const oldIdx = oldLen - 1 - i;
+    const newIdx = newLen - 1 - i;
+    const stableId = removedCells[oldIdx].maybeId;
+    if (Option.isSome(stableId)) {
+      matched.set(stableId.value, addedCells[newIdx]);
     }
   }
 
-  return {
-    matched,
-    unmatched: remainingRemoved,
-    newCells: remainingAdded,
-  };
+  // Middle section: cells between prefix and suffix
+  const oldMiddleStart = prefixLen;
+  const oldMiddleEnd = oldLen - suffixLen;
+  const newMiddleStart = prefixLen;
+  const newMiddleEnd = newLen - suffixLen;
+
+  const oldMiddle = removedCells.slice(oldMiddleStart, oldMiddleEnd);
+  const newMiddle = addedCells.slice(newMiddleStart, newMiddleEnd);
+
+  // Match middle cells by position (edited cells)
+  const middleMatchLen = Math.min(oldMiddle.length, newMiddle.length);
+  for (let i = 0; i < middleMatchLen; i++) {
+    const stableId = oldMiddle[i].maybeId;
+    if (Option.isSome(stableId)) {
+      matched.set(stableId.value, newMiddle[i]);
+    }
+  }
+
+  // Unmatched old cells (truly deleted)
+  const unmatched = oldMiddle.slice(middleMatchLen);
+
+  // Unmatched new cells (truly added)
+  const newCells = newMiddle.slice(middleMatchLen);
+
+  return { matched, unmatched, newCells };
 }
 
-function normalizeContent(content: string): string {
-  return content.trim().replace(/\s+/g, " ");
+/**
+ * Find number of matching cells from the beginning.
+ */
+function commonPrefix(
+  oldCells: Array<MarimoNotebookCell>,
+  newCells: Array<MarimoNotebookCell>,
+): number {
+  const maxLen = Math.min(oldCells.length, newCells.length);
+  let result = 0;
+
+  for (let i = 0; i < maxLen; i++) {
+    if (cellsEqual(oldCells[i], newCells[i])) {
+      result++;
+    } else {
+      break;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Find number of matching cells from the end.
+ */
+function commonSuffix(
+  oldCells: Array<MarimoNotebookCell>,
+  newCells: Array<MarimoNotebookCell>,
+  _prefixLen: number,
+  maxSuffix: number,
+): number {
+  let result = 0;
+
+  for (let i = 0; i < maxSuffix; i++) {
+    const oldIdx = oldCells.length - 1 - i;
+    const newIdx = newCells.length - 1 - i;
+
+    if (cellsEqual(oldCells[oldIdx], newCells[newIdx])) {
+      result++;
+    } else {
+      break;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Check if two cells are equal (same content and kind).
+ */
+function cellsEqual(a: MarimoNotebookCell, b: MarimoNotebookCell): boolean {
+  return (
+    a.kind === b.kind &&
+    a.document.languageId === b.document.languageId &&
+    a.document.getText() === b.document.getText()
+  );
 }

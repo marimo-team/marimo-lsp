@@ -8,11 +8,9 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 import {
-  decodeCellMetadata,
   encodeCellMetadata,
   MarimoNotebookCell,
   MarimoNotebookDocument,
-  type NotebookCellId,
   type NotebookId,
 } from "../schemas.ts";
 import { matchCells } from "../utils/cellMatching.ts";
@@ -133,117 +131,14 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                     staleStateRef,
                   },
                 );
-                // Skip normal processing - re-deserialization handled everything
                 return;
               }
 
-              // Normal processing: handle cell deletions
-              // When a cell is moved, VSCode reports it as removed AND added
-              // We need to filter out moved cells to find truly deleted cells
-              const removedCellIds = new Set<NotebookCellId>();
-              const addedCellIds = new Set<NotebookCellId>();
-              const removedCellsMap = new Map<
-                NotebookCellId,
-                MarimoNotebookCell
-              >();
-
-              for (const cell of allAddedCells) {
-                Option.map(cell.maybeId, (stableId) =>
-                  addedCellIds.add(stableId),
-                );
-              }
-
-              for (const cell of allRemovedCells) {
-                Option.map(cell.maybeId, (stableId) => {
-                  removedCellIds.add(stableId);
-                  removedCellsMap.set(stableId, cell);
-                });
-              }
-
-              // Find truly deleted cells (removed but not added)
-              const trulyDeletedCellIds = Array.from(removedCellIds).filter(
-                (cellId) => !addedCellIds.has(cellId),
-              );
-
-              // Process only truly deleted cells
-              for (const cellId of trulyDeletedCellIds) {
-                const cell = removedCellsMap.get(cellId);
-                if (!cell) {
-                  continue;
-                }
-
-                // Clear local tracking
-                yield* clearCellStaleTracking(event.notebook.id, cell.index, {
-                  staleStateRef,
-                });
-
-                // Notify backend about cell deletion
-                yield* client
-                  .executeCommand({
-                    command: "marimo.api",
-                    params: {
-                      method: "delete_cell",
-                      params: {
-                        notebookUri: event.notebook.id,
-                        inner: {
-                          cellId,
-                        },
-                      },
-                    },
-                  })
-                  .pipe(
-                    Effect.catchAllCause((cause) =>
-                      // TODO: should we add this back to the UI on failure?
-                      Effect.logWarning(
-                        "Failed to notify backend about cell deletion",
-                        cause,
-                      ).pipe(
-                        Effect.annotateLogs({
-                          notebookUri: event.notebook.id,
-                          cellIndex: cell.index,
-                        }),
-                      ),
-                    ),
-                  );
-              }
-
-              // Process cell changes (content or metadata edits)
-              for (const cellChange of event.cellChanges) {
-                const cell = cellChange.cell;
-                const cellIndex = cell.index;
-
-                // Check if document (content) changed
-                if (cellChange.document) {
-                  yield* Log.trace("Cell content changed", {
-                    notebookUri: event.notebook.id,
-                    cellIndex,
-                  });
-
-                  // Mark cell as stale
-                  yield* markCellStale(event.notebook.id, cellIndex, {
-                    code,
-                    staleStateRef,
-                    notebook: event.notebook,
-                  });
-                }
-
-                // No metadata change
-                if (!cellChange.metadata) {
-                  continue;
-                }
-
-                // Check if metadata changed and state is not stale
-                // (e.g., cleared by execution)
-                const metadata = decodeCellMetadata(cellChange.metadata);
-                if (
-                  Option.isSome(metadata) &&
-                  metadata.value.state !== "stale"
-                ) {
-                  yield* clearCellStaleTracking(event.notebook.id, cellIndex, {
-                    staleStateRef,
-                  });
-                }
-              }
+              yield* handleNormalChange(event, allRemovedCells, allAddedCells, {
+                code,
+                client,
+                staleStateRef,
+              });
             }),
           ),
         ),
@@ -600,7 +495,6 @@ const notifyBackendCellDelete = Effect.fn("deleteCell")(function* (
 
 /**
  * Creates a `vscode.NotebookEdit` for any cells that do not have a stableId
- *
  * Returns an empty list if all cells already contain a `stableId`.
  */
 function assignStableIdsToCells(
@@ -623,4 +517,93 @@ function assignStableIdsToCells(
     );
   }
   return edits;
+}
+
+/**
+ * Handles normal notebook changes (not re-deserialization).
+ *
+ * Processes:
+ * 1. Cell deletions - notifies backend about truly deleted cells (not moves)
+ * 2. Cell edits - marks cells stale on content change, clears stale on execution
+ * 3. New cells - assigns stable IDs to cells that don't have them
+ */
+function handleNormalChange(
+  event: {
+    notebook: MarimoNotebookDocument;
+    cellChanges: ReadonlyArray<vscode.NotebookDocumentCellChange>;
+  },
+  allRemovedCells: Array<MarimoNotebookCell>,
+  allAddedCells: Array<MarimoNotebookCell>,
+  deps: {
+    code: VsCode;
+    client: LanguageClient;
+    staleStateRef: SubscriptionRef.SubscriptionRef<
+      HashMap.HashMap<NotebookId, HashMap.HashMap<number, boolean>>
+    >;
+  },
+) {
+  return Effect.gen(function* () {
+    const { code, client, staleStateRef } = deps;
+    const notebookId = event.notebook.id;
+
+    // --- Cell Deletions ---
+    // When a cell is moved, VSCode reports it as removed AND added
+    // We need to filter out moved cells to find truly deleted cells
+    const addedCellIds = new Set(
+      EffectArray.getSomes(allAddedCells.map((c) => c.maybeId)),
+    );
+    const removedCellsMap = new Map(
+      EffectArray.getSomes(
+        allRemovedCells.map((cell) =>
+          Option.map(cell.maybeId, (id) => [id, cell] as const),
+        ),
+      ),
+    );
+
+    // Process truly deleted cells (removed but not added back)
+    for (const [cellId, cell] of removedCellsMap) {
+      if (addedCellIds.has(cellId)) {
+        continue; // Cell was moved, not deleted
+      }
+
+      yield* clearCellStaleTracking(notebookId, cell.index, { staleStateRef });
+      yield* notifyBackendCellDelete(client, event.notebook, cell);
+    }
+
+    // --- Cell Edits ---
+    for (const cellChange of event.cellChanges) {
+      const cell = MarimoNotebookCell.from(cellChange.cell);
+
+      // Content changed → mark stale
+      if (cellChange.document) {
+        yield* Log.trace("Cell content changed", {
+          notebookUri: notebookId,
+          cellIndex: cell.index,
+        });
+        yield* markCellStale(notebookId, cell.index, {
+          code,
+          staleStateRef,
+          notebook: event.notebook,
+        });
+      }
+
+      // Metadata changed to non-stale → clear tracking (e.g., cleared by execution)
+      if (cellChange.metadata && !cell.isStale) {
+        yield* clearCellStaleTracking(notebookId, cell.index, {
+          staleStateRef,
+        });
+      }
+    }
+
+    // --- Ensure stable IDs for new cells ---
+    const stableIdEdits = assignStableIdsToCells(allAddedCells, code);
+    if (stableIdEdits.length > 0) {
+      const edit = new code.WorkspaceEdit();
+      edit.set(event.notebook.uri, stableIdEdits);
+      yield* code.workspace.applyEdit(edit);
+      yield* Log.debug(
+        `Assigned ${stableIdEdits.length} stable IDs to new cells`,
+      );
+    }
+  });
 }
