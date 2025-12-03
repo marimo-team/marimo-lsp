@@ -116,7 +116,10 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         },
 
         /**
-         * Stream of active notebook URI changes
+         * Stream of active notebook URI changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
+         * Filters consecutive duplicates via Stream.changes.
          */
         streamActiveNotebookChanges() {
           return activeNotebookRef.changes.pipe(Stream.changes);

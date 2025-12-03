@@ -62,9 +62,6 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         yield* Log.debug("Updated stale context", { hasStaleCells });
       });
 
-      // Set initial context state
-      yield* Effect.forkScoped(updateContext());
-
       // Subscribe to stale state changes to update VSCode context
       yield* Effect.forkScoped(
         staleStateRef.changes.pipe(
@@ -294,7 +291,9 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         },
 
         /**
-         * Get the changes stream for external subscriptions
+         * Stream of stale state changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
          */
         get changes() {
           return staleStateRef.changes;

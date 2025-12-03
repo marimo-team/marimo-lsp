@@ -383,35 +383,45 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         },
 
         /**
-         * Stream of data source connection changes
+         * Stream of data source connection changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
          */
         streamConnectionsChanges() {
           return connectionsRef.changes;
         },
 
         /**
-         * Stream of dataset changes
+         * Stream of dataset changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
          */
         streamDatasetsChanges() {
           return datasetsRef.changes;
         },
 
         /**
-         * Stream of table preview changes
+         * Stream of table preview changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
          */
         streamTablePreviewsChanges() {
           return tablePreviewsRef.changes;
         },
 
         /**
-         * Stream of table list preview changes
+         * Stream of table list preview changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
          */
         streamTableListPreviewsChanges() {
           return tableListPreviewsRef.changes;
         },
 
         /**
-         * Stream of column preview changes
+         * Stream of column preview changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
          */
         streamColumnPreviewsChanges() {
           return columnPreviewsRef.changes;

@@ -167,9 +167,6 @@ export const VariablesViewLive = Layer.scopedDiscard(
       ),
     );
 
-    // Initialize with current state
-    yield* Effect.forkScoped(refreshVariables());
-
     yield* Effect.logInfo("Variables view initialized");
   }),
 );

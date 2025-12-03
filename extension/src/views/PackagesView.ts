@@ -158,9 +158,6 @@ export const PackagesViewLive = Layer.scopedDiscard(
       ),
     );
 
-    // Initialize with current state
-    yield* Effect.forkScoped(refreshPackages());
-
     // Register command to refresh packages
     yield* code.commands.registerCommand(
       "marimo.refreshPackages",

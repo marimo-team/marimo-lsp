@@ -162,14 +162,20 @@ export class VariablesService extends Effect.Service<VariablesService>()(
         },
 
         /**
-         * Stream of variable declaration changes
+         * Stream of variable declaration changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
+         * Filters consecutive duplicates via Stream.changes.
          */
         streamVariablesChanges() {
           return variablesRef.changes.pipe(Stream.changes);
         },
 
         /**
-         * Stream of variable value changes
+         * Stream of variable value changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
+         * Filters consecutive duplicates via Stream.changes.
          */
         streamVariableValuesChanges() {
           return variableValuesRef.changes.pipe(Stream.changes);

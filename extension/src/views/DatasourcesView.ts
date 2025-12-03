@@ -395,9 +395,6 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
       ),
     );
 
-    // Initialize with current state
-    yield* Effect.forkScoped(refreshDatasources());
-
     yield* Effect.logInfo("Datasources view initialized");
   }),
 );
