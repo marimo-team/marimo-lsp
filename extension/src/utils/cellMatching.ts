@@ -1,9 +1,9 @@
 import { Option } from "effect";
-import type { MarimoNotebookCell } from "../schemas.ts";
+import type { MarimoNotebookCell, NotebookCellId } from "../schemas.ts";
 
 export interface CellMatchResult {
   /** Mapping from old cell stableId to new cell */
-  matched: Map<string, MarimoNotebookCell>;
+  matched: Map<NotebookCellId, MarimoNotebookCell>;
   /** Old cells with no match (truly deleted) */
   unmatched: Array<MarimoNotebookCell>;
   /** New cells with no match (truly added) */
@@ -22,7 +22,7 @@ export function matchCells(
   removedCells: Array<MarimoNotebookCell>,
   addedCells: Array<MarimoNotebookCell>,
 ): CellMatchResult {
-  const matched = new Map<string, MarimoNotebookCell>();
+  const matched = new Map<NotebookCellId, MarimoNotebookCell>();
   const remainingRemoved = [...removedCells];
   const remainingAdded = [...addedCells];
 
