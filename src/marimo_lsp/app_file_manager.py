@@ -7,8 +7,9 @@ from typing import TYPE_CHECKING, Any, cast
 
 from marimo._ast.app import App, InternalApp
 from marimo._types.ids import CellId_t
-from marimo_lsp.loggers import get_logger
 from pygls.uris import to_fs_path
+
+from marimo_lsp.loggers import get_logger
 
 if TYPE_CHECKING:
     import lsprotocol.types as lsp
