@@ -585,7 +585,12 @@ function createCellIdMapper(
 ): (cellId: NotebookCellId) => string | undefined {
   return (cellId: NotebookCellId) => {
     // Find the cell by matching its URI to get the visual index (0-based)
-    const cellIndex = notebook.getCells().findIndex((c) => c.id === cellId);
+    const cellIndex = notebook.getCells().findIndex((cell) =>
+      Option.match(cell.id, {
+        onSome: (id) => id === cellId,
+        onNone: () => false,
+      }),
+    );
     if (cellIndex === -1) {
       return undefined;
     }

@@ -180,10 +180,7 @@ const matchRecentNotebookFromData = (
   // Find a notebook that has any of these stableIds
   for (const doc of recentlyEdited.take(5)) {
     for (const cell of doc.getCells()) {
-      if (
-        Option.isSome(cell.maybeId) &&
-        dataStableIds.has(cell.maybeId.value)
-      ) {
+      if (Option.isSome(cell.id) && dataStableIds.has(cell.id.value)) {
         return Option.some(doc);
       }
     }
