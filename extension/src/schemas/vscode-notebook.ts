@@ -105,7 +105,7 @@ export class MarimoNotebookCell {
    */
   buildEncodedMetadata(options?: {
     // TODO: Just shallow. Support deeper / fully recursive overrides when needed
-    overrides?: Pick<Partial<CellMetadata>, "state">;
+    overrides?: Pick<Partial<CellMetadata>, "state" | "stableId">;
   }) {
     return encodeCellMetadata({ ...this.#raw.metadata, ...options?.overrides });
   }

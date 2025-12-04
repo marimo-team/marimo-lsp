@@ -1,4 +1,5 @@
 import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
+import type * as vscode from "vscode";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -103,6 +104,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               >();
 
               // Collect all removed and added cell IDs
+              const edits: Array<vscode.NotebookEdit> = [];
               for (const change of event.contentChanges) {
                 for (const rawCell of change.removedCells) {
                   const cell = MarimoNotebookCell.from(rawCell);
@@ -111,12 +113,30 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                     removedCellsMap.set(cell.maybeId.value, cell);
                   }
                 }
+
                 for (const rawCell of change.addedCells) {
                   const cell = MarimoNotebookCell.from(rawCell);
                   if (Option.isSome(cell.maybeId)) {
                     addedCellIds.add(cell.maybeId.value);
+                  } else {
+                    // Cell added from UI without a stableId (so we need to create one)
+                    edits.push(
+                      code.NotebookEdit.updateCellMetadata(
+                        cell.index,
+                        cell.buildEncodedMetadata({
+                          overrides: { stableId: crypto.randomUUID() },
+                        }),
+                      ),
+                    );
                   }
                 }
+              }
+
+              if (edits.length > 0) {
+                // add out cell ids from above
+                const edit = new code.WorkspaceEdit();
+                edit.set(event.notebook.uri, edits);
+                yield* code.workspace.applyEdit(edit);
               }
 
               // Find truly deleted cells (removed but not added)
