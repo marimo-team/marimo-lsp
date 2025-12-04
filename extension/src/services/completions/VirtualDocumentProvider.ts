@@ -139,7 +139,9 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
           Stream.filterMap((event) =>
             MarimoNotebookDocument.tryFrom(event.notebook),
           ),
-          Stream.runForEach((notebook) => updateVirtualDocument(notebook)),
+          Stream.runForEach((notebook) => {
+            return updateVirtualDocument(notebook);
+          }),
         ),
       );
 
@@ -234,11 +236,7 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
   notebook: MarimoNotebookDocument,
   variablesService: VariablesService,
 ) {
-  const inOrderCells: Array<{
-    readonly id: NotebookCellId;
-    readonly index: number;
-    readonly document: vscode.TextDocument;
-  }> = notebook.getCells();
+  const inOrderCells: MarimoNotebookCell[] = notebook.getCells();
 
   const variables = yield* variablesService.getVariables(notebook.id);
 
@@ -248,20 +246,21 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
   }
 
   const sortedCellIds = getTopologicalCellIds(
-    inOrderCells.map((cell) => cell.id),
+    inOrderCells.flatMap((cell) =>
+      Option.match(cell.maybeId, {
+        onNone: () => [],
+        onSome: (id) => [id],
+      }),
+    ),
     variables.value,
   );
 
   // Map cell IDs back to cells
-  const cellMap = new Map<
-    NotebookCellId,
-    {
-      readonly id: NotebookCellId;
-      readonly index: number;
-      readonly document: vscode.TextDocument;
-    }
-  >();
+  const cellMap = new Map<NotebookCellId, MarimoNotebookCell>();
   for (const cell of inOrderCells) {
+    if (Option.isNone(cell.maybeId)) {
+      continue;
+    }
     cellMap.set(cell.id, cell);
   }
 
