@@ -869,6 +869,9 @@ it.scoped(
               kind: 1, // Code
               value: "x = 1",
               languageId: "python",
+              metadata: {
+                stableId: "cell-1",
+              },
             },
           ],
         },
@@ -942,6 +945,7 @@ it.scoped(
         metadata: {
           name: "test_cell",
           state: "stale",
+          stableId: "cell-1",
         },
       };
       const notebook = MarimoNotebookDocument.from(

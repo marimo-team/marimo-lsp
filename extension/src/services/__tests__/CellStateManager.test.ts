@@ -50,21 +50,24 @@ describe("CellStateManager", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
+        const cellData0 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "x = 1",
+          "python",
+        );
+        cellData0.metadata = { stableId: "cell-0" };
+
+        const cellData1 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "y = 2",
+          "python",
+        );
+        cellData1.metadata = { stableId: "cell-1" };
+
         // Create a test notebook with cells
         const notebook = MarimoNotebookDocument.from(
           createTestNotebookDocument("/test/notebook.py", {
-            data: new code.NotebookData([
-              new code.NotebookCellData(
-                code.NotebookCellKind.Code,
-                "x = 1",
-                "python",
-              ),
-              new code.NotebookCellData(
-                code.NotebookCellKind.Code,
-                "y = 2",
-                "python",
-              ),
-            ]),
+            data: new code.NotebookData([cellData0, cellData1]),
           }),
         );
 
@@ -95,24 +98,29 @@ describe("CellStateManager", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
+        const cellData0 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "x = 1",
+          "python",
+        );
+        cellData0.metadata = { stableId: "cell-0" };
+
+        const cellData1 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "y = 2",
+          "python",
+        );
+        cellData1.metadata = { stableId: "cell-1" };
+
+        const cellData2 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "z = 3",
+          "python",
+        );
+        cellData2.metadata = { stableId: "cell-2" };
+
         const notebook = createTestNotebookDocument("/test/notebook.py", {
-          data: new code.NotebookData([
-            new code.NotebookCellData(
-              code.NotebookCellKind.Code,
-              "x = 1",
-              "python",
-            ),
-            new code.NotebookCellData(
-              code.NotebookCellKind.Code,
-              "y = 2",
-              "python",
-            ),
-            new code.NotebookCellData(
-              code.NotebookCellKind.Code,
-              "z = 3",
-              "python",
-            ),
-          ]),
+          data: new code.NotebookData([cellData0, cellData1, cellData2]),
         });
 
         yield* ctx.vscode.addNotebookDocument(notebook);
@@ -144,7 +152,7 @@ describe("CellStateManager", () => {
                 "method": "delete_cell",
                 "params": {
                   "inner": {
-                    "cellId": "file:///test/notebook.py#cell-1",
+                    "cellId": "cell-1",
                   },
                   "notebookUri": "file:///test/notebook.py",
                 },
