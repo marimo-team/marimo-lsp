@@ -24,6 +24,7 @@ import { PythonExtension } from "../services/PythonExtension.ts";
 import { type ITelemetry, Telemetry } from "../services/Telemetry.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
+import { getPythonBinName } from "../utils/getPythonBinName.ts";
 import { Links } from "../utils/links.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
@@ -759,7 +760,7 @@ const updateActivePythonEnvironment = ({
         );
       }
 
-      executable = NodePath.join(venvResult.right, "bin", "python");
+      executable = NodePath.join(venvResult.right, "bin", getPythonBinName());
     }
 
     // update the active python environment
