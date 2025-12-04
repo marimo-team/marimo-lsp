@@ -75,8 +75,8 @@ describe("CellStateManager", () => {
         const cell1 = notebook.cellAt(1);
 
         // Get cell IDs
-        const cellId0 = cell0.id;
-        const cellId1 = cell1.id;
+        const cellId0 = Option.getOrThrow(cell0.id);
+        const cellId1 = Option.getOrThrow(cell1.id);
 
         // Verify cell IDs are strings and different
         expect(typeof cellId0).toBe("string");
@@ -84,8 +84,8 @@ describe("CellStateManager", () => {
         expect(cellId0).not.toBe(cellId1);
 
         // Verify calling getNotebookCellId again returns the same ID
-        expect(cell0.id).toBe(cellId0);
-        expect(cell1.id).toBe(cellId1);
+        expect(Option.getOrThrow(cell0.id)).toBe(cellId0);
+        expect(Option.getOrThrow(cell1.id)).toBe(cellId1);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
