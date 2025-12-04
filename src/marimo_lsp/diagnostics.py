@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any, Generic, NewType, TypeVar, cast
+from typing import TYPE_CHECKING, Generic, NewType, TypeVar
 
 from marimo._ast.compiler import compile_cell
 from marimo._messaging.msgspec_encoder import asdict
 from marimo._messaging.ops import VariableDeclaration, Variables
 from marimo._runtime.dataflow import DirectedGraph
-from marimo._types.ids import CellId_t
 
 from marimo_lsp.loggers import get_logger
+from marimo_lsp.utils import get_stable_id
 
 logger = get_logger()
 
 if TYPE_CHECKING:
     import lsprotocol.types as lsp
+    from marimo._types.ids import CellId_t
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace
 
@@ -25,23 +26,6 @@ T = TypeVar("T")
 U = TypeVar("U")
 
 CellDocumentUri = NewType("CellDocumentUri", str)
-
-
-def get_stable_id(cell: lsp.NotebookCell) -> CellId_t | None:
-    """Get the stable ID of a marimo notebook cell."""
-    return decode_marimo_cell_metadata(cell)[0]
-
-
-def decode_marimo_cell_metadata(
-    cell: lsp.NotebookCell,
-) -> tuple[CellId_t | None, dict[str, Any], str]:
-    """Decode marimo-specific metadata from lsp.NotebookCell."""
-    meta = cast("dict[str, Any]", cell.metadata) if cell.metadata else {}
-    cell_id = meta.get("stableId", None)
-    config = meta.get("config", {})
-    name = meta.get("name", "_")
-
-    return CellId_t(cell_id) if cell_id is not None else None, config, name
 
 
 class LRUCache(Generic[T, U]):
