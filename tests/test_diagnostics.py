@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import lsprotocol.types as lsp
 from marimo._types.ids import CellId_t
 
@@ -274,7 +276,7 @@ class TestCellMetadataHelpers:
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata={"stableId": "abc-123"},
+            metadata=cast("lsp.LSPObject", {"stableId": "abc-123"}),
         )
 
         stable_id = get_stable_id(cell)
@@ -285,7 +287,7 @@ class TestCellMetadataHelpers:
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata={},
+            metadata=cast("lsp.LSPObject", {}),
         )
 
         stable_id = get_stable_id(cell)
@@ -306,11 +308,14 @@ class TestCellMetadataHelpers:
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata={
-                "stableId": "abc-123",
-                "config": {"disabled": True},
-                "name": "my_cell",
-            },
+            metadata=cast(
+                "lsp.LSPObject",
+                {
+                    "stableId": "abc-123",
+                    "config": {"disabled": True},
+                    "name": "my_cell",
+                },
+            ),
         )
 
         cell_id, config, name = decode_marimo_cell_metadata(cell)
@@ -323,7 +328,7 @@ class TestCellMetadataHelpers:
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata={},
+            metadata=cast("lsp.LSPObject", {}),
         )
 
         cell_id, config, name = decode_marimo_cell_metadata(cell)
@@ -384,7 +389,7 @@ class TestURIMapping:
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata={"stableId": "abc-123"},
+            metadata=cast("lsp.LSPObject", {"stableId": "abc-123"}),
         )
 
         change = lsp.NotebookDocumentChangeEvent(
@@ -406,7 +411,7 @@ class TestURIMapping:
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata={"stableId": "abc-123"},
+            metadata=cast("lsp.LSPObject", {"stableId": "abc-123"}),
         )
 
         change = lsp.NotebookDocumentChangeEvent(
