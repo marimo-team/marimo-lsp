@@ -56,8 +56,8 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
         Effect.tryPromise({
           try: async () => {
             const client = new lsp.LanguageClient(
-              "marimo-python-ls",
-              "Marimo Python Language Server",
+              "marimo-ty",
+              "marimo (ty)",
               serverOptions,
               clientOptions,
             );
