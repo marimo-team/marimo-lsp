@@ -77,7 +77,7 @@ jobs:
     strategy:
       matrix:
         # TODO: more platforms
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -127,10 +127,11 @@ jobs:
         run: xvfb-run -a pnpm test:extension
         working-directory: marimo-lsp/extension
         if: runner.os == 'Linux'
-      - name: vscode-test (Non-Linux)
-        run: pnpm test:extension
-        working-directory: marimo-lsp/extension
-        if: runner.os != 'Linux'
+      # TODO: enable for other platforms
+      # - name: vscode-test (Non-Linux)
+      #  run: pnpm test:extension
+      #  working-directory: marimo-lsp/extension
+      #  if: runner.os != 'Linux'
 
   python-lint:
     name: Python / Lint
