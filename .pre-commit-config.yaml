@@ -34,6 +34,14 @@ repos:
       # Run the formatter
       - id: ruff-format
 
+  - repo: local
+    hooks:
+      - id: ty-check
+        name: ty check
+        entry: uv run ty check
+        language: system
+        pass_filenames: false
+
   - repo: https://github.com/biomejs/pre-commit
     rev: v2.3.8
     hooks:
