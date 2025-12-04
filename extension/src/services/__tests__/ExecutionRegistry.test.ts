@@ -904,7 +904,7 @@ it.scoped(
       // Send a message with staleInputs: true
       const message: CellMessage = {
         op: "cell-op",
-        cell_id: cell.id,
+        cell_id: Option.getOrThrow(cell.id),
         status: "idle",
         stale_inputs: true,
       };
@@ -980,7 +980,7 @@ it.scoped(
       // Send a queued message
       const message: CellMessage = {
         op: "cell-op",
-        cell_id: cell.id,
+        cell_id: Option.getOrThrow(cell.id),
         status: "queued",
         run_id: "test-run-id",
       };

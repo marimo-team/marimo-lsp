@@ -118,13 +118,6 @@ export class MarimoNotebookCell {
   }
 
   get id() {
-    return Option.getOrThrowWith(
-      this.maybeId,
-      () => new Error("Expected cell id"),
-    );
-  }
-
-  get maybeId() {
     return this.metadata.pipe(
       Option.flatMap((meta) => Option.fromNullable(meta.stableId)),
       Option.map((stableId) => NotebookCellId(stableId)),
@@ -366,7 +359,12 @@ export function findNotebookCell(
   cellId: NotebookCellId,
 ) {
   return Effect.gen(function* () {
-    const cell = notebook.getCells().find((c) => c.id === cellId);
+    const cell = notebook.getCells().find((c) =>
+      Option.match(c.id, {
+        onSome: (id) => id === cellId,
+        onNone: () => false,
+      }),
+    );
     if (!cell) {
       return yield* new NotebookCellNotFoundError({ cellId, notebook });
     }

@@ -4,11 +4,11 @@ import { Effect, Option, Runtime, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
 import {
-  MarimoNotebookCell,
+  type MarimoNotebookCell,
   MarimoNotebookDocument,
   SemVerFromString,
 } from "../schemas.ts";
-import { getCellExecutableCode } from "../utils/getCellExecutableCode.ts";
+import { extractExecuteCodeRequest } from "../utils/extractExecuteCodeRequest.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { Constants } from "./Constants.ts";
@@ -47,8 +47,15 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       controller.executeHandler = (rawCells, rawNotebook) =>
         runPromise<void, never>(
           Effect.gen(function* () {
+            const request = extractExecuteCodeRequest(rawCells, LanguageId);
+
+            if (Option.isNone(request)) {
+              return yield* Effect.logWarning("Empty execution request").pipe(
+                Effect.annotateLogs({ rawCells }),
+              );
+            }
+
             const notebook = MarimoNotebookDocument.from(rawNotebook);
-            const cells = rawCells.map((cell) => MarimoNotebookCell.from(cell));
 
             // sandboxing only works with titled (saved) notebooks
             if (notebook.isUntitled) {
@@ -96,12 +103,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
                 params: {
                   notebookUri: notebook.id,
                   executable,
-                  inner: {
-                    cellIds: cells.map((cell) => cell.id),
-                    codes: cells.map((cell) =>
-                      getCellExecutableCode(cell, LanguageId),
-                    ),
-                  },
+                  inner: request.value,
                 },
               },
             });

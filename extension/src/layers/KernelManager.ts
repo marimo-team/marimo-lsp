@@ -154,7 +154,12 @@ export const KernelManagerLive = Layer.scopedDiscard(
                   editor.value.notebook,
                 )
                   .getCells()
-                  .findIndex((cell) => cell.id === cellId);
+                  .findIndex((cell) =>
+                    Option.match(cell.id, {
+                      onSome: (id) => id === cellId,
+                      onNone: () => false,
+                    }),
+                  );
 
                 yield* Effect.logDebug(
                   `Navigating to cell at index ${cellIndex}`,
