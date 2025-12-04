@@ -6,7 +6,6 @@ import {
   type ParseResult,
   Runtime,
   Schema,
-  Stream,
 } from "effect";
 import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
@@ -14,15 +13,10 @@ import {
   type CellMetadata,
   decodeCellMetadata,
   MarimoNotebook,
-  MarimoNotebookDocument,
-  type NotebookId,
 } from "../schemas.ts";
-import {
-  findCachedIndexForIncoming,
-  matchCellData,
-} from "../utils/cellMatching.ts";
 import { Constants } from "./Constants.ts";
 import { LanguageClient } from "./LanguageClient.ts";
+import { NotebookDataCache } from "./NotebookDataCache.ts";
 import { VsCode } from "./VsCode.ts";
 
 type BooleanMap<T> = {
@@ -36,35 +30,12 @@ type BooleanMap<T> = {
 export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   "NotebookSerializer",
   {
-    dependencies: [Constants.Default],
+    dependencies: [Constants.Default, NotebookDataCache.Default],
     scoped: Effect.gen(function* () {
       const client = yield* LanguageClient;
       const constants = yield* Constants;
       const code = yield* Effect.serviceOption(VsCode);
-
-      const recentlyEdited = new MruList(
-        (doc: MarimoNotebookDocument) => doc.id,
-      );
-      const lastNotebookData = new Map<NotebookId, vscode.NotebookData>();
-
-      if (Option.isSome(code)) {
-        yield* Effect.forkScoped(
-          code.value.workspace.notebookDocumentOpened().pipe(
-            Stream.flatMap((doc) => MarimoNotebookDocument.tryFrom(doc)),
-            Stream.runForEach((doc) =>
-              Effect.sync(() => recentlyEdited.touch(doc)),
-            ),
-          ),
-        );
-        yield* Effect.forkScoped(
-          code.value.workspace.notebookDocumentChanges().pipe(
-            Stream.flatMap((e) => MarimoNotebookDocument.tryFrom(e.notebook)),
-            Stream.runForEach((doc) =>
-              Effect.sync(() => recentlyEdited.touch(doc)),
-            ),
-          ),
-        );
-      }
+      const notebookDataCache = yield* NotebookDataCache;
 
       const serializeEffect = Effect.fnUntraced(function* (
         notebook: vscode.NotebookData,
@@ -73,10 +44,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
           Effect.annotateLogs({ cellCount: notebook.cells.length }),
         );
 
-        yield* maybeCacheNotebookData(notebook, {
-          recentlyEdited,
-          lastNotebookData,
-        });
+        yield* notebookDataCache.set(notebook);
 
         const resp = yield* client.executeCommand({
           command: "marimo.api",
@@ -178,19 +146,14 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
           Effect.annotateLogs({ cellCount: notebook.cells.length }),
         );
 
-        if (Option.isNone(code)) {
-          yield* Effect.logWarning(
-            "Cache enrichment requires VsCode, skippping.",
-          );
+        const cached = yield* notebookDataCache.get(bytes);
+
+        if (Option.isNone(cached)) {
+          yield* Effect.logWarning("Could not recent data for notebook");
           return notebook;
         }
 
-        return yield* maybeEnrichNotebookDataFromCache(notebook, {
-          code: code.value,
-          currentBytes: bytes,
-          recentlyEdited,
-          lastNotebookData,
-        });
+        return yield* notebookDataCache.enrich(notebook, cached.value);
       });
 
       if (Option.isSome(code)) {
@@ -362,176 +325,3 @@ mo.md(r"""
 ${code}
 """)`;
 }
-
-/**
- * A list that tracks items by most-recently-touched order.
- *
- * Uses a Map internally, which maintains insertion order.
- * Touching an item removes and re-inserts it, moving it to the end.
- * Iteration yields items from most recent to least recent.
- */
-class MruList<K, V> {
-  #items = new Map<K, V>();
-  #keyFn: (value: V) => K;
-
-  constructor(keyFn: (value: V) => K) {
-    this.#keyFn = keyFn;
-  }
-
-  touch(item: V): void {
-    const key = this.#keyFn(item);
-    this.#items.delete(key);
-    this.#items.set(key, item);
-  }
-
-  take(limit: number): Array<V> {
-    return [...this.#items.values()].reverse().slice(0, limit);
-  }
-}
-
-const maybeEnrichNotebookDataFromCache = Effect.fnUntraced(function* (
-  data: vscode.NotebookData,
-  deps: {
-    code: VsCode;
-    currentBytes: Uint8Array;
-    recentlyEdited: MruList<NotebookId, MarimoNotebookDocument>;
-    lastNotebookData: Map<NotebookId, vscode.NotebookData>;
-  },
-) {
-  const { code, lastNotebookData, currentBytes, recentlyEdited } = deps;
-  const notebookId = yield* matchRecentNotebookFromBytes(currentBytes, {
-    code,
-    recentlyEdited,
-  });
-
-  if (Option.isNone(notebookId)) {
-    yield* Effect.logDebug("Could not match notebook for enrichment");
-    return data;
-  }
-
-  const cachedData = lastNotebookData.get(notebookId.value);
-  if (!cachedData) {
-    yield* Effect.logDebug("No cached data found");
-    return data;
-  }
-
-  // Match cells using VSCode-style prefix/suffix + content matching
-  const matchResult = matchCellData(cachedData.cells, data.cells);
-
-  // Build enriched cells array
-  let matchedCount = 0;
-  const enrichedCells = data.cells.map((incomingCell, incomingIdx) => {
-    const cachedIdx = findCachedIndexForIncoming(matchResult, {
-      incomingIdx,
-      incomingLength: data.cells.length,
-      cachedLength: cachedData.cells.length,
-    });
-
-    if (Option.isSome(cachedIdx)) {
-      matchedCount++;
-      const cachedCell = cachedData.cells[cachedIdx.value];
-      return {
-        ...incomingCell,
-        metadata: {
-          ...incomingCell.metadata,
-          stableId:
-            cachedCell.metadata?.stableId ?? incomingCell.metadata?.stableId,
-        },
-        outputs: cachedCell.outputs ?? incomingCell.outputs,
-      };
-    }
-
-    // No match found, keep the incoming cell as-is
-    return incomingCell;
-  });
-
-  yield* Effect.logDebug("Enriched notebook from cache").pipe(
-    Effect.annotateLogs({
-      notebookId: notebookId.value,
-      stablePrefix: matchResult.stablePrefix,
-      stableSuffix: matchResult.stableSuffix,
-      middleMatches: matchResult.middleMatches.size,
-      totalMatched: matchedCount,
-    }),
-  );
-
-  return { ...data, cells: enrichedCells };
-});
-
-const matchRecentNotebookFromData = (
-  data: vscode.NotebookData,
-  recentlyEdited: MruList<NotebookId, MarimoNotebookDocument>,
-): Option.Option<MarimoNotebookDocument> => {
-  // Collect all stableIds from the NotebookData cells
-  const dataStableIds = new Set(
-    data.cells
-      .map((cell) => cell.metadata?.stableId)
-      .filter((id): id is string => typeof id === "string"),
-  );
-
-  if (dataStableIds.size === 0) {
-    return Option.none();
-  }
-
-  // Find a notebook that has any of these stableIds
-  for (const doc of recentlyEdited.take(5)) {
-    for (const cell of doc.getCells()) {
-      if (
-        Option.isSome(cell.maybeId) &&
-        dataStableIds.has(cell.maybeId.value)
-      ) {
-        return Option.some(doc);
-      }
-    }
-  }
-  return Option.none();
-};
-
-const matchRecentNotebookFromBytes = Effect.fnUntraced(function* (
-  bytes: Uint8Array,
-  deps: {
-    code: VsCode;
-    recentlyEdited: MruList<NotebookId, MarimoNotebookDocument>;
-  },
-) {
-  const { code, recentlyEdited } = deps;
-
-  const incomingContent = new TextDecoder().decode(bytes);
-
-  for (const doc of recentlyEdited.take(5)) {
-    const fileBytes = yield* code.workspace.fs
-      .readFile(doc.uri)
-      .pipe(Effect.option);
-
-    if (Option.isNone(fileBytes)) {
-      continue;
-    }
-
-    const fileContent = new TextDecoder().decode(fileBytes.value);
-    if (fileContent === incomingContent) {
-      return Option.some(doc.id);
-    }
-  }
-  return Option.none<NotebookId>();
-});
-
-const maybeCacheNotebookData = Effect.fnUntraced(function* (
-  data: vscode.NotebookData,
-  deps: {
-    lastNotebookData: Map<NotebookId, vscode.NotebookData>;
-    recentlyEdited: MruList<NotebookId, MarimoNotebookDocument>;
-  },
-) {
-  const { lastNotebookData, recentlyEdited } = deps;
-  const notebook = matchRecentNotebookFromData(data, recentlyEdited);
-
-  if (Option.isNone(notebook)) {
-    yield* Effect.logDebug("Could not match notebook for caching");
-    return;
-  }
-
-  lastNotebookData.set(notebook.value.id, data);
-  yield* Effect.logDebug("Cached notebook data").pipe(
-    Effect.annotateLogs({ notebookId: notebook.value.id }),
-  );
-});
