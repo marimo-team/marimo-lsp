@@ -9,6 +9,7 @@ import {
   SemVerFromString,
 } from "../schemas.ts";
 import { getCellExecutableCode } from "../utils/getCellExecutableCode.ts";
+import { getPythonBinName } from "../utils/getPythonBinName.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { Constants } from "./Constants.ts";
@@ -86,7 +87,8 @@ export class SandboxController extends Effect.Service<SandboxController>()(
                   Effect.die("Expected PEP 723 metadata to be present"),
                 ),
               );
-            const executable = NodePath.join(venv, "bin", "python");
+
+            const executable = NodePath.join(venv, "bin", getPythonBinName());
             yield* python.updateActiveEnvironmentPath(executable);
 
             yield* client.executeCommand({
