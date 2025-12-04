@@ -1,6 +1,7 @@
 import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import {
   Effect,
+  Stream,
   Fiber,
   Option,
   type ParseResult,
@@ -13,6 +14,8 @@ import {
   type CellMetadata,
   decodeCellMetadata,
   MarimoNotebook,
+  MarimoNotebookDocument,
+  NotebookId,
 } from "../schemas.ts";
 import { Constants } from "./Constants.ts";
 import { LanguageClient } from "./LanguageClient.ts";
@@ -30,17 +33,84 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   "NotebookSerializer",
   {
     dependencies: [Constants.Default],
-    scoped: Effect.gen(function* () {
+    scoped: Effect.gen(function*() {
       const client = yield* LanguageClient;
       const constants = yield* Constants;
       const code = yield* Effect.serviceOption(VsCode);
 
-      const serializeEffect = Effect.fnUntraced(function* (
+      const recentlyEdited = new MruList((doc: MarimoNotebookDocument) => doc.id);
+      const lastNotebookData = new Map<NotebookId, vscode.NotebookData>()
+
+      if (Option.isSome(code)) {
+        yield* Effect.forkScoped(
+          code.value.workspace.notebookDocumentOpened().pipe(
+            Stream.flatMap((doc) => MarimoNotebookDocument.tryFrom(doc)),
+            Stream.runForEach((doc) =>
+              Effect.sync(() => recentlyEdited.touch(doc)),
+            ),
+          ),
+        );
+        yield* Effect.forkScoped(
+          code.value.workspace.notebookDocumentChanges().pipe(
+            Stream.flatMap((e) => MarimoNotebookDocument.tryFrom(e.notebook)),
+            Stream.runForEach((doc) =>
+              Effect.sync(() => recentlyEdited.touch(doc)),
+            ),
+          ),
+        );
+      }
+
+      const matchRecentNotebookFromData = (data: vscode.NotebookData): Option.Option<MarimoNotebookDocument> => {
+        // some simple match based on cells?
+        for (const doc of recentlyEdited.take(5)) {
+          // TODO
+        }
+        return Option.none();
+      }
+
+      const matchRecentNotebookFromBytes = (bytes: Uint8Array): Option.Option<vscode.NotebookData> => {
+        // iterate 
+        for (const doc of recentlyEdited.take(5)) {
+          const filePath = doc.uri.fsPath;
+          // read file contents and see if we have a match?
+        }
+        return Option.none();
+      }
+
+      const maybeCacheNotebookData = Effect.fnUntraced(function*(
+        data: vscode.NotebookData,
+      ) {
+        const notebook = matchRecentNotebookFromData(data);
+
+        if (Option.isNone(notebook)) {
+          return yield* Effect.logWarning("TODO");
+        }
+
+        lastNotebookData.set(notebook.value.id, data)
+      });
+
+      const maybeEnrichNotebookDataFromCache = Effect.fnUntraced(function*(
+        bytes: Uint8Array,
+        data: vscode.NotebookData,
+      ) {
+        const prev = matchRecentNotebookFromBytes(bytes);
+
+        if (Option.isNone(prev)) {
+          yield* Effect.logWarning("TODO")
+          return data;
+        }
+
+        // TODO: Try enriching data with previous outputs and stableIds
+      })
+
+      const serializeEffect = Effect.fnUntraced(function*(
         notebook: vscode.NotebookData,
       ) {
         yield* Effect.logDebug("Serializing notebook").pipe(
           Effect.annotateLogs({ cellCount: notebook.cells.length }),
         );
+
+        yield* maybeCacheNotebookData(notebook);
 
         const resp = yield* client.executeCommand({
           command: "marimo.api",
@@ -62,7 +132,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
         return bytes;
       });
 
-      const deserializeEffect = Effect.fnUntraced(function* (
+      const deserializeEffect = Effect.fnUntraced(function*(
         bytes: Uint8Array,
       ) {
         yield* Effect.logDebug("Deserializing notebook").pipe(
@@ -141,7 +211,8 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
         yield* Effect.logDebug("Deserialization complete").pipe(
           Effect.annotateLogs({ cellCount: notebook.cells.length }),
         );
-        return notebook;
+
+        return yield* maybeEnrichNotebookDataFromCache(bytes, notebook)
       });
 
       if (Option.isSome(code)) {
@@ -153,7 +224,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
           {
             serializeNotebook(notebook, token) {
               return runPromise(
-                Effect.gen(function* () {
+                Effect.gen(function*() {
                   const fiber = yield* Effect.fork(serializeEffect(notebook));
                   token.onCancellationRequested(() =>
                     runPromise(Fiber.interrupt(fiber)),
@@ -174,7 +245,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
             },
             deserializeNotebook(bytes, token) {
               return runPromise(
-                Effect.gen(function* () {
+                Effect.gen(function*() {
                   const fiber = yield* Effect.fork(deserializeEffect(bytes));
                   token.onCancellationRequested(() =>
                     runPromise(Fiber.interrupt(fiber)),
@@ -195,13 +266,13 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
             },
           },
           {
-            transientOutputs: true,
+            transientOutputs: false,
             transientCellMetadata: {
               state: true,
               name: false,
               languageMetadata: false,
               // Stable ID is ephemeral - not persisted to .py file, regenerated on open
-              stableId: true,
+              stableId: false,
               options: false,
             } satisfies BooleanMap<CellMetadata>,
             transientDocumentMetadata: {
@@ -223,7 +294,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       };
     }),
   },
-) {}
+) { }
 
 const decodeDeserializeResponse = Schema.decodeUnknown(MarimoNotebook);
 const decodeSerializeResponse = Schema.decodeUnknown(
@@ -312,4 +383,30 @@ export function wrapInMarkdown(code: string): string {
 mo.md(r"""
 ${code}
 """)`;
+}
+
+/**
+ * A list that tracks items by most-recently-touched order.
+ *
+ * Uses a Map internally, which maintains insertion order.
+ * Touching an item removes and re-inserts it, moving it to the end.
+ * Iteration yields items from most recent to least recent.
+ */
+class MruList<K, V> {
+  #items = new Map<K, V>();
+  #keyFn: (value: V) => K;
+
+  constructor(keyFn: (value: V) => K) {
+    this.#keyFn = keyFn;
+  }
+
+  touch(item: V): void {
+    const key = this.#keyFn(item);
+    this.#items.delete(key);
+    this.#items.set(key, item);
+  }
+
+  take(limit: number): Array<V> {
+    return [...this.#items.values()].reverse().slice(0, limit);
+  }
 }
