@@ -1,7 +1,7 @@
 import * as NodeFs from "node:fs";
 import { Effect } from "effect";
-import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
+import type { MarimoNotebookDocument } from "../schemas.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 
@@ -14,13 +14,13 @@ export function installPackages(
 export function installPackages(
   packages: ReadonlyArray<string>,
   options: {
-    script: vscode.NotebookDocument;
+    script: MarimoNotebookDocument;
   },
 ): Effect.Effect<void, never, Uv | VsCode>;
 export function installPackages(
   packages: ReadonlyArray<string>,
   options: {
-    script?: vscode.NotebookDocument;
+    script?: MarimoNotebookDocument;
     venvPath?: string;
   },
 ): Effect.Effect<void, never, Uv | VsCode> {
@@ -89,13 +89,13 @@ export function installPackages(
 
 export const uvAddScriptSafe = Effect.fnUntraced(function* (
   packages: ReadonlyArray<string>,
-  notebook: vscode.NotebookDocument,
+  notebook: MarimoNotebookDocument,
 ) {
   const uv = yield* Uv;
   const code = yield* VsCode;
   const tmpFile = `${notebook.uri.fsPath}.tmp`;
   yield* Effect.promise(() =>
-    NodeFs.promises.writeFile(tmpFile, notebook.metadata?.header?.value ?? ""),
+    NodeFs.promises.writeFile(tmpFile, notebook.header),
   );
 
   yield* uv.addScript({ script: tmpFile, packages, noSync: true });

@@ -1,6 +1,7 @@
 import { Effect, Layer, Option, Queue, Runtime, Stream } from "effect";
 import { unreachable } from "../assert.ts";
 import { handleMissingPackageAlert } from "../operations.ts";
+import { MarimoNotebookDocument, type NotebookId } from "../schemas.ts";
 import { Config } from "../services/Config.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
@@ -12,15 +13,11 @@ import { OutputChannel } from "../services/OutputChannel.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
-import {
-  getNotebookUri,
-  type MessageOperation,
-  type NotebookUri,
-} from "../types.ts";
+import type { MessageOperation } from "../types.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
 interface MarimoOperation {
-  notebookUri: NotebookUri;
+  notebookUri: NotebookId;
   operation: MessageOperation;
 }
 
@@ -109,9 +106,12 @@ export const KernelManagerLive = Layer.scopedDiscard(
       renderer.messages().pipe(
         Stream.mapEffect(
           Effect.fnUntraced(function* ({ editor, message }) {
-            const notebookUri = getNotebookUri(editor.notebook);
+            const notebook = MarimoNotebookDocument.from(editor.notebook);
             yield* Effect.logTrace("Renderer command").pipe(
-              Effect.annotateLogs({ command: message.command, notebookUri }),
+              Effect.annotateLogs({
+                command: message.command,
+                notebookUri: notebook.id,
+              }),
             );
             switch (message.command) {
               case "set_ui_element_value": {
@@ -120,7 +120,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
                   params: {
                     method: message.command,
                     params: {
-                      notebookUri,
+                      notebookUri: notebook.id,
                       inner: message.params,
                     },
                   },
@@ -133,7 +133,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
                   params: {
                     method: message.command,
                     params: {
-                      notebookUri,
+                      notebookUri: notebook.id,
                       inner: message.params,
                     },
                   },
@@ -141,7 +141,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
                 return;
               }
               case "navigate_to_cell": {
-                const { cellUri } = message.params;
+                const { cellId } = message.params;
                 const editor = yield* code.window.getActiveNotebookEditor();
 
                 if (Option.isNone(editor)) {
@@ -150,15 +150,15 @@ export const KernelManagerLive = Layer.scopedDiscard(
                   );
                 }
 
-                const cellIndex = editor.value.notebook
+                const cellIndex = MarimoNotebookDocument.from(
+                  editor.value.notebook,
+                )
                   .getCells()
-                  .findIndex(
-                    (cell) => cell.document.uri.toString() === cellUri,
-                  );
+                  .findIndex((cell) => cell.id === cellId);
 
                 yield* Effect.logDebug(
                   `Navigating to cell at index ${cellIndex}`,
-                ).pipe(Effect.annotateLogs({ cellUri, cellIndex }));
+                ).pipe(Effect.annotateLogs({ cellId, cellIndex }));
 
                 if (cellIndex !== -1) {
                   editor.value.revealRange(
@@ -218,9 +218,8 @@ function processOperation(
     }
 
     const editor = Option.getOrThrow(maybeEditor);
-    const maybeController = yield* controllers.getActiveController(
-      editor.notebook,
-    );
+    const notebook = MarimoNotebookDocument.from(editor.notebook);
+    const maybeController = yield* controllers.getActiveController(notebook);
 
     if (Option.isNone(maybeController)) {
       yield* Effect.logWarning("No active controller, skipping operation").pipe(
@@ -249,11 +248,7 @@ function processOperation(
       case "missing-package-alert": {
         // Handle in a separate fork (we don't want to block resolution)
         runPromise(
-          handleMissingPackageAlert(
-            operation,
-            editor.notebook,
-            controller,
-          ).pipe(
+          handleMissingPackageAlert(operation, notebook, controller).pipe(
             Effect.provideService(Uv, uv),
             Effect.provideService(VsCode, code),
             Effect.provideService(Config, config),

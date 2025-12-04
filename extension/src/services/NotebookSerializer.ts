@@ -14,8 +14,10 @@ import {
   decodeCellMetadata,
   MarimoNotebook,
 } from "../schemas.ts";
+import { enrichNotebookFromCached } from "../utils/enrichNotebookFromCached.ts";
 import { Constants } from "./Constants.ts";
 import { LanguageClient } from "./LanguageClient.ts";
+import { NotebookDataCache } from "./NotebookDataCache.ts";
 import { VsCode } from "./VsCode.ts";
 
 type BooleanMap<T> = {
@@ -29,11 +31,12 @@ type BooleanMap<T> = {
 export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   "NotebookSerializer",
   {
-    dependencies: [Constants.Default],
+    dependencies: [Constants.Default, NotebookDataCache.Default],
     scoped: Effect.gen(function* () {
       const client = yield* LanguageClient;
       const constants = yield* Constants;
       const code = yield* Effect.serviceOption(VsCode);
+      const notebookDataCache = yield* NotebookDataCache;
 
       const serializeEffect = Effect.fnUntraced(function* (
         notebook: vscode.NotebookData,
@@ -41,6 +44,8 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
         yield* Effect.logDebug("Serializing notebook").pipe(
           Effect.annotateLogs({ cellCount: notebook.cells.length }),
         );
+
+        yield* notebookDataCache.set(notebook);
 
         const resp = yield* client.executeCommand({
           command: "marimo.api",
@@ -99,6 +104,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                     languageMetadata: {
                       markdown: result.metadata,
                     },
+                    stableId: crypto.randomUUID(),
                   } satisfies CellMetadata,
                 };
               }
@@ -118,6 +124,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                   languageMetadata: {
                     sql: result.metadata,
                   },
+                  stableId: crypto.randomUUID(),
                 } satisfies CellMetadata,
               };
             }
@@ -131,6 +138,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               metadata: {
                 name: cell.name,
                 options: cell.options,
+                stableId: crypto.randomUUID(),
               } satisfies CellMetadata,
             };
           }),
@@ -138,7 +146,15 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
         yield* Effect.logDebug("Deserialization complete").pipe(
           Effect.annotateLogs({ cellCount: notebook.cells.length }),
         );
-        return notebook;
+
+        const cached = yield* notebookDataCache.get(bytes);
+
+        if (Option.isNone(cached)) {
+          yield* Effect.logWarning("Could not recent data for notebook");
+          return notebook;
+        }
+
+        return enrichNotebookFromCached(notebook, cached.value);
       });
 
       if (Option.isSome(code)) {
@@ -192,11 +208,13 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
             },
           },
           {
-            transientOutputs: true,
+            transientOutputs: false,
             transientCellMetadata: {
               state: true,
               name: false,
               languageMetadata: false,
+              // Stable ID is ephemeral - not persisted to .py file, regenerated on open
+              stableId: false,
               options: false,
             } satisfies BooleanMap<CellMetadata>,
             transientDocumentMetadata: {

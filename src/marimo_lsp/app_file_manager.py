@@ -123,7 +123,7 @@ def sync_app_with_workspace(
 
     for cell in notebook.cells:
         # Extract cell ID from document URI fragment (e.g., "file:///test.py#cell1" -> "cell1")
-        cell_ids.append(CellId_t(cell.document))
+        cell_ids.append(CellId_t(cell.metadata["stableId"]))
         document = workspace.text_documents.get(cell.document)
         if document:
             codes.append(document.source or "")

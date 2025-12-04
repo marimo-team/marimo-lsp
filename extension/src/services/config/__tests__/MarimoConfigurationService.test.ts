@@ -6,15 +6,16 @@ import {
   createTestNotebookEditor,
   TestVsCode,
 } from "../../../__mocks__/TestVsCode.ts";
-import type { MarimoConfig, NotebookUri } from "../../../types.ts";
+import type { NotebookId } from "../../../schemas.ts";
+import type { MarimoConfig } from "../../../types.ts";
 import { LanguageClient } from "../../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../NotebookEditorRegistry.ts";
 import { VsCode } from "../../VsCode.ts";
 import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";
 
-const NOTEBOOK_URI = "file:///test/notebook.py" as NotebookUri;
-const NOTEBOOK_URI_1 = "file:///test/notebook1.py" as NotebookUri;
-const NOTEBOOK_URI_2 = "file:///test/notebook2.py" as NotebookUri;
+const NOTEBOOK_URI = "file:///test/notebook.py" as NotebookId;
+const NOTEBOOK_URI_1 = "file:///test/notebook1.py" as NotebookId;
+const NOTEBOOK_URI_2 = "file:///test/notebook2.py" as NotebookId;
 
 const AUTORUN_CONFIG = {
   runtime: {
@@ -29,10 +30,10 @@ const LAZY_CONFIG = {
 } as MarimoConfig;
 
 const withTestCtx = Effect.fnUntraced(function* (
-  options: { configStore?: Map<NotebookUri, MarimoConfig> } = {},
+  options: { configStore?: Map<NotebookId, MarimoConfig> } = {},
 ) {
   const vscode = yield* TestVsCode.make();
-  const { configStore = new Map<NotebookUri, MarimoConfig>() } = options;
+  const { configStore = new Map<NotebookId, MarimoConfig>() } = options;
 
   const layer = MarimoConfigurationService.Default.pipe(
     Layer.provide(NotebookEditorRegistry.Default),
@@ -90,7 +91,7 @@ const withTestCtx = Effect.fnUntraced(function* (
   return {
     vscode,
     layer,
-    setConfig(uri: NotebookUri, config: MarimoConfig) {
+    setConfig(uri: NotebookId, config: MarimoConfig) {
       configStore.set(uri, config);
       return Effect.void;
     },

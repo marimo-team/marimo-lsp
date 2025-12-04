@@ -18,17 +18,17 @@ import {
 import type * as vscode from "vscode";
 import { logUnreachable } from "../assert.ts";
 import {
+  extractCellIdFromCellMessage,
+  findNotebookCell,
+  MarimoNotebookDocument,
+  type NotebookCellId,
+} from "../schemas.ts";
+import {
   type CellMessage,
   type CellRuntimeState,
   createCellNavigationLink,
-  getNotebookUri,
 } from "../types.ts";
 import { prettyErrorMessage } from "../utils/errors.ts";
-import {
-  extractCellId,
-  getNotebookCell,
-  type NotebookCellId,
-} from "../utils/notebook.ts";
 import { CellStateManager } from "./CellStateManager.ts";
 import type { VenvPythonController } from "./NotebookControllerFactory.ts";
 import type { SandboxController } from "./SandboxController.ts";
@@ -83,7 +83,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
         ) =>
           Effect.gen(function* () {
             const { editor, controller } = options;
-            const cellId = extractCellId(msg);
+            const cellId = extractCellIdFromCellMessage(msg);
 
             const cell = yield* Ref.modify(ref, (map) => {
               const prev = Option.match(HashMap.get(map, cellId), {
@@ -94,16 +94,13 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
               return [update, HashMap.set(map, cellId, update)];
             });
 
-            const notebookUri = getNotebookUri(editor.notebook);
-            const notebookCell = yield* getNotebookCell(
-              editor.notebook,
-              cell.id,
-            );
+            const notebook = MarimoNotebookDocument.from(editor.notebook);
+            const notebookCell = yield* findNotebookCell(notebook, cell.id);
 
             // If cell has stale inputs, mark it as stale
             if (cell.state.staleInputs) {
               yield* cellStateManager.markCellStale(
-                notebookUri,
+                notebook.id,
                 notebookCell.index,
               );
             }
@@ -112,7 +109,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
               case "queued": {
                 // Clear stale state when cell is queued for execution
                 yield* cellStateManager.clearCellStale(
-                  notebookUri,
+                  notebook.id,
                   notebookCell.index,
                 );
 
@@ -385,8 +382,8 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
           "Creating ephemeral execution for marimo error without pending execution",
         ).pipe(Effect.annotateLogs({ cellId }));
 
-        const notebookCell = yield* getNotebookCell(
-          deps.editor.notebook,
+        const notebookCell = yield* findNotebookCell(
+          MarimoNotebookDocument.from(deps.editor.notebook),
           cellId,
         );
         const execution =
@@ -584,19 +581,15 @@ export function buildCellOutputs(
  * @returns A function that maps cell URIs to HTML link strings
  */
 function createCellIdMapper(
-  notebook: vscode.NotebookDocument,
-): (cellId: string) => string | undefined {
-  return (cellUri: string) => {
-    const cells = notebook.getCells();
-
+  notebook: MarimoNotebookDocument,
+): (cellId: NotebookCellId) => string | undefined {
+  return (cellId: NotebookCellId) => {
     // Find the cell by matching its URI to get the visual index (0-based)
-    const cellIndex = cells.findIndex(
-      (cell) => cell.document.uri.toString() === cellUri,
-    );
+    const cellIndex = notebook.getCells().findIndex((c) => c.id === cellId);
     if (cellIndex === -1) {
       return undefined;
     }
-    return createCellNavigationLink(cellUri, cellIndex + 1);
+    return createCellNavigationLink(cellId, cellIndex + 1);
   };
 }
 
@@ -639,7 +632,9 @@ function buildOutputItem(
   // Handle marimo errors
   if (output.channel === "marimo-error" && Array.isArray(output.data)) {
     // Convert marimo errors to VSCode Error objects
-    const cellIdMapper = notebook ? createCellIdMapper(notebook) : undefined;
+    const cellIdMapper = notebook
+      ? createCellIdMapper(MarimoNotebookDocument.from(notebook))
+      : undefined;
     const errors = output.data.map((error) => {
       const errorMessage = prettyErrorMessage(error, cellIdMapper);
       // If the error message contains HTML (links), use text/html mime type

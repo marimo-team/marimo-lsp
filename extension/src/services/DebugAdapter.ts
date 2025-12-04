@@ -107,10 +107,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
               );
               const notebook = Option.flatMap(
                 yield* code.window.getActiveNotebookEditor(),
-                (editor) =>
-                  MarimoNotebookDocument.decodeUnknownNotebookDocument(
-                    editor.notebook,
-                  ),
+                (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
               );
               if (Option.isNone(notebook)) {
                 yield* Effect.logWarning("No active marimo notebook found");

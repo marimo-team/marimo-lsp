@@ -10,13 +10,8 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import {
-  type CellMessage,
-  type CellRuntimeState,
-  getNotebookUri,
-} from "../../types.ts";
-import type { NotebookCellId } from "../../utils/notebook.ts";
-import { getNotebookCellId } from "../../utils/notebook.ts";
+import { MarimoNotebookDocument, type NotebookCellId } from "../../schemas.ts";
+import type { CellMessage, CellRuntimeState } from "../../types.ts";
 import { CellStateManager } from "../CellStateManager.ts";
 import { buildCellOutputs, ExecutionRegistry } from "../ExecutionRegistry.ts";
 import { VenvPythonController } from "../NotebookControllerFactory.ts";
@@ -874,6 +869,9 @@ it.scoped(
               kind: 1, // Code
               value: "x = 1",
               languageId: "python",
+              metadata: {
+                stableId: "cell-1",
+              },
             },
           ],
         },
@@ -887,7 +885,8 @@ it.scoped(
       const cellStateManager = yield* CellStateManager;
       const code = yield* VsCode;
 
-      const cell = editor.notebook.cellAt(0);
+      const notebook = MarimoNotebookDocument.from(editor.notebook);
+      const cell = notebook.cellAt(0);
 
       // Set active editor in testVsCode so NotebookEditorRegistry can find it
       yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
@@ -905,7 +904,7 @@ it.scoped(
       // Send a message with staleInputs: true
       const message: CellMessage = {
         op: "cell-op",
-        cell_id: getNotebookCellId(cell),
+        cell_id: cell.id,
         status: "idle",
         stale_inputs: true,
       };
@@ -916,15 +915,14 @@ it.scoped(
       });
 
       // Check that CellStateManager tracked the cell as stale
-      const notebookUri = getNotebookUri(editor.notebook);
-      const staleCells = yield* cellStateManager.getStaleCells(notebookUri);
+      const staleCells = yield* cellStateManager.getStaleCells(notebook.id);
       expect(staleCells).toContain(cell.index);
 
       // Clear stale state
-      yield* cellStateManager.clearCellStale(notebookUri, cell.index);
+      yield* cellStateManager.clearCellStale(notebook.id, cell.index);
 
       // Check that the cell is no longer stale
-      const staleCells2 = yield* cellStateManager.getStaleCells(notebookUri);
+      const staleCells2 = yield* cellStateManager.getStaleCells(notebook.id);
       expect(staleCells2).not.toContain(cell.index);
     }).pipe(Effect.provide(ctx.layer));
   }),
@@ -947,13 +945,15 @@ it.scoped(
         metadata: {
           name: "test_cell",
           state: "stale",
+          stableId: "cell-1",
         },
       };
-      const notebook = createTestNotebookDocument(
-        "file:///test/notebook_mo.py",
-        { data: { cells: [cellData] } },
+      const notebook = MarimoNotebookDocument.from(
+        createTestNotebookDocument("file:///test/notebook_mo.py", {
+          data: { cells: [cellData] },
+        }),
       );
-      const editor = createTestNotebookEditor(notebook);
+      const editor = createTestNotebookEditor(notebook.rawNotebookDocument);
       const cell = notebook.cellAt(0);
       const code = yield* VsCode;
 
@@ -964,11 +964,10 @@ it.scoped(
       yield* TestClock.adjust("10 millis");
 
       // First, mark the cell as stale in CellStateManager
-      const notebookUri = getNotebookUri(notebook);
-      yield* cellStateManager.markCellStale(notebookUri, cell.index);
+      yield* cellStateManager.markCellStale(notebook.id, cell.index);
 
       // Verify cell is tracked as stale
-      let staleCells = yield* cellStateManager.getStaleCells(notebookUri);
+      let staleCells = yield* cellStateManager.getStaleCells(notebook.id);
       expect(staleCells).toContain(cell.index);
 
       // Create a mock controller
@@ -981,7 +980,7 @@ it.scoped(
       // Send a queued message
       const message: CellMessage = {
         op: "cell-op",
-        cell_id: getNotebookCellId(cell),
+        cell_id: cell.id,
         status: "queued",
         run_id: "test-run-id",
       };
@@ -992,7 +991,7 @@ it.scoped(
       });
 
       // Check that the cell's stale state was cleared
-      staleCells = yield* cellStateManager.getStaleCells(notebookUri);
+      staleCells = yield* cellStateManager.getStaleCells(notebook.id);
       expect(staleCells).not.toContain(cell.index);
     }).pipe(Effect.provide(ctx.layer));
   }),

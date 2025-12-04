@@ -3,9 +3,10 @@ import {
   type DependencyTreeNode,
   DependencyTreeResponse,
   ListPackagesResponse,
+  MarimoNotebookDocument,
+  type NotebookId,
   type PackageDescription,
 } from "../../schemas.ts";
-import type { NotebookUri } from "../../types.ts";
 import { Log } from "../../utils/log.ts";
 import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { LanguageClient } from "../LanguageClient.ts";
@@ -50,12 +51,12 @@ export class PackagesService extends Effect.Service<PackagesService>()(
 
       // Track package lists: NotebookUri -> PackageListState
       const packageListsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, PackageListState>(),
+        HashMap.empty<NotebookId, PackageListState>(),
       );
 
       // Track dependency trees: NotebookUri -> DependencyTreeState
       const dependencyTreesRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, DependencyTreeState>(),
+        HashMap.empty<NotebookId, DependencyTreeState>(),
       );
 
       return {
@@ -63,7 +64,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          * Update package list for a notebook
          */
         updatePackageList(
-          notebookUri: NotebookUri,
+          notebookUri: NotebookId,
           packages: PackageDescriptionType[],
         ) {
           return Effect.gen(function* () {
@@ -85,7 +86,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
         /**
          * Set package list loading state
          */
-        setPackageListLoading(notebookUri: NotebookUri, loading: boolean) {
+        setPackageListLoading(notebookUri: NotebookId, loading: boolean) {
           return SubscriptionRef.update(packageListsRef, (map) =>
             HashMap.set(
               map,
@@ -101,7 +102,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
         /**
          * Set package list error state
          */
-        setPackageListError(notebookUri: NotebookUri, error: string) {
+        setPackageListError(notebookUri: NotebookId, error: string) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(packageListsRef, (map) =>
               HashMap.set(
@@ -121,7 +122,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          * Update dependency tree for a notebook
          */
         updateDependencyTree(
-          notebookUri: NotebookUri,
+          notebookUri: NotebookId,
           tree: DependencyTreeNode | null,
         ) {
           return Effect.gen(function* () {
@@ -143,7 +144,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
         /**
          * Set dependency tree loading state
          */
-        setDependencyTreeLoading(notebookUri: NotebookUri, loading: boolean) {
+        setDependencyTreeLoading(notebookUri: NotebookId, loading: boolean) {
           return SubscriptionRef.update(dependencyTreesRef, (map) =>
             HashMap.set(
               map,
@@ -159,7 +160,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
         /**
          * Set dependency tree error state
          */
-        setDependencyTreeError(notebookUri: NotebookUri, error: string) {
+        setDependencyTreeError(notebookUri: NotebookId, error: string) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
               HashMap.set(
@@ -179,7 +180,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
         /**
          * Get package list state for a notebook
          */
-        getPackageList(notebookUri: NotebookUri) {
+        getPackageList(notebookUri: NotebookId) {
           return Effect.map(
             SubscriptionRef.get(packageListsRef),
             HashMap.get(notebookUri),
@@ -189,7 +190,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
         /**
          * Get dependency tree state for a notebook
          */
-        getDependencyTree(notebookUri: NotebookUri) {
+        getDependencyTree(notebookUri: NotebookId) {
           return Effect.map(
             SubscriptionRef.get(dependencyTreesRef),
             HashMap.get(notebookUri),
@@ -200,7 +201,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          * Fetch dependency tree from the language server
          * Caches the result in dependencyTreesRef and re-uses if already cached
          */
-        fetchDependencyTree(notebookUri: NotebookUri) {
+        fetchDependencyTree(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             // Check if we already have a cached tree
             const cached = yield* SubscriptionRef.get(dependencyTreesRef);
@@ -219,17 +220,17 @@ export class PackagesService extends Effect.Service<PackagesService>()(
             }
 
             // Get the executable from the active controller
-            const activeNotebookEditor =
-              yield* editors.getActiveNotebookEditor();
-            if (Option.isNone(activeNotebookEditor)) {
-              yield* Log.warn("Could not find notebook editor");
+            const activeNotebook = Option.flatMap(
+              yield* editors.getActiveNotebookEditor(),
+              (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
+            );
+            if (Option.isNone(activeNotebook)) {
+              yield* Log.warn("Could not find marimo-notebook editor");
               return null;
             }
 
             const controller = Option.getOrElse(
-              yield* controllers.getActiveController(
-                activeNotebookEditor.value.notebook,
-              ),
+              yield* controllers.getActiveController(activeNotebook.value),
               // fallback to sandbox
               () => sandboxController,
             );
@@ -372,7 +373,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
         /**
          * Clear all package data for a notebook
          */
-        clearNotebook(notebookUri: NotebookUri) {
+        clearNotebook(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(
               packageListsRef,

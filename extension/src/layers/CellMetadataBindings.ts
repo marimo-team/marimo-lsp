@@ -4,7 +4,6 @@ import { CellMetadataUIBindingService } from "../services/CellMetadataUIBindingS
 import { Constants } from "../services/Constants.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
 import { VsCode } from "../services/VsCode.ts";
-import { getNotebookUri } from "../types.ts";
 
 const DEFAULT_ENGINE = "__marimo_duckdb";
 const DEFAULT_LABEL = "duckdb (In-Memory)";
@@ -221,9 +220,9 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
 
       getOptions: (cell) => {
         return Effect.gen(function* () {
-          const notebookUri = getNotebookUri(cell.notebook);
-          const connectionsOption =
-            yield* datasources.getConnections(notebookUri);
+          const connectionsOption = yield* datasources.getConnections(
+            cell.notebook.id,
+          );
 
           // Always include duckdb as default
           const options: Array<{ label: string; value: string }> = [

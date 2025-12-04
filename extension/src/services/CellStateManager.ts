@@ -1,13 +1,12 @@
 import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
 import {
-  decodeCellMetadata,
-  encodeCellMetadata,
+  MarimoNotebookCell,
   MarimoNotebookDocument,
+  type NotebookCellId,
+  type NotebookId,
 } from "../schemas.ts";
-import { getNotebookUri, type NotebookUri } from "../types.ts";
 import { Log } from "../utils/log.ts";
-import { getNotebookCellId } from "../utils/notebook.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
 import { VsCode } from "./VsCode.ts";
@@ -33,7 +32,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
       // Track stale state: NotebookUri -> (CellIndex -> isStale)
       const staleStateRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, HashMap.HashMap<number, boolean>>(),
+        HashMap.empty<NotebookId, HashMap.HashMap<number, boolean>>(),
       );
 
       // Helper to update context based on current state
@@ -82,9 +81,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         code.workspace.notebookDocumentChanges().pipe(
           Stream.filterMap((event) =>
             Option.map(
-              MarimoNotebookDocument.decodeUnknownNotebookDocument(
-                event.notebook,
-              ),
+              MarimoNotebookDocument.tryFrom(event.notebook),
               (notebook) => ({ ...event, notebook }),
             ),
           ),
@@ -96,26 +93,50 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                 newMetadata: event.metadata,
               });
 
-              const notebookUri = getNotebookUri(event.notebook);
-
               // Process cell deletions
               // When a cell is moved, VSCode reports it as removed AND added
               // We need to filter out moved cells to find truly deleted cells
-              const removedCellIds = new Set<string>();
-              const addedCellIds = new Set<string>();
-              const removedCellsMap = new Map<string, vscode.NotebookCell>();
+              const removedCellIds = new Set<NotebookCellId>();
+              const addedCellIds = new Set<NotebookCellId>();
+              const removedCellsMap = new Map<
+                NotebookCellId,
+                MarimoNotebookCell
+              >();
 
               // Collect all removed and added cell IDs
+              const edits: Array<vscode.NotebookEdit> = [];
               for (const change of event.contentChanges) {
-                for (const cell of change.removedCells) {
-                  const cellId = getNotebookCellId(cell);
-                  removedCellIds.add(cellId);
-                  removedCellsMap.set(cellId, cell);
+                for (const rawCell of change.removedCells) {
+                  const cell = MarimoNotebookCell.from(rawCell);
+                  if (Option.isSome(cell.maybeId)) {
+                    removedCellIds.add(cell.maybeId.value);
+                    removedCellsMap.set(cell.maybeId.value, cell);
+                  }
                 }
-                for (const cell of change.addedCells) {
-                  const cellId = getNotebookCellId(cell);
-                  addedCellIds.add(cellId);
+
+                for (const rawCell of change.addedCells) {
+                  const cell = MarimoNotebookCell.from(rawCell);
+                  if (Option.isSome(cell.maybeId)) {
+                    addedCellIds.add(cell.maybeId.value);
+                  } else {
+                    // Cell added from UI without a stableId (so we need to create one)
+                    edits.push(
+                      code.NotebookEdit.updateCellMetadata(
+                        cell.index,
+                        cell.buildEncodedMetadata({
+                          overrides: { stableId: crypto.randomUUID() },
+                        }),
+                      ),
+                    );
+                  }
                 }
+              }
+
+              if (edits.length > 0) {
+                // add out cell ids from above
+                const edit = new code.WorkspaceEdit();
+                edit.set(event.notebook.uri, edits);
+                yield* code.workspace.applyEdit(edit);
               }
 
               // Find truly deleted cells (removed but not added)
@@ -131,7 +152,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                 }
 
                 // Clear local tracking
-                yield* clearCellStaleTracking(notebookUri, cell.index, {
+                yield* clearCellStaleTracking(event.notebook.id, cell.index, {
                   staleStateRef,
                 });
 
@@ -142,7 +163,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                     params: {
                       method: "delete_cell",
                       params: {
-                        notebookUri,
+                        notebookUri: event.notebook.id,
                         inner: {
                           cellId,
                         },
@@ -157,7 +178,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                         cause,
                       ).pipe(
                         Effect.annotateLogs({
-                          notebookUri,
+                          notebookUri: event.notebook.id,
                           cellIndex: cell.index,
                         }),
                       ),
@@ -167,18 +188,18 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
               // Process cell changes (content or metadata edits)
               for (const cellChange of event.cellChanges) {
-                const cell = cellChange.cell;
+                const cell = MarimoNotebookCell.from(cellChange.cell);
                 const cellIndex = cell.index;
 
                 // Check if document (content) changed
                 if (cellChange.document) {
                   yield* Log.trace("Cell content changed", {
-                    notebookUri,
+                    notebookUri: event.notebook.id,
                     cellIndex,
                   });
 
                   // Mark cell as stale
-                  yield* markCellStale(notebookUri, cellIndex, {
+                  yield* markCellStale(event.notebook.id, cellIndex, {
                     code,
                     staleStateRef,
                     notebook: event.notebook,
@@ -190,14 +211,8 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                   continue;
                 }
 
-                // Check if metadata changed and state is not stale
-                // (e.g., cleared by execution)
-                const metadata = decodeCellMetadata(cellChange.metadata);
-                if (
-                  Option.isSome(metadata) &&
-                  metadata.value.state !== "stale"
-                ) {
-                  yield* clearCellStaleTracking(notebookUri, cellIndex, {
+                if (Option.isSome(cell.metadata) && !cell.isStale) {
+                  yield* clearCellStaleTracking(event.notebook.id, cellIndex, {
                     staleStateRef,
                   });
                 }
@@ -211,12 +226,11 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         /**
          * Mark a cell as stale and update its metadata
          */
-        markCellStale(notebookUri: NotebookUri, cellIndex: number) {
+        markCellStale(notebookUri: NotebookId, cellIndex: number) {
           return Effect.gen(function* () {
             const notebook = Option.filterMap(
               yield* editorRegistry.getLastNotebookEditor(notebookUri),
-              ({ notebook }) =>
-                MarimoNotebookDocument.decodeUnknownNotebookDocument(notebook),
+              ({ notebook }) => MarimoNotebookDocument.tryFrom(notebook),
             );
 
             if (Option.isNone(notebook)) {
@@ -235,10 +249,12 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         /**
          * Clear stale state from a cell
          */
-        clearCellStale(notebookUri: NotebookUri, cellIndex: number) {
+        clearCellStale(notebookUri: NotebookId, cellIndex: number) {
           return Effect.gen(function* () {
-            const notebook =
-              yield* editorRegistry.getLastNotebookEditor(notebookUri);
+            const notebook = Option.filterMap(
+              yield* editorRegistry.getLastNotebookEditor(notebookUri),
+              (e) => MarimoNotebookDocument.tryFrom(e.notebook),
+            );
 
             if (Option.isNone(notebook)) {
               yield* Log.warn("Notebook not found for clearing stale", {
@@ -247,7 +263,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               return;
             }
 
-            const cell = notebook.value.notebook.cellAt(cellIndex);
+            const cell = notebook.value.cellAt(cellIndex);
             if (!cell) {
               yield* Log.warn("Cell not found", { notebookUri, cellIndex });
               return;
@@ -255,11 +271,10 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
             // Update cell metadata to remove stale state
             const edit = new code.WorkspaceEdit();
-            const newMetadata = encodeCellMetadata({
-              ...cell.metadata,
-              state: undefined,
+            const newMetadata = cell.buildEncodedMetadata({
+              overrides: { state: undefined },
             });
-            edit.set(notebook.value.notebook.uri, [
+            edit.set(notebook.value.uri, [
               code.NotebookEdit.updateCellMetadata(cellIndex, newMetadata),
             ]);
             yield* code.workspace.applyEdit(edit);
@@ -279,7 +294,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         /**
          * Get all stale cell indices for a notebook
          */
-        getStaleCells(notebookUri: NotebookUri) {
+        getStaleCells(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             const staleMap = yield* SubscriptionRef.get(staleStateRef);
             const cellMap = HashMap.get(staleMap, notebookUri);
@@ -307,12 +322,12 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
  * Mark a cell as stale in tracking and metadata
  */
 function markCellStale(
-  notebookUri: NotebookUri,
+  notebookUri: NotebookId,
   cellIndex: number,
   deps: {
     code: VsCode;
     staleStateRef: SubscriptionRef.SubscriptionRef<
-      HashMap.HashMap<NotebookUri, HashMap.HashMap<number, boolean>>
+      HashMap.HashMap<NotebookId, HashMap.HashMap<number, boolean>>
     >;
     notebook: MarimoNotebookDocument;
   },
@@ -356,11 +371,11 @@ function markCellStale(
  * Clear stale tracking for a cell (doesn't modify metadata)
  */
 function clearCellStaleTracking(
-  notebookUri: NotebookUri,
+  notebookUri: NotebookId,
   cellIndex: number,
   deps: {
     staleStateRef: SubscriptionRef.SubscriptionRef<
-      HashMap.HashMap<NotebookUri, HashMap.HashMap<number, boolean>>
+      HashMap.HashMap<NotebookId, HashMap.HashMap<number, boolean>>
     >;
   },
 ) {

@@ -3,13 +3,10 @@ import type * as vscode from "vscode";
 import {
   type MarimoNotebookCell,
   MarimoNotebookDocument,
-} from "../../schemas.ts";
-import { getNotebookUri, type NotebookUri } from "../../types.ts";
-import { getTopologicalCellIds } from "../../utils/getTopologicalCellIds.ts";
-import {
-  getNotebookCellId,
   type NotebookCellId,
-} from "../../utils/notebook.ts";
+  type NotebookId,
+} from "../../schemas.ts";
+import { getTopologicalCellIds } from "../../utils/getTopologicalCellIds.ts";
 import { VsCode } from "../VsCode.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
 import { PythonLanguageServer } from "./PythonLanguageServer.ts";
@@ -64,7 +61,7 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
 
       // State: Map of notebook URI -> virtual document info
       const virtualDocsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, VirtualDocInfo>(),
+        HashMap.empty<NotebookId, VirtualDocInfo>(),
       );
 
       /**
@@ -81,14 +78,13 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
 
         const { content, cellOffsets } = buildVirtualDocumentContent(cells);
 
-        const notebookUri = getNotebookUri(notebook);
-        const hash = Buffer.from(notebookUri)
+        const hash = Buffer.from(notebook.id)
           .toString("base64")
           .replace(/[/+=]/g, "")
           .slice(0, 16);
 
         const basename =
-          notebookUri.split("/").pop()?.split(".")[0] ?? "notebook";
+          notebook.uri.toString().split("/").pop()?.split(".")[0] ?? "notebook";
 
         const virtualUri = code.Uri.file(`/marimo/${basename}_${hash}.py`);
 
@@ -104,15 +100,14 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
       const updateVirtualDocument = Effect.fnUntraced(function* (
         notebook: MarimoNotebookDocument,
       ) {
-        const notebookUri = getNotebookUri(notebook);
         const currentDocs = yield* SubscriptionRef.get(virtualDocsRef);
-        const existingDoc = HashMap.get(currentDocs, notebookUri);
+        const existingDoc = HashMap.get(currentDocs, notebook.id);
 
         // If no virtual doc exists yet, create one
         if (Option.isNone(existingDoc)) {
           const virtualDoc = yield* createVirtualDocument(notebook);
           yield* SubscriptionRef.update(virtualDocsRef, (docs) =>
-            HashMap.set(docs, notebookUri, virtualDoc),
+            HashMap.set(docs, notebook.id, virtualDoc),
           );
           return;
         }
@@ -130,7 +125,7 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
 
         // Update the stored info
         yield* SubscriptionRef.update(virtualDocsRef, (docs) =>
-          HashMap.set(docs, notebookUri, {
+          HashMap.set(docs, notebook.id, {
             uri: existingDoc.value.uri, // Keep same URI
             content,
             cellOffsets,
@@ -142,9 +137,7 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
       yield* Effect.forkScoped(
         code.workspace.notebookDocumentChanges().pipe(
           Stream.filterMap((event) =>
-            MarimoNotebookDocument.decodeUnknownNotebookDocument(
-              event.notebook,
-            ),
+            MarimoNotebookDocument.tryFrom(event.notebook),
           ),
           Stream.runForEach((notebook) => updateVirtualDocument(notebook)),
         ),
@@ -156,10 +149,9 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
       const getVirtualDocument = Effect.fnUntraced(function* (
         notebook: MarimoNotebookDocument,
       ) {
-        const notebookUri = getNotebookUri(notebook);
         const currentDocs = yield* SubscriptionRef.get(virtualDocsRef);
 
-        const existingDoc = HashMap.get(currentDocs, notebookUri);
+        const existingDoc = HashMap.get(currentDocs, notebook.id);
         if (Option.isSome(existingDoc)) {
           return existingDoc.value;
         }
@@ -168,7 +160,7 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
         const virtualDoc = yield* createVirtualDocument(notebook);
 
         yield* SubscriptionRef.update(virtualDocsRef, (docs) =>
-          HashMap.set(docs, notebookUri, virtualDoc),
+          HashMap.set(docs, notebook.id, virtualDoc),
         );
 
         return virtualDoc;
@@ -185,15 +177,13 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
         getMapperForCell: Effect.fnUntraced(function* (
           cell: MarimoNotebookCell,
         ) {
-          const cellId = getNotebookCellId(cell);
-
           const virtualDoc = yield* getVirtualDocument(cell.notebook);
           const cellOffset = virtualDoc.cellOffsets.find(
-            (offset) => offset.cellId === cellId,
+            (offset) => offset.cellId === cell.id,
           );
 
           if (!cellOffset) {
-            return yield* new CellNotFoundError({ cellId });
+            return yield* new CellNotFoundError({ cellId: cell.id });
           }
 
           return {
@@ -244,13 +234,13 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
   notebook: MarimoNotebookDocument,
   variablesService: VariablesService,
 ) {
-  const notebookUri = getNotebookUri(notebook);
   const inOrderCells: Array<{
+    readonly id: NotebookCellId;
     readonly index: number;
     readonly document: vscode.TextDocument;
   }> = notebook.getCells();
 
-  const variables = yield* variablesService.getVariables(notebookUri);
+  const variables = yield* variablesService.getVariables(notebook.id);
 
   // If we don't have variables info yet, use notebook order as fallback
   if (Option.isNone(variables)) {
@@ -258,7 +248,7 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
   }
 
   const sortedCellIds = getTopologicalCellIds(
-    inOrderCells.map((cell) => getNotebookCellId(cell)),
+    inOrderCells.map((cell) => cell.id),
     variables.value,
   );
 
@@ -266,13 +256,13 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
   const cellMap = new Map<
     NotebookCellId,
     {
+      readonly id: NotebookCellId;
       readonly index: number;
       readonly document: vscode.TextDocument;
     }
   >();
   for (const cell of inOrderCells) {
-    const cellId = getNotebookCellId(cell);
-    cellMap.set(cellId, cell);
+    cellMap.set(cell.id, cell);
   }
 
   // biome-ignore lint/style/noNonNullAssertion: We checked existence above
@@ -286,6 +276,7 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
  */
 function buildVirtualDocumentContent(
   cells: Array<{
+    readonly id: NotebookCellId;
     readonly index: number;
     readonly document: vscode.TextDocument;
   }>,
@@ -303,7 +294,7 @@ function buildVirtualDocumentContent(
     const lineCount = lines.length;
 
     cellOffsets.push({
-      cellId: cell.document.uri.toString(),
+      cellId: cell.id,
       cellIndex: cell.index,
       startLine: currentLine,
       endLine: currentLine + lineCount,

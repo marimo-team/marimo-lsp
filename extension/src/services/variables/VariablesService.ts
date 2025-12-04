@@ -1,21 +1,10 @@
-import {
-  Brand,
-  Effect,
-  HashMap,
-  Option,
-  Stream,
-  SubscriptionRef,
-} from "effect";
-import type {
-  NotebookUri,
-  VariablesOp,
-  VariableValuesOp,
-} from "../../types.ts";
+import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
+import { decodeVariablesOperation, type NotebookId } from "../../schemas.ts";
+import type { VariablesOp, VariableValuesOp } from "../../types.ts";
 import { Log } from "../../utils/log.ts";
-import { NotebookCellId } from "../../utils/notebook.ts";
 
-const VariableName = Brand.nominal<VariableName>();
-export type VariableName = Brand.Branded<string, "VariableName">;
+// Re-export for others using this service
+export type { VariableName } from "../../schemas.ts";
 
 /**
  * Manages variable state across all notebooks.
@@ -32,35 +21,26 @@ export class VariablesService extends Effect.Service<VariablesService>()(
     scoped: Effect.gen(function* () {
       // Track variable declarations: NotebookUri -> VariablesOp
       const variablesRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, VariablesOp>(),
+        HashMap.empty<NotebookId, VariablesOp>(),
       );
 
       // Track variable values: NotebookUri -> VariableValuesOp
       const variableValuesRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, VariableValuesOp>(),
+        HashMap.empty<NotebookId, VariableValuesOp>(),
       );
 
       /**
        * Get variable declarations for a notebook
        */
-      function getVariables(notebookUri: NotebookUri) {
+      function getVariables(notebookUri: NotebookId) {
         return Effect.gen(function* () {
           const map = yield* SubscriptionRef.get(variablesRef);
           const op = HashMap.get(map, notebookUri);
-          return Option.map(op, (o) =>
-            o.variables.map(
-              (v) =>
-                ({
-                  name: VariableName(v.name),
-                  declaredBy: v.declared_by.map(NotebookCellId),
-                  usedBy: v.used_by.map(NotebookCellId),
-                }) as const,
-            ),
-          );
+          return Option.map(op, (o) => decodeVariablesOperation(o));
         });
       }
 
-      function getVariableValues(notebookUri: NotebookUri) {
+      function getVariableValues(notebookUri: NotebookId) {
         return Effect.gen(function* () {
           const map = yield* SubscriptionRef.get(variableValuesRef);
           const op = HashMap.get(map, notebookUri);
@@ -72,7 +52,7 @@ export class VariablesService extends Effect.Service<VariablesService>()(
         /**
          * Update variable declarations for a notebook
          */
-        updateVariables(notebookUri: NotebookUri, operation: VariablesOp) {
+        updateVariables(notebookUri: NotebookId, operation: VariablesOp) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(variablesRef, (map) =>
               HashMap.set(map, notebookUri, operation),
@@ -109,7 +89,7 @@ export class VariablesService extends Effect.Service<VariablesService>()(
          * Update variable values for a notebook
          */
         updateVariableValues(
-          notebookUri: NotebookUri,
+          notebookUri: NotebookId,
           operation: VariableValuesOp,
         ) {
           return Effect.gen(function* () {
@@ -137,7 +117,7 @@ export class VariablesService extends Effect.Service<VariablesService>()(
         /**
          * Get all variables and their values for a notebook
          */
-        getAllVariableData(notebookUri: NotebookUri) {
+        getAllVariableData(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             const variables = yield* getVariables(notebookUri);
             const values = yield* getVariableValues(notebookUri);
@@ -148,7 +128,7 @@ export class VariablesService extends Effect.Service<VariablesService>()(
         /**
          * Clear all variable data for a notebook
          */
-        clearNotebook(notebookUri: NotebookUri) {
+        clearNotebook(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(variablesRef, (map) =>
               HashMap.remove(map, notebookUri),

@@ -1,7 +1,7 @@
 import { Effect, Layer, Option, Ref, Stream } from "effect";
+import type { NotebookId } from "../schemas.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
-import type { NotebookUri } from "../types.ts";
 import { Log } from "../utils/log.ts";
 import { TreeView } from "./TreeView.ts";
 
@@ -13,7 +13,7 @@ type DatasourceTreeItem =
 
 interface ConnectionItem {
   type: "connection";
-  notebookUri: NotebookUri;
+  notebookUri: NotebookId;
   connectionName: string;
   displayName: string;
   dialect: string;
@@ -21,7 +21,7 @@ interface ConnectionItem {
 
 interface DatabaseItem {
   type: "database";
-  notebookUri: NotebookUri;
+  notebookUri: NotebookId;
   connectionName: string;
   databaseName: string;
   dialect: string;
@@ -29,7 +29,7 @@ interface DatabaseItem {
 
 interface SchemaItem {
   type: "schema";
-  notebookUri: NotebookUri;
+  notebookUri: NotebookId;
   connectionName: string;
   databaseName: string;
   schemaName: string;
@@ -37,7 +37,7 @@ interface SchemaItem {
 
 interface TableItem {
   type: "table";
-  notebookUri: NotebookUri;
+  notebookUri: NotebookId;
   connectionName: string;
   databaseName: string;
   schemaName: string;

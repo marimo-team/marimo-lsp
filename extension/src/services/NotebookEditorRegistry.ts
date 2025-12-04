@@ -1,7 +1,6 @@
 import { Effect, HashMap, Option, Ref, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
-import { MarimoNotebookDocument } from "../schemas.ts";
-import { getNotebookUri, type NotebookUri } from "../types.ts";
+import { MarimoNotebookDocument, type NotebookId } from "../schemas.ts";
 import { Log } from "../utils/log.ts";
 import { Telemetry } from "./Telemetry.ts";
 import { VsCode } from "./VsCode.ts";
@@ -13,12 +12,12 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
       const code = yield* VsCode;
       const telemetry = yield* Telemetry;
       const ref = yield* Ref.make(
-        HashMap.empty<NotebookUri, vscode.NotebookEditor>(),
+        HashMap.empty<NotebookId, vscode.NotebookEditor>(),
       );
 
       // Track the currently active notebook URI
       const activeNotebookRef = yield* SubscriptionRef.make(
-        Option.none<NotebookUri>(),
+        Option.none<NotebookId>(),
       );
 
       yield* Effect.forkScoped(
@@ -26,15 +25,12 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
           Stream.mapEffect(
             Effect.fnUntraced(function* (editor) {
               const notebook = Option.filterMap(editor, (editor) =>
-                MarimoNotebookDocument.decodeUnknownNotebookDocument(
-                  editor.notebook,
-                ),
+                MarimoNotebookDocument.tryFrom(editor.notebook),
               );
               if (Option.isNone(editor) || Option.isNone(notebook)) {
                 yield* SubscriptionRef.set(activeNotebookRef, Option.none());
                 return;
               }
-              const notebookUri = getNotebookUri(editor.value.notebook);
 
               // Only track marimo notebooks
               if (Option.isNone(notebook)) {
@@ -44,15 +40,15 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
 
               const isNewNotebook = HashMap.has(
                 yield* Ref.get(ref),
-                notebookUri,
+                notebook.value.id,
               );
 
               yield* Ref.update(ref, (map) =>
-                HashMap.set(map, notebookUri, editor.value),
+                HashMap.set(map, notebook.value.id, editor.value),
               );
 
               yield* Log.info("Active notebook changed", {
-                notebookUri,
+                notebookUri: notebook.value.id,
               });
 
               // Track notebook opened event (only for new notebooks)
@@ -64,7 +60,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
 
               yield* SubscriptionRef.set(
                 activeNotebookRef,
-                Option.some(notebookUri),
+                Option.some(notebook.value.id),
               );
             }),
           ),
@@ -79,7 +75,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         /**
          * Get the last notebook editor for a given notebook URI
          */
-        getLastNotebookEditor(id: NotebookUri) {
+        getLastNotebookEditor(id: NotebookId) {
           return Effect.map(Ref.get(ref), HashMap.get(id));
         },
 
@@ -93,7 +89,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         /**
          * Get the notebook editor for a given notebook URI
          */
-        getNotebookEditor(uri: NotebookUri) {
+        getNotebookEditor(uri: NotebookId) {
           return Effect.map(Ref.get(ref), HashMap.get(uri));
         },
 

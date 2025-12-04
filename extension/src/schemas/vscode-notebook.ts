@@ -1,6 +1,8 @@
-import { Option, Schema } from "effect";
+import { Brand, Data, Effect, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
+import type { CellMessage, VariablesOp } from "../types.ts";
+import { MarimoNotebook } from "./ir.ts";
 
 const SQLMetadata = Schema.Struct({
   dataframeName: Schema.String,
@@ -13,6 +15,17 @@ const SQLMetadata = Schema.Struct({
 const MarkdownMetadata = Schema.Struct({
   quotePrefix: Schema.Literal("", "f", "r", "fr", "rf"),
 });
+
+export type NotebookId = Brand.Branded<string, "NotebookId">;
+export type NotebookCellId = Brand.Branded<string, "NotebookCellId">;
+export type VariableName = Brand.Branded<string, "VariableName">;
+
+// Do not export constructors from this module.
+//
+// The only way to get our NotebookUid/CellUid type is from modules in this file
+const NotebookId = Brand.nominal<NotebookId>();
+const NotebookCellId = Brand.nominal<NotebookCellId>();
+const VariableName = Brand.nominal<VariableName>();
 
 /**
  * Cell execution state
@@ -51,6 +64,10 @@ export const CellMetadata = Schema.partial(
         markdown: MarkdownMetadata,
       }),
     ),
+
+    // Stable ID for tracking cells across re-deserializations
+    // This is ephemeral (not persisted to .py file) and regenerated on file open
+    stableId: Schema.String,
   }),
 );
 
@@ -68,14 +85,11 @@ export const encodeCellMetadata = Schema.encodeSync(CellMetadata);
 
 export class MarimoNotebookCell {
   #raw: vscode.NotebookCell;
-  #meta: Option.Option<CellMetadata>;
+  // we parse lazily
+  #cachedMeta: undefined | Option.Option<CellMetadata>;
 
-  private constructor(
-    raw: vscode.NotebookCell,
-    meta: Option.Option<CellMetadata>,
-  ) {
+  private constructor(raw: vscode.NotebookCell) {
     this.#raw = raw;
-    this.#meta = meta;
   }
 
   /**
@@ -91,7 +105,7 @@ export class MarimoNotebookCell {
    */
   buildEncodedMetadata(options?: {
     // TODO: Just shallow. Support deeper / fully recursive overrides when needed
-    overrides?: Pick<Partial<CellMetadata>, "state">;
+    overrides?: Pick<Partial<CellMetadata>, "state" | "stableId">;
   }) {
     return encodeCellMetadata({ ...this.#raw.metadata, ...options?.overrides });
   }
@@ -100,28 +114,43 @@ export class MarimoNotebookCell {
    * Creates a MarimoNotebookCell from a VS Code NotebookCell.
    */
   static from(cell: vscode.NotebookCell) {
-    return new MarimoNotebookCell(cell, decodeCellMetadata(cell.metadata));
+    return new MarimoNotebookCell(cell);
   }
 
-  /**
-   * The notebook this cell belongs to.
-   */
+  get id() {
+    return Option.getOrThrowWith(
+      this.maybeId,
+      () => new Error("Expected cell id"),
+    );
+  }
+
+  get maybeId() {
+    return this.metadata.pipe(
+      Option.flatMap((meta) => Option.fromNullable(meta.stableId)),
+      Option.map((stableId) => NotebookCellId(stableId)),
+    );
+  }
+
   get notebook() {
-    return new MarimoNotebookDocument(this.#raw.notebook);
+    return MarimoNotebookDocument.from(this.#raw.notebook);
   }
 
   /**
    * The decoded metadata for this cell.
    */
   get metadata() {
-    return this.#meta;
+    if (this.#cachedMeta) {
+      return this.#cachedMeta;
+    }
+    this.#cachedMeta = decodeCellMetadata(this.#raw.metadata);
+    return this.#cachedMeta;
   }
 
   /**
    * Whether the cell is marked as stale.
    */
   get isStale() {
-    return this.#meta.pipe(
+    return this.metadata.pipe(
       Option.map((meta) => meta.state === "stale"),
       Option.getOrElse(() => false),
     );
@@ -131,7 +160,7 @@ export class MarimoNotebookCell {
    * The cell's language metadata, if present.
    */
   get languageMetadata() {
-    return this.#meta.pipe(
+    return this.metadata.pipe(
       Option.flatMap((meta) => Option.fromNullable(meta.languageMetadata)),
     );
   }
@@ -140,7 +169,7 @@ export class MarimoNotebookCell {
    * The cell's name, if present.
    */
   get name() {
-    return this.#meta.pipe(
+    return this.metadata.pipe(
       Option.flatMap((meta) => Option.fromNullable(meta.name)),
     );
   }
@@ -148,6 +177,12 @@ export class MarimoNotebookCell {
   /**
    * The underlying cell kind.
    */
+  get stableId() {
+    return this.metadata.pipe(
+      Option.flatMap((meta) => Option.fromNullable(meta.stableId)),
+    );
+  }
+
   get kind() {
     return this.#raw.kind;
   }
@@ -172,21 +207,80 @@ export class MarimoNotebookCell {
   get outputs() {
     return this.#raw.outputs;
   }
+
+  /**
+   * A handle to the underlying untyped cell
+   *
+   * This should _only_ be accessed when using VS Code APIs that require the underlying type.
+   */
+  get rawNotebookCell() {
+    return this.#raw;
+  }
 }
 
 export class MarimoNotebookDocument {
   #raw: vscode.NotebookDocument;
+  // we parse lazily, just the header for now... could expand when we need it
+  #cachedMeta: undefined | Option.Option<Pick<MarimoNotebook, "header">>;
 
-  constructor(raw: vscode.NotebookDocument) {
+  private constructor(raw: vscode.NotebookDocument) {
     this.#raw = raw;
   }
 
-  static decodeUnknownNotebookDocument(
+  /**
+   * Attempts to construct a MarimoNotebookDocument from the given raw VS Code
+   * NotebookDocument. Returns `Option.none()` if the notebook type does not match.
+   */
+  static tryFrom(
     raw: vscode.NotebookDocument,
   ): Option.Option<MarimoNotebookDocument> {
     return raw.notebookType === NOTEBOOK_TYPE
       ? Option.some(new MarimoNotebookDocument(raw))
       : Option.none();
+  }
+
+  /**
+   * Constructs a MarimoNotebookDocument from the given VS Code NotebookDocument.
+   *
+   * Use this when the caller expects the document to *definitely* be a Marimo
+   * notebook and wants an immediate failure if it is not. This is appropriate in
+   * code paths where an invalid notebook type indicates a programming error or an
+   * unexpected extension state.
+   *
+   * If the VS Code NotebookDocument is unknown, prefer `MarimoNotebookDocument.tryFrom`
+   *
+   * Throws an Error if the notebook type does not match `NOTEBOOK_TYPE`.
+   */
+  static from(raw: vscode.NotebookDocument): MarimoNotebookDocument {
+    return Option.getOrThrowWith(
+      MarimoNotebookDocument.tryFrom(raw),
+      () =>
+        new Error(
+          `Expected "${NOTEBOOK_TYPE}" document, got ${raw.notebookType}`,
+        ),
+    );
+  }
+
+  get #meta() {
+    if (this.#cachedMeta) {
+      return this.#cachedMeta;
+    }
+    const meta = Schema.decodeUnknownOption(MarimoNotebook.pick("header"))(
+      this.#raw.metadata,
+    );
+    this.#cachedMeta = meta;
+    return meta;
+  }
+
+  get id() {
+    return NotebookId(this.#raw.uri.toString());
+  }
+
+  get header() {
+    return this.#meta.pipe(
+      Option.flatMap((meta) => Option.fromNullable(meta.header?.value)),
+      Option.getOrElse(() => ""),
+    );
   }
 
   get rawMetadata() {
@@ -201,6 +295,10 @@ export class MarimoNotebookDocument {
     return this.#raw.uri;
   }
 
+  get isUntitled() {
+    return this.#raw.isUntitled;
+  }
+
   getCells() {
     return this.#raw.getCells().map((cell) => MarimoNotebookCell.from(cell));
   }
@@ -209,16 +307,69 @@ export class MarimoNotebookDocument {
     return MarimoNotebookCell.from(this.#raw.cellAt(index));
   }
 
+  save() {
+    return Effect.promise(() => this.#raw.save());
+  }
+
   get cellCount() {
     return this.#raw.cellCount;
   }
 
   /**
-   * Get a handle to the underlying untyped document
+   * A handle to the underlying (untyped) document
    *
-   * This should only be accessed when using VS Code APIs that require a "raw" document.
+   * This should _only_ be accessed when using VS Code APIs that require a "raw" document.
    */
-  get unsafeRawNotebookDocument() {
+  get rawNotebookDocument() {
     return this.#raw;
   }
+}
+
+class NotebookCellNotFoundError extends Data.TaggedError(
+  "NotebookCellNotFoundError",
+)<{
+  readonly cellId: NotebookCellId;
+  readonly notebook: MarimoNotebookDocument;
+}> {
+  get message() {
+    const cellIds = this.notebook.getCells().map((c) => c.id);
+    return `No cell id ${this.cellId} in notebook ${this.notebook.uri.toString()}. Available cells: ${cellIds.join(
+      ", ",
+    )}`;
+  }
+}
+
+export function extractCellIdFromCellMessage(msg: CellMessage) {
+  return NotebookCellId(msg.cell_id);
+}
+
+export function decodeVariablesOperation({ variables }: VariablesOp) {
+  return variables.map(
+    (v) =>
+      ({
+        name: VariableName(v.name),
+        declaredBy: v.declared_by.map((id) => NotebookCellId(id)),
+        usedBy: v.used_by.map((id) => NotebookCellId(id)),
+      }) as const,
+  );
+}
+
+/**
+ * Get a notebook cell by its id
+ * @param notebook - The notebook document
+ * @param cellId - The id of the cell
+ * @returns The notebook cell
+ * @throws An error if the cell is not found
+ */
+export function findNotebookCell(
+  notebook: MarimoNotebookDocument,
+  cellId: NotebookCellId,
+) {
+  return Effect.gen(function* () {
+    const cell = notebook.getCells().find((c) => c.id === cellId);
+    if (!cell) {
+      return yield* new NotebookCellNotFoundError({ cellId, notebook });
+    }
+    return cell;
+  });
 }

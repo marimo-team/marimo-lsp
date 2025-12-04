@@ -1,15 +1,15 @@
 import { Effect, Layer, Option, Ref, Stream } from "effect";
+import type { NotebookId } from "../schemas.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import type { DependencyTreeNode } from "../services/packages/PackagesService.ts";
 import { PackagesService } from "../services/packages/PackagesService.ts";
 import { VsCode } from "../services/VsCode.ts";
-import type { NotebookUri } from "../types.ts";
 import { Log } from "../utils/log.ts";
 import { TreeView } from "./TreeView.ts";
 
 interface PackageTreeItem {
   type: "package";
-  notebookUri: NotebookUri;
+  notebookUri: NotebookId;
   name: string;
   version: string | null;
   tags: readonly Record<string, string>[];

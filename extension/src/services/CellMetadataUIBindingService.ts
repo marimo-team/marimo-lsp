@@ -112,10 +112,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
         code.workspace.notebookDocumentChanges().pipe(
           Stream.runForEach(
             Effect.fnUntraced(function* (event) {
-              const notebook =
-                MarimoNotebookDocument.decodeUnknownNotebookDocument(
-                  event.notebook,
-                );
+              const notebook = MarimoNotebookDocument.tryFrom(event.notebook);
 
               // Only process marimo notebooks
               if (Option.isNone(notebook)) {
@@ -196,7 +193,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
           }
 
           // Get the active cell
-          const notebook = MarimoNotebookDocument.decodeUnknownNotebookDocument(
+          const notebook = MarimoNotebookDocument.tryFrom(
             editor.value.notebook,
           );
 

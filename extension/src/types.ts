@@ -1,8 +1,7 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
-import { Brand } from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
-import type { MarimoNotebook, MarimoNotebookDocument } from "./schemas.ts";
+import type { MarimoNotebook, NotebookCellId, NotebookId } from "./schemas.ts";
 
 export type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 
@@ -26,18 +25,8 @@ export type SqlTableListPreviewOp =
 
 export type MarimoConfig = Schemas["MarimoConfig"];
 
-export type NotebookUri = Brand.Branded<string, "NotebookUri">;
-
-// Only way to get our NotebookUri type is from the server or a vscode.NotebookDocument
-const NotebookUri = Brand.nominal<NotebookUri>();
-export function getNotebookUri(
-  doc: MarimoNotebookDocument | vscode.NotebookDocument,
-): NotebookUri {
-  return NotebookUri(doc.uri.toString());
-}
-
 interface NotebookScoped<T> {
-  notebookUri: NotebookUri;
+  notebookUri: NotebookId;
   inner: T;
 }
 
@@ -133,7 +122,7 @@ type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {
 type RendererCommandMap = {
   set_ui_element_value: MarimoApiMethodMap["set_ui_element_value"]["inner"];
   function_call_request: MarimoApiMethodMap["function_call_request"]["inner"];
-  navigate_to_cell: { cellUri: string };
+  navigate_to_cell: { cellId: NotebookCellId };
 };
 type RendererCommandMessageOf<K extends keyof RendererCommandMap> = {
   [C in keyof RendererCommandMap]: {
@@ -157,7 +146,7 @@ export type RendererReceiveMessage =
 
 // Language server -> client
 type MarimoNotificationMap = {
-  "marimo/operation": { notebookUri: NotebookUri; operation: MessageOperation };
+  "marimo/operation": { notebookUri: NotebookId; operation: MessageOperation };
   "marimo/dap": { sessionId: string; message: vscode.DebugProtocolMessage };
   "window/logMessage": lsp.LogMessageParams;
 };
@@ -196,12 +185,12 @@ export type MarimoHtmlPublishMessage = MarimoHtmlPublishOf<MarimoHtmlPublish>;
  * @returns HTML string with embedded onclick handler
  */
 export function createCellNavigationLink(
-  cellUri: string,
+  cellId: NotebookCellId,
   cellIndex: number,
 ): string {
   const msg: MarimoHtmlPublishOf<"navigate_to_cell"> = {
     command: "navigate_to_cell",
-    params: { cellUri },
+    params: { cellId },
   };
   const encoded = JSON.stringify(msg).replace(/"/g, "&quot;");
   return `<a href="#" data-message="${encoded}" onclick="event.preventDefault(); window.parent.postMessage(JSON.parse(this.getAttribute('data-message')), '*'); return false;">cell-${cellIndex}</a>`;

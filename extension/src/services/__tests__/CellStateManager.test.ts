@@ -6,8 +6,8 @@ import {
   NotebookRange,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { MarimoNotebookDocument } from "../../schemas.ts";
 import type { MarimoCommand } from "../../types.ts";
-import { getNotebookCellId } from "../../utils/notebook.ts";
 import { CellStateManager } from "../CellStateManager.ts";
 import { LanguageClient } from "../LanguageClient.ts";
 import { VsCode } from "../VsCode.ts";
@@ -50,28 +50,33 @@ describe("CellStateManager", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
+        const cellData0 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "x = 1",
+          "python",
+        );
+        cellData0.metadata = { stableId: "cell-0" };
+
+        const cellData1 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "y = 2",
+          "python",
+        );
+        cellData1.metadata = { stableId: "cell-1" };
+
         // Create a test notebook with cells
-        const notebook = createTestNotebookDocument("/test/notebook.py", {
-          data: new code.NotebookData([
-            new code.NotebookCellData(
-              code.NotebookCellKind.Code,
-              "x = 1",
-              "python",
-            ),
-            new code.NotebookCellData(
-              code.NotebookCellKind.Code,
-              "y = 2",
-              "python",
-            ),
-          ]),
-        });
+        const notebook = MarimoNotebookDocument.from(
+          createTestNotebookDocument("/test/notebook.py", {
+            data: new code.NotebookData([cellData0, cellData1]),
+          }),
+        );
 
         const cell0 = notebook.cellAt(0);
         const cell1 = notebook.cellAt(1);
 
         // Get cell IDs
-        const cellId0 = getNotebookCellId(cell0);
-        const cellId1 = getNotebookCellId(cell1);
+        const cellId0 = cell0.id;
+        const cellId1 = cell1.id;
 
         // Verify cell IDs are strings and different
         expect(typeof cellId0).toBe("string");
@@ -79,8 +84,8 @@ describe("CellStateManager", () => {
         expect(cellId0).not.toBe(cellId1);
 
         // Verify calling getNotebookCellId again returns the same ID
-        expect(getNotebookCellId(cell0)).toBe(cellId0);
-        expect(getNotebookCellId(cell1)).toBe(cellId1);
+        expect(cell0.id).toBe(cellId0);
+        expect(cell1.id).toBe(cellId1);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -93,24 +98,29 @@ describe("CellStateManager", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
+        const cellData0 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "x = 1",
+          "python",
+        );
+        cellData0.metadata = { stableId: "cell-0" };
+
+        const cellData1 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "y = 2",
+          "python",
+        );
+        cellData1.metadata = { stableId: "cell-1" };
+
+        const cellData2 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "z = 3",
+          "python",
+        );
+        cellData2.metadata = { stableId: "cell-2" };
+
         const notebook = createTestNotebookDocument("/test/notebook.py", {
-          data: new code.NotebookData([
-            new code.NotebookCellData(
-              code.NotebookCellKind.Code,
-              "x = 1",
-              "python",
-            ),
-            new code.NotebookCellData(
-              code.NotebookCellKind.Code,
-              "y = 2",
-              "python",
-            ),
-            new code.NotebookCellData(
-              code.NotebookCellKind.Code,
-              "z = 3",
-              "python",
-            ),
-          ]),
+          data: new code.NotebookData([cellData0, cellData1, cellData2]),
         });
 
         yield* ctx.vscode.addNotebookDocument(notebook);
@@ -142,7 +152,7 @@ describe("CellStateManager", () => {
                 "method": "delete_cell",
                 "params": {
                   "inner": {
-                    "cellId": "file:///test/notebook.py#cell-1",
+                    "cellId": "cell-1",
                   },
                   "notebookUri": "file:///test/notebook.py",
                 },

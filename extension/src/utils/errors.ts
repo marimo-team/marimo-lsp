@@ -1,11 +1,12 @@
 import type { CellOutput } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
 import { unreachable } from "../assert.ts";
+import type { NotebookCellId } from "../schemas.ts";
 
 export type ExtendsArray<T> = T extends Array<infer U> ? U : never;
 
 export type MarimoError = ExtendsArray<CellOutput["data"]>;
 
-export type CellIdMapper = (cellId: string) => string | undefined;
+export type CellIdMapper = (cellId: NotebookCellId) => string | undefined;
 
 export function prettyErrorMessage(
   error: MarimoError,
@@ -67,7 +68,7 @@ function formatMultipleDefinitionError(
   cellIdMapper?: CellIdMapper,
 ): string {
   const cellNames = error.cells.map((cellId) => {
-    const mapped = cellIdMapper?.(cellId);
+    const mapped = cellIdMapper?.(cellId as NotebookCellId);
     return mapped ?? cellId;
   });
 

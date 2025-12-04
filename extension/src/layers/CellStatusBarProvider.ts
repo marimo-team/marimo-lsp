@@ -23,10 +23,7 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
       code.workspace.notebookDocumentChanges().pipe(
         Stream.runForEach(
           Effect.fnUntraced(function* (event) {
-            const notebook =
-              MarimoNotebookDocument.decodeUnknownNotebookDocument(
-                event.notebook,
-              );
+            const notebook = MarimoNotebookDocument.tryFrom(event.notebook);
 
             if (Option.isNone(notebook)) {
               // not a marimo notebook

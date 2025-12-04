@@ -24,7 +24,6 @@ import { PythonExtension } from "../services/PythonExtension.ts";
 import { type ITelemetry, Telemetry } from "../services/Telemetry.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
-import { getNotebookUri } from "../types.ts";
 import { Links } from "../utils/links.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
@@ -118,6 +117,14 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
         const editor = yield* code.window.getActiveNotebookEditor();
         if (Option.isNone(editor)) {
           yield* code.window.showInformationMessage(
+            "No notebook editor is currently open",
+          );
+          return;
+        }
+
+        const notebook = MarimoNotebookDocument.tryFrom(editor.value.notebook);
+        if (Option.isNone(notebook)) {
+          yield* code.window.showInformationMessage(
             "No marimo notebook is currently open",
           );
           return;
@@ -138,7 +145,7 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
                 params: {
                   method: "close_session",
                   params: {
-                    notebookUri: getNotebookUri(editor.value.notebook),
+                    notebookUri: notebook.value.id,
                     inner: {},
                   },
                 },
@@ -289,8 +296,7 @@ const createSetupCell = ({
   Effect.gen(function* () {
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
-      (editor) =>
-        MarimoNotebookDocument.decodeUnknownNotebookDocument(editor.notebook),
+      (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
     );
 
     if (Option.isNone(notebook)) {
@@ -310,7 +316,7 @@ const createSetupCell = ({
       // Show message and focus on existing setup cell
       yield* code.window.showInformationMessage("Setup cell already exists");
       yield* code.window.showNotebookDocument(
-        notebook.value.unsafeRawNotebookDocument,
+        notebook.value.rawNotebookDocument,
         {
           selections: [
             new code.NotebookRange(existing.index, existing.index + 1),
@@ -382,8 +388,7 @@ const createGist = ({
   Effect.gen(function* () {
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
-      (editor) =>
-        MarimoNotebookDocument.decodeUnknownNotebookDocument(editor.notebook),
+      (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
     );
 
     if (Option.isNone(notebook)) {
@@ -475,8 +480,7 @@ const runStale = ({
   Effect.gen(function* () {
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
-      (editor) =>
-        MarimoNotebookDocument.decodeUnknownNotebookDocument(editor.notebook),
+      (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
     );
 
     if (Option.isNone(notebook)) {
@@ -529,8 +533,7 @@ const toggleOnCellChange = ({
   Effect.gen(function* () {
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
-      (editor) =>
-        MarimoNotebookDocument.decodeUnknownNotebookDocument(editor.notebook),
+      (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
     );
 
     if (Option.isNone(notebook)) {
@@ -541,10 +544,8 @@ const toggleOnCellChange = ({
       return;
     }
 
-    const notebookUri = getNotebookUri(notebook.value);
-
     // Fetch current configuration
-    const config = yield* configService.getConfig(notebookUri);
+    const config = yield* configService.getConfig(notebook.value.id);
 
     const currentMode = config.runtime?.on_cell_change ?? "autorun";
 
@@ -579,13 +580,13 @@ const toggleOnCellChange = ({
     // Update configuration
     yield* Effect.logInfo("Updating on_cell_change mode").pipe(
       Effect.annotateLogs({
-        notebook: notebookUri,
+        notebook: notebook.value.id,
         from: currentMode,
         to: newMode,
       }),
     );
 
-    yield* configService.updateConfig(notebookUri, {
+    yield* configService.updateConfig(notebook.value.id, {
       runtime: {
         on_cell_change: newMode,
       },
@@ -616,8 +617,7 @@ const exportNotebookAsHTML = ({
   Effect.gen(function* () {
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
-      (editor) =>
-        MarimoNotebookDocument.decodeUnknownNotebookDocument(editor.notebook),
+      (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
     );
 
     if (Option.isNone(notebook)) {
@@ -637,8 +637,6 @@ const exportNotebookAsHTML = ({
       );
       return;
     }
-
-    const notebookUri = getNotebookUri(notebook.value);
 
     // Ask user where to save the file
     const saveUri = yield* code.window.showSaveDialog({
@@ -668,7 +666,7 @@ const exportNotebookAsHTML = ({
             params: {
               method: "export_as_html",
               params: {
-                notebookUri,
+                notebookUri: notebook.value.id,
                 inner: {
                   download: false,
                   files: [],
@@ -700,7 +698,7 @@ const exportNotebookAsHTML = ({
 
         yield* Effect.logInfo("Exported notebook as HTML").pipe(
           Effect.annotateLogs({
-            notebook: notebookUri,
+            notebook: notebook.value.id,
             output: saveUri.value.fsPath,
           }),
         );
@@ -729,9 +727,16 @@ const updateActivePythonEnvironment = ({
       return;
     }
 
-    const controller = yield* controllers.getActiveController(
-      editor.value.notebook,
-    );
+    const notebook = MarimoNotebookDocument.tryFrom(editor.value.notebook);
+
+    if (Option.isNone(notebook)) {
+      yield* code.window.showInformationMessage(
+        "Active notebook is not a marimo notebook.",
+      );
+      return;
+    }
+
+    const controller = yield* controllers.getActiveController(notebook.value);
 
     if (Option.isNone(controller)) {
       yield* code.window.showInformationMessage(

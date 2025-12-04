@@ -7,7 +7,8 @@ import {
   SubscriptionRef,
 } from "effect";
 import { MarimoConfigResponseSchema } from "../../schemas/config.ts";
-import type { MarimoConfig, NotebookUri } from "../../types.ts";
+import type { NotebookId } from "../../schemas.ts";
+import type { MarimoConfig } from "../../types.ts";
 import { Log } from "../../utils/log.ts";
 import { LanguageClient } from "../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../NotebookEditorRegistry.ts";
@@ -26,7 +27,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
 
       // Track configurations: NotebookUri -> MarimoConfig
       const configRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookUri, MarimoConfig>(),
+        HashMap.empty<NotebookId, MarimoConfig>(),
       );
 
       const client = yield* LanguageClient;
@@ -35,7 +36,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
         /**
          * Get the configuration for a notebook
          */
-        getConfig(notebookUri: NotebookUri) {
+        getConfig(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             // First check if we have it cached
             const map = yield* SubscriptionRef.get(configRef);
@@ -82,7 +83,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
          * Update the configuration for a notebook
          */
         updateConfig(
-          notebookUri: NotebookUri,
+          notebookUri: NotebookId,
           partialConfig: Record<string, unknown>,
         ) {
           return Effect.gen(function* () {
@@ -125,7 +126,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
         /**
          * Get cached configuration for a notebook (if available)
          */
-        getCachedConfig(notebookUri: NotebookUri) {
+        getCachedConfig(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             const map = yield* SubscriptionRef.get(configRef);
             return HashMap.get(map, notebookUri);
@@ -135,7 +136,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
         /**
          * Clear configuration for a notebook
          */
-        clearNotebook(notebookUri: NotebookUri) {
+        clearNotebook(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(configRef, (map) =>
               HashMap.remove(map, notebookUri),
