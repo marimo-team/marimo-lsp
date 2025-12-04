@@ -1,13 +1,10 @@
 import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
-import type * as vscode from "vscode";
 import {
-  decodeCellMetadata,
-  encodeCellMetadata,
   MarimoNotebookCell,
   MarimoNotebookDocument,
+  type NotebookCellId,
   type NotebookId,
 } from "../schemas.ts";
-import { matchCells } from "../utils/cellMatching.ts";
 import { Log } from "../utils/log.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
@@ -63,9 +60,6 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         yield* Log.debug("Updated stale context", { hasStaleCells });
       });
 
-      // Set initial context state
-      yield* Effect.forkScoped(updateContext());
-
       // Subscribe to stale state changes to update VSCode context
       yield* Effect.forkScoped(
         staleStateRef.changes.pipe(
@@ -98,55 +92,31 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                 newMetadata: event.metadata,
               });
 
-              // Collect all removed and added cells from content changes
-              const allRemovedCells: Array<vscode.NotebookCell> = [];
-              const allAddedCells: Array<vscode.NotebookCell> = [];
-
-              for (const change of event.contentChanges) {
-                allRemovedCells.push(...change.removedCells);
-                allAddedCells.push(...change.addedCells);
-              }
-
-              // Detect potential re-deserialization:
-              // When VS Code re-deserializes (save, agent, external edit), it removes
-              // all old cells and adds new cells. We detect this by checking if
-              // removed and added counts are equal and non-zero.
-              const isLikelyRedeserialization =
-                allRemovedCells.length > 0 &&
-                allAddedCells.length > 0 &&
-                allRemovedCells.length === allAddedCells.length;
-
-              if (isLikelyRedeserialization) {
-                yield* handleRedeserialization(
-                  event.notebook,
-                  allRemovedCells.map((cell) => MarimoNotebookCell.from(cell)),
-                  allAddedCells.map((cell) => MarimoNotebookCell.from(cell)),
-                  {
-                    code,
-                    notebookUri: event.notebook.id,
-                    client,
-                    staleStateRef,
-                  },
-                );
-                // Skip normal processing - re-deserialization handled everything
-                return;
-              }
-
-              // Normal processing: handle cell deletions
+              // Process cell deletions
               // When a cell is moved, VSCode reports it as removed AND added
               // We need to filter out moved cells to find truly deleted cells
-              const removedCellIds = new Set<string>();
-              const addedCellIds = new Set<string>();
-              const removedCellsMap = new Map<string, MarimoNotebookCell>();
+              const removedCellIds = new Set<NotebookCellId>();
+              const addedCellIds = new Set<NotebookCellId>();
+              const removedCellsMap = new Map<
+                NotebookCellId,
+                MarimoNotebookCell
+              >();
 
-              for (const rawCell of allRemovedCells) {
-                const cell = MarimoNotebookCell.from(rawCell);
-                removedCellIds.add(cell.id);
-                removedCellsMap.set(cell.id, cell);
-              }
-              for (const rawCell of allAddedCells) {
-                const cell = MarimoNotebookCell.from(rawCell);
-                addedCellIds.add(cell.id);
+              // Collect all removed and added cell IDs
+              for (const change of event.contentChanges) {
+                for (const rawCell of change.removedCells) {
+                  const cell = MarimoNotebookCell.from(rawCell);
+                  if (Option.isSome(cell.maybeId)) {
+                    removedCellIds.add(cell.maybeId.value);
+                    removedCellsMap.set(cell.maybeId.value, cell);
+                  }
+                }
+                for (const rawCell of change.addedCells) {
+                  const cell = MarimoNotebookCell.from(rawCell);
+                  if (Option.isSome(cell.maybeId)) {
+                    addedCellIds.add(cell.maybeId.value);
+                  }
+                }
               }
 
               // Find truly deleted cells (removed but not added)
@@ -198,7 +168,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
               // Process cell changes (content or metadata edits)
               for (const cellChange of event.cellChanges) {
-                const cell = cellChange.cell;
+                const cell = MarimoNotebookCell.from(cellChange.cell);
                 const cellIndex = cell.index;
 
                 // Check if document (content) changed
@@ -221,13 +191,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                   continue;
                 }
 
-                // Check if metadata changed and state is not stale
-                // (e.g., cleared by execution)
-                const metadata = decodeCellMetadata(cellChange.metadata);
-                if (
-                  Option.isSome(metadata) &&
-                  metadata.value.state !== "stale"
-                ) {
+                if (Option.isSome(cell.metadata) && !cell.isStale) {
                   yield* clearCellStaleTracking(event.notebook.id, cellIndex, {
                     staleStateRef,
                   });
@@ -267,8 +231,10 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
          */
         clearCellStale(notebookUri: NotebookId, cellIndex: number) {
           return Effect.gen(function* () {
-            const notebook =
-              yield* editorRegistry.getLastNotebookEditor(notebookUri);
+            const notebook = Option.filterMap(
+              yield* editorRegistry.getLastNotebookEditor(notebookUri),
+              (e) => MarimoNotebookDocument.tryFrom(e.notebook),
+            );
 
             if (Option.isNone(notebook)) {
               yield* Log.warn("Notebook not found for clearing stale", {
@@ -277,7 +243,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               return;
             }
 
-            const cell = notebook.value.notebook.cellAt(cellIndex);
+            const cell = notebook.value.cellAt(cellIndex);
             if (!cell) {
               yield* Log.warn("Cell not found", { notebookUri, cellIndex });
               return;
@@ -285,11 +251,10 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
             // Update cell metadata to remove stale state
             const edit = new code.WorkspaceEdit();
-            const newMetadata = encodeCellMetadata({
-              ...cell.metadata,
-              state: undefined,
+            const newMetadata = cell.buildEncodedMetadata({
+              overrides: { state: undefined },
             });
-            edit.set(notebook.value.notebook.uri, [
+            edit.set(notebook.value.uri, [
               code.NotebookEdit.updateCellMetadata(cellIndex, newMetadata),
             ]);
             yield* code.workspace.applyEdit(edit);
@@ -321,7 +286,9 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         },
 
         /**
-         * Get the changes stream for external subscriptions
+         * Stream of stale state changes.
+         *
+         * Emits the current value on subscription, then all subsequent changes.
          */
         get changes() {
           return staleStateRef.changes;
@@ -414,122 +381,5 @@ function clearCellStaleTracking(
       notebookUri,
       cellIndex,
     });
-  });
-}
-
-/**
- * Handle notebook re-deserialization by matching old cells to new cells
- * and transferring stable IDs.
- *
- * When VS Code re-deserializes a notebook (on save, agent use, external edit),
- * it replaces all cells with new ones. This function:
- * 1. Matches old cells to new cells by content
- * 2. Transfers stable IDs from matched old cells to new cells
- * 3. Generates new stable IDs for truly new cells
- * 4. Notifies backend about truly deleted cells
- */
-function handleRedeserialization(
-  notebook: MarimoNotebookDocument,
-  removedCells: Array<MarimoNotebookCell>,
-  addedCells: Array<MarimoNotebookCell>,
-  deps: {
-    code: VsCode;
-    notebookUri: NotebookId;
-    client: LanguageClient;
-    staleStateRef: SubscriptionRef.SubscriptionRef<
-      HashMap.HashMap<NotebookId, HashMap.HashMap<number, boolean>>
-    >;
-  },
-) {
-  return Effect.gen(function* () {
-    const { code, notebookUri, client, staleStateRef } = deps;
-
-    yield* Log.debug("Detected re-deserialization", {
-      notebookUri,
-      removedCount: removedCells.length,
-      addedCount: addedCells.length,
-    });
-
-    const matchResult = matchCells(removedCells, addedCells);
-
-    yield* Log.debug("Cell matching results", {
-      matchedCount: matchResult.matched.size,
-      unmatchedRemovedCount: matchResult.unmatched.length,
-      newCellsCount: matchResult.newCells.length,
-    });
-
-    // Transfer stable IDs from matched old cells to new cells
-    const edit = new code.WorkspaceEdit();
-
-    for (const [stableId, newCell] of matchResult.matched) {
-      const existingMeta = newCell.metadata ?? {};
-      const newMetadata = encodeCellMetadata({
-        ...existingMeta,
-        stableId,
-      });
-      edit.set(notebook.uri, [
-        code.NotebookEdit.updateCellMetadata(newCell.index, newMetadata),
-      ]);
-    }
-
-    // For truly new cells, ensure they have stable IDs
-    // (they should already have them from deserialization, but just in case)
-    for (const newCell of matchResult.newCells) {
-      if (Option.isNone(newCell.maybeId)) {
-        const existingMeta = newCell.metadata ?? {};
-        const newMetadata = encodeCellMetadata({
-          ...existingMeta,
-          stableId: crypto.randomUUID(),
-        });
-        edit.set(notebook.uri, [
-          code.NotebookEdit.updateCellMetadata(newCell.index, newMetadata),
-        ]);
-      }
-    }
-
-    yield* code.workspace.applyEdit(edit);
-
-    // Clear stale tracking for all cells (fresh state after re-deserialization)
-    yield* SubscriptionRef.update(staleStateRef, (map) =>
-      HashMap.remove(map, notebookUri),
-    );
-
-    // Notify backend about truly deleted cells (using stable ID)
-    for (const deletedCell of matchResult.unmatched) {
-      const stableId = deletedCell.maybeId;
-
-      if (Option.isNone(stableId)) {
-        continue;
-      }
-
-      yield* client
-        .executeCommand({
-          command: "marimo.api",
-          params: {
-            method: "delete_cell",
-            params: {
-              notebookUri,
-              inner: {
-                cellId: stableId.value,
-              },
-            },
-          },
-        })
-        .pipe(
-          Effect.catchAllCause((cause) =>
-            Effect.logWarning(
-              "Failed to notify backend about cell deletion",
-              cause,
-            ).pipe(
-              Effect.annotateLogs({
-                notebookUri,
-                stableId: stableId.value,
-              }),
-            ),
-          ),
-        );
-    }
-
-    yield* Log.debug("Re-deserialization handled", { notebookUri });
   });
 }

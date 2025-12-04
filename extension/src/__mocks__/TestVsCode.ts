@@ -1289,6 +1289,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   notebookChange(event: vscode.NotebookDocumentChangeEvent) {
     return PubSub.publish(this.documentChangesPubSub, event);
   }
+
   static make = Effect.fnUntraced(function* (
     options: {
       initialDocuments?: Array<vscode.NotebookDocument>;
@@ -1594,6 +1595,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 (serializer) =>
                   Ref.update(serializers, HashSet.remove(serializer)),
               );
+            },
+            notebookDocumentOpened() {
+              // TODO: We should trigger this somehow in our mocks when notebooks are "opened"
+              return Stream.never;
             },
             notebookDocumentChanges() {
               return Stream.fromPubSub(documentChanges);
