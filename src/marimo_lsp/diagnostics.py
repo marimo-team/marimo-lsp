@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections import OrderedDict
+from typing import TYPE_CHECKING, Any, Generic, NewType, TypeVar, cast
 
 from marimo._ast.compiler import compile_cell
 from marimo._messaging.msgspec_encoder import asdict
@@ -10,10 +11,63 @@ from marimo._messaging.ops import VariableDeclaration, Variables
 from marimo._runtime.dataflow import DirectedGraph
 from marimo._types.ids import CellId_t
 
+from marimo_lsp.loggers import get_logger
+
+logger = get_logger()
+
 if TYPE_CHECKING:
     import lsprotocol.types as lsp
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace
+
+
+T = TypeVar("T")
+U = TypeVar("U")
+
+CellDocumentUri = NewType("CellDocumentUri", str)
+
+
+def get_stable_id(cell: lsp.NotebookCell) -> CellId_t | None:
+    """Get the stable ID of a marimo notebook cell."""
+    return decode_marimo_cell_metadata(cell)[0]
+
+
+def decode_marimo_cell_metadata(
+    cell: lsp.NotebookCell,
+) -> tuple[CellId_t | None, dict[str, Any], str]:
+    """Decode marimo-specific metadata from lsp.NotebookCell."""
+    meta = cast("dict[str, Any]", cell.metadata) if cell.metadata else {}
+    cell_id = meta.get("stableId", None)
+    config = meta.get("config", {})
+    name = meta.get("name", "_")
+
+    return CellId_t(cell_id) if cell_id is not None else None, config, name
+
+
+class LRUCache(Generic[T, U]):
+    """A simple LRU (Least Recently Used) cache implementation."""
+
+    def __init__(self, capacity: int) -> None:
+        self.cache: OrderedDict[T, U] = OrderedDict()
+        self.capacity = capacity
+
+    def get(self, key: T) -> U | None:
+        """Retrieve item from cache and mark as recently used."""
+        if key not in self.cache:
+            return None
+        # Move the accessed item to the end (most recently used)
+        value = self.cache.pop(key)
+        self.cache[key] = value
+        return value
+
+    def put(self, key: T, value: U) -> None:
+        """Add item to cache, evicting least recently used if necessary."""
+        if key in self.cache:
+            self.cache.pop(key)  # Remove existing item to update its position
+        elif len(self.cache) >= self.capacity:
+            # Evict the least recently used item (first item in OrderedDict)
+            self.cache.popitem(last=False)
+        self.cache[key] = value
 
 
 class NotebookGraphManager:
@@ -28,16 +82,22 @@ class NotebookGraphManager:
         self._cell_sources: dict[CellId_t, str] = {}
         self._graph: DirectedGraph = DirectedGraph()
         self._stale = False
+        self.uri_to_cell_id_cache: LRUCache[CellDocumentUri, CellId_t] = LRUCache(
+            capacity=1000  # We shouldn't have notebooks larger than this
+        )
 
     def initialize(
         self, server: LanguageServer, notebook: lsp.NotebookDocument
     ) -> None:
         """Build initial graph from all cells in the notebook."""
         for cell in notebook.cells:
-            cell_id = CellId_t(cell.document)
             document = server.workspace.text_documents.get(cell.document)
             source = document.source if document else ""
-            self.update_cell(cell_id, source)
+            cell_id = get_stable_id(cell)
+            if cell_id:
+                self.update_cell(cell_id, source)
+            else:
+                logger.warning("Could not find cell ID for cell; skipping.")
 
         # Mark as stale so diagnostics are published on first request
         self._stale = True
@@ -82,6 +142,29 @@ class NotebookGraphManager:
         """Mark the graph as clean after publishing."""
         self._stale = False
 
+    def _remove_cell_document(self, cell: lsp.TextDocumentIdentifier) -> None:
+        """Remove a cell from tracking."""
+        cell_id = self.uri_to_cell_id_cache.get(CellDocumentUri(cell.uri))
+        if not cell_id:
+            # Debug instead of warning since can happen during normal operation
+            logger.debug(f"Could not find cell ID for URI {cell.uri} (on close)")
+        else:
+            self.remove_cell(cell_id)
+
+    def _update_cell_document(
+        self,
+        cell: lsp.VersionedTextDocumentIdentifier | lsp.TextDocumentItem,
+        source: str,
+    ) -> None:
+        """Update a cell from its notebook cell representation."""
+        cell_id = self.uri_to_cell_id_cache.get(CellDocumentUri(cell.uri))
+        if not cell_id:
+            logger.warning(
+                f"Could not find cell ID for URI {cell.uri} (on open/update)"
+            )
+            return
+        self.update_cell(cell_id, source)
+
     def sync_with_notebook_document_change_event(
         self,
         workspace: Workspace,
@@ -92,24 +175,51 @@ class NotebookGraphManager:
             return
 
         # Handle cell removals
+        self._persist_mapping(change)
+
         if change.cells.structure and change.cells.structure.did_close:
             for closed_cell in change.cells.structure.did_close:
-                cell_id = CellId_t(closed_cell.uri)
-                self.remove_cell(cell_id)
+                self._remove_cell_document(closed_cell)
 
         # Handle cell additions
         if change.cells.structure and change.cells.structure.did_open:
             for opened_cell in change.cells.structure.did_open:
-                cell_id = CellId_t(opened_cell.uri)
-                self.update_cell(cell_id, opened_cell.text)
+                self._update_cell_document(opened_cell, opened_cell.text)
 
         # Handle text content changes
         if change.cells.text_content:
             for text_change in change.cells.text_content:
-                cell_id = CellId_t(text_change.document.uri)
                 document = workspace.text_documents.get(text_change.document.uri)
                 if document:
-                    self.update_cell(cell_id, document.source)
+                    self._update_cell_document(text_change.document, document.source)
+
+    def _persist_mapping(self, change: lsp.NotebookDocumentChangeEvent) -> None:
+        """Persist mapping from cell URIs to stable IDs for quick lookup."""
+        if change.cells is None:
+            return
+
+        if change.cells.data:
+            for cell in change.cells.data:
+                cell_id = get_stable_id(cell)
+                if cell_id:
+                    self.uri_to_cell_id_cache.put(
+                        CellDocumentUri(cell.document), cell_id
+                    )
+                else:
+                    logger.warning(
+                        f"Opened cell {cell.document} missing stable ID; cannot map URI."
+                    )
+        if change.cells.structure and change.cells.structure.array.cells:
+            for cell in change.cells.structure.array.cells:
+                cell_id = get_stable_id(cell)
+                if cell_id:
+                    self.uri_to_cell_id_cache.put(
+                        CellDocumentUri(cell.document), cell_id
+                    )
+                else:
+                    logger.warning(
+                        f"Opened cell {cell.document} missing stable ID; cannot map URI."
+                    )
 
 
 class GraphManagerRegistry:
