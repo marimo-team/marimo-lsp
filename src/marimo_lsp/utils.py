@@ -28,4 +28,8 @@ def decode_marimo_cell_metadata(
     config = meta.get("config", {})
     name = meta.get("name", "_")
 
-    return CellId_t(cell_id) if cell_id is not None else None, config, name
+    return (
+        CellId_t(cell_id) if cell_id is not None else None,
+        config,
+        name,
+    )

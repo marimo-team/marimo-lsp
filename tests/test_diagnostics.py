@@ -12,9 +12,8 @@ from marimo_lsp.diagnostics import (
     GraphManagerRegistry,
     LRUCache,
     NotebookGraphManager,
-    decode_marimo_cell_metadata,
-    get_stable_id,
 )
+from marimo_lsp.utils import decode_marimo_cell_metadata, get_stable_id
 
 
 class TestNotebookGraphManager:

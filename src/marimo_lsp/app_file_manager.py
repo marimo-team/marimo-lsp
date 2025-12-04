@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pathlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from marimo._ast.app import App, InternalApp
 from pygls.uris import to_fs_path
@@ -11,6 +11,7 @@ from pygls.uris import to_fs_path
 from marimo_lsp.utils import decode_marimo_cell_metadata
 
 if TYPE_CHECKING:
+    from marimo._ast.cell import CellConfig
     from marimo._types.ids import CellId_t
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace
@@ -112,7 +113,8 @@ def sync_app_with_workspace(
     """Sync workspace with InternalApp."""
     notebook = workspace.notebook_documents[notebook_uri]
 
-    app_config = notebook.metadata or {}
+    # lsp.LSPObject at runtime is just a dict...
+    app_config = cast("dict", notebook.metadata or {})
     if app is None:
         app = InternalApp(App(**app_config))
 
@@ -124,7 +126,6 @@ def sync_app_with_workspace(
     names: list[str] = []
 
     for cell in notebook.cells:
-        # Extract cell ID from document URI fragment (e.g., "file:///test.py#cell1" -> "cell1")
         cell_id, config, name = decode_marimo_cell_metadata(cell)
         if cell_id is None:
             continue
@@ -140,6 +141,7 @@ def sync_app_with_workspace(
     return app.with_data(
         cell_ids=cell_ids,
         codes=codes,
-        configs=configs,
+        # FIXME: expected type is `CellConfig` but passing dictionaries has worked fine?  # noqa: FIX001
+        configs=cast("list[CellConfig]", configs),
         names=names,
     )
