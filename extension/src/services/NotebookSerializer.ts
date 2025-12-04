@@ -14,6 +14,7 @@ import {
   decodeCellMetadata,
   MarimoNotebook,
 } from "../schemas.ts";
+import { enrichNotebookFromCached } from "../utils/enrichNotebookFromCached.ts";
 import { Constants } from "./Constants.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookDataCache } from "./NotebookDataCache.ts";
@@ -153,7 +154,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
           return notebook;
         }
 
-        return yield* notebookDataCache.enrich(notebook, cached.value);
+        return enrichNotebookFromCached(notebook, cached.value);
       });
 
       if (Option.isSome(code)) {
