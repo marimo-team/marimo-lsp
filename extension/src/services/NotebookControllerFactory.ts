@@ -3,11 +3,11 @@ import type * as py from "@vscode/python-extension";
 import { Brand, Effect, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
 import { unreachable } from "../assert.ts";
-import { MarimoNotebookCell, MarimoNotebookDocument } from "../schemas.ts";
+import { type MarimoNotebookCell, MarimoNotebookDocument } from "../schemas.ts";
 import { Constants } from "../services/Constants.ts";
+import { extractExecuteCodeRequest } from "../utils/extractExecuteCodeRequest.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
-import { getCellExecutableCode } from "../utils/getCellExecutableCode.ts";
 import { installPackages } from "../utils/installPackages.ts";
 import { Config } from "./Config.ts";
 import { EnvironmentValidator } from "./EnvironmentValidator.ts";
@@ -60,13 +60,19 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
           controller.executeHandler = (rawCells, rawNotebook, controller) =>
             runPromise(
               Effect.gen(function* () {
-                const cells = rawCells.map((c) => MarimoNotebookCell.from(c));
+                const request = extractExecuteCodeRequest(rawCells, LanguageId);
+                if (Option.isNone(request)) {
+                  return yield* Effect.logWarning(
+                    "Empty execution request",
+                  ).pipe(Effect.annotateLogs({ rawCells }));
+                }
+
                 const notebook = MarimoNotebookDocument.from(rawNotebook);
 
                 yield* Effect.logInfo("Running cells").pipe(
                   Effect.annotateLogs({
                     controller: controller.id,
-                    cellCount: cells.length,
+                    cellCount: request.value.cellIds.length,
                     notebook: rawNotebook.uri.toString(),
                   }),
                 );
@@ -78,12 +84,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                     params: {
                       notebookUri: notebook.id,
                       executable: validEnv.executable,
-                      inner: {
-                        cellIds: cells.map((cell) => cell.id),
-                        codes: cells.map((cell) =>
-                          getCellExecutableCode(cell, LanguageId),
-                        ),
-                      },
+                      inner: request.value,
                     },
                   },
                 });

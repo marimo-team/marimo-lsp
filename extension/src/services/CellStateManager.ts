@@ -108,16 +108,16 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               for (const change of event.contentChanges) {
                 for (const rawCell of change.removedCells) {
                   const cell = MarimoNotebookCell.from(rawCell);
-                  if (Option.isSome(cell.maybeId)) {
-                    removedCellIds.add(cell.maybeId.value);
-                    removedCellsMap.set(cell.maybeId.value, cell);
+                  if (Option.isSome(cell.id)) {
+                    removedCellIds.add(cell.id.value);
+                    removedCellsMap.set(cell.id.value, cell);
                   }
                 }
 
                 for (const rawCell of change.addedCells) {
                   const cell = MarimoNotebookCell.from(rawCell);
-                  if (Option.isSome(cell.maybeId)) {
-                    addedCellIds.add(cell.maybeId.value);
+                  if (Option.isSome(cell.id)) {
+                    addedCellIds.add(cell.id.value);
                   } else {
                     // Cell added from UI without a stableId (so we need to create one)
                     edits.push(

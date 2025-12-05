@@ -16,7 +16,7 @@ import { PythonLanguageServer } from "./PythonLanguageServer.ts";
  */
 interface CellOffsetInfo {
   /** Unique ID of the cell */
-  cellId: string;
+  cellId: NotebookCellId;
   /** Index of the cell in the notebook */
   cellIndex: number;
   /** Line index in virtual doc where this cell starts */
@@ -139,7 +139,9 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
           Stream.filterMap((event) =>
             MarimoNotebookDocument.tryFrom(event.notebook),
           ),
-          Stream.runForEach((notebook) => updateVirtualDocument(notebook)),
+          Stream.runForEach((notebook) => {
+            return updateVirtualDocument(notebook);
+          }),
         ),
       );
 
@@ -178,12 +180,17 @@ export class VirtualDocumentProvider extends Effect.Service<VirtualDocumentProvi
           cell: MarimoNotebookCell,
         ) {
           const virtualDoc = yield* getVirtualDocument(cell.notebook);
-          const cellOffset = virtualDoc.cellOffsets.find(
-            (offset) => offset.cellId === cell.id,
+          const cellOffset = virtualDoc.cellOffsets.find((offset) =>
+            Option.match(cell.id, {
+              onSome: (id) => id === offset.cellId,
+              onNone: () => false,
+            }),
           );
 
           if (!cellOffset) {
-            return yield* new CellNotFoundError({ cellId: cell.id });
+            return yield* new CellNotFoundError({
+              cellId: Option.getOrUndefined(cell.id),
+            });
           }
 
           return {
@@ -234,11 +241,7 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
   notebook: MarimoNotebookDocument,
   variablesService: VariablesService,
 ) {
-  const inOrderCells: Array<{
-    readonly id: NotebookCellId;
-    readonly index: number;
-    readonly document: vscode.TextDocument;
-  }> = notebook.getCells();
+  const inOrderCells: Array<MarimoNotebookCell> = notebook.getCells();
 
   const variables = yield* variablesService.getVariables(notebook.id);
 
@@ -248,21 +251,22 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
   }
 
   const sortedCellIds = getTopologicalCellIds(
-    inOrderCells.map((cell) => cell.id),
+    inOrderCells.flatMap((cell) =>
+      Option.match(cell.id, {
+        onNone: () => [],
+        onSome: (id) => [id],
+      }),
+    ),
     variables.value,
   );
 
   // Map cell IDs back to cells
-  const cellMap = new Map<
-    NotebookCellId,
-    {
-      readonly id: NotebookCellId;
-      readonly index: number;
-      readonly document: vscode.TextDocument;
-    }
-  >();
+  const cellMap = new Map<NotebookCellId, MarimoNotebookCell>();
   for (const cell of inOrderCells) {
-    cellMap.set(cell.id, cell);
+    if (Option.isNone(cell.id)) {
+      continue;
+    }
+    cellMap.set(cell.id.value, cell);
   }
 
   // biome-ignore lint/style/noNonNullAssertion: We checked existence above
@@ -274,13 +278,7 @@ const getCellsInTopologicalOrder = Effect.fnUntraced(function* (
  * @param cells - Array of notebook cells
  * @returns Virtual document content as a single string
  */
-function buildVirtualDocumentContent(
-  cells: Array<{
-    readonly id: NotebookCellId;
-    readonly index: number;
-    readonly document: vscode.TextDocument;
-  }>,
-): {
+function buildVirtualDocumentContent(cells: Array<MarimoNotebookCell>): {
   content: string;
   cellOffsets: ReadonlyArray<CellOffsetInfo>;
 } {
@@ -289,12 +287,15 @@ function buildVirtualDocumentContent(
   const contentParts: Array<string> = [];
 
   for (const cell of cells) {
+    if (Option.isNone(cell.id)) {
+      continue;
+    }
     const cellContent = cell.document.getText();
     const lines = cellContent.split("\n");
     const lineCount = lines.length;
 
     cellOffsets.push({
-      cellId: cell.id,
+      cellId: cell.id.value,
       cellIndex: cell.index,
       startLine: currentLine,
       endLine: currentLine + lineCount,

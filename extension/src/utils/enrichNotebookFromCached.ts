@@ -31,6 +31,7 @@ export function enrichNotebookFromCached(
         ...incomingCell,
         metadata: {
           ...incomingCell.metadata,
+          stale: cachedCell.metadata?.stale ?? incomingCell.metadata?.stale,
           stableId:
             cachedCell.metadata?.stableId ?? incomingCell.metadata?.stableId,
         },

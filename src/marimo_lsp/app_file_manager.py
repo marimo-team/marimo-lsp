@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import pathlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from marimo._ast.app import App, InternalApp
-from marimo._types.ids import CellId_t
 from pygls.uris import to_fs_path
 
+from marimo_lsp.utils import decode_marimo_cell_metadata
+
 if TYPE_CHECKING:
+    from marimo._ast.cell import CellConfig
+    from marimo._types.ids import CellId_t
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace
 
@@ -110,31 +113,35 @@ def sync_app_with_workspace(
     """Sync workspace with InternalApp."""
     notebook = workspace.notebook_documents[notebook_uri]
 
-    app_config = notebook.metadata or {}
+    # lsp.LSPObject at runtime is just a dict...
+    app_config = cast("dict", notebook.metadata or {})
     if app is None:
         app = InternalApp(App(**app_config))
 
     app.update_config(app_config)
 
     cell_ids: list[CellId_t] = []
-    codes = []
-    configs = []
+    codes: list[str] = []
+    configs: list[dict[str, Any]] = []
     names: list[str] = []
 
     for cell in notebook.cells:
-        # Extract cell ID from document URI fragment (e.g., "file:///test.py#cell1" -> "cell1")
-        cell_ids.append(CellId_t(cell.metadata["stableId"]))
+        cell_id, config, name = decode_marimo_cell_metadata(cell)
+        if cell_id is None:
+            continue
+        cell_ids.append(cell_id)
         document = workspace.text_documents.get(cell.document)
         if document:
             codes.append(document.source or "")
         else:
             codes.append("")
-        configs.append((cell.metadata or {}).get("config", {}))
-        names.append((cell.metadata or {}).get("name", "_"))
+        configs.append(config)
+        names.append(name)
 
     return app.with_data(
         cell_ids=cell_ids,
         codes=codes,
-        configs=configs,
+        # FIXME: expected type is `CellConfig` but passing dictionaries has worked fine?  # noqa: FIX001
+        configs=cast("list[CellConfig]", configs),
         names=names,
     )
