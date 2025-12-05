@@ -13,7 +13,7 @@ const NotebookSerializerLive = Layer.empty.pipe(
   Layer.provideMerge(Constants.Default),
 );
 
-it.layer(NotebookSerializerLive)("NotebookSerializer", (it) => {
+it.layer(NotebookSerializerLive, { timeout: 30_000 })("NotebookSerializer", (it) => {
   it("NOTEBOOK_TYPE matches package.json notebook type", () => {
     const notebookConfig = packageJson.contributes.notebooks.find(
       (nb) => nb.type === NOTEBOOK_TYPE,

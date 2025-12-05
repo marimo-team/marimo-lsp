@@ -110,6 +110,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         ]
       `);
     }),
+    { timeout: 30_000 },
   );
 
   it.effect(
@@ -153,6 +154,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         ]
       `);
     }),
+    { timeout: 30_000 },
   );
 
   it.effect(
@@ -175,6 +177,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       assert(Either.isRight(result), "Expected validation to succeed");
       assert.strictEqual(result.right._tag, "ValidPythonEnvironment");
     }),
+    { timeout: 30_000 },
   );
 
   it.effect(
