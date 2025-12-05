@@ -9,11 +9,12 @@ import {
   Schema,
   Stream,
 } from "effect";
-import { MarimoCommand, NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
 import {
-  MarimoNotebookDocument,
-  encodeCellMetadata,
-} from "../schemas.ts";
+  type MarimoCommand,
+  NOTEBOOK_TYPE,
+  SETUP_CELL_NAME,
+} from "../constants.ts";
+import { encodeCellMetadata, MarimoNotebookDocument } from "../schemas.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
@@ -27,8 +28,8 @@ import { PythonExtension } from "../services/PythonExtension.ts";
 import { type ITelemetry, Telemetry } from "../services/Telemetry.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
+import type { MarimoConfig } from "../types.ts";
 import { getPythonBinName } from "../utils/getPythonBinName.ts";
-import { type MarimoConfig } from "../types.ts";
 import { Links } from "../utils/links.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
