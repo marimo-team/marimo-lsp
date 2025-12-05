@@ -302,8 +302,8 @@ if __name__ == "__main__":
       const serializedSource = new TextDecoder().decode(serialized).trim();
       const sourceSource = source.trim();
 
-      expect(removeGeneratedWith(serializedSource)).toBe(
-        removeGeneratedWith(sourceSource),
+      expect(normalizeLineEndings(removeGeneratedWith(serializedSource))).toBe(
+        normalizeLineEndings(removeGeneratedWith(sourceSource)),
       );
     });
   });
@@ -311,4 +311,8 @@ if __name__ == "__main__":
 
 function removeGeneratedWith(source: string): string {
   return source.replace(/__generated_with = ".*"/, '__generated_with = ""');
+}
+
+function normalizeLineEndings(source: string): string {
+  return source.replace(/\r\n/g, "\n");
 }

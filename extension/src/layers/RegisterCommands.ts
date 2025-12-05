@@ -16,7 +16,6 @@ import {
 } from "../constants.ts";
 import { encodeCellMetadata, MarimoNotebookDocument } from "../schemas.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
-import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
@@ -29,7 +28,7 @@ import { type ITelemetry, Telemetry } from "../services/Telemetry.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 import type { MarimoConfig } from "../types.ts";
-import { getPythonBinName } from "../utils/getPythonBinName.ts";
+import { getVenvPythonPath } from "../utils/getVenvPythonPath.ts";
 import { Links } from "../utils/links.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
@@ -47,7 +46,6 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     const executions = yield* ExecutionRegistry;
     const serializer = yield* NotebookSerializer;
     const configService = yield* MarimoConfigurationService;
-    const configContextManager = yield* ConfigContextManager;
     const controllers = yield* ControllerRegistry;
     const healthService = yield* HealthService;
     const telemetry = yield* Telemetry;
@@ -106,10 +104,8 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
         command,
         toggleOnCellChange({
           code,
-          serializer,
           channel,
           configService,
-          configContextManager,
         }),
       );
     }
@@ -124,10 +120,8 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
         command,
         toggleAutoReload({
           code,
-          serializer,
           channel,
           configService,
-          configContextManager,
         }),
       );
     }
@@ -639,16 +633,12 @@ const createConfigToggle = <T extends string>({
 
 const toggleOnCellChange = ({
   code,
-  serializer,
   channel,
   configService,
-  configContextManager,
 }: {
   code: VsCode;
-  serializer: NotebookSerializer;
   channel: OutputChannel;
   configService: MarimoConfigurationService;
-  configContextManager: ConfigContextManager;
 }) =>
   createConfigToggle({
     code,
@@ -673,16 +663,12 @@ const toggleOnCellChange = ({
 
 const toggleAutoReload = ({
   code,
-  serializer,
   channel,
   configService,
-  configContextManager,
 }: {
   code: VsCode;
-  serializer: NotebookSerializer;
   channel: OutputChannel;
   configService: MarimoConfigurationService;
-  configContextManager: ConfigContextManager;
 }) =>
   createConfigToggle({
     code,
@@ -875,7 +861,7 @@ const updateActivePythonEnvironment = ({
         );
       }
 
-      executable = NodePath.join(venvResult.right, "bin", getPythonBinName());
+      executable = getVenvPythonPath(venvResult.right);
     }
 
     // update the active python environment

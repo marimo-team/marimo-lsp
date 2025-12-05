@@ -69,12 +69,12 @@ describe("Uv", () => {
         yield* uv.venv(venv, { python });
 
         yield* uv.pipInstall(["httpx"], { venv });
-        const sitePackages = NodePath.join(
-          venv,
-          "lib",
-          `python${python}`,
-          "site-packages",
-        );
+        // On Windows, site-packages is in Lib/site-packages (no python version)
+        // On Unix, it's in lib/pythonX.Y/site-packages
+        const sitePackages =
+          process.platform === "win32"
+            ? NodePath.join(venv, "Lib", "site-packages")
+            : NodePath.join(venv, "lib", `python${python}`, "site-packages");
         assert(
           NodeFs.existsSync(NodePath.join(sitePackages, "httpx")),
           `Expected httpx to be in ${sitePackages}`,
