@@ -34,6 +34,20 @@ const LAZY_CONFIG = {
   },
 } as MarimoConfig;
 
+const AUTO_RELOAD_LAZY_CONFIG = {
+  runtime: {
+    on_cell_change: "autorun",
+    auto_reload: "lazy",
+  },
+} as MarimoConfig;
+
+const AUTO_RELOAD_AUTORUN_CONFIG = {
+  runtime: {
+    on_cell_change: "autorun",
+    auto_reload: "autorun",
+  },
+} as MarimoConfig;
+
 // Test context that tracks VSCode context calls
 class TestContext extends Effect.Service<TestContext>()("TestContext", {
   scoped: Effect.gen(function* () {
@@ -309,7 +323,12 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
       yield* TestClock.adjust("10 millis");
 
       let calls = yield* ctx.getContextCalls();
-      expect(calls[calls.length - 1].value).toBe("autorun");
+      let onCellChangeCalls = calls.filter(
+        (c) => c.key === "marimo.config.runtime.on_cell_change",
+      );
+      expect(onCellChangeCalls[onCellChangeCalls.length - 1].value).toBe(
+        "autorun",
+      );
 
       // Switch to notebook 2
       yield* ctx.setActiveNotebook(Option.some(NOTEBOOK_URI_2));
@@ -317,7 +336,178 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
       yield* TestClock.adjust("10 millis");
 
       calls = yield* ctx.getContextCalls();
-      expect(calls[calls.length - 1].value).toBe("lazy");
+      onCellChangeCalls = calls.filter(
+        (c) => c.key === "marimo.config.runtime.on_cell_change",
+      );
+      expect(onCellChangeCalls[onCellChangeCalls.length - 1].value).toBe(
+        "lazy",
+      );
+
+      yield* lifecycle;
+    }),
+  );
+
+  it.scoped(
+    "should default auto_reload to off when config is None",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* TestContext;
+      const _manager = yield* ConfigContextManager;
+
+      yield* TestClock.adjust("10 millis");
+
+      const calls = yield* ctx.getContextCalls();
+
+      // Should have context for auto_reload set to "off" (default)
+      const autoReloadCalls = calls.filter(
+        (c) => c.key === "marimo.config.runtime.auto_reload",
+      );
+      expect(autoReloadCalls.length).toBeGreaterThanOrEqual(1);
+      expect(autoReloadCalls[0].value).toBe("off");
+
+      yield* lifecycle;
+    }),
+  );
+
+  it.scoped(
+    "should update auto_reload context when config changes",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* TestContext;
+      const configService = yield* MarimoConfigurationService;
+      const _manager = yield* ConfigContextManager;
+
+      const notebookUri = NOTEBOOK_URI;
+      yield* ctx.setConfig(notebookUri, AUTORUN_CONFIG);
+      yield* ctx.setActiveNotebook(Option.some(notebookUri));
+
+      yield* TestClock.adjust("10 millis");
+
+      // Fetch config to populate cache
+      yield* configService.getConfig(notebookUri);
+      yield* TestClock.adjust("10 millis");
+
+      // Update to auto_reload lazy
+      yield* configService.updateConfig(notebookUri, AUTO_RELOAD_LAZY_CONFIG);
+      yield* TestClock.adjust("10 millis");
+
+      // Update to auto_reload autorun
+      yield* configService.updateConfig(
+        notebookUri,
+        AUTO_RELOAD_AUTORUN_CONFIG,
+      );
+      yield* TestClock.adjust("10 millis");
+
+      const calls = yield* ctx.getContextCalls();
+      const autoReloadCalls = calls.filter(
+        (c) => c.key === "marimo.config.runtime.auto_reload",
+      );
+
+      // Should have updates: off (default/initial) -> lazy -> autorun
+      expect(autoReloadCalls.some((c) => c.value === "off")).toBe(true);
+      expect(autoReloadCalls.some((c) => c.value === "lazy")).toBe(true);
+      expect(autoReloadCalls.some((c) => c.value === "autorun")).toBe(true);
+
+      yield* lifecycle;
+    }),
+  );
+
+  it.scoped(
+    "should stream auto_reload mode changes",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* TestContext;
+      const configService = yield* MarimoConfigurationService;
+      const manager = yield* ConfigContextManager;
+
+      const notebookUri = NOTEBOOK_URI;
+      yield* ctx.setConfig(notebookUri, AUTORUN_CONFIG);
+      yield* ctx.setActiveNotebook(Option.some(notebookUri));
+
+      const stream = manager.streamAutoReloadModeChanges();
+      const collectedStreamed = yield* Effect.fork(
+        stream.pipe(Stream.take(4), Stream.runCollect),
+      );
+
+      yield* TestClock.adjust("10 millis");
+
+      // Fetch initial config
+      yield* configService.getConfig(notebookUri);
+      yield* TestClock.adjust("10 millis");
+
+      // Make changes
+      yield* configService.updateConfig(notebookUri, AUTO_RELOAD_LAZY_CONFIG);
+      yield* TestClock.adjust("10 millis");
+
+      yield* configService.updateConfig(
+        notebookUri,
+        AUTO_RELOAD_AUTORUN_CONFIG,
+      );
+      yield* TestClock.adjust("10 millis");
+
+      const collected = yield* collectedStreamed;
+
+      expect(collected).toMatchInlineSnapshot(`
+        {
+          "_id": "Chunk",
+          "values": [
+            {
+              "_id": "Option",
+              "_tag": "None",
+            },
+            {
+              "_id": "Option",
+              "_tag": "Some",
+              "value": undefined,
+            },
+            {
+              "_id": "Option",
+              "_tag": "Some",
+              "value": "lazy",
+            },
+            {
+              "_id": "Option",
+              "_tag": "Some",
+              "value": "autorun",
+            },
+          ],
+        }
+      `);
+
+      yield* lifecycle;
+    }),
+  );
+
+  it.scoped(
+    "should handle switching between notebooks with different auto_reload configs",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* TestContext;
+      const configService = yield* MarimoConfigurationService;
+      const _manager = yield* ConfigContextManager;
+
+      yield* ctx.setConfig(NOTEBOOK_URI_1, AUTO_RELOAD_LAZY_CONFIG);
+      yield* ctx.setConfig(NOTEBOOK_URI_2, AUTO_RELOAD_AUTORUN_CONFIG);
+
+      yield* ctx.clearContextCalls();
+
+      // Switch to notebook 1
+      yield* ctx.setActiveNotebook(Option.some(NOTEBOOK_URI_1));
+      yield* configService.getConfig(NOTEBOOK_URI_1);
+      yield* TestClock.adjust("10 millis");
+
+      let calls = yield* ctx.getContextCalls();
+      let autoReloadCalls = calls.filter(
+        (c) => c.key === "marimo.config.runtime.auto_reload",
+      );
+      expect(autoReloadCalls[autoReloadCalls.length - 1].value).toBe("lazy");
+
+      // Switch to notebook 2
+      yield* ctx.setActiveNotebook(Option.some(NOTEBOOK_URI_2));
+      yield* configService.getConfig(NOTEBOOK_URI_2);
+      yield* TestClock.adjust("10 millis");
+
+      calls = yield* ctx.getContextCalls();
+      autoReloadCalls = calls.filter(
+        (c) => c.key === "marimo.config.runtime.auto_reload",
+      );
+      expect(autoReloadCalls[autoReloadCalls.length - 1].value).toBe("autorun");
 
       yield* lifecycle;
     }),
