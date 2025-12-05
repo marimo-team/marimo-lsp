@@ -558,4 +558,92 @@ describe("MarimoConfigurationService", () => {
       expect(Option.getOrThrow(cached).runtime?.on_cell_change).toBe("autorun");
     }),
   );
+
+  it.effect(
+    "should stream auto_reload configuration changes and dedupe",
+    Effect.fnUntraced(function* () {
+      const notebookUri = NOTEBOOK_URI;
+      const initialConfig = {
+        runtime: {
+          auto_reload: "off",
+        },
+      } as MarimoConfig;
+
+      const ctx = yield* withTestCtx({
+        configStore: new Map([[notebookUri, initialConfig]]),
+      });
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const service = yield* MarimoConfigurationService;
+
+        const doc = createTestNotebookDocument(
+          code.Uri.parse(notebookUri, true),
+        );
+        yield* ctx.vscode.addNotebookDocument(doc);
+        yield* ctx.vscode.setActiveNotebookEditor(
+          Option.some(createTestNotebookEditor(doc)),
+        );
+        yield* TestClock.adjust("10 millis");
+
+        const stream = service.streamOf(
+          (config) => config.runtime?.auto_reload,
+        );
+
+        const collectedStreamed = yield* Effect.fork(
+          stream.pipe(Stream.take(4), Stream.runCollect),
+        );
+
+        yield* TestClock.adjust("10 millis");
+
+        // Trigger some changes
+        // lazy, lazy, autorun, lazy, lazy
+        yield* service.updateConfig(notebookUri, {
+          runtime: { auto_reload: "lazy" },
+        });
+        yield* service.updateConfig(notebookUri, {
+          runtime: { auto_reload: "lazy" },
+        });
+        yield* service.updateConfig(notebookUri, {
+          runtime: { auto_reload: "autorun" },
+        });
+        yield* service.updateConfig(notebookUri, {
+          runtime: { auto_reload: "lazy" },
+        });
+        yield* service.updateConfig(notebookUri, {
+          runtime: { auto_reload: "lazy" },
+        });
+
+        yield* TestClock.adjust("10 millis");
+
+        const collected = yield* collectedStreamed;
+        expect(collected).toMatchInlineSnapshot(`
+        {
+          "_id": "Chunk",
+          "values": [
+            {
+              "_id": "Option",
+              "_tag": "None",
+            },
+            {
+              "_id": "Option",
+              "_tag": "Some",
+              "value": "lazy",
+            },
+            {
+              "_id": "Option",
+              "_tag": "Some",
+              "value": "autorun",
+            },
+            {
+              "_id": "Option",
+              "_tag": "Some",
+              "value": "lazy",
+            },
+          ],
+        }
+      `);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
 });
