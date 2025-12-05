@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import sys
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import lsprotocol.types as lsp
 import pytest
@@ -11,6 +11,15 @@ import pytest_lsp
 from dirty_equals import IsFloat, IsList, IsUUID
 from inline_snapshot import snapshot
 from pytest_lsp import ClientServerConfig, LanguageClient
+
+
+class NotebookCell(lsp.NotebookCell):
+    def __init__(self, kind: lsp.NotebookCellKind, document: str) -> None:
+        super().__init__(
+            kind=kind,
+            document=document,
+            metadata=cast("lsp.LSPObject", {"stableId": document.split("#")[1]}),
+        )
 
 
 def asdict(obj: Any) -> dict[str, Any]:  # noqa: ANN401
@@ -76,7 +85,7 @@ async def test_notebook_did_open(client: LanguageClient) -> None:
                 uri="file:///test.py",
                 notebook_type="marimo-notebook",
                 cells=[
-                    lsp.NotebookCell(
+                    NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
                         document="file:///test.py#cell1",
                     )
@@ -105,7 +114,7 @@ async def test_notebook_did_change(client: LanguageClient) -> None:
                 notebook_type="marimo-notebook",
                 version=1,
                 cells=[
-                    lsp.NotebookCell(
+                    NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
                         document="file:///test2.py#cell1",
                     )
@@ -135,7 +144,7 @@ async def test_notebook_did_change(client: LanguageClient) -> None:
                             start=0,
                             delete_count=0,
                             cells=[
-                                lsp.NotebookCell(
+                                NotebookCell(
                                     kind=lsp.NotebookCellKind.Code,
                                     document="file:///test2.py#cell2",
                                 )
@@ -350,7 +359,7 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
                 notebook_type="marimo-notebook",
                 version=1,
                 cells=[
-                    lsp.NotebookCell(
+                    NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
                         document="file:///package_test.py#cell1",
                     )
@@ -449,7 +458,7 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
                 notebook_type="marimo-notebook",
                 version=1,
                 cells=[
-                    lsp.NotebookCell(
+                    NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
                         document="file:///dep_tree_test.py#cell1",
                     )
@@ -537,7 +546,7 @@ x\
                 notebook_type="marimo-notebook",
                 version=1,
                 cells=[
-                    lsp.NotebookCell(
+                    NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
                         document="file:///exec_test.py#cell1",
                     )
@@ -597,12 +606,12 @@ x\
                     "variables": IsList(
                         {
                             "name": "x",
-                            "declared_by": ["file:///exec_test.py#cell1"],
+                            "declared_by": ["cell1"],
                             "used_by": [],
                         },
                         {
                             "name": "sys",
-                            "declared_by": ["file:///exec_test.py#cell1"],
+                            "declared_by": ["cell1"],
                             "used_by": [],
                         },
                         check_order=False,
@@ -635,7 +644,7 @@ x\
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
                     "op": "cell-op",
-                    "cell_id": "file:///exec_test.py#cell1",
+                    "cell_id": "cell1",
                     "output": None,
                     "console": None,
                     "status": None,
@@ -669,6 +678,20 @@ x\
                     "console": None,
                     "status": "queued",
                     "stale_inputs": None,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "cell1",
+                    "output": None,
+                    "console": None,
+                    "status": None,
+                    "stale_inputs": False,
                     "run_id": IsUUID(),
                     "serialization": None,
                     "timestamp": IsFloat(),
@@ -795,11 +818,11 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                 notebook_type="marimo-notebook",
                 version=1,
                 cells=[
-                    lsp.NotebookCell(
+                    NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
                         document="file:///exec_test.py#cell1",
                     ),
-                    lsp.NotebookCell(
+                    NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
                         document="file:///exec_test.py#cell2",
                     ),
@@ -866,8 +889,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                     "variables": [
                         {
                             "name": "x",
-                            "declared_by": ["file:///exec_test.py#cell1"],
-                            "used_by": ["file:///exec_test.py#cell2"],
+                            "declared_by": ["cell1"],
+                            "used_by": ["cell2"],
                         }
                     ],
                 },
@@ -889,7 +912,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
                     "op": "cell-op",
-                    "cell_id": "file:///exec_test.py#cell1",
+                    "cell_id": "cell1",
                     "output": None,
                     "console": None,
                     "status": None,
@@ -903,7 +926,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
                     "op": "cell-op",
-                    "cell_id": "file:///exec_test.py#cell2",
+                    "cell_id": "cell2",
                     "output": None,
                     "console": None,
                     "status": None,
@@ -924,7 +947,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                     "variables": [
                         {
                             "name": "x",
-                            "declared_by": ["file:///exec_test.py#cell1"],
+                            "declared_by": ["cell1"],
                             "used_by": ["cell2"],
                         }
                     ],
@@ -934,7 +957,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
                     "op": "cell-op",
-                    "cell_id": "file:///exec_test.py#cell1",
+                    "cell_id": "cell1",
                     "output": None,
                     "console": None,
                     "status": "queued",
@@ -948,7 +971,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
                     "op": "cell-op",
-                    "cell_id": "file:///exec_test.py#cell1",
+                    "cell_id": "cell1",
                     "output": None,
                     "console": None,
                     "status": None,
@@ -975,9 +998,20 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             {
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
-                    "op": "remove-ui-elements",
-                    "cell_id": "file:///exec_test.py#cell1",
+                    "op": "cell-op",
+                    "cell_id": "cell2",
+                    "output": None,
+                    "console": None,
+                    "status": None,
+                    "stale_inputs": False,
+                    "run_id": IsUUID(),
+                    "serialization": None,
+                    "timestamp": IsFloat(),
                 },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {"op": "remove-ui-elements", "cell_id": "cell1"},
             },
             {
                 "notebookUri": "file:///exec_test.py",
@@ -987,7 +1021,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
                     "op": "cell-op",
-                    "cell_id": "file:///exec_test.py#cell1",
+                    "cell_id": "cell1",
                     "output": None,
                     "console": [],
                     "status": "running",
@@ -1008,7 +1042,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
                     "op": "cell-op",
-                    "cell_id": "file:///exec_test.py#cell1",
+                    "cell_id": "cell1",
                     "output": {
                         "channel": "output",
                         "mimetype": "text/plain",
@@ -1027,7 +1061,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
                     "op": "cell-op",
-                    "cell_id": "file:///exec_test.py#cell1",
+                    "cell_id": "cell1",
                     "output": None,
                     "console": None,
                     "status": "idle",
@@ -1131,11 +1165,11 @@ async def test_incremental_graph_text_change(client: LanguageClient) -> None:
                 notebook_type="marimo-notebook",
                 version=1,
                 cells=[
-                    lsp.NotebookCell(
+                    NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
                         document="file:///incremental_test.py#cell1",
                     ),
-                    lsp.NotebookCell(
+                    NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
                         document="file:///incremental_test.py#cell2",
                     ),
@@ -1168,12 +1202,12 @@ async def test_incremental_graph_text_change(client: LanguageClient) -> None:
                     "variables": [
                         {
                             "name": "x",
-                            "declared_by": ["file:///incremental_test.py#cell1"],
-                            "used_by": ["file:///incremental_test.py#cell2"],
+                            "declared_by": ["cell1"],
+                            "used_by": ["cell2"],
                         },
                         {
                             "name": "y",
-                            "declared_by": ["file:///incremental_test.py#cell2"],
+                            "declared_by": ["cell2"],
                             "used_by": [],
                         },
                     ],
@@ -1203,7 +1237,7 @@ async def test_cell_addition(client: LanguageClient) -> None:
                 notebook_type="marimo-notebook",
                 version=1,
                 cells=[
-                    lsp.NotebookCell(
+                    NotebookCell(
                         kind=lsp.NotebookCellKind.Code,
                         document="file:///addition_test.py#cell1",
                     )
@@ -1231,7 +1265,7 @@ async def test_cell_addition(client: LanguageClient) -> None:
                     "variables": [
                         {
                             "name": "x",
-                            "declared_by": ["file:///addition_test.py#cell1"],
+                            "declared_by": ["cell1"],
                             "used_by": [],
                         }
                     ],
@@ -1253,7 +1287,14 @@ async def test_cell_addition(client: LanguageClient) -> None:
                 cells=lsp.NotebookDocumentCellChanges(
                     structure=lsp.NotebookDocumentCellChangeStructure(
                         array=lsp.NotebookCellArrayChange(
-                            start=1, delete_count=0, cells=[]
+                            start=1,
+                            delete_count=0,
+                            cells=[
+                                NotebookCell(
+                                    kind=lsp.NotebookCellKind.Code,
+                                    document="file:///addition_test.py#cell2",
+                                )
+                            ],
                         ),
                         did_open=[
                             lsp.TextDocumentItem(
@@ -1292,7 +1333,7 @@ async def test_cell_addition(client: LanguageClient) -> None:
                     "variables": [
                         {
                             "name": "x",
-                            "declared_by": ["file:///addition_test.py#cell1"],
+                            "declared_by": ["cell1"],
                             "used_by": [],
                         }
                     ],
@@ -1305,12 +1346,12 @@ async def test_cell_addition(client: LanguageClient) -> None:
                     "variables": [
                         {
                             "name": "x",
-                            "declared_by": ["file:///addition_test.py#cell1"],
-                            "used_by": ["file:///addition_test.py#cell2"],
+                            "declared_by": ["cell1"],
+                            "used_by": ["cell2"],
                         },
                         {
                             "name": "y",
-                            "declared_by": ["file:///addition_test.py#cell2"],
+                            "declared_by": ["cell2"],
                             "used_by": [],
                         },
                     ],
