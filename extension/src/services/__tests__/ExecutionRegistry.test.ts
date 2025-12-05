@@ -1,8 +1,7 @@
 import { expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import { Effect, Layer, Option, TestClock } from "effect";
+import { Effect, Layer, Option, Stream, TestClock } from "effect";
 import type * as vscode from "vscode";
-import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
 import { TestTelemetry } from "../../__mocks__/TestTelemetry.ts";
 import {
   createTestNotebookDocument,
@@ -14,8 +13,24 @@ import { MarimoNotebookDocument, type NotebookCellId } from "../../schemas.ts";
 import type { CellMessage, CellRuntimeState } from "../../types.ts";
 import { CellStateManager } from "../CellStateManager.ts";
 import { buildCellOutputs, ExecutionRegistry } from "../ExecutionRegistry.ts";
+import { LanguageClient } from "../LanguageClient.ts";
 import { VenvPythonController } from "../NotebookControllerFactory.ts";
 import { VsCode } from "../VsCode.ts";
+
+// Simple mock LanguageClient that doesn't spawn a real LSP process
+const TestLanguageClientMock = Layer.succeed(
+  LanguageClient,
+  LanguageClient.make({
+    channel: { name: "marimo-lsp", show() {} },
+    restart: Effect.void,
+    executeCommand() {
+      return Effect.void;
+    },
+    streamOf() {
+      return Stream.never;
+    },
+  }),
+);
 
 const withTestCtx = Effect.fnUntraced(function* (
   options: Parameters<(typeof TestVsCode)["make"]>[0] = {},
@@ -24,7 +39,7 @@ const withTestCtx = Effect.fnUntraced(function* (
   const layer = Layer.empty.pipe(
     Layer.merge(ExecutionRegistry.Default),
     Layer.merge(CellStateManager.Default),
-    Layer.provide(TestLanguageClientLive),
+    Layer.provide(TestLanguageClientMock),
     Layer.provide(TestTelemetry),
     Layer.provideMerge(vscode.layer),
   );

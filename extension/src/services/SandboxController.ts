@@ -1,4 +1,3 @@
-import * as NodePath from "node:path";
 import * as semver from "@std/semver";
 import { Effect, Option, Runtime, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
@@ -9,7 +8,7 @@ import {
   SemVerFromString,
 } from "../schemas.ts";
 import { extractExecuteCodeRequest } from "../utils/extractExecuteCodeRequest.ts";
-import { getPythonBinName } from "../utils/getPythonBinName.ts";
+import { getVenvPythonPath } from "../utils/getVenvPythonPath.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { Constants } from "./Constants.ts";
@@ -95,7 +94,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
                 ),
               );
 
-            const executable = NodePath.join(venv, "bin", getPythonBinName());
+            const executable = getVenvPythonPath(venv);
             yield* python.updateActiveEnvironmentPath(executable);
 
             yield* client.executeCommand({

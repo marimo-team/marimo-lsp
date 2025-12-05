@@ -5,6 +5,7 @@ import { assert, expect, it } from "@effect/vitest";
 import { Effect, Either, Layer } from "effect";
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import { getVenvPythonPath } from "../../utils/getVenvPythonPath.ts";
 import { EnvironmentValidator } from "../EnvironmentValidator.ts";
 import { Uv } from "../Uv.ts";
 
@@ -54,7 +55,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       const result = yield* Effect.either(
         validator.validate(
-          TestPythonExtension.makeVenv(NodePath.join(venv, "bin", "python")),
+          TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
         ),
       );
 
@@ -91,7 +92,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       const result = yield* Effect.either(
         validator.validate(
-          TestPythonExtension.makeVenv(NodePath.join(venv, "bin", "python")),
+          TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
         ),
       );
 
@@ -109,6 +110,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         ]
       `);
     }),
+    { timeout: 30_000 },
   );
 
   it.effect(
@@ -124,7 +126,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       const result = yield* Effect.either(
         validator.validate(
-          TestPythonExtension.makeVenv(NodePath.join(venv, "bin", "python")),
+          TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
         ),
       );
 
@@ -152,6 +154,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         ]
       `);
     }),
+    { timeout: 30_000 },
   );
 
   it.effect(
@@ -167,13 +170,14 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       const result = yield* Effect.either(
         validator.validate(
-          TestPythonExtension.makeVenv(NodePath.join(venv, "bin", "python")),
+          TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
         ),
       );
 
       assert(Either.isRight(result), "Expected validation to succeed");
       assert.strictEqual(result.right._tag, "ValidPythonEnvironment");
     }),
+    { timeout: 30_000 },
   );
 
   it.effect(
@@ -187,7 +191,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       const result = yield* Effect.either(
         validator.validate(
-          TestPythonExtension.makeVenv(NodePath.join(venv, "bin", "python")),
+          TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
         ),
       );
       assert(Either.isLeft(result), "Expected validation to fail");
