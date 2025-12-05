@@ -1,4 +1,5 @@
 import { Effect, Option, Stream } from "effect";
+import { MarimoNotebookDocument } from "../schemas.ts";
 import { Log } from "../utils/log.ts";
 import { ControllerRegistry } from "./ControllerRegistry.ts";
 import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
@@ -21,7 +22,10 @@ export class SessionStateManager extends Effect.Service<SessionStateManager>()(
 
       // Helper to update context based on current state
       const updateContext = Effect.fnUntraced(function* () {
-        const activeNotebook = yield* code.window.getActiveNotebookEditor();
+        const activeNotebook = Option.filterMap(
+          yield* code.window.getActiveNotebookEditor(),
+          (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
+        );
 
         // Check if the active notebook has a selected controller
         const hasKernel = yield* Effect.gen(function* () {
@@ -30,7 +34,7 @@ export class SessionStateManager extends Effect.Service<SessionStateManager>()(
           }
 
           const controller = yield* controllerRegistry.getActiveController(
-            activeNotebook.value.notebook,
+            activeNotebook.value,
           );
 
           return Option.isSome(controller);
