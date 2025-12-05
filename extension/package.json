@@ -390,7 +390,7 @@
     "typecheck": "tsgo",
     "test": "vitest",
     "test:extension": "vscode-test",
-    "embed-sdist": "uv build --directory=.. --out-dir=extension/dist --sdist && cd dist/ && tar xzf marimo_lsp-*.tar.gz && rm marimo_lsp-*.tar.gz",
+    "embed-sdist": "node scripts/embed-sdist.mjs",
     "lint": "biome ci && node ./scripts/check-css-variables.mjs"
   },
   "devDependencies": {
@@ -422,6 +422,7 @@
     "posthog-node": "^5.10.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "tar": "^7.5.2",
     "tinyspy": "^4.0.4",
     "turbo": "^2.5.8",
     "typescript": "^5.9.3",
