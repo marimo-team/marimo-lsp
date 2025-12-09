@@ -354,6 +354,28 @@
       ]
     },
     "menus": {
+      "commandPalette": [
+        {
+          "command": "marimo.config.toggleOnCellChangeAutoRun",
+          "when": "never"
+        },
+        {
+          "command": "marimo.config.toggleOnCellChangeLazy",
+          "when": "never"
+        },
+        {
+          "command": "marimo.config.toggleAutoReloadOff",
+          "when": "never"
+        },
+        {
+          "command": "marimo.config.toggleAutoReloadLazy",
+          "when": "never"
+        },
+        {
+          "command": "marimo.config.toggleAutoReloadAutorun",
+          "when": "never"
+        }
+      ],
       "file/newFile": [
         {
           "command": "marimo.newMarimoNotebook",
