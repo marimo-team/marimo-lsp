@@ -77,3 +77,18 @@ describe("extension.activate", () => {
     }),
   );
 });
+
+describe("package.json validation", () => {
+  it("all commands in commandPalette menu should exist in main commands list", () => {
+    const commandIds = new Set(pkg.contributes.commands.map((c) => c.command));
+    const commandPaletteIds =
+      pkg.contributes.menus.commandPalette?.map((item) => item.command) || [];
+
+    for (const commandId of commandPaletteIds) {
+      expect(
+        commandIds.has(commandId),
+        `Command "${commandId}" in menus.commandPalette does not exist in contributes.commands`,
+      ).toBe(true);
+    }
+  });
+});
