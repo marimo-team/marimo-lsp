@@ -38,7 +38,7 @@
  */
 
 export { OutputRenderer } from "@marimo-team/frontend/unstable_internal/components/editor/Output.tsx";
-export { ConsoleOutput } from "@marimo-team/frontend/unstable_internal/components/editor/output/ConsoleOutput.tsx";
+export { ConsoleOutput } from "@marimo-team/frontend/unstable_internal/components/editor/output/console/ConsoleOutput.tsx";
 export { TooltipProvider } from "@marimo-team/frontend/unstable_internal/components/ui/tooltip.tsx";
 export { UI_ELEMENT_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/dom/uiregistry.ts";
 export { RuntimeState } from "@marimo-team/frontend/unstable_internal/core/kernel/RuntimeState.ts";
