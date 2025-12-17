@@ -385,11 +385,52 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
   },
 ) {}
 
+interface InitializationOptions {
+  logLevel?: "error" | "warn" | "info" | "debug" | "trace";
+  logFile?: string;
+}
+
+interface ExtensionSettings {
+  cwd: string;
+  path: string[];
+  interpreter: string[];
+  importStrategy: "fromEnvironment" | "useBundled";
+}
+
+// Keys that are handled by the extension and should not be sent to the server
+type ExtensionOnlyKeys =
+  | keyof InitializationOptions
+  | keyof ExtensionSettings
+  | "trace";
+
+/**
+ * Keys that are handled by the extension and should not be sent to the ty server.
+ * These are extension-specific settings that the server doesn't recognize.
+ *
+ * Adapted from https://github.com/astral-sh/ty-vscode/blob/221a8d1a/src/client.ts
+ */
+const EXTENSION_ONLY_KEYS = {
+  // InitializationOptions
+  logLevel: true,
+  logFile: true,
+  // ExtensionSettings
+  cwd: true,
+  path: true,
+  interpreter: true,
+  importStrategy: true,
+  // Client-handled settings
+  trace: true,
+} as const satisfies Record<ExtensionOnlyKeys, true>;
+
+function isExtensionOnlyKey(key: string): key is ExtensionOnlyKeys {
+  return key in EXTENSION_ONLY_KEYS;
+}
+
 /**
  * Creates middleware that enriches workspace/configuration responses
  * with active Python environment information from the Python extension.
  *
- * Adapted from https://github.com/astral-sh/ty-vscode/blob/fdc8684e/src/client.ts
+ * Adapted from https://github.com/astral-sh/ty-vscode/blob/221a8d1a/src/client.ts
  */
 function createTyMiddleware(
   pythonExtension: PythonExtension,
@@ -464,8 +505,15 @@ function createTyMiddleware(
                             },
                           };
 
+                    // Filter out extension-only settings that shouldn't be sent to the server
+                    const serverSettings = Object.fromEntries(
+                      Object.entries(result ?? {}).filter(
+                        ([key]) => !isExtensionOnlyKey(key),
+                      ),
+                    );
+
                     return {
-                      ...result,
+                      ...serverSettings,
                       pythonExtension: {
                         ...result?.pythonExtension,
                         activeEnvironment,
