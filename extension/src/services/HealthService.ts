@@ -63,7 +63,6 @@ export class HealthService extends Effect.Service<HealthService>()(
             lines.push(`\tUV Bin: Discovered (${bin.executable})`),
         });
 
-        lines.push(`\tUV: ${uv.bin}`);
         if (Option.isSome(uvVersion)) {
           lines.push(`\tUV: ${uvVersion.value} ✓`);
         } else {
