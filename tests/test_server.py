@@ -734,7 +734,7 @@ x\
                     "output": {
                         "channel": "output",
                         "mimetype": "text/html",
-                        "data": "<pre style='font-size: 12px'>42</pre>",
+                        "data": "<pre class='text-xs'>42</pre>",
                         "timestamp": IsFloat(),
                     },
                     "console": None,
