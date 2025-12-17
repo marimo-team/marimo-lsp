@@ -8,7 +8,7 @@ authors = [{ name = "Trevor Manz", email = "trevor.j.manz@gmail.com" }]
 dependencies = [
   "jupytext>=1.17.2",
   "lsprotocol>=2025.0.0",
-  "marimo>=0.17.0",
+  "marimo>=0.17.0,<0.18.5",
   "pygls>=2.0.0",
   "pyzmq>=27.0.2",
 ]
