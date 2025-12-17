@@ -17,7 +17,7 @@ from marimo_lsp.loggers import get_logger
 from marimo_lsp.session_consumer import LspSessionConsumer
 
 if typing.TYPE_CHECKING:
-    from marimo._server.file_manager import AppFileManager
+    from marimo._server.notebook import AppFileManager
     from marimo._server.sessions import KernelManager, QueueManager
     from pygls.lsp.server import LanguageServer
 
