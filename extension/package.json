@@ -62,7 +62,7 @@
       {
         "id": "mo-python",
         "aliases": [
-          "Python",
+          "Python (marimo)",
           "mo-python"
         ],
         "configuration": "./language-configuration.json"
