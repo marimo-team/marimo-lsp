@@ -18,9 +18,9 @@ code .
 ```
 
 > [!NOTE]
-> The extension currently builds against the `main` branch of
-> [`marimo-team/marimo`](https://github.com/marimo-team/marimo), so both
-> repositories must be cloned side-by-side:
+> The extension builds against a specific version of
+> [`marimo-team/marimo`](https://github.com/marimo-team/marimo), specified in
+> the `.marimo-version` file. Both repositories must be cloned side-by-side:
 >
 > ```
 > parent-folder/
@@ -28,8 +28,16 @@ code .
 > └── marimo-lsp/      # This project
 > ```
 >
-> Eventually this codebase will be merged into the main marimo repo, simplifying
-> setup.
+> For local development, checkout the matching version in the `marimo` directory:
+>
+> ```sh
+> cd ../marimo
+> git checkout $(cat ../marimo-lsp/.marimo-version)
+> ```
+>
+> CI automatically checks out the version specified in `.marimo-version`. To update
+> the pinned version, change `.marimo-version` to a tag (e.g., `0.18.4`), branch, or
+> commit SHA.
 
 ### Pre-commit Hooks
 
