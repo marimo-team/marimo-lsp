@@ -41,10 +41,14 @@ jobs:
         with:
           path: marimo-lsp
 
+      - name: Read marimo version
+        id: marimo-version
+        run: echo "ref=$(cat marimo-lsp/.marimo-version)" >> $GITHUB_OUTPUT
+
       - uses: actions/checkout@v4
         with:
           repository: marimo-team/marimo
-          ref: main
+          ref: ${{ steps.marimo-version.outputs.ref }}
           path: marimo
 
       - uses: pnpm/action-setup@v4
@@ -84,10 +88,15 @@ jobs:
         with:
           path: marimo-lsp
 
+      - name: Read marimo version
+        id: marimo-version
+        shell: bash
+        run: echo "ref=$(cat marimo-lsp/.marimo-version)" >> $GITHUB_OUTPUT
+
       - uses: actions/checkout@v4
         with:
           repository: marimo-team/marimo
-          ref: main
+          ref: ${{ steps.marimo-version.outputs.ref }}
           path: marimo
 
       - uses: astral-sh/setup-uv@v6
