@@ -47,7 +47,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
               value: "settings",
             },
             {
-              label: "$(output) Show marimo diagnostics",
+              label: "$(output) Show diagnostics",
               value: "diagnostics",
             },
           ] as const,
