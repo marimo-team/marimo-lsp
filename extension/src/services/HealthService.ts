@@ -2,7 +2,9 @@ import * as NodeProcess from "node:process";
 import { Data, Effect, Option, Schema } from "effect";
 import { EXTENSION_PACKAGE } from "../utils/extension.ts";
 import { Config } from "./Config.ts";
+import { PythonLanguageServer } from "./completions/PythonLanguageServer.ts";
 import { getUvVersion } from "./LanguageClient.ts";
+import { PythonExtension } from "./PythonExtension.ts";
 import { Uv, UvBin } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -18,11 +20,13 @@ export class CouldNotGetInformationError extends Data.TaggedError(
 export class HealthService extends Effect.Service<HealthService>()(
   "HealthService",
   {
-    dependencies: [Uv.Default],
+    dependencies: [Uv.Default, PythonLanguageServer.Default],
     effect: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
+      const pyExt = yield* PythonExtension;
+      const pyLsp = yield* PythonLanguageServer;
 
       const getLspStatus = () =>
         Effect.try({
@@ -80,6 +84,67 @@ export class HealthService extends Effect.Service<HealthService>()(
         }
 
         lines.push("");
+
+        // Python Extension Environment
+        lines.push("Python Extension:");
+        const pyEnvPath = yield* pyExt
+          .getActiveEnvironmentPath()
+          .pipe(Effect.option);
+        if (Option.isNone(pyEnvPath)) {
+          lines.push("\tNot available (Python extension not found)");
+        } else {
+          const resolved = yield* pyExt
+            .resolveEnvironment(pyEnvPath.value)
+            .pipe(Effect.option);
+          const env = Option.flatten(resolved);
+          if (Option.isNone(env)) {
+            lines.push(`\tInterpreter: ${pyEnvPath.value}`);
+            lines.push("\tVersion: Unknown");
+          } else {
+            const e = env.value;
+            lines.push(
+              `\tInterpreter: ${e.executable.uri?.fsPath ?? e.path ?? "Unknown"}`,
+            );
+            lines.push(`\tVersion: ${e.version?.sysVersion ?? "Unknown"}`);
+            if (e.environment) {
+              lines.push(
+                `\tEnvironment: ${e.environment.type} (${e.environment.name})`,
+              );
+            }
+          }
+        }
+
+        lines.push("");
+
+        // Python Language Server (ty) - only show if managed language features enabled
+        const managedLanguageFeaturesEnabled =
+          yield* config.getManagedLanguageFeaturesEnabled();
+        if (managedLanguageFeaturesEnabled) {
+          lines.push("Python Language Server (ty):");
+          const tyHealth = yield* pyLsp.getHealthStatus.pipe(Effect.option);
+          if (Option.isNone(tyHealth)) {
+            lines.push("\tStatus: Not available");
+          } else {
+            const health = tyHealth.value;
+            const statusIcon = health.status === "running" ? "✓" : "✗";
+            lines.push(`\tStatus: ${health.status} ${statusIcon}`);
+            if (health.version) {
+              lines.push(`\tVersion: ${health.version}`);
+            }
+            if (health.pythonEnvironment) {
+              const pyPath = health.pythonEnvironment.path ?? "Unknown";
+              const pyVersion = health.pythonEnvironment.version
+                ? ` (${health.pythonEnvironment.version})`
+                : "";
+              lines.push(`\tPython: ${pyPath}${pyVersion}`);
+            }
+            if (health.error) {
+              lines.push(`\tError: ${health.error}`);
+            }
+          }
+
+          lines.push("");
+        }
 
         // Extension Configuration
         lines.push("Extension Configuration:");
