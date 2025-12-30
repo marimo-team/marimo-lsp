@@ -302,7 +302,7 @@
       },
       {
         "command": "marimo.showDiagnostics",
-        "title": "Show marimo diagnostics",
+        "title": "Show diagnostics",
         "category": "marimo"
       },
       {
