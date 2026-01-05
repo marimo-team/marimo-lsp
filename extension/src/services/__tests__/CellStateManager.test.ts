@@ -234,19 +234,22 @@ describe("CellStateManager", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
+        const cellData0 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "x = 1",
+          "python",
+        );
+        cellData0.metadata = { stableId: "cell-0" };
+
+        const cellData1 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "y = 2",
+          "python",
+        );
+        cellData1.metadata = { stableId: "cell-1" };
+
         const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
-          data: new code.NotebookData([
-            new code.NotebookCellData(
-              code.NotebookCellKind.Code,
-              "x = 1",
-              "python",
-            ),
-            new code.NotebookCellData(
-              code.NotebookCellKind.Code,
-              "y = 2",
-              "python",
-            ),
-          ]),
+          data: new code.NotebookData([cellData0, cellData1]),
         });
 
         yield* ctx.vscode.addNotebookDocument(editor.notebook);
