@@ -287,4 +287,79 @@ describe("CellStateManager", () => {
       ]);
     }),
   );
+
+  it.effect(
+    "does not mark cell stale when content matches last executed (undo case)",
+    Effect.fnUntraced(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const cellStateManager = yield* CellStateManager;
+
+        const cellData0 = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "x = 1",
+          "python",
+        );
+        cellData0.metadata = { stableId: "cell-0" };
+
+        const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+          data: new code.NotebookData([cellData0]),
+        });
+
+        yield* ctx.vscode.addNotebookDocument(editor.notebook);
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
+        yield* TestClock.adjust("10 millis");
+
+        const notebook = MarimoNotebookDocument.from(editor.notebook);
+        const cell0 = notebook.cellAt(0);
+        const cellId = Option.getOrThrow(cell0.id);
+
+        // Simulate execution: clearCellStale stores content as "last executed"
+        yield* cellStateManager.clearCellStale(notebook.id, cellId);
+        yield* TestClock.adjust("10 millis");
+
+        // Clear previous executions to check fresh state
+        yield* Ref.update(ctx.vscode.executions, () => []);
+
+        // Trigger a content change event with the same content (simulating undo)
+        // Since content matches last executed, cell should NOT be marked stale
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
+
+        yield* TestClock.adjust("10 millis");
+
+        // Should have NO stale cells since content matches last executed
+        const staleCells = yield* cellStateManager.getStaleCells(notebook.id);
+        expect(staleCells).not.toContain(cellId);
+
+        // The hasStaleCells context should NOT have been set to true
+        const executions = yield* Ref.get(ctx.vscode.executions);
+        const hasStaleCellsUpdates = executions.filter(
+          (e) =>
+            e.command === "setContext" &&
+            e.args?.[0] === "marimo.notebook.hasStaleCells",
+        );
+        // Either no updates, or the last update should be false (not stale)
+        if (hasStaleCellsUpdates.length > 0) {
+          const lastUpdate =
+            hasStaleCellsUpdates[hasStaleCellsUpdates.length - 1];
+          expect(lastUpdate.args?.[1]).toBe(false);
+        }
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
 });

@@ -35,6 +35,12 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         HashMap.empty<NotebookId, HashMap.HashMap<NotebookCellId, boolean>>(),
       );
 
+      // Track last executed content: NotebookUri -> (CellId -> content)
+      // Used to determine if undo restores content to last executed state
+      const lastExecutedContentRef = yield* SubscriptionRef.make(
+        HashMap.empty<NotebookId, HashMap.HashMap<NotebookCellId, string>>(),
+      );
+
       // Helper to update context based on current state
       const updateContext = Effect.fnUntraced(function* () {
         const [staleMap, activeMarimoNotebook] = yield* Effect.all([
@@ -156,6 +162,11 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                   staleStateRef,
                 });
 
+                // Clear last executed content
+                yield* clearLastExecutedContent(event.notebook.id, cellId, {
+                  lastExecutedContentRef,
+                });
+
                 // Notify backend about cell deletion
                 yield* client
                   .executeCommand({
@@ -198,18 +209,51 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
                 // Check if document (content) changed
                 if (cellChange.document) {
+                  const currentContent = cell.document.getText();
+
                   yield* Log.trace("Cell content changed", {
                     notebookUri: event.notebook.id,
                     cellId: cellId.value,
                   });
 
-                  // Mark cell as stale
-                  yield* markCellStale(event.notebook.id, cellId.value, {
-                    code,
-                    staleStateRef,
-                    notebook: event.notebook,
-                    cell,
+                  // Check if content matches last executed (undo case)
+                  const lastExecutedMap = yield* SubscriptionRef.get(
+                    lastExecutedContentRef,
+                  );
+                  const lastExecutedContent = Option.flatMap(
+                    HashMap.get(lastExecutedMap, event.notebook.id),
+                    HashMap.get(cellId.value),
+                  );
+
+                  const shouldMarkStale = Option.match(lastExecutedContent, {
+                    onNone: () => true, // No record = mark stale
+                    onSome: (lastContent) => currentContent !== lastContent,
                   });
+
+                  if (shouldMarkStale) {
+                    yield* markCellStale(event.notebook.id, cellId.value, {
+                      code,
+                      staleStateRef,
+                      notebook: event.notebook,
+                      cell,
+                    });
+                  } else {
+                    // Content matches last executed - clear stale state
+                    yield* Log.trace("Cell content matches last executed", {
+                      notebookUri: event.notebook.id,
+                      cellId: cellId.value,
+                    });
+                    yield* clearCellStaleWithMetadata(
+                      event.notebook.id,
+                      cellId.value,
+                      {
+                        code,
+                        staleStateRef,
+                        notebook: event.notebook,
+                        cell,
+                      },
+                    );
+                  }
                 }
 
                 // No metadata change
@@ -266,7 +310,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         },
 
         /**
-         * Clear stale state from a cell
+         * Clear stale state from a cell and store its content as last executed
          */
         clearCellStale(notebookUri: NotebookId, cellId: NotebookCellId) {
           return Effect.gen(function* () {
@@ -289,6 +333,12 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               yield* Log.warn("Cell not found", { notebookUri, cellId });
               return;
             }
+
+            // Store current content as last executed (cell is being run)
+            const currentContent = cell.document.getText();
+            yield* setLastExecutedContent(notebookUri, cellId, currentContent, {
+              lastExecutedContentRef,
+            });
 
             // Update cell metadata to remove stale state
             const edit = new code.WorkspaceEdit();
@@ -318,11 +368,10 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         getStaleCells(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             const staleMap = yield* SubscriptionRef.get(staleStateRef);
-            const cellMap = HashMap.get(staleMap, notebookUri);
-            if (Option.isNone(cellMap)) {
-              return [];
-            }
-            return Array.from(HashMap.keys(cellMap.value));
+            return HashMap.get(staleMap, notebookUri).pipe(
+              Option.map((m) => Array.from(HashMap.keys(m))),
+              Option.getOrElse(() => []),
+            );
           });
         },
 
@@ -414,6 +463,101 @@ function clearCellStaleTracking(
     yield* Log.trace("Cleared cell from stale tracking", {
       notebookUri,
       cellId,
+    });
+  });
+}
+
+/**
+ * Clear stale state from a cell including metadata update (used when undo restores content)
+ */
+function clearCellStaleWithMetadata(
+  notebookUri: NotebookId,
+  cellId: NotebookCellId,
+  deps: {
+    code: VsCode;
+    staleStateRef: SubscriptionRef.SubscriptionRef<
+      HashMap.HashMap<NotebookId, HashMap.HashMap<NotebookCellId, boolean>>
+    >;
+    notebook: MarimoNotebookDocument;
+    cell: MarimoNotebookCell;
+  },
+) {
+  return Effect.gen(function* () {
+    const { code, staleStateRef, notebook, cell } = deps;
+
+    // Update cell metadata to remove stale state
+    const edit = new code.WorkspaceEdit();
+    const newMetadata = cell.buildEncodedMetadata({
+      overrides: { state: undefined },
+    });
+    edit.set(notebook.uri, [
+      code.NotebookEdit.updateCellMetadata(cell.index, newMetadata),
+    ]);
+    yield* code.workspace.applyEdit(edit);
+
+    // Update tracking
+    yield* clearCellStaleTracking(notebookUri, cellId, { staleStateRef });
+
+    yield* Log.trace("Cleared cell stale state (content matches executed)", {
+      notebookUri,
+      cellId,
+    });
+  });
+}
+
+/**
+ * Store the last executed content for a cell
+ */
+function setLastExecutedContent(
+  notebookUri: NotebookId,
+  cellId: NotebookCellId,
+  content: string,
+  deps: {
+    lastExecutedContentRef: SubscriptionRef.SubscriptionRef<
+      HashMap.HashMap<NotebookId, HashMap.HashMap<NotebookCellId, string>>
+    >;
+  },
+) {
+  return Effect.gen(function* () {
+    const { lastExecutedContentRef } = deps;
+
+    yield* SubscriptionRef.update(lastExecutedContentRef, (map) => {
+      const notebookMap = Option.getOrElse(HashMap.get(map, notebookUri), () =>
+        HashMap.empty<NotebookCellId, string>(),
+      );
+      const updatedNotebookMap = HashMap.set(notebookMap, cellId, content);
+      return HashMap.set(map, notebookUri, updatedNotebookMap);
+    });
+  });
+}
+
+/**
+ * Clear last executed content for a cell (when deleted)
+ */
+function clearLastExecutedContent(
+  notebookUri: NotebookId,
+  cellId: NotebookCellId,
+  deps: {
+    lastExecutedContentRef: SubscriptionRef.SubscriptionRef<
+      HashMap.HashMap<NotebookId, HashMap.HashMap<NotebookCellId, string>>
+    >;
+  },
+) {
+  return Effect.gen(function* () {
+    const { lastExecutedContentRef } = deps;
+
+    yield* SubscriptionRef.update(lastExecutedContentRef, (map) => {
+      const notebookMap = HashMap.get(map, notebookUri);
+      if (Option.isNone(notebookMap)) {
+        return map;
+      }
+
+      const updatedNotebookMap = HashMap.remove(notebookMap.value, cellId);
+      if (HashMap.isEmpty(updatedNotebookMap)) {
+        return HashMap.remove(map, notebookUri);
+      }
+
+      return HashMap.set(map, notebookUri, updatedNotebookMap);
     });
   });
 }
