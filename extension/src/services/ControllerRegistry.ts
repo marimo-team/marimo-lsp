@@ -17,17 +17,17 @@ import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
 import {
   NotebookControllerFactory,
   type NotebookControllerId,
-  VenvPythonController,
+  PythonController,
 } from "./NotebookControllerFactory.ts";
 import { PythonExtension } from "./PythonExtension.ts";
 import { SandboxController } from "./SandboxController.ts";
 import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
-type AnyController = VenvPythonController | SandboxController;
+type AnyController = PythonController | SandboxController;
 
 interface NotebookControllerHandle {
-  readonly controller: VenvPythonController;
+  readonly controller: PythonController;
   readonly scope: Scope.CloseableScope;
 }
 
@@ -83,8 +83,6 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         const envs = yield* pyExt.knownEnvironments();
         const filteredEnvs = envs.filter(
           (env) =>
-            // We only want virtual environments, not global interpreters
-            !isGlobalInterpreter(env) &&
             // Uv sandbox environments are handled by the sandbox controller and live
             // in the uv cache directory. We want to skip those so users don't see
             // duplicate controllers.
@@ -276,7 +274,7 @@ const createOrUpdateController = Effect.fnUntraced(function* (options: {
   const { env, selectionsRef, handlesRef } = options;
   const code = yield* VsCode;
   const factory = yield* NotebookControllerFactory;
-  const controllerId = VenvPythonController.getId(env);
+  const controllerId = PythonController.getId(env);
   const controllerLabel = formatControllerLabel(code, env);
 
   yield* Effect.logDebug("Creating or updating controller").pipe(
@@ -337,7 +335,7 @@ const pruneStaleControllers = Effect.fnUntraced(function* (options: {
   const { envs, handlesRef, selectionsRef } = options;
   yield* Effect.logDebug("Checking for stale controllers");
   const desiredControllerIds = new Set(
-    envs.map((env) => VenvPythonController.getId(env)),
+    envs.map((env) => PythonController.getId(env)),
   );
 
   yield* SynchronizedRef.updateEffect(
@@ -389,21 +387,6 @@ const pruneStaleControllers = Effect.fnUntraced(function* (options: {
     }),
   );
 });
-
-/**
- * Determines if the given Python environment is a global interpreter.
- *
- * From the docs:
- *
- * py.Environment.environment - carries details if it is an environment, otherwise
- * `undefined` in case of global interpreters and others.
- *
- * @param env The Python environment to check.
- * @returns True if the environment is global, false otherwise.
- */
-function isGlobalInterpreter(env: py.Environment): boolean {
-  return env.environment === undefined;
-}
 
 /**
  * Determines if the given Python environment is located within the uv cache directory.

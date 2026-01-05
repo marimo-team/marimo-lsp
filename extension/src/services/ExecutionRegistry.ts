@@ -30,7 +30,7 @@ import {
 } from "../types.ts";
 import { prettyErrorMessage } from "../utils/errors.ts";
 import { CellStateManager } from "./CellStateManager.ts";
-import type { VenvPythonController } from "./NotebookControllerFactory.ts";
+import type { PythonController } from "./NotebookControllerFactory.ts";
 import type { SandboxController } from "./SandboxController.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -78,7 +78,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
           msg: CellMessage,
           options: {
             editor: vscode.NotebookEditor;
-            controller: VenvPythonController | SandboxController;
+            controller: PythonController | SandboxController;
           },
         ) =>
           Effect.gen(function* () {
@@ -361,7 +361,7 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
     code: VsCode,
     deps?: {
       editor: vscode.NotebookEditor;
-      controller: VenvPythonController | SandboxController;
+      controller: PythonController | SandboxController;
     },
   ) {
     const { pendingExecution, id: cellId, state } = cell;

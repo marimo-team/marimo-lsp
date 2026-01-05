@@ -146,8 +146,14 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                         }
                       });
 
-                      // Only prompt to install if uv is enabled
-                      if (config.uv.enabled) {
+                      // Only prompt to install if uv is enabled and we have a venv
+                      // Non-venv environments (pixi, conda, bazel, global) don't have pyvenv.cfg
+                      // so uv can't install packages there
+                      const venv = findVenvPath(options.env.path);
+                      const canInstallWithUv =
+                        config.uv.enabled && Option.isSome(venv);
+
+                      if (canInstallWithUv) {
                         const msg =
                           `${formatControllerLabel(code, options.env)} cannot run the marimo kernel:\n\n` +
                           messages.join("\n") +
@@ -165,13 +171,6 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                             ? `${d.package}>=${semver.format(d.requiredVersion)}`
                             : d.package,
                         );
-                        const venv = findVenvPath(options.env.path);
-                        if (Option.isNone(venv)) {
-                          yield* code.window.showWarningMessage(
-                            `Package install failed. No venv found for ${options.env.path}`,
-                          );
-                          return;
-                        }
                         yield* installPackages(packages, {
                           venvPath: venv.value,
                         }).pipe(
@@ -227,15 +226,15 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
               ),
             );
 
-          return new VenvPythonController(controller, options.env.path);
+          return new PythonController(controller, options.env.path);
         }),
       };
     }),
   },
 ) {}
 
-export class VenvPythonController {
-  readonly _tag = "VenvPythonController";
+export class PythonController {
+  readonly _tag = "PythonController";
   #inner: Omit<vscode.NotebookController, "dispose">;
   executable: string;
   constructor(

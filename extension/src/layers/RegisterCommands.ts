@@ -848,7 +848,7 @@ const updateActivePythonEnvironment = ({
     }
 
     let executable: string;
-    if (controller.value._tag === "VenvPythonController") {
+    if (controller.value._tag === "PythonController") {
       executable = controller.value.executable;
     } else {
       const script = editor.value.notebook.uri.fsPath;

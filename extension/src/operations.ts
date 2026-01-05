@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 import type { MarimoNotebookDocument } from "./schemas.ts";
 import { Config } from "./services/Config.ts";
-import type { VenvPythonController } from "./services/NotebookControllerFactory.ts";
+import type { PythonController } from "./services/NotebookControllerFactory.ts";
 import type { SandboxController } from "./services/SandboxController.ts";
 import { VsCode } from "./services/VsCode.ts";
 import type { MessageOperationOf } from "./types.ts";
@@ -11,7 +11,7 @@ import { installPackages } from "./utils/installPackages.ts";
 export const handleMissingPackageAlert = Effect.fnUntraced(function* (
   operation: MessageOperationOf<"missing-package-alert">,
   notebook: MarimoNotebookDocument,
-  controller: VenvPythonController | SandboxController,
+  controller: PythonController | SandboxController,
 ) {
   const code = yield* VsCode;
   const config = yield* Config;
@@ -22,7 +22,7 @@ export const handleMissingPackageAlert = Effect.fnUntraced(function* (
   }
 
   if (!config.uv.enabled) {
-    // Use has uv disabled
+    // User has uv disabled
     yield* Effect.logDebug("uv integration disabled. Skipping install.").pipe(
       Effect.annotateLogs({
         packages: operation.packages,
@@ -35,10 +35,19 @@ export const handleMissingPackageAlert = Effect.fnUntraced(function* (
   let options: { script: MarimoNotebookDocument } | { venvPath: string };
 
   if ("executable" in controller) {
+    // Only venv environments (with pyvenv.cfg) support uv package installation
+    // Non-venv environments (pixi, conda, bazel, global) are skipped
     const venvPath = findVenvPath(controller.executable);
 
     if (Option.isNone(venvPath)) {
-      yield* Effect.logWarning("Could not find venv. Skipping install.");
+      yield* Effect.logDebug(
+        "No venv found for environment. Skipping uv install.",
+      ).pipe(
+        Effect.annotateLogs({
+          packages: operation.packages,
+          executable: controller.executable,
+        }),
+      );
       return;
     }
 
