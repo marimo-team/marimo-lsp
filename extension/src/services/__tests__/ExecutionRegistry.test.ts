@@ -929,16 +929,18 @@ it.scoped(
         controller: new VenvPythonController(controller, "test-controller"),
       });
 
+      const cellId = Option.getOrThrow(cell.id);
+
       // Check that CellStateManager tracked the cell as stale
       const staleCells = yield* cellStateManager.getStaleCells(notebook.id);
-      expect(staleCells).toContain(cell.index);
+      expect(staleCells).toContain(cellId);
 
       // Clear stale state
-      yield* cellStateManager.clearCellStale(notebook.id, cell.index);
+      yield* cellStateManager.clearCellStale(notebook.id, cellId);
 
       // Check that the cell is no longer stale
       const staleCells2 = yield* cellStateManager.getStaleCells(notebook.id);
-      expect(staleCells2).not.toContain(cell.index);
+      expect(staleCells2).not.toContain(cellId);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
@@ -970,6 +972,7 @@ it.scoped(
       );
       const editor = createTestNotebookEditor(notebook.rawNotebookDocument);
       const cell = notebook.cellAt(0);
+      const cellId = Option.getOrThrow(cell.id);
       const code = yield* VsCode;
 
       // Set active editor in testVsCode so NotebookEditorRegistry can find it
@@ -979,11 +982,11 @@ it.scoped(
       yield* TestClock.adjust("10 millis");
 
       // First, mark the cell as stale in CellStateManager
-      yield* cellStateManager.markCellStale(notebook.id, cell.index);
+      yield* cellStateManager.markCellStale(notebook.id, cellId);
 
       // Verify cell is tracked as stale
       let staleCells = yield* cellStateManager.getStaleCells(notebook.id);
-      expect(staleCells).toContain(cell.index);
+      expect(staleCells).toContain(cellId);
 
       // Create a mock controller
       const controller = yield* code.notebooks.createNotebookController(
@@ -995,7 +998,7 @@ it.scoped(
       // Send a queued message
       const message: CellMessage = {
         op: "cell-op",
-        cell_id: Option.getOrThrow(cell.id),
+        cell_id: cellId,
         status: "queued",
         run_id: "test-run-id",
       };
@@ -1007,7 +1010,7 @@ it.scoped(
 
       // Check that the cell's stale state was cleared
       staleCells = yield* cellStateManager.getStaleCells(notebook.id);
-      expect(staleCells).not.toContain(cell.index);
+      expect(staleCells).not.toContain(cellId);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );

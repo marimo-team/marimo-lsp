@@ -30,9 +30,9 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
       const editorRegistry = yield* NotebookEditorRegistry;
       const client = yield* LanguageClient;
 
-      // Track stale state: NotebookUri -> (CellIndex -> isStale)
+      // Track stale state: NotebookUri -> (CellId -> isStale)
       const staleStateRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, HashMap.HashMap<number, boolean>>(),
+        HashMap.empty<NotebookId, HashMap.HashMap<NotebookCellId, boolean>>(),
       );
 
       // Helper to update context based on current state
@@ -152,7 +152,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                 }
 
                 // Clear local tracking
-                yield* clearCellStaleTracking(event.notebook.id, cell.index, {
+                yield* clearCellStaleTracking(event.notebook.id, cellId, {
                   staleStateRef,
                 });
 
@@ -179,7 +179,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                       ).pipe(
                         Effect.annotateLogs({
                           notebookUri: event.notebook.id,
-                          cellIndex: cell.index,
+                          cellId,
                         }),
                       ),
                     ),
@@ -189,20 +189,26 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               // Process cell changes (content or metadata edits)
               for (const cellChange of event.cellChanges) {
                 const cell = MarimoNotebookCell.from(cellChange.cell);
-                const cellIndex = cell.index;
+                const cellId = cell.id;
+
+                if (Option.isNone(cellId)) {
+                  // Cell without an ID - skip stale tracking
+                  continue;
+                }
 
                 // Check if document (content) changed
                 if (cellChange.document) {
                   yield* Log.trace("Cell content changed", {
                     notebookUri: event.notebook.id,
-                    cellIndex,
+                    cellId: cellId.value,
                   });
 
                   // Mark cell as stale
-                  yield* markCellStale(event.notebook.id, cellIndex, {
+                  yield* markCellStale(event.notebook.id, cellId.value, {
                     code,
                     staleStateRef,
                     notebook: event.notebook,
+                    cell,
                   });
                 }
 
@@ -212,9 +218,13 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                 }
 
                 if (Option.isSome(cell.metadata) && !cell.isStale) {
-                  yield* clearCellStaleTracking(event.notebook.id, cellIndex, {
-                    staleStateRef,
-                  });
+                  yield* clearCellStaleTracking(
+                    event.notebook.id,
+                    cellId.value,
+                    {
+                      staleStateRef,
+                    },
+                  );
                 }
               }
             }),
@@ -226,7 +236,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         /**
          * Mark a cell as stale and update its metadata
          */
-        markCellStale(notebookUri: NotebookId, cellIndex: number) {
+        markCellStale(notebookUri: NotebookId, cellId: NotebookCellId) {
           return Effect.gen(function* () {
             const notebook = Option.filterMap(
               yield* editorRegistry.getLastNotebookEditor(notebookUri),
@@ -238,10 +248,19 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               return;
             }
 
-            yield* markCellStale(notebookUri, cellIndex, {
+            const cell = notebook.value
+              .getCells()
+              .find((c) => Option.contains(c.id, cellId));
+            if (!cell) {
+              yield* Log.warn("Cell not found", { notebookUri, cellId });
+              return;
+            }
+
+            yield* markCellStale(notebookUri, cellId, {
               code,
               staleStateRef,
               notebook: notebook.value,
+              cell,
             });
           });
         },
@@ -249,7 +268,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         /**
          * Clear stale state from a cell
          */
-        clearCellStale(notebookUri: NotebookId, cellIndex: number) {
+        clearCellStale(notebookUri: NotebookId, cellId: NotebookCellId) {
           return Effect.gen(function* () {
             const notebook = Option.filterMap(
               yield* editorRegistry.getLastNotebookEditor(notebookUri),
@@ -263,9 +282,11 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               return;
             }
 
-            const cell = notebook.value.cellAt(cellIndex);
+            const cell = notebook.value
+              .getCells()
+              .find((c) => Option.contains(c.id, cellId));
             if (!cell) {
-              yield* Log.warn("Cell not found", { notebookUri, cellIndex });
+              yield* Log.warn("Cell not found", { notebookUri, cellId });
               return;
             }
 
@@ -275,24 +296,24 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               overrides: { state: undefined },
             });
             edit.set(notebook.value.uri, [
-              code.NotebookEdit.updateCellMetadata(cellIndex, newMetadata),
+              code.NotebookEdit.updateCellMetadata(cell.index, newMetadata),
             ]);
             yield* code.workspace.applyEdit(edit);
 
             // Update tracking
-            yield* clearCellStaleTracking(notebookUri, cellIndex, {
+            yield* clearCellStaleTracking(notebookUri, cellId, {
               staleStateRef,
             });
 
             yield* Log.trace("Cleared cell stale state", {
               notebookUri,
-              cellIndex,
+              cellId,
             });
           });
         },
 
         /**
-         * Get all stale cell indices for a notebook
+         * Get all stale cell IDs for a notebook
          */
         getStaleCells(notebookUri: NotebookId) {
           return Effect.gen(function* () {
@@ -323,37 +344,30 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
  */
 function markCellStale(
   notebookUri: NotebookId,
-  cellIndex: number,
+  cellId: NotebookCellId,
   deps: {
     code: VsCode;
     staleStateRef: SubscriptionRef.SubscriptionRef<
-      HashMap.HashMap<NotebookId, HashMap.HashMap<number, boolean>>
+      HashMap.HashMap<NotebookId, HashMap.HashMap<NotebookCellId, boolean>>
     >;
     notebook: MarimoNotebookDocument;
+    cell: MarimoNotebookCell;
   },
 ) {
   return Effect.gen(function* () {
-    const { code, staleStateRef, notebook } = deps;
+    const { code, staleStateRef, notebook, cell } = deps;
+    const cellIndex = cell.index;
 
     // Update tracking
     yield* SubscriptionRef.update(staleStateRef, (map) => {
       const notebookMap = Option.getOrElse(HashMap.get(map, notebookUri), () =>
-        HashMap.empty<number, boolean>(),
+        HashMap.empty<NotebookCellId, boolean>(),
       );
-      const updatedNotebookMap = HashMap.set(notebookMap, cellIndex, true);
+      const updatedNotebookMap = HashMap.set(notebookMap, cellId, true);
       return HashMap.set(map, notebookUri, updatedNotebookMap);
     });
 
     // Update cell metadata
-    const cell = notebook.cellAt(cellIndex);
-    if (!cell) {
-      yield* Log.warn("Cell not found for marking stale", {
-        notebookUri,
-        cellIndex,
-      });
-      return;
-    }
-
     const edit = new code.WorkspaceEdit();
     edit.set(notebook.uri, [
       code.NotebookEdit.updateCellMetadata(
@@ -363,7 +377,7 @@ function markCellStale(
     ]);
     yield* code.workspace.applyEdit(edit);
 
-    yield* Log.trace("Marked cell as stale", { notebookUri, cellIndex });
+    yield* Log.trace("Marked cell as stale", { notebookUri, cellId });
   });
 }
 
@@ -372,10 +386,10 @@ function markCellStale(
  */
 function clearCellStaleTracking(
   notebookUri: NotebookId,
-  cellIndex: number,
+  cellId: NotebookCellId,
   deps: {
     staleStateRef: SubscriptionRef.SubscriptionRef<
-      HashMap.HashMap<NotebookId, HashMap.HashMap<number, boolean>>
+      HashMap.HashMap<NotebookId, HashMap.HashMap<NotebookCellId, boolean>>
     >;
   },
 ) {
@@ -388,7 +402,7 @@ function clearCellStaleTracking(
         return map;
       }
 
-      const updatedNotebookMap = HashMap.remove(notebookMap.value, cellIndex);
+      const updatedNotebookMap = HashMap.remove(notebookMap.value, cellId);
       if (HashMap.isEmpty(updatedNotebookMap)) {
         // Remove the notebook entry if no more stale cells
         return HashMap.remove(map, notebookUri);
@@ -399,7 +413,7 @@ function clearCellStaleTracking(
 
     yield* Log.trace("Cleared cell from stale tracking", {
       notebookUri,
-      cellIndex,
+      cellId,
     });
   });
 }

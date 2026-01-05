@@ -99,19 +99,13 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
 
             // If cell has stale inputs, mark it as stale
             if (cell.state.staleInputs) {
-              yield* cellStateManager.markCellStale(
-                notebook.id,
-                notebookCell.index,
-              );
+              yield* cellStateManager.markCellStale(notebook.id, cellId);
             }
 
             switch (msg.status) {
               case "queued": {
                 // Clear stale state when cell is queued for execution
-                yield* cellStateManager.clearCellStale(
-                  notebook.id,
-                  notebookCell.index,
-                );
+                yield* cellStateManager.clearCellStale(notebook.id, cellId);
 
                 yield* Ref.update(ref, (map) => {
                   const handle = HashMap.get(map, cellId).pipe(
