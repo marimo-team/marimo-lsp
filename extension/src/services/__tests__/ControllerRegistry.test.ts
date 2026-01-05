@@ -87,6 +87,10 @@ it.effect(
             "executable": "/home/user/.venv/bin/python",
             "id": "marimo-/home/user/.venv/bin/python",
           },
+          {
+            "executable": "/usr/local/bin/python3.11",
+            "id": "marimo-/usr/local/bin/python3.11",
+          },
         ],
         "selections": [],
       }
@@ -156,7 +160,7 @@ it.effect(
     yield* Effect.gen(function* () {
       const registry = yield* ControllerRegistry;
 
-      // Initial state - should have two controllers (global env filtered out)
+      // Initial state - should have three controllers (includes global env)
       const snapshot1 = yield* registry.snapshot();
       expect(snapshot1).toMatchInlineSnapshot(`
         {
@@ -164,6 +168,10 @@ it.effect(
             {
               "executable": "/home/user/.venv/bin/python",
               "id": "marimo-/home/user/.venv/bin/python",
+            },
+            {
+              "executable": "/opt/homebrew/bin/python3",
+              "id": "marimo-/opt/homebrew/bin/python3",
             },
             {
               "executable": "/usr/local/bin/python3.11",
@@ -181,7 +189,7 @@ it.effect(
       // Give time for the stream to process
       yield* TestClock.adjust("100 millis");
 
-      // Should now have one controller (global env still filtered)
+      // Should now have two controllers
       const snapshot2 = yield* registry.snapshot();
       expect(snapshot2).toMatchInlineSnapshot(`
         {
@@ -189,6 +197,10 @@ it.effect(
             {
               "executable": "/home/user/.venv/bin/python",
               "id": "marimo-/home/user/.venv/bin/python",
+            },
+            {
+              "executable": "/opt/homebrew/bin/python3",
+              "id": "marimo-/opt/homebrew/bin/python3",
             },
             {
               "executable": "/usr/local/bin/python3.11",
@@ -224,11 +236,12 @@ it.effect(
         createTestNotebookDocument(code.Uri.file("/test/notebook2_mo.py")),
       );
 
-      // Get controllers from vscode snapshot
+      // Get controllers from vscode snapshot (includes global env)
       const vsSnapshot = yield* vscode.snapshot();
       expect(vsSnapshot.controllers).toMatchInlineSnapshot(`
         [
           "marimo-/home/user/.venv/bin/python",
+          "marimo-/opt/homebrew/bin/python3",
           "marimo-/usr/local/bin/python3.11",
           "marimo-sandbox",
         ]
@@ -241,7 +254,7 @@ it.effect(
       assert(Option.isNone(controller1));
       assert(Option.isNone(controller2));
 
-      // Verify snapshot shows no selections
+      // Verify snapshot shows no selections (includes global env)
       const snapshot = yield* registry.snapshot();
       expect(snapshot).toMatchInlineSnapshot(`
         {
@@ -249,6 +262,10 @@ it.effect(
             {
               "executable": "/home/user/.venv/bin/python",
               "id": "marimo-/home/user/.venv/bin/python",
+            },
+            {
+              "executable": "/opt/homebrew/bin/python3",
+              "id": "marimo-/opt/homebrew/bin/python3",
             },
             {
               "executable": "/usr/local/bin/python3.11",
@@ -338,11 +355,15 @@ it.effect(
       const env2 = TestPythonExtension.makeVenv("/home/user/.venv/bin/python");
       const env3 = TestPythonExtension.makeVenv("/opt/python3.12/bin/python");
 
-      // Initial: 1 controller (global env filtered out)
+      // Initial: 2 controllers (includes global env)
       let snapshot = yield* registry.snapshot();
       expect(snapshot).toMatchInlineSnapshot(`
         {
           "controllers": [
+            {
+              "executable": "/opt/homebrew/bin/python3",
+              "id": "marimo-/opt/homebrew/bin/python3",
+            },
             {
               "executable": "/usr/local/bin/python3.11",
               "id": "marimo-/usr/local/bin/python3.11",
@@ -360,6 +381,10 @@ it.effect(
       expect(snapshot).toMatchInlineSnapshot(`
         {
           "controllers": [
+            {
+              "executable": "/opt/homebrew/bin/python3",
+              "id": "marimo-/opt/homebrew/bin/python3",
+            },
             {
               "executable": "/usr/local/bin/python3.11",
               "id": "marimo-/usr/local/bin/python3.11",
@@ -380,6 +405,10 @@ it.effect(
             {
               "executable": "/home/user/.venv/bin/python",
               "id": "marimo-/home/user/.venv/bin/python",
+            },
+            {
+              "executable": "/opt/homebrew/bin/python3",
+              "id": "marimo-/opt/homebrew/bin/python3",
             },
             {
               "executable": "/opt/python3.12/bin/python",
@@ -403,6 +432,10 @@ it.effect(
         {
           "controllers": [
             {
+              "executable": "/opt/homebrew/bin/python3",
+              "id": "marimo-/opt/homebrew/bin/python3",
+            },
+            {
               "executable": "/opt/python3.12/bin/python",
               "id": "marimo-/opt/python3.12/bin/python",
             },
@@ -423,6 +456,10 @@ it.effect(
       expect(snapshot).toMatchInlineSnapshot(`
         {
           "controllers": [
+            {
+              "executable": "/opt/homebrew/bin/python3",
+              "id": "marimo-/opt/homebrew/bin/python3",
+            },
             {
               "executable": "/opt/python3.12/bin/python",
               "id": "marimo-/opt/python3.12/bin/python",

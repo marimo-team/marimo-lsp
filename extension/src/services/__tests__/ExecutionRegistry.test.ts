@@ -14,7 +14,7 @@ import type { CellMessage, CellRuntimeState } from "../../types.ts";
 import { CellStateManager } from "../CellStateManager.ts";
 import { buildCellOutputs, ExecutionRegistry } from "../ExecutionRegistry.ts";
 import { LanguageClient } from "../LanguageClient.ts";
-import { VenvPythonController } from "../NotebookControllerFactory.ts";
+import { PythonController } from "../NotebookControllerFactory.ts";
 import { VsCode } from "../VsCode.ts";
 
 // Simple mock LanguageClient that doesn't spawn a real LSP process
@@ -926,7 +926,7 @@ it.scoped(
 
       yield* registry.handleCellOperation(message, {
         editor,
-        controller: new VenvPythonController(controller, "test-controller"),
+        controller: new PythonController(controller, "test-controller"),
       });
 
       // Check that CellStateManager tracked the cell as stale
@@ -1002,7 +1002,7 @@ it.scoped(
 
       yield* registry.handleCellOperation(message, {
         editor,
-        controller: new VenvPythonController(controller, "test-controller"),
+        controller: new PythonController(controller, "test-controller"),
       });
 
       // Check that the cell's stale state was cleared
