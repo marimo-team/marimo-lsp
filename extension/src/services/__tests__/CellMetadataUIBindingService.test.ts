@@ -7,6 +7,7 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { DEFAULT_SQL_ENGINE } from "../../layers/CellMetadataBindings.ts";
 import type { CellMetadata } from "../../schemas.ts";
 import {
   CellMetadataUIBindingService,
@@ -148,7 +149,7 @@ it.effect("should display value from cell metadata", () =>
               quotePrefix: "",
               commentLines: [],
               showOutput: true,
-              engine: "duckdb",
+              engine: DEFAULT_SQL_ENGINE,
             },
           },
         });

@@ -5,7 +5,7 @@ import { Constants } from "../services/Constants.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
 import { VsCode } from "../services/VsCode.ts";
 
-const DEFAULT_ENGINE = "__marimo_duckdb";
+export const DEFAULT_SQL_ENGINE = "__marimo_duckdb";
 const DEFAULT_LABEL = "duckdb (In-Memory)";
 
 /**
@@ -32,7 +32,7 @@ function updateSqlMetadata(
         quotePrefix: metadata.languageMetadata?.sql?.quotePrefix ?? "",
         commentLines: metadata.languageMetadata?.sql?.commentLines ?? [],
         showOutput: metadata.languageMetadata?.sql?.showOutput ?? true,
-        engine: metadata.languageMetadata?.sql?.engine ?? "duckdb",
+        engine: metadata.languageMetadata?.sql?.engine ?? DEFAULT_SQL_ENGINE,
         ...updates,
       },
     },
@@ -188,7 +188,7 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
       },
 
       getValue: (metadata: CellMetadata) => {
-        return metadata.languageMetadata?.sql?.engine ?? "duckdb";
+        return metadata.languageMetadata?.sql?.engine ?? DEFAULT_SQL_ENGINE;
       },
 
       setValue: (metadata: CellMetadata, value: string | boolean) => {
@@ -199,8 +199,8 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
       },
 
       getLabel: (value: string | boolean | undefined) => {
-        const engine = typeof value === "string" ? value : DEFAULT_ENGINE;
-        if (engine === DEFAULT_ENGINE) {
+        const engine = typeof value === "string" ? value : DEFAULT_SQL_ENGINE;
+        if (engine === DEFAULT_SQL_ENGINE) {
           // Pretty name for default engine
           return DEFAULT_LABEL;
         }
@@ -208,8 +208,8 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
       },
 
       getTooltip: (value: string | boolean | undefined) => {
-        const engine = typeof value === "string" ? value : DEFAULT_ENGINE;
-        if (engine === DEFAULT_ENGINE) {
+        const engine = typeof value === "string" ? value : DEFAULT_SQL_ENGINE;
+        if (engine === DEFAULT_SQL_ENGINE) {
           // Pretty name for default engine
           return DEFAULT_LABEL;
         }
@@ -226,14 +226,14 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
 
           // Always include duckdb as default
           const options: Array<{ label: string; value: string }> = [
-            { label: DEFAULT_LABEL, value: DEFAULT_ENGINE },
+            { label: DEFAULT_LABEL, value: DEFAULT_SQL_ENGINE },
           ];
 
           // Add available connections
           if (Option.isSome(connectionsOption)) {
             const connections = connectionsOption.value.connections;
             for (const [name, connection] of connections) {
-              if (name === DEFAULT_ENGINE) {
+              if (name === DEFAULT_SQL_ENGINE) {
                 continue;
               }
               options.push({
