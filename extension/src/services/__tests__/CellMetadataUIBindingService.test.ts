@@ -7,13 +7,13 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { DEFAULT_SQL_ENGINE } from "../../layers/CellMetadataBindings.ts";
 import type { CellMetadata } from "../../schemas.ts";
 import {
   CellMetadataUIBindingService,
   type MetadataBinding,
 } from "../CellMetadataUIBindingService.ts";
 import { Constants } from "../Constants.ts";
-import { DEFAULT_SQL_ENGINE } from "../../layers/CellMetadataBindings.ts";
 
 const withTestCtx = Effect.gen(function* () {
   const vscode = yield* TestVsCode.make();
