@@ -13,6 +13,7 @@ import {
   type MetadataBinding,
 } from "../CellMetadataUIBindingService.ts";
 import { Constants } from "../Constants.ts";
+import { DEFAULT_SQL_ENGINE } from "../../layers/CellMetadataBindings.ts";
 
 const withTestCtx = Effect.gen(function* () {
   const vscode = yield* TestVsCode.make();
@@ -148,7 +149,7 @@ it.effect("should display value from cell metadata", () =>
               quotePrefix: "",
               commentLines: [],
               showOutput: true,
-              engine: "duckdb",
+              engine: DEFAULT_SQL_ENGINE,
             },
           },
         });

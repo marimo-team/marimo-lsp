@@ -11,7 +11,7 @@ import type { CellMetadata } from "../../schemas.ts";
 import { CellMetadataUIBindingService } from "../../services/CellMetadataUIBindingService.ts";
 import { Constants } from "../../services/Constants.ts";
 import { DatasourcesService } from "../../services/datasources/DatasourcesService.ts";
-import { CellMetadataBindingsLive } from "../CellMetadataBindings.ts";
+import { CellMetadataBindingsLive, DEFAULT_SQL_ENGINE } from "../CellMetadataBindings.ts";
 
 const withTestCtx = Effect.gen(function* () {
   const vscode = yield* TestVsCode.make();
@@ -107,7 +107,7 @@ it.effect("should display dataframeName from SQL metadata", () =>
               quotePrefix: "",
               commentLines: [],
               showOutput: true,
-              engine: "duckdb",
+              engine: DEFAULT_SQL_ENGINE,
             },
           },
         });
