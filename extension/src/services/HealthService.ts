@@ -1,8 +1,10 @@
 import * as NodeProcess from "node:process";
+import * as semver from "@std/semver";
 import { Data, Effect, Option, Schema } from "effect";
 import { EXTENSION_PACKAGE } from "../utils/extension.ts";
 import { Config } from "./Config.ts";
 import { PythonLanguageServer } from "./completions/PythonLanguageServer.ts";
+import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
 import { getUvVersion } from "./LanguageClient.ts";
 import { PythonExtension } from "./PythonExtension.ts";
 import { Uv, UvBin } from "./Uv.ts";
@@ -194,7 +196,9 @@ export class HealthService extends Effect.Service<HealthService>()(
           lines.push("\t\t- Ensure marimo and pyzmq are installed");
           lines.push("\t\t- Check 'marimo-lsp' output channel for errors");
           lines.push("\t2. If features are missing:");
-          lines.push("\t\t- Ensure marimo version is >= 0.17.0");
+          lines.push(
+            `\t\t- Ensure marimo version is >= ${semver.format(MINIMUM_MARIMO_VERSION)}`,
+          );
           lines.push("\t\t- Try reloading the window");
         }
 

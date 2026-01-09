@@ -337,7 +337,7 @@ async def test_marimo_get_package_list_no_session(client: LanguageClient) -> Non
             command="marimo.api",
             arguments=[
                 {
-                    "method": "get_package_list",
+                    "method": "get-package-list",
                     "params": {
                         "notebookUri": "file:///nonexistent.py",
                         "executable": sys.executable,
@@ -385,7 +385,7 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
             command="marimo.api",
             arguments=[
                 {
-                    "method": "run",
+                    "method": "execute-cells",
                     "params": {
                         "notebookUri": "file:///package_test.py",
                         "executable": sys.executable,
@@ -408,7 +408,7 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
             command="marimo.api",
             arguments=[
                 {
-                    "method": "get_package_list",
+                    "method": "get-package-list",
                     "params": {
                         "notebookUri": "file:///package_test.py",
                         "executable": sys.executable,
@@ -436,7 +436,7 @@ async def test_marimo_get_dependency_tree_no_session(client: LanguageClient) -> 
             command="marimo.api",
             arguments=[
                 {
-                    "method": "get_dependency_tree",
+                    "method": "get-dependency-tree",
                     "params": {
                         "notebookUri": "file:///nonexistent.py",
                         "executable": sys.executable,
@@ -484,7 +484,7 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
             command="marimo.api",
             arguments=[
                 {
-                    "method": "run",
+                    "method": "execute-cells",
                     "params": {
                         "notebookUri": "file:///dep_tree_test.py",
                         "executable": sys.executable,
@@ -507,7 +507,7 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
             command="marimo.api",
             arguments=[
                 {
-                    "method": "get_dependency_tree",
+                    "method": "get-dependency-tree",
                     "params": {
                         "notebookUri": "file:///dep_tree_test.py",
                         "executable": sys.executable,
@@ -585,7 +585,7 @@ x\
             command="marimo.api",
             arguments=[
                 {
-                    "method": "run",
+                    "method": "execute-cells",
                     "params": {
                         "notebookUri": "file:///exec_test.py",
                         "executable": sys.executable,
@@ -845,7 +845,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             command="marimo.api",
             arguments=[
                 {
-                    "method": "run",
+                    "method": "execute-cells",
                     "params": {
                         "notebookUri": "file:///exec_test.py",
                         "executable": sys.executable,

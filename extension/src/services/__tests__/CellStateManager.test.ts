@@ -149,7 +149,7 @@ describe("CellStateManager", () => {
             {
               "command": "marimo.api",
               "params": {
-                "method": "delete_cell",
+                "method": "delete-cell",
                 "params": {
                   "inner": {
                     "cellId": "cell-1",
