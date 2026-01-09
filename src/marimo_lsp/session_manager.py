@@ -9,16 +9,14 @@ import marimo._ipc as ipc
 from marimo._config.manager import (
     get_default_config_manager,
 )
-from marimo._server.sessions import Session
 
 from marimo_lsp.app_file_manager import LspAppFileManager
 from marimo_lsp.kernel_manager import LspKernelManager
 from marimo_lsp.loggers import get_logger
+from marimo_lsp.session import LspSession
 from marimo_lsp.session_consumer import LspSessionConsumer
 
 if typing.TYPE_CHECKING:
-    from marimo._server.notebook import AppFileManager
-    from marimo._server.sessions import KernelManager, QueueManager
     from pygls.lsp.server import LanguageServer
 
 
@@ -38,14 +36,14 @@ class LspSessionManager:
 
     def __init__(self) -> None:
         """Initialize the session manager with an empty session map."""
-        self._sessions: dict[str, Session] = {}
+        self._sessions: dict[str, LspSession] = {}
         self._instantiated: dict[str, bool] = {}
 
-    def get_session(self, notebook_uri: str) -> Session | None:
+    def get_session(self, notebook_uri: str) -> LspSession | None:
         """Get a session by notebook URI."""
         return self._sessions.get(notebook_uri)
 
-    def add_session(self, notebook_uri: str, session: Session) -> None:
+    def add_session(self, notebook_uri: str, session: LspSession) -> None:
         """Add a session to the manager."""
         logger.info(f"Adding session for {notebook_uri}")
         self._sessions[notebook_uri] = session
@@ -65,7 +63,7 @@ class LspSessionManager:
 
     def create_session(
         self, *, server: LanguageServer, notebook_uri: str, executable: str
-    ) -> Session:
+    ) -> LspSession:
         """Create a new session for a notebook.
 
         Note: Sessions are created with (notebook_uri, executable) but only
@@ -91,14 +89,13 @@ class LspSessionManager:
 
         logger.info(f"Creating new session for {notebook_uri}")
 
-        session = Session(
+        session = LspSession(
             initialization_id=str(uuid4()),
             session_consumer=LspSessionConsumer(server, notebook_uri),
-            queue_manager=typing.cast("QueueManager", queue_manager),
-            kernel_manager=typing.cast("KernelManager", kernel_manager),
-            app_file_manager=typing.cast("AppFileManager", app_file_manager),
+            queue_manager=queue_manager,
+            kernel_manager=kernel_manager,
+            app_file_manager=app_file_manager,
             config_manager=config_manager,
-            ttl_seconds=0,  # No TTL for LSP
         )
 
         self.add_session(notebook_uri, session)

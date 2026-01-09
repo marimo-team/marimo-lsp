@@ -158,7 +158,7 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
               .executeCommand({
                 command: "marimo.api",
                 params: {
-                  method: "close_session",
+                  method: "close-session",
                   params: {
                     notebookUri: notebook.value.id,
                     inner: {},
@@ -766,7 +766,7 @@ const exportNotebookAsHTML = ({
           .executeCommand({
             command: "marimo.api",
             params: {
-              method: "export_as_html",
+              method: "export-as-html",
               params: {
                 notebookUri: notebook.value.id,
                 inner: {

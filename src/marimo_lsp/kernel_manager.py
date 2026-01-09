@@ -9,17 +9,17 @@ from typing import TypeVar
 
 import marimo._ipc as ipc
 from marimo._config.settings import GLOBAL_SETTINGS
-from marimo._runtime.requests import AppMetadata
-from marimo._server.model import SessionMode
-from marimo._server.sessions import KernelManager
-from marimo._server.types import ProcessLike
+from marimo._runtime.commands import AppMetadata
+from marimo._session.managers import KernelManagerImpl
+from marimo._session.model import SessionMode
+from marimo._session.queue import ProcessLike
 
 from marimo_lsp.loggers import get_logger
 
 if typing.TYPE_CHECKING:
     from marimo._config.manager import MarimoConfigManager
     from marimo._ipc.types import ConnectionInfo
-    from marimo._server.sessions import QueueManager
+    from marimo._session import QueueManager
 
     from marimo_lsp.app_file_manager import LspAppFileManager
 
@@ -81,7 +81,7 @@ def launch_kernel(
     return PopenProcessLike(inner=process)
 
 
-class LspKernelManager(KernelManager):
+class LspKernelManager(KernelManagerImpl):
     """Kernel manager for marimo-lsp."""
 
     def __init__(

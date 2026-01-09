@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 import re
 import sys
-from typing import Any, Callable, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import lsprotocol.types as lsp
 import pytest
@@ -334,7 +337,7 @@ async def test_marimo_get_package_list_no_session(client: LanguageClient) -> Non
             command="marimo.api",
             arguments=[
                 {
-                    "method": "get_package_list",
+                    "method": "get-package-list",
                     "params": {
                         "notebookUri": "file:///nonexistent.py",
                         "executable": sys.executable,
@@ -382,7 +385,7 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
             command="marimo.api",
             arguments=[
                 {
-                    "method": "run",
+                    "method": "execute-cells",
                     "params": {
                         "notebookUri": "file:///package_test.py",
                         "executable": sys.executable,
@@ -405,7 +408,7 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
             command="marimo.api",
             arguments=[
                 {
-                    "method": "get_package_list",
+                    "method": "get-package-list",
                     "params": {
                         "notebookUri": "file:///package_test.py",
                         "executable": sys.executable,
@@ -433,7 +436,7 @@ async def test_marimo_get_dependency_tree_no_session(client: LanguageClient) -> 
             command="marimo.api",
             arguments=[
                 {
-                    "method": "get_dependency_tree",
+                    "method": "get-dependency-tree",
                     "params": {
                         "notebookUri": "file:///nonexistent.py",
                         "executable": sys.executable,
@@ -481,7 +484,7 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
             command="marimo.api",
             arguments=[
                 {
-                    "method": "run",
+                    "method": "execute-cells",
                     "params": {
                         "notebookUri": "file:///dep_tree_test.py",
                         "executable": sys.executable,
@@ -504,7 +507,7 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
             command="marimo.api",
             arguments=[
                 {
-                    "method": "get_dependency_tree",
+                    "method": "get-dependency-tree",
                     "params": {
                         "notebookUri": "file:///dep_tree_test.py",
                         "executable": sys.executable,
@@ -582,7 +585,7 @@ x\
             command="marimo.api",
             arguments=[
                 {
-                    "method": "run",
+                    "method": "execute-cells",
                     "params": {
                         "notebookUri": "file:///exec_test.py",
                         "executable": sys.executable,
@@ -617,28 +620,6 @@ x\
                         check_order=False,
                     ),
                 },
-            },
-            {
-                "notebookUri": "file:///exec_test.py",
-                "operation": {
-                    "op": "update-cell-codes",
-                    "cell_ids": ["cell1"],
-                    "codes": [
-                        """\
-import sys
-
-print("hello, world")
-print("error message", file=sys.stderr)
-x = 42
-x\
-"""
-                    ],
-                    "code_is_stale": False,
-                },
-            },
-            {
-                "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "focus-cell", "cell_id": "cell1"},
             },
             {
                 "notebookUri": "file:///exec_test.py",
@@ -864,7 +845,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             command="marimo.api",
             arguments=[
                 {
-                    "method": "run",
+                    "method": "execute-cells",
                     "params": {
                         "notebookUri": "file:///exec_test.py",
                         "executable": sys.executable,
@@ -894,19 +875,6 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                         }
                     ],
                 },
-            },
-            {
-                "notebookUri": "file:///exec_test.py",
-                "operation": {
-                    "op": "update-cell-codes",
-                    "cell_ids": ["cell2"],
-                    "codes": ["print(x)"],
-                    "code_is_stale": False,
-                },
-            },
-            {
-                "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "focus-cell", "cell_id": "cell2"},
             },
             {
                 "notebookUri": "file:///exec_test.py",

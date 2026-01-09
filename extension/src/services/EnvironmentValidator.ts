@@ -8,7 +8,7 @@ import { SemVerFromString } from "../schemas.ts";
 
 export const MINIMUM_MARIMO_VERSION = {
   major: 0,
-  minor: 17,
+  minor: 19,
   patch: 0,
 } satisfies semver.SemVer;
 

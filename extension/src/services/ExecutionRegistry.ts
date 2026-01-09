@@ -24,7 +24,7 @@ import {
   type NotebookCellId,
 } from "../schemas.ts";
 import {
-  type CellMessage,
+  type CellOperationNotification,
   type CellRuntimeState,
   createCellNavigationLink,
 } from "../types.ts";
@@ -75,7 +75,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
           );
         },
         handleCellOperation: (
-          msg: CellMessage,
+          msg: CellOperationNotification,
           options: {
             editor: vscode.NotebookEditor;
             controller: PythonController | SandboxController;
@@ -304,7 +304,7 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
       lastRunId: Option.none(),
     });
   }
-  static transition(cell: CellEntry, message: CellMessage) {
+  static transition(cell: CellEntry, message: CellOperationNotification) {
     return new CellEntry({
       ...cell,
       state: transitionCell(cell.state, message),
@@ -433,14 +433,14 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
 }
 
 type RunId = Brand.Branded<string, "RunId">;
-function extractRunId(msg: CellMessage) {
+function extractRunId(msg: CellOperationNotification) {
   return Option.fromNullable(msg.run_id) as Option.Option<RunId>;
 }
 
 /* Type-safe wrapper around marimo's `transitionCell` we import above */
 function transitionCell(
   cell: CellRuntimeState,
-  message: CellMessage,
+  message: CellOperationNotification,
 ): CellRuntimeState {
   return untypedTransitionCell(cell, message);
 }

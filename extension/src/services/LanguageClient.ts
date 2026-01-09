@@ -8,8 +8,8 @@ import { unreachable } from "../assert.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import type {
   MarimoCommand,
-  MarimoNotification,
-  MarimoNotificationOf,
+  MarimoLspNotification,
+  MarimoLspNotificationOf,
 } from "../types.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
@@ -142,18 +142,19 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
             catch: (cause) => new ExecuteCommandError({ command: cmd, cause }),
           });
         }),
-        streamOf<Notification extends MarimoNotification>(
+        streamOf<Notification extends MarimoLspNotification>(
           notification: Notification,
         ) {
-          return Stream.asyncPush<MarimoNotificationOf<Notification>>((emit) =>
-            Effect.acquireRelease(
-              Effect.sync(() =>
-                client.onNotification(notification, (msg) => {
-                  emit.single(msg);
-                }),
+          return Stream.asyncPush<MarimoLspNotificationOf<Notification>>(
+            (emit) =>
+              Effect.acquireRelease(
+                Effect.sync(() =>
+                  client.onNotification(notification, (msg) => {
+                    emit.single(msg);
+                  }),
+                ),
+                (disposable) => Effect.sync(() => disposable.dispose()),
               ),
-              (disposable) => Effect.sync(() => disposable.dispose()),
-            ),
           );
         },
       };

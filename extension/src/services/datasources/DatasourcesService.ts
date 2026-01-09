@@ -1,11 +1,11 @@
 import { Effect, HashMap, SubscriptionRef } from "effect";
 import type { NotebookId } from "../../schemas.ts";
 import type {
-  DataColumnPreviewOp,
-  DataSourceConnectionsOp,
-  DatasetsOp,
-  SqlTableListPreviewOp,
-  SqlTablePreviewOp,
+  DataColumnPreviewNotification,
+  DataSourceConnectionsNotification,
+  DatasetsNotification,
+  SqlTableListPreviewNotification,
+  SqlTablePreviewNotification,
 } from "../../types.ts";
 import { Log } from "../../utils/log.ts";
 
@@ -115,7 +115,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
        * Convert DataSourceConnection list to efficient map structure
        */
       const convertConnectionsToMap = (
-        operation: DataSourceConnectionsOp,
+        operation: DataSourceConnectionsNotification,
       ): DataSourceConnectionMap => {
         const connectionsMap = new Map();
 
@@ -162,7 +162,9 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
       /**
        * Convert Datasets list to efficient map structure
        */
-      const convertDatasetsToMap = (operation: DatasetsOp): DatasetsMap => {
+      const convertDatasetsToMap = (
+        operation: DatasetsNotification,
+      ): DatasetsMap => {
         const tablesMap = new Map();
 
         for (const table of operation.tables) {
@@ -181,7 +183,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
          */
         updateConnections(
           notebookUri: NotebookId,
-          operation: DataSourceConnectionsOp,
+          operation: DataSourceConnectionsNotification,
         ) {
           return Effect.gen(function* () {
             const connectionsMap = convertConnectionsToMap(operation);
@@ -200,7 +202,10 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         /**
          * Update datasets for a notebook
          */
-        updateDatasets(notebookUri: NotebookId, operation: DatasetsOp) {
+        updateDatasets(
+          notebookUri: NotebookId,
+          operation: DatasetsNotification,
+        ) {
           return Effect.gen(function* () {
             const datasetsMap = convertDatasetsToMap(operation);
 
@@ -221,7 +226,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
          */
         updateTablePreview(
           notebookUri: NotebookId,
-          operation: SqlTablePreviewOp,
+          operation: SqlTablePreviewNotification,
         ) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(tablePreviewsRef, (map) => {
@@ -247,7 +252,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
          */
         updateTableListPreview(
           notebookUri: NotebookId,
-          operation: SqlTableListPreviewOp,
+          operation: SqlTableListPreviewNotification,
         ) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(tableListPreviewsRef, (map) => {
@@ -273,7 +278,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
          */
         updateColumnPreview(
           notebookUri: NotebookId,
-          operation: DataColumnPreviewOp,
+          operation: DataColumnPreviewNotification,
         ) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(columnPreviewsRef, (map) => {

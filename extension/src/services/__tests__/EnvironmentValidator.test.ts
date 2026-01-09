@@ -147,7 +147,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
             "package": "marimo",
             "requiredVersion": {
               "major": 0,
-              "minor": 17,
+              "minor": 19,
               "patch": 0,
             },
           },

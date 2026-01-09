@@ -172,7 +172,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                   .executeCommand({
                     command: "marimo.api",
                     params: {
-                      method: "delete_cell",
+                      method: "delete-cell",
                       params: {
                         notebookUri: event.notebook.id,
                         inner: {

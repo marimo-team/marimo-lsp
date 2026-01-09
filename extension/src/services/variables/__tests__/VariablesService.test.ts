@@ -1,7 +1,10 @@
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, Stream, TestClock } from "effect";
 import type { NotebookId } from "../../../schemas.ts";
-import type { VariablesOp, VariableValuesOp } from "../../../types.ts";
+import type {
+  VariablesNotification,
+  VariableValuesNotification,
+} from "../../../types.ts";
 import { VariablesService } from "../VariablesService.ts";
 
 const withTestCtx = () =>
@@ -21,10 +24,10 @@ const NOTEBOOK_URI = makeNotebookUri("file:///test/notebook.py");
 // Mock data factories
 function createMockVariablesOp(
   variables: Array<{ name: string; declared_by: string[]; used_by: string[] }>,
-): VariablesOp {
+): VariablesNotification {
   return {
     op: "variables",
-    variables: variables as VariablesOp["variables"],
+    variables: variables as VariablesNotification["variables"],
   };
 }
 
@@ -34,10 +37,10 @@ function createMockVariableValuesOp(
     value: string | number | null;
     datatype: string | null;
   }>,
-): VariableValuesOp {
+): VariableValuesNotification {
   return {
     op: "variable-values",
-    variables: variables as VariableValuesOp["variables"],
+    variables: variables as VariableValuesNotification["variables"],
   };
 }
 

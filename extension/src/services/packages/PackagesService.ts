@@ -262,7 +262,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               .executeCommand({
                 command: "marimo.api",
                 params: {
-                  method: "get_dependency_tree",
+                  method: "get-dependency-tree",
                   params: {
                     notebookUri,
                     executable,
@@ -296,7 +296,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                       .executeCommand({
                         command: "marimo.api",
                         params: {
-                          method: "get_package_list",
+                          method: "get-package-list",
                           params: {
                             notebookUri,
                             executable,

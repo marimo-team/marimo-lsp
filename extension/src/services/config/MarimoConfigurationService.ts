@@ -54,7 +54,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
             const result = yield* client.executeCommand({
               command: "marimo.api",
               params: {
-                method: "get_configuration",
+                method: "get-configuration",
                 params: {
                   notebookUri,
                   inner: {},
@@ -96,7 +96,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
             const result = yield* client.executeCommand({
               command: "marimo.api",
               params: {
-                method: "update_configuration",
+                method: "update-configuration",
                 params: {
                   notebookUri,
                   inner: {

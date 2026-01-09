@@ -132,7 +132,7 @@ const TestLanguageClientLive = Layer.effect(
             return yield* Effect.fail(new Error(`Unknown command: ${command}`));
           }
 
-          if (params.method === "get_configuration") {
+          if (params.method === "get-configuration") {
             const config = ctx.configStore.get(params.params.notebookUri);
             if (!config) {
               return yield* Effect.fail(
@@ -142,7 +142,7 @@ const TestLanguageClientLive = Layer.effect(
             return { config };
           }
 
-          if (params.method === "update_configuration") {
+          if (params.method === "update-configuration") {
             const existing = ctx.configStore.get(params.params.notebookUri);
             if (existing === undefined) {
               return yield* Effect.die(
