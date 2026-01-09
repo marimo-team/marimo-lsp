@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING, cast
 
 import msgspec
 from marimo._convert.converters import MarimoConvert
+from marimo._runtime.commands import InvokeFunctionCommand, UpdateUserConfigCommand
 from marimo._runtime.packages.package_managers import create_package_manager
-from marimo._runtime.requests import FunctionCallRequest, SetUserConfigRequest
 from marimo._schemas.serialization import NotebookSerialization
 from marimo._server.export.exporter import Exporter
 from marimo._server.models.export import ExportAsHTMLRequest
-from marimo._server.models.models import InstantiateRequest
+from marimo._server.models.models import InstantiateNotebookRequest
 from marimo._utils.parse_dataclass import parse_raw
 
 from marimo_lsp.debug_adapter import handle_debug_adapter_request
@@ -23,15 +23,15 @@ from marimo_lsp.models import (
     DeleteCellRequest,
     DependencyTreeRequest,
     DeserializeRequest,
+    ExecuteCellsRequest,
     GetConfigurationRequest,
     InterruptRequest,
     ListPackagesRequest,
     NotebookCommand,
-    RunRequest,
     SerializeRequest,
     SessionCommand,
-    SetUIElementValueRequest,
     UpdateConfigurationRequest,
+    UpdateUIElementRequest,
 )
 from marimo_lsp.package_manager import LspPackageManager
 
@@ -39,7 +39,6 @@ if TYPE_CHECKING:
     from marimo._config.config import DisplayConfig, PartialMarimoConfig
     from pygls.lsp.server import LanguageServer
 
-    from marimo_lsp.kernel_manager import LspKernelManager
     from marimo_lsp.session_manager import LspSessionManager
 
 
@@ -49,15 +48,13 @@ logger = get_logger()
 
 
 async def run(
-    ls: LanguageServer, manager: LspSessionManager, args: SessionCommand[RunRequest]
+    ls: LanguageServer,
+    manager: LspSessionManager,
+    args: SessionCommand[ExecuteCellsRequest],
 ):
     logger.info(f"run for {args.notebook_uri}")
     session = manager.get_session(args.notebook_uri)
-    if (
-        session is None
-        or cast("LspKernelManager", session.kernel_manager).executable
-        != args.executable
-    ):
+    if session is None or session.kernel_manager.executable != args.executable:
         session = manager.create_session(
             server=ls,
             executable=args.executable,
@@ -71,30 +68,28 @@ async def run(
     if not is_instantiated:
         logger.info(f"Instantiating session {args.notebook_uri}")
         session.instantiate(
-            InstantiateRequest(auto_run=False, object_ids=[], values=[]),
+            InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
             http_request=None,
         )
         manager.set_instantiated(args.notebook_uri, instantiated=True)
 
-    session.put_control_request(
-        args.inner.as_execution_request(), from_consumer_id=None
-    )
+    session.put_control_request(args.inner.as_command(), from_consumer_id=None)
     logger.info(f"Execution request sent for {args.notebook_uri}")
 
 
 async def set_ui_element_value(
     manager: LspSessionManager,
-    args: NotebookCommand[SetUIElementValueRequest],
+    args: NotebookCommand[UpdateUIElementRequest],
 ):
     logger.info(f"set_ui_element_value for {args.notebook_uri}")
     session = manager.get_session(args.notebook_uri)
     assert session, f"No session in workspace for {args.notebook_uri}"
-    session.put_control_request(args.inner, from_consumer_id=None)
+    session.put_control_request(args.inner.as_command(), from_consumer_id=None)
 
 
 async def function_call_request(
     manager: LspSessionManager,
-    args: NotebookCommand[FunctionCallRequest],
+    args: NotebookCommand[InvokeFunctionCommand],
 ):
     logger.info(f"function_call_request for {args.notebook_uri}")
     session = manager.get_session(args.notebook_uri)
@@ -122,7 +117,7 @@ async def delete_cell(
     logger.info(f"delete_cell for {args.notebook_uri}")
     session = manager.get_session(args.notebook_uri)
     if session:
-        session.put_control_request(args.inner, from_consumer_id=None)
+        session.put_control_request(args.inner.as_command(), from_consumer_id=None)
         logger.info(f"Delete cell request sent for {args.notebook_uri}")
     else:
         logger.warning(f"No session found for {args.notebook_uri}")
@@ -248,7 +243,7 @@ async def update_configuration(
 
         # Update the kernel's view of the config
         session.put_control_request(
-            SetUserConfigRequest(updated_config),
+            UpdateUserConfigCommand(config=updated_config),
             from_consumer_id=None,
         )
 
@@ -287,7 +282,9 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
     """Unified API endpoint for all marimo internal methods."""
     if method == "run":
         return await run(
-            ls, manager, msgspec.convert(params, type=SessionCommand[RunRequest])
+            ls,
+            manager,
+            msgspec.convert(params, type=SessionCommand[ExecuteCellsRequest]),
         )
 
     if method == "interrupt":
@@ -303,13 +300,13 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
     if method == "set_ui_element_value":
         return await set_ui_element_value(
             manager,
-            msgspec.convert(params, type=NotebookCommand[SetUIElementValueRequest]),
+            msgspec.convert(params, type=NotebookCommand[UpdateUIElementRequest]),
         )
 
     if method == "function_call_request":
         return await function_call_request(
             manager,
-            msgspec.convert(params, type=NotebookCommand[FunctionCallRequest]),
+            msgspec.convert(params, type=NotebookCommand[InvokeFunctionCommand]),
         )
 
     if method == "dap":

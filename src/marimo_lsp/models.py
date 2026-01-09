@@ -6,7 +6,6 @@ import typing
 
 import marimo._server.models.models as core
 import msgspec
-from marimo._runtime import requests
 
 T = typing.TypeVar("T", bound=msgspec.Struct)
 
@@ -109,6 +108,6 @@ class ApiRequest(msgspec.Struct, rename="camel"):
     """The parameters for the method."""
 
 
-RunRequest = core.RunRequest
-SetUIElementValueRequest = requests.SetUIElementValueRequest
-DeleteCellRequest = requests.DeleteCellRequest
+ExecuteCellsRequest = core.ExecuteCellsRequest
+UpdateUIElementRequest = core.UpdateUIElementRequest
+DeleteCellRequest = core.DeleteCellRequest

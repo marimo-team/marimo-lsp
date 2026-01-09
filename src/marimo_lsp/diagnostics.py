@@ -7,7 +7,10 @@ from typing import TYPE_CHECKING, Generic, NewType, TypeVar
 
 from marimo._ast.compiler import compile_cell
 from marimo._messaging.msgspec_encoder import asdict
-from marimo._messaging.ops import VariableDeclaration, Variables
+from marimo._messaging.notification import (
+    VariableDeclarationNotification,
+    VariablesNotification,
+)
 from marimo._runtime.dataflow import DirectedGraph
 
 from marimo_lsp.loggers import get_logger
@@ -233,11 +236,11 @@ class GraphManagerRegistry:
         self._managers.pop(notebook_uri, None)
 
 
-def extract_variables(graph: DirectedGraph) -> Variables:
+def extract_variables(graph: DirectedGraph) -> VariablesNotification:
     """Extract variable declarations and usages from the directed graph."""
-    return Variables(
+    return VariablesNotification(
         variables=[
-            VariableDeclaration(
+            VariableDeclarationNotification(
                 name=variable,
                 declared_by=list(declared_by),
                 used_by=list(graph.get_referring_cells(variable, language="python")),
