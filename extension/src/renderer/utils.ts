@@ -34,15 +34,15 @@ export function createRequestClient(
   const client = {
     async sendFunctionRequest(request) {
       context.postMessage({
-        command: "function_call_request",
+        command: "invoke-function",
         params: request,
       });
       return null;
     },
     async sendComponentValues(request) {
       context.postMessage({
-        command: "set_ui_element_value",
-        params: { ...request },
+        command: "update-ui-element",
+        params: request,
       });
       return null;
     },

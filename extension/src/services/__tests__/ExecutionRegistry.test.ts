@@ -10,7 +10,10 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { MarimoNotebookDocument, type NotebookCellId } from "../../schemas.ts";
-import type { CellMessage, CellRuntimeState } from "../../types.ts";
+import type {
+  CellOperationNotification,
+  CellRuntimeState,
+} from "../../types.ts";
 import { CellStateManager } from "../CellStateManager.ts";
 import { buildCellOutputs, ExecutionRegistry } from "../ExecutionRegistry.ts";
 import { LanguageClient } from "../LanguageClient.ts";
@@ -917,7 +920,7 @@ it.scoped(
       );
 
       // Send a message with staleInputs: true
-      const message: CellMessage = {
+      const message: CellOperationNotification = {
         op: "cell-op",
         cell_id: Option.getOrThrow(cell.id),
         status: "idle",
@@ -996,7 +999,7 @@ it.scoped(
       );
 
       // Send a queued message
-      const message: CellMessage = {
+      const message: CellOperationNotification = {
         op: "cell-op",
         cell_id: cellId,
         status: "queued",

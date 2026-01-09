@@ -52,7 +52,7 @@ const withTestCtx = Effect.fnUntraced(function* (
               return yield* Effect.die(`Unknown command: ${command}`);
             }
 
-            if (params.method === "get_configuration") {
+            if (params.method === "get-configuration") {
               const config = configStore.get(params.params.notebookUri);
               if (config === undefined) {
                 return yield* Effect.die(
@@ -62,7 +62,7 @@ const withTestCtx = Effect.fnUntraced(function* (
               return { config };
             }
 
-            if (params.method === "update_configuration") {
+            if (params.method === "update-configuration") {
               const existing = configStore.get(params.params.notebookUri);
               if (existing === undefined) {
                 return yield* Effect.die(

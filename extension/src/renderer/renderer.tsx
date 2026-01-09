@@ -45,7 +45,7 @@ export const activate: vscode.ActivationFunction = (context) => {
     "message",
     (event: MessageEvent<MarimoHtmlPublishMessage>) => {
       switch (event.data.command) {
-        case "navigate_to_cell":
+        case "navigate-to-cell":
           context.postMessage(event.data);
           break;
         default:

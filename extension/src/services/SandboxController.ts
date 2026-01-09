@@ -100,7 +100,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             yield* client.executeCommand({
               command: "marimo.api",
               params: {
-                method: "run",
+                method: "execute-cells",
                 params: {
                   notebookUri: notebook.id,
                   executable,

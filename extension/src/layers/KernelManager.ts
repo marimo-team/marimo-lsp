@@ -13,12 +13,12 @@ import { OutputChannel } from "../services/OutputChannel.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
-import type { MessageOperation } from "../types.ts";
+import type { Notification } from "../types.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
 interface MarimoOperation {
   notebookUri: NotebookId;
-  operation: MessageOperation;
+  operation: Notification;
 }
 
 /**
@@ -114,7 +114,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
               }),
             );
             switch (message.command) {
-              case "set_ui_element_value": {
+              case "update-ui-element": {
                 yield* client.executeCommand({
                   command: "marimo.api",
                   params: {
@@ -127,7 +127,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
                 });
                 return;
               }
-              case "function_call_request": {
+              case "invoke-function": {
                 yield* client.executeCommand({
                   command: "marimo.api",
                   params: {
@@ -140,7 +140,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
                 });
                 return;
               }
-              case "navigate_to_cell": {
+              case "navigate-to-cell": {
                 const { cellId } = message.params;
                 const editor = yield* code.window.getActiveNotebookEditor();
 

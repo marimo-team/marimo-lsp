@@ -1,6 +1,9 @@
 import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import { decodeVariablesOperation, type NotebookId } from "../../schemas.ts";
-import type { VariablesOp, VariableValuesOp } from "../../types.ts";
+import type {
+  VariablesNotification,
+  VariableValuesNotification,
+} from "../../types.ts";
 import { Log } from "../../utils/log.ts";
 
 // Re-export for others using this service
@@ -21,12 +24,12 @@ export class VariablesService extends Effect.Service<VariablesService>()(
     scoped: Effect.gen(function* () {
       // Track variable declarations: NotebookUri -> VariablesOp
       const variablesRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, VariablesOp>(),
+        HashMap.empty<NotebookId, VariablesNotification>(),
       );
 
       // Track variable values: NotebookUri -> VariableValuesOp
       const variableValuesRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, VariableValuesOp>(),
+        HashMap.empty<NotebookId, VariableValuesNotification>(),
       );
 
       /**
@@ -52,7 +55,10 @@ export class VariablesService extends Effect.Service<VariablesService>()(
         /**
          * Update variable declarations for a notebook
          */
-        updateVariables(notebookUri: NotebookId, operation: VariablesOp) {
+        updateVariables(
+          notebookUri: NotebookId,
+          operation: VariablesNotification,
+        ) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(variablesRef, (map) =>
               HashMap.set(map, notebookUri, operation),
@@ -90,7 +96,7 @@ export class VariablesService extends Effect.Service<VariablesService>()(
          */
         updateVariableValues(
           notebookUri: NotebookId,
-          operation: VariableValuesOp,
+          operation: VariableValuesNotification,
         ) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(variableValuesRef, (map) =>

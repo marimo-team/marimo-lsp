@@ -4,12 +4,12 @@ import { Config } from "./services/Config.ts";
 import type { PythonController } from "./services/NotebookControllerFactory.ts";
 import type { SandboxController } from "./services/SandboxController.ts";
 import { VsCode } from "./services/VsCode.ts";
-import type { MessageOperationOf } from "./types.ts";
+import type { NotificationOf } from "./types.ts";
 import { findVenvPath } from "./utils/findVenvPath.ts";
 import { installPackages } from "./utils/installPackages.ts";
 
 export const handleMissingPackageAlert = Effect.fnUntraced(function* (
-  operation: MessageOperationOf<"missing-package-alert">,
+  operation: NotificationOf<"missing-package-alert">,
   notebook: MarimoNotebookDocument,
   controller: PythonController | SandboxController,
 ) {

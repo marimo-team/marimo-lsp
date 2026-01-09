@@ -47,7 +47,7 @@ import "@marimo-team/frontend/unstable_internal/css/admonition.css";
 import "@marimo-team/frontend/unstable_internal/css/md-tooltip.css";
 import "@marimo-team/frontend/unstable_internal/css/table.css";
 
-import type { MessageOperationOf, CellRuntimeState } from "../types.ts";
+import type { NotificationOf, CellRuntimeState } from "../types.ts";
 
 export { useTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";
 
@@ -70,7 +70,7 @@ export function initialize(client: RequestClient) {
 
 // vendored from https://github.com/marimo-team/marimo/blob/111b24f/frontend/src/core/websocket/useMarimoWebSocket.tsx#L110-L134
 export function handleSendUiElementMessage(
-  msg: MessageOperationOf<"send-ui-element-message">,
+  msg: NotificationOf<"send-ui-element-message">,
 ) {
   const modelId = msg.model_id;
   const uiElement = msg.ui_element as UIElementId;
@@ -92,14 +92,14 @@ export function handleSendUiElementMessage(
 }
 
 export function handleFunctionCallResult(
-  msg: MessageOperationOf<"function-call-result">,
+  msg: NotificationOf<"function-call-result">,
 ) {
   FUNCTIONS_REGISTRY.resolve(msg.function_call_id as RequestId, msg);
   return;
 }
 
 export function handleRemoveUIElements(
-  msg: MessageOperationOf<"remove-ui-elements">,
+  msg: NotificationOf<"remove-ui-elements">,
 ) {
   // This removes the element from the registry to (1) clean-up
   // memory and (2) make sure that the old value doesn't get re-used

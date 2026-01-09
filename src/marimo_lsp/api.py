@@ -280,7 +280,7 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
     ls: LanguageServer, manager: LspSessionManager, method: str, params: dict
 ) -> object:
     """Unified API endpoint for all marimo internal methods."""
-    if method == "run":
+    if method == "execute-cells":
         return await run(
             ls,
             manager,
@@ -292,18 +292,18 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
             manager, msgspec.convert(params, type=NotebookCommand[InterruptRequest])
         )
 
-    if method == "delete_cell":
+    if method == "delete-cell":
         return await delete_cell(
             manager, msgspec.convert(params, type=NotebookCommand[DeleteCellRequest])
         )
 
-    if method == "set_ui_element_value":
+    if method == "update-ui-element":
         return await set_ui_element_value(
             manager,
             msgspec.convert(params, type=NotebookCommand[UpdateUIElementRequest]),
         )
 
-    if method == "function_call_request":
+    if method == "invoke-function":
         return await function_call_request(
             manager,
             msgspec.convert(params, type=NotebookCommand[InvokeFunctionCommand]),
@@ -316,7 +316,7 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
             msgspec.convert(params, type=NotebookCommand[DebugAdapterRequest]),
         )
 
-    if method == "close_session":
+    if method == "close-session":
         return await close_session(
             manager,
             msgspec.convert(params, type=NotebookCommand[CloseSessionRequest]),
@@ -328,31 +328,31 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
     if method == "deserialize":
         return await deserialize(msgspec.convert(params, type=DeserializeRequest))
 
-    if method == "get_package_list":
+    if method == "get-package-list":
         return await get_package_list(
             manager,
             msgspec.convert(params, type=SessionCommand[ListPackagesRequest]),
         )
 
-    if method == "get_dependency_tree":
+    if method == "get-dependency-tree":
         return await get_dependency_tree(
             manager,
             msgspec.convert(params, type=SessionCommand[DependencyTreeRequest]),
         )
 
-    if method == "get_configuration":
+    if method == "get-configuration":
         return await get_configuration(
             manager,
             msgspec.convert(params, type=NotebookCommand[GetConfigurationRequest]),
         )
 
-    if method == "update_configuration":
+    if method == "update-configuration":
         return await update_configuration(
             manager,
             msgspec.convert(params, type=NotebookCommand[UpdateConfigurationRequest]),
         )
 
-    if method == "export_as_html":
+    if method == "export-as-html":
         return await export_as_html(
             manager,
             msgspec.convert(params, type=NotebookCommand[ExportAsHTMLRequest]),

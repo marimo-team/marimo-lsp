@@ -1,7 +1,10 @@
 import { Brand, Data, Effect, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import type { CellMessage, VariablesOp } from "../types.ts";
+import type {
+  CellOperationNotification,
+  VariablesNotification,
+} from "../types.ts";
 import { MarimoNotebook } from "./ir.ts";
 
 const SQLMetadata = Schema.Struct({
@@ -332,11 +335,11 @@ class NotebookCellNotFoundError extends Data.TaggedError(
   }
 }
 
-export function extractCellIdFromCellMessage(msg: CellMessage) {
+export function extractCellIdFromCellMessage(msg: CellOperationNotification) {
   return NotebookCellId(msg.cell_id);
 }
 
-export function decodeVariablesOperation({ variables }: VariablesOp) {
+export function decodeVariablesOperation({ variables }: VariablesNotification) {
   return variables.map(
     (v) =>
       ({

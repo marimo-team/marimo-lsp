@@ -80,7 +80,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                 yield* marimo.executeCommand({
                   command: "marimo.api",
                   params: {
-                    method: "run",
+                    method: "execute-cells",
                     params: {
                       notebookUri: notebook.id,
                       executable: validEnv.executable,
