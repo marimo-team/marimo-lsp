@@ -1,4 +1,5 @@
 import * as lsp from "vscode-languageclient/node";
+import type * as proto from "vscode-languageserver-protocol";
 
 /**
  * LanguageClient that namespaces LSP executeCommand registrations on the client
@@ -12,15 +13,20 @@ import * as lsp from "vscode-languageclient/node";
  * The transformation is symmetric:
  * - Incoming command registrations are prefixed on registration
  * - Outgoing executeCommand requests have the prefix removed
+ *
+ * Additionally, this client intercepts server capabilities to extend the
+ * notebook document sync selector to include custom language IDs (like mo-python).
  */
 export class NamespacedLanguageClient extends lsp.LanguageClient {
   #prefix: string;
+  #extraCellLanguages: string[];
 
   constructor(
     id: string,
     name: string,
     serverOptions: lsp.ServerOptions,
     clientOptions: lsp.LanguageClientOptions,
+    options?: { extraCellLanguages?: string[] },
   ) {
     // Just use the client ID as the prefix
     const prefix = `${id}.`;
@@ -37,6 +43,41 @@ export class NamespacedLanguageClient extends lsp.LanguageClient {
       },
     });
     this.#prefix = prefix;
+    this.#extraCellLanguages = options?.extraCellLanguages ?? [];
+  }
+
+  /**
+   * Intercepts the initialize result to extend the notebook document sync
+   * selector with additional cell languages. This allows our middleware to
+   * transform custom language IDs (like mo-python) before sending to the server.
+   */
+  protected override async doInitialize(
+    connection: lsp.MessageConnection,
+    initParams: proto.InitializeParams,
+  ): Promise<proto.InitializeResult> {
+    // @ts-expect-error - accessing protected method on parent
+    const result = await super.doInitialize(connection, initParams);
+
+    // Extend notebook selector to include extra cell languages
+    if (
+      this.#extraCellLanguages.length > 0 &&
+      result.capabilities?.notebookDocumentSync
+    ) {
+      const sync = result.capabilities.notebookDocumentSync;
+      const options = "notebookSelector" in sync ? sync : undefined;
+      if (options?.notebookSelector) {
+        for (const selector of options.notebookSelector) {
+          if ("cells" in selector && selector.cells) {
+            // Add extra languages to each cell selector
+            for (const lang of this.#extraCellLanguages) {
+              selector.cells.push({ language: lang });
+            }
+          }
+        }
+      }
+    }
+
+    return result;
   }
 
   /**

@@ -48,6 +48,7 @@ import { TreeView } from "../views/TreeView.ts";
 import { VariablesViewLive } from "../views/VariablesView.ts";
 import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
+import { FormatterConfigSyncLive } from "./FormatterConfigSync.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
 import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
@@ -73,6 +74,7 @@ const MainLive = Layer.empty
     Layer.merge(PackagesViewLive),
     Layer.merge(CellStatusBarProviderLive),
     Layer.merge(CellMetadataBindingsLive),
+    Layer.merge(FormatterConfigSyncLive),
   )
   .pipe(
     Layer.provide(RuffLanguageServer.Default),
