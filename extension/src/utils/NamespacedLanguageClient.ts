@@ -49,6 +49,10 @@ export class NamespacedLanguageClient extends lsp.LanguageClient {
    * Intercepts the initialize result to extend the notebook document sync
    * selector with additional cell languages. This allows our middleware to
    * transform custom language IDs (like mo-python) before sending to the server.
+   *
+   * IMPORTANT: We must re-initialize the NotebookDocumentSyncFeature after
+   * modifying capabilities because its internal selector is built at construction
+   * time from the original capabilities.
    */
   protected override async doInitialize(
     connection: lsp.MessageConnection,
@@ -64,6 +68,7 @@ export class NamespacedLanguageClient extends lsp.LanguageClient {
     ) {
       const sync = result.capabilities.notebookDocumentSync;
       const options = "notebookSelector" in sync ? sync : undefined;
+
       if (options?.notebookSelector) {
         for (const selector of options.notebookSelector) {
           if ("cells" in selector && selector.cells) {
@@ -71,6 +76,34 @@ export class NamespacedLanguageClient extends lsp.LanguageClient {
             for (const lang of this.#extraCellLanguages) {
               selector.cells.push({ language: lang });
             }
+          }
+        }
+
+        // Re-initialize the NotebookDocumentSyncFeature with modified capabilities.
+        // The feature's internal selector was already built from the OLD capabilities,
+        // so we need to clear and re-register it with the updated selector.
+        // @ts-expect-error - accessing private _features array
+        const features = this._features as Array<lsp.DynamicFeature<unknown>>;
+        for (const feature of features) {
+          if (feature.registrationType?.method === "notebookDocument/sync") {
+            // Clear existing registrations (disposes providers with old selectors)
+            feature.clear();
+            // @ts-expect-error - accessing private _capabilities
+            const capabilities = this._capabilities;
+            // Re-run preInitialize and initialize with modified capabilities
+            if (
+              "preInitialize" in feature &&
+              typeof feature.preInitialize === "function"
+            ) {
+              feature.preInitialize(capabilities);
+            }
+            if (
+              "initialize" in feature &&
+              typeof feature.initialize === "function"
+            ) {
+              feature.initialize(capabilities);
+            }
+            break;
           }
         }
       }

@@ -2,7 +2,6 @@ import { Data, Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
 import type { Middleware } from "vscode-languageclient/node";
-import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
 import { Config } from "../Config.ts";
 import { Constants } from "../Constants.ts";
@@ -60,15 +59,21 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
 
       const serverOptions: lsp.ServerOptions = {
         command: uv.bin.executable,
-        args: ["tool", "run", "--offline", "ruff", "server"],
+        args: ["tool", "run", "ruff", "server"],
         options: {},
       };
 
       const adapter = new RuffAdapter(LanguageId.Python);
+
       const middleware: Middleware = {
+        didOpen: (document, next) => next(adapter.document(document)),
+        didClose: (document, next) => next(adapter.document(document)),
+        didChange: (change, next) =>
+          next({
+            ...change,
+            document: adapter.document(change.document),
+          }),
         notebooks: {
-          // Append .ipynb to notebook URI so Ruff recognizes it as a notebook
-          // Keep cell URIs unchanged so they match format requests
           didOpen: (doc, cells, next) =>
             next(
               adapter.notebookDocument(doc),
@@ -86,7 +91,6 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
               cells: adapter.cellsEvent(event.cells),
             }),
         },
-        // Only map languageId, keep URI unchanged to match notebook sync
         provideDocumentFormattingEdits: (document, options, token, next) =>
           next(adapter.document(document), options, token),
         provideDocumentRangeFormattingEdits: (
@@ -101,21 +105,15 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       };
 
       const clientOptions: lsp.LanguageClientOptions = {
-        documentSelector: [
-          {
-            notebook: NOTEBOOK_TYPE,
-            // We only want to handle our "custom" language-id with our server
-            language: LanguageId.Python,
-          },
-        ],
-        synchronize: {
-          fileEvents: [],
-        },
-        initializationOptions: {
-          settings,
-          globalSettings,
-        },
         middleware,
+        outputChannelName: "marimo (ruff)",
+        documentSelector: [
+          { scheme: "file", language: LanguageId.Python },
+          { scheme: "untitled", language: LanguageId.Python },
+          { scheme: "vscode-notebook", language: LanguageId.Python },
+          { scheme: "vscode-notebook-cell", language: LanguageId.Python },
+        ],
+        initializationOptions: { settings, globalSettings },
       };
 
       const getClient = yield* Effect.cached(
@@ -266,7 +264,12 @@ function getGlobalRuffSettings(
 
 /**
  * Adapts marimo notebook documents and cells for Ruff compatibility.
- * Normalizes mo-python language IDs to python and appends .ipynb to notebook URIs.
+ *
+ * Key insight: Ruff uses `key_from_url` which checks if a URL path ends with `.ipynb`
+ * to determine if it's a notebook. We must:
+ * - Append `.ipynb` to the NOTEBOOK document URI so Ruff treats it as a notebook
+ * - NOT append `.ipynb` to CELL document URIs, so they aren't mistaken for notebooks
+ * - Normalize mo-python -> python language ID
  */
 class RuffAdapter {
   #pythonLanguageId: string;
@@ -281,34 +284,40 @@ class RuffAdapter {
 
   /** Appends .ipynb to notebook URI so Ruff recognizes it as a notebook. */
   notebookDocument<T extends { uri: vscode.Uri }>(doc: T): T {
-    return { ...doc, uri: doc.uri.with({ path: `${doc.uri.path}.ipynb` }) };
+    const wrapped = Object.create(doc);
+    Object.defineProperty(wrapped, "uri", {
+      value: doc.uri.with({ path: `${doc.uri.path}.ipynb` }),
+      enumerable: true,
+      configurable: true,
+    });
+    return wrapped;
   }
 
   /**
-   * Creates a document proxy that normalizes mo-python to python.
-   * Uses Proxy to preserve TextDocument methods while intercepting languageId.
+   * Creates a document wrapper that normalizes mo-python to python.
+   * Does NOT modify the URI - cell URIs should stay as-is so Ruff doesn't
+   * mistake them for notebook documents.
    */
   document(document: vscode.TextDocument): vscode.TextDocument {
-    const self = this;
-    return new Proxy(document, {
-      get(target, prop, receiver) {
-        if (prop === "languageId") {
-          return self.#resolveLanguageId(target.languageId);
-        }
-        const value = Reflect.get(target, prop, receiver);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
+    const wrapped = Object.create(document);
+    Object.defineProperty(wrapped, "languageId", {
+      value: this.#resolveLanguageId(document.languageId),
+      enumerable: true,
+      configurable: true,
     });
+    return wrapped;
   }
 
-  /** Normalizes mo-python to python on a notebook cell. */
+  /**
+   * Adapts a notebook cell for notebook document sync messages.
+   * - Transforms the notebook URI to include .ipynb
+   * - Normalizes the cell document language ID (but NOT the URI)
+   */
   cell(cell: vscode.NotebookCell): vscode.NotebookCell {
     return {
       ...cell,
-      document: {
-        ...cell.document,
-        languageId: this.#resolveLanguageId(cell.document.languageId),
-      },
+      notebook: this.notebookDocument(cell.notebook),
+      document: this.document(cell.document),
     };
   }
 
@@ -317,7 +326,7 @@ class RuffAdapter {
     cells: lsp.VNotebookDocumentChangeEvent["cells"],
   ): lsp.VNotebookDocumentChangeEvent["cells"] {
     if (!cells) {
-      return {};
+      return undefined;
     }
 
     const result: lsp.VNotebookDocumentChangeEvent["cells"] = {};
@@ -326,10 +335,7 @@ class RuffAdapter {
     if (textContent) {
       result.textContent = textContent.map((change) => ({
         ...change,
-        document: {
-          ...change.document,
-          languageId: this.#resolveLanguageId(change.document.languageId),
-        },
+        document: this.document(change.document),
       }));
     }
 
