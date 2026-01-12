@@ -9,7 +9,7 @@ import { VsCode } from "../VsCode.ts";
 
 // TODO: make TY_VERSION configurable?
 // For now, since we are doing rolling releases, we can bump this as needed.
-const TY_VERSION = "0.0.8";
+const TY_VERSION = "0.0.11";
 
 export class PythonLanguageServerStartError extends Data.TaggedError(
   "PythonLanguageServerStartError",
