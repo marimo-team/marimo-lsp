@@ -5,6 +5,7 @@ import type { Middleware } from "vscode-languageclient/node";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
 import { Config } from "../Config.ts";
+import { Constants } from "../Constants.ts";
 import { Uv } from "../Uv.ts";
 import { VsCode } from "../VsCode.ts";
 
@@ -13,10 +14,6 @@ export class RuffLanguageServerStartError extends Data.TaggedError(
 )<{
   cause: unknown;
 }> {}
-
-function intoIpynbUri(uri: vscode.Uri): vscode.Uri {
-  return uri.with({ path: `${uri.path}.ipynb` });
-}
 
 /**
  * Manages a dedicated Ruff language server instance (using ruff via uvx)
@@ -32,6 +29,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       const uv = yield* Uv;
       const config = yield* Config;
       const code = yield* VsCode;
+      const { LanguageId } = yield* Constants;
 
       const shouldEnableRuffLS =
         yield* config.getManagedLanguageFeaturesEnabled();
@@ -66,50 +64,48 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         options: {},
       };
 
+      const adapter = new RuffAdapter(LanguageId.Python);
       const middleware: Middleware = {
         notebooks: {
           // Append .ipynb to notebook URI so Ruff recognizes it as a notebook
           // Keep cell URIs unchanged so they match format requests
           didOpen: (doc, cells, next) =>
             next(
-              { ...doc, uri: intoIpynbUri(doc.uri) },
-              cells.map(mapCellLanguageId),
+              adapter.notebookDocument(doc),
+              cells.map((cell) => adapter.cell(cell)),
             ),
           didClose: (doc, cells, next) =>
             next(
-              { ...doc, uri: intoIpynbUri(doc.uri) },
-              cells.map(mapCellLanguageId),
+              adapter.notebookDocument(doc),
+              cells.map((cell) => adapter.cell(cell)),
             ),
           didChange: (event, next) =>
             next({
-              notebook: {
-                ...event.notebook,
-                uri: intoIpynbUri(event.notebook.uri),
-              },
+              notebook: adapter.notebookDocument(event.notebook),
               metadata: event.metadata,
-              cells: mapCellsEvent(event.cells),
+              cells: adapter.cellsEvent(event.cells),
             }),
         },
         // Only map languageId, keep URI unchanged to match notebook sync
         provideDocumentFormattingEdits: (document, options, token, next) =>
-          next(mapLanguageIdOnly(document), options, token),
+          next(adapter.document(document), options, token),
         provideDocumentRangeFormattingEdits: (
           document,
           range,
           options,
           token,
           next,
-        ) => next(mapLanguageIdOnly(document), range, options, token),
+        ) => next(adapter.document(document), range, options, token),
         provideCodeActions: (document, range, context, token, next) =>
-          next(mapLanguageIdOnly(document), range, context, token),
+          next(adapter.document(document), range, context, token),
       };
 
       const clientOptions: lsp.LanguageClientOptions = {
         documentSelector: [
           {
             notebook: NOTEBOOK_TYPE,
-            // We only want to handle our "custom" mo-python language with our server
-            language: "mo-python",
+            // We only want to handle our "custom" language-id with our server
+            language: LanguageId.Python,
           },
         ],
         synchronize: {
@@ -130,7 +126,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
               "marimo (ruff)",
               serverOptions,
               clientOptions,
-              { extraCellLanguages: ["mo-python"] },
+              { extraCellLanguages: [LanguageId.Python] },
             );
             await client.start();
             return client;
@@ -187,62 +183,6 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
     }),
   },
 ) {}
-
-function toPythonLanguageId(languageId: string): string {
-  return languageId === "mo-python" ? "python" : languageId;
-}
-
-/**
- * Creates a document proxy that only maps languageId from mo-python to python.
- * Uses Proxy to preserve TextDocument methods while intercepting languageId.
- */
-function mapLanguageIdOnly(document: vscode.TextDocument): vscode.TextDocument {
-  return new Proxy(document, {
-    get(target, prop, receiver) {
-      if (prop === "languageId") return toPythonLanguageId(target.languageId);
-      const value = Reflect.get(target, prop, receiver);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-}
-
-/** Maps languageId on a text document (for notebook sync). */
-function mapLanguageId(document: vscode.TextDocument): vscode.TextDocument {
-  return { ...document, languageId: toPythonLanguageId(document.languageId) };
-}
-
-/** Maps languageId on a notebook cell (for notebook sync). */
-function mapCellLanguageId(cell: vscode.NotebookCell): vscode.NotebookCell {
-  return { ...cell, document: mapLanguageId(cell.document) };
-}
-
-/** Maps languageId on all cells in a notebook change event. */
-function mapCellsEvent(
-  cells: lsp.VNotebookDocumentChangeEvent["cells"],
-): lsp.VNotebookDocumentChangeEvent["cells"] {
-  if (!cells) return {};
-  const result: lsp.VNotebookDocumentChangeEvent["cells"] = {};
-  if (cells.textContent) {
-    result.textContent = cells.textContent.map((change) => ({
-      ...change,
-      document: mapLanguageId(change.document),
-    }));
-  }
-  if (cells.data) {
-    result.data = cells.data.map(mapCellLanguageId);
-  }
-  if (cells.structure) {
-    result.structure = {
-      array: {
-        ...cells.structure.array,
-        cells: cells.structure.array.cells?.map(mapCellLanguageId),
-      },
-      didOpen: cells.structure.didOpen?.map(mapCellLanguageId),
-      didClose: cells.structure.didClose?.map(mapCellLanguageId),
-    };
-  }
-  return result;
-}
 
 /**
  * Read ruff.* settings from a WorkspaceConfiguration and return them in the format
@@ -322,4 +262,92 @@ function getGlobalRuffSettings(
     logLevel: getGlobal("logLevel"),
     logFile: getGlobal("logFile"),
   };
+}
+
+/**
+ * Adapts marimo notebook documents and cells for Ruff compatibility.
+ * Normalizes mo-python language IDs to python and appends .ipynb to notebook URIs.
+ */
+class RuffAdapter {
+  #pythonLanguageId: string;
+
+  constructor(pythonId: string) {
+    this.#pythonLanguageId = pythonId;
+  }
+
+  #resolveLanguageId(languageId: string): string {
+    return languageId === this.#pythonLanguageId ? "python" : languageId;
+  }
+
+  /** Appends .ipynb to notebook URI so Ruff recognizes it as a notebook. */
+  notebookDocument<T extends { uri: vscode.Uri }>(doc: T): T {
+    return { ...doc, uri: doc.uri.with({ path: `${doc.uri.path}.ipynb` }) };
+  }
+
+  /**
+   * Creates a document proxy that normalizes mo-python to python.
+   * Uses Proxy to preserve TextDocument methods while intercepting languageId.
+   */
+  document(document: vscode.TextDocument): vscode.TextDocument {
+    const self = this;
+    return new Proxy(document, {
+      get(target, prop, receiver) {
+        if (prop === "languageId") {
+          return self.#resolveLanguageId(target.languageId);
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  }
+
+  /** Normalizes mo-python to python on a notebook cell. */
+  cell(cell: vscode.NotebookCell): vscode.NotebookCell {
+    return {
+      ...cell,
+      document: {
+        ...cell.document,
+        languageId: this.#resolveLanguageId(cell.document.languageId),
+      },
+    };
+  }
+
+  /** Normalizes mo-python to python on all cells in a notebook change event. */
+  cellsEvent(
+    cells: lsp.VNotebookDocumentChangeEvent["cells"],
+  ): lsp.VNotebookDocumentChangeEvent["cells"] {
+    if (!cells) {
+      return {};
+    }
+
+    const result: lsp.VNotebookDocumentChangeEvent["cells"] = {};
+    const { textContent, data, structure } = cells;
+
+    if (textContent) {
+      result.textContent = textContent.map((change) => ({
+        ...change,
+        document: {
+          ...change.document,
+          languageId: this.#resolveLanguageId(change.document.languageId),
+        },
+      }));
+    }
+
+    if (data) {
+      result.data = data.map((cell) => this.cell(cell));
+    }
+
+    if (structure) {
+      result.structure = {
+        array: {
+          ...structure.array,
+          cells: structure.array.cells?.map((cell) => this.cell(cell)),
+        },
+        didOpen: structure.didOpen?.map((cell) => this.cell(cell)),
+        didClose: structure.didClose?.map((cell) => this.cell(cell)),
+      };
+    }
+
+    return result;
+  }
 }

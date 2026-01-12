@@ -1,5 +1,4 @@
 import * as lsp from "vscode-languageclient/node";
-import type * as proto from "vscode-languageserver-protocol";
 
 /**
  * LanguageClient that namespaces LSP executeCommand registrations on the client
@@ -53,8 +52,8 @@ export class NamespacedLanguageClient extends lsp.LanguageClient {
    */
   protected override async doInitialize(
     connection: lsp.MessageConnection,
-    initParams: proto.InitializeParams,
-  ): Promise<proto.InitializeResult> {
+    initParams: lsp.InitializeParams,
+  ): Promise<lsp.InitializeResult> {
     // @ts-expect-error - accessing protected method on parent
     const result = await super.doInitialize(connection, initParams);
 
