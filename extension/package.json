@@ -492,5 +492,10 @@
     "vscode-jsonrpc": "^8.2.1",
     "vscode-languageclient": "10.0.0-next.18"
   },
+  "pnpm": {
+    "patchedDependencies": {
+      "vscode-languageclient@10.0.0-next.18": "patches/vscode-languageclient@10.0.0-next.18.patch"
+    }
+  },
   "packageManager": "pnpm@10.9.0"
 }

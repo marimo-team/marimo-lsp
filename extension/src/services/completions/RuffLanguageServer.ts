@@ -114,6 +114,18 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
           { scheme: "vscode-notebook-cell", language: LanguageId.Python },
         ],
         initializationOptions: { settings, globalSettings },
+        // Extend ruff's notebook sync selector to include mo-python cells
+        transformServerCapabilities: (capabilities) => {
+          const sync = capabilities.notebookDocumentSync;
+          if (sync && "notebookSelector" in sync) {
+            for (const selector of sync.notebookSelector) {
+              if ("cells" in selector && selector.cells) {
+                selector.cells.push({ language: LanguageId.Python });
+              }
+            }
+          }
+          return capabilities;
+        },
       };
 
       const getClient = yield* Effect.cached(
@@ -124,7 +136,6 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
               "marimo (ruff)",
               serverOptions,
               clientOptions,
-              { extraCellLanguages: [LanguageId.Python] },
             );
             await client.start();
             return client;
