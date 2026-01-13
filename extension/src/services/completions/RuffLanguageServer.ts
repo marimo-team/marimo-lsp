@@ -115,17 +115,9 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         ],
         initializationOptions: { settings, globalSettings },
         // Extend ruff's notebook sync selector to include mo-python cells
-        transformServerCapabilities: (capabilities) => {
-          const sync = capabilities.notebookDocumentSync;
-          if (sync && "notebookSelector" in sync) {
-            for (const selector of sync.notebookSelector) {
-              if ("cells" in selector && selector.cells) {
-                selector.cells.push({ language: LanguageId.Python });
-              }
-            }
-          }
-          return capabilities;
-        },
+        transformServerCapabilities: extendNotebookCellLanguages(
+          LanguageId.Python,
+        ),
       };
 
       const getClient = yield* Effect.cached(
@@ -281,8 +273,10 @@ function getGlobalRuffSettings(
  * - Append `.ipynb` to the NOTEBOOK document URI so Ruff treats it as a notebook
  * - NOT append `.ipynb` to CELL document URIs, so they aren't mistaken for notebooks
  * - Normalize mo-python -> python language ID
+ *
+ * @internal Exported for testing
  */
-class RuffAdapter {
+export class RuffAdapter {
   #pythonLanguageId: string;
 
   constructor(pythonId: string) {
@@ -367,4 +361,26 @@ class RuffAdapter {
 
     return result;
   }
+}
+
+/**
+ * Creates a transform function that extends notebook document sync selectors
+ * to include additional cell languages.
+ *
+ * @internal Exported for testing
+ */
+export function extendNotebookCellLanguages(
+  language: string,
+): (capabilities: lsp.ServerCapabilities) => lsp.ServerCapabilities {
+  return (capabilities) => {
+    const sync = capabilities.notebookDocumentSync;
+    if (sync && "notebookSelector" in sync) {
+      for (const selector of sync.notebookSelector) {
+        if ("cells" in selector && selector.cells) {
+          selector.cells.push({ language });
+        }
+      }
+    }
+    return capabilities;
+  };
 }
