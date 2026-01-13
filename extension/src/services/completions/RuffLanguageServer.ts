@@ -1,7 +1,6 @@
 import { Data, Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
-import type { Middleware } from "vscode-languageclient/node";
 import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
 import { Config } from "../Config.ts";
 import { Constants } from "../Constants.ts";
@@ -63,56 +62,17 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         options: {},
       };
 
-      const adapter = new RuffAdapter(LanguageId.Python);
-
-      const middleware: Middleware = {
-        didOpen: (document, next) => next(adapter.document(document)),
-        didClose: (document, next) => next(adapter.document(document)),
-        didChange: (change, next) =>
-          next({
-            ...change,
-            document: adapter.document(change.document),
-          }),
-        notebooks: {
-          didOpen: (doc, cells, next) =>
-            next(
-              adapter.notebookDocument(doc),
-              cells.map((cell) => adapter.cell(cell)),
-            ),
-          didClose: (doc, cells, next) =>
-            next(
-              adapter.notebookDocument(doc),
-              cells.map((cell) => adapter.cell(cell)),
-            ),
-          didChange: (event, next) =>
-            next({
-              notebook: adapter.notebookDocument(event.notebook),
-              metadata: event.metadata,
-              cells: adapter.cellsEvent(event.cells),
-            }),
-        },
-        provideDocumentFormattingEdits: (document, options, token, next) =>
-          next(adapter.document(document), options, token),
-        provideDocumentRangeFormattingEdits: (
-          document,
-          range,
-          options,
-          token,
-          next,
-        ) => next(adapter.document(document), range, options, token),
-        provideCodeActions: (document, range, context, token, next) =>
-          next(adapter.document(document), range, context, token),
-      };
-
       const clientOptions: lsp.LanguageClientOptions = {
-        middleware,
         outputChannelName: "marimo (ruff)",
-        documentSelector: [
-          { scheme: "file", language: LanguageId.Python },
-          { scheme: "untitled", language: LanguageId.Python },
-          { scheme: "vscode-notebook", language: LanguageId.Python },
-          { scheme: "vscode-notebook-cell", language: LanguageId.Python },
-        ],
+        middleware: createRuffAdapterMiddleware(LanguageId.Python),
+        documentSelector: isVirtualWorkspace(workspaceFolders)
+          ? [{ language: LanguageId.Python }]
+          : [
+              { scheme: "file", language: LanguageId.Python },
+              { scheme: "untitled", language: LanguageId.Python },
+              { scheme: "vscode-notebook", language: LanguageId.Python },
+              { scheme: "vscode-notebook-cell", language: LanguageId.Python },
+            ],
         initializationOptions: { settings, globalSettings },
         // Extend ruff's notebook sync selector to include mo-python cells
         transformServerCapabilities: extendNotebookCellLanguages(
@@ -382,5 +342,76 @@ export function extendNotebookCellLanguages(
       }
     }
     return capabilities;
+  };
+}
+
+function isVirtualWorkspace(
+  workspaceFolders: Option.Option<ReadonlyArray<vscode.WorkspaceFolder>>,
+): boolean {
+  return Option.match(workspaceFolders, {
+    onSome: (folders) => folders.every((f) => f.uri.scheme !== "file"),
+    onNone: () => false,
+  });
+}
+
+/**
+ * Creates LSP middleware that adapts marimo notebook documents for Ruff.
+ *
+ * Background: marimo notebooks use a custom language ID (e.g., "mo-python") for
+ * Python cells. This prevents VS Code's built-in Python language servers from
+ * activating on marimo notebooks, giving us control over which language features
+ * are enabled. However, Ruff only processes cells with languageId "python" and
+ * ignores anything else.
+ *
+ * Additionally, Ruff determines whether a document is a notebook by checking if
+ * the URI path ends with `.ipynb`. marimo notebook files use `.py` extensions,
+ * so Ruff wouldn't recognize them as notebooks without intervention.
+ *
+ * This middleware intercepts LSP requests and transforms them before Ruff sees them:
+ * - Appends `.ipynb` to notebook document URIs so Ruff treats them as notebooks
+ * - Normalizes the custom language ID to "python" so Ruff processes the cells
+ * - Leaves cell URIs unchanged (only notebook URIs need the .ipynb suffix)
+ *
+ * @see https://github.com/astral-sh/ruff/pull/11206 - Ruff's notebook support
+ */
+function createRuffAdapterMiddleware(pythonLanguageId: string): lsp.Middleware {
+  const adapter = new RuffAdapter(pythonLanguageId);
+  return {
+    didOpen: (document, next) => next(adapter.document(document)),
+    didClose: (document, next) => next(adapter.document(document)),
+    didChange: (change, next) =>
+      next({
+        ...change,
+        document: adapter.document(change.document),
+      }),
+    notebooks: {
+      didOpen: (doc, cells, next) =>
+        next(
+          adapter.notebookDocument(doc),
+          cells.map((cell) => adapter.cell(cell)),
+        ),
+      didClose: (doc, cells, next) =>
+        next(
+          adapter.notebookDocument(doc),
+          cells.map((cell) => adapter.cell(cell)),
+        ),
+      didChange: (event, next) =>
+        next({
+          notebook: adapter.notebookDocument(event.notebook),
+          metadata: event.metadata,
+          cells: adapter.cellsEvent(event.cells),
+        }),
+    },
+    provideDocumentFormattingEdits: (document, options, token, next) =>
+      next(adapter.document(document), options, token),
+    provideDocumentRangeFormattingEdits: (
+      document,
+      range,
+      options,
+      token,
+      next,
+    ) => next(adapter.document(document), range, options, token),
+    provideCodeActions: (document, range, context, token, next) =>
+      next(adapter.document(document), range, context, token),
   };
 }
