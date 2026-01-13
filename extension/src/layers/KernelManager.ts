@@ -4,6 +4,7 @@ import { handleMissingPackageAlert } from "../operations.ts";
 import { MarimoNotebookDocument, type NotebookId } from "../schemas.ts";
 import { Config } from "../services/Config.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
+import { PythonLanguageServer } from "../services/completions/PythonLanguageServer.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
@@ -43,6 +44,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
     const controllers = yield* ControllerRegistry;
     const variables = yield* VariablesService;
     const datasources = yield* DatasourcesService;
+    const pyLsp = yield* PythonLanguageServer;
 
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
     const queue = yield* Queue.unbounded<MarimoOperation>();
@@ -84,6 +86,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
             uv,
             code,
             config,
+            pyLsp,
           }).pipe(
             Effect.catchAllCause(
               Effect.fnUntraced(function* (cause) {
@@ -198,6 +201,7 @@ function processOperation(
     uv: Uv;
     code: VsCode;
     config: Config;
+    pyLsp: PythonLanguageServer;
   },
 ) {
   return Effect.gen(function* () {
@@ -212,6 +216,7 @@ function processOperation(
       uv,
       code,
       config,
+      pyLsp,
     } = deps;
     const maybeEditor = yield* editors.getLastNotebookEditor(notebookUri);
 
@@ -257,6 +262,7 @@ function processOperation(
             Effect.provideService(Uv, uv),
             Effect.provideService(VsCode, code),
             Effect.provideService(Config, config),
+            Effect.provideService(PythonLanguageServer, pyLsp),
           ),
         );
         break;

@@ -1,6 +1,7 @@
 import { Effect, Option } from "effect";
 import type { MarimoNotebookDocument } from "./schemas.ts";
 import { Config } from "./services/Config.ts";
+import { PythonLanguageServer } from "./services/completions/PythonLanguageServer.ts";
 import type { PythonController } from "./services/NotebookControllerFactory.ts";
 import type { SandboxController } from "./services/SandboxController.ts";
 import { VsCode } from "./services/VsCode.ts";
@@ -15,6 +16,7 @@ export const handleMissingPackageAlert = Effect.fnUntraced(function* (
 ) {
   const code = yield* VsCode;
   const config = yield* Config;
+  const pyLsp = yield* PythonLanguageServer;
 
   if (operation.packages.length === 0) {
     // Nothing to do
@@ -80,6 +82,9 @@ export const handleMissingPackageAlert = Effect.fnUntraced(function* (
     } else {
       yield* installPackages(operation.packages, options);
     }
+
+    // Restart ty to pick up newly installed packages
+    yield* pyLsp.restart("packages installed via missing-package-alert");
     return;
   }
 
@@ -100,9 +105,12 @@ export const handleMissingPackageAlert = Effect.fnUntraced(function* (
     );
 
     if ("venvPath" in options) {
-      yield* installPackages(operation.packages, options);
+      yield* installPackages(newPackages, options);
     } else {
-      yield* installPackages(operation.packages, options);
+      yield* installPackages(newPackages, options);
     }
+
+    // Restart ty to pick up newly installed packages
+    yield* pyLsp.restart("packages installed via missing-package-alert");
   }
 });

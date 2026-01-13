@@ -100,70 +100,72 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
       // Track if we're currently restarting to prevent document operations
       const isRestarting = yield* Ref.make(false);
 
-      // Restart the language server when Python environment changes
+      // Reusable restart logic - restarts ty to pick up environment/package changes
       // Note: ty server does not support workspace/didChangeConfiguration yet,
-      // so we need to restart the server to pick up the new Python environment.
+      // so we need to restart the server to pick up changes.
+      const restartServer = (reason: string) =>
+        Effect.gen(function* () {
+          yield* Effect.logInfo(
+            `Restarting Python language server (ty): ${reason}`,
+          );
+
+          const client = yield* getClient;
+          if (Either.isLeft(client)) {
+            yield* Effect.logWarning(
+              "Language server not available, skipping restart",
+            );
+            return;
+          }
+
+          // Mark as restarting
+          yield* Ref.set(isRestarting, true);
+
+          // Store currently open documents before restarting
+          const openDocs = Array.from(documents.entries());
+          yield* Effect.logInfo(
+            `Storing ${openDocs.length} virtual documents for reopening`,
+          );
+
+          // Stop the current client
+          yield* Effect.promise(() => client.right.stop());
+          yield* Effect.logInfo("Python language server stopped");
+
+          // Start it again - it will get the enriched configuration on init
+          yield* Effect.promise(() => client.right.start());
+          yield* Effect.logInfo(
+            "Python language server restarted successfully",
+          );
+
+          // Reopen all virtual documents that were open before restart
+          for (const [uriString, doc] of openDocs) {
+            yield* Effect.logDebug(`Reopening virtual document: ${uriString}`);
+            yield* Effect.promise(() =>
+              client.right.sendNotification("textDocument/didOpen", {
+                textDocument: {
+                  uri: uriString,
+                  languageId: "python",
+                  version: 1, // Reset version to 1 for new server instance
+                  text: doc.content,
+                },
+              }),
+            );
+            // Reset version in our map too
+            documents.set(uriString, { version: 1, content: doc.content });
+          }
+
+          yield* Effect.logInfo(
+            `Reopened ${openDocs.length} virtual documents`,
+          );
+
+          // Mark as no longer restarting
+          yield* Ref.set(isRestarting, false);
+        });
+
+      // Restart the language server when Python environment changes
       yield* Effect.forkScoped(
         pyExt.activeEnvironmentPathChanges().pipe(
           Stream.mapEffect((event) =>
-            Effect.gen(function* () {
-              yield* Effect.logInfo(
-                `Python environment changed to: ${event.path}, restarting language server...`,
-              );
-
-              const client = yield* getClient;
-              if (Either.isLeft(client)) {
-                yield* Effect.logWarning(
-                  "Language server not available, skipping restart",
-                );
-                return;
-              }
-
-              // Mark as restarting
-              yield* Ref.set(isRestarting, true);
-
-              // Store currently open documents before restarting
-              const openDocs = Array.from(documents.entries());
-              yield* Effect.logInfo(
-                `Storing ${openDocs.length} virtual documents for reopening`,
-              );
-
-              // Stop the current client
-              yield* Effect.promise(() => client.right.stop());
-              yield* Effect.logInfo("Python language server stopped");
-
-              // Start it again - it will get the enriched configuration on init
-              yield* Effect.promise(() => client.right.start());
-              yield* Effect.logInfo(
-                "Python language server restarted successfully",
-              );
-
-              // Reopen all virtual documents that were open before restart
-              for (const [uriString, doc] of openDocs) {
-                yield* Effect.logDebug(
-                  `Reopening virtual document: ${uriString}`,
-                );
-                yield* Effect.promise(() =>
-                  client.right.sendNotification("textDocument/didOpen", {
-                    textDocument: {
-                      uri: uriString,
-                      languageId: "python",
-                      version: 1, // Reset version to 1 for new server instance
-                      text: doc.content,
-                    },
-                  }),
-                );
-                // Reset version in our map too
-                documents.set(uriString, { version: 1, content: doc.content });
-              }
-
-              yield* Effect.logInfo(
-                `Reopened ${openDocs.length} virtual documents`,
-              );
-
-              // Mark as no longer restarting
-              yield* Ref.set(isRestarting, false);
-            }),
+            restartServer(`Python environment changed to: ${event.path}`),
           ),
           Stream.runDrain,
         ),
@@ -431,6 +433,13 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
               }) satisfies PythonLanguageServerHealth,
           });
         }),
+
+        /**
+         * Restart the language server to pick up new packages or environment changes.
+         * This is useful after installing packages, as ty doesn't support
+         * workspace/didChangeConfiguration.
+         */
+        restart: (reason: string) => restartServer(reason),
       };
     }),
   },
