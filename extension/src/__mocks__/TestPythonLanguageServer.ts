@@ -10,6 +10,7 @@ import { PythonLanguageServer } from "../services/completions/PythonLanguageServ
 export const TestPythonLanguageServerLive = Layer.succeed(
   PythonLanguageServer,
   PythonLanguageServer.make({
+    restart: () => Effect.void,
     openDocument: () => Effect.void,
     updateDocument: () => Effect.void,
     closeDocument: () => Effect.void,
