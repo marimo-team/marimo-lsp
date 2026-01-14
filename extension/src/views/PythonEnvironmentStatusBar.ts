@@ -3,39 +3,29 @@
  *
  * ## Why This Exists
  *
- * In "managed" mode, marimo notebooks use a custom language ID (`mo-python`) instead of
- * the standard `python` language ID. This is done to disable certain language server features
- * and editor behaviors that could conflict with marimo's managed execution model.
+ * Marimo notebooks use a custom language ID (`mo-python`) instead of `python`. This means
+ * the Python extension's status bar (which shows the active interpreter) doesn't appear
+ * for marimo cells since it only shows for `languageId === "python"`.
  *
- * However, this has a side effect: the Python extension's status bar item (which shows the
- * active Python interpreter and allows users to select a different one) only appears for
- * files with the `python` language ID. Since our notebook cells use `mo-python`, users lose
- * the ability to select their Python environment through the familiar status bar picker.
+ * This module provides a fallback status bar that appears when viewing marimo notebooks,
+ * ensuring users always have access to the interpreter picker.
  *
- * ## What This Does
+ * ## Visibility Logic
  *
- * This module creates a duplicate status bar item that:
- * - Displays the active Python environment (e.g., "3.13.5 (myenv)")
- * - Opens the Python extension's interpreter picker when clicked
- * - Only appears when marimo notebooks are visible AND no regular Python files or Jupyter
- *   notebooks are open (to avoid duplicate status bars)
- * - Follows the same visual style and behavior as the Python extension's status bar
+ * The Python extension has a `python.interpreter.infoVisibility` setting:
+ * - `"always"`: Python ext always shows → we never show (would duplicate)
+ * - `"never"`: User doesn't want status bar → we never show (respect preference)
+ * - `"onPythonRelated"` (default): We show when a marimo notebook is active
  *
- * ## Implementation
- *
- * The implementation closely follows the Python extension's own status bar:
- * {@link https://github.com/microsoft/vscode-python/blob/main/src/client/interpreter/display/index.ts}
- *
- * It's a bit of a hack, but it maintains UI consistency and ensures users always have access
- * to the interpreter picker when working with marimo notebooks.
+ * @see https://github.com/microsoft/vscode-python/blob/main/src/client/interpreter/interpreterService.ts
  */
 
 import { Effect, Layer, Option, Stream } from "effect";
-import { NOTEBOOK_TYPE } from "../constants.ts";
+import { MarimoNotebookDocument } from "../schemas.ts";
 import { PythonExtension } from "../services/PythonExtension.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { formatPythonStatusBarLabel } from "../utils/formatControllerLabel.ts";
-import { StatusBar } from "./StatusBar.ts";
+import { StatusBar, type StatusBarItem } from "./StatusBar.ts";
 
 /**
  * Based on https://github.com/microsoft/vscode-python/issues/18040#issuecomment-992567670.
@@ -52,195 +42,124 @@ const STATUS_BAR_ITEM_PRIORITY = 100.09999;
  */
 export const PythonEnvironmentStatusBarLive = Layer.scopedDiscard(
   Effect.gen(function* () {
-    const statusBar = yield* StatusBar;
     const code = yield* VsCode;
+    const statusBar = yield* StatusBar;
     const pythonExtension = yield* PythonExtension;
 
-    // Track current state to avoid unnecessary updates
-    let currentlySelectedInterpreterDisplay: string | undefined;
-    let currentlySelectedInterpreterPath: string | undefined;
-    let statusBarCanBeDisplayed = false;
-    let shouldShowStatusBar = false;
-
-    // Create the status bar item at the same position as Python extension
     const item = yield* statusBar.createStatusBarItem(
       "marimo.pythonEnvironment",
       "Right",
       STATUS_BAR_ITEM_PRIORITY,
     );
-
-    // Set up the command to trigger Python interpreter selection
     yield* item.setCommand("python.setInterpreter");
 
-    /**
-     * Updates the status bar display based on the active Python interpreter.
-     * Follows the same logic as the Python extension's updateDisplay method.
-     */
-    const updateDisplay = (environmentPath: string | undefined) =>
-      Effect.gen(function* () {
-        if (!environmentPath) {
-          // No interpreter selected - show warning state
-          yield* item.setText("$(alert) Select Python Interpreter");
-          yield* item.setTooltip("");
-          yield* item.setColor("");
-          yield* item.setBackgroundColor("statusBarItem.warningBackground");
-          currentlySelectedInterpreterDisplay = undefined;
-          currentlySelectedInterpreterPath = undefined;
-          statusBarCanBeDisplayed = true;
-          yield* updateVisibility();
-          return;
-        }
-
-        // Resolve the environment to get details
-        const env = yield* pythonExtension.resolveEnvironment(environmentPath);
-
-        if (Option.isNone(env)) {
-          // Couldn't resolve - show the path
-          const pathParts = environmentPath.split(/[/\\]/);
-          const shortName = pathParts[pathParts.length - 1] || environmentPath;
-          yield* item.setText(shortName);
-          yield* item.setTooltip(environmentPath);
-          yield* item.setColor("");
-          yield* item.setBackgroundColor("statusBarItem.warningBackground");
-          currentlySelectedInterpreterDisplay = undefined;
-          currentlySelectedInterpreterPath = environmentPath;
-          statusBarCanBeDisplayed = true;
-          yield* updateVisibility();
-          return;
-        }
-
-        // Check if we need to update (avoid redundant updates)
-        const displayName = formatPythonStatusBarLabel(code, env.value);
-        const envPath = env.value.path;
-        if (
-          currentlySelectedInterpreterDisplay === displayName &&
-          currentlySelectedInterpreterPath === envPath
-        ) {
-          return;
-        }
-
-        // Log the interpreter path change
-        if (currentlySelectedInterpreterPath !== envPath) {
-          yield* Effect.logInfo(`Python interpreter path: ${envPath}`);
-          currentlySelectedInterpreterPath = envPath;
-        }
-
-        yield* item.setText(displayName);
-        yield* item.setTooltip(envPath);
-        yield* item.setColor("");
-        yield* item.setBackgroundColor(undefined);
-
-        currentlySelectedInterpreterDisplay = displayName;
-        statusBarCanBeDisplayed = true;
-        yield* updateVisibility();
-      });
-
-    /**
-     * Controls the visibility of the status bar item.
-     * Only shows when:
-     * 1. statusBarCanBeDisplayed is true (interpreter info is ready)
-     * 2. shouldShowStatusBar is true (marimo notebook visible AND no Python file open)
-     */
-    const updateVisibility = () =>
-      Effect.gen(function* () {
-        if (!statusBarCanBeDisplayed || !shouldShowStatusBar) {
-          yield* item.hide();
-          return;
-        }
-        yield* item.show();
-      });
-
-    /**
-     * Determines if the status bar should be shown.
-     * Shows when:
-     * - At least one marimo notebook is visible
-     * - AND no regular Python files are open
-     * - AND no regular Jupyter notebooks are open
-     */
-    const checkShouldShowStatusBar = () =>
-      Effect.gen(function* () {
-        const visibleNotebookEditors =
-          yield* code.window.getVisibleNotebookEditors();
-        const visibleTextEditors = yield* code.window.getVisibleTextEditors();
-
-        // Check if any marimo notebook is visible
-        const hasMarimoNotebook = visibleNotebookEditors.some(
-          (editor) => editor.notebook.notebookType === NOTEBOOK_TYPE,
-        );
-
-        // Check if any regular Python file is open
-        const hasPythonFile = visibleTextEditors.some(
-          (editor: { document: { languageId: string } }) =>
-            editor.document.languageId === "python",
-        );
-
-        // Check if any regular Jupyter notebook is open
-        const hasJupyterNotebook = visibleNotebookEditors.some(
-          (editor) =>
-            editor.notebook.notebookType === "jupyter-notebook" ||
-            editor.notebook.notebookType === "interactive",
-        );
-
-        const newShouldShow =
-          hasMarimoNotebook && !hasPythonFile && !hasJupyterNotebook;
-        if (shouldShowStatusBar !== newShouldShow) {
-          shouldShowStatusBar = newShouldShow;
-          return true; // Changed
-        }
-        return false; // No change
-      });
-
-    // Listen for visible notebook editor changes
-    yield* code.window.visibleNotebookEditorsChanges().pipe(
-      Stream.runForEach(() =>
-        Effect.gen(function* () {
-          const changed = yield* checkShouldShowStatusBar();
-          if (changed) {
-            yield* updateVisibility();
-          }
-        }),
-      ),
-      Effect.forkScoped,
+    const visibilityTriggers = Stream.mergeAll<void, never, never>(
+      [
+        code.window.activeNotebookEditorChanges(),
+        code.window.activeTextEditorChanges(),
+        code.workspace
+          .configurationChanges()
+          .pipe(
+            Stream.filter((e) =>
+              e.affectsConfiguration("python.interpreter.infoVisibility"),
+            ),
+          ),
+      ],
+      { concurrency: "unbounded" },
     );
 
-    // Listen for visible text editor changes
-    yield* code.window.visibleTextEditorsChanges().pipe(
-      Stream.runForEach(() =>
-        Effect.gen(function* () {
-          const changed = yield* checkShouldShowStatusBar();
-          if (changed) {
-            yield* updateVisibility();
-          }
-        }),
-      ),
+    // Update visibility when relevant events occur
+    yield* visibilityTriggers.pipe(
+      Stream.runForEach(() => updateVisibility(item)),
       Effect.forkScoped,
-    );
-
-    // Check initial state
-    yield* checkShouldShowStatusBar();
-
-    // Get and display the initial active environment
-    const initialEnv = yield* pythonExtension.getActiveEnvironmentPath();
-    yield* updateDisplay(initialEnv?.path).pipe(
-      Effect.catchAll((error) =>
-        Effect.logWarning("Failed to initialize Python status bar", { error }),
-      ),
     );
 
     // Listen for environment changes and update the status bar
     yield* pythonExtension.activeEnvironmentPathChanges().pipe(
-      Stream.runForEach((event) =>
-        updateDisplay(event.path).pipe(
-          Effect.catchAll((error) =>
-            Effect.logWarning("Failed to update Python status bar", {
-              error,
-            }),
-          ),
-        ),
+      Stream.runForEach(
+        Effect.fnUntraced(function* (event) {
+          yield* updateDisplay(item, Option.some(event.path));
+          yield* updateVisibility(item);
+        }),
       ),
       Effect.forkScoped,
     );
 
+    // Initialize with the current active environment
+    const initialEnv = yield* pythonExtension.getActiveEnvironmentPath();
+    yield* updateDisplay(item, Option.some(initialEnv.path));
+    yield* updateVisibility(item);
+
     yield* Effect.logInfo("Python environment status bar initialized");
   }),
 );
+
+/**
+ * Updates the status bar display based on the active Python interpreter.
+ * Follows the same logic as the Python extension's updateDisplay method.
+ */
+const updateDisplay = Effect.fn(function* (
+  item: StatusBarItem,
+  environmentPath: Option.Option<string>,
+) {
+  const code = yield* VsCode;
+  const pythonExtension = yield* PythonExtension;
+
+  if (Option.isNone(environmentPath)) {
+    // No interpreter selected - show warning state
+    yield* item.setText("$(alert) Select Python Interpreter");
+    yield* item.setTooltip("");
+    yield* item.setColor("");
+    yield* item.setBackgroundColor("statusBarItem.warningBackground");
+    return;
+  }
+
+  // Resolve the environment to get details
+  const env = yield* pythonExtension.resolveEnvironment(environmentPath.value);
+
+  if (Option.isNone(env)) {
+    // Couldn't resolve - show the path
+    const pathParts = environmentPath.value.split(/[/\\]/);
+    const shortName = pathParts[pathParts.length - 1] || environmentPath.value;
+    yield* item.setText(shortName);
+    yield* item.setTooltip(environmentPath.value);
+    yield* item.setColor("");
+    yield* item.setBackgroundColor("statusBarItem.warningBackground");
+    return;
+  }
+
+  yield* Effect.logInfo(`Python interpreter path: ${env.value.path}`);
+  yield* item.setText(formatPythonStatusBarLabel(code, env.value));
+  yield* item.setTooltip(env.value.path);
+  yield* item.setColor("");
+  yield* item.setBackgroundColor(undefined);
+});
+
+/**
+ * Determines if the status bar should be shown.
+ */
+const updateVisibility = Effect.fn(function* (item: StatusBarItem) {
+  const code = yield* VsCode;
+
+  const config = yield* code.workspace.getConfiguration("python");
+  const visibility = config.get<string>("interpreter.infoVisibility");
+
+  // Respect user's explicit preference for Python extension's status bar
+  if (visibility === "always" || visibility === "never") {
+    yield* item.hide();
+    return;
+  }
+
+  // "onPythonRelated" (default): show when a marimo notebook is active
+  const marimoNotebook = Option.flatMap(
+    yield* code.window.getActiveNotebookEditor(),
+    (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
+  );
+
+  if (Option.isSome(marimoNotebook)) {
+    yield* item.show();
+    return;
+  }
+
+  yield* item.hide();
+});
