@@ -1,6 +1,7 @@
 import { Data, Effect, Either, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
+import { EXTENSION_PACKAGE } from "../../utils/extension.ts";
 import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
 import { Config } from "../Config.ts";
 import { Constants } from "../Constants.ts";
@@ -10,6 +11,7 @@ import { VsCode } from "../VsCode.ts";
 // Pin Ruff version for stability, matching ruff-vscode's approach.
 // Bump this as needed for new features or fixes.
 const RUFF_VERSION = "0.11.13";
+const RUFF_EXTENSION_ID = "charliermarsh.ruff";
 
 export class RuffLanguageServerStartError extends Data.TaggedError(
   "RuffLanguageServerStartError",
@@ -43,6 +45,11 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
 
       const shouldEnableRuffLS =
         yield* config.getManagedLanguageFeaturesEnabled();
+
+      // Sync formatter config from Python to mo-python at startup
+      if (shouldEnableRuffLS) {
+        yield* syncFormatterConfig(code);
+      }
 
       const ruffConfig = yield* code.workspace.getConfiguration("ruff");
       const ruffEnabled = ruffConfig.get<boolean>("enable", true);
@@ -158,6 +165,15 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         ),
       );
 
+      // Re-sync formatter config when Python settings change
+      yield* Effect.forkScoped(
+        code.workspace.configurationChanges().pipe(
+          Stream.filter((event) => event.affectsConfiguration("[python]")),
+          Stream.mapEffect(() => syncFormatterConfig(code)),
+          Stream.runDrain,
+        ),
+      );
+
       return {
         getHealthStatus: Effect.gen(function* () {
           const c = yield* getClient;
@@ -255,7 +271,6 @@ function getGlobalRuffSettings(
     const inspect = config.inspect<T>(key);
     return inspect?.globalValue ?? inspect?.defaultValue ?? defaultValue;
   };
-  const userIgnore = getGlobal<string[]>("lint.ignore") ?? [];
   return {
     cwd: process.cwd(),
     workspace: process.cwd(),
@@ -271,7 +286,12 @@ function getGlobalRuffSettings(
       preview: getGlobal("lint.preview"),
       select: getGlobal("lint.select"),
       extendSelect: getGlobal("lint.extendSelect"),
-      ignore: [...new Set([...userIgnore, ...CELL_ORDERING_IGNORES])],
+      ignore: [
+        ...new Set([
+          ...(getGlobal<string[]>("lint.ignore") ?? []),
+          ...CELL_ORDERING_IGNORES,
+        ]),
+      ],
     },
     format: {
       preview: getGlobal("format.preview"),
@@ -475,4 +495,48 @@ function createRuffAdapterMiddleware(pythonLanguageId: string): lsp.Middleware {
     provideCodeActions: (document, range, context, token, next) =>
       next(adapter.document(document), range, context, token),
   };
+}
+
+/**
+ * Syncs formatter configuration from Python to mo-python.
+ *
+ * If the user has Ruff set as their Python formatter, we set marimo as
+ * the mo-python formatter so that our managed Ruff server handles formatting.
+ */
+function syncFormatterConfig(code: VsCode) {
+  return Effect.gen(function* () {
+    const pythonConfig = yield* code.workspace.getConfiguration("[python]");
+    const pythonFormatter = pythonConfig.get<string>("editor.defaultFormatter");
+
+    const moPythonConfig =
+      yield* code.workspace.getConfiguration("[mo-python]");
+    const currentMoPythonFormatter = moPythonConfig.get<string>(
+      "editor.defaultFormatter",
+    );
+
+    const userHasRuffForPython = pythonFormatter === RUFF_EXTENSION_ID;
+
+    if (userHasRuffForPython && currentMoPythonFormatter === undefined) {
+      yield* Effect.logInfo(
+        "User has Ruff configured for Python, setting marimo as mo-python formatter",
+      );
+
+      yield* Effect.tryPromise({
+        try: () =>
+          moPythonConfig.update(
+            "editor.defaultFormatter",
+            EXTENSION_PACKAGE.fullName,
+            1,
+          ),
+        catch: (error) =>
+          new Error(`Failed to update mo-python config: ${error}`),
+      });
+
+      yield* Effect.logInfo("Successfully configured mo-python formatter");
+    }
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.logWarning("Failed to sync formatter config", { error }),
+    ),
+  );
 }
