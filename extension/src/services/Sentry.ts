@@ -38,6 +38,21 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
           );
         });
       },
+      // Only capture errors that originate from this extension
+      beforeSend(event) {
+        const frames = event.exception?.values?.[0]?.stacktrace?.frames;
+        if (frames && frames.length > 0) {
+          const hasOurCode = frames.some(
+            (frame) =>
+              frame.filename?.includes("vscode-marimo") ||
+              frame.filename?.includes("marimo-lsp"),
+          );
+          if (!hasOurCode) {
+            return null;
+          }
+        }
+        return event;
+      },
     });
 
     // Set global context
