@@ -33,18 +33,10 @@ interface MarimoOperation {
 export const KernelManagerLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     yield* Effect.logInfo("Setting up kernel manager");
-    const uv = yield* Uv;
     const code = yield* VsCode;
-    const config = yield* Config;
     const client = yield* LanguageClient;
     const channel = yield* OutputChannel;
-    const editors = yield* NotebookEditorRegistry;
     const renderer = yield* NotebookRenderer;
-    const executions = yield* ExecutionRegistry;
-    const controllers = yield* ControllerRegistry;
-    const variables = yield* VariablesService;
-    const datasources = yield* DatasourcesService;
-    const pyLsp = yield* PythonLanguageServer;
 
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
     const queue = yield* Queue.unbounded<MarimoOperation>();
@@ -75,19 +67,7 @@ export const KernelManagerLive = Layer.scopedDiscard(
           );
           yield* Effect.logTrace(msg.operation.op, msg.operation);
 
-          yield* processOperation(msg, {
-            editors,
-            controllers,
-            executions,
-            variables,
-            datasources,
-            renderer,
-            runPromise,
-            uv,
-            code,
-            config,
-            pyLsp,
-          }).pipe(
+          yield* processOperation(msg, runPromise).pipe(
             Effect.catchAllCause(
               Effect.fnUntraced(function* (cause) {
                 const errorMessage = "Failed to process marimo operation.";
@@ -190,34 +170,20 @@ export const KernelManagerLive = Layer.scopedDiscard(
 
 function processOperation(
   { notebookUri, operation }: MarimoOperation,
-  deps: {
-    editors: NotebookEditorRegistry;
-    controllers: ControllerRegistry;
-    executions: ExecutionRegistry;
-    variables: VariablesService;
-    datasources: DatasourcesService;
-    renderer: NotebookRenderer;
-    runPromise: <A, E>(effect: Effect.Effect<A, E, never>) => Promise<A>;
-    uv: Uv;
-    code: VsCode;
-    config: Config;
-    pyLsp: PythonLanguageServer;
-  },
+  runPromise: <A, E>(effect: Effect.Effect<A, E, never>) => Promise<A>,
 ) {
   return Effect.gen(function* () {
-    const {
-      editors,
-      controllers,
-      executions,
-      variables,
-      datasources,
-      renderer,
-      runPromise,
-      uv,
-      code,
-      config,
-      pyLsp,
-    } = deps;
+    const uv = yield* Uv;
+    const code = yield* VsCode;
+    const config = yield* Config;
+    const editors = yield* NotebookEditorRegistry;
+    const renderer = yield* NotebookRenderer;
+    const executions = yield* ExecutionRegistry;
+    const controllers = yield* ControllerRegistry;
+    const variables = yield* VariablesService;
+    const datasources = yield* DatasourcesService;
+    const pyLsp = yield* PythonLanguageServer;
+
     const maybeEditor = yield* editors.getLastNotebookEditor(notebookUri);
 
     if (Option.isNone(maybeEditor)) {
