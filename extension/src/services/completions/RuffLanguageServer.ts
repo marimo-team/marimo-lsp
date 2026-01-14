@@ -146,6 +146,25 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
 ) {}
 
 /**
+ * Ruff rules that depend on cross-cell ordering.
+ *
+ * These rules assume top-down execution order, but marimo cells execute based
+ * on their dependency graph. Properly supporting these rules is challenging—
+ * we'd need middleware to present cells in topological order, or work with
+ * Astral on cell dependency metadata.
+ *
+ * For now, we ignore these rules to provide Ruff linting today. The trade-off
+ * is that we also miss legitimate violations within a single cell.
+ */
+const CELL_ORDERING_IGNORES = [
+  "F401", // unused-import: import may be used in a dependent cell
+  "F841", // unused-variable: variable may be used in a dependent cell
+  "F842", // unused-annotation: annotation may be used in a dependent cell
+  "F821", // undefined-name: name may be defined in a cell that executes first
+  "F811", // redefined-while-unused: may be used in another cell
+];
+
+/**
  * Read ruff.* settings from a WorkspaceConfiguration and return them in the format
  * expected by the Ruff language server's initializationOptions.
  *
@@ -169,10 +188,16 @@ function getRuffSettings(
       preview: config.get("lint.preview"),
       select: config.get("lint.select"),
       extendSelect: config.get("lint.extendSelect"),
-      ignore: config.get("lint.ignore"),
+      ignore: [
+        ...new Set([
+          ...(config.get<string[]>("lint.ignore") ?? []),
+          ...CELL_ORDERING_IGNORES,
+        ]),
+      ],
     },
     format: {
       preview: config.get("format.preview"),
+      backend: config.get("format.backend") ?? "internal",
     },
     codeAction: config.get("codeAction") ?? {},
     organizeImports: config.get("organizeImports") ?? true,
@@ -196,6 +221,7 @@ function getGlobalRuffSettings(
     const inspect = config.inspect<T>(key);
     return inspect?.globalValue ?? inspect?.defaultValue ?? defaultValue;
   };
+  const userIgnore = getGlobal<string[]>("lint.ignore") ?? [];
   return {
     cwd: process.cwd(),
     workspace: process.cwd(),
@@ -211,10 +237,11 @@ function getGlobalRuffSettings(
       preview: getGlobal("lint.preview"),
       select: getGlobal("lint.select"),
       extendSelect: getGlobal("lint.extendSelect"),
-      ignore: getGlobal("lint.ignore"),
+      ignore: [...new Set([...userIgnore, ...CELL_ORDERING_IGNORES])],
     },
     format: {
       preview: getGlobal("format.preview"),
+      backend: getGlobal("format.backend", "internal"),
     },
     codeAction: getGlobal("codeAction", {}),
     organizeImports: getGlobal("organizeImports", true),
