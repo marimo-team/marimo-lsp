@@ -15,6 +15,7 @@ import { Constants } from "../services/Constants.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { LspProxy } from "../services/completions/LspProxy.ts";
 import type { PythonLanguageServer } from "../services/completions/PythonLanguageServer.ts";
+import { RuffLanguageServer } from "../services/completions/RuffLanguageServer.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { DebugAdapter } from "../services/DebugAdapter.ts";
@@ -74,6 +75,7 @@ const MainLive = Layer.empty
     Layer.merge(CellMetadataBindingsLive),
   )
   .pipe(
+    Layer.provide(RuffLanguageServer.Default),
     Layer.provide(LspProxy.Default),
     Layer.provide(GitHubClient.Default),
     Layer.provide(DebugAdapter.Default),

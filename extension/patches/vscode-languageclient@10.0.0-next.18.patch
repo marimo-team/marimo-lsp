@@ -1,0 +1,50 @@
+diff --git a/lib/common/client.d.ts b/lib/common/client.d.ts
+index 844c07e6498968c17584bbc7702d815c535eeb68..63c27458723a907a8559eb0c7db6a42e5384b973 100644
+--- a/lib/common/client.d.ts
++++ b/lib/common/client.d.ts
+@@ -1,5 +1,5 @@
+ import { TextDocument, Disposable, DiagnosticCollection, Diagnostic as VDiagnostic, Uri, CancellationToken, WorkspaceFolder as VWorkspaceFolder, FileCreateEvent, FileRenameEvent, FileDeleteEvent, FileWillCreateEvent, FileWillRenameEvent, FileWillDeleteEvent, CompletionItemProvider, HoverProvider, SignatureHelpProvider, DefinitionProvider, ReferenceProvider, DocumentHighlightProvider, CodeActionProvider, DocumentFormattingEditProvider, DocumentRangeFormattingEditProvider, OnTypeFormattingEditProvider, RenameProvider, DocumentSymbolProvider, DocumentLinkProvider, DeclarationProvider, ImplementationProvider, DocumentColorProvider, SelectionRangeProvider, TypeDefinitionProvider, CallHierarchyProvider, LinkedEditingRangeProvider, TypeHierarchyProvider, WorkspaceSymbolProvider, ProviderResult, TextEdit as VTextEdit, InlineCompletionItemProvider, type LogOutputChannel } from 'vscode';
+-import { Message, MessageSignature, ResponseError, RequestType0, RequestType, NotificationType0, NotificationType, ProtocolRequestType, ProtocolRequestType0, RequestHandler, RequestHandler0, GenericRequestHandler, ProtocolNotificationType, ProtocolNotificationType0, NotificationHandler, NotificationHandler0, GenericNotificationHandler, MessageReader, MessageWriter, Trace, Event, RegistrationRequest, RegistrationParams, UnregistrationRequest, UnregistrationParams, InitializeParams, InitializeResult, DocumentSelector, DidChangeTextDocumentNotification, FileEvent, ApplyWorkspaceEditRequest, ApplyWorkspaceEditParams, ProgressType, ProgressToken, ShowDocumentRequest, ApplyWorkspaceEditResult, CancellationStrategy, InitializeError, WorkDoneProgressBegin, WorkDoneProgressReport, WorkDoneProgressEnd, DidOpenTextDocumentNotification, WillSaveTextDocumentNotification, WillSaveTextDocumentWaitUntilRequest, DidSaveTextDocumentNotification, DidCloseTextDocumentNotification, DidCreateFilesNotification, DidRenameFilesNotification, DidDeleteFilesNotification, WillRenameFilesRequest, WillCreateFilesRequest, WillDeleteFilesRequest, CompletionRequest, HoverRequest, SignatureHelpRequest, DefinitionRequest, ReferencesRequest, DocumentHighlightRequest, CodeActionRequest, CodeLensRequest, DocumentFormattingRequest, DocumentRangeFormattingRequest, DocumentOnTypeFormattingRequest, RenameRequest, DocumentSymbolRequest, DocumentLinkRequest, DocumentColorRequest, DeclarationRequest, FoldingRangeRequest, ImplementationRequest, SelectionRangeRequest, TypeDefinitionRequest, CallHierarchyPrepareRequest, SemanticTokensRegistrationType, LinkedEditingRangeRequest, TypeHierarchyPrepareRequest, InlineValueRequest, InlayHintRequest, WorkspaceSymbolRequest, TextDocumentRegistrationOptions, FileOperationRegistrationOptions, DocumentDiagnosticRequest, NotebookDocumentSyncRegistrationType, NotebookDocumentSyncRegistrationOptions, MessageStrategy, InlineCompletionRequest, InlineCompletionRegistrationOptions, ExecuteCommandRequest, ExecuteCommandOptions, HandlerResult, type TextDocumentContentRequest } from 'vscode-languageserver-protocol';
++import { Message, MessageSignature, ResponseError, RequestType0, RequestType, NotificationType0, NotificationType, ProtocolRequestType, ProtocolRequestType0, RequestHandler, RequestHandler0, GenericRequestHandler, ProtocolNotificationType, ProtocolNotificationType0, NotificationHandler, NotificationHandler0, GenericNotificationHandler, MessageReader, MessageWriter, Trace, Event, RegistrationRequest, RegistrationParams, UnregistrationRequest, UnregistrationParams, InitializeParams, InitializeResult, DocumentSelector, DidChangeTextDocumentNotification, FileEvent, ApplyWorkspaceEditRequest, ApplyWorkspaceEditParams, ProgressType, ProgressToken, ShowDocumentRequest, ApplyWorkspaceEditResult, CancellationStrategy, InitializeError, WorkDoneProgressBegin, WorkDoneProgressReport, WorkDoneProgressEnd, DidOpenTextDocumentNotification, WillSaveTextDocumentNotification, WillSaveTextDocumentWaitUntilRequest, DidSaveTextDocumentNotification, DidCloseTextDocumentNotification, DidCreateFilesNotification, DidRenameFilesNotification, DidDeleteFilesNotification, WillRenameFilesRequest, WillCreateFilesRequest, WillDeleteFilesRequest, CompletionRequest, HoverRequest, SignatureHelpRequest, DefinitionRequest, ReferencesRequest, DocumentHighlightRequest, CodeActionRequest, CodeLensRequest, DocumentFormattingRequest, DocumentRangeFormattingRequest, DocumentOnTypeFormattingRequest, RenameRequest, DocumentSymbolRequest, DocumentLinkRequest, DocumentColorRequest, DeclarationRequest, FoldingRangeRequest, ImplementationRequest, SelectionRangeRequest, TypeDefinitionRequest, CallHierarchyPrepareRequest, SemanticTokensRegistrationType, LinkedEditingRangeRequest, TypeHierarchyPrepareRequest, InlineValueRequest, InlayHintRequest, WorkspaceSymbolRequest, TextDocumentRegistrationOptions, FileOperationRegistrationOptions, DocumentDiagnosticRequest, NotebookDocumentSyncRegistrationType, NotebookDocumentSyncRegistrationOptions, MessageStrategy, InlineCompletionRequest, InlineCompletionRegistrationOptions, ExecuteCommandRequest, ExecuteCommandOptions, HandlerResult, type TextDocumentContentRequest, ServerCapabilities } from 'vscode-languageserver-protocol';
+ import * as c2p from './codeConverter';
+ import * as p2c from './protocolConverter';
+ import { DynamicFeature, FeatureClient, TextDocumentSendFeature, StaticFeature, TextDocumentProviderFeature, WorkspaceProviderFeature, type TabsModel } from './features';
+@@ -279,6 +279,12 @@ export type LanguageClientOptions = {
+          */
+         delayOpenNotifications?: boolean;
+     };
++    /**
++     * Hook to transform server capabilities before features are initialized.
++     * Use this to modify the capabilities returned by the server, such as
++     * extending notebook document sync selectors with additional cell languages.
++     */
++    transformServerCapabilities?: (capabilities: ServerCapabilities) => ServerCapabilities;
+ } & $NotebookDocumentOptions & $DiagnosticPullOptions & $ConfigurationOptions;
+ export interface MessageTransports {
+     reader: MessageReader;
+diff --git a/lib/common/client.js b/lib/common/client.js
+index 4b3ae0bb2d1d1e32fe8310a0b294f99fe15bf15c..41c54ffddc10ec0c086499f484548bc83a8bca9f 100644
+--- a/lib/common/client.js
++++ b/lib/common/client.js
+@@ -421,7 +421,8 @@ class BaseLanguageClient {
+             // },
+             diagnosticPullOptions: clientOptions.diagnosticPullOptions ?? { onChange: true, onSave: false },
+             notebookDocumentOptions: clientOptions.notebookDocumentOptions ?? {},
+-            textSynchronization: this.createTextSynchronizationOptions(clientOptions.textSynchronization)
++            textSynchronization: this.createTextSynchronizationOptions(clientOptions.textSynchronization),
++            transformServerCapabilities: clientOptions.transformServerCapabilities
+         };
+         this._clientOptions.synchronize = this._clientOptions.synchronize || {};
+         this._state = ClientState.Initial;
+@@ -1097,7 +1098,10 @@ class BaseLanguageClient {
+             else if (result.capabilities.textDocumentSync !== undefined && result.capabilities.textDocumentSync !== null) {
+                 textDocumentSyncOptions = result.capabilities.textDocumentSync;
+             }
+-            this._capabilities = Object.assign({}, result.capabilities, { resolvedTextDocumentSync: textDocumentSyncOptions });
++            const transformedCapabilities = this._clientOptions.transformServerCapabilities
++                ? this._clientOptions.transformServerCapabilities(result.capabilities)
++                : result.capabilities;
++            this._capabilities = Object.assign({}, transformedCapabilities, { resolvedTextDocumentSync: textDocumentSyncOptions });
+             connection.onNotification(vscode_languageserver_protocol_1.PublishDiagnosticsNotification.type, params => this.handleDiagnostics(params));
+             connection.onRequest(vscode_languageserver_protocol_1.RegistrationRequest.type, params => this.handleRegistrationRequest(params));
+             // See https://github.com/Microsoft/vscode-languageserver-node/issues/199

@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  vscode-languageclient@10.0.0-next.18:
+    hash: 54b342a6fbdcbaa51aa360aef3dd392d2da6ff5e3bdb3b69dfa2993ec0c85b65
+    path: patches/vscode-languageclient@10.0.0-next.18.patch
+
 importers:
 
   .:
@@ -115,7 +120,7 @@ importers:
         version: 8.2.1
       vscode-languageclient:
         specifier: 10.0.0-next.18
-        version: 10.0.0-next.18
+        version: 10.0.0-next.18(patch_hash=54b342a6fbdcbaa51aa360aef3dd392d2da6ff5e3bdb3b69dfa2993ec0c85b65)
 
 packages:
 
@@ -4397,7 +4402,7 @@ snapshots:
 
   vscode-jsonrpc@9.0.0-next.10: {}
 
-  vscode-languageclient@10.0.0-next.18:
+  vscode-languageclient@10.0.0-next.18(patch_hash=54b342a6fbdcbaa51aa360aef3dd392d2da6ff5e3bdb3b69dfa2993ec0c85b65):
     dependencies:
       minimatch: 10.1.1
       semver: 7.7.3
