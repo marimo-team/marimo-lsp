@@ -4,6 +4,10 @@ import { Data, Effect, Option, Schema } from "effect";
 import { EXTENSION_PACKAGE } from "../utils/extension.ts";
 import { Config } from "./Config.ts";
 import { PythonLanguageServer } from "./completions/PythonLanguageServer.ts";
+import {
+  RuffLanguageServer,
+  RuffLanguageServerHealth,
+} from "./completions/RuffLanguageServer.ts";
 import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
 import { getUvVersion } from "./LanguageClient.ts";
 import { PythonExtension } from "./PythonExtension.ts";
@@ -22,13 +26,18 @@ export class CouldNotGetInformationError extends Data.TaggedError(
 export class HealthService extends Effect.Service<HealthService>()(
   "HealthService",
   {
-    dependencies: [Uv.Default, PythonLanguageServer.Default],
+    dependencies: [
+      Uv.Default,
+      PythonLanguageServer.Default,
+      RuffLanguageServer.Default,
+    ],
     effect: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
       const pyExt = yield* PythonExtension;
       const pyLsp = yield* PythonLanguageServer;
+      const ruffLsp = yield* RuffLanguageServer;
 
       const getLspStatus = () =>
         Effect.try({
@@ -143,6 +152,28 @@ export class HealthService extends Effect.Service<HealthService>()(
             if (health.error) {
               lines.push(`\tError: ${health.error}`);
             }
+          }
+
+          lines.push("");
+
+          // Ruff Language Server
+          lines.push("Ruff Language Server:");
+          const ruffHealth = yield* ruffLsp.getHealthStatus.pipe(Effect.option);
+          if (Option.isNone(ruffHealth)) {
+            lines.push("\tStatus: Not available");
+          } else {
+            RuffLanguageServerHealth.$match(ruffHealth.value, {
+              Running: ({ version }) => {
+                lines.push("\tStatus: running ✓");
+                lines.push(
+                  `\tVersion: ${Option.getOrElse(version, () => "Unknown")}`,
+                );
+              },
+              Failed: ({ error }) => {
+                lines.push("\tStatus: failed ✗");
+                lines.push(`\tError: ${error}`);
+              },
+            });
           }
 
           lines.push("");

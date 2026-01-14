@@ -1,4 +1,4 @@
-import { Data, Effect, Option, Stream } from "effect";
+import { Data, Effect, Either, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
 import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
@@ -7,11 +7,23 @@ import { Constants } from "../Constants.ts";
 import { Uv } from "../Uv.ts";
 import { VsCode } from "../VsCode.ts";
 
+// Pin Ruff version for stability, matching ruff-vscode's approach.
+// Bump this as needed for new features or fixes.
+const RUFF_VERSION = "0.11.13";
+
 export class RuffLanguageServerStartError extends Data.TaggedError(
   "RuffLanguageServerStartError",
 )<{
   cause: unknown;
 }> {}
+
+export const RuffLanguageServerHealth =
+  Data.taggedEnum<RuffLanguageServerHealth>();
+
+type RuffLanguageServerHealth = Data.TaggedEnum<{
+  Running: { readonly version: Option.Option<string> };
+  Failed: { readonly error: string };
+}>;
 
 /**
  * Manages a dedicated Ruff language server instance (using ruff via uvx)
@@ -39,7 +51,13 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         yield* Effect.logInfo(
           "Ruff is disabled. Not starting Ruff language server.",
         );
-        return {};
+        return {
+          getHealthStatus: Effect.succeed(
+            RuffLanguageServerHealth.Failed({
+              error: "Managed language features are disabled.",
+            }),
+          ),
+        };
       }
 
       yield* Effect.logInfo("Starting Ruff language server for marimo");
@@ -58,7 +76,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
 
       const serverOptions: lsp.ServerOptions = {
         command: uv.bin.executable,
-        args: ["tool", "run", "ruff", "server"],
+        args: ["tool", "run", `ruff@${RUFF_VERSION}`, "server"],
         options: {},
       };
 
@@ -97,7 +115,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
           Effect.tapError((error) =>
             Effect.logError("Error starting Ruff language server", { error }),
           ),
-          Effect.option,
+          Effect.either,
         ),
       );
 
@@ -105,15 +123,15 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         Effect.gen(function* () {
           yield* Effect.logInfo("Stopping Ruff language server for marimo");
           const client = yield* getClient;
-          if (Option.isSome(client)) {
-            yield* Effect.promise(() => client.value.stop());
+          if (Either.isRight(client)) {
+            yield* Effect.promise(() => client.right.stop());
           }
         }),
       );
 
       const client = yield* getClient;
       yield* Effect.logInfo(
-        client._tag === "Some"
+        Either.isRight(client)
           ? "Ruff language server started successfully"
           : "Ruff language server failed to start",
       );
@@ -125,14 +143,14 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
           Stream.mapEffect(() =>
             Effect.gen(function* () {
               const c = yield* getClient;
-              if (Option.isNone(c)) {
+              if (Either.isLeft(c)) {
                 return;
               }
               yield* Effect.logInfo(
                 "Ruff settings changed, restarting language server...",
               );
-              yield* Effect.promise(() => c.value.stop());
-              yield* Effect.promise(() => c.value.start());
+              yield* Effect.promise(() => c.right.stop());
+              yield* Effect.promise(() => c.right.start());
               yield* Effect.logInfo("Ruff language server restarted");
             }),
           ),
@@ -140,7 +158,23 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         ),
       );
 
-      return {};
+      return {
+        getHealthStatus: Effect.gen(function* () {
+          const c = yield* getClient;
+          return Either.match(c, {
+            onLeft: (error) =>
+              RuffLanguageServerHealth.Failed({
+                error: String(error.cause),
+              }),
+            onRight: (client) =>
+              RuffLanguageServerHealth.Running({
+                version: Option.fromNullable(
+                  client.initializeResult?.serverInfo?.version,
+                ),
+              }),
+          });
+        }),
+      };
     }),
   },
 ) {}
