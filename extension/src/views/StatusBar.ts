@@ -4,6 +4,10 @@ import { VsCode } from "../services/VsCode.ts";
 export type StatusBarAlignment = "Left" | "Right";
 export type StatusBarCommand = string;
 
+export type StatusBarItem = Effect.Effect.Success<
+  ReturnType<StatusBar["createStatusBarItem"]>
+>;
+
 /**
  * Manages VS Code status bar items with automatic disposal.
  *
