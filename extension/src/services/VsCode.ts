@@ -324,8 +324,8 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
       getNotebookDocuments() {
         return Effect.succeed(api.notebookDocuments);
       },
-      getConfiguration(section: string) {
-        return Effect.succeed(api.getConfiguration(section));
+      getConfiguration(section: string, scope?: vscode.ConfigurationScope) {
+        return Effect.succeed(api.getConfiguration(section, scope));
       },
       getWorkspaceFolders() {
         return Effect.succeed(Option.fromNullable(api.workspaceFolders));

@@ -1,7 +1,6 @@
-import { Data, Effect, Either, Option, Stream } from "effect";
+import { Data, Effect, Either, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
-import { EXTENSION_PACKAGE } from "../../utils/extension.ts";
 import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
 import { Config } from "../Config.ts";
 import { Constants } from "../Constants.ts";
@@ -39,37 +38,20 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
   {
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
-      const config = yield* Config;
       const code = yield* VsCode;
       const { LanguageId } = yield* Constants;
 
-      const shouldEnableRuffLS =
-        yield* config.getManagedLanguageFeaturesEnabled();
-
-      // Sync formatter config from Python to mo-python at startup
-      if (shouldEnableRuffLS) {
-        yield* syncFormatterConfig(code);
-      }
-
-      const ruffConfig = yield* code.workspace.getConfiguration("ruff");
-      const ruffEnabled = ruffConfig.get<boolean>("enable", true);
-
-      if (!shouldEnableRuffLS || !ruffEnabled) {
-        yield* Effect.logInfo(
-          "Ruff is disabled. Not starting Ruff language server.",
-        );
+      const disabledHealth = yield* checkRuffEnabled();
+      if (Option.isSome(disabledHealth)) {
         return {
-          getHealthStatus: Effect.succeed(
-            RuffLanguageServerHealth.Failed({
-              error: "Managed language features are disabled.",
-            }),
-          ),
+          getHealthStatus: Effect.succeed(disabledHealth.value),
         };
       }
 
       yield* Effect.logInfo("Starting Ruff language server for marimo");
 
       // Build initializationOptions from ruff.* settings
+      const ruffConfig = yield* code.workspace.getConfiguration("ruff");
       const workspaceFolders = yield* code.workspace.getWorkspaceFolders();
       const settings = Option.getOrElse(workspaceFolders, () => []).map(
         (folder) => getRuffSettings(ruffConfig, folder),
@@ -87,9 +69,25 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         options: {},
       };
 
+      const runtime = yield* Effect.runtime<VsCode>();
+      const runPromise = Runtime.runPromise(runtime);
+
       const clientOptions: lsp.LanguageClientOptions = {
         outputChannelName: "marimo (ruff)",
-        middleware: createRuffAdapterMiddleware(LanguageId.Python),
+        middleware: createRuffAdapterMiddleware(LanguageId.Python, {
+          // We should only format if Ruff is the default formatter for Python
+          shouldFormat: () =>
+            ruffConfiguredAsDefaultPythonFormatter().pipe(
+              Effect.tap((enabled) =>
+                enabled
+                  ? Effect.void
+                  : Effect.logWarning(
+                      `Ruff is not configured as default Python formatter; skipping marimo format.`,
+                    ),
+              ),
+              runPromise,
+            ),
+        }),
         documentSelector: isVirtualWorkspace(workspaceFolders)
           ? [{ language: LanguageId.Python }]
           : [
@@ -136,6 +134,17 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         }),
       );
 
+      const restartServer = Effect.fn(function* () {
+        const c = yield* getClient;
+        if (Either.isLeft(c)) {
+          return;
+        }
+        yield* Effect.logInfo("Restarting Ruff language server for marimo");
+        yield* Effect.promise(() => c.right.stop());
+        yield* Effect.promise(() => c.right.start());
+        yield* Effect.logInfo("Ruff language server for marimo restarted");
+      });
+
       const client = yield* getClient;
       yield* Effect.logInfo(
         Either.isRight(client)
@@ -147,29 +156,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       yield* Effect.forkScoped(
         code.workspace.configurationChanges().pipe(
           Stream.filter((event) => event.affectsConfiguration("ruff")),
-          Stream.mapEffect(() =>
-            Effect.gen(function* () {
-              const c = yield* getClient;
-              if (Either.isLeft(c)) {
-                return;
-              }
-              yield* Effect.logInfo(
-                "Ruff settings changed, restarting language server...",
-              );
-              yield* Effect.promise(() => c.right.stop());
-              yield* Effect.promise(() => c.right.start());
-              yield* Effect.logInfo("Ruff language server restarted");
-            }),
-          ),
-          Stream.runDrain,
-        ),
-      );
-
-      // Re-sync formatter config when Python settings change
-      yield* Effect.forkScoped(
-        code.workspace.configurationChanges().pipe(
-          Stream.filter((event) => event.affectsConfiguration("[python]")),
-          Stream.mapEffect(() => syncFormatterConfig(code)),
+          Stream.mapEffect(restartServer),
           Stream.runDrain,
         ),
       );
@@ -408,6 +395,8 @@ export class RuffAdapter {
  * Creates a transform function that extends notebook document sync selectors
  * to include additional cell languages.
  *
+ * NOTE: Mutates the capabilities object in-place.
+ *
  * @internal Exported for testing
  */
 export function extendNotebookCellLanguages(
@@ -454,8 +443,17 @@ function isVirtualWorkspace(
  * - Leaves cell URIs unchanged (only notebook URIs need the .ipynb suffix)
  *
  * @see https://github.com/astral-sh/ruff/pull/11206 - Ruff's notebook support
+ *
+ *
+ * @param pythonLanguageId The custom language ID used for Python cells in marimo notebooks (e.g., "mo-python").
+ * @param config.shouldFormat Async function that returns whether formatting should be applied.
  */
-function createRuffAdapterMiddleware(pythonLanguageId: string): lsp.Middleware {
+function createRuffAdapterMiddleware(
+  pythonLanguageId: string,
+  config: {
+    shouldFormat: () => Promise<boolean>;
+  },
+): lsp.Middleware {
   const adapter = new RuffAdapter(pythonLanguageId);
   return {
     didOpen: (document, next) => next(adapter.document(document)),
@@ -483,60 +481,91 @@ function createRuffAdapterMiddleware(pythonLanguageId: string): lsp.Middleware {
           cells: adapter.cellsEvent(event.cells),
         }),
     },
-    provideDocumentFormattingEdits: (document, options, token, next) =>
-      next(adapter.document(document), options, token),
-    provideDocumentRangeFormattingEdits: (
+    async provideDocumentFormattingEdits(document, options, token, next) {
+      const shouldFormat = await config.shouldFormat();
+      return shouldFormat
+        ? next(adapter.document(document), options, token)
+        : null;
+    },
+    async provideDocumentRangeFormattingEdits(
       document,
       range,
       options,
       token,
       next,
-    ) => next(adapter.document(document), range, options, token),
+    ) {
+      const shouldFormat = await config.shouldFormat();
+      return shouldFormat
+        ? next(adapter.document(document), range, options, token)
+        : null;
+    },
     provideCodeActions: (document, range, context, token, next) =>
       next(adapter.document(document), range, context, token),
   };
 }
 
 /**
- * Syncs formatter configuration from Python to mo-python.
- *
- * If the user has Ruff set as their Python formatter, we set marimo as
- * the mo-python formatter so that our managed Ruff server handles formatting.
+ * Checks if the managed Ruff language server should be enabled.
+ * Returns Some(FailedHealth) if disabled, None if enabled.
  */
-function syncFormatterConfig(code: VsCode) {
-  return Effect.gen(function* () {
-    const pythonConfig = yield* code.workspace.getConfiguration("[python]");
-    const pythonFormatter = pythonConfig.get<string>("editor.defaultFormatter");
+const checkRuffEnabled = Effect.fn(function* () {
+  const code = yield* VsCode;
+  const config = yield* Config;
 
-    const moPythonConfig =
-      yield* code.workspace.getConfiguration("[mo-python]");
-    const currentMoPythonFormatter = moPythonConfig.get<string>(
-      "editor.defaultFormatter",
+  const managedFeaturesEnabled =
+    yield* config.getManagedLanguageFeaturesEnabled();
+
+  if (!managedFeaturesEnabled) {
+    yield* Effect.logInfo(
+      "Managed language features are disabled. Not starting managed Ruff language server.",
     );
+    return Option.some(
+      RuffLanguageServerHealth.Failed({
+        error: "Managed language features are disabled in marimo settings.",
+      }),
+    );
+  }
 
-    const userHasRuffForPython = pythonFormatter === RUFF_EXTENSION_ID;
+  const ruffExtension = code.extensions.getExtension(RUFF_EXTENSION_ID);
+  if (Option.isNone(ruffExtension)) {
+    yield* Effect.logInfo(
+      "Ruff extension is not installed. Not starting managed Ruff language server.",
+    );
+    return Option.some(
+      RuffLanguageServerHealth.Failed({
+        error: `Ruff extension (${RUFF_EXTENSION_ID}) is not installed.`,
+      }),
+    );
+  }
 
-    if (userHasRuffForPython && currentMoPythonFormatter === undefined) {
-      yield* Effect.logInfo(
-        "User has Ruff configured for Python, setting marimo as mo-python formatter",
-      );
+  const ruffConfig = yield* code.workspace.getConfiguration("ruff");
+  const ruffEnabled = ruffConfig.get<boolean>("enable", true);
 
-      yield* Effect.tryPromise({
-        try: () =>
-          moPythonConfig.update(
-            "editor.defaultFormatter",
-            EXTENSION_PACKAGE.fullName,
-            1,
-          ),
-        catch: (error) =>
-          new Error(`Failed to update mo-python config: ${error}`),
-      });
+  if (!ruffEnabled) {
+    yield* Effect.logInfo(
+      "Ruff extension is disabled via ruff.enable setting. Not starting managed Ruff language server.",
+    );
+    return Option.some(
+      RuffLanguageServerHealth.Failed({
+        error: "Ruff extension is disabled (ruff.enable = false).",
+      }),
+    );
+  }
 
-      yield* Effect.logInfo("Successfully configured mo-python formatter");
-    }
-  }).pipe(
-    Effect.catchAll((error) =>
-      Effect.logWarning("Failed to sync formatter config", { error }),
-    ),
+  return Option.none();
+});
+
+/**
+ * Checks if Ruff is configured as the default Python formatter in VS Code settings.
+ *
+ * Ref: https://github.com/astral-sh/ruff-vscode?tab=readme-ov-file#configuring-vs-code
+ */
+const ruffConfiguredAsDefaultPythonFormatter = Effect.fn(function* () {
+  const code = yield* VsCode;
+  const pythonConfig = yield* code.workspace.getConfiguration("", {
+    languageId: "python",
+  });
+  return (
+    pythonConfig.get<unknown>("editor.defaultFormatter") === RUFF_EXTENSION_ID
   );
-}
+});
