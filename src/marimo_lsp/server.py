@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import importlib.metadata
 import typing
 
@@ -43,6 +44,11 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     )
     manager = LspSessionManager()
     graph_registry = GraphManagerRegistry()
+
+    # Register atexit handler to ensure kernel processes are cleaned up
+    # when the LSP server exits (e.g., extension host restart, VS Code close).
+    # This prevents orphaned kernel subprocesses from consuming memory.
+    atexit.register(manager.shutdown)
 
     # Lsp Features
     @server.feature(lsp.SHUTDOWN)
