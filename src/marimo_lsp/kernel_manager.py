@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 import typing
 from pathlib import Path
-from typing import TypeVar
 
 import marimo._ipc as ipc
 from marimo._config.settings import GLOBAL_SETTINGS
@@ -142,16 +141,16 @@ class LspKernelManager(KernelManagerImpl):
         )
 
 
-T = TypeVar("T")
-
-
 class PopenProcessLike(ProcessLike):
     """Wraps `subprocess.Popen` as a `ProcessLike`.
 
     Provides the `ProcessLike` protocol required by marimo's KernelManager.
     """
 
-    def __init__(self, inner: subprocess.Popen) -> None:
+    # Timeout in seconds to wait for graceful termination before force killing
+    TERMINATE_TIMEOUT = 2.0
+
+    def __init__(self, inner: subprocess.Popen[bytes]) -> None:
         """Initialize with a subprocess.Popen instance."""
         self.inner = inner
 
@@ -165,5 +164,33 @@ class PopenProcessLike(ProcessLike):
         return self.inner.poll() is None
 
     def terminate(self) -> None:
-        """Terminate the process."""
+        """Terminate the process, force killing if it doesn't exit gracefully.
+
+        First sends SIGTERM and waits briefly for the process to exit.
+        If the process is still running after the timeout, sends SIGKILL
+        to ensure cleanup (prevents orphaned kernel processes on extension
+        host restart or unexpected shutdown).
+        """
+        pid = self.inner.pid
+        if not self.is_alive():
+            logger.debug(f"Kernel process {pid} already terminated")
+            return
+
+        logger.info(f"Terminating kernel process {pid}")
         self.inner.terminate()
+
+        try:
+            # Wait for graceful termination
+            self.inner.wait(timeout=self.TERMINATE_TIMEOUT)
+            logger.info(f"Kernel process {pid} terminated gracefully")
+        except subprocess.TimeoutExpired:
+            # Process didn't exit in time, force kill
+            logger.warning(
+                f"Kernel process {pid} did not terminate gracefully, sending SIGKILL"
+            )
+            self.inner.kill()
+            try:
+                self.inner.wait(timeout=1.0)
+                logger.info(f"Kernel process {pid} killed")
+            except subprocess.TimeoutExpired:
+                logger.exception(f"Failed to kill kernel process {pid}")
