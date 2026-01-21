@@ -63,12 +63,6 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         globalSettings,
       });
 
-      const serverOptions: lsp.ServerOptions = {
-        command: uv.bin.executable,
-        args: ["tool", "run", `ruff@${RUFF_VERSION}`, "server"],
-        options: {},
-      };
-
       const runtime = yield* Effect.runtime<VsCode>();
       const runPromise = Runtime.runPromise(runtime);
 
@@ -103,25 +97,30 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         ),
       };
 
-      const getClient = yield* Effect.cached(
-        Effect.tryPromise({
-          try: async () => {
-            const client = new NamespacedLanguageClient(
-              "marimo-ruff",
-              "marimo (ruff)",
-              serverOptions,
-              clientOptions,
-            );
-            await client.start();
-            return client;
-          },
-          catch: (cause) => new RuffLanguageServerStartError({ cause }),
-        }).pipe(
-          Effect.tapError((error) =>
-            Effect.logError("Error starting Ruff language server", { error }),
-          ),
-          Effect.either,
+      const serverOptions: lsp.ServerOptions = {
+        command: uv.bin.executable,
+        args: ["tool", "run", `ruff@${RUFF_VERSION}`, "server"],
+        options: {},
+      };
+
+      const getClient = yield* Effect.tryPromise({
+        try: async () => {
+          const client = new NamespacedLanguageClient(
+            "marimo-ruff",
+            "marimo (ruff)",
+            serverOptions,
+            clientOptions,
+          );
+          await client.start();
+          return client;
+        },
+        catch: (cause) => new RuffLanguageServerStartError({ cause }),
+      }).pipe(
+        Effect.tapError((error) =>
+          Effect.logError("Error starting Ruff language server", { error }),
         ),
+        Effect.either,
+        Effect.cached,
       );
 
       yield* Effect.addFinalizer(() =>

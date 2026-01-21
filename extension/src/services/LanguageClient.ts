@@ -1,10 +1,7 @@
-import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
-import * as NodeProcess from "node:process";
-import { Data, Effect, Either, Option, Stream } from "effect";
+import { Data, Effect, Option, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
-import { unreachable } from "../assert.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import type {
   MarimoCommand,
@@ -86,14 +83,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
             catch: (cause) => new LanguageClientStartError({ exec, cause }),
           });
           yield* Effect.logInfo("marimo-lsp client started");
-        }).pipe(
-          Effect.catchTag(
-            "LanguageClientStartError",
-            maybeHandleLanguageClientStartError,
-          ),
-          Effect.provideService(VsCode, code),
-          Effect.provideService(OutputChannel, channel),
-        );
+        });
 
       // Register cleanup when scope closes
       yield* Effect.addFinalizer(() => Effect.promise(() => client.dispose()));
@@ -189,83 +179,3 @@ export const findLspExecutable = Effect.fnUntraced(function* (
     args: ["run", "--directory", __dirname, "marimo-lsp"],
   };
 });
-
-export function getUvVersion(uvBinary: string): Option.Option<string> {
-  try {
-    const version = NodeChildProcess.execSync(`${uvBinary} --version`, {
-      encoding: "utf8",
-    });
-    return Option.some(version.trim());
-  } catch {
-    return Option.none();
-  }
-}
-
-function maybeHandleLanguageClientStartError(error: LanguageClientStartError) {
-  return Effect.gen(function* () {
-    const code = yield* VsCode;
-    const channel = yield* OutputChannel;
-
-    yield* Effect.logError("Failed to start marimo-lsp", error);
-
-    const uvBinary = error.exec.command;
-    const uvVersion = getUvVersion(uvBinary);
-    const isUvInstalled = Option.isSome(uvVersion);
-    const isUsingDefaultUv = uvBinary === "uv";
-
-    // Check if this is a uv-related error (either default "uv" or a custom path)
-    if (!isUvInstalled) {
-      const currentPath = NodeProcess.env.PATH ?? "(not set)";
-      yield* Effect.logError(
-        `uv is not available. Command: '${uvBinary}'. PATH: ${currentPath}`,
-      );
-
-      // Different error messages based on whether using default or custom uv path
-      const errorMessage = isUsingDefaultUv
-        ? "The marimo VS Code extension requires `uv` to be installed in your system PATH."
-        : `The configured uv binary was not found at: ${uvBinary}`;
-
-      const result = yield* code.window.showErrorMessage(errorMessage, {
-        modal: true,
-        items: isUsingDefaultUv
-          ? ["Install uv", "Try Again"]
-          : ["Open Settings", "Try Again"],
-      });
-
-      if (Option.isNone(result)) {
-        // dismissed
-        return yield* Effect.fail(error);
-      }
-
-      switch (result.value) {
-        case "Install uv": {
-          const uri = Either.getOrThrow(
-            code.utils.parseUri(
-              "https://docs.astral.sh/uv/getting-started/installation/",
-            ),
-          );
-          yield* code.env.openExternal(uri);
-          return yield* Effect.fail(error);
-        }
-        case "Open Settings": {
-          yield* code.commands.executeCommand(
-            "workbench.action.openSettings",
-            "marimo.uv.path",
-          );
-          return yield* Effect.fail(error);
-        }
-        case "Try Again": {
-          yield* code.commands.executeCommand("marimo.restartLsp");
-          return yield* Effect.fail(error);
-        }
-        default:
-          unreachable(result.value);
-      }
-    }
-
-    // Otherwise just fail
-    const msg = "marimo-lsp failed to start.";
-    yield* showErrorAndPromptLogs(msg, { code, channel });
-    return yield* Effect.die(msg);
-  });
-}

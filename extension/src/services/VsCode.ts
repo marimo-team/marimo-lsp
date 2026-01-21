@@ -34,6 +34,18 @@ export class Window extends Effect.Service<Window>()("Window", {
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
     return {
+      createTerminal(
+        options: vscode.TerminalOptions,
+      ): Effect.Effect<
+        Pick<vscode.Terminal, "show" | "sendText">,
+        never,
+        Scope.Scope
+      > {
+        return Effect.acquireRelease(
+          Effect.sync(() => api.createTerminal(options)),
+          (term) => Effect.sync(() => term.dispose()),
+        );
+      },
       showSaveDialog(options?: vscode.SaveDialogOptions) {
         return Effect.map(
           Effect.promise(() => api.showSaveDialog(options)),

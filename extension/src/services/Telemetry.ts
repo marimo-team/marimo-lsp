@@ -1,7 +1,7 @@
 import { Effect, Option, Ref, Schema, Stream } from "effect";
 import { PostHog } from "posthog-node";
+import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
 import { Log } from "../utils/log.ts";
-import { getExtensionVersion } from "./HealthService.ts";
 import { createStorageKey, Storage } from "./Storage.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -38,19 +38,19 @@ export function anonymousId(storage: Storage): Effect.Effect<string, never> {
   );
 }
 
+type EventMap = {
+  executed_command: { command: string; success: boolean };
+  new_notebook_created: undefined;
+  notebook_opened: { cellCount: number };
+  tutorial_opened: { tutorial: string };
+  uv_missing: { binType: "Default" | "Configured" | "Discovered" };
+  uv_install_clicked: undefined;
+};
+
 export interface ITelemetry {
-  capture(
-    event: "executed_command",
-    properties: { command: string; success: boolean },
-  ): Effect.Effect<void>;
-  capture(event: "new_notebook_created"): Effect.Effect<void>;
-  capture(
-    event: "notebook_opened",
-    properties: { cellCount: number },
-  ): Effect.Effect<void>;
-  capture(
-    event: "tutorial_opened",
-    properties: { tutorial: string },
+  capture<K extends keyof EventMap>(
+    event: K,
+    ...args: EventMap[K] extends undefined ? [] : [properties: EventMap[K]]
   ): Effect.Effect<void>;
   identify(properties?: Record<string, unknown>): Effect.Effect<void>;
 }
@@ -74,7 +74,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
     const telemetryEnabledRef = yield* Ref.make(initialTelemetryEnabled);
     const clientInitializedRef = yield* Ref.make(false);
 
-    const extensionVersion = yield* getExtensionVersion(code);
+    const extVersion = yield* getExtensionVersion();
     const distinctId = yield* anonymousId(storage);
 
     // Initialize PostHog client (only once when telemetry is enabled)
@@ -96,7 +96,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
         distinctId,
         event: "extension_activated",
         properties: {
-          extension_version: extensionVersion,
+          extension_version: Option.getOrElse(extVersion, () => "unknown"),
           app_name: code.env.appName,
           app_host: code.env.appHost,
         },
@@ -108,35 +108,31 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
     yield* initializeClient;
 
     // Subscribe to configuration changes
-    yield* code.workspace
-      .configurationChanges()
-      .pipe(
-        Stream.filter((event) =>
-          event.affectsConfiguration("marimo.telemetry"),
-        ),
-        Stream.runForEach(() =>
-          Effect.gen(function* () {
-            const config = yield* code.workspace.getConfiguration("marimo");
-            const newValue = config.get<boolean>("telemetry") ?? true;
-            const oldValue = yield* Ref.get(telemetryEnabledRef);
+    yield* code.workspace.configurationChanges().pipe(
+      Stream.filter((event) => event.affectsConfiguration("marimo.telemetry")),
+      Stream.runForEach(() =>
+        Effect.gen(function* () {
+          const config = yield* code.workspace.getConfiguration("marimo");
+          const newValue = config.get<boolean>("telemetry") ?? true;
+          const oldValue = yield* Ref.get(telemetryEnabledRef);
 
-            yield* Ref.set(telemetryEnabledRef, newValue);
+          yield* Ref.set(telemetryEnabledRef, newValue);
 
-            // If telemetry was just enabled, initialize client
-            if (!oldValue && newValue) {
-              yield* initializeClient;
-            }
+          // If telemetry was just enabled, initialize client
+          if (!oldValue && newValue) {
+            yield* initializeClient;
+          }
 
-            // If telemetry was just disabled, shutdown PostHog
-            if (oldValue && !newValue && client) {
-              yield* Effect.promise(async () => client?.shutdown());
-              client = undefined;
-              yield* Ref.set(clientInitializedRef, false);
-            }
-          }),
-        ),
-      )
-      .pipe(Effect.forkScoped);
+          // If telemetry was just disabled, shutdown PostHog
+          if (oldValue && !newValue && client) {
+            yield* Effect.promise(async () => client?.shutdown());
+            client = undefined;
+            yield* Ref.set(clientInitializedRef, false);
+          }
+        }),
+      ),
+      Effect.forkScoped,
+    );
 
     // Register finalizer to shutdown PostHog when scope closes
     yield* Effect.addFinalizer(() =>
@@ -159,7 +155,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
             event,
             properties: {
               ...properties,
-              extension_version: extensionVersion,
+              extension_version: extVersion,
             },
           });
         });

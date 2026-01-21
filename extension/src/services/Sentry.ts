@@ -6,9 +6,10 @@ import {
   Inspectable,
   Logger,
   LogLevel,
+  Option,
   Array as ReadonlyArray,
 } from "effect";
-import { getExtensionVersion } from "./HealthService.ts";
+import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
 import { VsCode } from "./VsCode.ts";
 
 // This is a public DSN
@@ -22,10 +23,9 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
 
-    const extensionVersion = yield* getExtensionVersion(code).pipe(
-      Effect.catchTag("CouldNotGetInformationError", () =>
-        Effect.succeed("unknown"),
-      ),
+    const extensionVersion = Option.getOrElse(
+      yield* getExtensionVersion(),
+      () => "unknown",
     );
 
     const config = yield* code.workspace.getConfiguration("marimo");
