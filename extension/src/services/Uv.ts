@@ -352,25 +352,30 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   code: VsCode,
   telemetry: Option.Option<Telemetry>,
 ) {
-  const isUsingDefault = UvBin.$is("Default")(error.bin);
-  const isUsingConfigured = UvBin.$is("Configured")(error.bin);
+  if (Option.isSome(telemetry)) {
+    yield* telemetry.value.capture("uv_missing", { binType: error.bin._tag });
+  }
 
-  const errorMessage = isUsingConfigured
-    ? `The marimo extension requires uv.\n\nThe configured path "${error.bin.executable}" was not found.`
-    : isUsingDefault
-      ? "The marimo extension requires uv."
-      : `The marimo extension requires uv.\n\nFound "${error.bin.executable}" but it failed to execute.`;
-
-  const items = isUsingConfigured
-    ? (["Open Settings"] as const)
-    : (["Install uv", "Open Settings"] as const);
+  const errorMessage = UvBin.$match(error.bin, {
+    Configured: (bin) =>
+      `The marimo extension requires uv.\n\nThe configured path "${bin.executable}" was not found.`,
+    Default: () => "The marimo extension requires uv.",
+    Discovered: (bin) =>
+      `The marimo extension requires uv.\n\nFound "${bin.executable}" but it failed to execute.`,
+  });
 
   const choice = yield* code.window.showErrorMessage(errorMessage, {
     modal: true,
-    items: [...items],
+    items: UvBin.$is("Configured")(error.bin)
+      ? (["Open Settings"] as const)
+      : (["Install uv", "Open Settings"] as const),
   });
 
   if (Option.isSome(choice) && choice.value === "Install uv") {
+    if (Option.isSome(telemetry)) {
+      yield* telemetry.value.capture("uv_install_clicked");
+    }
+
     // Create hidden terminal so Python extension doesn't auto-activate environments
     const terminal = yield* code.window.createTerminal({
       name: "Install uv",

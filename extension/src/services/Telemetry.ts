@@ -43,7 +43,7 @@ type EventMap = {
   new_notebook_created: undefined;
   notebook_opened: { cellCount: number };
   tutorial_opened: { tutorial: string };
-  uv_missing: { binType: "default" | "configured" | "discovered" };
+  uv_missing: { binType: "Default" | "Configured" | "Discovered" };
   uv_install_clicked: undefined;
 };
 
@@ -108,35 +108,31 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
     yield* initializeClient;
 
     // Subscribe to configuration changes
-    yield* code.workspace
-      .configurationChanges()
-      .pipe(
-        Stream.filter((event) =>
-          event.affectsConfiguration("marimo.telemetry"),
-        ),
-        Stream.runForEach(() =>
-          Effect.gen(function* () {
-            const config = yield* code.workspace.getConfiguration("marimo");
-            const newValue = config.get<boolean>("telemetry") ?? true;
-            const oldValue = yield* Ref.get(telemetryEnabledRef);
+    yield* code.workspace.configurationChanges().pipe(
+      Stream.filter((event) => event.affectsConfiguration("marimo.telemetry")),
+      Stream.runForEach(() =>
+        Effect.gen(function* () {
+          const config = yield* code.workspace.getConfiguration("marimo");
+          const newValue = config.get<boolean>("telemetry") ?? true;
+          const oldValue = yield* Ref.get(telemetryEnabledRef);
 
-            yield* Ref.set(telemetryEnabledRef, newValue);
+          yield* Ref.set(telemetryEnabledRef, newValue);
 
-            // If telemetry was just enabled, initialize client
-            if (!oldValue && newValue) {
-              yield* initializeClient;
-            }
+          // If telemetry was just enabled, initialize client
+          if (!oldValue && newValue) {
+            yield* initializeClient;
+          }
 
-            // If telemetry was just disabled, shutdown PostHog
-            if (oldValue && !newValue && client) {
-              yield* Effect.promise(async () => client?.shutdown());
-              client = undefined;
-              yield* Ref.set(clientInitializedRef, false);
-            }
-          }),
-        ),
-      )
-      .pipe(Effect.forkScoped);
+          // If telemetry was just disabled, shutdown PostHog
+          if (oldValue && !newValue && client) {
+            yield* Effect.promise(async () => client?.shutdown());
+            client = undefined;
+            yield* Ref.set(clientInitializedRef, false);
+          }
+        }),
+      ),
+      Effect.forkScoped,
+    );
 
     // Register finalizer to shutdown PostHog when scope closes
     yield* Effect.addFinalizer(() =>
