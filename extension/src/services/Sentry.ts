@@ -40,17 +40,23 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
       },
       // Only capture errors that originate from this extension
       beforeSend(event) {
+        // Filter out errors from other extensions by checking stack traces
         const frames = event.exception?.values?.[0]?.stacktrace?.frames;
         if (frames && frames.length > 0) {
-          const hasOurCode = frames.some(
-            (frame) =>
-              frame.filename?.includes("vscode-marimo") ||
-              frame.filename?.includes("marimo-lsp"),
-          );
-          if (!hasOurCode) {
+          if (!isMarimoStackTrace(frames)) {
             return null;
           }
         }
+
+        // Filter out errors that contain stack traces from other extensions in the message
+        const message =
+          event.message ||
+          event.exception?.values?.[0]?.value ||
+          event.logentry?.message;
+        if (message && shouldFilterMessage(message)) {
+          return null;
+        }
+
         return event;
       },
     });
@@ -79,6 +85,9 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
         Effect.sync(() => {
           SentrySDK.captureException(error, {
             extra: context,
+            tags: {
+              marimo: "true",
+            },
           });
         }),
 
@@ -94,6 +103,9 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
           SentrySDK.captureMessage(message, {
             level,
             extra: context,
+            tags: {
+              marimo: "true",
+            },
           });
         }),
 
@@ -136,17 +148,31 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
        * Error logger
        */
       errorLogger: Logger.make((opts) => {
+        const message = String(opts.message);
+
+        if (shouldFilterMessage(message)) {
+          return;
+        }
+
         if (opts.logLevel === LogLevel.Error) {
-          SentrySDK.captureMessage(String(opts.message), {
+          SentrySDK.captureMessage(message, {
             extra: Object.fromEntries(HashMap.toEntries(opts.annotations)),
+            level: "error",
+            tags: {
+              marimo: "true",
+            },
           });
         } else if (opts.logLevel === LogLevel.Fatal) {
-          SentrySDK.captureMessage(String(opts.message), {
+          SentrySDK.captureMessage(message, {
             extra: Object.fromEntries(HashMap.toEntries(opts.annotations)),
+            level: "info",
+            tags: {
+              marimo: "true",
+            },
           });
         } else if (opts.logLevel === LogLevel.Warning) {
           SentrySDK.addBreadcrumb({
-            message: String(opts.message),
+            message: message,
             level: "warning",
             data: Object.fromEntries(HashMap.toEntries(opts.annotations)),
           });
@@ -155,3 +181,20 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
     };
   }),
 }) {}
+
+function shouldFilterMessage(message: string) {
+  const lowerMessage = message.toLowerCase();
+  if (lowerMessage.includes("marimo")) {
+    return false;
+  }
+
+  // Filter '.vscode/extensions' or '.vscode\extensions'
+  return (
+    lowerMessage.includes(".vscode/extensions") ||
+    lowerMessage.includes(".vscode\\extensions")
+  );
+}
+
+function isMarimoStackTrace(frames: SentrySDK.StackFrame[]) {
+  return frames.some((frame) => frame.filename?.includes("marimo"));
+}
