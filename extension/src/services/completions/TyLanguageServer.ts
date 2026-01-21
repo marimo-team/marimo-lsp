@@ -232,6 +232,17 @@ function createTyMiddleware(
 
     return {
       ...sync.notebookMiddleware,
+      // WORKAROUND: ty panics when receiving textDocument/diagnostic for (.py) notebook
+      // cells because it only supports text document diagnostics, not notebook
+      // documents. We suppress these requests client-side until ty adds full
+      // notebook diagnostics support.
+      provideDiagnostics(doc, previousResultId, token, next) {
+        const uri = "scheme" in doc ? doc : doc.uri;
+        if (uri.scheme === "vscode-notebook-cell") {
+          return null;
+        }
+        return next(uri, previousResultId, token);
+      },
       workspace: {
         /**
          * Enriches the configuration response with the active Python environment

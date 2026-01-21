@@ -389,8 +389,8 @@ function createNotebookMiddleware(
     const notebookMiddleware: Readonly<
       Pick<lsp.Middleware, "didOpen" | "didClose" | "didChange" | "notebooks">
     > = {
-      didOpen: (document, next) => next(adapter.document(document)),
-      didClose: (document, next) => next(adapter.document(document)),
+      didOpen: (doc, next) => next(adapter.document(doc)),
+      didClose: (doc, next) => next(adapter.document(doc)),
       didChange: (change, next) =>
         next({ ...change, document: adapter.document(change.document) }),
       notebooks: {
