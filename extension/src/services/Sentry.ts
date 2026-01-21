@@ -1,5 +1,13 @@
 import * as SentrySDK from "@sentry/node";
-import { Cause, Effect, HashMap, Logger, LogLevel } from "effect";
+import {
+  Cause,
+  Effect,
+  HashMap,
+  Inspectable,
+  Logger,
+  LogLevel,
+  Array as ReadonlyArray,
+} from "effect";
 import { getExtensionVersion } from "./HealthService.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -148,33 +156,41 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
        * Error logger
        */
       errorLogger: Logger.make((opts) => {
-        const message = getErrorMessage(opts);
+        const messages = ReadonlyArray.ensure(opts.message);
+        const messageStr = messages.map(formatValue).join(" ");
 
-        if (shouldFilterMessage(message)) {
+        if (shouldFilterMessage(messageStr)) {
           return;
         }
 
+        // Build extra context with annotations
+        const extra: Record<string, unknown> = {};
+        for (const [key, value] of HashMap.toEntries(opts.annotations)) {
+          extra[key] = structuredMessage(value);
+        }
+
+        // Include cause if present
+        if (!Cause.isEmpty(opts.cause)) {
+          extra.cause = Cause.pretty(opts.cause, { renderErrorCause: true });
+        }
+
         if (opts.logLevel === LogLevel.Error) {
-          SentrySDK.captureMessage(message, {
-            extra: Object.fromEntries(HashMap.toEntries(opts.annotations)),
+          SentrySDK.captureMessage(messageStr, {
+            extra,
             level: "error",
-            tags: {
-              marimo: "true",
-            },
+            tags: { marimo: "true" },
           });
         } else if (opts.logLevel === LogLevel.Fatal) {
-          SentrySDK.captureMessage(message, {
-            extra: Object.fromEntries(HashMap.toEntries(opts.annotations)),
-            level: "info",
-            tags: {
-              marimo: "true",
-            },
+          SentrySDK.captureMessage(messageStr, {
+            extra,
+            level: "fatal",
+            tags: { marimo: "true" },
           });
         } else if (opts.logLevel === LogLevel.Warning) {
           SentrySDK.addBreadcrumb({
-            message: message,
+            message: messageStr,
             level: "warning",
-            data: Object.fromEntries(HashMap.toEntries(opts.annotations)),
+            data: extra,
           });
         }
       }),
@@ -198,26 +214,33 @@ function shouldFilterMessage(message: string) {
 function isMarimoStackTrace(frames: SentrySDK.StackFrame[]) {
   return frames.some((frame) => frame.filename?.includes("marimo"));
 }
-
-function getErrorMessage(opts: Logger.Logger.Options<unknown>) {
-  if (opts.cause && !Cause.isEmpty(opts.cause)) {
-    return Cause.pretty(opts.cause);
+/**
+ * Convert a value to a JSON-serializable form (inspired by LiveStore's structuredMessage)
+ */
+function structuredMessage(u: unknown): unknown {
+  switch (typeof u) {
+    case "bigint":
+    case "function":
+    case "symbol":
+      return String(u);
+    default:
+      return Inspectable.toJSON(u);
   }
-  return prettyMessage(opts.message);
 }
 
-function prettyMessage(message: unknown): string {
-  if (Array.isArray(message)) {
-    return message.map(prettyMessage).join(", ");
+/**
+ * Format a value as a string for Sentry
+ */
+function formatValue(value: unknown) {
+  if (typeof value === "string") {
+    return value;
   }
-
-  if (typeof message === "object" && message !== null) {
-    try {
-      return JSON.stringify(message);
-    } catch {
-      return String(message);
-    }
+  if (value === null || value === undefined) {
+    return String(value);
   }
-
-  return String(message);
+  try {
+    return JSON.stringify(structuredMessage(value));
+  } catch {
+    return String(value);
+  }
 }
