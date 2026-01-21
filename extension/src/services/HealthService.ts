@@ -9,9 +9,8 @@ import {
   RuffLanguageServerHealth,
 } from "./completions/RuffLanguageServer.ts";
 import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
-import { getUvVersion } from "./LanguageClient.ts";
 import { PythonExtension } from "./PythonExtension.ts";
-import { Uv, UvBin } from "./Uv.ts";
+import { getUvVersion, Uv, UvBin } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
 export class CouldNotGetInformationError extends Data.TaggedError(
@@ -51,14 +50,11 @@ export class HealthService extends Effect.Service<HealthService>()(
           config.lsp.executable,
           Effect.map(config.uv.enabled, (enabled) => !enabled),
         ]);
-        const uvVersion = getUvVersion(uv.bin.executable);
-        const vscodeVersion = code.version;
         const extensionVersion = yield* getExtensionVersion(code).pipe(
           Effect.catchTag("CouldNotGetInformationError", () =>
             Effect.succeed("unknown"),
           ),
         );
-        const lspStatus = yield* getLspStatus();
 
         const lines: string[] = [];
 
@@ -78,6 +74,7 @@ export class HealthService extends Effect.Service<HealthService>()(
             lines.push(`\tUV Bin: Discovered (${bin.executable})`),
         });
 
+        const uvVersion = getUvVersion(uv.bin);
         if (Option.isSome(uvVersion)) {
           lines.push(`\tUV: ${uvVersion.value} ✓`);
         } else {
@@ -190,7 +187,7 @@ export class HealthService extends Effect.Service<HealthService>()(
         lines.push("System Information:");
         lines.push(`\tHost: ${code.env.appHost} `);
         lines.push(`\tIDE: ${code.env.appName} `);
-        lines.push(`\tIDE version: ${vscodeVersion} `);
+        lines.push(`\tIDE version: ${code.version} `);
         lines.push(`\tPlatform: ${NodeProcess.platform} `);
         lines.push(`\tArchitecture: ${NodeProcess.arch} `);
         lines.push(`\tNode version: ${NodeProcess.version} `);
@@ -215,6 +212,7 @@ export class HealthService extends Effect.Service<HealthService>()(
         }
 
         // Troubleshooting
+        const lspStatus = yield* getLspStatus();
         if (!lspStatus.isAvailable) {
           lines.push("Troubleshooting:");
           lines.push("\t1. Check the 'marimo-lsp' output channel for errors");

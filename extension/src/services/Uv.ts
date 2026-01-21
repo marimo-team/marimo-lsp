@@ -1,3 +1,4 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
@@ -9,6 +10,7 @@ import { Data, Effect, Option, Stream, String } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import { Config } from "./Config.ts";
+import { Telemetry } from "./Telemetry.ts";
 import { VsCode } from "./VsCode.ts";
 
 export const UvBin = Data.taggedEnum<UvBin>();
@@ -17,6 +19,10 @@ type UvBin = Data.TaggedEnum<{
   Configured: { readonly executable: string };
   Discovered: { readonly executable: string };
 }>;
+
+class UvNotInstalledError extends Data.TaggedError("UvNotInstalledError")<{
+  bin: UvBin;
+}> {}
 
 class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
   command: Command.Command;
@@ -78,16 +84,23 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const config = yield* Config;
+    const telemetry = yield* Effect.serviceOption(Telemetry);
     const executor = yield* CommandExecutor.CommandExecutor;
     const channel = yield* code.window.createOutputChannel("marimo (uv)");
 
-    const uvBinary = yield* findUvBin(yield* config.uv.path);
-    const uv = createUv(uvBinary.executable, executor, channel);
+    // Eagerly verify UV is installed - this runs during layer construction
+    const uvBinary = yield* findUvBin(yield* config.uv.path).pipe(
+      Effect.catchTag("UvNotInstalledError", (error) =>
+        handleUvNotInstalled(error, code, telemetry),
+      ),
+    );
+
+    const uv = createUv(uvBinary, executor, channel);
 
     return {
       bin: uvBinary,
       getCacheDir: () =>
-        uv({ args: ["cache", "dir"] }).pipe(Effect.map((e) => e.stdout.trim())),
+        Effect.map(uv({ args: ["cache", "dir"] }), (e) => e.stdout.trim()),
       channel: {
         name: channel.name,
         show: channel.show.bind(channel),
@@ -100,7 +113,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         if (options.clear) {
           args.push("--clear");
         }
-        return uv({ args }).pipe(Effect.andThen(Effect.void));
+        return Effect.andThen(uv({ args }), Effect.void);
       },
       currentDeps(options: { script: string }) {
         return uv({
@@ -119,11 +132,12 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         if (options.python) {
           args.push("--python", options.python);
         }
-        return uv({ args }).pipe(Effect.andThen(Effect.void));
+        return Effect.andThen(uv({ args }), Effect.void);
       },
       initScript({ script }: { script: string }) {
-        return uv({ args: ["init", "--script", script] }).pipe(
-          Effect.andThen(Effect.void),
+        return Effect.andThen(
+          uv({ args: ["init", "--script", script] }),
+          Effect.void,
         );
       },
       syncScript(options: { script: string }) {
@@ -182,19 +196,22 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
           readonly venv: string;
         },
       ) {
-        return uv({
-          args: ["pip", "install", ...packages],
-          env: {
-            VIRTUAL_ENV: options.venv,
-          },
-        }).pipe(Effect.andThen(Effect.void));
+        return Effect.andThen(
+          uv({
+            args: ["pip", "install", ...packages],
+            env: {
+              VIRTUAL_ENV: options.venv,
+            },
+          }),
+          Effect.void,
+        );
       },
     };
   }),
 }) {}
 
 function createUv(
-  uvBinary: string,
+  bin: UvBin,
   executor: CommandExecutor.CommandExecutor,
   channel: vscode.OutputChannel,
 ) {
@@ -202,7 +219,7 @@ function createUv(
     readonly args: ReadonlyArray<string>;
     readonly env?: Record<string, string>;
   }) {
-    const command = Command.make(uvBinary, ...options.args).pipe(
+    const command = Command.make(bin.executable, ...options.args).pipe(
       Command.env({ NO_COLOR: "1", ...options.env }),
     );
     yield* Effect.logDebug("Running command").pipe(
@@ -255,39 +272,140 @@ function runString<E, R>(
 const findUvBin = Effect.fn("findUvBin")(function* (
   userConfigPath: Option.Option<string>,
 ) {
+  let bin: UvBin;
+
   if (Option.isSome(userConfigPath)) {
     yield* Effect.logDebug(
       `Using user-configured uv path: ${userConfigPath.value}`,
     );
-    return UvBin.Configured({ executable: userConfigPath.value });
-  }
+    bin = UvBin.Configured({ executable: userConfigPath.value });
+  } else {
+    // Check default install locations
+    const homedir = NodeOs.homedir();
+    const binName = NodeProcess.platform === "win32" ? "uv.exe" : "uv";
+    const defaultPaths =
+      NodeProcess.platform === "win32"
+        ? [
+            NodePath.join(homedir, ".local", "bin", binName),
+            NodePath.join(homedir, ".cargo", "bin", binName),
+          ]
+        : [
+            NodePath.join(homedir, ".local", "bin", binName),
+            NodePath.join(homedir, ".cargo", "bin", binName),
+            "/opt/homebrew/bin/uv", // Apple Silicon Homebrew
+          ];
 
-  // then check default install locations
-  const homedir = NodeOs.homedir();
-  const binName = NodeProcess.platform === "win32" ? "uv.exe" : "uv";
-  const defaultPaths =
-    NodeProcess.platform === "win32"
-      ? [
-          NodePath.join(homedir, ".local", "bin", binName),
-          NodePath.join(homedir, ".cargo", "bin", binName),
-        ]
-      : [
-          NodePath.join(homedir, ".local", "bin", binName),
-          NodePath.join(homedir, ".cargo", "bin", binName),
-          "/opt/homebrew/bin/uv", // Apple Silicon Homebrew
-        ];
+    let found: UvBin | null = null;
+    for (const path of defaultPaths) {
+      const exists = yield* Effect.try(() => NodeFs.existsSync(path)).pipe(
+        Effect.orElse(() => Effect.succeed(false)),
+      );
+      if (exists) {
+        yield* Effect.logDebug(`Found uv binary at default location: ${path}`);
+        found = UvBin.Discovered({ executable: path });
+        break;
+      }
+    }
 
-  // should probably use Command but for simplicity just check sync
-  for (const path of defaultPaths) {
-    const exists = yield* Effect.try(() => NodeFs.existsSync(path)).pipe(
-      Effect.orElse(() => Effect.succeed(false)),
-    );
-    if (exists) {
-      yield* Effect.logDebug(`Found uv binary at default location: ${path}`);
-      return UvBin.Discovered({ executable: path });
+    if (found) {
+      bin = found;
+    } else {
+      yield* Effect.logDebug("uv binary not found in default locations");
+      bin = UvBin.Default({ executable: binName });
     }
   }
 
-  yield* Effect.logDebug("uv binary not found in default locations");
-  return UvBin.Default({ executable: binName });
+  // Validate that the binary actually works
+  const version = getUvVersion(bin);
+  if (Option.isNone(version)) {
+    yield* Effect.logError(
+      `UV is not available. Binary: '${bin.executable}'. PATH: ${NodeProcess.env.PATH ?? "(not set)"}`,
+    );
+    return yield* new UvNotInstalledError({ bin });
+  }
+
+  yield* Effect.logInfo(`UV verified: ${version.value}`);
+  return bin;
+});
+
+/**
+ * Gets the UV version by running `uv --version`.
+ * Returns None if UV is not installed or not working.
+ */
+export function getUvVersion(bin: UvBin): Option.Option<string> {
+  try {
+    const version = NodeChildProcess.execSync(`${bin.executable} --version`, {
+      encoding: "utf8",
+    });
+    return Option.some(version.trim());
+  } catch {
+    return Option.none();
+  }
+}
+
+/**
+ * Handles UvNotInstalledError by showing a modal dialog with options.
+ * Dies after user interaction to prevent extension from continuing without UV.
+ */
+const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
+  error: UvNotInstalledError,
+  code: VsCode,
+  telemetry: Option.Option<Telemetry>,
+) {
+  const isUsingDefault = UvBin.$is("Default")(error.bin);
+  const isUsingConfigured = UvBin.$is("Configured")(error.bin);
+
+  const errorMessage = isUsingConfigured
+    ? `The marimo extension requires uv.\n\nThe configured path "${error.bin.executable}" was not found.`
+    : isUsingDefault
+      ? "The marimo extension requires uv."
+      : `The marimo extension requires uv.\n\nFound "${error.bin.executable}" but it failed to execute.`;
+
+  const items = isUsingConfigured
+    ? (["Open Settings"] as const)
+    : (["Install uv", "Open Settings"] as const);
+
+  const choice = yield* code.window.showErrorMessage(errorMessage, {
+    modal: true,
+    items: [...items],
+  });
+
+  if (Option.isSome(choice) && choice.value === "Install uv") {
+    // Create hidden terminal so Python extension doesn't auto-activate environments
+    const terminal = yield* code.window.createTerminal({
+      name: "Install uv",
+      hideFromUser: true,
+    });
+
+    /// Send install command from uv docs https://docs.astral.sh/uv/getting-started/installation/
+    terminal.sendText(
+      NodeProcess.platform === "win32"
+        ? 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
+        : "curl -LsSf https://astral.sh/uv/install.sh | sh",
+      /* Should execute */ false,
+    );
+
+    // Show to user to accept
+    terminal.show();
+
+    // Prompt user to reload after installation
+    const reload = yield* code.window.showInformationMessage(
+      "After installing uv, reload the window to activate the marimo extension.",
+      { items: ["Reload Window"] },
+    );
+
+    if (Option.isSome(reload) && reload.value === "Reload Window") {
+      yield* code.commands.executeCommand("workbench.action.reloadWindow");
+    }
+  }
+
+  if (Option.isSome(choice) && choice.value === "Open Settings") {
+    yield* code.commands.executeCommand(
+      "workbench.action.openSettings",
+      "marimo.uv.path",
+    );
+  }
+
+  // Die to prevent extension from continuing without UV
+  return yield* Effect.die(error);
 });

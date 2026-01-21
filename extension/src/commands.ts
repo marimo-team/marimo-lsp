@@ -183,4 +183,6 @@ export type VscodeBuiltinCommand =
   // Close active editor
   | "workbench.action.closeActiveEditor"
   // Open settings
-  | "workbench.action.openSettings";
+  | "workbench.action.openSettings"
+  // Reload window
+  | "workbench.action.reloadWindow";

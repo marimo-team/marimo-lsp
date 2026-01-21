@@ -26,14 +26,26 @@ import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
   cause: unknown;
-}> {}
+}> { }
 
 export class Window extends Effect.Service<Window>()("Window", {
-  scoped: Effect.gen(function* () {
+  scoped: Effect.gen(function*() {
     const api = vscode.window;
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
     return {
+      createTerminal(
+        options: vscode.TerminalOptions,
+      ): Effect.Effect<
+        Pick<vscode.Terminal, "show" | "sendText">,
+        never,
+        Scope.Scope
+      > {
+        return Effect.acquireRelease(
+          Effect.sync(() => api.createTerminal(options)),
+          (term) => Effect.sync(() => term.dispose()),
+        );
+      },
       showSaveDialog(options?: vscode.SaveDialogOptions) {
         return Effect.map(
           Effect.promise(() => api.showSaveDialog(options)),
@@ -222,7 +234,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         return Effect.promise((signal) =>
           api.withProgress(options, (progress, token) =>
             runPromise(
-              Effect.gen(function* () {
+              Effect.gen(function*() {
                 const fiber = yield* Effect.forkScoped(fn(progress));
                 const kill = () => runPromise(Fiber.interrupt(fiber));
                 yield* Effect.acquireRelease(
@@ -238,7 +250,7 @@ export class Window extends Effect.Service<Window>()("Window", {
       },
     };
   }),
-}) {}
+}) { }
 
 type ExecutableCommand = VscodeBuiltinCommand | MarimoCommand | DynamicCommand;
 
@@ -252,7 +264,7 @@ type ContextMap = {
 
 export class Commands extends Effect.Service<Commands>()("Commands", {
   dependencies: [Window.Default],
-  scoped: Effect.gen(function* () {
+  scoped: Effect.gen(function*() {
     const win = yield* Window;
     const api = vscode.commands;
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
@@ -283,11 +295,11 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
               runPromise(
                 effect.pipe(
                   // Publish the command to the command pubsub
-                  Effect.tap(function* () {
+                  Effect.tap(function*() {
                     yield* PubSub.publish(commandPubSub, Either.right(command));
                   }),
                   Effect.catchAllCause((cause) =>
-                    Effect.gen(function* () {
+                    Effect.gen(function*() {
                       yield* Effect.logError(cause);
                       yield* PubSub.publish(
                         commandPubSub,
@@ -307,7 +319,7 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
       },
     };
   }),
-}) {}
+}) { }
 
 export class Workspace extends Effect.Service<Workspace>()("Workspace", {
   sync: () => {
@@ -394,7 +406,7 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
       },
     };
   },
-}) {}
+}) { }
 
 export class Env extends Effect.Service<Env>()("Env", {
   sync: () => {
@@ -409,10 +421,10 @@ export class Env extends Effect.Service<Env>()("Env", {
       },
     };
   },
-}) {}
+}) { }
 
 export class Debug extends Effect.Service<Debug>()("Debug", {
-  scoped: Effect.gen(function* () {
+  scoped: Effect.gen(function*() {
     const api = vscode.debug;
     return {
       registerDebugConfigurationProvider(
@@ -439,7 +451,7 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
       },
     };
   }),
-}) {}
+}) { }
 
 export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
   effect: Effect.sync(() => {
@@ -480,14 +492,14 @@ export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
       },
     };
   }),
-}) {}
+}) { }
 
 export class AuthError extends Data.TaggedError("AuthError")<{
   cause: unknown;
-}> {}
+}> { }
 
 export class Auth extends Effect.Service<Auth>()("Auth", {
-  effect: Effect.gen(function* () {
+  effect: Effect.gen(function*() {
     const api = vscode.authentication;
     return {
       getSession(
@@ -505,17 +517,17 @@ export class Auth extends Effect.Service<Auth>()("Auth", {
       },
     };
   }),
-}) {}
+}) { }
 
 export class ParseUriError extends Data.TaggedError("ParseUriError")<{
   cause: unknown;
-}> {}
+}> { }
 
 /**
  * Wraps VS Code API functionality in Effect services
  */
 export class VsCode extends Effect.Service<VsCode>()("VsCode", {
-  effect: Effect.gen(function* () {
+  effect: Effect.gen(function*() {
     return {
       // namespaces
       window: yield* Window,
@@ -671,4 +683,4 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
     Notebooks.Default,
     Auth.Default,
   ],
-}) {}
+}) { }

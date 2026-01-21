@@ -1392,6 +1392,12 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 hide() {},
               });
             },
+            createTerminal() {
+              return Effect.succeed({
+                sendText() {},
+                show() {},
+              });
+            },
             createLogOutputChannel(name) {
               return Effect.acquireRelease(
                 Effect.sync(() => {

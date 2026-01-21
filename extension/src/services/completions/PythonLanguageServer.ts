@@ -47,14 +47,6 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
       // Virtual document store
       const documents = new Map<string, { version: number; content: string }>();
 
-      const serverOptions: lsp.ServerOptions = {
-        command: uv.bin.executable,
-        args: ["tool", "run", `ty@${TY_VERSION}`, "server"],
-        options: {
-          // Run in stdio mode
-        },
-      };
-
       // Create middleware to enrich configuration with Python environment
       const middleware = yield* createTyMiddleware(pyExt, code);
 
@@ -67,25 +59,32 @@ export class PythonLanguageServer extends Effect.Service<PythonLanguageServer>()
         middleware,
       };
 
-      const getClient = yield* Effect.cached(
-        Effect.tryPromise({
-          try: async () => {
-            const client = new NamespacedLanguageClient(
-              "marimo-ty",
-              "marimo (ty)",
-              serverOptions,
-              clientOptions,
-            );
-            await client.start();
-            return client;
-          },
-          catch: (cause) => new PythonLanguageServerStartError({ cause }),
-        }).pipe(
-          Effect.tapError((error) =>
-            Effect.logError("Error starting Python language server", { error }),
-          ),
-          Effect.either,
+      const serverOptions: lsp.ServerOptions = {
+        command: uv.bin.executable,
+        args: ["tool", "run", `ty@${TY_VERSION}`, "server"],
+        options: {
+          // Run in stdio mode
+        },
+      };
+
+      const getClient = yield* Effect.tryPromise({
+        try: async () => {
+          const client = new NamespacedLanguageClient(
+            "marimo-ty",
+            "marimo (ty)",
+            serverOptions,
+            clientOptions,
+          );
+          await client.start();
+          return client;
+        },
+        catch: (cause) => new PythonLanguageServerStartError({ cause }),
+      }).pipe(
+        Effect.tapError((error) =>
+          Effect.logError("Error starting Python language server", { error }),
         ),
+        Effect.either,
+        Effect.cached,
       );
 
       yield* Effect.addFinalizer(() =>

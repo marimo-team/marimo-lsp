@@ -38,19 +38,19 @@ export function anonymousId(storage: Storage): Effect.Effect<string, never> {
   );
 }
 
+type EventMap = {
+  executed_command: { command: string; success: boolean };
+  new_notebook_created: undefined;
+  notebook_opened: { cellCount: number };
+  tutorial_opened: { tutorial: string };
+  uv_missing: { binType: "default" | "configured" | "discovered" };
+  uv_install_clicked: undefined;
+};
+
 export interface ITelemetry {
-  capture(
-    event: "executed_command",
-    properties: { command: string; success: boolean },
-  ): Effect.Effect<void>;
-  capture(event: "new_notebook_created"): Effect.Effect<void>;
-  capture(
-    event: "notebook_opened",
-    properties: { cellCount: number },
-  ): Effect.Effect<void>;
-  capture(
-    event: "tutorial_opened",
-    properties: { tutorial: string },
+  capture<K extends keyof EventMap>(
+    event: K,
+    ...args: EventMap[K] extends undefined ? [] : [properties: EventMap[K]]
   ): Effect.Effect<void>;
   identify(properties?: Record<string, unknown>): Effect.Effect<void>;
 }
