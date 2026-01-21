@@ -15,9 +15,18 @@ import { VsCode } from "./VsCode.ts";
 
 export const UvBin = Data.taggedEnum<UvBin>();
 type UvBin = Data.TaggedEnum<{
-  Default: { readonly executable: "uv" | "uv.exe" };
-  Configured: { readonly executable: string };
-  Discovered: { readonly executable: string };
+  Default: {
+    readonly executable: "uv" | "uv.exe";
+    readonly version: Option.Option<string>;
+  };
+  Configured: {
+    readonly executable: string;
+    readonly version: Option.Option<string>;
+  };
+  Discovered: {
+    readonly executable: string;
+    readonly version: Option.Option<string>;
+  };
 }>;
 
 class UvNotInstalledError extends Data.TaggedError("UvNotInstalledError")<{
@@ -278,7 +287,10 @@ const findUvBin = Effect.fn("findUvBin")(function* (
     yield* Effect.logDebug(
       `Using user-configured uv path: ${userConfigPath.value}`,
     );
-    bin = UvBin.Configured({ executable: userConfigPath.value });
+    bin = UvBin.Configured({
+      executable: userConfigPath.value,
+      version: Option.none(),
+    });
   } else {
     // Check default install locations
     const homedir = NodeOs.homedir();
@@ -302,7 +314,10 @@ const findUvBin = Effect.fn("findUvBin")(function* (
       );
       if (exists) {
         yield* Effect.logDebug(`Found uv binary at default location: ${path}`);
-        found = UvBin.Discovered({ executable: path });
+        found = UvBin.Discovered({
+          executable: path,
+          version: Option.none(),
+        });
         break;
       }
     }
@@ -311,7 +326,10 @@ const findUvBin = Effect.fn("findUvBin")(function* (
       bin = found;
     } else {
       yield* Effect.logDebug("uv binary not found in default locations");
-      bin = UvBin.Default({ executable: binName });
+      bin = UvBin.Default({
+        executable: binName,
+        version: Option.none(),
+      });
     }
   }
 
@@ -325,14 +343,18 @@ const findUvBin = Effect.fn("findUvBin")(function* (
   }
 
   yield* Effect.logInfo(`UV verified: ${version.value}`);
-  return bin;
+  return UvBin.$match(bin, {
+    Default: (b) => UvBin.Default({ ...b, version }),
+    Configured: (b) => UvBin.Configured({ ...b, version }),
+    Discovered: (b) => UvBin.Discovered({ ...b, version }),
+  });
 });
 
 /**
  * Gets the UV version by running `uv --version`.
  * Returns None if UV is not installed or not working.
  */
-export function getUvVersion(bin: UvBin): Option.Option<string> {
+function getUvVersion(bin: UvBin): Option.Option<string> {
   try {
     const version = NodeChildProcess.execSync(`${bin.executable} --version`, {
       encoding: "utf8",

@@ -1,7 +1,7 @@
 import { Effect, Option, Ref, Schema, Stream } from "effect";
 import { PostHog } from "posthog-node";
+import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
 import { Log } from "../utils/log.ts";
-import { getExtensionVersion } from "./HealthService.ts";
 import { createStorageKey, Storage } from "./Storage.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -74,7 +74,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
     const telemetryEnabledRef = yield* Ref.make(initialTelemetryEnabled);
     const clientInitializedRef = yield* Ref.make(false);
 
-    const extensionVersion = yield* getExtensionVersion(code);
+    const extVersion = yield* getExtensionVersion();
     const distinctId = yield* anonymousId(storage);
 
     // Initialize PostHog client (only once when telemetry is enabled)
@@ -96,7 +96,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
         distinctId,
         event: "extension_activated",
         properties: {
-          extension_version: extensionVersion,
+          extension_version: Option.getOrElse(extVersion, () => "unknown"),
           app_name: code.env.appName,
           app_host: code.env.appHost,
         },
@@ -155,7 +155,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
             event,
             properties: {
               ...properties,
-              extension_version: extensionVersion,
+              extension_version: extVersion,
             },
           });
         });
