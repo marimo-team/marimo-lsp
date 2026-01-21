@@ -1,5 +1,5 @@
 import * as SentrySDK from "@sentry/node";
-import { Effect, HashMap, Logger, LogLevel } from "effect";
+import { Cause, Effect, HashMap, Logger, LogLevel } from "effect";
 import { getExtensionVersion } from "./HealthService.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -148,7 +148,7 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
        * Error logger
        */
       errorLogger: Logger.make((opts) => {
-        const message = String(opts.message);
+        const message = getErrorMessage(opts);
 
         if (shouldFilterMessage(message)) {
           return;
@@ -197,4 +197,27 @@ function shouldFilterMessage(message: string) {
 
 function isMarimoStackTrace(frames: SentrySDK.StackFrame[]) {
   return frames.some((frame) => frame.filename?.includes("marimo"));
+}
+
+function getErrorMessage(opts: Logger.Logger.Options<unknown>) {
+  if (opts.cause && !Cause.isEmpty(opts.cause)) {
+    return Cause.pretty(opts.cause);
+  }
+  return prettyMessage(opts.message);
+}
+
+function prettyMessage(message: unknown): string {
+  if (Array.isArray(message)) {
+    return message.map(prettyMessage).join(", ");
+  }
+
+  if (typeof message === "object" && message !== null) {
+    try {
+      return JSON.stringify(message);
+    } catch {
+      return String(message);
+    }
+  }
+
+  return String(message);
 }
