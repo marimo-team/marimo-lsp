@@ -1,4 +1,13 @@
-import { Effect, HashMap, HashSet, Option, Ref, Runtime, Stream } from "effect";
+import {
+  Effect,
+  HashMap,
+  HashSet,
+  Option,
+  Ref,
+  Runtime,
+  Stream,
+  SynchronizedRef,
+} from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
 import { MarimoNotebookDocument, type NotebookId } from "../../schemas.ts";
@@ -58,6 +67,16 @@ export function extendNotebookCellLanguages(
  * yield* sync.registerClient(client);
  * ```
  */
+/**
+ * Registered client with its own cell count tracking.
+ */
+interface RegisteredClient {
+  client: NamespacedLanguageClient;
+  cellCountsRef: SynchronizedRef.SynchronizedRef<
+    HashMap.HashMap<NotebookId, number>
+  >;
+}
+
 export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
   "NotebookSyncService",
   {
@@ -69,18 +88,13 @@ export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
 
       const adapter = new NotebookAdapter(LanguageId.Python);
 
-      const cellCountsRef = yield* Ref.make(
-        HashMap.empty<NotebookId, number>(),
-      );
-      const clientsRef = yield* Ref.make(
-        HashSet.empty<NamespacedLanguageClient>(),
-      );
+      const clientsRef = yield* Ref.make(HashSet.empty<RegisteredClient>());
 
       // Start the resync broadcaster
       yield* Effect.forkScoped(
         variablesService.streamVariablesChanges().pipe(
           Stream.mapEffect((change) =>
-            handleVariablesChange(clientsRef, cellCountsRef, adapter, change),
+            handleVariablesChange(clientsRef, adapter, change),
           ),
           Stream.runDrain,
         ),
@@ -120,20 +134,32 @@ export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
         /** The NotebookAdapter for document/cell transformations */
         adapter,
 
-        /** Middleware to spread into LSP client options */
-        notebookMiddleware: yield* createNotebookMiddleware(
-          adapter,
-          cellCountsRef,
-        ),
+        /**
+         * Creates notebook middleware for a specific client.
+         * Each client gets its own cell count tracking to avoid interference.
+         *
+         * IMPORTANT: Call this separately for each language client - do not share
+         * the returned middleware between clients.
+         */
+        createNotebookMiddleware() {
+          return createNotebookMiddleware(adapter);
+        },
 
         /**
          * Register a client to receive resync broadcasts.
+         * The cellCountsRef should be the same one used by the client's middleware.
          * Automatically unregisters when the scope closes.
          */
-        registerClient(client: NamespacedLanguageClient) {
+        registerClient(
+          client: NamespacedLanguageClient,
+          cellCountsRef: SynchronizedRef.SynchronizedRef<
+            HashMap.HashMap<NotebookId, number>
+          >,
+        ) {
+          const registered: RegisteredClient = { client, cellCountsRef };
           return Effect.acquireRelease(
-            Ref.update(clientsRef, HashSet.add(client)),
-            () => Ref.update(clientsRef, HashSet.remove(client)),
+            Ref.update(clientsRef, HashSet.add(registered)),
+            () => Ref.update(clientsRef, HashSet.remove(registered)),
           );
         },
       };
@@ -143,18 +169,18 @@ export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
 
 /**
  * Handle a variable change event by resyncing affected notebooks.
+ * Sends per-client notifications with correct deleteCount for each client's state.
  */
 const handleVariablesChange = Effect.fn(function* (
-  clientsRef: Ref.Ref<HashSet.HashSet<NamespacedLanguageClient>>,
-  cellCountsRef: Ref.Ref<HashMap.HashMap<NotebookId, number>>,
+  clientsRef: Ref.Ref<HashSet.HashSet<RegisteredClient>>,
   adapter: NotebookAdapter,
   variablesMap: HashMap.HashMap<NotebookId, unknown>,
 ) {
   const code = yield* VsCode;
 
-  const clients = yield* Ref.get(clientsRef);
+  const registeredClients = yield* Ref.get(clientsRef);
 
-  if (HashSet.size(clients) === 0) {
+  if (HashSet.size(registeredClients) === 0) {
     return;
   }
 
@@ -171,25 +197,28 @@ const handleVariablesChange = Effect.fn(function* (
       continue;
     }
 
-    const notification = yield* buildResyncNotification(
-      doc.value,
-      adapter,
-      cellCountsRef,
-    );
-
-    if (Option.isNone(notification)) {
-      continue;
-    }
-
+    // Send notification to each client with its own deleteCount
     yield* Effect.forEach(
-      clients,
-      (client) =>
-        Effect.promise(() =>
-          client.sendNotification(
-            "notebookDocument/didChange",
-            notification.value,
-          ),
-        ),
+      registeredClients,
+      (registered) =>
+        Effect.gen(function* () {
+          const notification = yield* buildResyncNotification(
+            doc.value,
+            adapter,
+            registered.cellCountsRef,
+          );
+
+          if (Option.isNone(notification)) {
+            return;
+          }
+
+          yield* Effect.promise(() =>
+            registered.client.sendNotification(
+              "notebookDocument/didChange",
+              notification.value,
+            ),
+          );
+        }),
       { concurrency: "unbounded" },
     );
   }
@@ -308,83 +337,101 @@ function isVirtualWorkspace(
 /**
  * Build a resync notification for a notebook when cell order changes.
  * Returns None if no resync is needed.
+ *
+ * Uses SynchronizedRef.modifyEffect to atomically get previous count,
+ * fetch reordered cells, and update the count - serializing with other
+ * notebook operations.
  */
-const buildResyncNotification = Effect.fn(function* (
+function buildResyncNotification(
   doc: MarimoNotebookDocument,
   adapter: NotebookAdapter,
-  cellCounts: Ref.Ref<HashMap.HashMap<NotebookId, number>>,
+  cellCounts: SynchronizedRef.SynchronizedRef<
+    HashMap.HashMap<NotebookId, number>
+  >,
 ) {
-  const previousCellCount = Option.getOrElse(
-    HashMap.get(yield* Ref.get(cellCounts), doc.id),
-    () => 0,
-  );
+  return SynchronizedRef.modifyEffect(cellCounts, (counts) =>
+    Effect.gen(function* () {
+      const previousCellCount = Option.getOrElse(
+        HashMap.get(counts, doc.id),
+        () => 0,
+      );
 
-  if (doc.cellCount === 0 && previousCellCount === 0) {
-    return Option.none();
-  }
+      const reorderedCells = yield* getTopologicalCells(doc);
 
-  const reorderedCells = yield* getTopologicalCells(doc);
+      if (reorderedCells.length === 0 && previousCellCount === 0) {
+        return [Option.none(), counts] as const;
+      }
 
-  // Update the cell count
-  yield* Ref.update(cellCounts, HashMap.set(doc.id, doc.cellCount));
+      // Track the count of cells we actually send, not doc.cellCount
+      const newCounts = HashMap.set(counts, doc.id, reorderedCells.length);
 
-  const transformedCells = adapter.cellsEvent({
-    structure: {
-      array: {
-        start: 0,
-        deleteCount: previousCellCount,
-        cells: reorderedCells,
-      },
-      didOpen: reorderedCells,
-      didClose: [],
-    },
-  });
-
-  const structure = transformedCells?.structure;
-  if (!structure) {
-    return Option.none();
-  }
-
-  const notebookDoc = adapter.notebookDocument(doc.rawNotebookDocument);
-
-  return Option.some({
-    notebookDocument: {
-      uri: notebookDoc.uri.toString(),
-      version: notebookDoc.version,
-    },
-    change: {
-      cells: {
+      const transformedCells = adapter.cellsEvent({
         structure: {
           array: {
-            start: structure.array.start,
-            deleteCount: structure.array.deleteCount,
-            cells: structure.array.cells?.map((cell) => ({
-              kind: cell.kind,
-              document: cell.document.uri.toString(),
-            })),
-          } satisfies lsp.NotebookCellArrayChange,
-          didOpen: structure.didOpen?.map((cell) => ({
-            uri: cell.document.uri.toString(),
-            languageId: cell.document.languageId,
-            version: cell.document.version,
-            text: cell.document.getText(),
-          })),
-          didClose: structure.didClose?.map((cell) => ({
-            uri: cell.document.uri.toString(),
-          })),
+            start: 0,
+            deleteCount: previousCellCount,
+            cells: reorderedCells,
+          },
+          didOpen: reorderedCells,
+          didClose: [],
         },
-      },
-    },
-  });
-});
+      });
 
-function createNotebookMiddleware(
-  adapter: NotebookAdapter,
-  countsRef: Ref.Ref<HashMap.HashMap<NotebookId, number>>,
-) {
+      const structure = transformedCells?.structure;
+      if (!structure) {
+        return [Option.none(), newCounts] as const;
+      }
+
+      const notebookDoc = adapter.notebookDocument(doc.rawNotebookDocument);
+
+      const notification = Option.some({
+        notebookDocument: {
+          uri: notebookDoc.uri.toString(),
+          version: notebookDoc.version,
+        },
+        change: {
+          cells: {
+            structure: {
+              array: {
+                start: structure.array.start,
+                deleteCount: structure.array.deleteCount,
+                cells: structure.array.cells?.map((cell) => ({
+                  kind: cell.kind,
+                  document: cell.document.uri.toString(),
+                })),
+              } satisfies lsp.NotebookCellArrayChange,
+              didOpen: structure.didOpen?.map((cell) => ({
+                uri: cell.document.uri.toString(),
+                languageId: cell.document.languageId,
+                version: cell.document.version,
+                text: cell.document.getText(),
+              })),
+              didClose: structure.didClose?.map((cell) => ({
+                uri: cell.document.uri.toString(),
+              })),
+            },
+          },
+        },
+      });
+
+      return [notification, newCounts] as const;
+    }),
+  );
+}
+
+/**
+ * Creates notebook middleware with its own cell count tracking.
+ * Returns both the middleware and the cellCountsRef for registration.
+ */
+function createNotebookMiddleware(adapter: NotebookAdapter) {
   return Effect.gen(function* () {
     const runtime = yield* Effect.runtime<VariablesService>();
     const runPromise = Runtime.runPromise(runtime);
+
+    // Each client gets its own cell count tracking
+    const countsRef = yield* SynchronizedRef.make(
+      HashMap.empty<NotebookId, number>(),
+    );
 
     const notebookMiddleware: Readonly<
       Pick<lsp.Middleware, "didOpen" | "didClose" | "didChange" | "notebooks">
@@ -396,9 +443,14 @@ function createNotebookMiddleware(
       notebooks: {
         didOpen: async (raw, _cells, next) => {
           const doc = MarimoNotebookDocument.from(raw);
+          // SynchronizedRef.modifyEffect serializes with other operations
           const orderedCells = await runPromise(
-            Ref.update(countsRef, HashMap.set(doc.id, doc.cellCount)).pipe(
-              Effect.andThen(() => getTopologicalCells(doc)),
+            SynchronizedRef.modifyEffect(countsRef, (counts) =>
+              Effect.map(getTopologicalCells(doc), (cells) => [
+                cells,
+                // Track the count of cells we actually send, not doc.cellCount
+                HashMap.set(counts, doc.id, cells.length),
+              ]),
             ),
           );
           return next(
@@ -408,9 +460,13 @@ function createNotebookMiddleware(
         },
         didClose: async (raw, _cells, next) => {
           const doc = MarimoNotebookDocument.from(raw);
+          // SynchronizedRef.modifyEffect serializes with other operations
           const orderedCells = await runPromise(
-            Ref.update(countsRef, HashMap.remove(doc.id)).pipe(
-              Effect.andThen(() => getTopologicalCells(doc)),
+            SynchronizedRef.modifyEffect(countsRef, (counts) =>
+              Effect.map(getTopologicalCells(doc), (cells) => [
+                cells,
+                HashMap.remove(counts, doc.id),
+              ]),
             ),
           );
           return next(
@@ -420,20 +476,19 @@ function createNotebookMiddleware(
         },
         didChange: async (event, next) => {
           const doc = MarimoNotebookDocument.from(event.notebook);
+          const result = await runPromise(
+            buildCellReplacement(doc, countsRef, event.cells),
+          );
           return next({
             notebook: adapter.notebookDocument(event.notebook),
             metadata: event.metadata,
-            cells: adapter.cellsEvent(
-              await runPromise(
-                buildCellReplacement(doc, countsRef, event.cells),
-              ),
-            ),
+            cells: adapter.cellsEvent(result),
           });
         },
       },
     };
 
-    return notebookMiddleware;
+    return { middleware: notebookMiddleware, cellCountsRef: countsRef };
   });
 }
 
@@ -444,30 +499,34 @@ function createNotebookMiddleware(
  * Rather than applying incremental changes, this deletes all existing cells
  * and re-inserts them in topological order. All cells are included in `didOpen`
  * so the LSP server receives their full text content.
+ *
+ * Uses SynchronizedRef.modifyEffect to serialize with other notebook operations.
  */
 function buildCellReplacement(
   doc: MarimoNotebookDocument,
-  countsRef: Ref.Ref<HashMap.HashMap<NotebookId, number>>,
+  countsRef: SynchronizedRef.SynchronizedRef<
+    HashMap.HashMap<NotebookId, number>
+  >,
   cells: lsp.VNotebookDocumentChangeEvent["cells"],
-) {
-  return Effect.gen(function* () {
-    // Delete all old cells, insert all in new order.
-    // We must provide ALL cells in didOpen so the server gets their text content.
-    if (cells?.structure) {
-      const [counts, reorderedCells] = yield* Effect.all(
-        [
-          // Get the previous map (for deleteCount) while storing the new count
-          Ref.getAndUpdate(countsRef, HashMap.set(doc.id, doc.cellCount)),
-          getTopologicalCells(doc),
-        ],
-        { concurrency: "unbounded" },
-      );
+): Effect.Effect<
+  lsp.VNotebookDocumentChangeEvent["cells"],
+  never,
+  VariablesService
+> {
+  // No structure change - pass through without locking
+  if (!cells?.structure) {
+    return Effect.succeed(cells);
+  }
 
-      const prevCount = HashMap.get(counts, doc.id).pipe(
-        Option.getOrElse(() => 0),
-      );
+  // Delete all old cells, insert all in new order.
+  // We must provide ALL cells in didOpen so the server gets their text content.
+  return SynchronizedRef.modifyEffect(countsRef, (counts) =>
+    Effect.map(getTopologicalCells(doc), (reorderedCells) => {
+      const prevCount = Option.getOrElse(HashMap.get(counts, doc.id), () => 0);
+      // Track the count of cells we actually send, not doc.cellCount
+      const newCounts = HashMap.set(counts, doc.id, reorderedCells.length);
 
-      return {
+      const result: lsp.VNotebookDocumentChangeEvent["cells"] = {
         structure: {
           array: {
             start: 0,
@@ -478,8 +537,8 @@ function buildCellReplacement(
           didClose: [],
         },
       };
-    }
 
-    return cells;
-  });
+      return [result, newCounts] as const;
+    }),
+  );
 }

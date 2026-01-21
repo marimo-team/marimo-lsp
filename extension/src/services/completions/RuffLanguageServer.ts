@@ -52,6 +52,10 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
 
       yield* Effect.logInfo("Starting Ruff language server for marimo");
 
+      // Create middleware with its own cell count tracking
+      const { middleware: notebookMiddleware, cellCountsRef } =
+        yield* sync.createNotebookMiddleware();
+
       // Build initializationOptions from ruff.* settings
       const ruffConfig = yield* code.workspace.getConfiguration("ruff");
       const workspaceFolders = yield* code.workspace.getWorkspaceFolders();
@@ -67,7 +71,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
 
       const clientOptions: lsp.LanguageClientOptions = {
         outputChannelName: "marimo (ruff)",
-        middleware: yield* createRuffMiddleware(sync),
+        middleware: yield* createRuffMiddleware(sync, notebookMiddleware),
         documentSelector: sync.getDocumentSelector(),
         transformServerCapabilities: sync.extendNotebookCellLanguages(),
         initializationOptions: { settings, globalSettings },
@@ -123,7 +127,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       const client = yield* getClient;
 
       if (Either.isRight(client)) {
-        yield* sync.registerClient(client.right);
+        yield* sync.registerClient(client.right, cellCountsRef);
         yield* Effect.logInfo("Ruff language server started successfully");
       } else {
         yield* Effect.logInfo("Ruff language server failed to start");
@@ -244,11 +248,14 @@ function getGlobalRuffSettings(
 /**
  * Creates LSP middleware that adapts marimo notebook documents for Ruff.
  *
- * Uses the shared NotebookSyncService for base notebook handling,
+ * Uses the provided notebook middleware for base notebook handling,
  * and adds Ruff-specific formatting and code action middleware.
  */
 function createRuffMiddleware(
   sync: NotebookSyncService,
+  notebookMiddleware: Readonly<
+    Pick<lsp.Middleware, "didOpen" | "didClose" | "didChange" | "notebooks">
+  >,
 ): Effect.Effect<lsp.Middleware, never, VsCode> {
   return Effect.gen(function* () {
     const runtime = yield* Effect.runtime<VsCode>();
@@ -267,7 +274,7 @@ function createRuffMiddleware(
       );
 
     return {
-      ...sync.notebookMiddleware,
+      ...notebookMiddleware,
       async provideDocumentFormattingEdits(document, options, token, next) {
         const shouldFormat = await isRuffFormatEnabled();
         return shouldFormat
