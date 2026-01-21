@@ -4,7 +4,7 @@ import { handleMissingPackageAlert } from "../operations.ts";
 import { MarimoNotebookDocument, type NotebookId } from "../schemas.ts";
 import { Config } from "../services/Config.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
-import { PythonLanguageServer } from "../services/completions/PythonLanguageServer.ts";
+import { TyLanguageServer } from "../services/completions/TyLanguageServer.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { LanguageClient } from "../services/LanguageClient.ts";
@@ -182,7 +182,7 @@ function processOperation(
     const controllers = yield* ControllerRegistry;
     const variables = yield* VariablesService;
     const datasources = yield* DatasourcesService;
-    const pyLsp = yield* PythonLanguageServer;
+    const tyLsp = yield* TyLanguageServer;
 
     const maybeEditor = yield* editors.getLastNotebookEditor(notebookUri);
 
@@ -228,7 +228,7 @@ function processOperation(
             Effect.provideService(Uv, uv),
             Effect.provideService(VsCode, code),
             Effect.provideService(Config, config),
-            Effect.provideService(PythonLanguageServer, pyLsp),
+            Effect.provideService(TyLanguageServer, tyLsp),
           ),
         );
         break;

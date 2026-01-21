@@ -4,7 +4,7 @@ import * as pkg from "../../package.json";
 import { getTestExtensionContext } from "../__mocks__/TestExtensionContext.ts";
 import { TestLanguageClientLive } from "../__mocks__/TestLanguageClient.ts";
 import { TestPythonExtension } from "../__mocks__/TestPythonExtension.ts";
-import { TestPythonLanguageServerLive } from "../__mocks__/TestPythonLanguageServer.ts";
+import { TestTyLanguageServerLive } from "../__mocks__/TestTyLanguageServer.ts";
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
@@ -16,7 +16,7 @@ const withTestCtx = Effect.fnUntraced(function* () {
     Layer.provideMerge(vscode.layer),
     Layer.provideMerge(TestLanguageClientLive),
     Layer.provideMerge(TestPythonExtension.Default),
-    Layer.provideMerge(TestPythonLanguageServerLive),
+    Layer.provideMerge(TestTyLanguageServerLive),
   );
   return {
     layer,

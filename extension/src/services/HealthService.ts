@@ -3,11 +3,14 @@ import * as semver from "@std/semver";
 import { Effect, Option } from "effect";
 import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
 import { Config } from "./Config.ts";
-import { PythonLanguageServer } from "./completions/PythonLanguageServer.ts";
 import {
   RuffLanguageServer,
   RuffLanguageServerHealth,
 } from "./completions/RuffLanguageServer.ts";
+import {
+  TyLanguageServer,
+  TyLanguageServerHealth,
+} from "./completions/TyLanguageServer.ts";
 import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
 import { PythonExtension } from "./PythonExtension.ts";
 import { Uv, UvBin } from "./Uv.ts";
@@ -21,15 +24,15 @@ export class HealthService extends Effect.Service<HealthService>()(
   {
     dependencies: [
       Uv.Default,
-      PythonLanguageServer.Default,
+      TyLanguageServer.Default,
       RuffLanguageServer.Default,
     ],
-    effect: Effect.gen(function* () {
+    scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
       const pyExt = yield* PythonExtension;
-      const pyLsp = yield* PythonLanguageServer;
+      const tyLsp = yield* TyLanguageServer;
       const ruffLsp = yield* RuffLanguageServer;
 
       const getLspStatus = () => Effect.succeed({ isAvailable: true });
@@ -113,24 +116,29 @@ export class HealthService extends Effect.Service<HealthService>()(
           // Python Language Server (ty) - only show if managed language features enabled
           const managedLanguageFeaturesEnabled =
             yield* config.getManagedLanguageFeaturesEnabled();
+
           if (managedLanguageFeaturesEnabled) {
             lines.push("Python Language Server (ty):");
-            const health = yield* pyLsp.getHealthStatus;
-            const statusIcon = health.status === "running" ? "✓" : "✗";
-            lines.push(`\tStatus: ${health.status} ${statusIcon}`);
-            if (health.version) {
-              lines.push(`\tVersion: ${health.version}`);
-            }
-            if (health.pythonEnvironment) {
-              const pyPath = health.pythonEnvironment.path ?? "Unknown";
-              const pyVersion = health.pythonEnvironment.version
-                ? ` (${health.pythonEnvironment.version})`
-                : "";
-              lines.push(`\tPython: ${pyPath}${pyVersion}`);
-            }
-            if (health.error) {
-              lines.push(`\tError: ${health.error}`);
-            }
+
+            TyLanguageServerHealth.$match(yield* tyLsp.getHealthStatus, {
+              Running: ({ version, pythonEnvironment }) => {
+                lines.push("\tStatus: running ✓");
+                lines.push(
+                  `\tVersion: ${Option.getOrElse(version, () => "Unknown")}`,
+                );
+                if (Option.isSome(pythonEnvironment)) {
+                  const pyPath = pythonEnvironment.value.path;
+                  const pyVersion = pythonEnvironment.value.version
+                    ? ` (${pythonEnvironment.value.version})`
+                    : "";
+                  lines.push(`\tPython: ${pyPath}${pyVersion}`);
+                }
+              },
+              Failed: ({ error }) => {
+                lines.push("\tStatus: failed ✗");
+                lines.push(`\tError: ${error}`);
+              },
+            });
 
             lines.push("");
 
@@ -185,7 +193,6 @@ export class HealthService extends Effect.Service<HealthService>()(
             } else {
               lines.push("\t(not set)");
             }
-
             lines.push("");
           }
 

@@ -8,11 +8,11 @@ import {
 } from "../../../__mocks__/TestVsCode.ts";
 import {
   extendNotebookCellLanguages,
-  RuffAdapter,
-} from "../RuffLanguageServer.ts";
+  NotebookAdapter,
+} from "../NotebookSyncService.ts";
 
-describe("RuffAdapter", () => {
-  const adapter = new RuffAdapter("mo-python");
+describe("NotebookAdapter", () => {
+  const adapter = new NotebookAdapter("mo-python");
 
   describe("notebookDocument", () => {
     it("appends .ipynb to notebook URI path", () => {
