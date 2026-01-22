@@ -55,8 +55,18 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
 
       yield* Effect.logInfo("Starting Ruff language server for marimo");
 
-      // Create isolated sync instance with its own cell count tracking
-      const notebookSync = yield* sync.forClient();
+      // Create isolated sync instance with its own cell count tracking.
+      //
+      // WORKAROUND: Ruff requires notebook document URIs to end with `.ipynb`
+      // to recognize them as notebooks. Without this, Ruff treats cells as
+      // independent files rather than parts of a single notebook module.
+      // This workaround is NOT needed for ty, which handles notebook URIs
+      // without the `.ipynb` suffix.
+      // See: https://github.com/astral-sh/ruff/issues/22809
+      const notebookSync = yield* sync.forClient({
+        transformNotebookDocumentUri: (uri) =>
+          uri.with({ path: `${uri.path}.ipynb` }),
+      });
 
       // Build initializationOptions from ruff.* settings
       const ruffConfig = yield* code.workspace.getConfiguration("ruff");
@@ -273,7 +283,11 @@ function createRuffMiddleware(
       );
 
     return {
-      ...sync.middleware,
+      notebooks: sync.notebookMiddleware,
+      didOpen: (doc, next) => next(sync.adapter.document(doc)),
+      didClose: (doc, next) => next(sync.adapter.document(doc)),
+      didChange: (change, next) =>
+        next({ ...change, document: sync.adapter.document(change.document) }),
       async provideDocumentFormattingEdits(document, options, token, next) {
         const shouldFormat = await isRuffFormatEnabled();
         return shouldFormat

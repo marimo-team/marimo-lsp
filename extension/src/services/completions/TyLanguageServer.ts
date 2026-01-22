@@ -236,8 +236,40 @@ function createTyMiddleware(
     const runtime = yield* Effect.runtime<VsCode | PythonExtension>();
     const runPromise = Runtime.runPromise(runtime);
 
+    // Helper to wrap document with language ID mapping (mo-python -> python)
+    const wrapDocument = sync.adapter.document.bind(sync.adapter);
+
     return {
-      ...sync.middleware,
+      notebooks: sync.notebookMiddleware,
+      // Language ID mapping for request handlers
+      // ty needs "python" language ID, but marimo uses "mo-python" to avoid conflicts
+      didOpen: (doc, next) => next(wrapDocument(doc)),
+      didClose: (doc, next) => next(wrapDocument(doc)),
+      didChange: (change, next) =>
+        next({ ...change, document: wrapDocument(change.document) }),
+      provideHover: (doc, position, token, next) =>
+        next(wrapDocument(doc), position, token),
+      provideDefinition: (doc, position, token, next) =>
+        next(wrapDocument(doc), position, token),
+      provideTypeDefinition: (doc, position, token, next) =>
+        next(wrapDocument(doc), position, token),
+      provideReferences: (doc, position, context, token, next) =>
+        next(wrapDocument(doc), position, context, token),
+      provideRenameEdits: (doc, position, newName, token, next) =>
+        next(wrapDocument(doc), position, newName, token),
+      prepareRename: (doc, position, token, next) =>
+        next(wrapDocument(doc), position, token),
+      provideCompletionItem: (doc, position, context, token, next) =>
+        next(wrapDocument(doc), position, context, token),
+      provideSignatureHelp: (doc, position, context, token, next) =>
+        next(wrapDocument(doc), position, context, token),
+      provideDocumentHighlights: (doc, position, token, next) =>
+        next(wrapDocument(doc), position, token),
+      provideDocumentSymbols: (doc, token, next) =>
+        next(wrapDocument(doc), token),
+      provideInlayHints: (doc, range, token, next) =>
+        next(wrapDocument(doc), range, token),
+
       // WORKAROUND: ty panics when receiving textDocument/diagnostic for (.py) notebook
       // cells because it only supports text document diagnostics, not notebook
       // documents. We suppress these requests client-side until ty adds full
