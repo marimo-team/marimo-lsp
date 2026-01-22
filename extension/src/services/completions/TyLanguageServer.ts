@@ -8,7 +8,10 @@ import { PythonExtension } from "../PythonExtension.ts";
 import { Uv } from "../Uv.ts";
 import { VsCode } from "../VsCode.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
-import { NotebookSyncService } from "./NotebookSyncService.ts";
+import {
+  type ClientNotebookSync,
+  NotebookSyncService,
+} from "./NotebookSyncService.ts";
 
 // TODO: make TY_VERSION configurable?
 // For now, since we are doing rolling releases, we can bump this as needed.
@@ -61,9 +64,8 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
 
       yield* Effect.logInfo("Starting ty language server for marimo");
 
-      // Create middleware with its own cell count tracking
-      const { middleware: notebookMiddleware, cellCountsRef } =
-        yield* sync.createNotebookMiddleware();
+      // Create isolated sync instance with its own cell count tracking
+      const notebookSync = yield* sync.forClient();
 
       const serverOptions: lsp.ServerOptions = {
         command: uv.bin.executable,
@@ -73,7 +75,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
 
       const clientOptions: lsp.LanguageClientOptions = {
         outputChannelName: "marimo (ty)",
-        middleware: yield* createTyMiddleware(notebookMiddleware),
+        middleware: yield* createTyMiddleware(notebookSync),
         documentSelector: sync.getDocumentSelector(),
         transformServerCapabilities: sync.extendNotebookCellLanguages(),
         initializationOptions: {},
@@ -112,7 +114,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
       const client = yield* getClient;
 
       if (Either.isRight(client)) {
-        yield* sync.registerClient(client.right, cellCountsRef);
+        yield* notebookSync.connect(client.right);
         yield* Effect.logInfo("ty language server started successfully");
       } else {
         yield* Effect.logInfo("ty language server failed to start");
@@ -228,16 +230,14 @@ function isExtensionOnlyKey(key: string): key is ExtensionOnlyKeys {
  * responses with Python environment information.
  */
 function createTyMiddleware(
-  notebookMiddleware: Readonly<
-    Pick<lsp.Middleware, "didOpen" | "didClose" | "didChange" | "notebooks">
-  >,
+  sync: ClientNotebookSync,
 ): Effect.Effect<lsp.Middleware, never, VsCode | PythonExtension> {
   return Effect.gen(function* () {
     const runtime = yield* Effect.runtime<VsCode | PythonExtension>();
     const runPromise = Runtime.runPromise(runtime);
 
     return {
-      ...notebookMiddleware,
+      ...sync.middleware,
       // WORKAROUND: ty panics when receiving textDocument/diagnostic for (.py) notebook
       // cells because it only supports text document diagnostics, not notebook
       // documents. We suppress these requests client-side until ty adds full

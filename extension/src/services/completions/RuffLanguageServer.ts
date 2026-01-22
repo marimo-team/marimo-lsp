@@ -6,7 +6,10 @@ import { Config } from "../Config.ts";
 import { Uv } from "../Uv.ts";
 import { VsCode } from "../VsCode.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
-import { NotebookSyncService } from "./NotebookSyncService.ts";
+import {
+  type ClientNotebookSync,
+  NotebookSyncService,
+} from "./NotebookSyncService.ts";
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
 // Bump this as needed for new features or fixes.
@@ -52,9 +55,8 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
 
       yield* Effect.logInfo("Starting Ruff language server for marimo");
 
-      // Create middleware with its own cell count tracking
-      const { middleware: notebookMiddleware, cellCountsRef } =
-        yield* sync.createNotebookMiddleware();
+      // Create isolated sync instance with its own cell count tracking
+      const notebookSync = yield* sync.forClient();
 
       // Build initializationOptions from ruff.* settings
       const ruffConfig = yield* code.workspace.getConfiguration("ruff");
@@ -71,7 +73,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
 
       const clientOptions: lsp.LanguageClientOptions = {
         outputChannelName: "marimo (ruff)",
-        middleware: yield* createRuffMiddleware(sync, notebookMiddleware),
+        middleware: yield* createRuffMiddleware(notebookSync),
         documentSelector: sync.getDocumentSelector(),
         transformServerCapabilities: sync.extendNotebookCellLanguages(),
         initializationOptions: { settings, globalSettings },
@@ -127,7 +129,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       const client = yield* getClient;
 
       if (Either.isRight(client)) {
-        yield* sync.registerClient(client.right, cellCountsRef);
+        yield* notebookSync.connect(client.right);
         yield* Effect.logInfo("Ruff language server started successfully");
       } else {
         yield* Effect.logInfo("Ruff language server failed to start");
@@ -252,10 +254,7 @@ function getGlobalRuffSettings(
  * and adds Ruff-specific formatting and code action middleware.
  */
 function createRuffMiddleware(
-  sync: NotebookSyncService,
-  notebookMiddleware: Readonly<
-    Pick<lsp.Middleware, "didOpen" | "didClose" | "didChange" | "notebooks">
-  >,
+  sync: ClientNotebookSync,
 ): Effect.Effect<lsp.Middleware, never, VsCode> {
   return Effect.gen(function* () {
     const runtime = yield* Effect.runtime<VsCode>();
@@ -274,7 +273,7 @@ function createRuffMiddleware(
       );
 
     return {
-      ...notebookMiddleware,
+      ...sync.middleware,
       async provideDocumentFormattingEdits(document, options, token, next) {
         const shouldFormat = await isRuffFormatEnabled();
         return shouldFormat
