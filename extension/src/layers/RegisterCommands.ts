@@ -52,7 +52,7 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
 
     yield* code.commands.registerCommand(
       "marimo.newMarimoNotebook",
-      newMarimoNotebook({ code, serializer, telemetry }),
+      newMarimoNotebook({ code, serializer, telemetry, channel }),
     );
 
     yield* code.commands.registerCommand(
@@ -261,9 +261,11 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
 
 const newMarimoNotebook = ({
   code,
+  channel,
   telemetry,
 }: {
   code: VsCode;
+  channel: OutputChannel;
   serializer: NotebookSerializer;
   telemetry: ITelemetry;
 }) =>
@@ -300,7 +302,17 @@ def _():
     );
 
     yield* telemetry.capture("new_notebook_created");
-  });
+  }).pipe(
+    Effect.catchTag("FileSystemError", (error) =>
+      Effect.gen(function* () {
+        yield* Effect.logError("Failed to create notebook", { error });
+        yield* showErrorAndPromptLogs("Failed to create notebook.", {
+          channel,
+          code,
+        });
+      }),
+    ),
+  );
 
 const createSetupCell = ({
   code,
@@ -795,17 +807,27 @@ const exportNotebookAsHTML = ({
         }
 
         // Write the HTML to the file
-        yield* code.workspace.fs.writeFile(
-          saveUri.value,
-          new TextEncoder().encode(result.right),
-        );
-
-        yield* Effect.logInfo("Exported notebook as HTML").pipe(
-          Effect.annotateLogs({
-            notebook: notebook.value.id,
-            output: saveUri.value.fsPath,
-          }),
-        );
+        yield* code.workspace.fs
+          .writeFile(saveUri.value, new TextEncoder().encode(result.right))
+          .pipe(
+            Effect.tap(() =>
+              Effect.logInfo("Exported notebook as HTML").pipe(
+                Effect.annotateLogs({
+                  notebook: notebook.value.id,
+                  output: saveUri.value.fsPath,
+                }),
+              ),
+            ),
+            Effect.tapError(() =>
+              Effect.logError("Failed to export notebook as HTML").pipe(
+                Effect.annotateLogs({
+                  notebook: notebook.value.id,
+                  output: saveUri.value.fsPath,
+                }),
+              ),
+            ),
+            Effect.ignore,
+          );
       }),
     );
   });

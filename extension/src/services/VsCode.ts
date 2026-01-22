@@ -28,6 +28,10 @@ export class VsCodeError extends Data.TaggedError("VsCodeError")<{
   cause: unknown;
 }> {}
 
+export class FileSystemError extends Data.TaggedError("FileSystemError")<{
+  cause: unknown;
+}> {}
+
 export class Window extends Effect.Service<Window>()("Window", {
   scoped: Effect.gen(function* () {
     const api = vscode.window;
@@ -343,10 +347,16 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
     return {
       fs: {
         readFile(uri: vscode.Uri) {
-          return Effect.promise(() => api.fs.readFile(uri));
+          return Effect.tryPromise({
+            try: () => api.fs.readFile(uri),
+            catch: (cause) => new FileSystemError({ cause }),
+          });
         },
         writeFile(uri: vscode.Uri, contents: Uint8Array) {
-          return Effect.promise(() => api.fs.writeFile(uri, contents));
+          return Effect.tryPromise({
+            try: () => api.fs.writeFile(uri, contents),
+            catch: (cause) => new FileSystemError({ cause }),
+          });
         },
       },
       getNotebookDocuments() {

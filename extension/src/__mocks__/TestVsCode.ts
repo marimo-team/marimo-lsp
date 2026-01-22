@@ -22,6 +22,7 @@ import {
   Commands,
   Debug,
   Env,
+  FileSystemError,
   Notebooks,
   ParseUriError,
   VsCode,
@@ -1218,6 +1219,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     }>
   >;
   readonly documentChangesPubSub: PubSub.PubSub<vscode.NotebookDocumentChangeEvent>;
+  readonly documentOpenedPubSub: PubSub.PubSub<vscode.NotebookDocument>;
   readonly setActiveNotebookEditor: (
     editor: Option.Option<vscode.NotebookEditor>,
   ) => Effect.Effect<void>;
@@ -1290,10 +1292,15 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     return PubSub.publish(this.documentChangesPubSub, event);
   }
 
+  openNotebook(doc: vscode.NotebookDocument) {
+    return PubSub.publish(this.documentOpenedPubSub, doc);
+  }
+
   static make = Effect.fnUntraced(function* (
     options: {
       initialDocuments?: Array<vscode.NotebookDocument>;
       version?: string;
+      fileSystem?: Map<string, Uint8Array | Error>;
     } = {},
   ) {
     const activeTextEditor = yield* SubscriptionRef.make(
@@ -1317,6 +1324,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
 
     const documentChanges =
       yield* PubSub.unbounded<vscode.NotebookDocumentChangeEvent>();
+
+    const documentOpened = yield* PubSub.unbounded<vscode.NotebookDocument>();
 
     const commands = yield* Ref.make(
       HashSet.empty<MarimoCommand | DynamicCommand>(),
@@ -1564,7 +1573,22 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           }),
           workspace: Workspace.make({
             fs: {
-              readFile() {
+              readFile(uri: vscode.Uri) {
+                const fileSystem = options.fileSystem;
+                if (fileSystem) {
+                  const key = uri.toString();
+                  const entry = fileSystem.get(key);
+                  if (entry instanceof Error) {
+                    return Effect.fail(new FileSystemError({ cause: entry }));
+                  }
+                  if (entry !== undefined) {
+                    return Effect.succeed(entry);
+                  }
+                  // File not in map - return error for missing file
+                  return Effect.fail(
+                    new FileSystemError({ cause: new Error(`ENOENT: ${key}`) }),
+                  );
+                }
                 return Effect.succeed(new Uint8Array());
               },
               writeFile() {
@@ -1604,8 +1628,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               );
             },
             notebookDocumentOpened() {
-              // TODO: We should trigger this somehow in our mocks when notebooks are "opened"
-              return Stream.never;
+              return Stream.fromPubSub(documentOpened);
             },
             notebookDocumentChanges() {
               return Stream.fromPubSub(documentChanges);
@@ -1878,6 +1901,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       serializers,
       statusBarProviders,
       documentChangesPubSub: documentChanges,
+      documentOpenedPubSub: documentOpened,
       affinityUpdates,
       setActiveNotebookEditor: (editor) =>
         Effect.gen(function* () {
