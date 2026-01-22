@@ -1,11 +1,14 @@
-import { Data, Effect, Either, Option, Runtime, Stream } from "effect";
+import { Data, Effect, Either, HashMap, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
+import { MarimoNotebookDocument, type NotebookId } from "../../schemas.ts";
+import { getTopologicalCells } from "../../utils/getTopologicalCells.ts";
 import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
 import { Config } from "../Config.ts";
 import { Constants } from "../Constants.ts";
 import { Uv } from "../Uv.ts";
 import { VsCode } from "../VsCode.ts";
+import { VariablesService } from "../variables/VariablesService.ts";
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
 // Bump this as needed for new features or fixes.
@@ -36,9 +39,11 @@ type RuffLanguageServerHealth = Data.TaggedEnum<{
 export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
   "RuffLanguageServer",
   {
+    dependencies: [VariablesService.Default],
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
+      const variablesService = yield* VariablesService;
       const { LanguageId } = yield* Constants;
 
       const disabledHealth = yield* checkRuffEnabled();
@@ -63,13 +68,14 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         globalSettings,
       });
 
-      const runtime = yield* Effect.runtime<VsCode>();
+      const runtime = yield* Effect.runtime<VsCode | VariablesService>();
       const runPromise = Runtime.runPromise(runtime);
 
       const clientOptions: lsp.LanguageClientOptions = {
         outputChannelName: "marimo (ruff)",
         middleware: createRuffAdapterMiddleware(LanguageId.Python, {
           // We should only format if Ruff is the default formatter for Python
+          runPromise,
           shouldFormat: () =>
             ruffConfiguredAsDefaultPythonFormatter().pipe(
               Effect.tap((enabled) =>
@@ -160,6 +166,98 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         ),
       );
 
+      // Track cell counts per notebook for resync
+      const notebookCellCounts = new Map<NotebookId, number>();
+
+      // Create a RuffAdapter for transforming cells in resync notifications
+      const adapter = new RuffAdapter(LanguageId.Python);
+
+      // Resync cells with Ruff when variables change (topological order may change)
+      yield* Effect.forkScoped(
+        variablesService.streamVariablesChanges().pipe(
+          Stream.mapEffect(
+            Effect.fnUntraced(function* (variablesMap) {
+              const c = yield* getClient;
+              if (Either.isLeft(c)) {
+                return;
+              }
+
+              // Find notebooks that have variable data and resync them
+              const notebooks = yield* code.workspace.getNotebookDocuments();
+              for (const raw of notebooks) {
+                const doc = MarimoNotebookDocument.tryFrom(raw);
+                if (Option.isNone(doc)) {
+                  continue;
+                }
+
+                // Check if this notebook has variables (meaning it's being tracked)
+                if (!HashMap.has(variablesMap, doc.value.id)) {
+                  continue;
+                }
+
+                // Build and send resync event
+                const previousCellCount =
+                  notebookCellCounts.get(doc.value.id) ?? doc.value.cellCount;
+
+                const event = yield* buildResyncEvent(
+                  doc.value,
+                  previousCellCount,
+                );
+
+                if (Option.isSome(event) && event.value?.cells?.structure) {
+                  notebookCellCounts.set(doc.value.id, doc.value.cellCount);
+
+                  // Transform cells through RuffAdapter and convert to LSP format
+                  const transformedCells = adapter.cellsEvent(
+                    event.value.cells,
+                  );
+                  const structure = transformedCells?.structure;
+
+                  if (structure) {
+                    const notebookDoc = adapter.notebookDocument(
+                      doc.value.rawNotebookDocument,
+                    );
+
+                    yield* Effect.promise(() =>
+                      c.right.sendNotification("notebookDocument/didChange", {
+                        notebookDocument: {
+                          uri: notebookDoc.uri.toString(),
+                          version: notebookDoc.version,
+                        },
+                        change: {
+                          cells: {
+                            structure: {
+                              array: {
+                                start: structure.array.start,
+                                deleteCount: structure.array.deleteCount,
+                                cells: structure.array.cells?.map((cell) => ({
+                                  kind: cell.kind,
+                                  document: cell.document.uri.toString(),
+                                })),
+                              },
+                              didOpen: structure.didOpen?.map((cell) => ({
+                                uri: cell.document.uri.toString(),
+                                languageId: cell.document.languageId,
+                                version: cell.document.version,
+                                text: cell.document.getText(),
+                              })),
+                              didClose: structure.didClose?.map((cell) => ({
+                                uri: cell.document.uri.toString(),
+                              })),
+                            },
+                          },
+                        },
+                      }),
+                    );
+                  }
+                }
+              }
+            }),
+          ),
+          Stream.runDrain,
+        ),
+      );
+
       return {
         getHealthStatus: Effect.gen(function* () {
           const c = yield* getClient;
@@ -180,25 +278,6 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
     }),
   },
 ) {}
-
-/**
- * Ruff rules that depend on cross-cell ordering.
- *
- * These rules assume top-down execution order, but marimo cells execute based
- * on their dependency graph. Properly supporting these rules is challenging—
- * we'd need middleware to present cells in topological order, or work with
- * Astral on cell dependency metadata.
- *
- * For now, we ignore these rules to provide Ruff linting today. The trade-off
- * is that we also miss legitimate violations within a single cell.
- */
-const CELL_ORDERING_IGNORES = [
-  "F401", // unused-import: import may be used in a dependent cell
-  "F841", // unused-variable: variable may be used in a dependent cell
-  "F842", // unused-annotation: annotation may be used in a dependent cell
-  "F821", // undefined-name: name may be defined in a cell that executes first
-  "F811", // redefined-while-unused: may be used in another cell
-];
 
 /**
  * Read ruff.* settings from a WorkspaceConfiguration and return them in the format
@@ -224,12 +303,7 @@ function getRuffSettings(
       preview: config.get("lint.preview"),
       select: config.get("lint.select"),
       extendSelect: config.get("lint.extendSelect"),
-      ignore: [
-        ...new Set([
-          ...(config.get<string[]>("lint.ignore") ?? []),
-          ...CELL_ORDERING_IGNORES,
-        ]),
-      ],
+      ignore: config.get<string[]>("lint.ignore", []),
     },
     format: {
       preview: config.get("format.preview"),
@@ -272,12 +346,7 @@ function getGlobalRuffSettings(
       preview: getGlobal("lint.preview"),
       select: getGlobal("lint.select"),
       extendSelect: getGlobal("lint.extendSelect"),
-      ignore: [
-        ...new Set([
-          ...(getGlobal<string[]>("lint.ignore") ?? []),
-          ...CELL_ORDERING_IGNORES,
-        ]),
-      ],
+      ignore: config.get<string[]>("lint.ignore", []),
     },
     format: {
       preview: getGlobal("format.preview"),
@@ -445,15 +514,23 @@ function isVirtualWorkspace(
  *
  *
  * @param pythonLanguageId The custom language ID used for Python cells in marimo notebooks (e.g., "mo-python").
+ * @param cellOrdering Middleware that reorders cells into topological order.
  * @param config.shouldFormat Async function that returns whether formatting should be applied.
  */
 function createRuffAdapterMiddleware(
   pythonLanguageId: string,
   config: {
     shouldFormat: () => Promise<boolean>;
+    runPromise: <T>(
+      effect: Effect.Effect<T, never, VariablesService>,
+    ) => Promise<T>;
   },
 ): lsp.Middleware {
   const adapter = new RuffAdapter(pythonLanguageId);
+
+  // Track cell counts per notebook so we know how many to delete on structure changes
+  const notebookCellCounts = new Map<NotebookId, number>();
+
   return {
     didOpen: (document, next) => next(adapter.document(document)),
     didClose: (document, next) => next(adapter.document(document)),
@@ -463,22 +540,75 @@ function createRuffAdapterMiddleware(
         document: adapter.document(change.document),
       }),
     notebooks: {
-      didOpen: (doc, cells, next) =>
-        next(
-          adapter.notebookDocument(doc),
-          cells.map((cell) => adapter.cell(cell)),
-        ),
-      didClose: (doc, cells, next) =>
-        next(
-          adapter.notebookDocument(doc),
-          cells.map((cell) => adapter.cell(cell)),
-        ),
-      didChange: (event, next) =>
-        next({
+      didOpen: async (raw, _, next) => {
+        const doc = MarimoNotebookDocument.tryFrom(raw);
+        if (Option.isNone(doc)) {
+          return;
+        }
+
+        notebookCellCounts.set(doc.value.id, doc.value.cellCount);
+        const orderedCells = await config.runPromise(
+          getTopologicalCells(doc.value),
+        );
+
+        return next(
+          adapter.notebookDocument(raw),
+          orderedCells.map((cell) => adapter.cell(cell)),
+        );
+      },
+      didClose: async (raw, _, next) => {
+        const doc = MarimoNotebookDocument.tryFrom(raw);
+        if (Option.isNone(doc)) {
+          return;
+        }
+
+        notebookCellCounts.delete(doc.value.id);
+        const orderedCells = await config.runPromise(
+          getTopologicalCells(doc.value),
+        );
+
+        return next(
+          adapter.notebookDocument(raw),
+          orderedCells.map((cell) => adapter.cell(cell)),
+        );
+      },
+      didChange: async (event, next) => {
+        const doc = MarimoNotebookDocument.tryFrom(event.notebook);
+        if (Option.isNone(doc)) {
+          return;
+        }
+
+        let transformedCells = event.cells;
+
+        // Delete all old cells, insert all in new order.
+        // We must provide ALL cells in didOpen so Ruff gets their text content.
+        if (event.cells?.structure) {
+          const reorderedCells = await config.runPromise(
+            getTopologicalCells(doc.value),
+          );
+          transformedCells = {
+            ...event.cells,
+            structure: {
+              array: {
+                start: 0,
+                // delete all previous cells
+                deleteCount: notebookCellCounts.get(doc.value.id) ?? 0,
+                cells: reorderedCells,
+              },
+              didOpen: reorderedCells,
+              didClose: [],
+            },
+          };
+
+          notebookCellCounts.set(doc.value.id, doc.value.cellCount);
+        }
+
+        return next({
           notebook: adapter.notebookDocument(event.notebook),
           metadata: event.metadata,
-          cells: adapter.cellsEvent(event.cells),
-        }),
+          cells: adapter.cellsEvent(transformedCells),
+        });
+      },
     },
     async provideDocumentFormattingEdits(document, options, token, next) {
       const shouldFormat = await config.shouldFormat();
@@ -568,3 +698,38 @@ const ruffConfiguredAsDefaultPythonFormatter = Effect.fn(function* () {
     pythonConfig.get<unknown>("editor.defaultFormatter") === RUFF_EXTENSION_ID
   );
 });
+
+/**
+ * Build a resync event for when variables change.
+ */
+function buildResyncEvent(
+  doc: MarimoNotebookDocument,
+  previousCellCount: number,
+): Effect.Effect<
+  Option.Option<lsp.VNotebookDocumentChangeEvent>,
+  never,
+  VariablesService
+> {
+  return Effect.gen(function* () {
+    if (doc.cellCount === 0 && previousCellCount === 0) {
+      return Option.none();
+    }
+
+    const reorderedCells = yield* getTopologicalCells(doc);
+
+    return Option.some({
+      notebook: doc.rawNotebookDocument,
+      cells: {
+        structure: {
+          array: {
+            start: 0,
+            deleteCount: previousCellCount,
+            cells: reorderedCells,
+          },
+          didOpen: reorderedCells,
+          didClose: [],
+        },
+      },
+    });
+  });
+}
