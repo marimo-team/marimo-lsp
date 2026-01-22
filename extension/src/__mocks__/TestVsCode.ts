@@ -1574,22 +1574,24 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           workspace: Workspace.make({
             fs: {
               readFile(uri: vscode.Uri) {
-                const fileSystem = options.fileSystem;
-                if (fileSystem) {
-                  const key = uri.toString();
-                  const entry = fileSystem.get(key);
-                  if (entry instanceof Error) {
-                    return Effect.fail(new FileSystemError({ cause: entry }));
-                  }
-                  if (entry !== undefined) {
-                    return Effect.succeed(entry);
-                  }
-                  // File not in map - return error for missing file
-                  return Effect.fail(
-                    new FileSystemError({ cause: new Error(`ENOENT: ${key}`) }),
-                  );
+                const fileSystem: Map<string, Uint8Array | Error> =
+                  options.fileSystem ?? new Map();
+
+                const key = uri.toString();
+                const entry = fileSystem.get(key);
+
+                if (entry instanceof Error) {
+                  return Effect.fail(new FileSystemError({ cause: entry }));
                 }
-                return Effect.succeed(new Uint8Array());
+
+                if (entry !== undefined) {
+                  return Effect.succeed(entry);
+                }
+
+                // File not in map - return error for missing file
+                return Effect.fail(
+                  new FileSystemError({ cause: new Error(`ENOENT: ${key}`) }),
+                );
               },
               writeFile() {
                 return Effect.succeed(true);
