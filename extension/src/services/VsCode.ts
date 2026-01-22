@@ -140,6 +140,22 @@ export class Window extends Effect.Service<Window>()("Window", {
       getActiveTextEditor() {
         return Effect.succeed(Option.fromNullable(api.activeTextEditor));
       },
+      closeTextEditorTab(uri: vscode.Uri) {
+        return Option.fromNullable(
+          api.tabGroups.all
+            .flatMap((group) => group.tabs)
+            .find(
+              (tab) =>
+                tab.input instanceof vscode.TabInputText &&
+                tab.input.uri.toString() === uri.toString(),
+            ),
+        ).pipe(
+          Option.match({
+            onSome: (tab) => Effect.promise(() => api.tabGroups.close(tab)),
+            onNone: () => Effect.void,
+          }),
+        );
+      },
       createTreeView<T>(viewId: string, options: vscode.TreeViewOptions<T>) {
         return Effect.acquireRelease(
           Effect.sync(() => api.createTreeView(viewId, options)),
