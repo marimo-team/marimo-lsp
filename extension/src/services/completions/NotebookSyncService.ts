@@ -272,7 +272,7 @@ export class NotebookAdapter {
    * Does NOT modify the URI - cell URIs should stay as-is so the server doesn't
    * mistake them for notebook documents.
    */
-  document(document: vscode.TextDocument): vscode.TextDocument {
+  document<T extends { languageId: string }>(document: T): T {
     const wrapped = Object.create(document);
     Object.defineProperty(wrapped, "languageId", {
       value: this.#resolveLanguageId(document.languageId),
