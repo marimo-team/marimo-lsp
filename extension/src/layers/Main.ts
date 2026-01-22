@@ -13,9 +13,8 @@ import { CellStateManager } from "../services/CellStateManager.ts";
 import { Config } from "../services/Config.ts";
 import { Constants } from "../services/Constants.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
-import { LspProxy } from "../services/completions/LspProxy.ts";
-import type { PythonLanguageServer } from "../services/completions/PythonLanguageServer.ts";
 import { RuffLanguageServer } from "../services/completions/RuffLanguageServer.ts";
+import { TyLanguageServer } from "../services/completions/TyLanguageServer.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { DebugAdapter } from "../services/DebugAdapter.ts";
@@ -51,7 +50,6 @@ import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { KernelManagerLive } from "./KernelManager.ts";
 import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
-import { NotebookLanguageFeaturesLive } from "./NotebookLanguageFeatures.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
 
 /**
@@ -66,7 +64,6 @@ const MainLive = Layer.empty
     Layer.merge(PythonEnvironmentStatusBarLive),
     Layer.merge(MarimoFileDetectorLive),
     Layer.merge(MarimoCodeLensProviderLive),
-    Layer.merge(NotebookLanguageFeaturesLive),
     Layer.merge(RecentNotebooksLive),
     Layer.merge(VariablesViewLive),
     Layer.merge(DatasourcesViewLive),
@@ -76,7 +73,7 @@ const MainLive = Layer.empty
   )
   .pipe(
     Layer.provide(RuffLanguageServer.Default),
-    Layer.provide(LspProxy.Default),
+    Layer.provide(TyLanguageServer.Default),
     Layer.provide(GitHubClient.Default),
     Layer.provide(DebugAdapter.Default),
     Layer.provide(NotebookRenderer.Default),
@@ -108,9 +105,7 @@ const MainLive = Layer.empty
   );
 
 export function makeActivate(
-  layer: Layer.Layer<
-    LanguageClient | VsCode | PythonExtension | PythonLanguageServer
-  >,
+  layer: Layer.Layer<LanguageClient | VsCode | PythonExtension>,
   minimumLogLevel: LogLevel.LogLevel,
 ): (
   context: Pick<

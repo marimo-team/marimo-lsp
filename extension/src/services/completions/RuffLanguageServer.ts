@@ -1,14 +1,15 @@
-import { Data, Effect, Either, HashMap, Option, Runtime, Stream } from "effect";
+import { Data, Effect, Either, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
-import { MarimoNotebookDocument, type NotebookId } from "../../schemas.ts";
-import { getTopologicalCells } from "../../utils/getTopologicalCells.ts";
 import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
 import { Config } from "../Config.ts";
-import { Constants } from "../Constants.ts";
 import { Uv } from "../Uv.ts";
 import { VsCode } from "../VsCode.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
+import {
+  type ClientNotebookSync,
+  NotebookSyncService,
+} from "./NotebookSyncService.ts";
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
 // Bump this as needed for new features or fixes.
@@ -39,12 +40,11 @@ type RuffLanguageServerHealth = Data.TaggedEnum<{
 export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
   "RuffLanguageServer",
   {
-    dependencies: [VariablesService.Default],
+    dependencies: [VariablesService.Default, NotebookSyncService.Default],
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
-      const variablesService = yield* VariablesService;
-      const { LanguageId } = yield* Constants;
+      const sync = yield* NotebookSyncService;
 
       const disabledHealth = yield* checkRuffEnabled();
       if (Option.isSome(disabledHealth)) {
@@ -54,6 +54,9 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       }
 
       yield* Effect.logInfo("Starting Ruff language server for marimo");
+
+      // Create isolated sync instance with its own cell count tracking
+      const notebookSync = yield* sync.forClient();
 
       // Build initializationOptions from ruff.* settings
       const ruffConfig = yield* code.workspace.getConfiguration("ruff");
@@ -68,39 +71,12 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
         globalSettings,
       });
 
-      const runtime = yield* Effect.runtime<VsCode | VariablesService>();
-      const runPromise = Runtime.runPromise(runtime);
-
       const clientOptions: lsp.LanguageClientOptions = {
         outputChannelName: "marimo (ruff)",
-        middleware: createRuffAdapterMiddleware(LanguageId.Python, {
-          // We should only format if Ruff is the default formatter for Python
-          runPromise,
-          shouldFormat: () =>
-            ruffConfiguredAsDefaultPythonFormatter().pipe(
-              Effect.tap((enabled) =>
-                enabled
-                  ? Effect.void
-                  : Effect.logWarning(
-                      `Ruff is not configured as default Python formatter; skipping marimo format.`,
-                    ),
-              ),
-              runPromise,
-            ),
-        }),
-        documentSelector: isVirtualWorkspace(workspaceFolders)
-          ? [{ language: LanguageId.Python }]
-          : [
-              { scheme: "file", language: LanguageId.Python },
-              { scheme: "untitled", language: LanguageId.Python },
-              { scheme: "vscode-notebook", language: LanguageId.Python },
-              { scheme: "vscode-notebook-cell", language: LanguageId.Python },
-            ],
+        middleware: yield* createRuffMiddleware(notebookSync),
+        documentSelector: sync.getDocumentSelector(),
+        transformServerCapabilities: sync.extendNotebookCellLanguages(),
         initializationOptions: { settings, globalSettings },
-        // Extend ruff's notebook sync selector to include mo-python cells
-        transformServerCapabilities: extendNotebookCellLanguages(
-          LanguageId.Python,
-        ),
       };
 
       const serverOptions: lsp.ServerOptions = {
@@ -132,9 +108,9 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       yield* Effect.addFinalizer(() =>
         Effect.gen(function* () {
           yield* Effect.logInfo("Stopping Ruff language server for marimo");
-          const client = yield* getClient;
-          if (Either.isRight(client)) {
-            yield* Effect.promise(() => client.right.stop());
+          const c = yield* getClient;
+          if (Either.isRight(c)) {
+            yield* Effect.promise(() => c.right.stop());
           }
         }),
       );
@@ -151,109 +127,19 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       });
 
       const client = yield* getClient;
-      yield* Effect.logInfo(
-        Either.isRight(client)
-          ? "Ruff language server started successfully"
-          : "Ruff language server failed to start",
-      );
+
+      if (Either.isRight(client)) {
+        yield* notebookSync.connect(client.right);
+        yield* Effect.logInfo("Ruff language server started successfully");
+      } else {
+        yield* Effect.logInfo("Ruff language server failed to start");
+      }
 
       // Restart the language server when ruff.* settings change
       yield* Effect.forkScoped(
         code.workspace.configurationChanges().pipe(
           Stream.filter((event) => event.affectsConfiguration("ruff")),
           Stream.mapEffect(restartServer),
-          Stream.runDrain,
-        ),
-      );
-
-      // Track cell counts per notebook for resync
-      const notebookCellCounts = new Map<NotebookId, number>();
-
-      // Create a RuffAdapter for transforming cells in resync notifications
-      const adapter = new RuffAdapter(LanguageId.Python);
-
-      // Resync cells with Ruff when variables change (topological order may change)
-      yield* Effect.forkScoped(
-        variablesService.streamVariablesChanges().pipe(
-          Stream.mapEffect(
-            Effect.fnUntraced(function* (variablesMap) {
-              const c = yield* getClient;
-              if (Either.isLeft(c)) {
-                return;
-              }
-
-              // Find notebooks that have variable data and resync them
-              const notebooks = yield* code.workspace.getNotebookDocuments();
-              for (const raw of notebooks) {
-                const doc = MarimoNotebookDocument.tryFrom(raw);
-                if (Option.isNone(doc)) {
-                  continue;
-                }
-
-                // Check if this notebook has variables (meaning it's being tracked)
-                if (!HashMap.has(variablesMap, doc.value.id)) {
-                  continue;
-                }
-
-                // Build and send resync event
-                const previousCellCount =
-                  notebookCellCounts.get(doc.value.id) ?? doc.value.cellCount;
-
-                const event = yield* buildResyncEvent(
-                  doc.value,
-                  previousCellCount,
-                );
-
-                if (Option.isSome(event) && event.value?.cells?.structure) {
-                  notebookCellCounts.set(doc.value.id, doc.value.cellCount);
-
-                  // Transform cells through RuffAdapter and convert to LSP format
-                  const transformedCells = adapter.cellsEvent(
-                    event.value.cells,
-                  );
-                  const structure = transformedCells?.structure;
-
-                  if (structure) {
-                    const notebookDoc = adapter.notebookDocument(
-                      doc.value.rawNotebookDocument,
-                    );
-
-                    yield* Effect.promise(() =>
-                      c.right.sendNotification("notebookDocument/didChange", {
-                        notebookDocument: {
-                          uri: notebookDoc.uri.toString(),
-                          version: notebookDoc.version,
-                        },
-                        change: {
-                          cells: {
-                            structure: {
-                              array: {
-                                start: structure.array.start,
-                                deleteCount: structure.array.deleteCount,
-                                cells: structure.array.cells?.map((cell) => ({
-                                  kind: cell.kind,
-                                  document: cell.document.uri.toString(),
-                                })),
-                              },
-                              didOpen: structure.didOpen?.map((cell) => ({
-                                uri: cell.document.uri.toString(),
-                                languageId: cell.document.languageId,
-                                version: cell.document.version,
-                                text: cell.document.getText(),
-                              })),
-                              didClose: structure.didClose?.map((cell) => ({
-                                uri: cell.document.uri.toString(),
-                              })),
-                            },
-                          },
-                        },
-                      }),
-                    );
-                  }
-                }
-              }
-            }),
-          ),
           Stream.runDrain,
         ),
       );
@@ -362,275 +248,54 @@ function getGlobalRuffSettings(
 }
 
 /**
- * Adapts marimo notebook documents and cells for Ruff compatibility.
- *
- * Key insight: Ruff uses `key_from_url` which checks if a URL path ends with `.ipynb`
- * to determine if it's a notebook. We must:
- * - Append `.ipynb` to the NOTEBOOK document URI so Ruff treats it as a notebook
- * - NOT append `.ipynb` to CELL document URIs, so they aren't mistaken for notebooks
- * - Normalize mo-python -> python language ID
- *
- * @internal Exported for testing
- */
-export class RuffAdapter {
-  #pythonLanguageId: string;
-
-  constructor(pythonId: string) {
-    this.#pythonLanguageId = pythonId;
-  }
-
-  #resolveLanguageId(languageId: string): string {
-    return languageId === this.#pythonLanguageId ? "python" : languageId;
-  }
-
-  /** Appends .ipynb to notebook URI so Ruff recognizes it as a notebook. */
-  notebookDocument<T extends { uri: vscode.Uri }>(doc: T): T {
-    const wrapped = Object.create(doc);
-    Object.defineProperty(wrapped, "uri", {
-      value: doc.uri.with({ path: `${doc.uri.path}.ipynb` }),
-      enumerable: true,
-      configurable: true,
-    });
-    return wrapped;
-  }
-
-  /**
-   * Creates a document wrapper that normalizes mo-python to python.
-   * Does NOT modify the URI - cell URIs should stay as-is so Ruff doesn't
-   * mistake them for notebook documents.
-   */
-  document(document: vscode.TextDocument): vscode.TextDocument {
-    const wrapped = Object.create(document);
-    Object.defineProperty(wrapped, "languageId", {
-      value: this.#resolveLanguageId(document.languageId),
-      enumerable: true,
-      configurable: true,
-    });
-    return wrapped;
-  }
-
-  /**
-   * Adapts a notebook cell for notebook document sync messages.
-   * - Transforms the notebook URI to include .ipynb
-   * - Normalizes the cell document language ID (but NOT the URI)
-   */
-  cell(cell: vscode.NotebookCell): vscode.NotebookCell {
-    return {
-      ...cell,
-      notebook: this.notebookDocument(cell.notebook),
-      document: this.document(cell.document),
-    };
-  }
-
-  /** Normalizes mo-python to python on all cells in a notebook change event. */
-  cellsEvent(
-    cells: lsp.VNotebookDocumentChangeEvent["cells"],
-  ): lsp.VNotebookDocumentChangeEvent["cells"] {
-    if (!cells) {
-      return undefined;
-    }
-
-    const result: lsp.VNotebookDocumentChangeEvent["cells"] = {};
-    const { textContent, data, structure } = cells;
-
-    if (textContent) {
-      result.textContent = textContent.map((change) => ({
-        ...change,
-        document: this.document(change.document),
-      }));
-    }
-
-    if (data) {
-      result.data = data.map((cell) => this.cell(cell));
-    }
-
-    if (structure) {
-      result.structure = {
-        array: {
-          ...structure.array,
-          cells: structure.array.cells?.map((cell) => this.cell(cell)),
-        },
-        didOpen: structure.didOpen?.map((cell) => this.cell(cell)),
-        didClose: structure.didClose?.map((cell) => this.cell(cell)),
-      };
-    }
-
-    return result;
-  }
-}
-
-/**
- * Creates a transform function that extends notebook document sync selectors
- * to include additional cell languages.
- *
- * NOTE: Mutates the capabilities object in-place.
- *
- * @internal Exported for testing
- */
-export function extendNotebookCellLanguages(
-  language: string,
-): (capabilities: lsp.ServerCapabilities) => lsp.ServerCapabilities {
-  return (capabilities) => {
-    const sync = capabilities.notebookDocumentSync;
-    if (sync && "notebookSelector" in sync) {
-      for (const selector of sync.notebookSelector) {
-        if ("cells" in selector && selector.cells) {
-          selector.cells.push({ language });
-        }
-      }
-    }
-    return capabilities;
-  };
-}
-
-function isVirtualWorkspace(
-  workspaceFolders: Option.Option<ReadonlyArray<vscode.WorkspaceFolder>>,
-): boolean {
-  return Option.match(workspaceFolders, {
-    onSome: (folders) => folders.every((f) => f.uri.scheme !== "file"),
-    onNone: () => false,
-  });
-}
-
-/**
  * Creates LSP middleware that adapts marimo notebook documents for Ruff.
  *
- * Background: marimo notebooks use a custom language ID (e.g., "mo-python") for
- * Python cells. This prevents VS Code's built-in Python language servers from
- * activating on marimo notebooks, giving us control over which language features
- * are enabled. However, Ruff only processes cells with languageId "python" and
- * ignores anything else.
- *
- * Additionally, Ruff determines whether a document is a notebook by checking if
- * the URI path ends with `.ipynb`. marimo notebook files use `.py` extensions,
- * so Ruff wouldn't recognize them as notebooks without intervention.
- *
- * This middleware intercepts LSP requests and transforms them before Ruff sees them:
- * - Appends `.ipynb` to notebook document URIs so Ruff treats them as notebooks
- * - Normalizes the custom language ID to "python" so Ruff processes the cells
- * - Leaves cell URIs unchanged (only notebook URIs need the .ipynb suffix)
- *
- * @see https://github.com/astral-sh/ruff/pull/11206 - Ruff's notebook support
- *
- *
- * @param pythonLanguageId The custom language ID used for Python cells in marimo notebooks (e.g., "mo-python").
- * @param cellOrdering Middleware that reorders cells into topological order.
- * @param config.shouldFormat Async function that returns whether formatting should be applied.
+ * Uses the provided notebook middleware for base notebook handling,
+ * and adds Ruff-specific formatting and code action middleware.
  */
-function createRuffAdapterMiddleware(
-  pythonLanguageId: string,
-  config: {
-    shouldFormat: () => Promise<boolean>;
-    runPromise: <T>(
-      effect: Effect.Effect<T, never, VariablesService>,
-    ) => Promise<T>;
-  },
-): lsp.Middleware {
-  const adapter = new RuffAdapter(pythonLanguageId);
+function createRuffMiddleware(
+  sync: ClientNotebookSync,
+): Effect.Effect<lsp.Middleware, never, VsCode> {
+  return Effect.gen(function* () {
+    const runtime = yield* Effect.runtime<VsCode>();
+    const runPromise = Runtime.runPromise(runtime);
 
-  // Track cell counts per notebook so we know how many to delete on structure changes
-  const notebookCellCounts = new Map<NotebookId, number>();
+    const isRuffFormatEnabled = () =>
+      ruffConfiguredAsDefaultPythonFormatter().pipe(
+        Effect.tap((enabled) =>
+          enabled
+            ? Effect.void
+            : Effect.logWarning(
+                `Ruff is not configured as default Python formatter; skipping marimo format.`,
+              ),
+        ),
+        runPromise,
+      );
 
-  return {
-    didOpen: (document, next) => next(adapter.document(document)),
-    didClose: (document, next) => next(adapter.document(document)),
-    didChange: (change, next) =>
-      next({
-        ...change,
-        document: adapter.document(change.document),
-      }),
-    notebooks: {
-      didOpen: async (raw, _, next) => {
-        const doc = MarimoNotebookDocument.tryFrom(raw);
-        if (Option.isNone(doc)) {
-          return;
-        }
-
-        notebookCellCounts.set(doc.value.id, doc.value.cellCount);
-        const orderedCells = await config.runPromise(
-          getTopologicalCells(doc.value),
-        );
-
-        return next(
-          adapter.notebookDocument(raw),
-          orderedCells.map((cell) => adapter.cell(cell)),
-        );
+    return {
+      ...sync.middleware,
+      async provideDocumentFormattingEdits(document, options, token, next) {
+        const shouldFormat = await isRuffFormatEnabled();
+        return shouldFormat
+          ? next(sync.adapter.document(document), options, token)
+          : null;
       },
-      didClose: async (raw, _, next) => {
-        const doc = MarimoNotebookDocument.tryFrom(raw);
-        if (Option.isNone(doc)) {
-          return;
-        }
-
-        notebookCellCounts.delete(doc.value.id);
-        const orderedCells = await config.runPromise(
-          getTopologicalCells(doc.value),
-        );
-
-        return next(
-          adapter.notebookDocument(raw),
-          orderedCells.map((cell) => adapter.cell(cell)),
-        );
+      async provideDocumentRangeFormattingEdits(
+        document,
+        range,
+        options,
+        token,
+        next,
+      ) {
+        const shouldFormat = await isRuffFormatEnabled();
+        return shouldFormat
+          ? next(sync.adapter.document(document), range, options, token)
+          : null;
       },
-      didChange: async (event, next) => {
-        const doc = MarimoNotebookDocument.tryFrom(event.notebook);
-        if (Option.isNone(doc)) {
-          return;
-        }
-
-        let transformedCells = event.cells;
-
-        // Delete all old cells, insert all in new order.
-        // We must provide ALL cells in didOpen so Ruff gets their text content.
-        if (event.cells?.structure) {
-          const reorderedCells = await config.runPromise(
-            getTopologicalCells(doc.value),
-          );
-          transformedCells = {
-            ...event.cells,
-            structure: {
-              array: {
-                start: 0,
-                // delete all previous cells
-                deleteCount: notebookCellCounts.get(doc.value.id) ?? 0,
-                cells: reorderedCells,
-              },
-              didOpen: reorderedCells,
-              didClose: [],
-            },
-          };
-
-          notebookCellCounts.set(doc.value.id, doc.value.cellCount);
-        }
-
-        return next({
-          notebook: adapter.notebookDocument(event.notebook),
-          metadata: event.metadata,
-          cells: adapter.cellsEvent(transformedCells),
-        });
-      },
-    },
-    async provideDocumentFormattingEdits(document, options, token, next) {
-      const shouldFormat = await config.shouldFormat();
-      return shouldFormat
-        ? next(adapter.document(document), options, token)
-        : null;
-    },
-    async provideDocumentRangeFormattingEdits(
-      document,
-      range,
-      options,
-      token,
-      next,
-    ) {
-      const shouldFormat = await config.shouldFormat();
-      return shouldFormat
-        ? next(adapter.document(document), range, options, token)
-        : null;
-    },
-    provideCodeActions: (document, range, context, token, next) =>
-      next(adapter.document(document), range, context, token),
-  };
+      provideCodeActions: (document, range, context, token, next) =>
+        next(sync.adapter.document(document), range, context, token),
+    };
+  });
 }
 
 /**
@@ -698,38 +363,3 @@ const ruffConfiguredAsDefaultPythonFormatter = Effect.fn(function* () {
     pythonConfig.get<unknown>("editor.defaultFormatter") === RUFF_EXTENSION_ID
   );
 });
-
-/**
- * Build a resync event for when variables change.
- */
-function buildResyncEvent(
-  doc: MarimoNotebookDocument,
-  previousCellCount: number,
-): Effect.Effect<
-  Option.Option<lsp.VNotebookDocumentChangeEvent>,
-  never,
-  VariablesService
-> {
-  return Effect.gen(function* () {
-    if (doc.cellCount === 0 && previousCellCount === 0) {
-      return Option.none();
-    }
-
-    const reorderedCells = yield* getTopologicalCells(doc);
-
-    return Option.some({
-      notebook: doc.rawNotebookDocument,
-      cells: {
-        structure: {
-          array: {
-            start: 0,
-            deleteCount: previousCellCount,
-            cells: reorderedCells,
-          },
-          didOpen: reorderedCells,
-          didClose: [],
-        },
-      },
-    });
-  });
-}

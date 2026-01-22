@@ -1,4 +1,11 @@
-import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
+import {
+  Effect,
+  HashMap,
+  Option,
+  PubSub,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import { decodeVariablesOperation, type NotebookId } from "../../schemas.ts";
 import type {
   VariablesNotification,
@@ -31,6 +38,12 @@ export class VariablesService extends Effect.Service<VariablesService>()(
       const variableValuesRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, VariableValuesNotification>(),
       );
+
+      // PubSub to notify when any notebook's variables change
+      const notebookUpdatesPubSub = yield* PubSub.unbounded<{
+        notebookId: NotebookId;
+        kind: "declaration" | "values";
+      }>();
 
       /**
        * Get variable declarations for a notebook
@@ -84,6 +97,11 @@ export class VariablesService extends Effect.Service<VariablesService>()(
               );
             }
 
+            yield* PubSub.publish(notebookUpdatesPubSub, {
+              notebookId: notebookUri,
+              kind: "declaration" as const,
+            });
+
             yield* Log.trace("Updated variable declarations", {
               notebookUri,
               count: operation.variables.length,
@@ -102,6 +120,11 @@ export class VariablesService extends Effect.Service<VariablesService>()(
             yield* SubscriptionRef.update(variableValuesRef, (map) =>
               HashMap.set(map, notebookUri, operation),
             );
+
+            yield* PubSub.publish(notebookUpdatesPubSub, {
+              notebookId: notebookUri,
+              kind: "values" as const,
+            });
 
             yield* Log.trace("Updated variable values", {
               notebookUri,
@@ -165,6 +188,16 @@ export class VariablesService extends Effect.Service<VariablesService>()(
          */
         streamVariableValuesChanges() {
           return variableValuesRef.changes.pipe(Stream.changes);
+        },
+
+        /**
+         * Stream of notebook IDs that had variable updates.
+         *
+         * Emits the NotebookId whenever variables or variable values are updated.
+         * Use this for reacting to changes without needing the full data.
+         */
+        notebookUpdates() {
+          return Stream.fromPubSub(notebookUpdatesPubSub);
         },
       };
     }),

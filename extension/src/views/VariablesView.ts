@@ -112,12 +112,7 @@ export const VariablesViewLive = Layer.scopedDiscard(
     // Subscribe to variable declarations changes
     yield* Effect.forkScoped(
       variablesService.streamVariablesChanges().pipe(
-        Stream.mapEffect(
-          Effect.fnUntraced(function* (_variablesMap) {
-            // When variables change (declarations), rebuild the entire list
-            yield* refreshVariables();
-          }),
-        ),
+        Stream.mapEffect(() => refreshVariables()),
         Stream.runDrain,
       ),
     );
