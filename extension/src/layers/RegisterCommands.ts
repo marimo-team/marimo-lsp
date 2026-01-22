@@ -372,19 +372,21 @@ const openAsMarimoNotebook = ({ code }: { code: VsCode }) =>
       return;
     }
 
-    // close previous editor
-    yield* code.commands.executeCommand("workbench.action.closeActiveEditor");
+    const uri = editor.value.document.uri;
 
-    // Open as notebook
-    yield* code.commands.executeCommand(
-      "vscode.openWith",
-      editor.value.document.uri,
-      NOTEBOOK_TYPE,
-    );
+    // We open first before closing to handle multi-window scenarios correctly:
+    // if we close first and it's the only editor in the window, the window
+    // closes before we can open the notebook in it.
+    yield* code.commands.executeCommand("vscode.openWith", uri, NOTEBOOK_TYPE);
+
+    // Find and close the original text editor tab (not the notebook we just opened).
+    // We find the tab after opening the notebook because tab references can become
+    // stale when VS Code reorganizes tabs.
+    yield* code.window.closeTextEditorTab(uri);
 
     yield* Effect.logInfo("Opened Python file as marimo notebook").pipe(
       Effect.annotateLogs({
-        uri: editor.value.document.uri.toString(),
+        uri: uri.toString(),
       }),
     );
   });

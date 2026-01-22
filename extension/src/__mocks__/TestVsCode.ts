@@ -1449,6 +1449,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             activeTextEditorChanges() {
               return activeTextEditor.changes;
             },
+            closeTextEditorTab: () => Effect.void,
             createTreeView<T>(viewId: string) {
               return Effect.acquireRelease(
                 Effect.gen(function* () {
