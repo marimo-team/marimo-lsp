@@ -56,9 +56,7 @@ export interface ClientNotebookSync {
   adapter: NotebookAdapter;
 
   /** Middleware to spread into LanguageClientOptions */
-  middleware: Readonly<
-    Pick<lsp.Middleware, "didOpen" | "didClose" | "didChange" | "notebooks">
-  >;
+  notebookMiddleware: lsp.Middleware["notebooks"];
 
   /** Connect the client - starts variable subscription, auto-cleanup on scope close */
   connect(
@@ -104,7 +102,6 @@ export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
       const variables = yield* VariablesService;
       const { LanguageId } = yield* Constants;
 
-      const adapter = new NotebookAdapter(LanguageId.Python);
       const workspaceFolders = yield* code.workspace.getWorkspaceFolders();
 
       return {
@@ -139,15 +136,28 @@ export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
         /**
          * Create an isolated sync instance for a client.
          * Each client gets its own cell count tracking to avoid interference.
+         *
+         * @param opts.transformNotebookDocumentUri - Optional function to transform notebook
+         *   document URIs before sending to the LSP server. Some servers (like Ruff) require
+         *   the URI to end with `.ipynb` to recognize it as a notebook. If not provided,
+         *   URIs are passed through unchanged.
          */
-        forClient(): Effect.Effect<ClientNotebookSync, never, Scope.Scope> {
+        forClient(
+          opts: {
+            transformNotebookDocumentUri?: (uri: vscode.Uri) => vscode.Uri;
+          } = {},
+        ): Effect.Effect<ClientNotebookSync, never, Scope.Scope> {
+          const adapter = new NotebookAdapter(
+            LanguageId.Python,
+            opts.transformNotebookDocumentUri,
+          );
           return Effect.gen(function* () {
             const cellCountsRef = yield* SynchronizedRef.make<CellCountsMap>(
               HashMap.empty(),
             );
             return {
               adapter,
-              middleware: yield* createNotebookMiddleware(
+              notebookMiddleware: yield* createNotebookMiddleware(
                 adapter,
                 cellCountsRef,
               ).pipe(Effect.provideService(VariablesService, variables)),
@@ -220,30 +230,37 @@ const sendResyncNotification = Effect.fn(function* (
 /**
  * Adapts marimo notebook documents and cells for LSP server compatibility.
  *
- * Key insight: LSP servers like Ruff and ty use `key_from_url` which checks if a URL path
- * ends with `.ipynb` to determine if it's a notebook. We must:
- * - Append `.ipynb` to the NOTEBOOK document URI so the server treats it as a notebook
- * - NOT append `.ipynb` to CELL document URIs, so they aren't mistaken for notebooks
+ * Responsibilities:
+ * - Optionally transform notebook document URIs (some servers need `.ipynb` suffix)
  * - Normalize mo-python -> python language ID
+ * - NOT modify cell URIs (they should stay as-is)
  *
  * @internal Exported for testing
  */
 export class NotebookAdapter {
   #pythonLanguageId: string;
+  #transformNotebookDocumentUri?: (uri: vscode.Uri) => vscode.Uri;
 
-  constructor(pythonLanguageId: string) {
+  constructor(
+    pythonLanguageId: string,
+    transformNotebookDocumentUri?: (uri: vscode.Uri) => vscode.Uri,
+  ) {
     this.#pythonLanguageId = pythonLanguageId;
+    this.#transformNotebookDocumentUri = transformNotebookDocumentUri;
   }
 
   #resolveLanguageId(languageId: string): string {
     return languageId === this.#pythonLanguageId ? "python" : languageId;
   }
 
-  /** Appends .ipynb to notebook URI so the server recognizes it as a notebook. */
+  /** Optionally transforms the notebook document URI using the configured transform. */
   notebookDocument<T extends { uri: vscode.Uri }>(doc: T): T {
+    if (!this.#transformNotebookDocumentUri) {
+      return doc;
+    }
     const wrapped = Object.create(doc);
     Object.defineProperty(wrapped, "uri", {
-      value: doc.uri.with({ path: `${doc.uri.path}.ipynb` }),
+      value: this.#transformNotebookDocumentUri(doc.uri),
       enumerable: true,
       configurable: true,
     });
@@ -255,7 +272,7 @@ export class NotebookAdapter {
    * Does NOT modify the URI - cell URIs should stay as-is so the server doesn't
    * mistake them for notebook documents.
    */
-  document(document: vscode.TextDocument): vscode.TextDocument {
+  document<T extends { languageId: string }>(document: T): T {
     const wrapped = Object.create(document);
     Object.defineProperty(wrapped, "languageId", {
       value: this.#resolveLanguageId(document.languageId),
@@ -426,61 +443,53 @@ function createNotebookMiddleware(
     const runtime = yield* Effect.runtime<VariablesService>();
     const runPromise = Runtime.runPromise(runtime);
 
-    const notebookMiddleware: Readonly<
-      Pick<lsp.Middleware, "didOpen" | "didClose" | "didChange" | "notebooks">
-    > = {
-      didOpen: (doc, next) => next(adapter.document(doc)),
-      didClose: (doc, next) => next(adapter.document(doc)),
-      didChange: (change, next) =>
-        next({ ...change, document: adapter.document(change.document) }),
-      notebooks: {
-        didOpen: async (raw, _cells, next) => {
-          const doc = MarimoNotebookDocument.from(raw);
-          // SynchronizedRef.modifyEffect serializes with other operations
-          const orderedCells = await runPromise(
-            SynchronizedRef.modifyEffect(cellCountsRef, (cellCounts) =>
-              Effect.map(getTopologicalCells(doc), (cells) => {
-                const newCellCounts = HashMap.set(
-                  cellCounts,
-                  doc.id,
-                  cells.length,
-                );
-                return [cells, newCellCounts];
-              }),
-            ),
-          );
-          return next(
-            adapter.notebookDocument(raw),
-            orderedCells.map((cell) => adapter.cell(cell)),
-          );
-        },
-        didClose: async (raw, _cells, next) => {
-          const doc = MarimoNotebookDocument.from(raw);
-          // SynchronizedRef.modifyEffect serializes with other operations
-          const orderedCells = await runPromise(
-            SynchronizedRef.modifyEffect(cellCountsRef, (cellCounts) =>
-              Effect.map(getTopologicalCells(doc), (cells) => {
-                const newCellCounts = HashMap.remove(cellCounts, doc.id);
-                return [cells, newCellCounts];
-              }),
-            ),
-          );
-          return next(
-            adapter.notebookDocument(raw),
-            orderedCells.map((cell) => adapter.cell(cell)),
-          );
-        },
-        didChange: async (event, next) => {
-          const doc = MarimoNotebookDocument.from(event.notebook);
-          const result = await runPromise(
-            buildCellReplacement(doc, cellCountsRef, event.cells),
-          );
-          return next({
-            notebook: adapter.notebookDocument(event.notebook),
-            metadata: event.metadata,
-            cells: adapter.cellsEvent(result),
-          });
-        },
+    const notebookMiddleware: lsp.Middleware["notebooks"] = {
+      didOpen: async (raw, _cells, next) => {
+        const doc = MarimoNotebookDocument.from(raw);
+        // SynchronizedRef.modifyEffect serializes with other operations
+        const orderedCells = await runPromise(
+          SynchronizedRef.modifyEffect(cellCountsRef, (cellCounts) =>
+            Effect.map(getTopologicalCells(doc), (cells) => {
+              const newCellCounts = HashMap.set(
+                cellCounts,
+                doc.id,
+                cells.length,
+              );
+              return [cells, newCellCounts];
+            }),
+          ),
+        );
+        return next(
+          adapter.notebookDocument(raw),
+          orderedCells.map((cell) => adapter.cell(cell)),
+        );
+      },
+      didClose: async (raw, _cells, next) => {
+        const doc = MarimoNotebookDocument.from(raw);
+        // SynchronizedRef.modifyEffect serializes with other operations
+        const orderedCells = await runPromise(
+          SynchronizedRef.modifyEffect(cellCountsRef, (cellCounts) =>
+            Effect.map(getTopologicalCells(doc), (cells) => {
+              const newCellCounts = HashMap.remove(cellCounts, doc.id);
+              return [cells, newCellCounts];
+            }),
+          ),
+        );
+        return next(
+          adapter.notebookDocument(raw),
+          orderedCells.map((cell) => adapter.cell(cell)),
+        );
+      },
+      didChange: async (event, next) => {
+        const doc = MarimoNotebookDocument.from(event.notebook);
+        const result = await runPromise(
+          buildCellReplacement(doc, cellCountsRef, event.cells),
+        );
+        return next({
+          notebook: adapter.notebookDocument(event.notebook),
+          metadata: event.metadata,
+          cells: adapter.cellsEvent(result),
+        });
       },
     };
 
