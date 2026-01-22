@@ -142,23 +142,30 @@ export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
          */
         forClient(): Effect.Effect<ClientNotebookSync, never, Scope.Scope> {
           return Effect.gen(function* () {
-            const ref = yield* SynchronizedRef.make<CellCountsMap>(
+            const cellCountsRef = yield* SynchronizedRef.make<CellCountsMap>(
               HashMap.empty(),
             );
             return {
               adapter,
-              middleware: yield* createNotebookMiddleware(adapter, ref).pipe(
-                Effect.provideService(VariablesService, variables),
-              ),
+              middleware: yield* createNotebookMiddleware(
+                adapter,
+                cellCountsRef,
+              ).pipe(Effect.provideService(VariablesService, variables)),
               connect: (client: NamespacedLanguageClient) =>
-                variables.streamVariablesChanges().pipe(
-                  Stream.mapEffect((change) =>
-                    sendResyncNotifications(client, ref, adapter, change),
+                variables.notebookUpdates().pipe(
+                  Stream.filter((evt) => evt.kind === "declaration"),
+                  Stream.mapEffect((evt) =>
+                    sendResyncNotification(
+                      client,
+                      cellCountsRef,
+                      adapter,
+                      evt.notebookId,
+                    ),
                   ),
                   Stream.runDrain,
                   Effect.forkScoped,
-                  Effect.provideService(VariablesService, variables),
                   Effect.provideService(VsCode, code),
+                  Effect.provideService(VariablesService, variables),
                 ),
             };
           });
@@ -169,43 +176,45 @@ export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
 ) {}
 
 /**
- * Sends resync notifications to a client for notebooks affected by variable changes.
+ * Sends a resync notification to a client for a specific notebook.
  */
-const sendResyncNotifications = Effect.fn(function* (
+const sendResyncNotification = Effect.fn(function* (
   client: NamespacedLanguageClient,
   cellCountsRef: SynchronizedRef.SynchronizedRef<CellCountsMap>,
   adapter: NotebookAdapter,
-  variablesMap: HashMap.HashMap<NotebookId, unknown>,
+  notebookId: NotebookId,
 ) {
   const code = yield* VsCode;
-
   const notebooks = yield* code.workspace.getNotebookDocuments();
 
-  for (const raw of notebooks) {
-    const doc = MarimoNotebookDocument.tryFrom(raw);
-    if (Option.isNone(doc)) {
-      continue;
-    }
+  // Find the notebook document for this ID
+  const raw = notebooks.find((nb) => {
+    const doc = MarimoNotebookDocument.tryFrom(nb);
+    return Option.isSome(doc) && doc.value.id === notebookId;
+  });
 
-    // Only resync notebooks that have variable data (meaning they're being tracked)
-    if (!HashMap.has(variablesMap, doc.value.id)) {
-      continue;
-    }
-
-    const notification = yield* buildResyncNotification(
-      doc.value,
-      adapter,
-      cellCountsRef,
-    );
-
-    if (Option.isNone(notification)) {
-      continue;
-    }
-
-    yield* Effect.promise(() =>
-      client.sendNotification("notebookDocument/didChange", notification.value),
-    );
+  if (!raw) {
+    return;
   }
+
+  const doc = MarimoNotebookDocument.tryFrom(raw);
+  if (Option.isNone(doc)) {
+    return;
+  }
+
+  const notification = yield* buildResyncNotification(
+    doc.value,
+    adapter,
+    cellCountsRef,
+  );
+
+  if (Option.isNone(notification)) {
+    return;
+  }
+
+  yield* Effect.promise(() =>
+    client.sendNotification("notebookDocument/didChange", notification.value),
+  );
 });
 
 /**
