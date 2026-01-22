@@ -157,7 +157,7 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
        */
       errorLogger: Logger.make((opts) => {
         const messages = ReadonlyArray.ensure(opts.message);
-        const messageStr = messages.map(formatValue).join(" ");
+        const messageStr = messages.map(formatValue).join("\n");
 
         if (shouldFilterMessage(messageStr)) {
           return;
