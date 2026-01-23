@@ -10,6 +10,7 @@ import { Data, Effect, Option, Stream, String } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import { Config } from "./Config.ts";
+import { Sentry } from "./Sentry.ts";
 import { Telemetry } from "./Telemetry.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -94,6 +95,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
     const code = yield* VsCode;
     const config = yield* Config;
     const telemetry = yield* Effect.serviceOption(Telemetry);
+    const sentry = yield* Effect.serviceOption(Sentry);
     const executor = yield* CommandExecutor.CommandExecutor;
     const channel = yield* code.window.createOutputChannel("marimo (uv)");
 
@@ -103,6 +105,13 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         handleUvNotInstalled(error, code, telemetry),
       ),
     );
+
+    if (Option.isSome(sentry)) {
+      yield* sentry.value.setTag(
+        "uv.version",
+        Option.getOrElse(uvBinary.version, () => "unknown"),
+      );
+    }
 
     const uv = createUv(uvBinary, executor, channel);
 

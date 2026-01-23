@@ -3,6 +3,7 @@ import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
 import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
 import { Config } from "../Config.ts";
+import { Sentry } from "../Sentry.ts";
 import { Uv } from "../Uv.ts";
 import { VsCode } from "../VsCode.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
@@ -45,6 +46,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       const uv = yield* Uv;
       const code = yield* VsCode;
       const sync = yield* NotebookSyncService;
+      const sentry = yield* Effect.serviceOption(Sentry);
 
       const disabledHealth = yield* checkRuffEnabled();
       if (Option.isSome(disabledHealth)) {
@@ -139,6 +141,12 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       const client = yield* getClient;
 
       if (Either.isRight(client)) {
+        if (Option.isSome(sentry)) {
+          yield* sentry.value.setTag(
+            "ruff.version",
+            client.right.initializeResult?.serverInfo?.version ?? "unknown",
+          );
+        }
         yield* notebookSync.connect(client.right);
         yield* Effect.logInfo("Ruff language server started successfully");
       } else {
