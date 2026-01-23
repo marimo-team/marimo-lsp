@@ -4,23 +4,22 @@ A VS Code extension for [marimo](https://github.com/marimo-team/marimo), a
 reactive Python notebook that's reproducible, git-friendly, and deployable as
 scripts or apps.
 
+> [!IMPORTANT]
+> **This extension requires [uv](https://docs.astral.sh/uv/) to be installed.**
+>
+> Install uv before using this extension:
+>
+> ```bash
+> # macOS/Linux
+> curl -LsSf https://astral.sh/uv/install.sh | sh
+>
+> # Windows
+> powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+> ```
+>
+> After installation, you may need to restart VS Code or reload the window.
+
 ![](https://github.com/user-attachments/assets/1221b757-4c82-471d-897c-030d61132e90)
-
-## Prerequisites
-
-This extension requires [uv](https://docs.astral.sh/uv/) to be installed and
-available on your PATH. The extension uses `uvx` to run the bundled
-`marimo-lsp` language server.
-
-Install uv:
-
-```bash
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Windows
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
 
 ## Features
 
@@ -31,7 +30,7 @@ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 ## Getting Started
 
-1. Ensure [uv](https://docs.astral.sh/uv/) is installed
+1. Ensure [uv](https://docs.astral.sh/uv/) is installed (see above)
 2. Install this extension from the VS Code Marketplace
 3. Open a marimo notebook (`.py` file), or create a new one:
    - Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
