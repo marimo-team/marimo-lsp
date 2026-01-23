@@ -5,6 +5,7 @@ import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.t
 import { signalFromToken } from "../../utils/signalFromToken.ts";
 import { Config } from "../Config.ts";
 import { PythonExtension } from "../PythonExtension.ts";
+import { Sentry } from "../Sentry.ts";
 import { Uv } from "../Uv.ts";
 import { VsCode } from "../VsCode.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
@@ -53,6 +54,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
       const uv = yield* Uv;
       const pyExt = yield* PythonExtension;
       const sync = yield* NotebookSyncService;
+      const sentry = yield* Effect.serviceOption(Sentry);
 
       const disabledHealth = yield* checkTyEnabled();
       if (Option.isSome(disabledHealth)) {
@@ -114,6 +116,12 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
       const client = yield* getClient;
 
       if (Either.isRight(client)) {
+        if (Option.isSome(sentry)) {
+          yield* sentry.value.setTag(
+            "ty.version",
+            client.right.initializeResult?.serverInfo?.version ?? "unknown",
+          );
+        }
         yield* notebookSync.connect(client.right);
         yield* Effect.logInfo("ty language server started successfully");
       } else {
