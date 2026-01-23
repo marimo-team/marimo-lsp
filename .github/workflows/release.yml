@@ -23,15 +23,196 @@ permissions:
   contents: write
 
 jobs:
-  publish:
+  # Phase 1: Bump version (runs once before platform builds)
+  version-bump:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: extension/package.json
+
+      - name: Bump version, commit & push
+        working-directory: extension
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          pnpm version ${{ inputs.version-bump }} --no-git-tag-version
+          git add package.json
+          if [ "${{ inputs.pre-release }}" = "true" ]; then
+            git commit -m "v$(cat package.json | jq -r '.version') (pre-release)"
+          else
+            git commit -m "v$(cat package.json | jq -r '.version')"
+          fi
+          git push origin HEAD:main
+
+      - name: Output version
+        id: version
+        working-directory: extension
+        run: echo "version=$(cat package.json | jq -r '.version')" >> $GITHUB_OUTPUT
+
+  # Phase 2: Build platform-specific extensions
+  build:
+    needs: version-bump
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            code-target: win32-x64
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            code-target: win32-arm64
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            code-target: linux-x64
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            code-target: linux-arm64
+            arch: aarch64
+          - os: ubuntu-22.04
+            target: arm-unknown-linux-gnueabihf
+            code-target: linux-armhf
+            arch: armv7
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            code-target: darwin-x64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            code-target: darwin-arm64
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            code-target: alpine-x64
+            arch: x86_64
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-musl
+            code-target: alpine-arm64
+            arch: aarch64
+
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
         with:
           path: marimo-lsp
-          fetch-depth: 0  # Fetch all history and tags
+          ref: main  # Get the version-bumped commit
+
+      - name: Read marimo version
+        id: marimo-version
+        run: echo "ref=$(cat marimo-lsp/.marimo-version)" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          repository: marimo-team/marimo
+          ref: ${{ steps.marimo-version.outputs.ref }}
+          path: marimo
+
+      # Install Python for pip install of uv binary
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      # ARM builds on macOS - select uv's universal binary
+      - name: Install uv binary (macOS ARM)
+        if: ${{ startsWith(matrix.os, 'macos') && startsWith(matrix.target, 'aarch64') }}
+        run: arch -arm64 python -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --upgrade -r ./marimo-lsp/extension/requirements.txt
+
+      # x86_64 builds on macOS
+      - name: Install uv binary (macOS x64)
+        if: ${{ startsWith(matrix.os, 'macos') && startsWith(matrix.target, 'x86_64') }}
+        run: arch -x86_64 python -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --upgrade -r ./marimo-lsp/extension/requirements.txt
+
+      # ARM builds on Ubuntu
+      - name: Install uv binary (Linux ARM)
+        if: ${{ startsWith(matrix.os, 'ubuntu') && !startsWith(matrix.target, 'x86_64') && !endsWith(matrix.target, 'musl') }}
+        uses: uraimo/run-on-arch-action@v3.0.1
+        with:
+          arch: ${{ matrix.arch }}
+          distro: ubuntu20.04
+          install: |
+            apt-get update
+            apt-get install -y --no-install-recommends python3 python3-pip
+            pip3 install -U pip
+          run: |
+            python3 -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --upgrade -r ./marimo-lsp/extension/requirements.txt
+
+      # Alpine builds (musl)
+      - name: Setup Alpine
+        if: ${{ startsWith(matrix.os, 'ubuntu') && endsWith(matrix.target, 'musl') }}
+        uses: jirutka/setup-alpine@v1.4.1
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Install uv binary (Alpine)
+        if: ${{ startsWith(matrix.os, 'ubuntu') && endsWith(matrix.target, 'musl') }}
+        shell: alpine.sh --root {0}
+        run: |
+          apk add --no-cache python3 py3-pip
+          python3 -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --upgrade -r ./marimo-lsp/extension/requirements.txt
+
+      # Standard x64 builds
+      - name: Install uv binary (standard)
+        if: ${{ !startsWith(matrix.os, 'macos') && !(startsWith(matrix.os, 'ubuntu') && !startsWith(matrix.target, 'x86_64') && !endsWith(matrix.target, 'musl')) && !(startsWith(matrix.os, 'ubuntu') && endsWith(matrix.target, 'musl')) }}
+        run: python -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --upgrade -r ./marimo-lsp/extension/requirements.txt
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: marimo-lsp/extension/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "pnpm"
+          cache-dependency-path: |
+            marimo/pnpm-lock.yaml
+            marimo-lsp/extension/pnpm-lock.yaml
+
+      - name: Build marimo packages
+        run: |
+          cd marimo
+          pnpm --recursive --filter "./packages/*" codegen
+          pnpm --recursive --filter "./packages/*" build
+
+      - name: Install packages and build extension
+        working-directory: marimo-lsp/extension
+        run: |
+          pnpm install
+          pnpm build
+          pnpm embed-sdist
+
+      - name: Package extension
+        working-directory: marimo-lsp/extension
+        shell: bash
+        run: |
+          if [ "${{ inputs.pre-release }}" = "true" ]; then
+            npx vsce package -o ./dist/marimo-${{ matrix.code-target }}.vsix --target ${{ matrix.code-target }} --pre-release
+          else
+            npx vsce package -o ./dist/marimo-${{ matrix.code-target }}.vsix --target ${{ matrix.code-target }}
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: marimo-lsp/extension/dist/
+
+  # Phase 3: Build universal extension (fallback for unsupported platforms)
+  build-universal:
+    needs: version-bump
+    runs-on: ubuntu-latest
+    name: Build (universal)
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: marimo-lsp
+          ref: main
 
       - name: Read marimo version
         id: marimo-version
@@ -63,20 +244,6 @@ jobs:
           pnpm --recursive --filter "./packages/*" codegen
           pnpm --recursive --filter "./packages/*" build
 
-      - name: Bump version, commit & push
-        working-directory: marimo-lsp/extension
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          pnpm version ${{ inputs.version-bump }} --no-git-tag-version
-          git add package.json
-          if [ "${{ inputs.pre-release }}" = "true" ]; then
-            git commit -m "v$(cat package.json | jq -r '.version') (pre-release)"
-          else
-            git commit -m "v$(cat package.json | jq -r '.version')"
-          fi
-          git push origin HEAD:main
-
       - name: Install packages and build extension
         working-directory: marimo-lsp/extension
         run: |
@@ -84,31 +251,66 @@ jobs:
           pnpm build
           pnpm embed-sdist
 
-      - name: Package the extension
-        working-directory: marimo-lsp/extension
-        run: npx vsce package
+      # NOTE: No pip install for uv - this is the universal fallback without bundled binary
 
-      - name: Publish to marketplace
+      - name: Package universal extension
         working-directory: marimo-lsp/extension
         run: |
           if [ "${{ inputs.pre-release }}" = "true" ]; then
-            npx vsce publish --pre-release --skip-duplicate
+            npx vsce package -o ./dist/marimo-universal.vsix --pre-release
           else
-            npx vsce publish --skip-duplicate
+            npx vsce package -o ./dist/marimo-universal.vsix
           fi
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-universal
+          path: marimo-lsp/extension/dist/
+
+  # Phase 4: Publish to marketplaces
+  publish:
+    needs: [version-bump, build, build-universal]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: marimo-lsp
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -al ./dist
+
+      - name: Install vsce and ovsx
+        run: npm install -g @vscode/vsce ovsx
+
+      - name: Publish to VS Code Marketplace
+        run: |
+          if [ "${{ inputs.pre-release }}" = "true" ]; then
+            vsce publish --pat ${{ secrets.VSCE_PAT }} --packagePath ./dist/*.vsix --pre-release
+          else
+            vsce publish --pat ${{ secrets.VSCE_PAT }} --packagePath ./dist/*.vsix
+          fi
 
       - name: Publish to Open VSX Registry
-        working-directory: marimo-lsp/extension
         run: |
           if [ "${{ inputs.pre-release }}" = "true" ]; then
-            npx ovsx publish --pre-release --skip-duplicate
+            ovsx publish --pat ${{ secrets.OPEN_VSX_TOKEN }} --packagePath ./dist/*.vsix --pre-release
           else
-            npx ovsx publish --skip-duplicate
+            ovsx publish --pat ${{ secrets.OPEN_VSX_TOKEN }} --packagePath ./dist/*.vsix
           fi
-        env:
-          OVSX_PAT: ${{ secrets.OPEN_VSX_TOKEN }}
+
+      - uses: astral-sh/setup-uv@v6
 
       - name: Get previous tag
         working-directory: marimo-lsp
@@ -118,15 +320,16 @@ jobs:
       - name: Generate release notes
         working-directory: marimo-lsp
         run: |
-          VERSION=$(cat extension/package.json | jq -r '.version')
-          uv run scripts/generate_release_notes.py "$PREVIOUS_TAG" "$VERSION" > extension/release_notes.md
+          uv run scripts/generate_release_notes.py "$PREVIOUS_TAG" "${{ needs.version-bump.outputs.version }}" > release_notes.md
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Create GitHub Release
-        working-directory: marimo-lsp/extension
         run: |
-          gh release create $(cat package.json | jq -r '.version') --notes-file release_notes.md *.vsix
+          gh release create ${{ needs.version-bump.outputs.version }} \
+            --repo ${{ github.repository }} \
+            --notes-file marimo-lsp/release_notes.md \
+            ./dist/*.vsix
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -144,7 +347,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "✅ *Release successful*\n\n*Repository:* vscode-marimo\n*Commit:* <https://github.com/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>\n*Branch:* ${{ github.ref_name }}\n*Duration:* ${{ github.event.workflow_run.conclusion == 'success' && 'N/A' || 'N/A' }}\n*URL:* https://marketplace.visualstudio.com/items?itemName=marimo-team.vscode-marimo"
+                    "text": "✅ *Release successful*\n\n*Repository:* vscode-marimo\n*Version:* ${{ needs.version-bump.outputs.version }}\n*Platforms:* darwin-arm64, darwin-x64, linux-x64, linux-arm64, linux-armhf, alpine-x64, alpine-arm64, win32-x64, win32-arm64, universal\n*URL:* https://marketplace.visualstudio.com/items?itemName=marimo-team.vscode-marimo"
                   }
                 }
               ]

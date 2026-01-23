@@ -368,6 +368,9 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
       getWorkspaceFolders() {
         return Effect.succeed(Option.fromNullable(api.workspaceFolders));
       },
+      isTrusted() {
+        return api.isTrusted;
+      },
       registerNotebookSerializer(
         notebookType: string,
         impl: vscode.NotebookSerializer,

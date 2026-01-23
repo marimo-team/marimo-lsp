@@ -1,0 +1,4 @@
+# Pin uv version for bundled binary in VS Code extension
+# This is installed via: pip install -t ./bundled/libs -r ./requirements.txt
+# The binary will be available at: bundled/libs/bin/uv
+uv==0.9.26

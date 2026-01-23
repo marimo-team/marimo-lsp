@@ -43,7 +43,7 @@ type EventMap = {
   new_notebook_created: undefined;
   notebook_opened: { cellCount: number };
   tutorial_opened: { tutorial: string };
-  uv_missing: { binType: "Default" | "Configured" | "Discovered" };
+  uv_missing: { binType: "Default" | "Configured" | "Discovered" | "Bundled" };
   uv_install_clicked: undefined;
 };
 
