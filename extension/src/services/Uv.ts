@@ -411,9 +411,11 @@ const findUvBin = Effect.fn("findUvBin")(function* (
  */
 function getUvVersion(bin: UvBin): Option.Option<string> {
   try {
-    const version = NodeChildProcess.execSync(`${bin.executable} --version`, {
-      encoding: "utf8",
-    });
+    const version = NodeChildProcess.execFileSync(
+      bin.executable,
+      ["--version"],
+      { encoding: "utf8" },
+    );
     return Option.some(version.trim());
   } catch {
     return Option.none();
