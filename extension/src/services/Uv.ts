@@ -94,8 +94,8 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const config = yield* Config;
-    const telemetry = yield* Effect.serviceOption(Telemetry);
-    const sentry = yield* Effect.serviceOption(Sentry);
+    const sentry = yield* Sentry;
+    const telemetry = yield* Telemetry;
     const executor = yield* CommandExecutor.CommandExecutor;
     const channel = yield* code.window.createOutputChannel("marimo (uv)");
 
@@ -106,12 +106,10 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
       ),
     );
 
-    if (Option.isSome(sentry)) {
-      yield* sentry.value.setTag(
-        "uv.version",
-        Option.getOrElse(uvBinary.version, () => "unknown"),
-      );
-    }
+    yield* sentry.setTag(
+      "uv.version",
+      Option.getOrElse(uvBinary.version, () => "unknown"),
+    );
 
     const uv = createUv(uvBinary, executor, channel);
 
@@ -381,11 +379,9 @@ function getUvVersion(bin: UvBin): Option.Option<string> {
 const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   error: UvNotInstalledError,
   code: VsCode,
-  telemetry: Option.Option<Telemetry>,
+  telemetry: Telemetry,
 ) {
-  if (Option.isSome(telemetry)) {
-    yield* telemetry.value.capture("uv_missing", { binType: error.bin._tag });
-  }
+  yield* telemetry.capture("uv_missing", { binType: error.bin._tag });
 
   const errorMessage = UvBin.$match(error.bin, {
     Configured: (bin) =>
@@ -403,9 +399,7 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   });
 
   if (Option.isSome(choice) && choice.value === "Install uv") {
-    if (Option.isSome(telemetry)) {
-      yield* telemetry.value.capture("uv_install_clicked");
-    }
+    yield* telemetry.capture("uv_install_clicked");
 
     // Create hidden terminal so Python extension doesn't auto-activate environments
     const terminal = yield* code.window.createTerminal({

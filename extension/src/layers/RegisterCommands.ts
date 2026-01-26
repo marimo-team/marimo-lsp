@@ -24,7 +24,7 @@ import { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { PythonExtension } from "../services/PythonExtension.ts";
-import { type ITelemetry, Telemetry } from "../services/Telemetry.ts";
+import { Telemetry } from "../services/Telemetry.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 import type { MarimoConfig } from "../types.ts";
@@ -267,7 +267,7 @@ const newMarimoNotebook = ({
   code: VsCode;
   channel: OutputChannel;
   serializer: NotebookSerializer;
-  telemetry: ITelemetry;
+  telemetry: Telemetry;
 }) =>
   Effect.gen(function* () {
     const uri = yield* code.window.showSaveDialog({

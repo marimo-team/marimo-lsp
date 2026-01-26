@@ -2,7 +2,7 @@ import { expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import { Effect, Layer, Option, Stream, TestClock } from "effect";
 import type * as vscode from "vscode";
-import { TestTelemetry } from "../../__mocks__/TestTelemetry.ts";
+import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
   createTestNotebookDocument,
   createTestNotebookEditor,
@@ -43,7 +43,7 @@ const withTestCtx = Effect.fnUntraced(function* (
     Layer.merge(ExecutionRegistry.Default),
     Layer.merge(CellStateManager.Default),
     Layer.provide(TestLanguageClientMock),
-    Layer.provide(TestTelemetry),
+    Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
   );
   return { vscode, layer };
