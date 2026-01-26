@@ -388,7 +388,15 @@ const findUvBin = Effect.fn("findUvBin")(function* (
     return yield* new UvNotInstalledError({ bin });
   }
 
-  yield* Effect.logInfo(`UV verified: ${version.value}`);
+  const sourceDescription = UvBin.$match(bin, {
+    Bundled: () => "bundled",
+    Configured: () => "configured",
+    Discovered: () => "discovered",
+    Default: () => "PATH",
+  });
+  yield* Effect.logInfo(
+    `Using ${sourceDescription} uv: ${bin.executable} (${version.value})`,
+  );
   return UvBin.$match(bin, {
     Bundled: (b) => UvBin.Bundled({ ...b, version }),
     Default: (b) => UvBin.Default({ ...b, version }),
