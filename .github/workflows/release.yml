@@ -22,6 +22,10 @@ on:
 permissions:
   contents: write
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # Phase 1: Bump version (runs once before platform builds)
   version-bump:
@@ -113,22 +117,30 @@ jobs:
           ref: ${{ steps.marimo-version.outputs.ref }}
           path: marimo
 
-      # Install Python for pip install of uv binary
-      - uses: actions/setup-python@v5
+      # Install Python for bundling the uv binary.
+      #
+      # Why pip instead of uv? We use `pip install -t` to download the uv wheel
+      # and extract the binary to bundle in the extension. While we could use
+      # `uv pip install --target`, some builds run in emulated environments
+      # (ARM Linux via QEMU, Alpine via chroot) where setting up uv adds
+      # complexity. Using pip everywhere keeps the workflow simple and consistent.
+      # The speed difference is negligible for a single package install.
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.x"
 
-      # ARM builds on macOS - select uv's universal binary
+      # macOS ARM - use arch prefix to ensure we get the ARM wheel
       - name: Install uv binary (macOS ARM)
         if: ${{ startsWith(matrix.os, 'macos') && startsWith(matrix.target, 'aarch64') }}
-        run: arch -arm64 python -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --upgrade -r ./marimo-lsp/extension/requirements.txt
+        run: arch -arm64 python -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --require-hashes -r ./marimo-lsp/extension/requirements.txt
 
-      # x86_64 builds on macOS
+      # macOS x64 - use arch prefix to ensure we get the x64 wheel (runs under Rosetta)
       - name: Install uv binary (macOS x64)
         if: ${{ startsWith(matrix.os, 'macos') && startsWith(matrix.target, 'x86_64') }}
-        run: arch -x86_64 python -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --upgrade -r ./marimo-lsp/extension/requirements.txt
+        run: arch -x86_64 python -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --require-hashes -r ./marimo-lsp/extension/requirements.txt
 
-      # ARM builds on Ubuntu
+      # Linux ARM - emulated via QEMU, pip runs inside and sees ARM architecture
       - name: Install uv binary (Linux ARM)
         if: ${{ startsWith(matrix.os, 'ubuntu') && !startsWith(matrix.target, 'x86_64') && !endsWith(matrix.target, 'musl') }}
         uses: uraimo/run-on-arch-action@v3.0.1
@@ -140,9 +152,9 @@ jobs:
             apt-get install -y --no-install-recommends python3 python3-pip
             pip3 install -U pip
           run: |
-            python3 -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --upgrade -r ./marimo-lsp/extension/requirements.txt
+            python3 -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --require-hashes -r ./marimo-lsp/extension/requirements.txt
 
-      # Alpine builds (musl)
+      # Alpine - emulated via chroot (+ QEMU for ARM), pip runs inside and sees musl
       - name: Setup Alpine
         if: ${{ startsWith(matrix.os, 'ubuntu') && endsWith(matrix.target, 'musl') }}
         uses: jirutka/setup-alpine@v1.4.1
@@ -154,12 +166,29 @@ jobs:
         shell: alpine.sh --root {0}
         run: |
           apk add --no-cache python3 py3-pip
-          python3 -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --upgrade -r ./marimo-lsp/extension/requirements.txt
+          python3 -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --require-hashes -r ./marimo-lsp/extension/requirements.txt
 
-      # Standard x64 builds
-      - name: Install uv binary (standard)
+      # Windows and Linux x64 - native builds, straightforward pip install
+      - name: Install uv binary (Windows/Linux x64)
         if: ${{ !startsWith(matrix.os, 'macos') && !(startsWith(matrix.os, 'ubuntu') && !startsWith(matrix.target, 'x86_64') && !endsWith(matrix.target, 'musl')) && !(startsWith(matrix.os, 'ubuntu') && endsWith(matrix.target, 'musl')) }}
-        run: python -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --upgrade -r ./marimo-lsp/extension/requirements.txt
+        run: python -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --require-hashes -r ./marimo-lsp/extension/requirements.txt
+
+      # Verify the bundled binary was installed correctly
+      - name: Verify uv binary
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ls -la ./marimo-lsp/extension/bundled/libs/bin/uv.exe
+            # Only run version check on native builds (not cross-compiled)
+            if [ "${{ matrix.code-target }}" = "win32-x64" ]; then
+              ./marimo-lsp/extension/bundled/libs/bin/uv.exe --version
+            fi
+          else
+            ls -la ./marimo-lsp/extension/bundled/libs/bin/uv
+            # Only run version check on native builds (not cross-compiled ARM/Alpine)
+            if [ "${{ matrix.code-target }}" = "darwin-arm64" ] || [ "${{ matrix.code-target }}" = "darwin-x64" ] || [ "${{ matrix.code-target }}" = "linux-x64" ]; then
+              ./marimo-lsp/extension/bundled/libs/bin/uv --version
+            fi
+          fi
 
       - uses: pnpm/action-setup@v4
         with:
