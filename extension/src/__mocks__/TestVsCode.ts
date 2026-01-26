@@ -1614,6 +1614,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             getWorkspaceFolders() {
               return Effect.succeed(Option.none());
             },
+            isTrusted() {
+              return true;
+            },
             registerNotebookSerializer(notebookType, impl, options) {
               return Effect.acquireRelease(
                 Effect.gen(function* () {

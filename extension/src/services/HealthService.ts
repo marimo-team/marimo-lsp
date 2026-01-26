@@ -56,6 +56,8 @@ export class HealthService extends Effect.Service<HealthService>()(
           lines.push("Language Server (LSP):");
 
           UvBin.$match(uv.bin, {
+            Bundled: (bin) =>
+              lines.push(`\tUV Bin: Bundled (${bin.executable})`),
             Default: (bin) =>
               lines.push(`\tUV Bin: Default (${bin.executable})`),
             Configured: (bin) =>

@@ -16,6 +16,10 @@ import { VsCode } from "./VsCode.ts";
 
 export const UvBin = Data.taggedEnum<UvBin>();
 type UvBin = Data.TaggedEnum<{
+  Bundled: {
+    readonly executable: string;
+    readonly version: Option.Option<string>;
+  };
   Default: {
     readonly executable: "uv" | "uv.exe";
     readonly version: Option.Option<string>;
@@ -29,6 +33,19 @@ type UvBin = Data.TaggedEnum<{
     readonly version: Option.Option<string>;
   };
 }>;
+
+/**
+ * Path to the bundled uv binary.
+ * At runtime, __dirname is the dist/ directory, so we go up one level to the extension root.
+ */
+const BUNDLED_UV_PATH = NodePath.join(
+  __dirname,
+  "..",
+  "bundled",
+  "libs",
+  "bin",
+  NodeProcess.platform === "win32" ? "uv.exe" : "uv",
+);
 
 class UvNotInstalledError extends Data.TaggedError("UvNotInstalledError")<{
   bin: UvBin;
@@ -289,8 +306,21 @@ const findUvBin = Effect.fn("findUvBin")(function* (
   userConfigPath: Option.Option<string>,
 ) {
   let bin: UvBin;
+  const code = yield* VsCode;
+  const bundledExists = NodeFs.existsSync(BUNDLED_UV_PATH);
 
-  if (Option.isSome(userConfigPath)) {
+  // Priority 1: Untrusted workspace with bundled binary - use bundled for security
+  if (!code.workspace.isTrusted() && bundledExists) {
+    yield* Effect.logDebug(
+      `Workspace is not trusted, using bundled uv: ${BUNDLED_UV_PATH}`,
+    );
+    bin = UvBin.Bundled({
+      executable: BUNDLED_UV_PATH,
+      version: Option.none(),
+    });
+  }
+  // Priority 2: User-configured path
+  else if (Option.isSome(userConfigPath)) {
     yield* Effect.logDebug(
       `Using user-configured uv path: ${userConfigPath.value}`,
     );
@@ -298,8 +328,17 @@ const findUvBin = Effect.fn("findUvBin")(function* (
       executable: userConfigPath.value,
       version: Option.none(),
     });
-  } else {
-    // Check default install locations
+  }
+  // Priority 3: Bundled binary
+  else if (bundledExists) {
+    yield* Effect.logDebug(`Using bundled uv: ${BUNDLED_UV_PATH}`);
+    bin = UvBin.Bundled({
+      executable: BUNDLED_UV_PATH,
+      version: Option.none(),
+    });
+  }
+  // Priority 4: Check default install locations
+  else {
     const homedir = NodeOs.homedir();
     const binName = NodeProcess.platform === "win32" ? "uv.exe" : "uv";
     const defaultPaths =
@@ -349,8 +388,17 @@ const findUvBin = Effect.fn("findUvBin")(function* (
     return yield* new UvNotInstalledError({ bin });
   }
 
-  yield* Effect.logInfo(`UV verified: ${version.value}`);
+  const sourceDescription = UvBin.$match(bin, {
+    Bundled: () => "bundled",
+    Configured: () => "configured",
+    Discovered: () => "discovered",
+    Default: () => "PATH",
+  });
+  yield* Effect.logInfo(
+    `Using ${sourceDescription} uv: ${bin.executable} (${version.value})`,
+  );
   return UvBin.$match(bin, {
+    Bundled: (b) => UvBin.Bundled({ ...b, version }),
     Default: (b) => UvBin.Default({ ...b, version }),
     Configured: (b) => UvBin.Configured({ ...b, version }),
     Discovered: (b) => UvBin.Discovered({ ...b, version }),
@@ -384,6 +432,8 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   yield* telemetry.capture("uv_missing", { binType: error.bin._tag });
 
   const errorMessage = UvBin.$match(error.bin, {
+    Bundled: (bin) =>
+      `The marimo extension requires uv.\n\nThe bundled binary "${bin.executable}" failed to execute.`,
     Configured: (bin) =>
       `The marimo extension requires uv.\n\nThe configured path "${bin.executable}" was not found.`,
     Default: () => "The marimo extension requires uv.",
@@ -395,7 +445,9 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
     modal: true,
     items: UvBin.$is("Configured")(error.bin)
       ? (["Open Settings"] as const)
-      : (["Install uv", "Open Settings"] as const),
+      : UvBin.$is("Bundled")(error.bin)
+        ? (["Open Settings"] as const)
+        : (["Install uv", "Open Settings"] as const),
   });
 
   if (Option.isSome(choice) && choice.value === "Install uv") {

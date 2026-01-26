@@ -20,3 +20,9 @@ tests
 
 # Include tutorial files in the extension package
 !tutorials/**
+
+# Include bundled uv binary
+!bundled/**
+
+# Exclude build-time only files
+requirements.txt
