@@ -1,4 +1,3 @@
-import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
@@ -6,7 +5,7 @@ import * as NodeProcess from "node:process";
 import { Command, CommandExecutor } from "@effect/platform";
 import type { PlatformError } from "@effect/platform/Error";
 import { NodeContext } from "@effect/platform-node";
-import { Data, Effect, Option, Stream, String } from "effect";
+import { Data, Effect, Option, Schema, Stream, String } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import { Config } from "./Config.ts";
@@ -18,19 +17,19 @@ export const UvBin = Data.taggedEnum<UvBin>();
 type UvBin = Data.TaggedEnum<{
   Bundled: {
     readonly executable: string;
-    readonly version: Option.Option<string>;
+    readonly version: Option.Option<VersionInfo>;
   };
   Default: {
     readonly executable: "uv" | "uv.exe";
-    readonly version: Option.Option<string>;
+    readonly version: Option.Option<VersionInfo>;
   };
   Configured: {
     readonly executable: string;
-    readonly version: Option.Option<string>;
+    readonly version: Option.Option<VersionInfo>;
   };
   Discovered: {
     readonly executable: string;
-    readonly version: Option.Option<string>;
+    readonly version: Option.Option<VersionInfo>;
   };
 }>;
 
@@ -47,11 +46,8 @@ const BUNDLED_UV_PATH = NodePath.join(
   NodeProcess.platform === "win32" ? "uv.exe" : "uv",
 );
 
-class UvNotInstalledError extends Data.TaggedError("UvNotInstalledError")<{
-  bin: UvBin;
-}> {}
-
 class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
+  bin: UvBin;
   command: Command.Command;
   cause: PlatformError;
 }> {}
@@ -118,14 +114,23 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
 
     // Eagerly verify UV is installed - this runs during layer construction
     const uvBinary = yield* findUvBin(yield* config.uv.path).pipe(
-      Effect.catchTag("UvNotInstalledError", (error) =>
+      Effect.catchTag("UvExecutionError", (error) =>
         handleUvNotInstalled(error, code, telemetry),
       ),
     );
 
+    if (Option.isNone(uvBinary.version)) {
+      yield* code.window.showWarningMessage(
+        "Unable to determine uv version. Some features may not work correctly.",
+      );
+    }
+
     yield* sentry.setTag(
       "uv.version",
-      Option.getOrElse(uvBinary.version, () => "unknown"),
+      Option.match(uvBinary.version, {
+        onSome: (v) => v.format(),
+        onNone: () => "unknown",
+      }),
     );
 
     const uv = createUv(uvBinary, executor, channel);
@@ -275,8 +280,8 @@ function createUv(
       ),
       Effect.scoped,
       Effect.catchTags({
-        BadArgument: (cause) => new UvExecutionError({ command, cause }),
-        SystemError: (cause) => new UvExecutionError({ command, cause }),
+        BadArgument: (cause) => new UvExecutionError({ bin, command, cause }),
+        SystemError: (cause) => new UvExecutionError({ bin, command, cause }),
       }),
     );
     if (exitCode !== 0) {
@@ -380,12 +385,12 @@ const findUvBin = Effect.fn("findUvBin")(function* (
   }
 
   // Validate that the binary actually works
-  const version = getUvVersion(bin);
+  const version = yield* getUvVersion(bin);
+
   if (Option.isNone(version)) {
-    yield* Effect.logError(
-      `UV is not available. Binary: '${bin.executable}'. PATH: ${NodeProcess.env.PATH ?? "(not set)"}`,
+    yield* Effect.logWarning(
+      `Unable to parse uv version for ${bin.executable}; proceeding with unknown version`,
     );
-    return yield* new UvNotInstalledError({ bin });
   }
 
   const sourceDescription = UvBin.$match(bin, {
@@ -394,9 +399,16 @@ const findUvBin = Effect.fn("findUvBin")(function* (
     Discovered: () => "discovered",
     Default: () => "PATH",
   });
+
+  const versionStr = Option.match(version, {
+    onSome: (v) => v.format(),
+    onNone: () => "unknown",
+  });
+
   yield* Effect.logInfo(
-    `Using ${sourceDescription} uv: ${bin.executable} (${version.value})`,
+    `Using ${sourceDescription} uv: ${bin.executable} ${versionStr}`,
   );
+
   return UvBin.$match(bin, {
     Bundled: (b) => UvBin.Bundled({ ...b, version }),
     Default: (b) => UvBin.Default({ ...b, version }),
@@ -405,19 +417,33 @@ const findUvBin = Effect.fn("findUvBin")(function* (
   });
 });
 
-/**
- * Gets the UV version by running `uv --version`.
- * Returns None if UV is not installed or not working.
- */
-function getUvVersion(bin: UvBin): Option.Option<string> {
-  try {
-    const version = NodeChildProcess.execSync(`${bin.executable} --version`, {
-      encoding: "utf8",
-    });
-    return Option.some(version.trim());
-  } catch {
-    return Option.none();
+class VersionInfo extends Schema.Class<VersionInfo>("VersionInfo")({
+  package_name: Schema.String,
+  version: Schema.String,
+  commit_info: Schema.Struct({
+    short_commit_hash: Schema.String,
+    commit_hash: Schema.String,
+    commit_date: Schema.String,
+    last_tag: Schema.NullOr(Schema.String),
+    commits_since_last_tag: Schema.Int,
+  }),
+}) {
+  format() {
+    return `${this.version} (${this.commit_info.short_commit_hash} ${this.commit_info.commit_date})`;
   }
+}
+
+function getUvVersion(bin: UvBin) {
+  const args = ["self", "version", "--output-format", "json"];
+  const command = Command.make(bin.executable, ...args);
+  return command.pipe(
+    Command.string,
+    Effect.map(Schema.decodeOption(Schema.parseJson(VersionInfo))),
+    Effect.catchTags({
+      BadArgument: (cause) => new UvExecutionError({ bin, command, cause }),
+      SystemError: (cause) => new UvExecutionError({ bin, command, cause }),
+    }),
+  );
 }
 
 /**
@@ -425,7 +451,7 @@ function getUvVersion(bin: UvBin): Option.Option<string> {
  * Dies after user interaction to prevent extension from continuing without UV.
  */
 const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
-  error: UvNotInstalledError,
+  error: UvExecutionError,
   code: VsCode,
   telemetry: Telemetry,
 ) {
