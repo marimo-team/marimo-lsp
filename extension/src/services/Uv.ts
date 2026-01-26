@@ -51,13 +51,13 @@ class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
   bin: UvBin;
   command: Command.Command;
   cause: PlatformError;
-}> { }
+}> {}
 
 class UvUnknownError extends Data.TaggedError("UvUnknownError")<{
   command: Command.Command;
   exitCode?: CommandExecutor.ExitCode;
   stderr: string;
-}> { }
+}> {}
 
 class UvMissingPyProjectError extends Data.TaggedError(
   "UvMissingPyProjectError",
@@ -105,7 +105,7 @@ class UvResolutionError extends Data.TaggedError("UvResolutionError")<{
 
 export class Uv extends Effect.Service<Uv>()("Uv", {
   dependencies: [NodeContext.layer, Config.Default],
-  scoped: Effect.gen(function*() {
+  scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const config = yield* Config;
     const sentry = yield* Sentry;
@@ -247,14 +247,14 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
       },
     };
   }),
-}) { }
+}) {}
 
 function createUv(
   bin: UvBin,
   executor: CommandExecutor.CommandExecutor,
   channel: vscode.OutputChannel,
 ) {
-  return Effect.fn("uv")(function*(options: {
+  return Effect.fn("uv")(function* (options: {
     readonly args: ReadonlyArray<string>;
     readonly env?: Record<string, string>;
   }) {
@@ -308,7 +308,7 @@ function runString<E, R>(
   );
 }
 
-const findUvBin = Effect.fn("findUvBin")(function*(
+const findUvBin = Effect.fn("findUvBin")(function* (
   userConfigPath: Option.Option<string>,
 ) {
   let bin: UvBin;
@@ -350,14 +350,14 @@ const findUvBin = Effect.fn("findUvBin")(function*(
     const defaultPaths =
       NodeProcess.platform === "win32"
         ? [
-          NodePath.join(homedir, ".local", "bin", binName),
-          NodePath.join(homedir, ".cargo", "bin", binName),
-        ]
+            NodePath.join(homedir, ".local", "bin", binName),
+            NodePath.join(homedir, ".cargo", "bin", binName),
+          ]
         : [
-          NodePath.join(homedir, ".local", "bin", binName),
-          NodePath.join(homedir, ".cargo", "bin", binName),
-          "/opt/homebrew/bin/uv", // Apple Silicon Homebrew
-        ];
+            NodePath.join(homedir, ".local", "bin", binName),
+            NodePath.join(homedir, ".cargo", "bin", binName),
+            "/opt/homebrew/bin/uv", // Apple Silicon Homebrew
+          ];
 
     let found: UvBin | null = null;
     for (const path of defaultPaths) {
@@ -460,7 +460,7 @@ function getUvVersion(bin: UvBin): Option.Option<VersionInfo> {
  * Handles UvNotInstalledError by showing a modal dialog with options.
  * Dies after user interaction to prevent extension from continuing without UV.
  */
-const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function*(
+const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   error: UvExecutionError,
   code: VsCode,
   telemetry: Telemetry,
