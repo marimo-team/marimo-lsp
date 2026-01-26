@@ -67,7 +67,7 @@ export class HealthService extends Effect.Service<HealthService>()(
           });
 
           if (Option.isSome(uv.bin.version)) {
-            lines.push(`\tUV: ${uv.bin.version.value} ✓`);
+            lines.push(`\tUV: ${uv.bin.version.value.format()} ✓`);
           } else {
             lines.push("\tUV: Not found ✗");
           }
