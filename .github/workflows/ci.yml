@@ -132,6 +132,10 @@ jobs:
         run: pnpm test
         working-directory: marimo-lsp/extension
 
+      - name: Bundle uv binary
+        run: python -m pip install -t ./bundled/libs --implementation py --no-deps --require-hashes -r ./requirements.txt
+        working-directory: marimo-lsp/extension
+
       - name: vscode-test (Linux)
         run: xvfb-run -a pnpm test:extension
         working-directory: marimo-lsp/extension

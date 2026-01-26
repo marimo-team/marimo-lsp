@@ -9,7 +9,7 @@ module.exports = defineConfig([
     installExtensions: ["ms-python.python"],
     mocha: {
       ui: "tdd",
-      timeout: 60000,
+      timeout: 120000,
     },
   },
 ]);
