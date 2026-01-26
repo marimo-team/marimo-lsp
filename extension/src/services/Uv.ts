@@ -420,15 +420,20 @@ const findUvBin = Effect.fn("findUvBin")(function* (
 class VersionInfo extends Schema.Class<VersionInfo>("VersionInfo")({
   package_name: Schema.String,
   version: Schema.String,
-  commit_info: Schema.Struct({
-    short_commit_hash: Schema.String,
-    commit_hash: Schema.String,
-    commit_date: Schema.String,
-    last_tag: Schema.NullOr(Schema.String),
-    commits_since_last_tag: Schema.Int,
-  }),
+  commit_info: Schema.NullOr(
+    Schema.Struct({
+      short_commit_hash: Schema.String,
+      commit_hash: Schema.String,
+      commit_date: Schema.String,
+      last_tag: Schema.NullOr(Schema.String),
+      commits_since_last_tag: Schema.Int,
+    }),
+  ),
 }) {
   format() {
+    if (!this.commit_info) {
+      return this.version;
+    }
     return `${this.version} (${this.commit_info.short_commit_hash} ${this.commit_info.commit_date})`;
   }
 }
