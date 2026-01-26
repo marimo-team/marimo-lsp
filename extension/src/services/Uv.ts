@@ -6,7 +6,7 @@ import * as NodeProcess from "node:process";
 import { Command, CommandExecutor } from "@effect/platform";
 import { type PlatformError, SystemError } from "@effect/platform/Error";
 import { NodeContext } from "@effect/platform-node";
-import { Data, Effect, Either, Option, Schema, Stream, String } from "effect";
+import { Data, Effect, Option, Schema, Stream, String } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import { Config } from "./Config.ts";
@@ -386,18 +386,22 @@ const findUvBin = Effect.fn("findUvBin")(function*(
   }
 
   // Validate that the binary actually works
-  const result = getUvVersion(bin);
-
-  if (Either.isLeft(result)) {
-    return yield* result.left;
-  }
-
-  const version = result.right;
+  const version = getUvVersion(bin);
 
   if (Option.isNone(version)) {
     yield* Effect.logWarning(
       `Unable to parse uv version for ${bin.executable}; proceeding with unknown version`,
     );
+    return yield* new UvExecutionError({
+      bin: bin,
+      command: Command.make(bin.executable, "self", "version"),
+      cause: new SystemError({
+        reason: "Unknown",
+        module: "Command",
+        method: "execFileSync",
+        pathOrDescriptor: bin.executable,
+      }),
+    });
   }
 
   const sourceDescription = UvBin.$match(bin, {
@@ -440,30 +444,16 @@ class VersionInfo extends Schema.Class<VersionInfo>("VersionInfo")({
   }
 }
 
-function getUvVersion(
-  bin: UvBin,
-): Either.Either<Option.Option<VersionInfo>, UvExecutionError> {
+function getUvVersion(bin: UvBin): Option.Option<VersionInfo> {
   const args = ["self", "version", "--output-format", "json"];
-  return Either.try({
-    try: () => {
-      const output = NodeChildProcess.execFileSync(bin.executable, args, {
-        encoding: "utf8",
-      });
-      return Schema.decodeOption(Schema.parseJson(VersionInfo))(output);
-    },
-    catch: (error: unknown) =>
-      new UvExecutionError({
-        bin,
-        command: Command.make(bin.executable, ...args),
-        cause: new SystemError({
-          reason: "Unknown",
-          module: "Command",
-          method: "execFileSync",
-          pathOrDescriptor: bin.executable,
-          cause: error,
-        }),
-      }),
-  });
+  try {
+    const output = NodeChildProcess.execFileSync(bin.executable, args, {
+      encoding: "utf8",
+    });
+    return Schema.decodeOption(Schema.parseJson(VersionInfo))(output);
+  } catch {
+    return Option.none();
+  }
 }
 
 /**
