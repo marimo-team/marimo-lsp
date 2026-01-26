@@ -4,6 +4,8 @@ import * as NodePath from "node:path";
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Either, Layer } from "effect";
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
+import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
+import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { getVenvPythonPath } from "../../utils/getVenvPythonPath.ts";
 import { EnvironmentValidator } from "../EnvironmentValidator.ts";
@@ -29,6 +31,8 @@ const EnvironmentValidatorLive = Layer.empty.pipe(
   Layer.provideMerge(TempDir.Default),
   Layer.provideMerge(Uv.Default),
   Layer.provideMerge(EnvironmentValidator.Default),
+  Layer.provide(TestSentryLive),
+  Layer.provide(TestTelemetryLive),
   Layer.provide(TestVsCode.Default),
 );
 

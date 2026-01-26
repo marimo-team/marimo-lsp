@@ -4,6 +4,8 @@ import * as pkg from "../../package.json";
 import { getTestExtensionContext } from "../__mocks__/TestExtensionContext.ts";
 import { TestLanguageClientLive } from "../__mocks__/TestLanguageClient.ts";
 import { TestPythonExtension } from "../__mocks__/TestPythonExtension.ts";
+import { TestSentryLive } from "../__mocks__/TestSentry.ts";
+import { TestTelemetryLive } from "../__mocks__/TestTelemetry.ts";
 import { TestTyLanguageServerLive } from "../__mocks__/TestTyLanguageServer.ts";
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
@@ -17,6 +19,8 @@ const withTestCtx = Effect.fnUntraced(function* () {
     Layer.provideMerge(TestLanguageClientLive),
     Layer.provideMerge(TestPythonExtension.Default),
     Layer.provideMerge(TestTyLanguageServerLive),
+    Layer.provideMerge(TestTelemetryLive),
+    Layer.provideMerge(TestSentryLive),
   );
   return {
     layer,

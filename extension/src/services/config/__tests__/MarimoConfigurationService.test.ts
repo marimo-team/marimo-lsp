@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Stream, TestClock } from "effect";
-import { TestTelemetry } from "../../../__mocks__/TestTelemetry.ts";
+import { TestTelemetryLive } from "../../../__mocks__/TestTelemetry.ts";
 import {
   createTestNotebookDocument,
   createTestNotebookEditor,
@@ -84,7 +84,7 @@ const withTestCtx = Effect.fnUntraced(function* (
         }),
       ),
     ),
-    Layer.provide(TestTelemetry),
+    Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
   );
 
