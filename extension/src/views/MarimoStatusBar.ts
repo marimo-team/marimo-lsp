@@ -4,7 +4,7 @@ import { Effect, Either, Layer, Option } from "effect";
 import { unreachable } from "../assert.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { ExtensionContext } from "../services/Storage.ts";
-import { type ITelemetry, Telemetry } from "../services/Telemetry.ts";
+import { Telemetry } from "../services/Telemetry.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { Links } from "../utils/links.ts";
 import { StatusBar } from "./StatusBar.ts";
@@ -112,23 +112,21 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
     // Register the command that opens tutorials directly
     yield* code.commands.registerCommand(
       "marimo.openTutorial",
-      Effect.gen(function* () {
-        yield* tutorialCommands({
-          code,
-          context,
-          serializer,
-          telemetry,
-        }).pipe(
-          Effect.catchAll((error) =>
-            Effect.gen(function* () {
-              yield* Effect.logError("Failed to open tutorial", error);
-              yield* code.window.showErrorMessage(
-                "Failed to open tutorial. See marimo logs for more info.",
-              );
-            }),
-          ),
-        );
-      }),
+      tutorialCommands({
+        code,
+        context,
+        serializer,
+        telemetry,
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.gen(function* () {
+            yield* Effect.logError("Failed to open tutorial", error);
+            yield* code.window.showErrorMessage(
+              "Failed to open tutorial. See marimo logs for more info.",
+            );
+          }),
+        ),
+      ),
     );
 
     // Create the status bar item
@@ -186,7 +184,7 @@ function tutorialCommands({
   code: VsCode;
   context: Pick<import("vscode").ExtensionContext, "extensionUri">;
   serializer: NotebookSerializer;
-  telemetry: ITelemetry;
+  telemetry: Telemetry;
 }) {
   return Effect.gen(function* () {
     const selection = yield* code.window.showQuickPickItems(

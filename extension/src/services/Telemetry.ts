@@ -47,19 +47,12 @@ type EventMap = {
   uv_install_clicked: undefined;
 };
 
-export interface ITelemetry {
-  capture<K extends keyof EventMap>(
-    event: K,
-    ...args: EventMap[K] extends undefined ? [] : [properties: EventMap[K]]
-  ): Effect.Effect<void>;
-  identify(properties?: Record<string, unknown>): Effect.Effect<void>;
-}
-
 /**
  * Telemetry service that respects marimo's telemetry setting and uses PostHog for analytics.
  * Only tracks events when: marimo.telemetry is enabled
  */
 export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
+  dependencies: [Storage.Default],
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const storage = yield* Storage;
@@ -139,11 +132,16 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       Effect.promise(async () => client?.shutdown()),
     );
 
-    const service: ITelemetry = {
+    return {
       /**
        * Track an event with optional properties
        */
-      capture: (event: string, properties?: Record<string, unknown>) => {
+      capture<K extends keyof EventMap>(
+        event: K,
+        ...properties: EventMap[K] extends undefined
+          ? []
+          : [properties: EventMap[K]]
+      ): Effect.Effect<void> {
         return Effect.gen(function* () {
           const telemetryEnabled = yield* Ref.get(telemetryEnabledRef);
           if (!telemetryEnabled || !client) {
@@ -161,7 +159,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
         });
       },
 
-      identify: (properties?: Record<string, unknown>) =>
+      identify: (properties?: Record<string, unknown>): Effect.Effect<void> =>
         Effect.gen(function* () {
           const telemetryEnabled = yield* Ref.get(telemetryEnabledRef);
           if (!telemetryEnabled || !client) {
@@ -174,8 +172,5 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
           });
         }),
     };
-
-    return service;
   }),
-  dependencies: [Storage.Default],
 }) {}
