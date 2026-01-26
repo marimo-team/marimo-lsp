@@ -1,11 +1,12 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 import { Command, CommandExecutor } from "@effect/platform";
-import type { PlatformError } from "@effect/platform/Error";
+import { type PlatformError, SystemError } from "@effect/platform/Error";
 import { NodeContext } from "@effect/platform-node";
-import { Data, Effect, Option, Schema, Stream, String } from "effect";
+import { Data, Effect, Either, Option, Schema, Stream, String } from "effect";
 import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import { Config } from "./Config.ts";
@@ -50,13 +51,13 @@ class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
   bin: UvBin;
   command: Command.Command;
   cause: PlatformError;
-}> {}
+}> { }
 
 class UvUnknownError extends Data.TaggedError("UvUnknownError")<{
   command: Command.Command;
   exitCode?: CommandExecutor.ExitCode;
   stderr: string;
-}> {}
+}> { }
 
 class UvMissingPyProjectError extends Data.TaggedError(
   "UvMissingPyProjectError",
@@ -104,7 +105,7 @@ class UvResolutionError extends Data.TaggedError("UvResolutionError")<{
 
 export class Uv extends Effect.Service<Uv>()("Uv", {
   dependencies: [NodeContext.layer, Config.Default],
-  scoped: Effect.gen(function* () {
+  scoped: Effect.gen(function*() {
     const code = yield* VsCode;
     const config = yield* Config;
     const sentry = yield* Sentry;
@@ -246,14 +247,14 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
       },
     };
   }),
-}) {}
+}) { }
 
 function createUv(
   bin: UvBin,
   executor: CommandExecutor.CommandExecutor,
   channel: vscode.OutputChannel,
 ) {
-  return Effect.fn("uv")(function* (options: {
+  return Effect.fn("uv")(function*(options: {
     readonly args: ReadonlyArray<string>;
     readonly env?: Record<string, string>;
   }) {
@@ -307,7 +308,7 @@ function runString<E, R>(
   );
 }
 
-const findUvBin = Effect.fn("findUvBin")(function* (
+const findUvBin = Effect.fn("findUvBin")(function*(
   userConfigPath: Option.Option<string>,
 ) {
   let bin: UvBin;
@@ -349,14 +350,14 @@ const findUvBin = Effect.fn("findUvBin")(function* (
     const defaultPaths =
       NodeProcess.platform === "win32"
         ? [
-            NodePath.join(homedir, ".local", "bin", binName),
-            NodePath.join(homedir, ".cargo", "bin", binName),
-          ]
+          NodePath.join(homedir, ".local", "bin", binName),
+          NodePath.join(homedir, ".cargo", "bin", binName),
+        ]
         : [
-            NodePath.join(homedir, ".local", "bin", binName),
-            NodePath.join(homedir, ".cargo", "bin", binName),
-            "/opt/homebrew/bin/uv", // Apple Silicon Homebrew
-          ];
+          NodePath.join(homedir, ".local", "bin", binName),
+          NodePath.join(homedir, ".cargo", "bin", binName),
+          "/opt/homebrew/bin/uv", // Apple Silicon Homebrew
+        ];
 
     let found: UvBin | null = null;
     for (const path of defaultPaths) {
@@ -385,7 +386,13 @@ const findUvBin = Effect.fn("findUvBin")(function* (
   }
 
   // Validate that the binary actually works
-  const version = yield* getUvVersion(bin);
+  const result = getUvVersion(bin);
+
+  if (Either.isLeft(result)) {
+    return yield* result.left;
+  }
+
+  const version = result.right;
 
   if (Option.isNone(version)) {
     yield* Effect.logWarning(
@@ -433,24 +440,37 @@ class VersionInfo extends Schema.Class<VersionInfo>("VersionInfo")({
   }
 }
 
-function getUvVersion(bin: UvBin) {
+function getUvVersion(
+  bin: UvBin,
+): Either.Either<Option.Option<VersionInfo>, UvExecutionError> {
   const args = ["self", "version", "--output-format", "json"];
-  const command = Command.make(bin.executable, ...args);
-  return command.pipe(
-    Command.string,
-    Effect.map(Schema.decodeOption(Schema.parseJson(VersionInfo))),
-    Effect.catchTags({
-      BadArgument: (cause) => new UvExecutionError({ bin, command, cause }),
-      SystemError: (cause) => new UvExecutionError({ bin, command, cause }),
-    }),
-  );
+  return Either.try({
+    try: () => {
+      const output = NodeChildProcess.execFileSync(bin.executable, args, {
+        encoding: "utf8",
+      });
+      return Schema.decodeOption(Schema.parseJson(VersionInfo))(output);
+    },
+    catch: (error: unknown) =>
+      new UvExecutionError({
+        bin,
+        command: Command.make(bin.executable, ...args),
+        cause: new SystemError({
+          reason: "Unknown",
+          module: "Command",
+          method: "execFileSync",
+          pathOrDescriptor: bin.executable,
+          cause: error,
+        }),
+      }),
+  });
 }
 
 /**
  * Handles UvNotInstalledError by showing a modal dialog with options.
  * Dies after user interaction to prevent extension from continuing without UV.
  */
-const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
+const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function*(
   error: UvExecutionError,
   code: VsCode,
   telemetry: Telemetry,
