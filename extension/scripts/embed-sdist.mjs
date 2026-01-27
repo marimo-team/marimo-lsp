@@ -11,10 +11,14 @@ import * as tar from "tar";
 const extensionDir = new URL("..", import.meta.url);
 const distDir = NodePath.join(NodeUrl.fileURLToPath(extensionDir), "dist");
 
+// Use UV_BINARY env var if set (e.g., for bundled uv in CI), otherwise fall back to "uv"
+const uvBinary = process.env.UV_BINARY || "uv";
+
 // Step 1: Run uv build
-console.log("Building Python sdist...");
-NodeChildProcess.execSync(
-  `uv build --directory=.. --out-dir=extension/dist --sdist`,
+console.log(`Building Python sdist using: ${uvBinary}`);
+NodeChildProcess.execFileSync(
+  uvBinary,
+  ["build", "--directory=..", "--out-dir=extension/dist", "--sdist"],
   {
     cwd: extensionDir,
     stdio: "inherit",
