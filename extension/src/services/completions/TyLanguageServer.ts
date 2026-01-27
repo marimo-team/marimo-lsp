@@ -16,7 +16,7 @@ import {
 
 // TODO: make TY_VERSION configurable?
 // For now, since we are doing rolling releases, we can bump this as needed.
-const TY_VERSION = "0.0.13";
+const TY_VERSION = "0.0.14";
 
 export class TyLanguageServerStartError extends Data.TaggedError(
   "TyLanguageServerStartError",
