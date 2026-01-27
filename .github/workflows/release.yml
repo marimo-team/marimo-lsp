@@ -223,9 +223,9 @@ jobs:
         shell: bash
         run: |
           if [ "${{ inputs.pre-release }}" = "true" ]; then
-            npx vsce package -o ./dist/marimo-${{ matrix.code-target }}.vsix --target ${{ matrix.code-target }} --pre-release
+            npx @vscode/vsce package -o ./dist/marimo-${{ matrix.code-target }}.vsix --target ${{ matrix.code-target }} --pre-release
           else
-            npx vsce package -o ./dist/marimo-${{ matrix.code-target }}.vsix --target ${{ matrix.code-target }}
+            npx @vscode/vsce package -o ./dist/marimo-${{ matrix.code-target }}.vsix --target ${{ matrix.code-target }}
           fi
 
       - name: Upload artifact
@@ -289,9 +289,9 @@ jobs:
         working-directory: marimo-lsp/extension
         run: |
           if [ "${{ inputs.pre-release }}" = "true" ]; then
-            npx vsce package -o ./dist/marimo-universal.vsix --pre-release
+            npx @vscode/vsce package -o ./dist/marimo-universal.vsix --pre-release
           else
-            npx vsce package -o ./dist/marimo-universal.vsix
+            npx @vscode/vsce package -o ./dist/marimo-universal.vsix
           fi
 
       - name: Upload artifact
