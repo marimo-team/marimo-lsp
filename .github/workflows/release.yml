@@ -41,24 +41,12 @@ jobs:
         with:
           package_json_file: extension/package.json
 
-      - name: Bump version, commit & push
-        working-directory: extension
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          pnpm version ${{ inputs.version-bump }} --no-git-tag-version
-          git add package.json
-          if [ "${{ inputs.pre-release }}" = "true" ]; then
-            git commit -m "v$(cat package.json | jq -r '.version') (pre-release)"
-          else
-            git commit -m "v$(cat package.json | jq -r '.version')"
-          fi
-          git push origin HEAD:main
-
-      - name: Output version
+      - name: Calculate new version
         id: version
         working-directory: extension
-        run: echo "version=$(cat package.json | jq -r '.version')" >> $GITHUB_OUTPUT
+        run: |
+          pnpm version ${{ inputs.version-bump }} --no-git-tag-version
+          echo "version=$(cat package.json | jq -r '.version')" >> $GITHUB_OUTPUT
 
   # Phase 2: Build platform-specific extensions
   build:
@@ -105,7 +93,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: marimo-lsp
-          ref: main  # Get the version-bumped commit
+
+      - name: Set version
+        working-directory: marimo-lsp/extension
+        run: npm version ${{ needs.version-bump.outputs.version }} --no-git-tag-version --allow-same-version
 
       - name: Read marimo version
         id: marimo-version
@@ -245,7 +236,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: marimo-lsp
-          ref: main
+
+      - name: Set version
+        working-directory: marimo-lsp/extension
+        run: npm version ${{ needs.version-bump.outputs.version }} --no-git-tag-version --allow-same-version
 
       - name: Read marimo version
         id: marimo-version
@@ -366,6 +360,21 @@ jobs:
             ./dist/*.vsix
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Commit version bump
+        working-directory: marimo-lsp
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          cd extension
+          npm version ${{ needs.version-bump.outputs.version }} --no-git-tag-version --allow-same-version
+          git add package.json
+          if [ "${{ inputs.pre-release }}" = "true" ]; then
+            git commit -m "v${{ needs.version-bump.outputs.version }} (pre-release)"
+          else
+            git commit -m "v${{ needs.version-bump.outputs.version }}"
+          fi
+          git push origin HEAD:main
 
       - name: Notify Slack - Release Success
         if: success() && github.event.pull_request.head.repo.fork == false
