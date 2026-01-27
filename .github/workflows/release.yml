@@ -222,10 +222,11 @@ jobs:
         working-directory: marimo-lsp/extension
         shell: bash
         run: |
+          npm install -g @vscode/vsce
           if [ "${{ inputs.pre-release }}" = "true" ]; then
-            npx @vscode/vsce package -o ./dist/marimo-${{ matrix.code-target }}.vsix --target ${{ matrix.code-target }} --pre-release
+            vsce package -o ./dist/marimo-${{ matrix.code-target }}.vsix --target ${{ matrix.code-target }} --pre-release
           else
-            npx @vscode/vsce package -o ./dist/marimo-${{ matrix.code-target }}.vsix --target ${{ matrix.code-target }}
+            vsce package -o ./dist/marimo-${{ matrix.code-target }}.vsix --target ${{ matrix.code-target }}
           fi
 
       - name: Upload artifact
@@ -288,10 +289,11 @@ jobs:
       - name: Package universal extension
         working-directory: marimo-lsp/extension
         run: |
+          npm install -g @vscode/vsce
           if [ "${{ inputs.pre-release }}" = "true" ]; then
-            npx @vscode/vsce package -o ./dist/marimo-universal.vsix --pre-release
+            vsce package -o ./dist/marimo-universal.vsix --pre-release
           else
-            npx @vscode/vsce package -o ./dist/marimo-universal.vsix
+            vsce package -o ./dist/marimo-universal.vsix
           fi
 
       - name: Upload artifact
