@@ -188,7 +188,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
               stderr.match(/Creating script environment at: (.+)/m);
             const path = match?.[1];
             assert(path, `Expected path from uv, got: stderr=${stderr}`);
-            return path;
+            return NodePath.resolve(path);
           },
         ).pipe(
           Effect.catchTag(
