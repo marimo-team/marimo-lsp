@@ -190,6 +190,9 @@ jobs:
             fi
           fi
 
+      # Install system uv for building sdist (bundled uv may be cross-compiled and not executable on the runner)
+      - uses: astral-sh/setup-uv@v6
+
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: marimo-lsp/extension/package.json
@@ -213,12 +216,6 @@ jobs:
         run: |
           pnpm install
           pnpm build
-          # Use the bundled uv binary for building the sdist
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            export UV_BINARY="./bundled/libs/bin/uv.exe"
-          else
-            export UV_BINARY="./bundled/libs/bin/uv"
-          fi
           pnpm embed-sdist
 
       - name: Package extension
