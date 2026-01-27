@@ -213,6 +213,12 @@ jobs:
         run: |
           pnpm install
           pnpm build
+          # Use the bundled uv binary for building the sdist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export UV_BINARY="./bundled/libs/bin/uv.exe"
+          else
+            export UV_BINARY="./bundled/libs/bin/uv"
+          fi
           pnpm embed-sdist
 
       - name: Package extension
