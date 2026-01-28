@@ -125,13 +125,15 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
       );
     }
 
-    yield* sentry.setTag(
-      "uv.version",
-      Option.match(uvBinary.version, {
+    {
+      const version = Option.match(uvBinary.version, {
         onSome: (v) => v.format(),
         onNone: () => "unknown",
-      }),
-    );
+      });
+
+      yield* sentry.setTag("uv.version", version);
+      yield* telemetry.capture("uv_init", { binType: uvBinary._tag, version });
+    }
 
     const uv = createUv(uvBinary, executor, channel);
 

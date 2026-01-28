@@ -44,6 +44,10 @@ type EventMap = {
   notebook_opened: { cellCount: number };
   tutorial_opened: { tutorial: string };
   uv_missing: { binType: "Default" | "Configured" | "Discovered" | "Bundled" };
+  uv_init: {
+    binType: "Default" | "Configured" | "Discovered" | "Bundled";
+    version: string;
+  };
   uv_install_clicked: undefined;
 };
 
@@ -138,22 +142,24 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
        */
       capture<K extends keyof EventMap>(
         event: K,
-        ...properties: EventMap[K] extends undefined
-          ? []
-          : [properties: EventMap[K]]
+        ...args: EventMap[K] extends undefined ? [] : [properties: EventMap[K]]
       ): Effect.Effect<void> {
         return Effect.gen(function* () {
           const telemetryEnabled = yield* Ref.get(telemetryEnabledRef);
           if (!telemetryEnabled || !client) {
             return;
           }
+          const properties = args[0];
 
           client.capture({
             distinctId,
             event,
             properties: {
               ...properties,
-              extension_version: extVersion,
+              extension_version: Option.match(extVersion, {
+                onSome: (v) => v,
+                onNone: () => "unknown",
+              }),
             },
           });
         });
