@@ -356,6 +356,7 @@ jobs:
         run: |
           gh release create ${{ needs.version-bump.outputs.version }} \
             --repo ${{ github.repository }} \
+            --title "${{ needs.version-bump.outputs.version }}" \
             --notes-file marimo-lsp/release_notes.md \
             ./dist/*.vsix
         env:
