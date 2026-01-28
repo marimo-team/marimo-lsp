@@ -200,7 +200,7 @@ print("hello")
         const originalCwd = NodeProcess.cwd();
         NodeProcess.chdir(NodeOs.homedir());
         yield* Effect.addFinalizer(() =>
-          Effect.sync(() => NodeProcess.chdir(originalCwd))
+          Effect.sync(() => NodeProcess.chdir(originalCwd)),
         );
 
         const envPath = yield* uv.syncScript({ script });
