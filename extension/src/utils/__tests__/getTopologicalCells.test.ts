@@ -249,4 +249,56 @@ describe("getTopologicalCells", () => {
       expect(indexC).toBeLessThan(indexD);
     }).pipe(Effect.provide(withTestLayer())),
   );
+
+  it.effect("filters out non-Python cells (SQL, markdown)", () =>
+    Effect.gen(function* () {
+      const uri = Uri.file("/test/notebook.py");
+      const raw = createTestNotebookDocument(uri, {
+        notebookType: NOTEBOOK_TYPE,
+        data: {
+          cells: [
+            {
+              kind: 2,
+              value: "x = 1",
+              languageId: "mo-python",
+              metadata: { stableId: "python-1" },
+            },
+            {
+              kind: 2,
+              value: "SELECT * FROM table",
+              languageId: "sql",
+              metadata: { stableId: "sql-1" },
+            },
+            {
+              kind: 2,
+              value: "y = x + 1",
+              languageId: "mo-python",
+              metadata: { stableId: "python-2" },
+            },
+            {
+              kind: 1, // Markup cell
+              value: "# Header",
+              languageId: "markdown",
+              metadata: { stableId: "markdown-1" },
+            },
+            {
+              kind: 2,
+              value: "z = y + 1",
+              languageId: "python", // Also accept plain "python"
+              metadata: { stableId: "python-3" },
+            },
+          ],
+          metadata: {},
+        },
+      });
+      const doc = MarimoNotebookDocument.from(raw);
+      const result = yield* getTopologicalCells(doc);
+
+      expect(result.map((c) => c.metadata.stableId)).toEqual([
+        "python-1",
+        "python-2",
+        "python-3",
+      ]);
+    }).pipe(Effect.provide(withTestLayer())),
+  );
 });

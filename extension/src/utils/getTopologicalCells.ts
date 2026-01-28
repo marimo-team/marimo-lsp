@@ -1,11 +1,15 @@
 import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
+import { LanguageId } from "../constants.ts";
 import type { MarimoNotebookDocument, NotebookCellId } from "../schemas.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
 import { getTopologicalCellIds } from "./getTopologicalCellIds.ts";
 
 /**
  * Get raw notebook cells in topological order, based on variable dependencies.
+ *
+ * Only includes Python cells (mo-python language ID) since the LSP server
+ * only understands Python. Non-Python cells (SQL, markdown) are filtered out.
  *
  * Cells with no dependencies or stableId are placed at the end.
  */
@@ -15,7 +19,14 @@ export function getTopologicalCells(
   return Effect.gen(function* () {
     const variablesService = yield* VariablesService;
 
-    const cells = doc.getCells();
+    // Filter to only Python cells - LSP server only understands Python
+    const cells = doc
+      .getCells()
+      .filter(
+        (cell) =>
+          cell.rawNotebookCell.document.languageId === LanguageId.Python ||
+          cell.rawNotebookCell.document.languageId === "python",
+      );
 
     if (cells.length === 0) {
       // Don't need to do anything for no cells
