@@ -1,6 +1,7 @@
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
+import * as NodeProcess from "node:process";
 import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Either, Layer } from "effect";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
@@ -168,6 +169,51 @@ print("This script has no PEP 723 metadata")
 
         assert(Either.isLeft(result), "Expected failure");
         assert.strictEqual(result.left._tag, "UvMissingPep723MetadataError");
+      }),
+    );
+  });
+
+  it.layer(Layer.fresh(UvLive))((it) => {
+    it.scoped(
+      "should return absolute path from syncScript even if uv outputs relative path",
+      Effect.fnUntraced(function* () {
+        const uv = yield* Uv;
+        const tmpdir = yield* TmpDir;
+
+        const script = NodePath.join(tmpdir.path, "test-script.py");
+        NodeFs.writeFileSync(
+          script,
+          `\
+# /// script
+# requires-python = ">=3.13"
+# dependencies = []
+# ///
+
+print("hello")
+`,
+          { encoding: "utf8" },
+        );
+
+        // Change CWD to home directory to trigger uv's relative path output.
+        // uv uses user_display() which strips CWD prefix from paths.
+        // When CWD is home (~), cache path ~/.cache/uv/... becomes .cache/uv/...
+        const originalCwd = NodeProcess.cwd();
+        NodeProcess.chdir(NodeOs.homedir());
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => NodeProcess.chdir(originalCwd)),
+        );
+
+        const envPath = yield* uv.syncScript({ script });
+
+        assert(
+          NodePath.isAbsolute(envPath),
+          `Expected absolute path, got: ${envPath}`,
+        );
+
+        assert(
+          NodeFs.existsSync(envPath),
+          `Expected environment path to exist: ${envPath}`,
+        );
       }),
     );
   });

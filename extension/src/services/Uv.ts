@@ -188,7 +188,15 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
               stderr.match(/Creating script environment at: (.+)/m);
             const path = match?.[1];
             assert(path, `Expected path from uv, got: stderr=${stderr}`);
-            return path;
+
+            // uv's user_display() strips the CWD prefix from paths when possible
+            // (see https://github.com/astral-sh/uv/blob/main/crates/uv-fs/src/path.rs#L80).
+            // When CWD is an ancestor of the cache directory, uv outputs relative paths
+            // like ".cache/uv/...".
+            //
+            // Since we later use the venv path to locate a Python binary from a different CWD,
+            // a relative path breaks our logic later. Fix this by ensuring our returned path is absolute
+            return NodePath.resolve(path);
           },
         ).pipe(
           Effect.catchTag(
