@@ -322,6 +322,12 @@
         "title": "Set Python interpreter to match notebook kernel",
         "category": "marimo",
         "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
+        "command": "marimo.testScratchpad",
+        "title": "Test scratchpad execution",
+        "category": "marimo",
+        "enablement": "notebookType == 'marimo-notebook'"
       }
     ],
     "viewsContainers": {

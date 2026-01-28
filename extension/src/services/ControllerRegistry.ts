@@ -24,7 +24,7 @@ import { SandboxController } from "./SandboxController.ts";
 import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
-type AnyController = PythonController | SandboxController;
+export type AnyController = PythonController | SandboxController;
 
 interface NotebookControllerHandle {
   readonly controller: PythonController;

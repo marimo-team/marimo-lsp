@@ -91,6 +91,13 @@ class CloseSessionRequest(msgspec.Struct, rename="camel"):
     """A request to close the current session."""
 
 
+class ExecuteScratchRequest(msgspec.Struct, rename="camel"):
+    """Execute arbitrary Python code outside the dependency graph."""
+
+    code: str
+    """The Python code to execute."""
+
+
 class UpdateConfigurationRequest(msgspec.Struct, rename="camel"):
     """A request to update the user configuration."""
 

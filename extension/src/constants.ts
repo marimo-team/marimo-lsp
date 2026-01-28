@@ -3,6 +3,11 @@
 
 export type MarimoCommand =
   | "marimo.clearRecentNotebooks"
+  | "marimo.config.toggleAutoReloadAutorun"
+  | "marimo.config.toggleAutoReloadLazy"
+  | "marimo.config.toggleAutoReloadOff"
+  | "marimo.config.toggleOnCellChangeAutoRun"
+  | "marimo.config.toggleOnCellChangeLazy"
   | "marimo.createSetupCell"
   | "marimo.exportStaticHTML"
   | "marimo.newMarimoNotebook"
@@ -17,11 +22,7 @@ export type MarimoCommand =
   | "marimo.runStale"
   | "marimo.showDiagnostics"
   | "marimo.showMarimoMenu"
-  | "marimo.config.toggleAutoReloadAutorun"
-  | "marimo.config.toggleAutoReloadLazy"
-  | "marimo.config.toggleAutoReloadOff"
-  | "marimo.config.toggleOnCellChangeAutoRun"
-  | "marimo.config.toggleOnCellChangeLazy"
+  | "marimo.testScratchpad"
   | "marimo.updateActivePythonEnvironment";
 
 export type MarimoView =
@@ -30,9 +31,11 @@ export type MarimoView =
   | "marimo-explorer-recents"
   | "marimo-explorer-variables";
 
-export const NOTEBOOK_TYPE = "marimo-notebook" as const;
+export const NOTEBOOK_TYPE = "marimo-notebook";
 
 export const SETUP_CELL_NAME = "setup";
+
+export const SCRATCH_CELL_ID = "__scratch__";
 
 export const LanguageId = {
   /**

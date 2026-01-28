@@ -17,6 +17,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 import { logUnreachable } from "../assert.ts";
+import { SCRATCH_CELL_ID } from "../constants.ts";
 import {
   extractCellIdFromCellMessage,
   findNotebookCell,
@@ -443,6 +444,31 @@ function transitionCell(
   message: CellOperationNotification,
 ): CellRuntimeState {
   return untypedTransitionCell(cell, message);
+}
+
+/**
+ * Convert CellOperationNotification(s) to VSCode NotebookCellOutput.
+ *
+ * Returns None if no outputs, Some if there are outputs.
+ */
+export function scratchCellNotificationsToVsCodeOutput(
+  notifications:
+    | CellOperationNotification
+    | readonly CellOperationNotification[],
+  code: VsCode,
+) {
+  const arr = Array.isArray(notifications) ? notifications : [notifications];
+  const outputs = buildCellOutputs(
+    // @ts-expect-error - special cell id for scratch pad
+    SCRATCH_CELL_ID,
+    arr.reduce(transitionCell, createCellRuntimeState()),
+    code,
+  );
+  const items = outputs.flatMap((o) => o.items);
+  if (items.length === 0) {
+    return Option.none<vscode.NotebookCellOutput>();
+  }
+  return Option.some(new code.NotebookCellOutput(items));
 }
 
 /**

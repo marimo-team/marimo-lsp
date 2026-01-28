@@ -61,6 +61,10 @@ type GetConfigurationRequest = {};
 // biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type CloseSessionRequest = {};
 
+interface ExecuteScratchRequest {
+  code: string;
+}
+
 interface UpdateConfigurationRequest {
   config: Record<string, unknown>;
 }
@@ -77,6 +81,7 @@ type MarimoApiMethodMap = {
   "get-configuration": NotebookScoped<GetConfigurationRequest>;
   "update-configuration": NotebookScoped<UpdateConfigurationRequest>;
   "close-session": NotebookScoped<CloseSessionRequest>;
+  "execute-scratchpad": NotebookScoped<ExecuteScratchRequest>;
   "export-as-html": NotebookScoped<ExportAsHtmlRequest>;
   interrupt: NotebookScoped<InterruptRequest>;
   // marimo-lsp API

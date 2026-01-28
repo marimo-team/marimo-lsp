@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, cast
 
 import msgspec
 from marimo._convert.converters import MarimoConvert
-from marimo._runtime.commands import InvokeFunctionCommand, UpdateUserConfigCommand
+from marimo._runtime.commands import (
+    ExecuteScratchpadCommand,
+    InvokeFunctionCommand,
+    UpdateUserConfigCommand,
+)
 from marimo._runtime.packages.package_managers import create_package_manager
 from marimo._schemas.serialization import NotebookSerialization
 from marimo._server.export.exporter import Exporter
@@ -24,6 +28,7 @@ from marimo_lsp.models import (
     DependencyTreeRequest,
     DeserializeRequest,
     ExecuteCellsRequest,
+    ExecuteScratchRequest,
     GetConfigurationRequest,
     InterruptRequest,
     ListPackagesRequest,
@@ -129,6 +134,24 @@ async def close_session(
 ):
     logger.info(f"close_session for {args.notebook_uri}")
     manager.close_session(args.notebook_uri)
+
+
+async def execute_scratch(
+    manager: LspSessionManager,
+    args: NotebookCommand[ExecuteScratchRequest],
+):
+    """Execute code in the scratchpad (isolated from dependency graph)."""
+    logger.info(f"execute_scratch for {args.notebook_uri}")
+    session = manager.get_session(args.notebook_uri)
+    if not session:
+        logger.warning(f"No session found for {args.notebook_uri}")
+        return
+
+    session.put_control_request(
+        ExecuteScratchpadCommand(code=args.inner.code),
+        from_consumer_id=None,
+    )
+    logger.info(f"Scratchpad execution request sent for {args.notebook_uri}")
 
 
 async def get_package_list(
@@ -356,6 +379,12 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
         return await export_as_html(
             manager,
             msgspec.convert(params, type=NotebookCommand[ExportAsHTMLRequest]),
+        )
+
+    if method == "execute-scratchpad":
+        return await execute_scratch(
+            manager,
+            msgspec.convert(params, type=NotebookCommand[ExecuteScratchRequest]),
         )
 
     logger.warning(f"Unknown API method: {method}")
