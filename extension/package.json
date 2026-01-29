@@ -38,7 +38,7 @@
     "@types/node": "^24.7.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
-    "@types/vscode": "^1.86.0",
+    "@types/vscode": "^1.95.0",
     "@types/vscode-notebook-renderer": "^1.72.4",
     "@typescript/native-preview": "7.0.0-dev.20251015.1",
     "@vitest/coverage-v8": "^4.0.0",
@@ -495,7 +495,7 @@
   ],
   "icon": "images/icon.png",
   "engines": {
-    "vscode": "^1.86.0"
+    "vscode": "^1.95.0"
   },
   "packageManager": "pnpm@10.9.0",
   "pnpm": {
@@ -503,5 +503,28 @@
       "vite": "npm:@voidzero-dev/vite-plus-core@latest",
       "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
     }
-  }
+  },
+  "languageModelTools": [
+    {
+      "name": "marimo_execute_python",
+      "displayName": "Run Python",
+      "toolReferenceName": "marimo",
+      "icon": "$(notebook)",
+      "userDescription": "Run Python code in the active marimo notebook",
+      "modelDescription": "Run Python in the active marimo notebook. DO NOT import packages or libraries, just use available variables in the notebook. You can inspect variables with Python builtins.",
+      "canBeReferencedInPrompt": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Python code to run"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      }
+    }
+  ]
 }
