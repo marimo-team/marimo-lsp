@@ -18,6 +18,7 @@ import {
 import type { CellOperationNotification, Notification } from "../types.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { Config } from "./Config.ts";
+import { Constants } from "./Constants.ts";
 import { ControllerRegistry } from "./ControllerRegistry.ts";
 import { TyLanguageServer } from "./completions/TyLanguageServer.ts";
 import { DatasourcesService } from "./datasources/DatasourcesService.ts";
@@ -46,6 +47,18 @@ interface MarimoOperation {
 export class KernelManager extends Effect.Service<KernelManager>()(
   "KernelManager",
   {
+    dependencies: [
+      Uv.Default,
+      Config.Default,
+      Constants.Default,
+      OutputChannel.Default,
+      VariablesService.Default,
+      TyLanguageServer.Default,
+      NotebookRenderer.Default,
+      ExecutionRegistry.Default,
+      DatasourcesService.Default,
+      NotebookEditorRegistry.Default,
+    ],
     scoped: Effect.gen(function* () {
       yield* Effect.logInfo("Setting up kernel manager");
       const code = yield* VsCode;
@@ -228,9 +241,6 @@ export class KernelManager extends Effect.Service<KernelManager>()(
     }),
   },
 ) {}
-
-/** @deprecated Use KernelManager.Default instead */
-export const KernelManagerLive = KernelManager.Default;
 
 function processOperation(
   { notebookUri, operation }: MarimoOperation,

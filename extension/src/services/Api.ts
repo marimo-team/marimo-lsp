@@ -15,9 +15,11 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 import { MarimoNotebookDocument } from "../schemas.ts";
+import { Config } from "./Config.ts";
 import { ControllerRegistry } from "./ControllerRegistry.ts";
 import { scratchCellNotificationsToVsCodeOutput } from "./ExecutionRegistry.ts";
 import { KernelManager } from "./KernelManager.ts";
+import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
 type KernelStatus =
@@ -66,6 +68,12 @@ export interface MarimoApi {
 }
 
 export class Api extends Effect.Service<Api>()("Api", {
+  dependencies: [
+    Uv.Default,
+    Config.Default,
+    KernelManager.Default,
+    ControllerRegistry.Default,
+  ],
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const kernelManager = yield* KernelManager;

@@ -39,9 +39,9 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
   "ControllerRegistry",
   {
     dependencies: [
-      NotebookControllerFactory.Default,
-      SandboxController.Default,
       Uv.Default,
+      SandboxController.Default,
+      NotebookControllerFactory.Default,
     ],
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;

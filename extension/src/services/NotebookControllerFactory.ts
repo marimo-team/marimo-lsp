@@ -25,6 +25,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
     dependencies: [
       Uv.Default,
       Config.Default,
+      Constants.Default,
       EnvironmentValidator.Default,
       NotebookSerializer.Default,
     ],

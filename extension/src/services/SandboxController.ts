@@ -22,7 +22,7 @@ import { VsCode } from "./VsCode.ts";
 export class SandboxController extends Effect.Service<SandboxController>()(
   "SandboxController",
   {
-    dependencies: [Uv.Default, OutputChannel.Default],
+    dependencies: [Uv.Default, OutputChannel.Default, Constants.Default],
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;

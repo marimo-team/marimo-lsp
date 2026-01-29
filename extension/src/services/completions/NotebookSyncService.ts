@@ -96,7 +96,7 @@ export interface ClientNotebookSync {
 export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
   "NotebookSyncService",
   {
-    dependencies: [VariablesService.Default],
+    dependencies: [VariablesService.Default, Constants.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const variables = yield* VariablesService;
