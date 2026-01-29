@@ -4,6 +4,7 @@ import { ResponseError } from "vscode-languageclient/node";
 import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
 import { signalFromToken } from "../../utils/signalFromToken.ts";
 import { Config } from "../Config.ts";
+import { Constants } from "../Constants.ts";
 import { PythonExtension } from "../PythonExtension.ts";
 import { Sentry } from "../Sentry.ts";
 import { Uv } from "../Uv.ts";
@@ -49,7 +50,13 @@ type TyLanguageServerHealth = Data.TaggedEnum<{
 export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
   "TyLanguageServer",
   {
-    dependencies: [VariablesService.Default, NotebookSyncService.Default],
+    dependencies: [
+      Uv.Default,
+      Config.Default,
+      Constants.Default,
+      VariablesService.Default,
+      NotebookSyncService.Default,
+    ],
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const pyExt = yield* PythonExtension;

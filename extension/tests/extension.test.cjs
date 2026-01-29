@@ -228,3 +228,41 @@ suite("marimo Extension Hello World Tests", () => {
     );
   });
 });
+
+suite("marimo Extension Experimental Kernels API", () => {
+  /**
+   * @returns {Promise<import("../src/services/Api.ts").MarimoApi>}
+   */
+  async function getApi() {
+    const extension = getExtension();
+    if (!extension.isActive) {
+      await extension.activate();
+    }
+    return extension.exports;
+  }
+
+  test("API should have experimental.kernels namespace", async () => {
+    const api = await getApi();
+    assert.ok(api, "API should be returned from extension");
+    assert.ok(api.experimental, "API should have experimental namespace");
+    assert.ok(
+      api.experimental.kernels,
+      "API should have experimental.kernels namespace",
+    );
+    assert.ok(
+      typeof api.experimental.kernels.getKernel === "function",
+      "experimental.kernels.getKernel should be a function",
+    );
+  });
+
+  test("getKernel should return undefined for non-existent notebook", async () => {
+    const api = await getApi();
+    const fakeUri = vscode.Uri.parse("file:///non-existent-notebook.py");
+    const kernel = await api.experimental.kernels.getKernel(fakeUri);
+    assert.strictEqual(
+      kernel,
+      undefined,
+      "getKernel should return undefined for non-existent notebook",
+    );
+  });
+});

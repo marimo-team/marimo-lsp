@@ -1,4 +1,5 @@
 import {
+  Context,
   Effect,
   Exit,
   Layer,
@@ -8,6 +9,7 @@ import {
   Scope,
 } from "effect";
 import type * as vscode from "vscode";
+import { Api, type MarimoApi } from "../services/Api.ts";
 import { CellMetadataUIBindingService } from "../services/CellMetadataUIBindingService.ts";
 import { CellStateManager } from "../services/CellStateManager.ts";
 import { Config } from "../services/Config.ts";
@@ -22,6 +24,7 @@ import { DatasourcesService } from "../services/datasources/DatasourcesService.t
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
 import { HealthService } from "../services/HealthService.ts";
+import { KernelManager } from "../services/KernelManager.ts";
 import type { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
@@ -47,7 +50,6 @@ import { TreeView } from "../views/TreeView.ts";
 import { VariablesViewLive } from "../views/VariablesView.ts";
 import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
-import { KernelManagerLive } from "./KernelManager.ts";
 import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
@@ -59,7 +61,6 @@ import { RegisterCommandsLive } from "./RegisterCommands.ts";
 const MainLive = Layer.empty
   .pipe(
     Layer.merge(RegisterCommandsLive),
-    Layer.merge(KernelManagerLive),
     Layer.merge(MarimoStatusBarLive),
     Layer.merge(PythonEnvironmentStatusBarLive),
     Layer.merge(MarimoFileDetectorLive),
@@ -72,6 +73,8 @@ const MainLive = Layer.empty
     Layer.merge(CellMetadataBindingsLive),
   )
   .pipe(
+    Layer.provideMerge(Api.Default),
+    Layer.provide(KernelManager.Default),
     Layer.provide(RuffLanguageServer.Default),
     Layer.provide(TyLanguageServer.Default),
     Layer.provide(GitHubClient.Default),
@@ -114,7 +117,7 @@ export function makeActivate(
     vscode.ExtensionContext,
     "workspaceState" | "globalState" | "extensionUri"
   >,
-) => Promise<vscode.Disposable> {
+) => Promise<vscode.Disposable & MarimoApi> {
   return (context) =>
     pipe(
       Effect.gen(function* () {
@@ -125,8 +128,13 @@ export function makeActivate(
         // manually-managed scope, and are only released when we explicitly close the
         // scope on deactivation.
         const scope = yield* Scope.make();
-        yield* Layer.buildWithScope(Layer.provide(MainLive, layer), scope);
+        const ctx = yield* Layer.buildWithScope(
+          Layer.provide(MainLive, layer),
+          scope,
+        );
+        const api = Context.get(ctx, Api);
         return {
+          ...api,
           dispose: () => Effect.runPromise(Scope.close(scope, Exit.void)),
         };
       }),

@@ -1327,3 +1327,195 @@ async def test_cell_addition(client: LanguageClient) -> None:
             },
         ]
     )
+
+
+@pytest.mark.asyncio
+async def test_scratchpad_execution(client: LanguageClient) -> None:
+    """Test that scratchpad executes code outside the dependency graph."""
+    # First, open a notebook with a cell (required to have a session)
+    notebook_code = "x = 10"
+    client.notebook_document_did_open(
+        lsp.DidOpenNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocument(
+                uri="file:///scratch_test.py",
+                notebook_type="marimo-notebook",
+                version=1,
+                cells=[
+                    NotebookCell(
+                        kind=lsp.NotebookCellKind.Code,
+                        document="file:///scratch_test.py#cell1",
+                    )
+                ],
+            ),
+            cell_text_documents=[
+                lsp.TextDocumentItem(
+                    uri="file:///scratch_test.py#cell1",
+                    language_id="python",
+                    version=1,
+                    text=notebook_code,
+                )
+            ],
+        ),
+    )
+
+    # Track state for both cell execution and scratchpad
+    cell_completion_event = asyncio.Event()
+    scratch_messages: list[dict] = []
+    scratch_completion_event = asyncio.Event()
+    waiting_for_scratch = False
+
+    @client.feature("marimo/operation")
+    async def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
+        nonlocal waiting_for_scratch
+        msg = asdict(params)
+        op = msg.get("operation", {})
+
+        # Handle cell completion (kernel startup)
+        if op.get("op") == "completed-run" and not waiting_for_scratch:
+            await asyncio.sleep(0.1)
+            cell_completion_event.set()
+            return
+
+        # Handle scratchpad operations
+        if op.get("op") == "cell-op" and op.get("cell_id") == "__scratch__":
+            scratch_messages.append(msg)
+            # Scratchpad completes when status is "idle"
+            if op.get("status") == "idle":
+                await asyncio.sleep(0.1)
+                scratch_completion_event.set()
+
+    # Execute a cell to start the kernel session
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "execute-cells",
+                    "params": {
+                        "notebookUri": "file:///scratch_test.py",
+                        "executable": sys.executable,
+                        "inner": {
+                            "cellIds": ["cell1"],
+                            "codes": [notebook_code],
+                        },
+                    },
+                }
+            ],
+        )
+    )
+
+    # Wait for the cell execution to complete (kernel is now running)
+    await asyncio.wait_for(cell_completion_event.wait(), timeout=10.0)
+
+    # Now switch to waiting for scratch operations
+    waiting_for_scratch = True
+
+    # Execute scratchpad code
+    scratchpad_code = """\
+y = 42
+print("scratchpad output")
+y\
+"""
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "execute-scratchpad",
+                    "params": {
+                        "notebookUri": "file:///scratch_test.py",
+                        "executable": sys.executable,
+                        "inner": {
+                            "code": scratchpad_code,
+                        },
+                    },
+                }
+            ],
+        )
+    )
+
+    await asyncio.wait_for(scratch_completion_event.wait(), timeout=5.0)
+    assert scratch_messages == snapshot(
+        [
+            {
+                "notebookUri": "file:///scratch_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "__scratch__",
+                    "output": None,
+                    "console": None,
+                    "status": "queued",
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///scratch_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "__scratch__",
+                    "output": None,
+                    "console": [],
+                    "status": "running",
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///scratch_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "__scratch__",
+                    "output": {
+                        "channel": "output",
+                        "mimetype": "text/html",
+                        "data": "<pre class='text-xs'>42</pre>",
+                        "timestamp": IsFloat(),
+                    },
+                    "console": None,
+                    "status": None,
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///scratch_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "__scratch__",
+                    "output": None,
+                    "console": None,
+                    "status": "idle",
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///scratch_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "__scratch__",
+                    "output": None,
+                    "console": {
+                        "channel": "stdout",
+                        "mimetype": "text/plain",
+                        "data": "scratchpad output\n",
+                        "timestamp": IsFloat(),
+                    },
+                    "status": None,
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+        ]
+    )

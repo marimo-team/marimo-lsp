@@ -37,7 +37,7 @@ export class ExecuteCommandError extends Data.TaggedError(
 export class LanguageClient extends Effect.Service<LanguageClient>()(
   "LanguageClient",
   {
-    dependencies: [VsCode.Default, Config.Default, Uv.Default],
+    dependencies: [Config.Default, Uv.Default],
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;

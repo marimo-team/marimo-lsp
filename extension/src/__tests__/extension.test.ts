@@ -39,10 +39,15 @@ describe("extension.activate", () => {
       const disposable = yield* Effect.promise(() => activate(context));
 
       expect(disposable).toMatchInlineSnapshot(`
-      {
-        "dispose": [Function],
-      }
-    `);
+        {
+          "dispose": [Function],
+          "experimental": {
+            "kernels": {
+              "getKernel": [Function],
+            },
+          },
+        }
+      `);
     }),
   );
 

@@ -66,6 +66,8 @@ export const NOTEBOOK_TYPE = "${notebook.type}";
 
 export const SETUP_CELL_NAME = "setup";
 
+export const SCRATCH_CELL_ID = "__scratch__";
+
 export const LanguageId = {
   /**
    * Language ID for Python cells in marimo notebooks.
