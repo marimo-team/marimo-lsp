@@ -306,7 +306,6 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
               ),
               runPromise,
             );
-
           yield* acquireDisposable(() =>
             api.registerCommand(command, callback),
           );
@@ -527,6 +526,20 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
           );
         },
       },
+
+      lm: {
+        get tools() {
+          return vscode.lm.tools;
+        },
+        registerTool: <T = unknown>(
+          name: string,
+          tool: vscode.LanguageModelTool<T>,
+        ) =>
+          Effect.andThen(
+            acquireDisposable(() => vscode.lm.registerTool(name, tool)),
+            Effect.void,
+          ),
+      },
       Hover: vscode.Hover,
       CompletionTriggerKind: vscode.CompletionTriggerKind,
       CompletionItem: vscode.CompletionItem,
@@ -562,6 +575,9 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       Location: vscode.Location,
       Uri: vscode.Uri,
       Range: vscode.Range,
+      LanguageModelTextPart: vscode.LanguageModelTextPart,
+      LanguageModelToolResult: vscode.LanguageModelToolResult,
+      LanguageModelChatMessage: vscode.LanguageModelChatMessage,
       version: vscode.version,
       extensions: {
         getExtension<T = unknown>(extensionId: string) {
