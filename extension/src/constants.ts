@@ -22,7 +22,6 @@ export type MarimoCommand =
   | "marimo.runStale"
   | "marimo.showDiagnostics"
   | "marimo.showMarimoMenu"
-  | "marimo.testScratchpad"
   | "marimo.updateActivePythonEnvironment";
 
 export type MarimoView =

@@ -226,20 +226,6 @@ export class KernelManager extends Effect.Service<KernelManager>()(
         },
       };
     }),
-    dependencies: [
-      VsCode.Default,
-      LanguageClient.Default,
-      OutputChannel.Default,
-      NotebookRenderer.Default,
-      NotebookEditorRegistry.Default,
-      ExecutionRegistry.Default,
-      ControllerRegistry.Default,
-      VariablesService.Default,
-      DatasourcesService.Default,
-      Config.Default,
-      Uv.Default,
-      TyLanguageServer.Default,
-    ],
   },
 ) {}
 

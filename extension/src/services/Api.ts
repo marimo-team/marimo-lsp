@@ -88,7 +88,9 @@ export class Api extends Effect.Service<Api>()("Api", {
       const doc = yield* findMarimoNotebookDocument(uri);
 
       if (Option.isNone(doc)) {
-        // TODO: Add logging
+        yield* Effect.logWarning("Notebook document not found").pipe(
+          Effect.annotateLogs({ uri: uri.toString() }),
+        );
         return undefined;
       }
 
@@ -99,7 +101,9 @@ export class Api extends Effect.Service<Api>()("Api", {
       );
 
       if (!isKernelActive) {
-        // TODO: Add logging
+        yield* Effect.logWarning("Kernel not active for notebook").pipe(
+          Effect.annotateLogs({ uri: uri.toString(), docId: doc.value.id }),
+        );
         return undefined;
       }
 
