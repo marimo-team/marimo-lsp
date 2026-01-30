@@ -1,3 +1,4 @@
+import * as NodeProcess from "node:process";
 import { Data, Effect, Either, Option, Runtime, Stream } from "effect";
 import type * as lsp from "vscode-languageclient/node";
 import { ResponseError } from "vscode-languageclient/node";
@@ -79,7 +80,11 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
       const serverOptions: lsp.ServerOptions = {
         command: uv.bin.executable,
         args: ["tool", "run", `ty@${TY_VERSION}`, "server"],
-        options: {},
+        options: {
+          env: {
+            ...NodeProcess.env,
+          },
+        },
       };
 
       const clientOptions: lsp.LanguageClientOptions = {
