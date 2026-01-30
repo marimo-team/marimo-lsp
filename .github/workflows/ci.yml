@@ -23,12 +23,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: biomejs/setup-biome@v2
-        with:
-          working-dir: "extension"
 
-      - name: Run Biome
-        run: biome ci
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: extension/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: extension/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: extension
+
+      - name: Run oxlint
+        run: pnpm exec oxlint
+        working-directory: extension
+
+      - name: Run oxfmt
+        run: pnpm exec oxfmt --check .
+        working-directory: extension
 
       - name: Validate marimo CSS variable overrides
         run: node extension/scripts/check-css-variables.mjs

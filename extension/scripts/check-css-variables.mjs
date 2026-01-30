@@ -1,5 +1,4 @@
 // @ts-check
-/** biome-ignore-all lint/suspicious/noUselessEscapeInString: Easier to copy styles from VS Code DevTools */
 
 /**
  * @module check-css-variables
@@ -27,14 +26,14 @@ function extractCSSVariables(css) {
   const allVarPattern = /--[\w-]+/g;
   /** @type {RegExpExecArray | null | undefined} */
   let match;
-  // biome-ignore lint/suspicious/noAssignInExpressions: implementation is clear
+  // oxlint-disable-next-line no-cond-assign -- implementation is clear
   while ((match = allVarPattern.exec(css)) !== null) {
     allVariables.add(match[0].substring(2)); // Remove the -- prefix
   }
 
   // Second pass: find only definitions (--var: value)
   const definitionPattern = /--([\w-]+):/g;
-  // biome-ignore lint/suspicious/noAssignInExpressions: implementation is clear
+  // oxlint-disable-next-line no-cond-assign -- implementation is clear
   while ((match = definitionPattern.exec(css)) !== null) {
     definitions.add(match[1]);
   }
