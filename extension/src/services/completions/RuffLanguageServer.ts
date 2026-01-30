@@ -1,3 +1,4 @@
+import * as NodeProcess from "node:process";
 import { Data, Effect, Either, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
@@ -94,7 +95,11 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       const serverOptions: lsp.ServerOptions = {
         command: uv.bin.executable,
         args: ["tool", "run", `ruff@${RUFF_VERSION}`, "server"],
-        options: {},
+        options: {
+          env: {
+            ...NodeProcess.env,
+          },
+        },
       };
 
       const getClient = yield* Effect.tryPromise({
