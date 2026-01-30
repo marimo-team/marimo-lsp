@@ -1174,6 +1174,81 @@ class ParameterInformation implements vscode.ParameterInformation {
   }
 }
 
+class LanguageModelTextPart implements vscode.LanguageModelTextPart {
+  readonly value: string;
+  constructor(value: string) {
+    this.value = value;
+  }
+}
+
+class LanguageModelToolResult implements vscode.LanguageModelToolResult {
+  readonly content: Array<
+    vscode.LanguageModelTextPart | vscode.LanguageModelPromptTsxPart | unknown
+  >;
+  constructor(
+    content: Array<
+      vscode.LanguageModelTextPart | vscode.LanguageModelPromptTsxPart | unknown
+    >,
+  ) {
+    this.content = content;
+  }
+}
+
+class LanguageModelChatMessage implements vscode.LanguageModelChatMessage {
+  readonly role: vscode.LanguageModelChatMessageRole;
+  readonly content: Array<
+    | vscode.LanguageModelTextPart
+    | vscode.LanguageModelToolResultPart
+    | vscode.LanguageModelToolCallPart
+  >;
+  readonly name: string | undefined;
+
+  constructor(
+    role: vscode.LanguageModelChatMessageRole,
+    content: Array<
+      | vscode.LanguageModelTextPart
+      | vscode.LanguageModelToolResultPart
+      | vscode.LanguageModelToolCallPart
+    >,
+    name?: string,
+  ) {
+    this.role = role;
+    this.content = content;
+    this.name = name;
+  }
+
+  static User(
+    content:
+      | string
+      | Array<
+          vscode.LanguageModelTextPart | vscode.LanguageModelToolResultPart
+        >,
+    name?: string,
+  ) {
+    return new LanguageModelChatMessage(
+      1,
+      typeof content === "string"
+        ? [new LanguageModelTextPart(content)]
+        : content,
+      name,
+    );
+  }
+  static Assistant(
+    content:
+      | string
+      | Array<vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart>,
+    name: string,
+  ) {
+    return new LanguageModelChatMessage(
+      2,
+      typeof content === "string"
+        ? [new LanguageModelTextPart(content)]
+        : content,
+      name,
+    );
+  }
+}
+
 export function createTestNotebookDocument(
   uri: Uri | string,
   options: {
@@ -1797,6 +1872,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               return Effect.succeed(Option.none());
             },
           }),
+          lm: { tools: [], registerTool: () => Effect.void },
           NotebookData,
           NotebookCellData,
           NotebookCellKind: {
@@ -1849,6 +1925,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           Position,
           Range,
           Location,
+          LanguageModelTextPart,
+          LanguageModelToolResult,
+          LanguageModelChatMessage,
           Hover,
           SignatureInformation,
           ParameterInformation,

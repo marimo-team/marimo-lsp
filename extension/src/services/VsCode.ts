@@ -578,20 +578,14 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
         get tools() {
           return vscode.lm.tools;
         },
-        registerTool: effectify(vscode.lm.registerTool),
-        chatModelChanges(): Stream.Stream<void, never, Scope.Scope> {
-          return Stream.asyncPush((emit) =>
-            acquireDisposable(() =>
-              vscode.lm.onDidChangeChatModels((e) => emit.single(e)),
-            ),
-          );
-        },
-        selectChatModels: (
-          selector?: vscode.LanguageModelChatSelector | undefined,
-        ) => Effect.promise(() => vscode.lm.selectChatModels(selector)),
-      },
-      chat: {
-        createChatParticipant: effectify(vscode.chat.createChatParticipant),
+        registerTool: <T = unknown>(
+          name: string,
+          tool: vscode.LanguageModelTool<T>,
+        ) =>
+          Effect.andThen(
+            acquireDisposable(() => vscode.lm.registerTool(name, tool)),
+            Effect.void,
+          ),
       },
       Hover: vscode.Hover,
       CompletionTriggerKind: vscode.CompletionTriggerKind,
@@ -668,17 +662,4 @@ function acquireDisposable<Ret extends { dispose: () => void }>(
     Effect.sync(() => fn()),
     (disposable) => Effect.sync(() => disposable.dispose()),
   );
-}
-
-function effectify<
-  Args extends Array<unknown>,
-  Ret extends { dispose: () => void },
->(
-  fn: (...args: Args) => Ret,
-): (...args: Args) => Effect.Effect<Ret, never, Scope.Scope> {
-  return (...args) =>
-    Effect.acquireRelease(
-      Effect.sync(() => fn(...args)),
-      (disposable) => Effect.sync(() => disposable.dispose()),
-    );
 }
