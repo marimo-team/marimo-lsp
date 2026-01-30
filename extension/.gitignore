@@ -1,3 +1,4 @@
 # Turborepo
 .turbo
 bundled
+.vscode-test/

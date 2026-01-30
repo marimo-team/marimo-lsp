@@ -446,16 +446,19 @@
     "build": "turbo build:renderer && turbo build:extension",
     "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
     "build:renderer": "vite build",
-    "fix": "biome check --write",
+    "fix": "oxlint --fix && oxfmt --write .",
     "typecheck-ci": "tsgo && tsc",
     "typecheck": "tsgo",
     "test": "vitest",
     "test:extension": "vscode-test",
     "embed-sdist": "node scripts/embed-sdist.mjs",
-    "lint": "biome ci && node ./scripts/check-css-variables.mjs"
+    "lint": "oxlint && oxfmt --check . && node ./scripts/check-css-variables.mjs",
+    "fmt": "oxfmt --write .",
+    "fmt:check": "oxfmt --check ."
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.6",
+    "oxlint": "^1.0.0",
+    "oxfmt": "^0.1.0",
     "@effect/language-service": "^0.45.0",
     "@effect/platform": "^0.92.1",
     "@effect/platform-node": "^0.98.3",
