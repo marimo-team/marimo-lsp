@@ -78,12 +78,6 @@ export class KernelManager extends Effect.Service<KernelManager>()(
         client.streamOf("marimo/operation").pipe(
           Stream.mapEffect(
             Effect.fnUntraced(function* (msg) {
-              yield* Effect.logTrace("Received marimo/operation").pipe(
-                Effect.annotateLogs({
-                  notebookUri: msg.notebookUri,
-                  op: msg.operation.op,
-                }),
-              );
               yield* Queue.offer(queue, msg);
             }),
           ),
@@ -95,19 +89,23 @@ export class KernelManager extends Effect.Service<KernelManager>()(
         Effect.gen(function* () {
           while (true) {
             const msg = yield* Queue.take(queue);
-            yield* Effect.logDebug("Processing operation from queue").pipe(
-              Effect.annotateLogs({ op: msg.operation.op }),
-            );
-            yield* Effect.logTrace(msg.operation.op, msg.operation);
-
             yield* processOperation(msg, runPromise, scratchOps).pipe(
+              Effect.annotateLogs({
+                notebookUri: msg.notebookUri,
+                operation: msg.operation.op,
+              }),
+              Effect.withSpan("process-operation"),
               Effect.catchAllCause(
                 Effect.fnUntraced(function* (cause) {
-                  const errorMessage = "Failed to process marimo operation.";
-                  yield* Effect.logError(errorMessage, cause).pipe(
-                    Effect.annotateLogs({ op: msg.operation.op }),
+                  yield* Effect.logError(
+                    "Failed to process marimo operation",
+                    cause,
                   );
-                  yield* Effect.fork(showErrorAndPromptLogs(errorMessage));
+                  yield* Effect.fork(
+                    showErrorAndPromptLogs(
+                      "Failed to process marimo operation.",
+                    ),
+                  );
                 }),
               ),
             );
@@ -121,12 +119,6 @@ export class KernelManager extends Effect.Service<KernelManager>()(
           Stream.mapEffect(
             Effect.fnUntraced(function* ({ editor, message }) {
               const notebook = MarimoNotebookDocument.from(editor.notebook);
-              yield* Effect.logTrace("Renderer command").pipe(
-                Effect.annotateLogs({
-                  command: message.command,
-                  notebookUri: notebook.id,
-                }),
-              );
               switch (message.command) {
                 case "update-ui-element": {
                   yield* client.executeCommand({
@@ -174,10 +166,6 @@ export class KernelManager extends Effect.Service<KernelManager>()(
                         onNone: () => false,
                       }),
                     );
-
-                  yield* Effect.logDebug(
-                    `Navigating to cell at index ${cellIndex}`,
-                  ).pipe(Effect.annotateLogs({ cellId, cellIndex }));
 
                   if (cellIndex !== -1) {
                     editor.value.revealRange(
@@ -259,9 +247,7 @@ function processOperation(
     const maybeEditor = yield* editors.getLastNotebookEditor(notebookUri);
 
     if (Option.isNone(maybeEditor)) {
-      yield* Effect.logWarning(
-        "No active notebook editor, skipping operation",
-      ).pipe(Effect.annotateLogs({ op: operation.op }));
+      yield* Effect.logWarning("No active notebook editor, skipping operation");
       return;
     }
 
@@ -270,9 +256,7 @@ function processOperation(
     const maybeController = yield* controllers.getActiveController(notebook);
 
     if (Option.isNone(maybeController)) {
-      yield* Effect.logWarning("No active controller, skipping operation").pipe(
-        Effect.annotateLogs({ op: operation.op }),
-      );
+      yield* Effect.logWarning("No active controller, skipping operation");
       return;
     }
 
@@ -356,15 +340,9 @@ function processOperation(
         break;
       }
       default: {
-        yield* Effect.logWarning("Unknown operation").pipe(
-          Effect.annotateLogs({ op: operation.op }),
-        );
+        yield* Effect.logWarning("Unknown operation");
         break;
       }
     }
-
-    yield* Effect.logDebug("Completed processing operation").pipe(
-      Effect.annotateLogs({ op: operation.op }),
-    );
   });
 }

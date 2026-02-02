@@ -5,7 +5,7 @@ import { LanguageClient } from "../services/LanguageClient.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
-export const restartKernel = Effect.fn(function* () {
+export const restartKernel = Effect.fn("command.restartKernel")(function* () {
   const code = yield* VsCode;
   const client = yield* LanguageClient;
   const executions = yield* ExecutionRegistry;

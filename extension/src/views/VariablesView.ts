@@ -2,7 +2,6 @@ import { Effect, HashMap, Layer, Option, Ref, Stream } from "effect";
 import type { NotebookId } from "../schemas.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
-import { Log } from "../utils/log.ts";
 import { TreeView } from "./TreeView.ts";
 
 interface VariableTreeItem {
@@ -55,9 +54,11 @@ export const VariablesViewLive = Layer.scopedDiscard(
     const refreshVariables = Effect.fnUntraced(function* () {
       const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
 
-      yield* Log.debug("Refreshing variables", {
-        activeNotebookUri: Option.getOrElse(activeNotebookUri, () => null),
-      });
+      yield* Effect.logDebug("Refreshing variables").pipe(
+        Effect.annotateLogs({
+          activeNotebookUri: Option.getOrElse(activeNotebookUri, () => null),
+        }),
+      );
       if (Option.isNone(activeNotebookUri)) {
         yield* Ref.set(variableItems, []);
         yield* provider.refresh();
@@ -94,7 +95,9 @@ export const VariablesViewLive = Layer.scopedDiscard(
         }
       }
 
-      yield* Log.debug("Refreshed variables", { count: items.length });
+      yield* Effect.logDebug("Refreshed variables").pipe(
+        Effect.annotateLogs({ count: items.length }),
+      );
       yield* Ref.set(variableItems, items);
       yield* provider.refresh();
     });

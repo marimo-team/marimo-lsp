@@ -6,7 +6,6 @@ import {
   type NotebookCellId,
   type NotebookId,
 } from "../schemas.ts";
-import { Log } from "../utils/log.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
 import { VsCode } from "./VsCode.ts";
@@ -64,7 +63,6 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
           "marimo.notebook.hasStaleCells",
           hasStaleCells,
         );
-        yield* Log.debug("Updated stale context", { hasStaleCells });
       });
 
       // Subscribe to stale state changes to update VSCode context
@@ -93,12 +91,6 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
           ),
           Stream.runForEach(
             Effect.fnUntraced(function* (event) {
-              yield* Effect.logTrace("onDidChangeNotebookDocument", {
-                notebook: event.notebook.uri.fsPath,
-                numCellChanges: event.cellChanges.length,
-                newMetadata: event.metadata,
-              });
-
               // Process cell deletions
               // When a cell is moved, VSCode reports it as removed AND added
               // We need to filter out moved cells to find truly deleted cells
@@ -211,11 +203,6 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                 if (cellChange.document) {
                   const currentContent = cell.document.getText();
 
-                  yield* Log.trace("Cell content changed", {
-                    notebookUri: event.notebook.id,
-                    cellId: cellId.value,
-                  });
-
                   // Check if content matches last executed (undo case)
                   const lastExecutedMap = yield* SubscriptionRef.get(
                     lastExecutedContentRef,
@@ -239,10 +226,6 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                     });
                   } else {
                     // Content matches last executed - clear stale state
-                    yield* Log.trace("Cell content matches last executed", {
-                      notebookUri: event.notebook.id,
-                      cellId: cellId.value,
-                    });
                     yield* clearCellStaleWithMetadata(
                       event.notebook.id,
                       cellId.value,
@@ -288,7 +271,9 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
             );
 
             if (Option.isNone(notebook)) {
-              yield* Log.warn("Notebook not found", { notebookUri });
+              yield* Effect.logWarning("Notebook not found").pipe(
+                Effect.annotateLogs({ notebookUri }),
+              );
               return;
             }
 
@@ -296,7 +281,9 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               .getCells()
               .find((c) => Option.contains(c.id, cellId));
             if (!cell) {
-              yield* Log.warn("Cell not found", { notebookUri, cellId });
+              yield* Effect.logWarning("Cell not found").pipe(
+                Effect.annotateLogs({ notebookUri, cellId }),
+              );
               return;
             }
 
@@ -320,9 +307,9 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
             );
 
             if (Option.isNone(notebook)) {
-              yield* Log.warn("Notebook not found for clearing stale", {
-                notebookUri,
-              });
+              yield* Effect.logWarning(
+                "Notebook not found for clearing stale",
+              ).pipe(Effect.annotateLogs({ notebookUri }));
               return;
             }
 
@@ -330,7 +317,9 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               .getCells()
               .find((c) => Option.contains(c.id, cellId));
             if (!cell) {
-              yield* Log.warn("Cell not found", { notebookUri, cellId });
+              yield* Effect.logWarning("Cell not found").pipe(
+                Effect.annotateLogs({ notebookUri, cellId }),
+              );
               return;
             }
 
@@ -353,11 +342,6 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
             // Update tracking
             yield* clearCellStaleTracking(notebookUri, cellId, {
               staleStateRef,
-            });
-
-            yield* Log.trace("Cleared cell stale state", {
-              notebookUri,
-              cellId,
             });
           });
         },
@@ -425,8 +409,6 @@ function markCellStale(
       ),
     ]);
     yield* code.workspace.applyEdit(edit);
-
-    yield* Log.trace("Marked cell as stale", { notebookUri, cellId });
   });
 }
 
@@ -458,11 +440,6 @@ function clearCellStaleTracking(
       }
 
       return HashMap.set(map, notebookUri, updatedNotebookMap);
-    });
-
-    yield* Log.trace("Cleared cell from stale tracking", {
-      notebookUri,
-      cellId,
     });
   });
 }
@@ -497,11 +474,6 @@ function clearCellStaleWithMetadata(
 
     // Update tracking
     yield* clearCellStaleTracking(notebookUri, cellId, { staleStateRef });
-
-    yield* Log.trace("Cleared cell stale state (content matches executed)", {
-      notebookUri,
-      cellId,
-    });
   });
 }
 

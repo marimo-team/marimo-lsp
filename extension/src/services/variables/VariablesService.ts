@@ -11,7 +11,6 @@ import type {
   VariablesNotification,
   VariableValuesNotification,
 } from "../../types.ts";
-import { Log } from "../../utils/log.ts";
 
 // Re-export for others using this service
 export type { VariableName } from "../../schemas.ts";
@@ -102,10 +101,12 @@ export class VariablesService extends Effect.Service<VariablesService>()(
               kind: "declaration" as const,
             });
 
-            yield* Log.trace("Updated variable declarations", {
-              notebookUri,
-              count: operation.variables.length,
-            });
+            yield* Effect.logTrace("Updated variable declarations").pipe(
+              Effect.annotateLogs({
+                notebookUri,
+                count: operation.variables.length,
+              }),
+            );
           });
         },
 
@@ -126,10 +127,12 @@ export class VariablesService extends Effect.Service<VariablesService>()(
               kind: "values" as const,
             });
 
-            yield* Log.trace("Updated variable values", {
-              notebookUri,
-              count: operation.variables.length,
-            });
+            yield* Effect.logTrace("Updated variable values").pipe(
+              Effect.annotateLogs({
+                notebookUri,
+                count: operation.variables.length,
+              }),
+            );
           });
         },
 
@@ -166,7 +169,9 @@ export class VariablesService extends Effect.Service<VariablesService>()(
               HashMap.remove(map, notebookUri),
             );
 
-            yield* Log.trace("Cleared variable data", { notebookUri });
+            yield* Effect.logTrace("Cleared variable data").pipe(
+              Effect.annotateLogs({ notebookUri }),
+            );
           });
         },
 

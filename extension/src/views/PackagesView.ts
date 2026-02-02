@@ -4,7 +4,6 @@ import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import type { DependencyTreeNode } from "../services/packages/PackagesService.ts";
 import { PackagesService } from "../services/packages/PackagesService.ts";
 import { VsCode } from "../services/VsCode.ts";
-import { Log } from "../utils/log.ts";
 import { TreeView } from "./TreeView.ts";
 
 interface PackageTreeItem {
@@ -85,9 +84,11 @@ export const PackagesViewLive = Layer.scopedDiscard(
     const refreshPackages = Effect.fnUntraced(function* () {
       const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
 
-      yield* Log.debug("Refreshing packages", {
-        activeNotebookUri: Option.getOrElse(activeNotebookUri, () => null),
-      });
+      yield* Effect.logDebug("Refreshing packages").pipe(
+        Effect.annotateLogs({
+          activeNotebookUri: Option.getOrElse(activeNotebookUri, () => null),
+        }),
+      );
       if (Option.isNone(activeNotebookUri)) {
         yield* Ref.set(packageItems, []);
         yield* provider.refresh();
@@ -127,11 +128,13 @@ export const PackagesViewLive = Layer.scopedDiscard(
         },
       ];
 
-      yield* Log.debug("Refreshed packages", {
-        rootPackage: tree.name,
-        version: tree.version,
-        totalDependencies: tree.dependencies.length,
-      });
+      yield* Effect.logDebug("Refreshed packages").pipe(
+        Effect.annotateLogs({
+          rootPackage: tree.name,
+          version: tree.version,
+          totalDependencies: tree.dependencies.length,
+        }),
+      );
       yield* Ref.set(packageItems, items);
       yield* provider.refresh();
     });
@@ -164,22 +167,23 @@ export const PackagesViewLive = Layer.scopedDiscard(
       Effect.fn(function* () {
         const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
         if (Option.isNone(activeNotebookUri)) {
-          yield* Log.warn("No active notebook to refresh packages");
+          yield* Effect.logWarning("No active notebook to refresh packages");
           return;
         }
 
         const notebookUri = activeNotebookUri.value;
-        yield* Log.info("Refreshing packages", { notebookUri });
+        yield* Effect.logInfo("Refreshing packages").pipe(
+          Effect.annotateLogs({ notebookUri }),
+        );
 
         // Clear cache and force re-fetch
         yield* packagesService.setDependencyTreeLoading(notebookUri, true);
         yield* packagesService.fetchDependencyTree(notebookUri).pipe(
           Effect.catchAll((error) =>
             Effect.gen(function* () {
-              yield* Log.error("Failed to refresh packages", {
-                notebookUri,
-                error: String(error),
-              });
+              yield* Effect.logError("Failed to refresh packages").pipe(
+                Effect.annotateLogs({ notebookUri, error: String(error) }),
+              );
               yield* packagesService.setDependencyTreeError(
                 notebookUri,
                 String(error),

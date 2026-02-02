@@ -1,5 +1,4 @@
 import { Effect, Option, Stream } from "effect";
-import { Log } from "../../utils/log.ts";
 import { VsCode } from "../VsCode.ts";
 import { MarimoConfigurationService } from "./MarimoConfigurationService.ts";
 
@@ -32,7 +31,9 @@ export class ConfigContextManager extends Effect.Service<ConfigContextManager>()
       yield* Effect.forkScoped(
         onCellChangeModeStream.pipe(
           Stream.tap((mode) =>
-            Log.debug("Updated onCellChangeMode context", { mode }),
+            Effect.logDebug("Updated onCellChangeMode context").pipe(
+              Effect.annotateLogs({ mode }),
+            ),
           ),
           Stream.tap((mode) =>
             code.commands.setContext(
@@ -48,7 +49,9 @@ export class ConfigContextManager extends Effect.Service<ConfigContextManager>()
       yield* Effect.forkScoped(
         autoReloadModeStream.pipe(
           Stream.tap((mode) =>
-            Log.debug("Updated autoReloadMode context", { mode }),
+            Effect.logDebug("Updated autoReloadMode context").pipe(
+              Effect.annotateLogs({ mode }),
+            ),
           ),
           Stream.tap((mode) =>
             code.commands.setContext(

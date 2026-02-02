@@ -270,9 +270,7 @@ function createUv(
     const command = Command.make(bin.executable, ...options.args).pipe(
       Command.env({ NO_COLOR: "1", ...options.env }),
     );
-    yield* Effect.logDebug("Running command").pipe(
-      Effect.annotateLogs({ command }),
-    );
+    yield* Effect.annotateCurrentSpan("args", options.args);
     const [exitCode, stdout, stderr] = yield* command.pipe(
       Command.start,
       Effect.provideService(CommandExecutor.CommandExecutor, executor),
@@ -326,9 +324,6 @@ const findUvBin = Effect.fn("findUvBin")(function* (
 
   // Priority 1: Untrusted workspace with bundled binary - use bundled for security
   if (!code.workspace.isTrusted() && bundledExists) {
-    yield* Effect.logDebug(
-      `Workspace is not trusted, using bundled uv: ${BUNDLED_UV_PATH}`,
-    );
     bin = UvBin.Bundled({
       executable: BUNDLED_UV_PATH,
       version: Option.none(),
@@ -336,9 +331,6 @@ const findUvBin = Effect.fn("findUvBin")(function* (
   }
   // Priority 2: User-configured path
   else if (Option.isSome(userConfigPath)) {
-    yield* Effect.logDebug(
-      `Using user-configured uv path: ${userConfigPath.value}`,
-    );
     bin = UvBin.Configured({
       executable: userConfigPath.value,
       version: Option.none(),
@@ -346,7 +338,6 @@ const findUvBin = Effect.fn("findUvBin")(function* (
   }
   // Priority 3: Bundled binary
   else if (bundledExists) {
-    yield* Effect.logDebug(`Using bundled uv: ${BUNDLED_UV_PATH}`);
     bin = UvBin.Bundled({
       executable: BUNDLED_UV_PATH,
       version: Option.none(),
@@ -374,7 +365,6 @@ const findUvBin = Effect.fn("findUvBin")(function* (
         Effect.orElse(() => Effect.succeed(false)),
       );
       if (exists) {
-        yield* Effect.logDebug(`Found uv binary at default location: ${path}`);
         found = UvBin.Discovered({
           executable: path,
           version: Option.none(),
@@ -383,15 +373,8 @@ const findUvBin = Effect.fn("findUvBin")(function* (
       }
     }
 
-    if (found) {
-      bin = found;
-    } else {
-      yield* Effect.logDebug("uv binary not found in default locations");
-      bin = UvBin.Default({
-        executable: binName,
-        version: Option.none(),
-      });
-    }
+    bin =
+      found ?? UvBin.Default({ executable: binName, version: Option.none() });
   }
 
   // Validate that the binary actually works
@@ -399,24 +382,18 @@ const findUvBin = Effect.fn("findUvBin")(function* (
 
   if (Option.isNone(version)) {
     yield* Effect.logWarning(
-      `Unable to parse uv version for ${bin.executable}; proceeding with unknown version`,
+      "Unable to parse uv version, proceeding with unknown",
     );
   }
-
-  const sourceDescription = UvBin.$match(bin, {
-    Bundled: () => "bundled",
-    Configured: () => "configured",
-    Discovered: () => "discovered",
-    Default: () => "PATH",
-  });
 
   const versionStr = Option.match(version, {
     onSome: (v) => v.format(),
     onNone: () => "unknown",
   });
 
+  // Single wide event with all context
   yield* Effect.logInfo(
-    `Using ${sourceDescription} uv: ${bin.executable} ${versionStr}`,
+    `Using ${bin._tag.toLowerCase()} uv: ${bin.executable} ${versionStr}`,
   );
 
   return UvBin.$match(bin, {

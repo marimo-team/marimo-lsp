@@ -7,7 +7,6 @@ import type {
   SqlTableListPreviewNotification,
   SqlTablePreviewNotification,
 } from "../../types.ts";
-import { Log } from "../../utils/log.ts";
 
 /**
  * Maps for efficient lookups in the datasource hierarchy:
@@ -192,10 +191,12 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
               HashMap.set(map, notebookUri, connectionsMap),
             );
 
-            yield* Log.trace("Updated data source connections", {
-              notebookUri,
-              count: operation.connections.length,
-            });
+            yield* Effect.logTrace("Updated data source connections").pipe(
+              Effect.annotateLogs({
+                notebookUri,
+                count: operation.connections.length,
+              }),
+            );
           });
         },
 
@@ -213,11 +214,13 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
               HashMap.set(map, notebookUri, datasetsMap),
             );
 
-            yield* Log.trace("Updated datasets", {
-              notebookUri,
-              count: operation.tables.length,
-              clear_channel: operation.clear_channel,
-            });
+            yield* Effect.logTrace("Updated datasets").pipe(
+              Effect.annotateLogs({
+                notebookUri,
+                count: operation.tables.length,
+                clear_channel: operation.clear_channel,
+              }),
+            );
           });
         },
 
@@ -239,11 +242,13 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
               return HashMap.set(map, notebookUri, previewMap);
             });
 
-            yield* Log.trace("Updated table preview", {
-              notebookUri,
-              request_id: operation.request_id,
-              has_table: operation.table !== null,
-            });
+            yield* Effect.logTrace("Updated table preview").pipe(
+              Effect.annotateLogs({
+                notebookUri,
+                request_id: operation.request_id,
+                has_table: operation.table !== null,
+              }),
+            );
           });
         },
 
@@ -265,11 +270,13 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
               return HashMap.set(map, notebookUri, previewMap);
             });
 
-            yield* Log.trace("Updated table list preview", {
-              notebookUri,
-              request_id: operation.request_id,
-              count: operation.tables?.length ?? 0,
-            });
+            yield* Effect.logTrace("Updated table list preview").pipe(
+              Effect.annotateLogs({
+                notebookUri,
+                request_id: operation.request_id,
+                count: operation.tables?.length ?? 0,
+              }),
+            );
           });
         },
 
@@ -293,10 +300,12 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
               return HashMap.set(map, notebookUri, previewMap);
             });
 
-            yield* Log.trace("Updated column preview", {
-              notebookUri,
-              table_name: operation.table_name,
-            });
+            yield* Effect.logTrace("Updated column preview").pipe(
+              Effect.annotateLogs({
+                notebookUri,
+                table_name: operation.table_name,
+              }),
+            );
           });
         },
 
@@ -383,7 +392,9 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
               HashMap.remove(map, notebookUri),
             );
 
-            yield* Log.trace("Cleared datasource data", { notebookUri });
+            yield* Effect.logTrace("Cleared datasource data").pipe(
+              Effect.annotateLogs({ notebookUri }),
+            );
           });
         },
 

@@ -7,7 +7,6 @@ import {
   type NotebookId,
   type PackageDescription,
 } from "../../schemas.ts";
-import { Log } from "../../utils/log.ts";
 import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { LanguageClient } from "../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../NotebookEditorRegistry.ts";
@@ -76,10 +75,9 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               }),
             );
 
-            yield* Log.trace("Updated package list", {
-              notebookUri,
-              count: packages.length,
-            });
+            yield* Effect.logTrace("Updated package list").pipe(
+              Effect.annotateLogs({ notebookUri, count: packages.length }),
+            );
           });
         },
 
@@ -114,7 +112,9 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                 }),
               ),
             );
-            yield* Log.error("Package list error", { notebookUri, error });
+            yield* Effect.logError("Package list error").pipe(
+              Effect.annotateLogs({ notebookUri, error }),
+            );
           });
         },
 
@@ -134,10 +134,9 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               }),
             );
 
-            yield* Log.trace("Updated dependency tree", {
-              notebookUri,
-              hasTree: tree !== null,
-            });
+            yield* Effect.logTrace("Updated dependency tree").pipe(
+              Effect.annotateLogs({ notebookUri, hasTree: tree !== null }),
+            );
           });
         },
 
@@ -173,7 +172,9 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               ),
             );
 
-            yield* Log.error("Dependency tree error", { notebookUri, error });
+            yield* Effect.logError("Dependency tree error").pipe(
+              Effect.annotateLogs({ notebookUri, error }),
+            );
           });
         },
 
@@ -213,9 +214,9 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               existing.value.tree &&
               !existing.value.error
             ) {
-              yield* Log.trace("Re-using cached dependency tree", {
-                notebookUri,
-              });
+              yield* Effect.logTrace("Re-using cached dependency tree").pipe(
+                Effect.annotateLogs({ notebookUri }),
+              );
               return existing.value.tree;
             }
 
@@ -225,7 +226,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
             );
             if (Option.isNone(activeNotebook)) {
-              yield* Log.warn("Could not find marimo-notebook editor");
+              yield* Effect.logWarning("Could not find marimo-notebook editor");
               return null;
             }
 
@@ -239,7 +240,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
             if ("executable" in controller) {
               executable = controller.executable;
             } else {
-              yield* Log.warn(
+              yield* Effect.logWarning(
                 "No active controller for fetching dependency tree",
               );
               return null;
@@ -272,10 +273,9 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               })
               .pipe(
                 Effect.tap((result) =>
-                  Log.trace("Fetched dependency tree", {
-                    notebookUri,
-                    result,
-                  }),
+                  Effect.logTrace("Fetched dependency tree").pipe(
+                    Effect.annotateLogs({ notebookUri, result }),
+                  ),
                 ),
                 Effect.flatMap((raw) =>
                   Schema.decodeUnknown(DependencyTreeResponse)(raw),
@@ -283,12 +283,10 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                 Effect.catchAll((error) =>
                   Effect.gen(function* () {
                     const errorMsg = String(error);
-                    yield* Log.warn(
+                    yield* Effect.logWarning(
                       "Dependency tree failed, falling back to package list",
-                      {
-                        notebookUri,
-                        error: errorMsg,
-                      },
+                    ).pipe(
+                      Effect.annotateLogs({ notebookUri, error: errorMsg }),
                     );
 
                     // Fallback: fetch package list and convert to flat tree
@@ -317,12 +315,13 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                                   error: `${errorMsg}; fallback also failed: ${fallbackErrorMsg}`,
                                 }),
                             );
-                            yield* Log.error(
+                            yield* Effect.logError(
                               "Package list fallback also failed",
-                              {
+                            ).pipe(
+                              Effect.annotateLogs({
                                 notebookUri,
                                 error: fallbackErrorMsg,
-                              },
+                              }),
                             );
                             return { packages: [] };
                           }),
@@ -361,10 +360,12 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               }),
             );
 
-            yield* Log.trace("Fetched and cached dependency tree", {
-              notebookUri,
-              hasTree: rawResult.tree !== null,
-            });
+            yield* Effect.logTrace("Fetched and cached dependency tree").pipe(
+              Effect.annotateLogs({
+                notebookUri,
+                hasTree: rawResult.tree !== null,
+              }),
+            );
 
             return rawResult.tree;
           });
@@ -383,7 +384,9 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               dependencyTreesRef,
               HashMap.remove(notebookUri),
             );
-            yield* Log.trace("Cleared package data", { notebookUri });
+            yield* Effect.logTrace("Cleared package data").pipe(
+              Effect.annotateLogs({ notebookUri }),
+            );
           });
         },
 

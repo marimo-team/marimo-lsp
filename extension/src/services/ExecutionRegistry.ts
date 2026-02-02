@@ -129,25 +129,19 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                   );
                   return HashMap.set(map, cellId, update);
                 });
-                yield* Effect.logDebug("Cell queued for execution").pipe(
-                  Effect.annotateLogs({ cellId }),
-                );
                 return;
               }
 
               case "running": {
                 if (Option.isNone(cell.pendingExecution)) {
                   yield* Effect.logWarning(
-                    "Got running message but no cell execution found.",
+                    "Got running message but no cell execution found",
                   );
                 }
                 const update = yield* Ref.modify(ref, (map) => {
                   const update = CellEntry.start(cell, msg.timestamp ?? 0);
                   return [update, HashMap.set(map, cellId, update)];
                 });
-                yield* Effect.logDebug("Cell execution started").pipe(
-                  Effect.annotateLogs({ cellId }),
-                );
                 yield* CellEntry.maybeUpdateCellOutput(update, code, options);
                 return;
               }
@@ -155,7 +149,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
               case "idle": {
                 if (Option.isNone(cell.pendingExecution)) {
                   yield* Effect.logWarning(
-                    "Got idle message but no cell execution found.",
+                    "Got idle message but no cell execution found",
                   );
                 }
                 // MUST modify cell output before `ExecutionHandle.end`
@@ -197,10 +191,6 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                   });
                   setTimeout(() => runFork(finalize), 50);
                 }
-
-                yield* Effect.logDebug("Cell execution completed").pipe(
-                  Effect.annotateLogs({ cellId }),
-                );
                 return;
               }
 
@@ -209,11 +199,10 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
               }
             }
           }).pipe(
-            Effect.catchTag("NotebookCellNotFoundError", (e) => {
-              return Effect.logWarning(
-                "Notebook cell not found for cell operation",
-              ).pipe(Effect.annotateLogs({ cellId: e.cellId, op: msg.op }));
-            }),
+            Effect.catchTag("NotebookCellNotFoundError", () =>
+              Effect.logWarning("Notebook cell not found for cell operation"),
+            ),
+            Effect.annotateLogs({ cellId: extractCellIdFromCellMessage(msg) }),
           ),
       };
     }),
@@ -266,10 +255,9 @@ class RunningExecutionHandle extends Data.TaggedClass(
     const notebook = this.inner.cell.notebook;
     const outputs = buildCellOutputs(cellId, state, code, notebook);
     return Effect.tryPromise(() => this.inner.replaceOutput(outputs)).pipe(
+      Effect.annotateLogs({ cellId }),
       Effect.catchAllCause((cause) =>
-        Effect.logError("Failed to update cell output", cause).pipe(
-          Effect.annotateLogs({ cellId }),
-        ),
+        Effect.logError("Failed to update cell output", cause),
       ),
     );
   }
@@ -375,7 +363,7 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
       if (hasError && deps) {
         yield* Effect.logDebug(
           "Creating ephemeral execution for marimo error without pending execution",
-        ).pipe(Effect.annotateLogs({ cellId }));
+        );
 
         const notebookCell = yield* findNotebookCell(
           MarimoNotebookDocument.from(deps.editor.notebook),
@@ -396,7 +384,7 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
             Effect.logError(
               "Failed to update cell output for ephemeral execution",
               cause,
-            ).pipe(Effect.annotateLogs({ cellId })),
+            ),
           ),
         );
         execution.end(false);
@@ -404,16 +392,14 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
         return;
       }
 
-      yield* Effect.logWarning("No pending execution to update.").pipe(
-        Effect.annotateLogs({ cellId }),
-      );
+      yield* Effect.logWarning("No pending execution to update");
       return;
     }
 
     if (pendingExecution.value.kind !== "running") {
       yield* Effect.logDebug(
-        "Pending execution is not running; skipping output update",
-      ).pipe(Effect.annotateLogs({ cellId, status: state.status }));
+        "Pending execution is not running, skipping output update",
+      ).pipe(Effect.annotateLogs({ status: state.status }));
       return;
     }
 
@@ -425,10 +411,9 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
       })
       .pipe(
         Effect.catchAllCause((cause) =>
-          Effect.logError("Failed to update cell output", cause).pipe(
-            Effect.annotateLogs({ cellId }),
-          ),
+          Effect.logError("Failed to update cell output", cause),
         ),
+        Effect.annotateLogs({ cellId }),
       );
   });
 }

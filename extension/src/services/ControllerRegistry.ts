@@ -81,7 +81,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         ),
       );
 
-      const refresh = Effect.fnUntraced(function* () {
+      const refresh = Effect.fn("ControllerRegistry.refresh")(function* () {
         const envs = yield* pyExt.knownEnvironments();
         const filteredEnvs = envs.filter(
           (env) =>
@@ -91,12 +91,9 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
             !isInUvCache(env, { code, uvCacheDir }),
         );
 
-        yield* Effect.logDebug("Refreshing controllers").pipe(
-          Effect.annotateLogs({
-            environmentCount: envs.length,
-            filteredCount: filteredEnvs.length,
-          }),
-        );
+        yield* Effect.annotateCurrentSpan("environmentCount", envs.length);
+        yield* Effect.annotateCurrentSpan("filteredCount", filteredEnvs.length);
+
         yield* Effect.forEach(
           filteredEnvs,
           (env) =>
@@ -266,66 +263,60 @@ const trackControllerSelections = (
     Stream.runDrain,
   );
 
-const createOrUpdateController = Effect.fnUntraced(function* (options: {
-  env: py.Environment;
-  handlesRef: SynchronizedRef.SynchronizedRef<
-    HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
-  >;
-  selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, AnyController>>;
-}) {
-  const { env, selectionsRef, handlesRef } = options;
-  const code = yield* VsCode;
-  const factory = yield* NotebookControllerFactory;
-  const controllerId = PythonController.getId(env);
-  const controllerLabel = formatControllerLabel(code, env);
+const createOrUpdateController = Effect.fn("ControllerRegistry.createOrUpdate")(
+  function* (options: {
+    env: py.Environment;
+    handlesRef: SynchronizedRef.SynchronizedRef<
+      HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
+    >;
+    selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, AnyController>>;
+  }) {
+    const { env, selectionsRef, handlesRef } = options;
+    const code = yield* VsCode;
+    const factory = yield* NotebookControllerFactory;
+    const controllerId = PythonController.getId(env);
+    const controllerLabel = formatControllerLabel(code, env);
 
-  yield* Effect.logDebug("Creating or updating controller").pipe(
-    Effect.annotateLogs({ controllerId }),
-  );
+    yield* Effect.annotateCurrentSpan("controllerId", controllerId);
 
-  yield* SynchronizedRef.updateEffect(
-    handlesRef,
-    Effect.fnUntraced(function* (map) {
-      const existing = HashMap.get(map, controllerId);
+    yield* SynchronizedRef.updateEffect(
+      handlesRef,
+      Effect.fnUntraced(function* (map) {
+        const existing = HashMap.get(map, controllerId);
 
-      // Just update description if we already have a controller
-      if (Option.isSome(existing)) {
-        yield* existing.value.controller.mutateDescription(controllerLabel);
-        // We updated an existing controller and don't need to recreate
-        yield* Effect.annotateLogs(
-          Effect.logTrace("Controller already exists, updated label"),
-          { controllerId: existing.value.controller.id },
+        // Just update description if we already have a controller
+        if (Option.isSome(existing)) {
+          yield* existing.value.controller.mutateDescription(controllerLabel);
+          yield* Effect.logTrace("Controller already exists, updated label");
+          return map;
+        }
+
+        // Create a disposable scope
+        const scope = yield* Scope.make();
+        const controller = yield* Scope.extend(
+          Effect.gen(function* () {
+            const controller = yield* factory.createNotebookController({
+              env,
+              id: controllerId,
+              label: controllerLabel,
+            });
+
+            yield* Effect.forkScoped(
+              trackControllerSelections(controller, selectionsRef),
+            );
+
+            return controller;
+          }),
+          scope,
         );
-        return map;
-      }
 
-      // Create a disposable scope
-      const scope = yield* Scope.make();
-      const controller = yield* Scope.extend(
-        Effect.gen(function* () {
-          const controller = yield* factory.createNotebookController({
-            env,
-            id: controllerId,
-            label: controllerLabel,
-          });
+        yield* Effect.logTrace("Created new controller");
 
-          yield* Effect.forkScoped(
-            trackControllerSelections(controller, selectionsRef),
-          );
-
-          return controller;
-        }),
-        scope,
-      );
-
-      yield* Effect.annotateLogs(Effect.logTrace("Created new controller"), {
-        controllerId: controller.id,
-      });
-
-      return HashMap.set(map, controllerId, { controller, scope });
-    }),
-  );
-});
+        return HashMap.set(map, controllerId, { controller, scope });
+      }),
+    );
+  },
+);
 
 const pruneStaleControllers = Effect.fnUntraced(function* (options: {
   envs: ReadonlyArray<py.Environment>;

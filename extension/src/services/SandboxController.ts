@@ -149,12 +149,6 @@ export class SandboxController extends Effect.Service<SandboxController>()(
         runPromise(
           Effect.gen(function* () {
             const notebook = MarimoNotebookDocument.from(doc);
-            yield* Effect.logInfo("Interrupting execution").pipe(
-              Effect.annotateLogs({
-                controllerId: controller.id,
-                notebook: notebook.id,
-              }),
-            );
             yield* client.executeCommand({
               command: "marimo.api",
               params: {
@@ -166,9 +160,15 @@ export class SandboxController extends Effect.Service<SandboxController>()(
               },
             });
           }).pipe(
-            Effect.catchAllCause((cause) =>
-              Effect.gen(function* () {
-                yield* Effect.logError(cause);
+            Effect.withSpan("SandboxController.interrupt", {
+              attributes: {
+                controllerId: controller.id,
+                notebook: doc.uri.toString(),
+              },
+            }),
+            Effect.catchAllCause(
+              Effect.fnUntraced(function* (cause) {
+                yield* Effect.logError("Failed to interrupt execution", cause);
                 yield* showErrorAndPromptLogs("Failed to interrupt execution.");
               }),
             ),
