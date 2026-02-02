@@ -42,11 +42,14 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
       const runPromise = Runtime.runPromise(runtime);
 
       return {
-        createNotebookController: Effect.fnUntraced(function* (options: {
+        createNotebookController: Effect.fn(
+          "NotebookControllerFactory.createController",
+        )(function* (options: {
           id: NotebookControllerId;
           label: string;
           env: py.Environment;
         }) {
+          yield* Effect.annotateCurrentSpan("controllerId", options.id);
           const controller = yield* code.notebooks.createNotebookController(
             options.id,
             serializer.notebookType,
@@ -63,21 +66,12 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
               Effect.gen(function* () {
                 const request = extractExecuteCodeRequest(rawCells, LanguageId);
                 if (Option.isNone(request)) {
-                  return yield* Effect.logWarning(
-                    "Empty execution request",
-                  ).pipe(Effect.annotateLogs({ rawCells }));
+                  return yield* Effect.logWarning("Empty execution request");
                 }
 
                 const notebook = MarimoNotebookDocument.from(rawNotebook);
-
-                yield* Effect.logInfo("Running cells").pipe(
-                  Effect.annotateLogs({
-                    controller: controller.id,
-                    cellCount: request.value.cellIds.length,
-                    notebook: rawNotebook.uri.toString(),
-                  }),
-                );
                 const validEnv = yield* validator.validate(options.env);
+
                 yield* marimo.executeCommand({
                   command: "marimo.api",
                   params: {
@@ -90,6 +84,13 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                   },
                 });
               }).pipe(
+                Effect.withSpan("PythonController.execute", {
+                  attributes: {
+                    controllerId: controller.id,
+                    cellCount: rawCells.length,
+                    notebook: rawNotebook.uri.toString(),
+                  },
+                }),
                 // Known exceptions
                 Effect.catchTags({
                   ExecuteCommandError: Effect.fnUntraced(function* (error) {
@@ -199,12 +200,6 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
             runPromise(
               Effect.gen(function* () {
                 const notebook = MarimoNotebookDocument.from(rawNotebook);
-                yield* Effect.logInfo("Interrupting execution").pipe(
-                  Effect.annotateLogs({
-                    controllerId: controller.id,
-                    notebook: notebook.uri.toString(),
-                  }),
-                );
                 yield* marimo.executeCommand({
                   command: "marimo.api",
                   params: {
@@ -216,9 +211,18 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                   },
                 });
               }).pipe(
+                Effect.withSpan("PythonController.interrupt", {
+                  attributes: {
+                    controllerId: controller.id,
+                    notebook: rawNotebook.uri.toString(),
+                  },
+                }),
                 Effect.catchAllCause((cause) =>
                   Effect.gen(function* () {
-                    yield* Effect.logError(cause);
+                    yield* Effect.logError(
+                      "Failed to interrupt execution",
+                      cause,
+                    );
                     yield* code.window.showErrorMessage(
                       "Failed to interrupt execution. Please check the logs for details.",
                     );
