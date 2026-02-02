@@ -75,8 +75,8 @@ const MainLive = Layer.empty
   .pipe(
     Layer.provideMerge(Api.Default),
     Layer.provide(KernelManager.Default),
-    Layer.provide(RuffLanguageServer.Default),
     Layer.provide(TyLanguageServer.Default),
+    Layer.provide(RuffLanguageServer.Default),
     Layer.provide(GitHubClient.Default),
     Layer.provide(DebugAdapter.Default),
     Layer.provide(NotebookRenderer.Default),
