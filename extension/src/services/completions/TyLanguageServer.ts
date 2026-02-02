@@ -1,5 +1,7 @@
 import * as NodeProcess from "node:process";
-import { Data, Effect, Either, Option, Runtime, Stream } from "effect";
+import { Command, CommandExecutor } from "@effect/platform";
+import { NodeContext } from "@effect/platform-node";
+import { Data, Effect, Either, Option, Runtime, Stream, String } from "effect";
 import type * as lsp from "vscode-languageclient/node";
 import { ResponseError } from "vscode-languageclient/node";
 import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
@@ -19,12 +21,6 @@ import {
 // TODO: make TY_VERSION configurable?
 // For now, since we are doing rolling releases, we can bump this as needed.
 const TY_VERSION = "0.0.14";
-
-export class TyLanguageServerStartError extends Data.TaggedError(
-  "TyLanguageServerStartError",
-)<{
-  cause: unknown;
-}> {}
 
 export const TyLanguageServerHealth = Data.taggedEnum<TyLanguageServerHealth>();
 
@@ -52,6 +48,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
   "TyLanguageServer",
   {
     dependencies: [
+      NodeContext.layer,
       Uv.Default,
       Config.Default,
       Constants.Default,
@@ -62,6 +59,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
       const uv = yield* Uv;
       const pyExt = yield* PythonExtension;
       const sync = yield* NotebookSyncService;
+      const executor = yield* CommandExecutor.CommandExecutor;
       const sentry = yield* Effect.serviceOption(Sentry);
 
       const disabledHealth = yield* checkTyEnabled();
@@ -109,7 +107,21 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
         catch: (cause) => new TyLanguageServerStartError({ cause }),
       }).pipe(
         Effect.tapError((error) =>
-          Effect.logError("Error starting ty language server", { error }),
+          Effect.gen(function* () {
+            const diagnostic = yield* runTyDiagnostic(uv.bin.executable).pipe(
+              Effect.provideService(CommandExecutor.CommandExecutor, executor),
+              Effect.timeout("10 seconds"),
+              Effect.catchAll(() => Effect.succeed(null)),
+            );
+            yield* Effect.logError("Error starting ty language server").pipe(
+              Effect.annotateLogs({
+                cause: error.cause,
+                message: error.formatMessage(),
+                diagnosticStderr: diagnostic?.stderr,
+                diagnosticExitCode: diagnostic?.exitCode,
+              }),
+            );
+          }),
         ),
         Effect.either,
         Effect.cached,
@@ -176,7 +188,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
           const resolved = yield* pyExt.resolveEnvironment(path);
           return Either.match(client, {
             onLeft: (error) =>
-              TyLanguageServerHealth.Failed({ error: String(error.cause) }),
+              TyLanguageServerHealth.Failed({ error: error.formatMessage() }),
             onRight: (client) =>
               TyLanguageServerHealth.Running({
                 version: Option.fromNullable(
@@ -421,3 +433,75 @@ const checkTyEnabled = Effect.fn(function* () {
 
   return Option.none();
 });
+
+/**
+ * Run `uv tool run ty@X.X.X server -h` to diagnose why the server failed to start.
+ * Returns stdout/stderr which may contain useful error messages.
+ */
+const runTyDiagnostic = Effect.fn(function* (bin: string) {
+  const command = Command.make(
+    bin,
+    "tool",
+    "run",
+    `ty@${TY_VERSION}`,
+    "server",
+    "-h",
+  );
+
+  function runString<E, R>(
+    stream: Stream.Stream<Uint8Array, E, R>,
+  ): Effect.Effect<string, E, R> {
+    return stream.pipe(
+      Stream.decodeText(),
+      Stream.runFold(String.empty, String.concat),
+    );
+  }
+
+  const [exitCode, stdout, stderr] = yield* command.pipe(
+    Command.start,
+    Effect.flatMap((process) =>
+      Effect.all(
+        [
+          process.exitCode,
+          runString(process.stdout),
+          runString(process.stderr),
+        ],
+        { concurrency: 3 },
+      ),
+    ),
+    Effect.scoped,
+  );
+
+  return { exitCode, stdout, stderr };
+});
+
+export class TyLanguageServerStartError extends Data.TaggedError(
+  "TyLanguageServerStartError",
+)<{
+  cause: unknown;
+}> {
+  formatMessage(): string {
+    if (isLanguageServerError(this.cause)) {
+      const code = this.cause.code;
+      switch (code) {
+        case -32097:
+          return `Connection closed unexpectedly. The server process may have crashed or failed to start (code: ${code})`;
+        default:
+          return `Language server error (code: ${code})`;
+      }
+    }
+    if (this.cause instanceof Error) {
+      return this.cause.message;
+    }
+    return JSON.stringify(this.cause);
+  }
+}
+
+function isLanguageServerError(x: unknown): x is { code: number } {
+  return (
+    typeof x === "object" &&
+    x !== null &&
+    "code" in x &&
+    typeof x.code === "number"
+  );
+}
