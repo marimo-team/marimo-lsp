@@ -7,6 +7,8 @@ import { VsCode } from "../services/VsCode.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
 export const publishMarimoNotebookGist = Effect.fn(
+  "command.publishMarimoNotebookGist",
+)(
   function* () {
     const code = yield* VsCode;
     const gh = yield* GitHubClient;

@@ -38,124 +38,114 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       const code = yield* Effect.serviceOption(VsCode);
       const notebookDataCache = yield* NotebookDataCache;
 
-      const serializeEffect = Effect.fnUntraced(function* (
-        notebook: vscode.NotebookData,
-      ) {
-        yield* Effect.logDebug("Serializing notebook").pipe(
-          Effect.annotateLogs({ cellCount: notebook.cells.length }),
-        );
+      const serializeEffect = Effect.fn("NotebookSerializer.serialize")(
+        function* (notebook: vscode.NotebookData) {
+          yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
+          yield* notebookDataCache.set(notebook);
 
-        yield* notebookDataCache.set(notebook);
-
-        const resp = yield* client.executeCommand({
-          command: "marimo.api",
-          params: {
-            method: "serialize",
+          const resp = yield* client.executeCommand({
+            command: "marimo.api",
             params: {
-              notebook: yield* notebookDataToMarimoNotebook(
-                notebook,
-                constants,
-              ),
+              method: "serialize",
+              params: {
+                notebook: yield* notebookDataToMarimoNotebook(
+                  notebook,
+                  constants,
+                ),
+              },
             },
-          },
-        });
-        const result = yield* decodeSerializeResponse(resp);
-        const bytes = new TextEncoder().encode(result.source);
-        yield* Effect.logDebug("Serialization complete").pipe(
-          Effect.annotateLogs({ bytes: bytes.length }),
-        );
-        return bytes;
-      });
+          });
+          const result = yield* decodeSerializeResponse(resp);
+          return new TextEncoder().encode(result.source);
+        },
+      );
 
-      const deserializeEffect = Effect.fnUntraced(function* (
-        bytes: Uint8Array,
-      ) {
-        yield* Effect.logDebug("Deserializing notebook").pipe(
-          Effect.annotateLogs({ bytes: bytes.length }),
-        );
-        const resp = yield* client.executeCommand({
-          command: "marimo.api",
-          params: {
-            method: "deserialize",
-            params: { source: new TextDecoder().decode(bytes) },
-          },
-        });
-        const { cells, ...metadata } = yield* decodeDeserializeResponse(resp);
-        const sqlParser = new SQLParser();
-        const markdownParser = new MarkdownParser();
+      const deserializeEffect = Effect.fn("NotebookSerializer.deserialize")(
+        function* (bytes: Uint8Array) {
+          yield* Effect.annotateCurrentSpan("bytes", bytes.length);
+          const resp = yield* client.executeCommand({
+            command: "marimo.api",
+            params: {
+              method: "deserialize",
+              params: { source: new TextDecoder().decode(bytes) },
+            },
+          });
+          const { cells, ...metadata } = yield* decodeDeserializeResponse(resp);
+          const sqlParser = new SQLParser();
+          const markdownParser = new MarkdownParser();
 
-        const notebook = {
-          metadata: metadata,
-          cells: cells.map((cell) => {
-            const isNonEmpty = Boolean(cell.code.trim());
+          const notebook = {
+            metadata: metadata,
+            cells: cells.map((cell) => {
+              const isNonEmpty = Boolean(cell.code.trim());
 
-            // Check if this is a markdown cell (mo.md() without f-strings)
-            if (isNonEmpty && markdownParser.isSupported(cell.code)) {
-              const result = markdownParser.transformIn(cell.code);
-              if (!result.metadata.quotePrefix.includes("f")) {
+              // Check if this is a markdown cell (mo.md() without f-strings)
+              if (isNonEmpty && markdownParser.isSupported(cell.code)) {
+                const result = markdownParser.transformIn(cell.code);
+                if (!result.metadata.quotePrefix.includes("f")) {
+                  return {
+                    // Hard code to avoid taking dep on VsCode
+                    kind: 1 satisfies vscode.NotebookCellKind.Markup,
+                    value: result.code,
+                    languageId: constants.LanguageId.Markdown,
+                    metadata: {
+                      name: cell.name,
+                      options: cell.options,
+                      languageMetadata: {
+                        markdown: result.metadata,
+                      },
+                      stableId: crypto.randomUUID(),
+                    } satisfies CellMetadata,
+                  };
+                }
+              }
+
+              // Check if this is a SQL cell
+              if (isNonEmpty && sqlParser.isSupported(cell.code)) {
+                const result = sqlParser.transformIn(cell.code);
                 return {
                   // Hard code to avoid taking dep on VsCode
-                  kind: 1 satisfies vscode.NotebookCellKind.Markup,
+                  kind: 2 satisfies vscode.NotebookCellKind.Code,
                   value: result.code,
-                  languageId: constants.LanguageId.Markdown,
+                  languageId: constants.LanguageId.Sql,
                   metadata: {
                     name: cell.name,
                     options: cell.options,
                     languageMetadata: {
-                      markdown: result.metadata,
+                      sql: result.metadata,
                     },
                     stableId: crypto.randomUUID(),
                   } satisfies CellMetadata,
                 };
               }
-            }
 
-            // Check if this is a SQL cell
-            if (isNonEmpty && sqlParser.isSupported(cell.code)) {
-              const result = sqlParser.transformIn(cell.code);
+              // Default Python cell
               return {
                 // Hard code to avoid taking dep on VsCode
                 kind: 2 satisfies vscode.NotebookCellKind.Code,
-                value: result.code,
-                languageId: constants.LanguageId.Sql,
+                value: cell.code,
+                languageId: constants.LanguageId.Python,
                 metadata: {
                   name: cell.name,
                   options: cell.options,
-                  languageMetadata: {
-                    sql: result.metadata,
-                  },
                   stableId: crypto.randomUUID(),
                 } satisfies CellMetadata,
               };
-            }
+            }),
+          };
 
-            // Default Python cell
-            return {
-              // Hard code to avoid taking dep on VsCode
-              kind: 2 satisfies vscode.NotebookCellKind.Code,
-              value: cell.code,
-              languageId: constants.LanguageId.Python,
-              metadata: {
-                name: cell.name,
-                options: cell.options,
-                stableId: crypto.randomUUID(),
-              } satisfies CellMetadata,
-            };
-          }),
-        };
-        yield* Effect.logDebug("Deserialization complete").pipe(
-          Effect.annotateLogs({ cellCount: notebook.cells.length }),
-        );
+          yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
 
-        const cached = yield* notebookDataCache.get(bytes);
+          const cached = yield* notebookDataCache.get(bytes);
 
-        if (Option.isNone(cached)) {
-          yield* Effect.logWarning("Could not recent data for notebook");
-          return notebook;
-        }
+          if (Option.isNone(cached)) {
+            yield* Effect.logWarning("Could not find cached data for notebook");
+            return notebook;
+          }
 
-        return enrichNotebookFromCached(notebook, cached.value);
-      });
+          return enrichNotebookFromCached(notebook, cached.value);
+        },
+      );
 
       if (Option.isSome(code)) {
         // Register with VS Code if present

@@ -7,7 +7,9 @@ import { VsCode } from "../services/VsCode.ts";
 import { getVenvPythonPath } from "../utils/getVenvPythonPath.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
-export const updateActivePythonEnvironment = Effect.fn(function* () {
+export const updateActivePythonEnvironment = Effect.fn(
+  "command.updateActivePythonEnvironment",
+)(function* () {
   const uv = yield* Uv;
   const code = yield* VsCode;
   const py = yield* PythonExtension;
@@ -63,5 +65,9 @@ export const updateActivePythonEnvironment = Effect.fn(function* () {
   // inform the user
   yield* code.window.showInformationMessage(
     `Active Python environment updated to: ${executable}`,
+  );
+
+  yield* Effect.logInfo("Updated active Python environment").pipe(
+    Effect.annotateLogs({ executable }),
   );
 });

@@ -3,7 +3,7 @@ import { MarimoNotebookDocument } from "../schemas.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
-export const runStale = Effect.fn(
+export const runStale = Effect.fn("command.runStale")(
   function* () {
     const code = yield* VsCode;
     const notebook = Option.filterMap(

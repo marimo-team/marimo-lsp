@@ -9,7 +9,6 @@ import {
 import { MarimoConfigResponseSchema } from "../../schemas/config.ts";
 import type { NotebookId } from "../../schemas.ts";
 import type { MarimoConfig } from "../../types.ts";
-import { Log } from "../../utils/log.ts";
 import { LanguageClient } from "../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../NotebookEditorRegistry.ts";
 
@@ -46,9 +45,9 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
             }
 
             // Fetch from LSP server
-            yield* Log.trace("Fetching configuration from LSP", {
-              notebookUri,
-            });
+            yield* Effect.logTrace("Fetching configuration from LSP").pipe(
+              Effect.annotateLogs({ notebookUri }),
+            );
 
             const result = yield* client.executeCommand({
               command: "marimo.api",
@@ -70,9 +69,9 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
               HashMap.set(map, notebookUri, config.config),
             );
 
-            yield* Log.trace("Configuration fetched and cached", {
-              notebookUri,
-            });
+            yield* Effect.logTrace("Configuration fetched and cached").pipe(
+              Effect.annotateLogs({ notebookUri }),
+            );
 
             return config.config;
           });
@@ -86,10 +85,9 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
           partialConfig: Record<string, unknown>,
         ) {
           return Effect.gen(function* () {
-            yield* Log.trace("Updating configuration", {
-              notebookUri,
-              config: partialConfig,
-            });
+            yield* Effect.logTrace("Updating configuration").pipe(
+              Effect.annotateLogs({ notebookUri, config: partialConfig }),
+            );
 
             // Send update to LSP server
             const result = yield* client.executeCommand({
@@ -114,9 +112,9 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
               HashMap.set(map, notebookUri, config.config),
             );
 
-            yield* Log.trace("Configuration updated successfully", {
-              notebookUri,
-            });
+            yield* Effect.logTrace("Configuration updated successfully").pipe(
+              Effect.annotateLogs({ notebookUri }),
+            );
 
             return config.config;
           });
@@ -141,7 +139,9 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
               HashMap.remove(map, notebookUri),
             );
 
-            yield* Log.trace("Cleared configuration cache", { notebookUri });
+            yield* Effect.logTrace("Cleared configuration cache").pipe(
+              Effect.annotateLogs({ notebookUri }),
+            );
           });
         },
 

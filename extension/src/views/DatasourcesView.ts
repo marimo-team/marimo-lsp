@@ -2,7 +2,6 @@ import { Effect, Layer, Option, Ref, Stream } from "effect";
 import type { NotebookId } from "../schemas.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
-import { Log } from "../utils/log.ts";
 import { TreeView } from "./TreeView.ts";
 
 type DatasourceTreeItem =
@@ -238,9 +237,11 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
     const refreshDatasources = Effect.fnUntraced(function* () {
       const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
 
-      yield* Log.trace("Refreshing datasources", {
-        activeNotebookUri: Option.getOrElse(activeNotebookUri, () => null),
-      });
+      yield* Effect.logTrace("Refreshing datasources").pipe(
+        Effect.annotateLogs({
+          activeNotebookUri: Option.getOrElse(activeNotebookUri, () => null),
+        }),
+      );
 
       if (Option.isNone(activeNotebookUri)) {
         yield* Ref.set(datasourceItems, []);
@@ -352,11 +353,13 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
         }
       }
 
-      yield* Log.trace("Refreshed datasources", {
-        connections: connectionsMap.connections.size,
-        inMemoryTables: datasetsMap.tables.size,
-        totalItems: items.length,
-      });
+      yield* Effect.logTrace("Refreshed datasources").pipe(
+        Effect.annotateLogs({
+          connections: connectionsMap.connections.size,
+          inMemoryTables: datasetsMap.tables.size,
+          totalItems: items.length,
+        }),
+      );
       yield* Ref.set(datasourceItems, items);
       yield* provider.refresh();
     });

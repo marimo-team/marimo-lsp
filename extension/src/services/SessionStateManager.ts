@@ -1,6 +1,5 @@
 import { Effect, Option, Stream } from "effect";
 import { MarimoNotebookDocument } from "../schemas.ts";
-import { Log } from "../utils/log.ts";
 import { ControllerRegistry } from "./ControllerRegistry.ts";
 import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
 import { VsCode } from "./VsCode.ts";
@@ -41,7 +40,9 @@ export class SessionStateManager extends Effect.Service<SessionStateManager>()(
         }).pipe(Effect.orElseSucceed(() => false));
 
         yield* code.commands.setContext("marimo.notebook.hasKernel", hasKernel);
-        yield* Log.debug("Updated hasKernel context", { hasKernel });
+        yield* Effect.logDebug("Updated hasKernel context").pipe(
+          Effect.annotateLogs({ hasKernel }),
+        );
       });
 
       // Set initial context state

@@ -75,13 +75,12 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
 
       const startClient = () =>
         Effect.gen(function* () {
-          yield* Effect.logInfo("Starting marimo-lsp client");
           yield* Effect.tryPromise({
             try: () => client.start(),
             catch: (cause) => new LanguageClientStartError({ exec, cause }),
           });
           yield* Effect.logInfo("marimo-lsp client started");
-        });
+        }).pipe(Effect.withSpan("lsp.start"));
 
       // Register cleanup when scope closes
       yield* Effect.addFinalizer(() => Effect.promise(() => client.dispose()));
@@ -131,7 +130,17 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
                 tokenFromSignal(signal),
               ),
             catch: (cause) => new ExecuteCommandError({ command: cmd, cause }),
-          });
+          }).pipe(
+            Effect.withSpan("lsp.executeCommand", {
+              attributes: {
+                command: cmd.command,
+                method:
+                  "params" in cmd && cmd.params && "method" in cmd.params
+                    ? cmd.params.method
+                    : undefined,
+              },
+            }),
+          );
         }),
         streamOf<Notification extends MarimoLspNotification>(
           notification: Notification,

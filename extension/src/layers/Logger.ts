@@ -53,7 +53,10 @@ export const LoggerLive = Layer.unwrapScoped(
     const sentry = yield* Sentry;
     return Logger.replace(
       Logger.defaultLogger,
-      Logger.zip(Logger.zip(fileLogger, vscodeLogger), sentry.errorLogger),
+      Logger.zip(
+        Logger.zip(fileLogger, vscodeLogger),
+        Logger.withSpanAnnotations(sentry.errorLogger),
+      ),
     );
   }),
 );

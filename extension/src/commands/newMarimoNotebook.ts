@@ -3,7 +3,7 @@ import { Telemetry } from "../services/Telemetry.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
-export const newMarimoNotebook = Effect.fn(
+export const newMarimoNotebook = Effect.fn("command.newMarimoNotebook")(
   function* () {
     const code = yield* VsCode;
     const telemetry = yield* Telemetry;
@@ -34,9 +34,7 @@ def _():
     yield* code.window.showNotebookDocument(notebook);
 
     yield* Effect.logInfo("Created new marimo notebook").pipe(
-      Effect.annotateLogs({
-        uri: notebook.uri.toString(),
-      }),
+      Effect.annotateLogs({ uri: notebook.uri.toString() }),
     );
 
     yield* telemetry.capture("new_notebook_created");

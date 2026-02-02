@@ -1,7 +1,6 @@
 import { Effect, HashMap, Option, Ref, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
 import { MarimoNotebookDocument, type NotebookId } from "../schemas.ts";
-import { Log } from "../utils/log.ts";
 import { Telemetry } from "./Telemetry.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -47,9 +46,9 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
                 HashMap.set(map, notebook.value.id, editor.value),
               );
 
-              yield* Log.info("Active notebook changed", {
-                notebookUri: notebook.value.id,
-              });
+              yield* Effect.logInfo("Active notebook changed").pipe(
+                Effect.annotateLogs({ notebookUri: notebook.value.id }),
+              );
 
               // Track notebook opened event (only for new notebooks)
               if (!isNewNotebook) {
@@ -102,7 +101,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
               yield* SubscriptionRef.get(activeNotebookRef);
 
             if (Option.isNone(activeNotebookUri)) {
-              yield* Log.warn("No active notebook editor");
+              yield* Effect.logWarning("No active notebook editor");
               return Option.none();
             }
 

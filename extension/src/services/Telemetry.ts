@@ -1,7 +1,6 @@
 import { Effect, Option, Ref, Schema, Stream } from "effect";
 import { PostHog } from "posthog-node";
 import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
-import { Log } from "../utils/log.ts";
 import { createStorageKey, Storage } from "./Storage.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -98,7 +97,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
           app_host: code.env.appHost,
         },
       });
-      yield* Log.info("Anonymous telemetry enabled");
+      yield* Effect.logInfo("Anonymous telemetry enabled");
     });
 
     // Initialize on startup if enabled
