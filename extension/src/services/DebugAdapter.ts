@@ -13,15 +13,14 @@ import { VsCode } from "./VsCode.ts";
 export class DebugAdapter extends Effect.Service<DebugAdapter>()(
   "DebugAdapter",
   {
-    dependencies: [NotebookSerializer.Default],
+    dependencies: [NotebookSerializer.Default, OutputChannel.Default],
     scoped: Effect.gen(function* () {
       const debugType = "marimo";
 
       const code = yield* VsCode;
       const client = yield* LanguageClient;
-      const channel = yield* OutputChannel;
 
-      const runtime = yield* Effect.runtime();
+      const runtime = yield* Effect.runtime<OutputChannel | VsCode>();
       const runFork = Runtime.runFork(runtime);
       const runPromise = Runtime.runPromise(runtime);
 
@@ -83,7 +82,6 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
                     LanguageClientStartError: Effect.fnUntraced(function* () {
                       yield* showErrorAndPromptLogs(
                         "marimo-lsp failed to start.",
-                        { code, channel },
                       );
                     }),
                   }),

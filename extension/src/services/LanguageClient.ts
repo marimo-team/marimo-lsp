@@ -11,7 +11,6 @@ import type {
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 import { Config } from "./Config.ts";
-import { OutputChannel } from "./OutputChannel.ts";
 import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -42,7 +41,6 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
       const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
-      const channel = yield* OutputChannel;
 
       const exec = yield* Option.match(yield* config.lsp.executable, {
         onSome: Effect.succeed,
@@ -93,31 +91,34 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
           name: outputChannel.name,
           show: outputChannel.show.bind(outputChannel),
         },
-        restart: code.window.withProgress(
-          {
-            location: code.ProgressLocation.Notification,
-            title: "Restarting marimo-lsp",
-            cancellable: true,
-          },
-          Effect.fnUntraced(function* (progress) {
-            if (client.isRunning()) {
-              progress.report({ message: "Stopping..." });
-              yield* Effect.promise(() => client.stop());
-            }
-            progress.report({ message: "Starting..." });
-            yield* startClient().pipe(
-              Effect.catchTag(
-                "LanguageClientStartError",
-                Effect.fnUntraced(function* (error) {
-                  const msg = "Failed to restart marimo-lsp.";
-                  yield* Effect.logError(msg, error);
-                  yield* showErrorAndPromptLogs(msg, { code, channel });
-                }),
-              ),
-            );
-            progress.report({ message: "Done." });
-          }),
-        ),
+        restart: () =>
+          code.window.withProgress(
+            {
+              location: code.ProgressLocation.Notification,
+              title: "Restarting marimo-lsp",
+              cancellable: true,
+            },
+            Effect.fnUntraced(function* (progress) {
+              if (client.isRunning()) {
+                progress.report({ message: "Stopping..." });
+                yield* Effect.promise(() => client.stop());
+              }
+              progress.report({ message: "Starting..." });
+              yield* startClient().pipe(
+                Effect.catchTag(
+                  "LanguageClientStartError",
+                  Effect.fnUntraced(function* (error) {
+                    const msg = "Failed to restart marimo-lsp.";
+                    yield* Effect.logError(msg, error);
+                    yield* showErrorAndPromptLogs(msg, {
+                      channel: outputChannel,
+                    });
+                  }),
+                ),
+              );
+              progress.report({ message: "Done." });
+            }),
+          ),
         executeCommand: Effect.fnUntraced(function* (cmd: MarimoCommand) {
           if (!client.isRunning()) {
             yield* startClient();

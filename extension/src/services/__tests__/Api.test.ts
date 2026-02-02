@@ -26,7 +26,7 @@ const withTestCtx = Effect.fnUntraced(function* (
           LanguageClient,
           LanguageClient.make({
             channel: { name: "marimo-lsp-test", show() {} },
-            restart: Effect.void,
+            restart: () => Effect.void,
             executeCommand() {
               return Effect.die("not implemented");
             },

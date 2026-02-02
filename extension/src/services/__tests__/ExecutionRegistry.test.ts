@@ -25,7 +25,7 @@ const TestLanguageClientMock = Layer.succeed(
   LanguageClient,
   LanguageClient.make({
     channel: { name: "marimo-lsp", show() {} },
-    restart: Effect.void,
+    restart: () => Effect.void,
     executeCommand() {
       return Effect.void;
     },

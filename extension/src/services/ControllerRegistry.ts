@@ -19,6 +19,7 @@ import {
   type NotebookControllerId,
   PythonController,
 } from "./NotebookControllerFactory.ts";
+import { OutputChannel } from "./OutputChannel.ts";
 import { PythonExtension } from "./PythonExtension.ts";
 import { SandboxController } from "./SandboxController.ts";
 import { Uv } from "./Uv.ts";
@@ -40,6 +41,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
   {
     dependencies: [
       Uv.Default,
+      OutputChannel.Default,
       SandboxController.Default,
       NotebookControllerFactory.Default,
     ],

@@ -45,7 +45,7 @@ const withTestCtx = Effect.fnUntraced(function* (
             name: "marimo-lsp",
             show() {},
           },
-          restart: Effect.void,
+          restart: () => Effect.void,
           streamOf: () => Stream.never,
           executeCommand: Effect.fnUntraced(function* ({ command, params }) {
             if (!(command === "marimo.api")) {

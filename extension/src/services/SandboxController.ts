@@ -26,12 +26,13 @@ export class SandboxController extends Effect.Service<SandboxController>()(
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
-      const channel = yield* OutputChannel;
       const client = yield* LanguageClient;
       const python = yield* PythonExtension;
       const { LanguageId } = yield* Constants;
 
-      const runPromise = Runtime.runPromise(yield* Effect.runtime());
+      const runPromise = Runtime.runPromise(
+        yield* Effect.runtime<OutputChannel | VsCode>(),
+      );
 
       const controller = yield* code.notebooks.createNotebookController(
         SANDBOX_CONTROLLER_ID,
@@ -114,40 +115,30 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             Effect.catchTag("UvExecutionError", () =>
               showErrorAndPromptLogs(
                 "Failed to execute uv. Ensure uv is installed and accessible in your PATH.",
-                {
-                  code,
-                  channel: uv.channel,
-                },
+                { channel: uv.channel },
               ),
             ),
             Effect.catchTag("UvUnknownError", () =>
               showErrorAndPromptLogs(
                 "uv command failed. Check the logs for details.",
-                {
-                  code,
-                  channel: uv.channel,
-                },
+                { channel: uv.channel },
               ),
             ),
             Effect.catchTag("UvResolutionError", () =>
               showErrorAndPromptLogs(
                 "Dependency conflict. Your notebook has conflicting package version requirements.",
-                {
-                  code,
-                  channel: uv.channel,
-                },
+                { channel: uv.channel },
               ),
             ),
             Effect.catchTag("ExecuteCommandError", () =>
               showErrorAndPromptLogs(
                 "Failed to communicate with marimo language server.",
-                { code, channel: client.channel },
+                { channel: client.channel },
               ),
             ),
             Effect.catchTag("LanguageClientStartError", () =>
               showErrorAndPromptLogs(
                 "Failed to start marimo language server (marimo-lsp).",
-                { code, channel },
               ),
             ),
             Effect.annotateLogs({ notebook: rawNotebook.uri.fsPath }),
@@ -178,10 +169,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             Effect.catchAllCause((cause) =>
               Effect.gen(function* () {
                 yield* Effect.logError(cause);
-                yield* showErrorAndPromptLogs(
-                  "Failed to interrupt execution.",
-                  { code, channel },
-                );
+                yield* showErrorAndPromptLogs("Failed to interrupt execution.");
               }),
             ),
           ),

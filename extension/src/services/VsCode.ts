@@ -35,7 +35,6 @@ export class FileSystemError extends Data.TaggedError("FileSystemError")<{
 export class Window extends Effect.Service<Window>()("Window", {
   scoped: Effect.gen(function* () {
     const api = vscode.window;
-    const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
     return {
       createTerminal(
@@ -238,7 +237,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         // Could return the vscode.TextEditor, but skipping it simplifies mocks/tests
         return Effect.asVoid(Effect.promise(() => api.showTextDocument(doc)));
       },
-      withProgress(
+      withProgress<A, E, R>(
         options: {
           location: vscode.ProgressLocation;
           title: string;
@@ -249,24 +248,27 @@ export class Window extends Effect.Service<Window>()("Window", {
             message: string;
             increment?: number;
           }>,
-        ) => Effect.Effect<void>,
+        ) => Effect.Effect<A, E, R>,
       ) {
-        return Effect.promise((signal) =>
-          api.withProgress(options, (progress, token) =>
-            runPromise(
-              Effect.gen(function* () {
-                const fiber = yield* Effect.forkScoped(fn(progress));
-                const kill = () => runPromise(Fiber.interrupt(fiber));
-                yield* Effect.acquireRelease(
-                  Effect.sync(() => token.onCancellationRequested(kill)),
-                  (disposable) => Effect.sync(() => disposable.dispose()),
-                );
-                yield* Fiber.join(fiber);
-              }).pipe(Effect.scoped),
-              { signal },
+        return Effect.gen(function* () {
+          const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
+          yield* Effect.promise((signal) =>
+            api.withProgress(options, (progress, token) =>
+              runPromise(
+                Effect.gen(function* () {
+                  const fiber = yield* Effect.forkScoped(fn(progress));
+                  const kill = () => runPromise(Fiber.interrupt(fiber));
+                  yield* Effect.acquireRelease(
+                    Effect.sync(() => token.onCancellationRequested(kill)),
+                    (disposable) => Effect.sync(() => disposable.dispose()),
+                  );
+                  yield* Fiber.join(fiber);
+                }).pipe(Effect.scoped),
+                { signal },
+              ),
             ),
-          ),
-        );
+          );
+        });
       },
     };
   }),
@@ -287,7 +289,6 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
   scoped: Effect.gen(function* () {
     const win = yield* Window;
     const api = vscode.commands;
-    const runPromise = Runtime.runPromise(yield* Effect.runtime());
     // Pubsub of the commands run and their results
     // Left is the command that failed, right is the command that succeeded
     const commandPubSub =
@@ -305,37 +306,34 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
           api.executeCommand("setContext", key, value),
         );
       },
-      registerCommand(
+      registerCommand<A, E, R>(
         command: MarimoCommand | DynamicCommand,
-        effect: Effect.Effect<void>,
+        fn: () => Effect.Effect<A, E, R>,
       ) {
-        return Effect.acquireRelease(
-          Effect.sync(() =>
-            api.registerCommand(command, () =>
-              runPromise(
-                effect.pipe(
-                  // Publish the command to the command pubsub
-                  Effect.tap(function* () {
-                    yield* PubSub.publish(commandPubSub, Either.right(command));
-                  }),
-                  Effect.catchAllCause((cause) =>
-                    Effect.gen(function* () {
-                      yield* Effect.logError(cause);
-                      yield* PubSub.publish(
-                        commandPubSub,
-                        Either.left(command),
-                      );
-                      yield* win.showWarningMessage(
-                        `Something went wrong in ${JSON.stringify(command)}. See marimo logs for more info.`,
-                      );
-                    }),
-                  ),
-                ),
+        return Effect.gen(function* () {
+          const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
+          const callback = () =>
+            fn().pipe(
+              Effect.tap(() =>
+                PubSub.publish(commandPubSub, Either.right(command)),
               ),
-            ),
-          ),
-          (disposable) => Effect.sync(() => disposable.dispose()),
-        ).pipe(Effect.andThen(Effect.void));
+              Effect.catchAllCause(
+                Effect.fnUntraced(function* (cause) {
+                  yield* Effect.logError(cause);
+                  yield* PubSub.publish(commandPubSub, Either.left(command));
+                  yield* win.showWarningMessage(
+                    `Something went wrong in ${JSON.stringify(command)}. See marimo logs for more info.`,
+                  );
+                }),
+              ),
+              runPromise,
+            );
+
+          yield* Effect.acquireRelease(
+            Effect.sync(() => api.registerCommand(command, callback)),
+            (disposable) => Effect.sync(() => disposable.dispose()),
+          );
+        });
       },
     };
   }),
