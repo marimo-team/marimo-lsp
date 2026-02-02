@@ -143,7 +143,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
           const commandId = dynamicCommand(`cell.metadata.${binding.id}`);
           yield* code.commands.registerCommand(
             commandId,
-            createBindingCommand(binding),
+            createBindingCommandFor(binding),
           );
 
           // Create provider for status bar item
@@ -184,8 +184,8 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
       /**
        * Create a command handler for a binding
        */
-      function createBindingCommand(binding: MetadataBinding) {
-        return Effect.gen(function* () {
+      function createBindingCommandFor(binding: MetadataBinding) {
+        return Effect.fn(function* () {
           const editor = yield* code.window.getActiveNotebookEditor();
 
           if (Option.isNone(editor)) {

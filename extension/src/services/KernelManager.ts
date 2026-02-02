@@ -63,7 +63,6 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       yield* Effect.logInfo("Setting up kernel manager");
       const code = yield* VsCode;
       const client = yield* LanguageClient;
-      const channel = yield* OutputChannel;
       const renderer = yield* NotebookRenderer;
 
       const runPromise = Runtime.runPromise(yield* Effect.runtime());
@@ -108,9 +107,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
                   yield* Effect.logError(errorMessage, cause).pipe(
                     Effect.annotateLogs({ op: msg.operation.op }),
                   );
-                  yield* Effect.fork(
-                    showErrorAndPromptLogs(errorMessage, { code, channel }),
-                  );
+                  yield* Effect.fork(showErrorAndPromptLogs(errorMessage));
                 }),
               ),
             );

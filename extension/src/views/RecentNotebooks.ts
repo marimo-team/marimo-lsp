@@ -159,7 +159,7 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
     // Register command to clear recent notebooks
     yield* code.commands.registerCommand(
       "marimo.clearRecentNotebooks",
-      Effect.gen(function* () {
+      Effect.fn(function* () {
         yield* Ref.set(recentNotebooks, []);
         yield* storage.workspace
           .set(RECENT_NOTEBOOKS_KEY, [])

@@ -41,7 +41,7 @@ export const TestLanguageClientLive = Layer.scoped(
         name: "marimo-lsp",
         show() {},
       },
-      restart: Effect.void,
+      restart: () => Effect.void,
       executeCommand(cmd) {
         return Effect.tryPromise({
           try: () =>

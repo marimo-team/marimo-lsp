@@ -161,7 +161,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
     // Register command to refresh packages
     yield* code.commands.registerCommand(
       "marimo.refreshPackages",
-      Effect.gen(function* () {
+      Effect.fn(function* () {
         const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
         if (Option.isNone(activeNotebookUri)) {
           yield* Log.warn("No active notebook to refresh packages");

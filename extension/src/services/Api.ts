@@ -19,6 +19,7 @@ import { Config } from "./Config.ts";
 import { ControllerRegistry } from "./ControllerRegistry.ts";
 import { scratchCellNotificationsToVsCodeOutput } from "./ExecutionRegistry.ts";
 import { KernelManager } from "./KernelManager.ts";
+import { OutputChannel } from "./OutputChannel.ts";
 import { Uv } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -72,6 +73,7 @@ export class Api extends Effect.Service<Api>()("Api", {
     Uv.Default,
     Config.Default,
     KernelManager.Default,
+    OutputChannel.Default,
     ControllerRegistry.Default,
   ],
   scoped: Effect.gen(function* () {

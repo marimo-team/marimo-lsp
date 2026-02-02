@@ -23,14 +23,13 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
   "MarimoConfigurationService",
   {
     scoped: Effect.gen(function* () {
+      const client = yield* LanguageClient;
       const editorRegistry = yield* NotebookEditorRegistry;
 
       // Track configurations: NotebookUri -> MarimoConfig
       const configRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, MarimoConfig>(),
       );
-
-      const client = yield* LanguageClient;
 
       return {
         /**

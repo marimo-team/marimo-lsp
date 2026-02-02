@@ -228,7 +228,7 @@ export class HealthService extends Effect.Service<HealthService>()(
          * Shows a text document with comprehensive diagnostics about the extension
          * and environment setup.
          */
-        showDiagnostics: Effect.gen(function* () {
+        showDiagnostics: Effect.fn(function* () {
           yield* Effect.logInfo("Showing diagnostics");
 
           const diagnosticText = yield* formatDiagnostics().pipe(

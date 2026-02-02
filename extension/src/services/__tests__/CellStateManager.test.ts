@@ -27,7 +27,7 @@ const withTestCtx = Effect.fnUntraced(function* () {
             name: "marimo-lsp",
             show() {},
           },
-          restart: Effect.void,
+          restart: () => Effect.void,
           executeCommand(cmd) {
             return Ref.update(executions, (arr) => [...arr, cmd]);
           },

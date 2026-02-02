@@ -1,20 +1,22 @@
 import { Effect, Option } from "effect";
-import type { VsCode } from "../services/VsCode.ts";
+import { OutputChannel } from "../services/OutputChannel.ts";
+import { VsCode } from "../services/VsCode.ts";
 
-export const showErrorAndPromptLogs = Effect.fnUntraced(function* (
+export const showErrorAndPromptLogs = Effect.fn(function* (
   msg: string,
-  deps: {
-    code: VsCode;
-    channel: { name: string; show(): void };
-  },
+  options: { channel?: { name: string; show(): void } } = {},
 ) {
-  const selection = yield* deps.code.window.showErrorMessage(
-    `${msg}\n\nSee ${deps.channel.name} logs for details.`,
+  const code = yield* VsCode;
+  const defaultChannel = yield* OutputChannel;
+  const channel = options.channel ?? defaultChannel;
+
+  const selection = yield* code.window.showErrorMessage(
+    `${msg}\n\nSee ${channel.name} logs for details.`,
     { items: ["Open Logs"] },
   );
 
   if (Option.isSome(selection)) {
-    deps.channel.show();
+    channel.show();
     return;
   }
 });

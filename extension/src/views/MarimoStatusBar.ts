@@ -14,16 +14,13 @@ import { StatusBar } from "./StatusBar.ts";
  */
 export const MarimoStatusBarLive = Layer.scopedDiscard(
   Effect.gen(function* () {
-    const statusBar = yield* StatusBar;
     const code = yield* VsCode;
-    const context = yield* ExtensionContext;
-    const serializer = yield* NotebookSerializer;
-    const telemetry = yield* Telemetry;
+    const statusBar = yield* StatusBar;
 
     // Register the command that shows the quick pick menu
     yield* code.commands.registerCommand(
       "marimo.showMarimoMenu",
-      Effect.gen(function* () {
+      Effect.fn(function* () {
         const selection = yield* code.window.showQuickPickItems(
           [
             {
@@ -62,18 +59,13 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
 
         switch (selection.value.value) {
           case "documentation": {
-            yield* openUrl(code, Links.documentation);
+            yield* openUrl(Links.documentation);
             break;
           }
           case "tutorials": {
-            yield* tutorialCommands({
-              code,
-              context,
-              serializer,
-              telemetry,
-            }).pipe(
-              Effect.catchAll((error) =>
-                Effect.gen(function* () {
+            yield* tutorialCommands().pipe(
+              Effect.catchAll(
+                Effect.fnUntraced(function* (error) {
                   yield* Effect.logError("Failed to open tutorial", error);
                   yield* code.window.showErrorMessage(
                     "Failed to open tutorial. See marimo logs for more info.",
@@ -84,7 +76,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
             break;
           }
           case "discord": {
-            yield* openUrl(code, Links.discord);
+            yield* openUrl(Links.discord);
             break;
           }
           case "settings": {
@@ -95,7 +87,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
             break;
           }
           case "reportIssue": {
-            yield* openUrl(code, Links.issues);
+            yield* openUrl(Links.issues);
             break;
           }
           case "diagnostics": {
@@ -110,14 +102,8 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
     );
 
     // Register the command that opens tutorials directly
-    yield* code.commands.registerCommand(
-      "marimo.openTutorial",
-      tutorialCommands({
-        code,
-        context,
-        serializer,
-        telemetry,
-      }).pipe(
+    yield* code.commands.registerCommand("marimo.openTutorial", () =>
+      tutorialCommands().pipe(
         Effect.catchAll((error) =>
           Effect.gen(function* () {
             yield* Effect.logError("Failed to open tutorial", error);
@@ -147,9 +133,10 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
 /**
  * Opens a URL in the default browser
  */
-function openUrl(code: VsCode, url: `https://${string}`) {
+const openUrl = Effect.fn(function* (url: `https://${string}`) {
+  const code = yield* VsCode;
   return code.env.openExternal(Either.getOrThrow(code.utils.parseUri(url)));
-}
+});
 
 const TUTORIALS = [
   // Get started with marimo basics
@@ -175,107 +162,98 @@ const TUTORIALS = [
 /**
  * Shows tutorial options
  */
-function tutorialCommands({
-  code,
-  context,
-  serializer,
-  telemetry,
-}: {
-  code: VsCode;
-  context: Pick<import("vscode").ExtensionContext, "extensionUri">;
-  serializer: NotebookSerializer;
-  telemetry: Telemetry;
-}) {
-  return Effect.gen(function* () {
-    const selection = yield* code.window.showQuickPickItems(
-      TUTORIALS.map(([label, filename, icon]) => ({
-        label,
-        description: filename,
-        iconPath: new code.ThemeIcon(icon),
-      })),
-      {
-        placeHolder: "Select a tutorial",
-      },
-    );
+const tutorialCommands = Effect.fn(function* () {
+  const code = yield* VsCode;
+  const context = yield* ExtensionContext;
+  const serializer = yield* NotebookSerializer;
+  const telemetry = yield* Telemetry;
+  const selection = yield* code.window.showQuickPickItems(
+    TUTORIALS.map(([label, filename, icon]) => ({
+      label,
+      description: filename,
+      iconPath: new code.ThemeIcon(icon),
+    })),
+    {
+      placeHolder: "Select a tutorial",
+    },
+  );
 
-    if (Option.isNone(selection)) {
-      return;
-    }
+  if (Option.isNone(selection)) {
+    return;
+  }
 
-    const filename = selection.value.description;
-    const tutorialName = selection.value.label;
+  const filename = selection.value.description;
+  const tutorialName = selection.value.label;
 
-    // Build path to tutorial file
-    const tutorialUri = code.Uri.joinPath(
-      context.extensionUri,
-      "tutorials",
-      filename,
-    );
+  // Build path to tutorial file
+  const tutorialUri = code.Uri.joinPath(
+    context.extensionUri,
+    "tutorials",
+    filename,
+  );
 
-    // Read tutorial file content
-    const bytes = yield* code.workspace.fs.readFile(tutorialUri);
+  // Read tutorial file content
+  const bytes = yield* code.workspace.fs.readFile(tutorialUri);
 
-    // Try to write to temp file, fall back to untitled if it fails
-    const result = yield* Effect.either(
-      Effect.gen(function* () {
-        // Create temp file path
-        const tempDir = NodeOs.tmpdir();
-        const tempFilePath = NodePath.join(
-          tempDir,
-          `marimo_tutorial_${filename}`,
-        );
-        const tempFileUri = code.Uri.file(tempFilePath);
+  // Try to write to temp file, fall back to untitled if it fails
+  const result = yield* Effect.either(
+    Effect.gen(function* () {
+      // Create temp file path
+      const tempDir = NodeOs.tmpdir();
+      const tempFilePath = NodePath.join(
+        tempDir,
+        `marimo_tutorial_${filename}`,
+      );
+      const tempFileUri = code.Uri.file(tempFilePath);
 
-        // Write tutorial content to temp file
-        yield* code.workspace.fs.writeFile(tempFileUri, bytes);
+      // Write tutorial content to temp file
+      yield* code.workspace.fs.writeFile(tempFileUri, bytes);
 
-        // Open the temp file as a notebook
-        const notebook =
-          yield* code.workspace.openNotebookDocument(tempFileUri);
-        yield* code.window.showNotebookDocument(notebook);
+      // Open the temp file as a notebook
+      const notebook = yield* code.workspace.openNotebookDocument(tempFileUri);
+      yield* code.window.showNotebookDocument(notebook);
 
-        yield* Effect.logInfo("Opened tutorial as temp file").pipe(
-          Effect.annotateLogs({
-            tutorial: filename,
-            path: tempFilePath,
-          }),
-        );
+      yield* Effect.logInfo("Opened tutorial as temp file").pipe(
+        Effect.annotateLogs({
+          tutorial: filename,
+          path: tempFilePath,
+        }),
+      );
+    }),
+  );
+
+  // If temp file approach failed, fall back to untitled
+  if (Either.isLeft(result)) {
+    yield* Effect.logWarning(
+      "Failed to create temp file, opening as untitled",
+    ).pipe(
+      Effect.annotateLogs({
+        tutorial: filename,
+        error: result.left,
       }),
     );
 
-    // If temp file approach failed, fall back to untitled
-    if (Either.isLeft(result)) {
-      yield* Effect.logWarning(
-        "Failed to create temp file, opening as untitled",
-      ).pipe(
-        Effect.annotateLogs({
-          tutorial: filename,
-          error: result.left,
-        }),
-      );
+    // Deserialize Python file to notebook data
+    const notebookData = yield* serializer.deserializeEffect(bytes);
 
-      // Deserialize Python file to notebook data
-      const notebookData = yield* serializer.deserializeEffect(bytes);
+    // Open as untitled notebook
+    const notebook = yield* code.workspace.openUntitledNotebookDocument(
+      serializer.notebookType,
+      notebookData,
+    );
 
-      // Open as untitled notebook
-      const notebook = yield* code.workspace.openUntitledNotebookDocument(
-        serializer.notebookType,
-        notebookData,
-      );
+    // Show the notebook
+    yield* code.window.showNotebookDocument(notebook);
 
-      // Show the notebook
-      yield* code.window.showNotebookDocument(notebook);
+    yield* Effect.logInfo("Opened tutorial as untitled").pipe(
+      Effect.annotateLogs({
+        tutorial: filename,
+      }),
+    );
+  }
 
-      yield* Effect.logInfo("Opened tutorial as untitled").pipe(
-        Effect.annotateLogs({
-          tutorial: filename,
-        }),
-      );
-    }
-
-    // Track walkthrough step completion
-    yield* telemetry.capture("tutorial_opened", {
-      tutorial: tutorialName,
-    });
+  // Track walkthrough step completion
+  yield* telemetry.capture("tutorial_opened", {
+    tutorial: tutorialName,
   });
-}
+});
