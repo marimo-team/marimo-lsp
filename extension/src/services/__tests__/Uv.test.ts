@@ -7,7 +7,7 @@ import { Effect, Either, Layer } from "effect";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { Uv } from "../../services/Uv.ts";
+import { singleStrategy, Uv } from "../../services/Uv.ts";
 
 const python = "3.13";
 
@@ -216,5 +216,65 @@ print("hello")
         );
       }),
     );
+  });
+
+  describe("ensureLanguageServerBinaryInstalled", () => {
+    const server = { name: "ruff" as const, version: "0.11.4" };
+
+    it.layer(Layer.fresh(UvLive))((it) => {
+      it.scoped(
+        "installs with default strategy",
+        Effect.fnUntraced(function* () {
+          const uv = yield* Uv;
+          const tmpdir = yield* TmpDir;
+          const targetPath = NodePath.join(tmpdir.path, "default");
+
+          const binPath = yield* uv.ensureLanguageServerBinaryInstalled(
+            server,
+            { targetPath, policy: singleStrategy("default") },
+          );
+
+          assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
+        }),
+      );
+
+      it.scoped(
+        "installs with native-tls strategy",
+        Effect.fnUntraced(function* () {
+          const uv = yield* Uv;
+          const tmpdir = yield* TmpDir;
+          const targetPath = NodePath.join(tmpdir.path, "native-tls");
+
+          const binPath = yield* uv.ensureLanguageServerBinaryInstalled(
+            server,
+            { targetPath, policy: singleStrategy("native-tls") },
+          );
+
+          assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
+        }),
+      );
+
+      it.scoped(
+        "installs with offline strategy",
+        Effect.fnUntraced(function* () {
+          const uv = yield* Uv;
+          const tmpdir = yield* TmpDir;
+          const targetPath = NodePath.join(tmpdir.path, "offline");
+
+          // First install to cache, then test offline
+          yield* uv.ensureLanguageServerBinaryInstalled(server, {
+            targetPath: NodePath.join(tmpdir.path, "cache-warmup"),
+            policy: singleStrategy("default"),
+          });
+
+          const binPath = yield* uv.ensureLanguageServerBinaryInstalled(
+            server,
+            { targetPath, policy: singleStrategy("offline") },
+          );
+
+          assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
+        }),
+      );
+    });
   });
 });

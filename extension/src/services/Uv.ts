@@ -43,16 +43,16 @@ const BUNDLED_UV_PATH = NodePath.join(
   "bundled",
   "libs",
   "bin",
-  NodeProcess.platform === "win32" ? "uv.exe" : "uv",
+  resolvePlatformBinaryName("uv"),
 );
 
-class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
+export class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
   bin: UvBin;
   command: Command.Command;
   cause: PlatformError;
 }> {}
 
-class UvUnknownError extends Data.TaggedError("UvUnknownError")<{
+export class UvUnknownError extends Data.TaggedError("UvUnknownError")<{
   command: Command.Command;
   exitCode?: CommandExecutor.ExitCode;
   stderr: string;
@@ -99,6 +99,75 @@ class UvResolutionError extends Data.TaggedError("UvResolutionError")<{
         ? new UvResolutionError({ cause })
         : cause,
     );
+  }
+}
+
+type LanguageServerInstallStrategy = "default" | "native-tls" | "offline";
+
+type LanguageServerInstallAttempt = {
+  readonly strategy: LanguageServerInstallStrategy;
+  readonly error: UvUnknownError | UvExecutionError;
+};
+
+export type InstallPolicy = {
+  readonly initial: LanguageServerInstallStrategy;
+  readonly next: (
+    current: LanguageServerInstallStrategy,
+    error: UvUnknownError,
+  ) => Option.Option<LanguageServerInstallStrategy>;
+};
+
+const InstallStrategy = {
+  /**
+   * Predicates that match stderr patterns to determine if a retry strategy
+   * might help. These check for known error messages from uv that indicate
+   * specific failure modes (TLS issues, network failures, etc.).
+   */
+  should: {
+    retryWithNativeTls(error: UvUnknownError): boolean {
+      return (
+        error.stderr.includes("invalid peer certificate") ||
+        error.stderr.includes("--native-tls")
+      );
+    },
+    retryOffline(error: UvUnknownError): boolean {
+      return error.stderr.includes("Request failed after");
+    },
+  },
+
+  next(
+    current: LanguageServerInstallStrategy,
+    error: UvUnknownError,
+  ): Option.Option<LanguageServerInstallStrategy> {
+    if (current === "default" && this.should.retryWithNativeTls(error)) {
+      return Option.some("native-tls");
+    }
+    if (current !== "offline" && this.should.retryOffline(error)) {
+      return Option.some("offline");
+    }
+    return Option.none();
+  },
+};
+
+export class LanguageServerInstallError extends Data.TaggedError(
+  "LanguageServerInstallError",
+)<{
+  readonly server: { name: "ruff" | "ty"; version: string };
+  readonly targetPath: string;
+  readonly attempts: ReadonlyArray<LanguageServerInstallAttempt>;
+}> {
+  format(): string {
+    const lines = [
+      `Failed to install ${this.server.name}@${this.server.version}`,
+    ];
+    for (const attempt of this.attempts) {
+      const errorMsg =
+        attempt.error._tag === "UvExecutionError"
+          ? `execution error: ${attempt.error.cause.message}`
+          : `exit code ${attempt.error.exitCode ?? "unknown"}: ${attempt.error.stderr.slice(0, 200)}`;
+      lines.push(`  [${attempt.strategy}] ${errorMsg}`);
+    }
+    return lines.join("\n");
   }
 }
 
@@ -244,15 +313,108 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
           readonly venv: string;
         },
       ) {
+        const args = ["pip", "install"];
         return Effect.andThen(
           uv({
-            args: ["pip", "install", ...packages],
+            args: [...args, ...packages],
             env: {
               VIRTUAL_ENV: options.venv,
             },
           }),
           Effect.void,
         );
+      },
+      ensureLanguageServerBinaryInstalled(
+        server: {
+          name: "ruff" | "ty";
+          version: string;
+        },
+        options: {
+          targetPath: string;
+          policy?: InstallPolicy;
+        },
+      ) {
+        const policy: InstallPolicy = options.policy ?? {
+          initial: "default",
+          next: InstallStrategy.next.bind(InstallStrategy),
+        };
+
+        const strategyToEnv = {
+          default: {},
+          "native-tls": { UV_NATIVE_TLS: "1" },
+          offline: { UV_OFFLINE: "1" },
+        } as const;
+
+        const tryInstall = (strategy: LanguageServerInstallStrategy) =>
+          uv({
+            args: [
+              "pip",
+              "install",
+              "--target",
+              options.targetPath,
+              "--no-deps",
+              `${server.name}==${server.version}`,
+            ],
+            env: {
+              UV_NO_CONFIG: "1",
+              UV_PYTHON: "3.10",
+              UV_DEFAULT_INDEX: "https://pypi.org/simple/",
+              ...strategyToEnv[strategy],
+            },
+          });
+
+        const loop = (
+          attempts: ReadonlyArray<LanguageServerInstallAttempt>,
+          strategy: LanguageServerInstallStrategy,
+        ): Effect.Effect<string, LanguageServerInstallError> =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              `Installing ${server.name}@${server.version} with strategy="${strategy}"`,
+            );
+            return yield* tryInstall(strategy).pipe(
+              Effect.catchTag("UvUnknownError", (error) => {
+                const newAttempts = [...attempts, { strategy, error }];
+                return Option.match(policy.next(strategy, error), {
+                  onSome: (next) =>
+                    Effect.zipRight(
+                      Effect.logDebug(
+                        `Strategy "${strategy}" failed, retrying with "${next}"`,
+                      ),
+                      loop(newAttempts, next),
+                    ),
+                  onNone: () =>
+                    Effect.zipRight(
+                      Effect.logDebug(
+                        `Strategy "${strategy}" failed, no more strategies to try`,
+                      ),
+                      new LanguageServerInstallError({
+                        server,
+                        targetPath: options.targetPath,
+                        attempts: newAttempts,
+                      }),
+                    ),
+                });
+              }),
+              Effect.catchTag(
+                "UvExecutionError",
+                (error) =>
+                  new LanguageServerInstallError({
+                    server,
+                    targetPath: options.targetPath,
+                    attempts: [...attempts, { strategy, error }],
+                  }),
+              ),
+              Effect.andThen(() =>
+                NodePath.resolve(
+                  options.targetPath,
+                  "bin",
+                  resolvePlatformBinaryName(server.name),
+                ),
+              ),
+            );
+          });
+
+        return loop([], policy.initial);
       },
     };
   }),
@@ -287,10 +449,11 @@ function createUv(
         ),
       ),
       Effect.scoped,
-      Effect.catchTags({
-        BadArgument: (cause) => new UvExecutionError({ bin, command, cause }),
-        SystemError: (cause) => new UvExecutionError({ bin, command, cause }),
-      }),
+      Effect.catchTag(
+        "BadArgument",
+        "SystemError",
+        (cause) => new UvExecutionError({ bin, command, cause }),
+      ),
     );
     if (exitCode !== 0) {
       return yield* new UvUnknownError({ command, exitCode, stderr });
@@ -431,10 +594,11 @@ function getUvVersion(bin: UvBin) {
   return command.pipe(
     Command.string,
     Effect.map(Schema.decodeOption(Schema.parseJson(VersionInfo))),
-    Effect.catchTags({
-      BadArgument: (cause) => new UvExecutionError({ bin, command, cause }),
-      SystemError: (cause) => new UvExecutionError({ bin, command, cause }),
-    }),
+    Effect.catchTag(
+      "BadArgument",
+      "SystemError",
+      (cause) => new UvExecutionError({ bin, command, cause }),
+    ),
   );
 }
 
@@ -509,3 +673,7 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   // Die to prevent extension from continuing without UV
   return yield* Effect.die(error);
 });
+
+function resolvePlatformBinaryName(name: "uv" | "ruff" | "ty") {
+  return NodeProcess.platform === "win32" ? `${name}.exe` : name;
+}
