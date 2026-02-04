@@ -19,6 +19,7 @@ import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
 import { signalFromToken } from "../../utils/signalFromToken.ts";
 import { Config } from "../Config.ts";
 import { Constants } from "../Constants.ts";
+import { OutputChannel } from "../OutputChannel.ts";
 import { PythonExtension } from "../PythonExtension.ts";
 import { Sentry } from "../Sentry.ts";
 import { Uv } from "../Uv.ts";
@@ -72,6 +73,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
       Constants.Default,
       VariablesService.Default,
       NotebookSyncService.Default,
+      OutputChannel.Default,
     ],
     scoped: Effect.gen(function* () {
       const pyExt = yield* PythonExtension;

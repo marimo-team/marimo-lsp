@@ -53,7 +53,6 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       Constants.Default,
       OutputChannel.Default,
       VariablesService.Default,
-      TyLanguageServer.Default,
       NotebookRenderer.Default,
       ExecutionRegistry.Default,
       DatasourcesService.Default,

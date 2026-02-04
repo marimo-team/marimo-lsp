@@ -16,7 +16,9 @@ import {
 } from "../../utils/createManagedLanguageClient.ts";
 import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
 import { Config } from "../Config.ts";
+import { OutputChannel } from "../OutputChannel.ts";
 import { Sentry } from "../Sentry.ts";
+import { Uv } from "../Uv.ts";
 import { VsCode } from "../VsCode.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
 import {
@@ -56,7 +58,13 @@ type RuffLanguageServerStatus = Data.TaggedEnum<{
 export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
   "RuffLanguageServer",
   {
-    dependencies: [VariablesService.Default, NotebookSyncService.Default],
+    dependencies: [
+      Uv.Default,
+      Config.Default,
+      VariablesService.Default,
+      NotebookSyncService.Default,
+      OutputChannel.Default,
+    ],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const sync = yield* NotebookSyncService;

@@ -1,13 +1,14 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Effect, Either, Layer } from "effect";
+import { Effect, Either, Layer, Option } from "effect";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { singleStrategy, Uv } from "../../services/Uv.ts";
+import { Uv } from "../../services/Uv.ts";
 
 const python = "3.13";
 
@@ -219,7 +220,12 @@ print("hello")
   });
 
   describe("ensureLanguageServerBinaryInstalled", () => {
-    const server = { name: "ruff" as const, version: "0.11.4" };
+    const server = { name: "ruff", version: "0.11.4" } as const;
+
+    const singleStrategy = <T extends string>(initial: T) => ({
+      initial,
+      next: () => Option.none(),
+    });
 
     it.layer(Layer.fresh(UvLive))((it) => {
       it.scoped(
@@ -273,6 +279,35 @@ print("hello")
           );
 
           assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
+        }),
+      );
+
+      it.scoped(
+        "reinstalling with a new version replaces the binary",
+        Effect.fnUntraced(function* () {
+          const uv = yield* Uv;
+          const tmpdir = yield* TmpDir;
+          const targetPath = NodePath.join(tmpdir.path, "upgrade");
+
+          // Install old version first
+          const oldServer = { name: "ruff", version: "0.11.4" } as const;
+          yield* uv.ensureLanguageServerBinaryInstalled(oldServer, {
+            targetPath,
+            policy: singleStrategy("default"),
+          });
+
+          // Install new version over it
+          const newServer = { name: "ruff", version: "0.11.5" } as const;
+          const binPath = yield* uv.ensureLanguageServerBinaryInstalled(
+            newServer,
+            { targetPath, policy: singleStrategy("default") },
+          );
+
+          const output = NodeChildProcess.execSync(`${binPath} --version`, {
+            encoding: "utf8",
+          });
+
+          expect(output.trim()).toMatchInlineSnapshot(`"ruff 0.11.5"`);
         }),
       );
     });

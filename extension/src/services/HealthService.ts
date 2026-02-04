@@ -22,11 +22,7 @@ import { VsCode } from "./VsCode.ts";
 export class HealthService extends Effect.Service<HealthService>()(
   "HealthService",
   {
-    dependencies: [
-      Uv.Default,
-      TyLanguageServer.Default,
-      RuffLanguageServer.Default,
-    ],
+    dependencies: [Uv.Default],
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;

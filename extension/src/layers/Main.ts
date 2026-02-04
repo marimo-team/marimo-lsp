@@ -15,8 +15,8 @@ import { CellStateManager } from "../services/CellStateManager.ts";
 import { Config } from "../services/Config.ts";
 import { Constants } from "../services/Constants.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
-import { RuffLanguageServer } from "../services/completions/RuffLanguageServer.ts";
-import { TyLanguageServer } from "../services/completions/TyLanguageServer.ts";
+import type { RuffLanguageServer } from "../services/completions/RuffLanguageServer.ts";
+import type { TyLanguageServer } from "../services/completions/TyLanguageServer.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { DebugAdapter } from "../services/DebugAdapter.ts";
@@ -75,8 +75,6 @@ const MainLive = Layer.empty
   .pipe(
     Layer.provideMerge(Api.Default),
     Layer.provide(KernelManager.Default),
-    Layer.provide(TyLanguageServer.Default),
-    Layer.provide(RuffLanguageServer.Default),
     Layer.provide(GitHubClient.Default),
     Layer.provide(DebugAdapter.Default),
     Layer.provide(NotebookRenderer.Default),
@@ -107,7 +105,13 @@ const MainLive = Layer.empty
 
 export function makeActivate(
   layer: Layer.Layer<
-    LanguageClient | VsCode | PythonExtension | Telemetry | Sentry,
+    | LanguageClient
+    | VsCode
+    | PythonExtension
+    | Telemetry
+    | Sentry
+    | TyLanguageServer
+    | RuffLanguageServer,
     never,
     ExtensionContext
   >,
@@ -115,7 +119,7 @@ export function makeActivate(
 ): (
   context: Pick<
     vscode.ExtensionContext,
-    "workspaceState" | "globalState" | "extensionUri"
+    "workspaceState" | "globalState" | "extensionUri" | "globalStorageUri"
   >,
 ) => Promise<vscode.Disposable & MarimoApi> {
   return (context) =>

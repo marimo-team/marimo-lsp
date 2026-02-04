@@ -19,9 +19,7 @@ export const TestTyLanguageServerLive = Layer.succeed(
         TyLanguageServerStatus.Running({
           client: {
             start: () => Effect.succeed(Option.none()),
-            stop: () => Effect.void,
             restart: () => Effect.void,
-            sendNotification: () => Effect.void,
           },
           serverVersion: "0.0.0-test",
           pythonEnvironment: Option.none(),
