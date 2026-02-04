@@ -1,8 +1,10 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
+import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
+import { TestTyLanguageServerLive } from "../../__mocks__/TestTyLanguageServer.ts";
 import {
   createTestNotebookDocument,
   TestVsCode,
@@ -39,6 +41,8 @@ const withTestCtx = Effect.fnUntraced(function* (
       Layer.provide(TestTelemetryLive),
       Layer.provide(TestSentryLive),
       Layer.provide(TestPythonExtension.Default),
+      Layer.provide(TestTyLanguageServerLive),
+      Layer.provide(TestExtensionContextLive),
       Layer.provideMerge(testVsCode.layer),
     ),
   };

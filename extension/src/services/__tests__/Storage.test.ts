@@ -20,6 +20,7 @@ const withTestCtx = Effect.fnUntraced(function* (
         globalState: ctx.globalState ?? new Memento(),
         workspaceState: ctx.workspaceState ?? new Memento(),
         extensionUri: Uri.parse("file:///test/extension/path", true),
+        globalStorageUri: Uri.parse("file:///test/extension/path/libs", true),
       }),
     ),
   );
@@ -64,6 +65,13 @@ it.effect(
             "scheme": "file",
           },
           "globalState": {},
+          "globalStorageUri": {
+            "authority": "",
+            "fragment": "",
+            "path": "/test/extension/path/libs",
+            "query": "",
+            "scheme": "file",
+          },
           "workspaceState": {},
         }
       `);
@@ -90,6 +98,13 @@ it.effect(
             "scheme": "file",
           },
           "globalState": {},
+          "globalStorageUri": {
+            "authority": "",
+            "fragment": "",
+            "path": "/test/extension/path/libs",
+            "query": "",
+            "scheme": "file",
+          },
           "workspaceState": {
             "key": {
               "value": 2,
@@ -125,6 +140,13 @@ it.effect(
             "scheme": "file",
           },
           "globalState": {},
+          "globalStorageUri": {
+            "authority": "",
+            "fragment": "",
+            "path": "/test/extension/path/libs",
+            "query": "",
+            "scheme": "file",
+          },
           "workspaceState": {
             "key": {
               "value": 3,

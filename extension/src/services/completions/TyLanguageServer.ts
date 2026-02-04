@@ -1,13 +1,25 @@
-import * as NodeProcess from "node:process";
-import { Command, CommandExecutor } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import { Data, Effect, Either, Option, Runtime, Stream, String } from "effect";
+import {
+  type Cause,
+  Data,
+  Effect,
+  Exit,
+  Option,
+  Ref,
+  Runtime,
+  Stream,
+} from "effect";
 import type * as lsp from "vscode-languageclient/node";
 import { ResponseError } from "vscode-languageclient/node";
-import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
+import {
+  createManagedLanguageClient,
+  type ManagedLanguageClient,
+} from "../../utils/createManagedLanguageClient.ts";
+import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
 import { signalFromToken } from "../../utils/signalFromToken.ts";
 import { Config } from "../Config.ts";
 import { Constants } from "../Constants.ts";
+import { OutputChannel } from "../OutputChannel.ts";
 import { PythonExtension } from "../PythonExtension.ts";
 import { Sentry } from "../Sentry.ts";
 import { Uv } from "../Uv.ts";
@@ -20,19 +32,26 @@ import {
 
 // TODO: make TY_VERSION configurable?
 // For now, since we are doing rolling releases, we can bump this as needed.
-const TY_VERSION = "0.0.14";
+const TY_SERVER = { name: "ty", version: "0.0.14" } as const;
 
-export const TyLanguageServerHealth = Data.taggedEnum<TyLanguageServerHealth>();
+export const TyLanguageServerStatus = Data.taggedEnum<TyLanguageServerStatus>();
 
-type TyLanguageServerHealth = Data.TaggedEnum<{
+type TyLanguageServerStatus = Data.TaggedEnum<{
+  // biome-ignore lint/complexity/noBannedTypes: This is ok with Effect enums
+  Starting: {};
+  Disabled: { readonly reason: string };
   Running: {
-    readonly version: Option.Option<string>;
+    readonly client: ManagedLanguageClient;
+    readonly serverVersion: string;
     readonly pythonEnvironment: Option.Option<{
       path: string;
       version: string | null;
     }>;
   };
-  Failed: { readonly error: string };
+  Failed: {
+    readonly message: string;
+    readonly cause?: Cause.Cause<unknown>;
+  };
 }>;
 
 /**
@@ -54,160 +73,192 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
       Constants.Default,
       VariablesService.Default,
       NotebookSyncService.Default,
+      OutputChannel.Default,
     ],
     scoped: Effect.gen(function* () {
-      const uv = yield* Uv;
       const pyExt = yield* PythonExtension;
       const sync = yield* NotebookSyncService;
-      const executor = yield* CommandExecutor.CommandExecutor;
       const sentry = yield* Effect.serviceOption(Sentry);
 
-      const disabledHealth = yield* checkTyEnabled();
-      if (Option.isSome(disabledHealth)) {
-        return {
-          getHealthStatus: Effect.succeed(disabledHealth.value),
-          restart: () => Effect.void,
-        };
+      const statusRef = yield* Ref.make<TyLanguageServerStatus>(
+        TyLanguageServerStatus.Starting(),
+      );
+
+      const disabledReasonOption = yield* getTyDisabledReason();
+      if (Option.isSome(disabledReasonOption)) {
+        yield* Ref.set(
+          statusRef,
+          TyLanguageServerStatus.Disabled({
+            reason: disabledReasonOption.value,
+          }),
+        );
       }
 
-      yield* Effect.logInfo("Starting ty language server for marimo");
+      yield* Effect.forkScoped(
+        Effect.gen(function* () {
+          if (Option.isSome(disabledReasonOption)) {
+            // skip startup completely if disabled for any reason
+            return;
+          }
 
-      // Create isolated sync instance with its own cell count tracking
-      const notebookSync = yield* sync.forClient();
-
-      const serverOptions: lsp.ServerOptions = {
-        command: uv.bin.executable,
-        args: ["tool", "run", `ty@${TY_VERSION}`, "server"],
-        options: {
-          env: {
-            ...NodeProcess.env,
-          },
-        },
-      };
-
-      const clientOptions: lsp.LanguageClientOptions = {
-        outputChannelName: "marimo (ty)",
-        middleware: yield* createTyMiddleware(notebookSync),
-        documentSelector: sync.getDocumentSelector(),
-        transformServerCapabilities: sync.extendNotebookCellLanguages(),
-        initializationOptions: {},
-      };
-
-      const getClient = yield* Effect.tryPromise({
-        try: async () => {
-          const client = new NamespacedLanguageClient(
-            "marimo-ty",
-            "marimo (ty)",
-            serverOptions,
-            clientOptions,
+          // Phase 1: Install the language server
+          yield* Effect.logInfo("Starting language server").pipe(
+            Effect.annotateLogs({
+              server: TY_SERVER.name,
+              version: TY_SERVER.version,
+            }),
           );
-          await client.start();
-          return client;
-        },
-        catch: (cause) => new TyLanguageServerStartError({ cause }),
-      }).pipe(
-        Effect.tapError((error) =>
-          Effect.gen(function* () {
-            const diagnostic = yield* runTyDiagnostic(uv.bin.executable).pipe(
-              Effect.provideService(CommandExecutor.CommandExecutor, executor),
-              Effect.timeout("10 seconds"),
-              Effect.catchAll(() => Effect.succeed(null)),
+
+          // Create isolated sync instance with its own cell count tracking
+          const notebookSync = yield* sync.forClient();
+
+          const installExit = yield* Effect.exit(
+            createManagedLanguageClient(TY_SERVER, {
+              notebookSync,
+              clientOptions: {
+                outputChannelName: "marimo (ty)",
+                middleware: yield* createTyMiddleware(notebookSync),
+                documentSelector: sync.getDocumentSelector(),
+                transformServerCapabilities: sync.extendNotebookCellLanguages(),
+                initializationOptions: {},
+              },
+            }),
+          );
+
+          if (!Exit.isSuccess(installExit)) {
+            const cause = installExit.cause;
+            const message = "Failed to install language server";
+            yield* Ref.set(
+              statusRef,
+              TyLanguageServerStatus.Failed({ message, cause }),
             );
-            yield* Effect.logError("Error starting ty language server").pipe(
+            yield* Effect.logError(message).pipe(
               Effect.annotateLogs({
-                cause: error.cause,
-                message: error.formatMessage(),
-                diagnosticStderr: diagnostic?.stderr,
-                diagnosticExitCode: diagnostic?.exitCode,
+                server: TY_SERVER.name,
+                version: TY_SERVER.version,
+                cause,
               }),
             );
-          }),
-        ),
-        Effect.either,
-        Effect.cached,
-      );
-
-      yield* Effect.addFinalizer(() =>
-        Effect.gen(function* () {
-          yield* Effect.logInfo("Stopping ty language server for marimo");
-          const c = yield* getClient;
-          if (Either.isRight(c)) {
-            yield* Effect.promise(() => c.right.stop());
+            yield* Effect.forkScoped(showErrorAndPromptLogs(message));
+            return;
           }
+
+          // Phase 2: Start the server
+          const client = installExit.value;
+          yield* Effect.forkScoped(
+            Effect.gen(function* () {
+              const startExit = yield* Effect.exit(client.start());
+
+              if (!Exit.isSuccess(startExit)) {
+                const cause = startExit.cause;
+                const message = "Failed to start language server";
+                yield* Ref.set(
+                  statusRef,
+                  TyLanguageServerStatus.Failed({ message, cause }),
+                );
+                yield* Effect.logError(message).pipe(
+                  Effect.annotateLogs({
+                    server: TY_SERVER.name,
+                    version: TY_SERVER.version,
+                    cause,
+                  }),
+                );
+                yield* Effect.forkScoped(showErrorAndPromptLogs(message));
+                return;
+              }
+
+              const serverVersion = startExit.value.pipe(
+                Option.map((info) => info.version),
+                Option.getOrElse(() => "unknown"),
+              );
+
+              yield* Effect.logInfo("Language server started").pipe(
+                Effect.annotateLogs({
+                  server: TY_SERVER.name,
+                  version: serverVersion,
+                }),
+              );
+
+              if (Option.isSome(sentry)) {
+                yield* sentry.value.setTag("ty.version", serverVersion);
+              }
+
+              const updateRunningStatus = Effect.fnUntraced(function* () {
+                const activePath = yield* pyExt.getActiveEnvironmentPath();
+                const resolved = yield* pyExt.resolveEnvironment(activePath);
+                const pythonEnvironment = Option.map(resolved, (env) => ({
+                  path: env.executable.uri?.fsPath ?? env.path ?? "Unknown",
+                  version: env.version?.sysVersion ?? null,
+                }));
+                yield* Ref.set(
+                  statusRef,
+                  TyLanguageServerStatus.Running({
+                    client,
+                    serverVersion,
+                    pythonEnvironment,
+                  }),
+                );
+              });
+
+              // Restart the language server when Python environment changes
+              // ty needs restart to pick up environment changes since it doesn't
+              // support workspace/didChangeConfiguration for environment updates
+              yield* Effect.forkScoped(
+                pyExt.activeEnvironmentPathChanges().pipe(
+                  Stream.runForEach(
+                    Effect.fnUntraced(function* (event) {
+                      yield* client
+                        .restart(`Python environment changed to: ${event.path}`)
+                        .pipe(
+                          Effect.catchAllCause((cause) =>
+                            Effect.logError(
+                              "Failed to restart language server",
+                            ).pipe(
+                              Effect.annotateLogs({
+                                server: TY_SERVER.name,
+                                cause,
+                              }),
+                            ),
+                          ),
+                        );
+                      yield* updateRunningStatus();
+                    }),
+                  ),
+                ),
+              );
+
+              yield* updateRunningStatus();
+            }),
+          );
         }),
-      );
-
-      const client = yield* getClient;
-
-      if (Either.isRight(client)) {
-        if (Option.isSome(sentry)) {
-          yield* sentry.value.setTag(
-            "ty.version",
-            client.right.initializeResult?.serverInfo?.version ?? "unknown",
-          );
-        }
-        yield* notebookSync.connect(client.right);
-        yield* Effect.logInfo("ty language server started successfully");
-      } else {
-        yield* Effect.logInfo("ty language server failed to start");
-      }
-
-      const restartServer = Effect.fn(function* (reason: string) {
-        if (Either.isLeft(client)) {
-          yield* Effect.logWarning(
-            "Cannot restart ty language server: client failed to start",
-          );
-          return;
-        }
-        yield* Effect.logInfo(
-          `Restarting ty language server for marimo: ${reason}`,
-        );
-        yield* Effect.promise(() => client.right.stop());
-        yield* Effect.promise(() => client.right.start());
-        yield* Effect.logInfo("ty language server for marimo restarted");
-      });
-
-      // Restart the language server when Python environment changes
-      // ty needs restart to pick up environment changes since it doesn't
-      // support workspace/didChangeConfiguration for environment updates
-      yield* Effect.forkScoped(
-        pyExt.activeEnvironmentPathChanges().pipe(
-          Stream.mapEffect((event) =>
-            restartServer(`Python environment changed to: ${event.path}`),
-          ),
-          Stream.runDrain,
-        ),
       );
 
       return {
-        getHealthStatus: Effect.gen(function* () {
-          const [client, path] = yield* Effect.all([
-            getClient,
-            pyExt.getActiveEnvironmentPath(),
-          ]);
-          const resolved = yield* pyExt.resolveEnvironment(path);
-          return Either.match(client, {
-            onLeft: (error) =>
-              TyLanguageServerHealth.Failed({ error: error.formatMessage() }),
-            onRight: (client) =>
-              TyLanguageServerHealth.Running({
-                version: Option.fromNullable(
-                  client.initializeResult?.serverInfo?.version,
-                ),
-                pythonEnvironment: Option.map(resolved, (env) => ({
-                  path: env.executable.uri?.fsPath ?? env.path ?? "Unknown",
-                  version: env.version?.sysVersion ?? null,
-                })),
-              }),
-          });
-        }),
-
+        getHealthStatus: () => Ref.get(statusRef),
         /**
          * Restart the language server to pick up new packages or environment changes.
          * This is useful after installing packages, as ty doesn't support
          * workspace/didChangeConfiguration.
          */
-        restart: (reason: string) => restartServer(reason),
+        restart: Effect.fnUntraced(function* (reason: string) {
+          const status = yield* Ref.get(statusRef);
+          if (!TyLanguageServerStatus.$is("Running")(status)) {
+            yield* Effect.logWarning(
+              "Cannot restart language server: server is not running",
+            ).pipe(Effect.annotateLogs({ server: TY_SERVER.name }));
+            return;
+          }
+          return yield* status.client.restart(reason).pipe(
+            Effect.catchAllCause((cause) =>
+              Effect.logError("Failed to restart language server").pipe(
+                Effect.annotateLogs({
+                  server: TY_SERVER.name,
+                  cause,
+                }),
+              ),
+            ),
+          );
+        }),
       };
     }),
   },
@@ -414,7 +465,7 @@ function createTyMiddleware(
  * Checks if the managed ty language server should be enabled.
  * Returns Some(FailedHealth) if disabled, None if enabled.
  */
-const checkTyEnabled = Effect.fn(function* () {
+const getTyDisabledReason = Effect.fn(function* () {
   const config = yield* Config;
 
   const managedFeaturesEnabled =
@@ -425,83 +476,9 @@ const checkTyEnabled = Effect.fn(function* () {
       "Managed language features are disabled. Not starting managed ty language server.",
     );
     return Option.some(
-      TyLanguageServerHealth.Failed({
-        error: "Managed language features are disabled in marimo settings.",
-      }),
+      "Managed language features are disabled in marimo settings.",
     );
   }
 
   return Option.none();
 });
-
-/**
- * Run `uv tool run ty@X.X.X server -h` to diagnose why the server failed to start.
- * Returns stdout/stderr which may contain useful error messages.
- */
-const runTyDiagnostic = Effect.fn(function* (bin: string) {
-  const command = Command.make(
-    bin,
-    "tool",
-    "run",
-    `ty@${TY_VERSION}`,
-    "server",
-    "-h",
-  );
-
-  function runString<E, R>(
-    stream: Stream.Stream<Uint8Array, E, R>,
-  ): Effect.Effect<string, E, R> {
-    return stream.pipe(
-      Stream.decodeText(),
-      Stream.runFold(String.empty, String.concat),
-    );
-  }
-
-  const [exitCode, stdout, stderr] = yield* command.pipe(
-    Command.start,
-    Effect.flatMap((process) =>
-      Effect.all(
-        [
-          process.exitCode,
-          runString(process.stdout),
-          runString(process.stderr),
-        ],
-        { concurrency: 3 },
-      ),
-    ),
-    Effect.scoped,
-  );
-
-  return { exitCode, stdout, stderr };
-});
-
-export class TyLanguageServerStartError extends Data.TaggedError(
-  "TyLanguageServerStartError",
-)<{
-  cause: unknown;
-}> {
-  formatMessage(): string {
-    if (isLanguageServerError(this.cause)) {
-      const code = this.cause.code;
-      switch (code) {
-        case -32097:
-          return `Connection closed unexpectedly. The server process may have crashed or failed to start (code: ${code})`;
-        default:
-          return `Language server error (code: ${code})`;
-      }
-    }
-    if (this.cause instanceof Error) {
-      return this.cause.message;
-    }
-    return JSON.stringify(this.cause);
-  }
-}
-
-function isLanguageServerError(x: unknown): x is { code: number } {
-  return (
-    typeof x === "object" &&
-    x !== null &&
-    "code" in x &&
-    typeof x.code === "number"
-  );
-}

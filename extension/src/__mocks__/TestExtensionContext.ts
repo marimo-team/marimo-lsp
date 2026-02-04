@@ -27,11 +27,12 @@ export const TestExtensionContextLive = Layer.succeed(ExtensionContext, {
   globalState: new Memento(),
   workspaceState: new Memento(),
   extensionUri: Uri.parse("file:///test/extension/path", true),
+  globalStorageUri: Uri.parse("file://test/extension/libs", true),
 });
 
 export function getTestExtensionContext() {
-  return Effect.gen(function* () {
-    const context = yield* ExtensionContext;
-    return context;
-  }).pipe(Effect.provide(TestExtensionContextLive));
+  return ExtensionContext.pipe(
+    Effect.provide(TestExtensionContextLive),
+    Effect.scoped,
+  );
 }

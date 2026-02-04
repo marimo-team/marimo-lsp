@@ -1,9 +1,22 @@
-import * as NodeProcess from "node:process";
-import { Data, Effect, Either, Option, Runtime, Stream } from "effect";
+import {
+  type Cause,
+  Data,
+  Effect,
+  Exit,
+  Option,
+  Ref,
+  Runtime,
+  Stream,
+} from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
-import { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
+import {
+  createManagedLanguageClient,
+  type ManagedLanguageClient,
+} from "../../utils/createManagedLanguageClient.ts";
+import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
 import { Config } from "../Config.ts";
+import { OutputChannel } from "../OutputChannel.ts";
 import { Sentry } from "../Sentry.ts";
 import { Uv } from "../Uv.ts";
 import { VsCode } from "../VsCode.ts";
@@ -15,26 +28,29 @@ import {
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
 // Bump this as needed for new features or fixes.
-const RUFF_VERSION = "0.11.13";
+const RUFF_SERVER = { name: "ruff", version: "0.11.13" } as const;
 const RUFF_EXTENSION_ID = "charliermarsh.ruff";
 
-export class RuffLanguageServerStartError extends Data.TaggedError(
-  "RuffLanguageServerStartError",
-)<{
-  cause: unknown;
-}> {}
+export const RuffLanguageServerStatus =
+  Data.taggedEnum<RuffLanguageServerStatus>();
 
-export const RuffLanguageServerHealth =
-  Data.taggedEnum<RuffLanguageServerHealth>();
-
-type RuffLanguageServerHealth = Data.TaggedEnum<{
-  Running: { readonly version: Option.Option<string> };
-  Failed: { readonly error: string };
+type RuffLanguageServerStatus = Data.TaggedEnum<{
+  // biome-ignore lint/complexity/noBannedTypes: This is ok with Effect enums
+  Starting: {};
+  Disabled: { readonly reason: string };
+  Running: {
+    readonly client: ManagedLanguageClient;
+    readonly serverVersion: string;
+  };
+  Failed: {
+    readonly message: string;
+    readonly cause?: Cause.Cause<unknown>;
+  };
 }>;
 
 /**
- * Manages a dedicated Ruff language server instance (using ruff via uvx)
- * for marimo notebooks. Provides linting diagnostics for notebook cells.
+ * Manages a dedicated Ruff language server instance for marimo notebooks.
+ * Provides linting diagnostics for notebook cells.
  *
  * Ruff has native notebook support. We configure automatic notebook sync
  * and use middleware to map mo-python -> python language IDs.
@@ -42,147 +58,176 @@ type RuffLanguageServerHealth = Data.TaggedEnum<{
 export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
   "RuffLanguageServer",
   {
-    dependencies: [VariablesService.Default, NotebookSyncService.Default],
+    dependencies: [
+      Uv.Default,
+      Config.Default,
+      VariablesService.Default,
+      NotebookSyncService.Default,
+      OutputChannel.Default,
+    ],
     scoped: Effect.gen(function* () {
-      const uv = yield* Uv;
       const code = yield* VsCode;
       const sync = yield* NotebookSyncService;
       const sentry = yield* Effect.serviceOption(Sentry);
 
-      const disabledHealth = yield* checkRuffEnabled();
-      if (Option.isSome(disabledHealth)) {
-        return {
-          getHealthStatus: Effect.succeed(disabledHealth.value),
-        };
+      const statusRef = yield* Ref.make<RuffLanguageServerStatus>(
+        RuffLanguageServerStatus.Starting(),
+      );
+
+      const disabledReasonOption = yield* getRuffDisabledReason();
+      if (Option.isSome(disabledReasonOption)) {
+        yield* Ref.set(
+          statusRef,
+          RuffLanguageServerStatus.Disabled({
+            reason: disabledReasonOption.value,
+          }),
+        );
       }
 
-      yield* Effect.logInfo("Starting Ruff language server for marimo");
-
-      // Create isolated sync instance with its own cell count tracking.
-      //
-      // WORKAROUND: Ruff requires notebook document URIs to end with `.ipynb`
-      // to recognize them as notebooks. Without this, Ruff treats cells as
-      // independent files rather than parts of a single notebook module.
-      // This workaround is NOT needed for ty, which handles notebook URIs
-      // without the `.ipynb` suffix.
-      // See: https://github.com/astral-sh/ruff/issues/22809
-      const notebookSync = yield* sync.forClient({
-        transformNotebookDocumentUri: (uri) =>
-          uri.with({ path: `${uri.path}.ipynb` }),
-      });
-
-      // Build initializationOptions from ruff.* settings
-      const ruffConfig = yield* code.workspace.getConfiguration("ruff");
-      const workspaceFolders = yield* code.workspace.getWorkspaceFolders();
-      const settings = Option.getOrElse(workspaceFolders, () => []).map(
-        (folder) => getRuffSettings(ruffConfig, folder),
-      );
-      const globalSettings = getGlobalRuffSettings(ruffConfig);
-
-      yield* Effect.logDebug("Ruff initialization options", {
-        settings,
-        globalSettings,
-      });
-
-      const clientOptions: lsp.LanguageClientOptions = {
-        outputChannelName: "marimo (ruff)",
-        middleware: yield* createRuffMiddleware(notebookSync),
-        documentSelector: sync.getDocumentSelector(),
-        transformServerCapabilities: sync.extendNotebookCellLanguages(),
-        initializationOptions: { settings, globalSettings },
-      };
-
-      const serverOptions: lsp.ServerOptions = {
-        command: uv.bin.executable,
-        args: ["tool", "run", `ruff@${RUFF_VERSION}`, "server"],
-        options: {
-          env: {
-            ...NodeProcess.env,
-          },
-        },
-      };
-
-      const getClient = yield* Effect.tryPromise({
-        try: async () => {
-          const client = new NamespacedLanguageClient(
-            "marimo-ruff",
-            "marimo (ruff)",
-            serverOptions,
-            clientOptions,
-          );
-          await client.start();
-          return client;
-        },
-        catch: (cause) => new RuffLanguageServerStartError({ cause }),
-      }).pipe(
-        Effect.tapError((error) =>
-          Effect.logError("Error starting Ruff language server", { error }),
-        ),
-        Effect.either,
-        Effect.cached,
-      );
-
-      yield* Effect.addFinalizer(() =>
-        Effect.gen(function* () {
-          yield* Effect.logInfo("Stopping Ruff language server for marimo");
-          const c = yield* getClient;
-          if (Either.isRight(c)) {
-            yield* Effect.promise(() => c.right.stop());
-          }
-        }),
-      );
-
-      const restartServer = Effect.fn(function* () {
-        const c = yield* getClient;
-        if (Either.isLeft(c)) {
-          return;
-        }
-        yield* Effect.logInfo("Restarting Ruff language server for marimo");
-        yield* Effect.promise(() => c.right.stop());
-        yield* Effect.promise(() => c.right.start());
-        yield* Effect.logInfo("Ruff language server for marimo restarted");
-      });
-
-      const client = yield* getClient;
-
-      if (Either.isRight(client)) {
-        if (Option.isSome(sentry)) {
-          yield* sentry.value.setTag(
-            "ruff.version",
-            client.right.initializeResult?.serverInfo?.version ?? "unknown",
-          );
-        }
-        yield* notebookSync.connect(client.right);
-        yield* Effect.logInfo("Ruff language server started successfully");
-      } else {
-        yield* Effect.logInfo("Ruff language server failed to start");
-      }
-
-      // Restart the language server when ruff.* settings change
       yield* Effect.forkScoped(
-        code.workspace.configurationChanges().pipe(
-          Stream.filter((event) => event.affectsConfiguration("ruff")),
-          Stream.mapEffect(restartServer),
-          Stream.runDrain,
-        ),
+        Effect.gen(function* () {
+          if (Option.isSome(disabledReasonOption)) {
+            // Skip startup completely if disabled for any reason
+            return;
+          }
+
+          // Phase 1: Install the language server
+          yield* Effect.logInfo("Starting language server").pipe(
+            Effect.annotateLogs({
+              server: RUFF_SERVER.name,
+              version: RUFF_SERVER.version,
+            }),
+          );
+
+          // Create isolated sync instance with its own cell count tracking.
+          //
+          // WORKAROUND: Ruff requires notebook document URIs to end with `.ipynb`
+          // to recognize them as notebooks. Without this, Ruff treats cells as
+          // independent files rather than parts of a single notebook module.
+          // This workaround is NOT needed for ty, which handles notebook URIs
+          // without the `.ipynb` suffix.
+          // See: https://github.com/astral-sh/ruff/issues/22809
+          const notebookSync = yield* sync.forClient({
+            transformNotebookDocumentUri: (uri) =>
+              uri.with({ path: `${uri.path}.ipynb` }),
+          });
+
+          // Build initializationOptions from ruff.* settings
+          const ruffConfig = yield* code.workspace.getConfiguration("ruff");
+          const workspaceFolders = yield* code.workspace.getWorkspaceFolders();
+          const settings = Option.getOrElse(workspaceFolders, () => []).map(
+            (folder) => getRuffSettings(ruffConfig, folder),
+          );
+          const globalSettings = getGlobalRuffSettings(ruffConfig);
+
+          yield* Effect.logDebug("Ruff initialization options", {
+            settings,
+            globalSettings,
+          });
+
+          const installExit = yield* Effect.exit(
+            createManagedLanguageClient(RUFF_SERVER, {
+              notebookSync,
+              clientOptions: {
+                outputChannelName: "marimo (ruff)",
+                middleware: yield* createRuffMiddleware(notebookSync),
+                documentSelector: sync.getDocumentSelector(),
+                transformServerCapabilities: sync.extendNotebookCellLanguages(),
+                initializationOptions: { settings, globalSettings },
+              },
+            }),
+          );
+
+          if (!Exit.isSuccess(installExit)) {
+            const cause = installExit.cause;
+            const message = "Failed to install language server";
+            yield* Ref.set(
+              statusRef,
+              RuffLanguageServerStatus.Failed({ message, cause }),
+            );
+            yield* Effect.logError(message).pipe(
+              Effect.annotateLogs({
+                server: RUFF_SERVER.name,
+                version: RUFF_SERVER.version,
+                cause,
+              }),
+            );
+            yield* Effect.forkScoped(showErrorAndPromptLogs(message));
+            return;
+          }
+
+          // Phase 2: Start the server
+          const client = installExit.value;
+          yield* Effect.forkScoped(
+            Effect.gen(function* () {
+              const startExit = yield* Effect.exit(client.start());
+
+              if (!Exit.isSuccess(startExit)) {
+                const cause = startExit.cause;
+                const message = "Failed to start language server";
+                yield* Ref.set(
+                  statusRef,
+                  RuffLanguageServerStatus.Failed({ message, cause }),
+                );
+                yield* Effect.logError(message).pipe(
+                  Effect.annotateLogs({
+                    server: RUFF_SERVER.name,
+                    version: RUFF_SERVER.version,
+                    cause,
+                  }),
+                );
+                yield* Effect.forkScoped(showErrorAndPromptLogs(message));
+                return;
+              }
+
+              const serverVersion = startExit.value.pipe(
+                Option.map((info) => info.version),
+                Option.getOrElse(() => "unknown"),
+              );
+
+              yield* Effect.logInfo("Language server started").pipe(
+                Effect.annotateLogs({
+                  server: RUFF_SERVER.name,
+                  version: serverVersion,
+                }),
+              );
+
+              if (Option.isSome(sentry)) {
+                yield* sentry.value.setTag("ruff.version", serverVersion);
+              }
+
+              yield* Ref.set(
+                statusRef,
+                RuffLanguageServerStatus.Running({ client, serverVersion }),
+              );
+
+              // Restart the language server when ruff.* settings change
+              yield* Effect.forkScoped(
+                code.workspace.configurationChanges().pipe(
+                  Stream.filter((event) => event.affectsConfiguration("ruff")),
+                  Stream.runForEach(() =>
+                    client.restart("Ruff settings changed").pipe(
+                      Effect.catchAllCause((cause) =>
+                        Effect.logError(
+                          "Failed to restart language server",
+                        ).pipe(
+                          Effect.annotateLogs({
+                            server: RUFF_SERVER.name,
+                            cause,
+                          }),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          );
+        }),
       );
 
       return {
-        getHealthStatus: Effect.gen(function* () {
-          const c = yield* getClient;
-          return Either.match(c, {
-            onLeft: (error) =>
-              RuffLanguageServerHealth.Failed({
-                error: String(error.cause),
-              }),
-            onRight: (client) =>
-              RuffLanguageServerHealth.Running({
-                version: Option.fromNullable(
-                  client.initializeResult?.serverInfo?.version,
-                ),
-              }),
-          });
-        }),
+        getHealthStatus: () => Ref.get(statusRef),
       };
     }),
   },
@@ -326,10 +371,9 @@ function createRuffMiddleware(
 }
 
 /**
- * Checks if the managed Ruff language server should be enabled.
- * Returns Some(FailedHealth) if disabled, None if enabled.
+ * Returns the reason why the Ruff language server is disabled, or None if enabled.
  */
-const checkRuffEnabled = Effect.fn(function* () {
+const getRuffDisabledReason = Effect.fn(function* () {
   const code = yield* VsCode;
   const config = yield* Config;
 
@@ -341,9 +385,7 @@ const checkRuffEnabled = Effect.fn(function* () {
       "Managed language features are disabled. Not starting managed Ruff language server.",
     );
     return Option.some(
-      RuffLanguageServerHealth.Failed({
-        error: "Managed language features are disabled in marimo settings.",
-      }),
+      "Managed language features are disabled in marimo settings.",
     );
   }
 
@@ -353,9 +395,7 @@ const checkRuffEnabled = Effect.fn(function* () {
       "Ruff extension is not installed. Not starting managed Ruff language server.",
     );
     return Option.some(
-      RuffLanguageServerHealth.Failed({
-        error: `Ruff extension (${RUFF_EXTENSION_ID}) is not installed.`,
-      }),
+      `Ruff extension (${RUFF_EXTENSION_ID}) is not installed.`,
     );
   }
 
@@ -366,11 +406,7 @@ const checkRuffEnabled = Effect.fn(function* () {
     yield* Effect.logInfo(
       "Ruff extension is disabled via ruff.enable setting. Not starting managed Ruff language server.",
     );
-    return Option.some(
-      RuffLanguageServerHealth.Failed({
-        error: "Ruff extension is disabled (ruff.enable = false).",
-      }),
-    );
+    return Option.some("Ruff extension is disabled (ruff.enable = false).");
   }
 
   return Option.none();

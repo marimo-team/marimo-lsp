@@ -11,7 +11,6 @@ import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
 import { MarimoNotebookDocument, type NotebookId } from "../../schemas.ts";
 import { getTopologicalCells } from "../../utils/getTopologicalCells.ts";
-import type { NamespacedLanguageClient } from "../../utils/NamespacedLanguageClient.ts";
 import { Constants } from "../Constants.ts";
 import { VsCode } from "../VsCode.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
@@ -59,9 +58,7 @@ export interface ClientNotebookSync {
   notebookMiddleware: lsp.Middleware["notebooks"];
 
   /** Connect the client - starts variable subscription, auto-cleanup on scope close */
-  connect(
-    client: NamespacedLanguageClient,
-  ): Effect.Effect<void, never, Scope.Scope>;
+  connect(client: lsp.LanguageClient): Effect.Effect<void, never, Scope.Scope>;
 }
 
 /**
@@ -161,7 +158,7 @@ export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
                 adapter,
                 cellCountsRef,
               ).pipe(Effect.provideService(VariablesService, variables)),
-              connect: (client: NamespacedLanguageClient) =>
+              connect: (client: lsp.LanguageClient) =>
                 variables.notebookUpdates().pipe(
                   Stream.filter((evt) => evt.kind === "declaration"),
                   Stream.mapEffect((evt) =>
@@ -189,7 +186,7 @@ export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
  * Sends a resync notification to a client for a specific notebook.
  */
 const sendResyncNotification = Effect.fn(function* (
-  client: NamespacedLanguageClient,
+  client: lsp.LanguageClient,
   cellCountsRef: SynchronizedRef.SynchronizedRef<CellCountsMap>,
   adapter: NotebookAdapter,
   notebookId: NotebookId,

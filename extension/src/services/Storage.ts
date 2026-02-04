@@ -16,7 +16,7 @@ export class ExtensionContext extends Context.Tag("ExtensionContext")<
   ExtensionContext,
   Pick<
     vscode.ExtensionContext,
-    "workspaceState" | "globalState" | "extensionUri"
+    "workspaceState" | "globalState" | "extensionUri" | "globalStorageUri"
   >
 >() {}
 

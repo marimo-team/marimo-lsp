@@ -5,11 +5,11 @@ import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
 import { Config } from "./Config.ts";
 import {
   RuffLanguageServer,
-  RuffLanguageServerHealth,
+  RuffLanguageServerStatus,
 } from "./completions/RuffLanguageServer.ts";
 import {
   TyLanguageServer,
-  TyLanguageServerHealth,
+  TyLanguageServerStatus,
 } from "./completions/TyLanguageServer.ts";
 import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
 import { PythonExtension } from "./PythonExtension.ts";
@@ -22,11 +22,7 @@ import { VsCode } from "./VsCode.ts";
 export class HealthService extends Effect.Service<HealthService>()(
   "HealthService",
   {
-    dependencies: [
-      Uv.Default,
-      TyLanguageServer.Default,
-      RuffLanguageServer.Default,
-    ],
+    dependencies: [Uv.Default],
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
@@ -122,12 +118,17 @@ export class HealthService extends Effect.Service<HealthService>()(
           if (managedLanguageFeaturesEnabled) {
             lines.push("Python Language Server (ty):");
 
-            TyLanguageServerHealth.$match(yield* tyLsp.getHealthStatus, {
-              Running: ({ version, pythonEnvironment }) => {
+            TyLanguageServerStatus.$match(yield* tyLsp.getHealthStatus(), {
+              Disabled: ({ reason }) => {
+                lines.push("\tStatus: disabled");
+                lines.push(`\tReason: ${reason}`);
+              },
+              Starting: () => {
+                lines.push("\tStatus: starting...");
+              },
+              Running: ({ serverVersion, pythonEnvironment }) => {
                 lines.push("\tStatus: running ✓");
-                lines.push(
-                  `\tVersion: ${Option.getOrElse(version, () => "Unknown")}`,
-                );
+                lines.push(`\tVersion: ${serverVersion}`);
                 if (Option.isSome(pythonEnvironment)) {
                   const pyPath = pythonEnvironment.value.path;
                   const pyVersion = pythonEnvironment.value.version
@@ -136,9 +137,9 @@ export class HealthService extends Effect.Service<HealthService>()(
                   lines.push(`\tPython: ${pyPath}${pyVersion}`);
                 }
               },
-              Failed: ({ error }) => {
+              Failed: ({ message }) => {
                 lines.push("\tStatus: failed ✗");
-                lines.push(`\tError: ${error}`);
+                lines.push(`\tError: ${message}`);
               },
             });
 
@@ -146,16 +147,21 @@ export class HealthService extends Effect.Service<HealthService>()(
 
             // Ruff Language Server
             lines.push("Ruff Language Server:");
-            RuffLanguageServerHealth.$match(yield* ruffLsp.getHealthStatus, {
-              Running: ({ version }) => {
-                lines.push("\tStatus: running ✓");
-                lines.push(
-                  `\tVersion: ${Option.getOrElse(version, () => "Unknown")}`,
-                );
+            RuffLanguageServerStatus.$match(yield* ruffLsp.getHealthStatus(), {
+              Disabled: ({ reason }) => {
+                lines.push("\tStatus: disabled");
+                lines.push(`\tReason: ${reason}`);
               },
-              Failed: ({ error }) => {
+              Starting: () => {
+                lines.push("\tStatus: starting...");
+              },
+              Running: ({ serverVersion }) => {
+                lines.push("\tStatus: running ✓");
+                lines.push(`\tVersion: ${serverVersion}`);
+              },
+              Failed: ({ message }) => {
                 lines.push("\tStatus: failed ✗");
-                lines.push(`\tError: ${error}`);
+                lines.push(`\tError: ${message}`);
               },
             });
 
