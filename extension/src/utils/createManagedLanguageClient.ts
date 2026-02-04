@@ -1,6 +1,6 @@
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
-import { Data, Effect, Option, pipe } from "effect";
+import { Data, Effect, flow, Option, pipe } from "effect";
 import * as lsp from "vscode-languageclient/node";
 import type { ClientNotebookSync } from "../services/completions/NotebookSyncService.ts";
 import { ExtensionContext } from "../services/Storage.ts";
@@ -165,7 +165,7 @@ export const createManagedLanguageClient = Effect.fn(function* (
     // NB: `dispose()` wraps `.stop()` internally.
     // `Infinity` bypasses VS Code timeout errors; Effect owns timeout + error handling.
     Effect.tryPromise(() => client.dispose(Infinity)).pipe(
-      Effect.timeout("10 seconds"),
+      Effect.timeout("30 seconds"),
       Effect.catchTag("TimeoutException", "UnknownException", (error) =>
         Effect.logWarning("Language client dispose failed").pipe(
           Effect.annotateLogs({ error, server }),
@@ -193,24 +193,26 @@ export const createManagedLanguageClient = Effect.fn(function* (
       catch: (cause) => new LanguageClientError({ cause }),
     });
 
-  const restart = Effect.fn(function* (reason: string) {
-    yield* Effect.logInfo(`Restarting ${server.name} language server`, reason);
-    if (client.isRunning()) {
-      yield* stop();
-    }
-    yield* start();
-    yield* Effect.logInfo(`${server.name} language server restarted`);
-  });
+  const restart = Effect.fn(
+    function* (reason: string) {
+      yield* Effect.logInfo(
+        `Restarting ${server.name} language server`,
+        reason,
+      );
+      if (client.isRunning()) {
+        yield* stop();
+      }
+      yield* start();
+      yield* Effect.logInfo(`${server.name} language server restarted`);
+    },
+    flow(Effect.timeout("30 seconds")),
+  );
 
   // Connect to notebook sync service
   yield* options.notebookSync.connect(client);
 
   return {
     start,
-    stop,
     restart,
-    sendNotification(method: string, params: unknown) {
-      return Effect.promise(() => client.sendNotification(method, params));
-    },
   };
 });
