@@ -260,6 +260,7 @@ app = marimo.App()
 @app.cell
 def cell1():
     import marimo as mo
+
     return
 
 

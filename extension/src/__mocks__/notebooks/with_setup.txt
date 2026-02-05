@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.16.2"
+__generated_with = "0.19.8"
 app = marimo.App()
 
 with app.setup:
@@ -24,4 +24,3 @@ def _(data):
 
 if __name__ == "__main__":
     app.run()
-
