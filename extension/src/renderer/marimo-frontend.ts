@@ -31,7 +31,6 @@ import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/
 import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts";
 import {
   handleWidgetMessage,
-  isMessageWidgetState,
   MODEL_MANAGER,
 } from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts";
 import { FUNCTIONS_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/functions/FunctionRegistry.ts";
@@ -72,23 +71,17 @@ export function initialize(client: RequestClient) {
 export function handleSendUiElementMessage(
   msg: NotificationOf<"send-ui-element-message">,
 ) {
-  const modelId = msg.model_id;
   const uiElement = msg.ui_element as UIElementId;
   const message = msg.message;
   const buffers = safeExtractSetUIElementMessageBuffers(msg);
 
-  if (modelId && isMessageWidgetState(message)) {
-    handleWidgetMessage({
-      modelId,
-      msg: message,
-      buffers,
-      modelManager: MODEL_MANAGER,
-    });
-  }
-
   if (uiElement) {
     untyped.UI_ELEMENT_REGISTRY.broadcastMessage(uiElement, message, buffers);
   }
+}
+
+export function handleModelLifecycle(msg: NotificationOf<"model-lifecycle">) {
+  handleWidgetMessage(MODEL_MANAGER, msg);
 }
 
 export function handleFunctionCallResult(

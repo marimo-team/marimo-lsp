@@ -32,6 +32,7 @@ from marimo_lsp.models import (
     GetConfigurationRequest,
     InterruptRequest,
     ListPackagesRequest,
+    ModelRequest,
     NotebookCommand,
     SerializeRequest,
     SessionCommand,
@@ -87,6 +88,16 @@ async def set_ui_element_value(
     args: NotebookCommand[UpdateUIElementRequest],
 ):
     logger.info(f"set_ui_element_value for {args.notebook_uri}")
+    session = manager.get_session(args.notebook_uri)
+    assert session, f"No session in workspace for {args.notebook_uri}"
+    session.put_control_request(args.inner.as_command(), from_consumer_id=None)
+
+
+async def set_model_value(
+    manager: LspSessionManager,
+    args: NotebookCommand[ModelRequest],
+):
+    logger.info(f"set_model_value for {args.notebook_uri}")
     session = manager.get_session(args.notebook_uri)
     assert session, f"No session in workspace for {args.notebook_uri}"
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
@@ -324,6 +335,12 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
         return await set_ui_element_value(
             manager,
             msgspec.convert(params, type=NotebookCommand[UpdateUIElementRequest]),
+        )
+
+    if method == "set-model-value":
+        return await set_model_value(
+            manager,
+            msgspec.convert(params, type=NotebookCommand[ModelRequest]),
         )
 
     if method == "invoke-function":
