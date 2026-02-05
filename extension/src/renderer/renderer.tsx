@@ -12,6 +12,7 @@ import {
   type CellId,
   type CellRuntimeState,
   handleFunctionCallResult,
+  handleModelLifecycle,
   handleRemoveUIElements,
   handleSendUiElementMessage,
   initialize,
@@ -69,6 +70,10 @@ export const activate: vscode.ActivationFunction = (context) => {
       }
       case "function-call-result": {
         handleFunctionCallResult(msg);
+        return;
+      }
+      case "model-lifecycle": {
+        handleModelLifecycle(msg);
         return;
       }
       default: {

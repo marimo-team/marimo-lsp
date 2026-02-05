@@ -145,6 +145,19 @@ export class KernelManager extends Effect.Service<KernelManager>()(
                   });
                   return;
                 }
+                case "set-model-value": {
+                  yield* client.executeCommand({
+                    command: "marimo.api",
+                    params: {
+                      method: message.command,
+                      params: {
+                        notebookUri: notebook.id,
+                        inner: message.params,
+                      },
+                    },
+                  });
+                  return;
+                }
                 case "navigate-to-cell": {
                   const { cellId } = message.params;
                   const editor = yield* code.window.getActiveNotebookEditor();
@@ -329,7 +342,8 @@ function processOperation(
       // Forward to renderer (front end) (non-blocking)
       case "remove-ui-elements":
       case "function-call-result":
-      case "send-ui-element-message": {
+      case "send-ui-element-message":
+      case "model-lifecycle": {
         runPromise(renderer.postMessage(operation, editor));
         break;
       }

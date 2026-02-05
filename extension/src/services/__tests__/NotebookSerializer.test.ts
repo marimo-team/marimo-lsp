@@ -45,27 +45,28 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
         });
         const serializedSource = new TextDecoder().decode(bytes).trim();
         expect(removeGeneratedWith(serializedSource)).toMatchInlineSnapshot(`
-        "import marimo
+          "import marimo
 
-        __generated_with = ""
-        app = marimo.App()
-
-
-        @app.cell
-        def _():
-            import marimo as mo
-            return
+          __generated_with = ""
+          app = marimo.App()
 
 
-        @app.cell
-        def _():
-            x = 1
-            return
+          @app.cell
+          def _():
+              import marimo as mo
+
+              return
 
 
-        if __name__ == "__main__":
-            app.run()"
-      `);
+          @app.cell
+          def _():
+              x = 1
+              return
+
+
+          if __name__ == "__main__":
+              app.run()"
+        `);
       }),
     );
 
@@ -95,38 +96,39 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
         });
         const serializedSource = new TextDecoder().decode(bytes).trim();
         expect(removeGeneratedWith(serializedSource)).toMatchInlineSnapshot(`
-        "import marimo
+          "import marimo
 
-        __generated_with = ""
-        app = marimo.App()
-
-
-        @app.cell
-        def _():
-            import marimo as mo
-            return (mo,)
+          __generated_with = ""
+          app = marimo.App()
 
 
-        @app.cell
-        def _(mo):
-            mo.md(r"""
-            # single line markdown
-            """)
-            return
+          @app.cell
+          def _():
+              import marimo as mo
+
+              return (mo,)
 
 
-        @app.cell
-        def _(mo):
-            mo.md(r"""
-            - multiline
-            -markdown
-            """)
-            return
+          @app.cell
+          def _(mo):
+              mo.md(r"""
+              # single line markdown
+              """)
+              return
 
 
-        if __name__ == "__main__":
-            app.run()"
-      `);
+          @app.cell
+          def _(mo):
+              mo.md(r"""
+              - multiline
+              -markdown
+              """)
+              return
+
+
+          if __name__ == "__main__":
+              app.run()"
+        `);
       }),
     );
 
@@ -248,6 +250,7 @@ app = marimo.App()
 @app.cell
 def _():
     import marimo as mo
+
     return (mo,)
 
 

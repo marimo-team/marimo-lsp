@@ -46,6 +46,13 @@ export function createRequestClient(
       });
       return null;
     },
+    async sendModelValue(request) {
+      context.postMessage({
+        command: "set-model-value",
+        params: request,
+      });
+      return null;
+    },
   } satisfies Partial<RequestClient>;
 
   return new Proxy(client as RequestClient, {

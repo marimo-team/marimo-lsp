@@ -37,6 +37,7 @@ interface SessionScoped<T> extends NotebookScoped<T> {
 
 type ExecuteCellsRequest = Schemas["ExecuteCellsRequest"];
 type UpdateUIElementRequest = Schemas["UpdateUIElementRequest"];
+type ModelRequest = Schemas["ModelRequest"];
 type InvokeFunctionRequest = Schemas["InvokeFunctionRequest"];
 type DeleteCellRequest = Schemas["DeleteCellRequest"];
 type ExportAsHtmlRequest = Schemas["ExportAsHTMLRequest"];
@@ -74,6 +75,7 @@ type MarimoApiMethodMap = {
   // marimo core API
   "execute-cells": SessionScoped<ExecuteCellsRequest>;
   "update-ui-element": NotebookScoped<UpdateUIElementRequest>;
+  "set-model-value": NotebookScoped<ModelRequest>;
   "invoke-function": NotebookScoped<InvokeFunctionRequest>;
   "delete-cell": NotebookScoped<DeleteCellRequest>;
   "get-package-list": SessionScoped<ListPackagesRequest>;
@@ -130,6 +132,7 @@ type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {
 type RendererCommandMap = {
   // Forward to extension marimo.api
   "update-ui-element": MarimoApiMethodMap["update-ui-element"]["inner"];
+  "set-model-value": MarimoApiMethodMap["set-model-value"]["inner"];
   "invoke-function": MarimoApiMethodMap["invoke-function"]["inner"];
   // Custom
   "navigate-to-cell": { cellId: NotebookCellId };
@@ -152,7 +155,8 @@ export type RendererCommand = RendererCommandMessageOf<
 export type RendererReceiveMessage =
   | NotificationOf<"remove-ui-elements">
   | NotificationOf<"send-ui-element-message">
-  | NotificationOf<"function-call-result">;
+  | NotificationOf<"function-call-result">
+  | NotificationOf<"model-lifecycle">;
 
 // Language server -> client
 type MarimoLspNotificationMap = {

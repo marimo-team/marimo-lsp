@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.16.2"
+__generated_with = "0.19.8"
 app = marimo.App()
 
 
@@ -9,6 +9,7 @@ def _():
     import pandas as pd
     import numpy as np
     import matplotlib.pyplot as plt
+
     return np, pd, plt
 
 
@@ -39,4 +40,3 @@ def _(df, plt):
 
 if __name__ == "__main__":
     app.run()
-
