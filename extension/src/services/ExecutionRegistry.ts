@@ -257,7 +257,9 @@ class RunningExecutionHandle extends Data.TaggedClass(
     return Effect.tryPromise(() => this.inner.replaceOutput(outputs)).pipe(
       Effect.annotateLogs({ cellId }),
       Effect.catchAllCause((cause) =>
-        Effect.logError("Failed to update cell output", cause),
+        Effect.logError("Failed to update cell output").pipe(
+          Effect.annotateLogs({ cause }),
+        ),
       ),
     );
   }
@@ -411,7 +413,9 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
       })
       .pipe(
         Effect.catchAllCause((cause) =>
-          Effect.logError("Failed to update cell output", cause),
+          Effect.logError("Failed to update cell output").pipe(
+            Effect.annotateLogs({ cause }),
+          ),
         ),
         Effect.annotateLogs({ cellId }),
       );

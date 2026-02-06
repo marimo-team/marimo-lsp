@@ -76,7 +76,9 @@ export function installPackages(
         }).pipe(
           Effect.catchAllCause(
             Effect.fnUntraced(function* (cause) {
-              yield* Effect.logError("Failed to install", cause);
+              yield* Effect.logError("Failed to install").pipe(
+                Effect.annotateLogs({ cause }),
+              );
               yield* code.window.showErrorMessage(
                 `Failed to install ${packages.join(", ")}. See marimo logs for details.`,
               );

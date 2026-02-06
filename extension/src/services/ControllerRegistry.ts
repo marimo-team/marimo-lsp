@@ -1,6 +1,7 @@
 import * as NodePath from "node:path";
 import type * as py from "@vscode/python-extension";
 import {
+  Cause,
   Effect,
   Exit,
   HashMap,
@@ -55,7 +56,9 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       const uvCacheDir = yield* uv.getCacheDir().pipe(
         Effect.map((path) => code.Uri.file(path)),
         Effect.tapError((err) =>
-          Effect.logError("Failed to get uv cache directory", err),
+          Effect.logError("Failed to get uv cache directory").pipe(
+            Effect.annotateLogs({ cause: Cause.fail(err) }),
+          ),
         ),
         Effect.option,
       );

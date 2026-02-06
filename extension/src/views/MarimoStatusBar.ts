@@ -1,6 +1,6 @@
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
-import { Effect, Either, Layer, Option } from "effect";
+import { Cause, Effect, Either, Layer, Option } from "effect";
 import { unreachable } from "../assert.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { ExtensionContext } from "../services/Storage.ts";
@@ -66,7 +66,9 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
             yield* tutorialCommands().pipe(
               Effect.catchAll(
                 Effect.fnUntraced(function* (error) {
-                  yield* Effect.logError("Failed to open tutorial", error);
+                  yield* Effect.logError("Failed to open tutorial").pipe(
+                    Effect.annotateLogs({ cause: Cause.fail(error) }),
+                  );
                   yield* code.window.showErrorMessage(
                     "Failed to open tutorial. See marimo logs for more info.",
                   );
@@ -106,7 +108,9 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
       tutorialCommands().pipe(
         Effect.catchAll((error) =>
           Effect.gen(function* () {
-            yield* Effect.logError("Failed to open tutorial", error);
+            yield* Effect.logError("Failed to open tutorial").pipe(
+              Effect.annotateLogs({ cause: Cause.fail(error) }),
+            );
             yield* code.window.showErrorMessage(
               "Failed to open tutorial. See marimo logs for more info.",
             );
@@ -135,7 +139,9 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
  */
 const openUrl = Effect.fn(function* (url: `https://${string}`) {
   const code = yield* VsCode;
-  return code.env.openExternal(Either.getOrThrow(code.utils.parseUri(url)));
+  return yield* code.env.openExternal(
+    Either.getOrThrow(code.utils.parseUri(url)),
+  );
 });
 
 const TUTORIALS = [

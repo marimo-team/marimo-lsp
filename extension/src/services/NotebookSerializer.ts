@@ -164,7 +164,9 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                   return yield* Fiber.join(fiber);
                 }).pipe(
                   Effect.tapErrorCause((cause) =>
-                    Effect.logError(`Notebook serialize failed.`, cause),
+                    Effect.logError(`Notebook serialize failed`).pipe(
+                      Effect.annotateLogs({ cause }),
+                    ),
                   ),
                   Effect.mapError(
                     () =>
@@ -185,7 +187,9 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                   return yield* Fiber.join(fiber);
                 }).pipe(
                   Effect.tapErrorCause((cause) =>
-                    Effect.logError(`Notebook deserialize failed.`, cause),
+                    Effect.logError(`Notebook deserialize failed`).pipe(
+                      Effect.annotateLogs({ cause }),
+                    ),
                   ),
                   Effect.mapError(
                     () =>

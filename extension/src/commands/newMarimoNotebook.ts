@@ -1,4 +1,4 @@
-import { Effect, flow, Option } from "effect";
+import { Cause, Effect, flow, Option } from "effect";
 import { Telemetry } from "../services/Telemetry.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
@@ -43,7 +43,9 @@ def _():
     Effect.catchTag(
       "FileSystemError",
       Effect.fnUntraced(function* (error) {
-        yield* Effect.logError("Failed to create notebook", { error });
+        yield* Effect.logError("Failed to create notebook").pipe(
+          Effect.annotateLogs({ cause: Cause.fail(error) }),
+        );
         yield* showErrorAndPromptLogs("Failed to create notebook.");
       }),
     ),

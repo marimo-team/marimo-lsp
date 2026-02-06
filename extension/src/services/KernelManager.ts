@@ -98,8 +98,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
                 Effect.fnUntraced(function* (cause) {
                   yield* Effect.logError(
                     "Failed to process marimo operation",
-                    cause,
-                  );
+                  ).pipe(Effect.annotateLogs({ cause }));
                   yield* Effect.fork(
                     showErrorAndPromptLogs(
                       "Failed to process marimo operation.",

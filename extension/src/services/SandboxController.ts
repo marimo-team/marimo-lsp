@@ -168,7 +168,9 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             }),
             Effect.catchAllCause(
               Effect.fnUntraced(function* (cause) {
-                yield* Effect.logError("Failed to interrupt execution", cause);
+                yield* Effect.logError("Failed to interrupt execution").pipe(
+                  Effect.annotateLogs({ cause }),
+                );
                 yield* showErrorAndPromptLogs("Failed to interrupt execution.");
               }),
             ),
