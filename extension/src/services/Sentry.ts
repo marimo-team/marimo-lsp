@@ -215,16 +215,34 @@ function isMarimoStackTrace(frames: SentrySDK.StackFrame[]) {
   return frames.some((frame) => frame.filename?.includes("marimo"));
 }
 /**
- * Convert a value to a JSON-serializable form (inspired by LiveStore's structuredMessage)
+ * Convert a value to a JSON-serializable form suitable for Sentry's extra data.
+ *
+ * Sentry truncates nested objects at ~3 levels deep, so complex Effect types
+ * (Cause, TaggedErrors with nested fields) get rendered as `[Array]`/`[Object]`.
+ * We flatten these to strings to ensure full visibility in Sentry.
  */
 function structuredMessage(u: unknown): unknown {
+  // Cause values should be pretty-printed, not serialized as nested objects
+  if (Cause.isCause(u)) {
+    return Cause.pretty(u, { renderErrorCause: true });
+  }
   switch (typeof u) {
     case "bigint":
     case "function":
     case "symbol":
       return String(u);
-    default:
-      return Inspectable.toJSON(u);
+    default: {
+      const json = Inspectable.toJSON(u);
+      // If toJSON produced an object, stringify it to avoid Sentry depth truncation
+      if (json !== null && typeof json === "object") {
+        try {
+          return Inspectable.format(json);
+        } catch {
+          return String(u);
+        }
+      }
+      return json;
+    }
   }
 }
 
