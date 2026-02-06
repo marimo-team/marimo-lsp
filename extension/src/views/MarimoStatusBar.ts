@@ -135,7 +135,9 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
  */
 const openUrl = Effect.fn(function* (url: `https://${string}`) {
   const code = yield* VsCode;
-  return code.env.openExternal(Either.getOrThrow(code.utils.parseUri(url)));
+  return yield* code.env.openExternal(
+    Either.getOrThrow(code.utils.parseUri(url)),
+  );
 });
 
 const TUTORIALS = [
