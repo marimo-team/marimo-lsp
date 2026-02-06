@@ -1,6 +1,6 @@
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
-import { Data, Effect, Option, Stream } from "effect";
+import { Cause, Data, Effect, Option, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import type {
@@ -108,7 +108,9 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
                   "LanguageClientStartError",
                   Effect.fnUntraced(function* (error) {
                     const msg = "Failed to restart marimo-lsp.";
-                    yield* Effect.logError(msg, error);
+                    yield* Effect.logError(msg).pipe(
+                      Effect.annotateLogs({ cause: Cause.fail(error) }),
+                    );
                     yield* showErrorAndPromptLogs(msg, {
                       channel: outputChannel,
                     });

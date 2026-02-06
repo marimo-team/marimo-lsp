@@ -1,6 +1,6 @@
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Brand, Effect, Option, Runtime, Stream } from "effect";
+import { Brand, Cause, Effect, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
 import { unreachable } from "../assert.ts";
 import { type MarimoNotebookCell, MarimoNotebookDocument } from "../schemas.ts";
@@ -94,11 +94,9 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                 // Known exceptions
                 Effect.catchTags({
                   ExecuteCommandError: Effect.fnUntraced(function* (error) {
-                    yield* Effect.logError(
-                      "Failed to execute command",
-                      error,
-                    ).pipe(
+                    yield* Effect.logError("Failed to execute command").pipe(
                       Effect.annotateLogs({
+                        cause: Cause.fail(error),
                         command: error.command.command,
                       }),
                     );
@@ -109,7 +107,9 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                   }),
                   EnvironmentInspectionError: Effect.fnUntraced(
                     function* (error) {
-                      yield* Effect.logError("Python venv check failed", error);
+                      yield* Effect.logError("Python venv check failed").pipe(
+                        Effect.annotateLogs({ cause: Cause.fail(error) }),
+                      );
 
                       if (error.cause?._tag === "InvalidExecutableError") {
                         yield* code.window.showErrorMessage(
@@ -221,8 +221,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                   Effect.gen(function* () {
                     yield* Effect.logError(
                       "Failed to interrupt execution",
-                      cause,
-                    );
+                    ).pipe(Effect.annotateLogs({ cause }));
                     yield* code.window.showErrorMessage(
                       "Failed to interrupt execution. Please check the logs for details.",
                     );

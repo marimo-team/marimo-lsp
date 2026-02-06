@@ -1,6 +1,6 @@
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
-import { Data, Effect, flow, Option, pipe } from "effect";
+import { Cause, Data, Effect, flow, Option, pipe } from "effect";
 import * as lsp from "vscode-languageclient/node";
 import type { ClientNotebookSync } from "../services/completions/NotebookSyncService.ts";
 import { ExtensionContext } from "../services/Storage.ts";
@@ -168,7 +168,7 @@ export const createManagedLanguageClient = Effect.fn(function* (
       Effect.timeout("30 seconds"),
       Effect.catchTag("TimeoutException", "UnknownException", (error) =>
         Effect.logWarning("Language client dispose failed").pipe(
-          Effect.annotateLogs({ error, server }),
+          Effect.annotateLogs({ cause: Cause.fail(error), server }),
         ),
       ),
     ),

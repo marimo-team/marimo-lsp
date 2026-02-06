@@ -127,7 +127,9 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
         .set(RECENT_NOTEBOOKS_KEY, updated)
         .pipe(
           Effect.catchAllCause((cause) =>
-            Effect.logWarning("Failed to persist recent notebooks", cause),
+            Effect.logWarning("Failed to persist recent notebooks").pipe(
+              Effect.annotateLogs({ cause }),
+            ),
           ),
         );
 
@@ -165,7 +167,9 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
           .set(RECENT_NOTEBOOKS_KEY, [])
           .pipe(
             Effect.catchAllCause((cause) =>
-              Effect.logWarning("Failed to clear recent notebooks", cause),
+              Effect.logWarning("Failed to clear recent notebooks").pipe(
+                Effect.annotateLogs({ cause }),
+              ),
             ),
           );
         yield* provider.refresh();
