@@ -1,9 +1,9 @@
 /**
- * Oxlint plugin: Enforce type-only imports for vscode module
- * Replaces: vscode-type-only.grit
+ * Oxlint plugin: marimo custom lint rules
  */
 
-const rule = {
+/** Enforce type-only imports for vscode module */
+const vscodeTypeOnly = {
   meta: {
     type: "problem",
     docs: {
@@ -107,12 +107,42 @@ const rule = {
   },
 };
 
+/** Disallow @/* imports */
+const noAtImports = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Disallow @/* imports",
+    },
+    messages: {
+      noAtImports:
+        "Do not use @/* imports. Use @marimo-team/frontend/unstable_internal/* instead, preferably with type-only imports. Use sparingly and with caution.",
+    },
+  },
+  create(context) {
+    return {
+      ImportDeclaration(node) {
+        const source = node.source.value;
+
+        // Check if the import path starts with @/ (but not @marimo-team/ or other scoped packages)
+        if (typeof source === "string" && /^@\//.test(source)) {
+          context.report({
+            node: node.source,
+            messageId: "noAtImports",
+          });
+        }
+      },
+    };
+  },
+};
+
 const plugin = {
   meta: {
-    name: "marimo-vscode",
+    name: "marimo",
   },
   rules: {
-    "vscode-type-only": rule,
+    "vscode-type-only": vscodeTypeOnly,
+    "no-at-imports": noAtImports,
   },
 };
 

@@ -10,17 +10,13 @@
   },
   "plugins": ["typescript", "react", "import"],
   "jsPlugins": [
-    "./extension/lint/vscode-type-only-plugin.mjs",
-    "./extension/lint/no-at-imports-plugin.mjs"
+    "./extension/lint/marimo-plugin.mjs"
   ],
   "rules": {
-    "react-hooks/rules-of-hooks": "off",
     "react/react-in-jsx-scope": "off",
     "import/extensions": ["error", "always", { "ignorePackages": true }],
     "import/no-unassigned-import": ["error", { "allow": ["**/*.css", "**/*.scss"] }],
-    "no-shadow-restricted-names": "off",
-    "marimo-vscode/vscode-type-only": "error",
-    "marimo-imports/no-at-imports": "error"
-  },
-  "ignorePatterns": ["dist/**", "node_modules/**", ".vscode-test/**"]
+    "marimo/vscode-type-only": "error",
+    "marimo/no-at-imports": "error"
+  }
 }
