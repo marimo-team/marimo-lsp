@@ -28,7 +28,7 @@ import {
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
 // Bump this as needed for new features or fixes.
-const RUFF_SERVER = { name: "ruff", version: "0.11.13" } as const;
+const RUFF_SERVER = { name: "ruff", version: "0.15.0" } as const;
 const RUFF_EXTENSION_ID = "charliermarsh.ruff";
 
 export const RuffLanguageServerStatus =
@@ -100,17 +100,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
           );
 
           // Create isolated sync instance with its own cell count tracking.
-          //
-          // WORKAROUND: Ruff requires notebook document URIs to end with `.ipynb`
-          // to recognize them as notebooks. Without this, Ruff treats cells as
-          // independent files rather than parts of a single notebook module.
-          // This workaround is NOT needed for ty, which handles notebook URIs
-          // without the `.ipynb` suffix.
-          // See: https://github.com/astral-sh/ruff/issues/22809
-          const notebookSync = yield* sync.forClient({
-            transformNotebookDocumentUri: (uri) =>
-              uri.with({ path: `${uri.path}.ipynb` }),
-          });
+          const notebookSync = yield* sync.forClient();
 
           // Build initializationOptions from ruff.* settings
           const ruffConfig = yield* code.workspace.getConfiguration("ruff");

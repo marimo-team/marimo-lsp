@@ -139,15 +139,8 @@ export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
          *   the URI to end with `.ipynb` to recognize it as a notebook. If not provided,
          *   URIs are passed through unchanged.
          */
-        forClient(
-          opts: {
-            transformNotebookDocumentUri?: (uri: vscode.Uri) => vscode.Uri;
-          } = {},
-        ): Effect.Effect<ClientNotebookSync, never, Scope.Scope> {
-          const adapter = new NotebookAdapter(
-            LanguageId.Python,
-            opts.transformNotebookDocumentUri,
-          );
+        forClient(): Effect.Effect<ClientNotebookSync, never, Scope.Scope> {
+          const adapter = new NotebookAdapter(LanguageId.Python);
           return Effect.gen(function* () {
             const cellCountsRef = yield* SynchronizedRef.make<CellCountsMap>(
               HashMap.empty(),
@@ -236,14 +229,9 @@ const sendResyncNotification = Effect.fn(function* (
  */
 export class NotebookAdapter {
   #pythonLanguageId: string;
-  #transformNotebookDocumentUri?: (uri: vscode.Uri) => vscode.Uri;
 
-  constructor(
-    pythonLanguageId: string,
-    transformNotebookDocumentUri?: (uri: vscode.Uri) => vscode.Uri,
-  ) {
+  constructor(pythonLanguageId: string) {
     this.#pythonLanguageId = pythonLanguageId;
-    this.#transformNotebookDocumentUri = transformNotebookDocumentUri;
   }
 
   #resolveLanguageId(languageId: string): string {
@@ -252,16 +240,8 @@ export class NotebookAdapter {
 
   /** Optionally transforms the notebook document URI using the configured transform. */
   notebookDocument<T extends { uri: vscode.Uri }>(doc: T): T {
-    if (!this.#transformNotebookDocumentUri) {
-      return doc;
-    }
-    const wrapped = Object.create(doc);
-    Object.defineProperty(wrapped, "uri", {
-      value: this.#transformNotebookDocumentUri(doc.uri),
-      enumerable: true,
-      configurable: true,
-    });
-    return wrapped;
+    // no-op
+    return doc;
   }
 
   /**
