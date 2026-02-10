@@ -100,7 +100,7 @@ export interface MetadataBinding {
 export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIBindingService>()(
   "CellMetadataUIBindingService",
   {
-    scoped: Effect.gen(function* () {
+    scoped: Effect.gen(function*() {
       const code = yield* VsCode;
       const bindings = new Map<string, MetadataBinding>();
 
@@ -110,8 +110,8 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
       // Listen to notebook document changes and emit events
       yield* Effect.forkScoped(
         code.workspace.notebookDocumentChanges().pipe(
-          Stream.runForEach(
-            Effect.fnUntraced(function* (event) {
+          Stream.runForEach((event) =>
+            Effect.sync(() => {
               const notebook = MarimoNotebookDocument.tryFrom(event.notebook);
 
               // Only process marimo notebooks
@@ -136,15 +136,12 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
        * Register a new metadata binding
        */
       const registerBinding = (binding: MetadataBinding) =>
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           bindings.set(binding.id, binding);
 
           // Create command for handling clicks
           const commandId = dynamicCommand(`cell.metadata.${binding.id}`);
-          yield* code.commands.registerCommand(
-            commandId,
-            createBindingCommandFor(binding),
-          );
+          yield* code.commands.registerCommand(commandId, createBindingCommandFor(binding));
 
           // Create provider for status bar item
           const provider: vscode.NotebookCellStatusBarItemProvider = {
@@ -175,17 +172,14 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
           };
 
           // Register the provider
-          yield* code.notebooks.registerNotebookCellStatusBarItemProvider(
-            NOTEBOOK_TYPE,
-            provider,
-          );
+          yield* code.notebooks.registerNotebookCellStatusBarItemProvider(NOTEBOOK_TYPE, provider);
         });
 
       /**
        * Create a command handler for a binding
        */
       function createBindingCommandFor(binding: MetadataBinding) {
-        return Effect.fn(function* () {
+        return Effect.fn(function*() {
           const editor = yield* code.window.getActiveNotebookEditor();
 
           if (Option.isNone(editor)) {
@@ -193,17 +187,13 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
           }
 
           // Get the active cell
-          const notebook = MarimoNotebookDocument.tryFrom(
-            editor.value.notebook,
-          );
+          const notebook = MarimoNotebookDocument.tryFrom(editor.value.notebook);
 
           if (Option.isNone(notebook)) {
             return;
           }
 
-          const activeCell = notebook.value.cellAt(
-            editor.value.selection.start,
-          );
+          const activeCell = notebook.value.cellAt(editor.value.selection.start);
 
           if (!binding.shouldShow(activeCell)) {
             return;
@@ -220,10 +210,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
             newValue = !currentValue;
           } else if (binding.type === "option") {
             // Show quick pick for options
-            assert(
-              binding.getOptions !== undefined,
-              "getOptions is required for option bindings",
-            );
+            assert(binding.getOptions !== undefined, "getOptions is required for option bindings");
             const options = yield* binding.getOptions(activeCell);
 
             const selected = yield* code.window.showQuickPick(
@@ -239,9 +226,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
             }
 
             // Find the value from the label
-            const selectedOption = options.find(
-              (opt) => opt.label === selected.value,
-            );
+            const selectedOption = options.find((opt) => opt.label === selected.value);
             if (!selectedOption) {
               return;
             }
@@ -250,19 +235,14 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
             // Show input box for text
             const input = yield* code.window.showInputBox({
               prompt: binding.inputPrompt ?? "Enter value",
-              value:
-                typeof currentValue === "string" ? currentValue : undefined,
-              placeHolder:
-                binding.inputPlaceholder ?? binding.defaultValue ?? "",
+              value: typeof currentValue === "string" ? currentValue : undefined,
+              placeHolder: binding.inputPlaceholder ?? binding.defaultValue ?? "",
               validateInput: binding.validateInput
                 ? (value) => {
-                    assert(
-                      binding.validateInput !== undefined,
-                      "validateInput is required",
-                    );
-                    const error = binding.validateInput(value);
-                    return error ? error : undefined;
-                  }
+                  assert(binding.validateInput !== undefined, "validateInput is required");
+                  const error = binding.validateInput(value);
+                  return error ? error : undefined;
+                }
                 : undefined,
             });
 
@@ -315,9 +295,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
             ],
           });
 
-          yield* Effect.logInfo(
-            `Updated cell metadata for binding: ${binding.id}`,
-          ).pipe(
+          yield* Effect.logInfo(`Updated cell metadata for binding: ${binding.id}`).pipe(
             Effect.annotateLogs({
               cell: activeCell.index,
               newValue,
@@ -329,4 +307,5 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
       return { registerBinding } as const;
     }),
   },
-) {}
+) {
+}

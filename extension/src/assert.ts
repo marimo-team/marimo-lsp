@@ -35,7 +35,7 @@ export function assert(
   if (!expression) {
     if (process.env.NODE_ENV === "development") {
       // biome-ignore lint/suspicious/noDebugger: Triggers a breakpoint in development; stripped out in production builds.
-      debugger;
+      
     }
 
     throw new AssertionError({ message });

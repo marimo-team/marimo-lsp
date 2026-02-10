@@ -12,7 +12,7 @@ const DEFAULT_NAME = "_";
  * Listens to cell metadata changes and updates the status bar accordingly.
  */
 export const CellStatusBarProviderLive = Layer.scopedDiscard(
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const code = yield* VsCode;
 
     // Track metadata change events to trigger re-rendering
@@ -21,8 +21,8 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
     // Listen to notebook document changes and emit events
     yield* Effect.forkScoped(
       code.workspace.notebookDocumentChanges().pipe(
-        Stream.runForEach(
-          Effect.fnUntraced(function* (event) {
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
             const notebook = MarimoNotebookDocument.tryFrom(event.notebook);
 
             if (Option.isNone(notebook)) {
@@ -47,9 +47,7 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
      * Creates a provider for a specific status bar item type
      */
     function createProvider(
-      provide: (
-        cell: MarimoNotebookCell,
-      ) => vscode.NotebookCellStatusBarItem | undefined,
+      provide: (cell: MarimoNotebookCell) => vscode.NotebookCellStatusBarItem | undefined,
     ): vscode.NotebookCellStatusBarItemProvider {
       return {
         onDidChangeCellStatusBarItems: onDidChangeCellStatusBarItems.event,
@@ -112,9 +110,6 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
       NOTEBOOK_TYPE,
       stalenessProvider,
     );
-    yield* code.notebooks.registerNotebookCellStatusBarItemProvider(
-      NOTEBOOK_TYPE,
-      nameProvider,
-    );
+    yield* code.notebooks.registerNotebookCellStatusBarItemProvider(NOTEBOOK_TYPE, nameProvider);
   }),
 );

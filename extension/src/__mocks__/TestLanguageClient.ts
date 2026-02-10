@@ -9,9 +9,9 @@ import {
 
 export const TestLanguageClientLive = Layer.scoped(
   LanguageClient,
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const { conn } = yield* Effect.acquireRelease(
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const exec = yield* findLspExecutable("uv");
         const proc = NodeChildProcess.spawn(exec.command, exec.args, {
           stdio: ["pipe", "pipe", "inherit"],
@@ -39,7 +39,7 @@ export const TestLanguageClientLive = Layer.scoped(
     return LanguageClient.make({
       channel: {
         name: "marimo-lsp",
-        show() {},
+        show() { },
       },
       restart: () => Effect.void,
       executeCommand(cmd) {
@@ -55,11 +55,7 @@ export const TestLanguageClientLive = Layer.scoped(
       streamOf(notification) {
         return Stream.asyncPush((emit) =>
           Effect.acquireRelease(
-            Effect.gen(function* () {
-              return conn.onNotification(notification, (msg) =>
-                emit.single(msg),
-              );
-            }),
+            Effect.sync(() => conn.onNotification(notification, (msg) => emit.single(msg))),
             (disposable) => Effect.sync(() => disposable.dispose()),
           ),
         );
