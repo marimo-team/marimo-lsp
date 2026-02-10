@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, TestClock } from "effect";
+
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { PythonEnvironmentStatusBarLive } from "../PythonEnvironmentStatusBar.ts";

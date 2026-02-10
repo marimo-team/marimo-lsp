@@ -13,6 +13,7 @@ import assert from "node:assert";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodeUrl from "node:url";
+
 import pkg from "../package.json" with { type: "json" };
 
 /** @type {(arr: Array<string>) => string} */

@@ -1,11 +1,13 @@
 import { Effect, Option } from "effect";
+
 import type { MarimoNotebookDocument } from "./schemas.ts";
-import { Config } from "./services/Config.ts";
-import { TyLanguageServer } from "./services/completions/TyLanguageServer.ts";
 import type { PythonController } from "./services/NotebookControllerFactory.ts";
 import type { SandboxController } from "./services/SandboxController.ts";
-import { VsCode } from "./services/VsCode.ts";
 import type { NotificationOf } from "./types.ts";
+
+import { TyLanguageServer } from "./services/completions/TyLanguageServer.ts";
+import { Config } from "./services/Config.ts";
+import { VsCode } from "./services/VsCode.ts";
 import { findVenvPath } from "./utils/findVenvPath.ts";
 import { installPackages } from "./utils/installPackages.ts";
 

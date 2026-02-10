@@ -1,5 +1,7 @@
-import { describe, expect, it } from "@effect/vitest";
 import type * as vscode from "vscode";
+
+import { describe, expect, it } from "@effect/vitest";
+
 import { enrichNotebookFromCached } from "../enrichNotebookFromCached.ts";
 
 // Helper to create a cell with minimal required fields

@@ -1,6 +1,9 @@
-import { Effect } from "effect";
 import type * as vscode from "vscode";
+
+import { Effect } from "effect";
+
 import type { MarimoView } from "../constants.ts";
+
 import { VsCode } from "../services/VsCode.ts";
 
 /**

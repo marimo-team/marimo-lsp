@@ -1,12 +1,14 @@
+import type { PlatformError } from "@effect/platform/Error";
+import type * as vscode from "vscode";
+
+import { Command, CommandExecutor } from "@effect/platform";
+import { NodeContext } from "@effect/platform-node";
+import { Data, Effect, Option, Schema, Stream, String } from "effect";
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
-import { Command, CommandExecutor } from "@effect/platform";
-import type { PlatformError } from "@effect/platform/Error";
-import { NodeContext } from "@effect/platform-node";
-import { Data, Effect, Option, Schema, Stream, String } from "effect";
-import type * as vscode from "vscode";
+
 import { assert } from "../assert.ts";
 import { Config } from "./Config.ts";
 import { Sentry } from "./Sentry.ts";

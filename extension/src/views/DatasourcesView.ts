@@ -1,5 +1,7 @@
 import { Effect, Layer, Option, Ref, Stream } from "effect";
+
 import type { NotebookId } from "../schemas.ts";
+
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { TreeView } from "./TreeView.ts";

@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
+
 import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";

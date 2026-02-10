@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+
 import { Config } from "./Config.ts";
 
 export class Constants extends Effect.Service<Constants>()("Constants", {

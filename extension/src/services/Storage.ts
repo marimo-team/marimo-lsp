@@ -1,5 +1,6 @@
-import { Brand, Context, Data, Effect, Option, Schema } from "effect";
 import type * as vscode from "vscode";
+
+import { Brand, Context, Data, Effect, Option, Schema } from "effect";
 
 export class StorageError extends Data.TaggedError("StorageError")<{
   cause: unknown;

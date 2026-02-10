@@ -1,4 +1,5 @@
 import { Cause, Effect, flow, Option } from "effect";
+
 import { Telemetry } from "../services/Telemetry.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";

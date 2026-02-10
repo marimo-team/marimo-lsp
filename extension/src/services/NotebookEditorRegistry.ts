@@ -1,5 +1,7 @@
-import { Effect, HashMap, Option, Ref, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
+
+import { Effect, HashMap, Option, Ref, Stream, SubscriptionRef } from "effect";
+
 import { MarimoNotebookDocument, type NotebookId } from "../schemas.ts";
 import { Telemetry } from "./Telemetry.ts";
 import { VsCode } from "./VsCode.ts";

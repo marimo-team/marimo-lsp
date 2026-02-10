@@ -1,3 +1,6 @@
+import type * as vscode from "vscode";
+import type * as lsp from "vscode-languageclient/node";
+
 import {
   type Cause,
   Data,
@@ -8,8 +11,7 @@ import {
   Runtime,
   Stream,
 } from "effect";
-import type * as vscode from "vscode";
-import type * as lsp from "vscode-languageclient/node";
+
 import {
   createManagedLanguageClient,
   type ManagedLanguageClient,
@@ -19,8 +21,8 @@ import { Config } from "../Config.ts";
 import { OutputChannel } from "../OutputChannel.ts";
 import { Sentry } from "../Sentry.ts";
 import { Uv } from "../Uv.ts";
-import { VsCode } from "../VsCode.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
+import { VsCode } from "../VsCode.ts";
 import {
   type ClientNotebookSync,
   NotebookSyncService,

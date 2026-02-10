@@ -1,12 +1,14 @@
 /// <reference lib="dom" />
 
 import "./styles.css";
-import styleText from "virtual:stylesheet";
+import type * as vscode from "vscode-notebook-renderer";
 
 import * as ReactDOM from "react-dom/client";
-import type * as vscode from "vscode-notebook-renderer";
-import { assert, unreachable } from "../assert.ts";
+import styleText from "virtual:stylesheet";
+
 import type { MarimoHtmlPublishMessage } from "../types.ts";
+
+import { assert, unreachable } from "../assert.ts";
 import { CellOutput } from "./CellOutput.tsx";
 import {
   type CellId,

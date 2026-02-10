@@ -1,3 +1,5 @@
+import type * as lsp from "vscode-languageclient/node";
+
 import { NodeContext } from "@effect/platform-node";
 import {
   type Cause,
@@ -9,8 +11,8 @@ import {
   Runtime,
   Stream,
 } from "effect";
-import type * as lsp from "vscode-languageclient/node";
 import { ResponseError } from "vscode-languageclient/node";
+
 import {
   createManagedLanguageClient,
   type ManagedLanguageClient,
@@ -23,8 +25,8 @@ import { OutputChannel } from "../OutputChannel.ts";
 import { PythonExtension } from "../PythonExtension.ts";
 import { Sentry } from "../Sentry.ts";
 import { Uv } from "../Uv.ts";
-import { VsCode } from "../VsCode.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
+import { VsCode } from "../VsCode.ts";
 import {
   type ClientNotebookSync,
   NotebookSyncService,

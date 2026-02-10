@@ -7,7 +7,7 @@ vi.mock("vscode-languageclient/node", () => ({
     constructor() {
       throw new Error(
         "LanguageClient was constructed in a test. " +
-        "This should be mocked or injected—production code leaked into the test.",
+          "This should be mocked or injected—production code leaked into the test.",
       );
     }
   },

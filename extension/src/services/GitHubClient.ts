@@ -9,6 +9,7 @@ import {
   HttpClientRequest,
 } from "@effect/platform";
 import { Effect, flow, Option, Schema } from "effect";
+
 import { VsCode } from "./VsCode.ts";
 
 const GistRequest = Schema.Struct({

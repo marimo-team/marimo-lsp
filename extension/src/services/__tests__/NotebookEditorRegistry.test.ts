@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Stream, TestClock } from "effect";
+
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
   createTestNotebookDocument,

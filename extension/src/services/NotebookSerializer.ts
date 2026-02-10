@@ -1,3 +1,5 @@
+import type * as vscode from "vscode";
+
 import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import {
   Effect,
@@ -7,7 +9,7 @@ import {
   Runtime,
   Schema,
 } from "effect";
-import type * as vscode from "vscode";
+
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import {
   type CellMetadata,

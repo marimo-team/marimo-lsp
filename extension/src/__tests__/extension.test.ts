@@ -1,5 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, LogLevel } from "effect";
+
 import * as pkg from "../../package.json";
 import { getTestExtensionContext } from "../__mocks__/TestExtensionContext.ts";
 import { TestLanguageClientLive } from "../__mocks__/TestLanguageClient.ts";

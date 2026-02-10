@@ -1,8 +1,9 @@
+import { assert, expect, it } from "@effect/vitest";
+import { Effect, Either, Layer } from "effect";
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
-import { assert, expect, it } from "@effect/vitest";
-import { Effect, Either, Layer } from "effect";
+
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";

@@ -1,3 +1,6 @@
+import type * as vscode from "vscode";
+import type * as lsp from "vscode-languageclient/node";
+
 import {
   Effect,
   HashMap,
@@ -7,13 +10,12 @@ import {
   Stream,
   SynchronizedRef,
 } from "effect";
-import type * as vscode from "vscode";
-import type * as lsp from "vscode-languageclient/node";
+
 import { MarimoNotebookDocument, type NotebookId } from "../../schemas.ts";
 import { getTopologicalCells } from "../../utils/getTopologicalCells.ts";
 import { Constants } from "../Constants.ts";
-import { VsCode } from "../VsCode.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
+import { VsCode } from "../VsCode.ts";
 
 /**
  * Creates a transform function that extends notebook document sync selectors

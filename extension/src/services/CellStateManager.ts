@@ -1,5 +1,7 @@
-import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
+
+import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
+
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,

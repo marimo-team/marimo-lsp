@@ -56,11 +56,11 @@
  * This prevents popovers from being cut off in VS Code's output rendering
  */
 .marimo-cell-output:has(
-    marimo-date,
-    marimo-date-range,
-    marimo-datetime,
-    marimo-multiselect
-  ) {
+  marimo-date,
+  marimo-date-range,
+  marimo-datetime,
+  marimo-multiselect
+) {
   min-height: 350px;
 }
 

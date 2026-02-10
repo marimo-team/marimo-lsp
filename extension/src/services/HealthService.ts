@@ -1,8 +1,8 @@
-import * as NodeProcess from "node:process";
 import * as semver from "@std/semver";
 import { Effect, Option } from "effect";
+import * as NodeProcess from "node:process";
+
 import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
-import { Config } from "./Config.ts";
 import {
   RuffLanguageServer,
   RuffLanguageServerStatus,
@@ -11,6 +11,7 @@ import {
   TyLanguageServer,
   TyLanguageServerStatus,
 } from "./completions/TyLanguageServer.ts";
+import { Config } from "./Config.ts";
 import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
 import { PythonExtension } from "./PythonExtension.ts";
 import { Uv, UvBin } from "./Uv.ts";

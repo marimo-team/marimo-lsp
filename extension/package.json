@@ -1,25 +1,70 @@
 {
   "name": "vscode-marimo",
   "displayName": "marimo",
-  "description": "A marimo notebook extension for VS Code.",
   "version": "0.10.2",
-  "icon": "images/icon.png",
-  "engines": {
-    "vscode": "^1.86.0"
-  },
-  "extensionDependencies": [
-    "ms-python.python"
-  ],
-  "publisher": "marimo-team",
-  "repository": "https://github.com/marimo-team/marimo-lsp",
+  "description": "A marimo notebook extension for VS Code.",
   "categories": [
-    "Notebooks",
-    "Data Science"
+    "Data Science",
+    "Notebooks"
   ],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
+  "repository": "https://github.com/marimo-team/marimo-lsp",
+  "publisher": "marimo-team",
   "main": "./dist/extension.js",
+  "scripts": {
+    "prepare": "turbo patch-tsc",
+    "patch-tsc": "effect-language-service patch",
+    "build": "turbo build:renderer && turbo build:extension",
+    "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
+    "build:renderer": "vite build",
+    "fix": "oxlint --fix && oxfmt --write .",
+    "typecheck-ci": "tsgo && tsc",
+    "typecheck": "tsgo",
+    "test": "vitest",
+    "test:extension": "vscode-test",
+    "embed-sdist": "node scripts/embed-sdist.mjs",
+    "lint": "oxlint && oxfmt --check . && node ./scripts/check-css-variables.mjs",
+    "fmt": "oxfmt --write .",
+    "fmt:check": "oxfmt --check ."
+  },
+  "devDependencies": {
+    "@effect/language-service": "^0.45.0",
+    "@effect/platform": "^0.92.1",
+    "@effect/platform-node": "^0.98.3",
+    "@effect/vitest": "^0.26.0",
+    "@marimo-team/frontend": "link:../../marimo/frontend",
+    "@marimo-team/openapi": "link:../../marimo/packages/openapi",
+    "@marimo-team/smart-cells": "link:../../marimo/packages/smart-cells",
+    "@sentry/node": "^9.47.1",
+    "@std/semver": "jsr:^1.0.6",
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^24.7.2",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@types/vscode": "^1.86.0",
+    "@types/vscode-notebook-renderer": "^1.72.4",
+    "@typescript/native-preview": "7.0.0-dev.20251015.1",
+    "@vscode/python-extension": "^1.0.6",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "effect": "^3.18.4",
+    "esbuild": "^0.25.11",
+    "jest-mock-vscode": "^4.7.0",
+    "mocha": "^11.7.4",
+    "oxfmt": "^0.28.0",
+    "oxlint": "^1.43.0",
+    "posthog-node": "^5.10.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tar": "^7.5.2",
+    "tinyspy": "^4.0.4",
+    "turbo": "^2.5.8",
+    "typescript": "^5.9.3",
+    "vite": "npm:rolldown-vite@7.2.2",
+    "vitest": "^3.2.4",
+    "vscode-jsonrpc": "^8.2.1",
+    "vscode-languageclient": "10.0.0-next.18"
+  },
   "contributes": {
     "configuration": {
       "title": "Marimo",
@@ -440,65 +485,20 @@
       ]
     }
   },
-  "scripts": {
-    "prepare": "turbo patch-tsc",
-    "patch-tsc": "effect-language-service patch",
-    "build": "turbo build:renderer && turbo build:extension",
-    "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
-    "build:renderer": "vite build",
-    "fix": "oxlint --fix && oxfmt --write .",
-    "typecheck-ci": "tsgo && tsc",
-    "typecheck": "tsgo",
-    "test": "vitest",
-    "test:extension": "vscode-test",
-    "embed-sdist": "node scripts/embed-sdist.mjs",
-    "lint": "oxlint && oxfmt --check . && node ./scripts/check-css-variables.mjs",
-    "fmt": "oxfmt --write .",
-    "fmt:check": "oxfmt --check ."
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionDependencies": [
+    "ms-python.python"
+  ],
+  "icon": "images/icon.png",
+  "engines": {
+    "vscode": "^1.86.0"
   },
-  "devDependencies": {
-    "@effect/language-service": "^0.45.0",
-    "@effect/platform": "^0.92.1",
-    "@effect/platform-node": "^0.98.3",
-    "@effect/vitest": "^0.26.0",
-    "@marimo-team/frontend": "link:../../marimo/frontend",
-    "@marimo-team/openapi": "link:../../marimo/packages/openapi",
-    "@marimo-team/smart-cells": "link:../../marimo/packages/smart-cells",
-    "@sentry/node": "^9.47.1",
-    "@std/semver": "jsr:^1.0.6",
-    "@tailwindcss/vite": "^4.1.14",
-    "@types/mocha": "^10.0.10",
-    "@types/node": "^24.7.2",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
-    "@types/vscode": "^1.86.0",
-    "@types/vscode-notebook-renderer": "^1.72.4",
-    "@typescript/native-preview": "7.0.0-dev.20251015.1",
-    "@vscode/python-extension": "^1.0.6",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2",
-    "effect": "^3.18.4",
-    "esbuild": "^0.25.11",
-    "jest-mock-vscode": "^4.7.0",
-    "mocha": "^11.7.4",
-    "oxfmt": "^0.28.0",
-    "oxlint": "^1.43.0",
-    "posthog-node": "^5.10.3",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "tar": "^7.5.2",
-    "tinyspy": "^4.0.4",
-    "turbo": "^2.5.8",
-    "typescript": "^5.9.3",
-    "vite": "npm:rolldown-vite@7.2.2",
-    "vitest": "^3.2.4",
-    "vscode-jsonrpc": "^8.2.1",
-    "vscode-languageclient": "10.0.0-next.18"
-  },
+  "packageManager": "pnpm@10.9.0",
   "pnpm": {
     "patchedDependencies": {
       "vscode-languageclient@10.0.0-next.18": "patches/vscode-languageclient@10.0.0-next.18.patch"
     }
-  },
-  "packageManager": "pnpm@10.9.0"
+  }
 }

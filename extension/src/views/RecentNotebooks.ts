@@ -1,5 +1,7 @@
-import { Effect, Layer, Option, Ref, Schema, Stream } from "effect";
 import type { Uri, WorkspaceFolder } from "vscode";
+
+import { Effect, Layer, Option, Ref, Schema, Stream } from "effect";
+
 import { MarimoNotebookDocument } from "../schemas.ts";
 import { createStorageKey, Storage } from "../services/Storage.ts";
 import { VsCode } from "../services/VsCode.ts";

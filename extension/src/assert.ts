@@ -1,5 +1,5 @@
-import * as process from "node:process";
 import { Data } from "effect";
+import * as process from "node:process";
 
 export class AssertionError extends Data.TaggedError("AssertionError")<{
   message: unknown;
@@ -35,7 +35,6 @@ export function assert(
   if (!expression) {
     if (process.env.NODE_ENV === "development") {
       // biome-ignore lint/suspicious/noDebugger: Triggers a breakpoint in development; stripped out in production builds.
-      
     }
 
     throw new AssertionError({ message });

@@ -1,9 +1,10 @@
 /// <reference types="vitest" />
 // @ts-check
 
-import * as process from "node:process";
 import tailwindcss from "@tailwindcss/vite";
+import * as process from "node:process";
 import * as vite from "vite";
+
 import stylesheet from "./scripts/vite-plugin-virtual-stylesheet.mjs";
 
 export default vite.defineConfig({

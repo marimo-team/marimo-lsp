@@ -1,6 +1,7 @@
+import { Cause, Effect, Either, Layer, Option } from "effect";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
-import { Cause, Effect, Either, Layer, Option } from "effect";
+
 import { unreachable } from "../assert.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { ExtensionContext } from "../services/Storage.ts";

@@ -1,6 +1,8 @@
-import { assert, expect, it } from "@effect/vitest";
 import type * as py from "@vscode/python-extension";
+
+import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Stream, TestClock } from "effect";
+
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";

@@ -1,13 +1,16 @@
+import type * as vscode from "vscode";
+
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
-import type * as vscode from "vscode";
+
+import type { CellMetadata } from "../../schemas.ts";
+
 import {
   createNotebookCell,
   createNotebookUri,
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import type { CellMetadata } from "../../schemas.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
 
 const withTestCtx = Effect.fnUntraced(function* () {

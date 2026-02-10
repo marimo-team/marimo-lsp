@@ -1,8 +1,9 @@
 import type * as vscode from "vscode-notebook-renderer";
 
-import { assert } from "../assert.ts";
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 import type { RequestClient } from "./marimo-frontend.ts";
+
+import { assert } from "../assert.ts";
 
 type TypedRequestContext = Omit<
   vscode.RendererContext<unknown>,

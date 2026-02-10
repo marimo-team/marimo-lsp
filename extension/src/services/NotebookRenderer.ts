@@ -1,6 +1,9 @@
-import { Effect, Stream } from "effect";
 import type * as vscode from "vscode";
+
+import { Effect, Stream } from "effect";
+
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
+
 import { VsCode } from "./VsCode.ts";
 
 /**

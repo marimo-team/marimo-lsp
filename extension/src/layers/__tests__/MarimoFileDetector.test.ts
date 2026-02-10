@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, TestClock } from "effect";
+
 import {
   createTestTextDocument,
   createTestTextEditor,

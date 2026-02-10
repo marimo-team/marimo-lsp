@@ -1,4 +1,5 @@
 import { Effect, Option, Schema } from "effect";
+
 import { VsCode } from "../services/VsCode.ts";
 import { EXTENSION_PACKAGE } from "./extension.ts";
 
