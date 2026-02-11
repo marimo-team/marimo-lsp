@@ -59,7 +59,6 @@ export function getTopologicalCells(
       variables.value,
     );
 
-    // biome-ignore lint/style/noNonNullAssertion: All cells added above
     const sortedCells = sortedIds.map((id) => cellMap.get(id)!);
 
     return [...sortedCells, ...cellsWithoutIds];

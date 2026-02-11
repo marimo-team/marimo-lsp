@@ -39,7 +39,6 @@ const TY_SERVER = { name: "ty", version: "0.0.15" } as const;
 export const TyLanguageServerStatus = Data.taggedEnum<TyLanguageServerStatus>();
 
 type TyLanguageServerStatus = Data.TaggedEnum<{
-  // biome-ignore lint/complexity/noBannedTypes: This is ok with Effect enums
   Starting: {};
   Disabled: { readonly reason: string };
   Running: {

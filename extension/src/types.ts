@@ -52,15 +52,10 @@ interface DebugAdapterRequest {
   sessionId: string;
   message: vscode.DebugProtocolMessage;
 }
-// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type InterruptRequest = {};
-// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type ListPackagesRequest = {};
-// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type DependencyTreeRequest = {};
-// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type GetConfigurationRequest = {};
-// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type CloseSessionRequest = {};
 
 interface ExecuteScratchRequest {

@@ -37,7 +37,6 @@ export const RuffLanguageServerStatus =
   Data.taggedEnum<RuffLanguageServerStatus>();
 
 type RuffLanguageServerStatus = Data.TaggedEnum<{
-  // biome-ignore lint/complexity/noBannedTypes: This is ok with Effect enums
   Starting: {};
   Disabled: { readonly reason: string };
   Running: {

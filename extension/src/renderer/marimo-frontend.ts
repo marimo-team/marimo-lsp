@@ -5,8 +5,6 @@
  *
  * See marimo-frontend-untyped.js for details on why this split exists.
  */
-// @ts-expect-error - Untyped imports that would fail type-checking. See marimo-frontend-untyped.js.
-
 import type {
   CellId,
   UIElementId,
@@ -45,7 +43,7 @@ import "@marimo-team/frontend/unstable_internal/css/md.css";
 import "@marimo-team/frontend/unstable_internal/css/admonition.css";
 import "@marimo-team/frontend/unstable_internal/css/md-tooltip.css";
 import "@marimo-team/frontend/unstable_internal/css/table.css";
-// biome-ignore assist/source/organizeImports: Keep untyped imports at the top
+// @ts-expect-error - Untyped imports that would fail type-checking. See marimo-frontend-untyped.js.
 import * as untyped from "./marimo-frontend-untyped.js";
 
 export { useTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";
