@@ -118,6 +118,7 @@ class LspSession:
                     values=request.values,
                 ),
                 auto_run=request.auto_run,
+                cell_ids=tuple(codes.keys()),
             ),
             from_consumer_id=None,
         )
