@@ -452,7 +452,7 @@ export class Env extends Effect.Service<Env>()("Env", {
 }) {}
 
 export class Debug extends Effect.Service<Debug>()("Debug", {
-  succeed: Effect.sync(() => {
+  effect: Effect.sync(() => {
     const api = vscode.debug;
     return {
       registerDebugConfigurationProvider(

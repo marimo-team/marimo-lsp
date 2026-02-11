@@ -89,7 +89,7 @@ importers:
         specifier: ^0.28.0
         version: 0.28.0
       oxlint:
-        specifier: ^1.43.0
+        specifier: ^1.46.0
         version: 1.46.0
       posthog-node:
         specifier: ^5.10.3
