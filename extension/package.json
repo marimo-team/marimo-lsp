@@ -52,7 +52,7 @@
     "jest-mock-vscode": "^4.7.0",
     "mocha": "^11.7.4",
     "oxfmt": "^0.28.0",
-    "oxlint": "^1.43.0",
+    "oxlint": "^1.46.0",
     "posthog-node": "^5.10.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
