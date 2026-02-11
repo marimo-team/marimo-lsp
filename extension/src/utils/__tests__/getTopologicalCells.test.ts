@@ -1,10 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
+
+import type { VariablesNotification } from "../../types.ts";
+
 import { createTestNotebookDocument, Uri } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { MarimoNotebookDocument } from "../../schemas.ts";
 import { VariablesService } from "../../services/variables/VariablesService.ts";
-import type { VariablesNotification } from "../../types.ts";
 import { getTopologicalCells } from "../getTopologicalCells.ts";
 
 function createMockVariablesOp(

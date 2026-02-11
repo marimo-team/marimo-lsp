@@ -1,5 +1,6 @@
-import { Option } from "effect";
 import type * as vscode from "vscode";
+
+import { Option } from "effect";
 
 /**
  * Enrich freshly-deserialized notebook data with cached outputs and stable IDs.

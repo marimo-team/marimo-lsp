@@ -1,7 +1,14 @@
+import type * as vscode from "vscode";
+
 import { expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import { Effect, Layer, Option, Stream, TestClock } from "effect";
-import type * as vscode from "vscode";
+
+import type {
+  CellOperationNotification,
+  CellRuntimeState,
+} from "../../types.ts";
+
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
   createTestNotebookDocument,
@@ -10,10 +17,6 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { MarimoNotebookDocument, type NotebookCellId } from "../../schemas.ts";
-import type {
-  CellOperationNotification,
-  CellRuntimeState,
-} from "../../types.ts";
 import { CellStateManager } from "../CellStateManager.ts";
 import { buildCellOutputs, ExecutionRegistry } from "../ExecutionRegistry.ts";
 import { LanguageClient } from "../LanguageClient.ts";

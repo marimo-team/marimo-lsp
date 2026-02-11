@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-issue-forms.json
-name: '🐞 Bug report'
+name: "🐞 Bug report"
 description: Report an issue with vscode-marimo
 labels: [bug]
 type: Bug

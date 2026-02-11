@@ -1,6 +1,7 @@
-import * as NodeChildProcess from "node:child_process";
 import { Effect, Layer, Stream } from "effect";
+import * as NodeChildProcess from "node:child_process";
 import * as rpc from "vscode-jsonrpc/node";
+
 import {
   ExecuteCommandError,
   findLspExecutable,
@@ -55,11 +56,9 @@ export const TestLanguageClientLive = Layer.scoped(
       streamOf(notification) {
         return Stream.asyncPush((emit) =>
           Effect.acquireRelease(
-            Effect.gen(function* () {
-              return conn.onNotification(notification, (msg) =>
-                emit.single(msg),
-              );
-            }),
+            Effect.sync(() =>
+              conn.onNotification(notification, (msg) => emit.single(msg)),
+            ),
             (disposable) => Effect.sync(() => disposable.dispose()),
           ),
         );

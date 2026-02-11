@@ -1,4 +1,5 @@
 import { Effect, Option } from "effect";
+
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../services/VsCode.ts";
 

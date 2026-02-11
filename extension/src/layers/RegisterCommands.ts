@@ -1,4 +1,7 @@
 import { Effect, Either, Layer, Stream } from "effect";
+
+import type { MarimoCommand } from "../constants.ts";
+
 import { createSetupCell } from "../commands/createSetupCell.ts";
 import { exportNotebookAsHtml } from "../commands/exportNotebookAsHtml.ts";
 import { newMarimoNotebook } from "../commands/newMarimoNotebook.ts";
@@ -13,7 +16,6 @@ import { showDiagnostics } from "../commands/showDiagnostics.ts";
 import { toggleAutoReload } from "../commands/toggleAutoReload.ts";
 import { toggleOnCellChange } from "../commands/toggleOnCellChange.ts";
 import { updateActivePythonEnvironment } from "../commands/updateActivePythonEnvironment.ts";
-import type { MarimoCommand } from "../constants.ts";
 import { Telemetry } from "../services/Telemetry.ts";
 import { VsCode } from "../services/VsCode.ts";
 

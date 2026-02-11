@@ -1,6 +1,7 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
+
 import type { MarimoNotebook, NotebookCellId, NotebookId } from "./schemas.ts";
 
 export type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
@@ -51,15 +52,10 @@ interface DebugAdapterRequest {
   sessionId: string;
   message: vscode.DebugProtocolMessage;
 }
-// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type InterruptRequest = {};
-// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type ListPackagesRequest = {};
-// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type DependencyTreeRequest = {};
-// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type GetConfigurationRequest = {};
-// biome-ignore lint/complexity/noBannedTypes: We need this for over the wire
 type CloseSessionRequest = {};
 
 interface ExecuteScratchRequest {

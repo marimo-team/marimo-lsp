@@ -1,5 +1,7 @@
-import { Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
+
+import { Effect, Option, Stream } from "effect";
+
 import { assert } from "../assert.ts";
 import { dynamicCommand } from "../commands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
@@ -110,8 +112,8 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
       // Listen to notebook document changes and emit events
       yield* Effect.forkScoped(
         code.workspace.notebookDocumentChanges().pipe(
-          Stream.runForEach(
-            Effect.fnUntraced(function* (event) {
+          Stream.runForEach((event) =>
+            Effect.sync(() => {
               const notebook = MarimoNotebookDocument.tryFrom(event.notebook);
 
               // Only process marimo notebooks

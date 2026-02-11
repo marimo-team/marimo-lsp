@@ -6,11 +6,13 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import { decodeVariablesOperation, type NotebookId } from "../../schemas.ts";
+
 import type {
   VariablesNotification,
   VariableValuesNotification,
 } from "../../types.ts";
+
+import { decodeVariablesOperation, type NotebookId } from "../../schemas.ts";
 
 // Re-export for others using this service
 export type { VariableName } from "../../schemas.ts";

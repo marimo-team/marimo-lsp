@@ -1,4 +1,5 @@
 import { Effect, flow, Option } from "effect";
+
 import { MarimoNotebookDocument } from "../schemas.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";

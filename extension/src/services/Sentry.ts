@@ -9,6 +9,7 @@ import {
   Option,
   Array as ReadonlyArray,
 } from "effect";
+
 import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
 import { VsCode } from "./VsCode.ts";
 

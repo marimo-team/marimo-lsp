@@ -1,7 +1,9 @@
 import { Effect, Layer, Option, Ref, Stream } from "effect";
+
 import type { NotebookId } from "../schemas.ts";
-import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import type { DependencyTreeNode } from "../services/packages/PackagesService.ts";
+
+import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { PackagesService } from "../services/packages/PackagesService.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { TreeView } from "./TreeView.ts";

@@ -1,7 +1,9 @@
-import * as NodeFs from "node:fs";
 import { Effect } from "effect";
-import { assert } from "../assert.ts";
+import * as NodeFs from "node:fs";
+
 import type { MarimoNotebookDocument } from "../schemas.ts";
+
+import { assert } from "../assert.ts";
 import { Uv } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 

@@ -1,5 +1,8 @@
 fail_fast: false
 
+ci:
+  skip: [oxfmt]
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -20,7 +23,7 @@ repos:
       - id: validate-pyproject
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1
+    rev: v1.43.4
     hooks:
       - id: typos
         pass_filenames: false
@@ -34,14 +37,16 @@ repos:
       # Run the formatter
       - id: ruff-format
 
-  - repo: https://github.com/biomejs/pre-commit
-    rev: v2.3.14
+  - repo: https://github.com/oxc-project/mirrors-oxlint
+    rev: v1.46.0
     hooks:
-      - id: biome-check
-        args: [--diagnostic-level, warn]
-        exclude: |
-          (?x)^(
-            extension/node_modules/.*|
-            extension/dist/.*|
-          )$
+      - id: oxlint
+        args: [--fix]
 
+  - repo: local
+    hooks:
+      - id: oxfmt
+        name: oxfmt
+        entry: pnpm exec oxfmt --write
+        language: system
+        'types_or': [javascript, jsx, ts, tsx]

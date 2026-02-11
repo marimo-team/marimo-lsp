@@ -1,5 +1,7 @@
 import { Effect, HashMap, Layer, Option, Ref, Stream } from "effect";
+
 import type { NotebookId } from "../schemas.ts";
+
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
 import { TreeView } from "./TreeView.ts";

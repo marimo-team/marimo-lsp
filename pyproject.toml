@@ -40,22 +40,22 @@ extend-exclude = ["vscode/*", "extension/tutorials/*"]
 pydocstyle = { convention = "numpy" }
 select = ["ALL"]
 ignore = [
-  "COM812",  # Missing trailing comma (conflicts with ruff format)
-  "ISC001",  # Import sorting (conflicts with ruff format)
-  "FIX002",  # Fixable issue
-  "G004",  # Uses of f-strings in logging
-  "PLC2701",  # Private imports
-  "TD",  # TODOS
-  "S101",  # Use of assert
-  "E501",  # Line too long (we will still format these)
-  "ANN202",  # Return types
+  "COM812", # Missing trailing comma (conflicts with ruff format)
+  "ISC001", # Import sorting (conflicts with ruff format)
+  "FIX002", # Fixable issue
+  "G004", # Uses of f-strings in logging
+  "PLC2701", # Private imports
+  "TD", # TODOS
+  "S101", # Use of assert
+  "E501", # Line too long (we will still format these)
+  "ANN202", # Return types
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = [
-  "D",  # No docstrings in tests
-  "S101",  # Use of assert
-  "B018",  # "useless expression", for accessing the Foo._repr_mimbundle_ descriptor
+  "D", # No docstrings in tests
+  "S101", # Use of assert
+  "B018", # "useless expression", for accessing the Foo._repr_mimbundle_ descriptor
   "SLF001",
   "PLC",
   "PLR",

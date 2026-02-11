@@ -1,5 +1,6 @@
 import { Effect, Option, Ref, Schema, Stream } from "effect";
 import { PostHog } from "posthog-node";
+
 import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
 import { createStorageKey, Storage } from "./Storage.ts";
 import { VsCode } from "./VsCode.ts";

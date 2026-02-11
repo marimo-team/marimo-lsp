@@ -1,4 +1,5 @@
 import { Layer, LogLevel } from "effect";
+
 import { LoggerLive } from "./layers/Logger.ts";
 import { makeActivate } from "./layers/Main.ts";
 import { RuffLanguageServer } from "./services/completions/RuffLanguageServer.ts";

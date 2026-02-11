@@ -7,6 +7,9 @@ import {
   Runtime,
   Stream,
 } from "effect";
+
+import type { CellOperationNotification, Notification } from "../types.ts";
+
 import { unreachable } from "../assert.ts";
 import { SCRATCH_CELL_ID } from "../constants.ts";
 import { handleMissingPackageAlert } from "../operations.ts";
@@ -15,12 +18,11 @@ import {
   MarimoNotebookDocument,
   type NotebookId,
 } from "../schemas.ts";
-import type { CellOperationNotification, Notification } from "../types.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
+import { TyLanguageServer } from "./completions/TyLanguageServer.ts";
 import { Config } from "./Config.ts";
 import { Constants } from "./Constants.ts";
 import { ControllerRegistry } from "./ControllerRegistry.ts";
-import { TyLanguageServer } from "./completions/TyLanguageServer.ts";
 import { DatasourcesService } from "./datasources/DatasourcesService.ts";
 import { ExecutionRegistry } from "./ExecutionRegistry.ts";
 import { LanguageClient } from "./LanguageClient.ts";
@@ -28,8 +30,8 @@ import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "./NotebookRenderer.ts";
 import { OutputChannel } from "./OutputChannel.ts";
 import { Uv } from "./Uv.ts";
-import { VsCode } from "./VsCode.ts";
 import { VariablesService } from "./variables/VariablesService.ts";
+import { VsCode } from "./VsCode.ts";
 
 interface MarimoOperation {
   notebookUri: NotebookId;

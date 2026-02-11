@@ -6,9 +6,11 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import { MarimoConfigResponseSchema } from "../../schemas/config.ts";
+
 import type { NotebookId } from "../../schemas.ts";
 import type { MarimoConfig } from "../../types.ts";
+
+import { MarimoConfigResponseSchema } from "../../schemas/config.ts";
 import { LanguageClient } from "../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../NotebookEditorRegistry.ts";
 

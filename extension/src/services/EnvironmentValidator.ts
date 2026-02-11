@@ -1,9 +1,11 @@
-import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import type { PlatformError } from "@effect/platform/Error";
+import type * as py from "@vscode/python-extension";
+
+import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import * as semver from "@std/semver";
-import type * as py from "@vscode/python-extension";
 import { Data, Effect, type ParseResult, Schema } from "effect";
+
 import { SemVerFromString } from "../schemas.ts";
 
 export const MINIMUM_MARIMO_VERSION = {

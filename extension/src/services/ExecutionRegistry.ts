@@ -1,10 +1,12 @@
-// @ts-expect-error
-import { transitionCell as untypedTransitionCell } from "@marimo-team/frontend/unstable_internal/core/cells/cell.ts?nocheck";
-import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import type {
   CellOutput,
   OutputMessage,
 } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
+import type * as vscode from "vscode";
+
+// @ts-expect-error
+import { transitionCell as untypedTransitionCell } from "@marimo-team/frontend/unstable_internal/core/cells/cell.ts?nocheck";
+import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import {
   type Brand,
   Data,
@@ -15,7 +17,10 @@ import {
   Ref,
   Runtime,
 } from "effect";
-import type * as vscode from "vscode";
+
+import type { PythonController } from "./NotebookControllerFactory.ts";
+import type { SandboxController } from "./SandboxController.ts";
+
 import { logUnreachable } from "../assert.ts";
 import { SCRATCH_CELL_ID } from "../constants.ts";
 import {
@@ -31,8 +36,6 @@ import {
 } from "../types.ts";
 import { prettyErrorMessage } from "../utils/errors.ts";
 import { CellStateManager } from "./CellStateManager.ts";
-import type { PythonController } from "./NotebookControllerFactory.ts";
-import type { SandboxController } from "./SandboxController.ts";
 import { VsCode } from "./VsCode.ts";
 
 export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(

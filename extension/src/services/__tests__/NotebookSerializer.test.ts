@@ -1,6 +1,7 @@
-import * as NodeFs from "node:fs";
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
+import * as NodeFs from "node:fs";
+
 import packageJson from "../../../package.json";
 import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";

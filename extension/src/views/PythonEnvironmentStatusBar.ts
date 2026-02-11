@@ -21,6 +21,7 @@
  */
 
 import { Effect, Layer, Option, Stream } from "effect";
+
 import { MarimoNotebookDocument } from "../schemas.ts";
 import { PythonExtension } from "../services/PythonExtension.ts";
 import { VsCode } from "../services/VsCode.ts";

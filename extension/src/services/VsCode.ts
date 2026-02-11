@@ -9,7 +9,6 @@ import {
   type Scope,
   Stream,
 } from "effect";
-
 // VsCode.ts centralizes and restricts access to the VS Code API.
 //
 // All other modules should use type-only imports and access the API through this service.
@@ -18,10 +17,12 @@ import {
 // easier testing story. The goal is NOT to hide APIs that are hard to mock,
 // but to limit surface area to what's necessary for correctness and clarity.
 //
-// biome-ignore lint: See above
+// oxlint-disable-next-line marimo/vscode-type-only"
 import * as vscode from "vscode";
+
 import type { DynamicCommand, VscodeBuiltinCommand } from "../commands.ts";
 import type { MarimoCommand, MarimoContextKey } from "../constants.ts";
+
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
@@ -33,7 +34,7 @@ export class FileSystemError extends Data.TaggedError("FileSystemError")<{
 }> {}
 
 export class Window extends Effect.Service<Window>()("Window", {
-  scoped: Effect.gen(function* () {
+  effect: Effect.sync(() => {
     const api = vscode.window;
 
     return {
@@ -451,7 +452,7 @@ export class Env extends Effect.Service<Env>()("Env", {
 }) {}
 
 export class Debug extends Effect.Service<Debug>()("Debug", {
-  scoped: Effect.gen(function* () {
+  effect: Effect.sync(() => {
     const api = vscode.debug;
     return {
       registerDebugConfigurationProvider(
@@ -526,7 +527,7 @@ export class AuthError extends Data.TaggedError("AuthError")<{
 }> {}
 
 export class Auth extends Effect.Service<Auth>()("Auth", {
-  effect: Effect.gen(function* () {
+  effect: Effect.sync(() => {
     const api = vscode.authentication;
     return {
       getSession(

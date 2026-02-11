@@ -8,12 +8,14 @@ import {
   SubscriptionRef,
   TestClock,
 } from "effect";
-import { partialService } from "../../../__tests__/__utils__/partial.ts";
+
 import type { NotebookId } from "../../../schemas.ts";
 import type { MarimoConfig } from "../../../types.ts";
+import type { VsCode } from "../../VsCode.ts";
+
+import { partialService } from "../../../__tests__/__utils__/partial.ts";
 import { LanguageClient } from "../../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../NotebookEditorRegistry.ts";
-import type { VsCode } from "../../VsCode.ts";
 import { VsCode as VsCodeService } from "../../VsCode.ts";
 import { ConfigContextManager } from "../ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";

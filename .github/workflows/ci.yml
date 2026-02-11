@@ -17,21 +17,33 @@ env:
   TURBO_TEAM: marimo
 
 jobs:
-
   typescript-lint:
     name: TypeScript / Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: biomejs/setup-biome@v2
+
+      - uses: pnpm/action-setup@v4
         with:
-          working-dir: "extension"
+          package_json_file: extension/package.json
 
-      - name: Run Biome
-        run: biome ci
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "pnpm"
+          cache-dependency-path: extension/pnpm-lock.yaml
 
-      - name: Validate marimo CSS variable overrides
-        run: node extension/scripts/check-css-variables.mjs
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: extension
+
+      - name: Run oxlint
+        run: pnpm exec oxlint
+        working-directory: extension
+
+      - name: Run oxfmt
+        run: pnpm exec oxfmt --check .
+        working-directory: extension
 
   typescript-typecheck:
     name: TypeScript / Typecheck
@@ -58,7 +70,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'pnpm'
+          cache: "pnpm"
           cache-dependency-path: |
             marimo/pnpm-lock.yaml
             marimo-lsp/extension/pnpm-lock.yaml
@@ -75,6 +87,9 @@ jobs:
           # make sure our types are up to date
           node scripts/codegen.mjs
           pnpm turbo typecheck-ci
+
+      - name: Validate marimo CSS variable overrides
+        run: node marimo-lsp/extension/scripts/check-css-variables.mjs
 
   typescript-test:
     name: TypeScript / Test / ${{ matrix.os }}
@@ -108,7 +123,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'pnpm'
+          cache: "pnpm"
           cache-dependency-path: |
             marimo/pnpm-lock.yaml
             marimo-lsp/extension/pnpm-lock.yaml

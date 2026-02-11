@@ -1,8 +1,10 @@
 import { Effect, Option } from "effect";
+
+import type { MarimoConfig } from "../types.ts";
+
 import { MarimoNotebookDocument } from "../schemas.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
 import { VsCode } from "../services/VsCode.ts";
-import type { MarimoConfig } from "../types.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 
 /**

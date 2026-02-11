@@ -1,4 +1,5 @@
 import { Effect, Option } from "effect";
+
 import { SETUP_CELL_NAME } from "../constants.ts";
 import { encodeCellMetadata, MarimoNotebookDocument } from "../schemas.ts";
 import { VsCode } from "../services/VsCode.ts";

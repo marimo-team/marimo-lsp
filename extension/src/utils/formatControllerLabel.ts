@@ -1,5 +1,7 @@
 import type * as py from "@vscode/python-extension";
+
 import { Either } from "effect";
+
 import type { VsCode } from "../services/VsCode.ts";
 
 /**

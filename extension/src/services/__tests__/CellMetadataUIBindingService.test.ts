@@ -1,6 +1,10 @@
+import type * as vscode from "vscode";
+
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
-import type * as vscode from "vscode";
+
+import type { CellMetadata } from "../../schemas.ts";
+
 import {
   createNotebookCell,
   createNotebookUri,
@@ -8,7 +12,6 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { DEFAULT_SQL_ENGINE } from "../../layers/CellMetadataBindings.ts";
-import type { CellMetadata } from "../../schemas.ts";
 import {
   CellMetadataUIBindingService,
   type MetadataBinding,

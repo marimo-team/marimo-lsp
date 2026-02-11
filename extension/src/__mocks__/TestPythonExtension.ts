@@ -1,4 +1,5 @@
 import type * as py from "@vscode/python-extension";
+
 import {
   Data,
   Effect,
@@ -9,6 +10,7 @@ import {
   Ref,
   Stream,
 } from "effect";
+
 import { Uri } from "../__mocks__/TestVsCode.ts";
 import { PythonExtension } from "../services/PythonExtension.ts";
 
@@ -60,45 +62,43 @@ export class TestPythonExtension extends Data.TaggedClass(
     });
 
     return new TestPythonExtension({
-      layer: Layer.scoped(
+      layer: Layer.succeed(
         PythonExtension,
-        Effect.gen(function* () {
-          return PythonExtension.make({
-            updateActiveEnvironmentPath(executable: string) {
-              return Effect.gen(function* () {
-                const envPath: py.EnvironmentPath = {
-                  id: executable,
-                  path: executable,
-                };
-                yield* Ref.set(activeEnv, envPath);
-                yield* activePathPubsub.publish({
-                  ...envPath,
-                  resource: undefined,
-                });
+        PythonExtension.make({
+          updateActiveEnvironmentPath(executable: string) {
+            return Effect.gen(function* () {
+              const envPath: py.EnvironmentPath = {
+                id: executable,
+                path: executable,
+              };
+              yield* Ref.set(activeEnv, envPath);
+              yield* activePathPubsub.publish({
+                ...envPath,
+                resource: undefined,
               });
-            },
-            knownEnvironments() {
-              return Effect.map(Ref.get(known), (set) => HashSet.toValues(set));
-            },
-            environmentChanges() {
-              return Stream.fromPubSub(pubsub);
-            },
-            activeEnvironmentPathChanges() {
-              return Stream.fromPubSub(activePathPubsub);
-            },
-            getActiveEnvironmentPath(_resource?: py.Resource) {
-              return Ref.get(activeEnv);
-            },
-            resolveEnvironment(path: string | py.EnvironmentPath) {
-              return Effect.gen(function* () {
-                const pathStr = typeof path === "string" ? path : path.path;
-                const knownSet = yield* Ref.get(known);
-                return Option.fromNullable(
-                  Array.from(knownSet).find((e) => e.path === pathStr),
-                );
-              });
-            },
-          });
+            });
+          },
+          knownEnvironments() {
+            return Effect.map(Ref.get(known), (set) => HashSet.toValues(set));
+          },
+          environmentChanges() {
+            return Stream.fromPubSub(pubsub);
+          },
+          activeEnvironmentPathChanges() {
+            return Stream.fromPubSub(activePathPubsub);
+          },
+          getActiveEnvironmentPath(_resource?: py.Resource) {
+            return Ref.get(activeEnv);
+          },
+          resolveEnvironment(path: string | py.EnvironmentPath) {
+            return Effect.gen(function* () {
+              const pathStr = typeof path === "string" ? path : path.path;
+              const knownSet = yield* Ref.get(known);
+              return Option.fromNullable(
+                Array.from(knownSet).find((e) => e.path === pathStr),
+              );
+            });
+          },
         }),
       ),
       addEnvironment: (env) =>

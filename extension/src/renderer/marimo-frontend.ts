@@ -5,11 +5,10 @@
  *
  * See marimo-frontend-untyped.js for details on why this split exists.
  */
-// @ts-expect-error - Untyped imports that would fail type-checking. See marimo-frontend-untyped.js.
-
-// biome-ignore assist/source/organizeImports: Keep untyped imports at the top
-import * as untyped from "./marimo-frontend-untyped.js";
-
+import type {
+  CellId,
+  UIElementId,
+} from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
 /**
  * Type imports from @marimo-team/frontend
  *
@@ -22,20 +21,19 @@ import type {
   EditRequests,
   RunRequests,
 } from "@marimo-team/frontend/unstable_internal/core/network/types.ts";
-import type {
-  CellId,
-  UIElementId,
-} from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
-import type { RequestId } from "../../../../marimo/frontend/src/core/network/DeferredRequestRegistry.ts";
+
+import { FUNCTIONS_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/functions/FunctionRegistry.ts";
+import { initialModeAtom } from "@marimo-team/frontend/unstable_internal/core/mode.ts";
 import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts";
 import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts";
 import {
   handleWidgetMessage,
   MODEL_MANAGER,
 } from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts";
-import { FUNCTIONS_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/functions/FunctionRegistry.ts";
 import { safeExtractSetUIElementMessageBuffers } from "@marimo-team/frontend/unstable_internal/utils/json/base64.ts";
-import { initialModeAtom } from "@marimo-team/frontend/unstable_internal/core/mode.ts";
+
+import type { RequestId } from "../../../../marimo/frontend/src/core/network/DeferredRequestRegistry.ts";
+import type { NotificationOf, CellRuntimeState } from "../types.ts";
 
 import "@marimo-team/frontend/unstable_internal/css/common.css";
 import "@marimo-team/frontend/unstable_internal/css/globals.css";
@@ -45,8 +43,8 @@ import "@marimo-team/frontend/unstable_internal/css/md.css";
 import "@marimo-team/frontend/unstable_internal/css/admonition.css";
 import "@marimo-team/frontend/unstable_internal/css/md-tooltip.css";
 import "@marimo-team/frontend/unstable_internal/css/table.css";
-
-import type { NotificationOf, CellRuntimeState } from "../types.ts";
+// @ts-expect-error - Untyped imports that would fail type-checking. See marimo-frontend-untyped.js.
+import * as untyped from "./marimo-frontend-untyped.js";
 
 export { useTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";
 

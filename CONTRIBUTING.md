@@ -53,16 +53,17 @@ This will run linting and formatting checks automatically before each commit.
 
 This project uses [just](https://just.systems/) for common development tasks:
 
-| Command            | Action                                      |
-| ------------------ | ------------------------------------------- |
-| `just check`       | Lint and typecheck all code                 |
-| `just fix`         | Fix linting issues and format all code      |
-| `just test`        | Run all tests (pytest + vitest)             |
-| `just pytest`      | Run Python tests only                       |
-| `just vitest`      | Run TypeScript tests only                   |
-| `just vscode-test` | Run VS Code extension integration tests     |
+| Command            | Action                                  |
+| ------------------ | --------------------------------------- |
+| `just check`       | Lint and typecheck all code             |
+| `just fix`         | Fix linting issues and format all code  |
+| `just test`        | Run all tests (pytest + vitest)         |
+| `just pytest`      | Run Python tests only                   |
+| `just vitest`      | Run TypeScript tests only               |
+| `just vscode-test` | Run VS Code extension integration tests |
 
 You can pass additional arguments to test commands:
+
 ```sh
 just pytest -v                    # Run pytest with verbose output
 just pytest tests/test_foo.py     # Run specific test file
@@ -100,12 +101,13 @@ Put variable data in annotations, not the message:
 
 ```ts
 // Do
-yield* Effect.logInfo("Created notebook").pipe(
-  Effect.annotateLogs({ uri: notebook.uri.toString() }),
-);
+yield *
+  Effect.logInfo("Created notebook").pipe(
+    Effect.annotateLogs({ uri: notebook.uri.toString() }),
+  );
 
 // Don't
-yield* Effect.logDebug(`Processing ${count} items`);
+yield * Effect.logDebug(`Processing ${count} items`);
 ```
 
 ### Span Annotations
@@ -124,6 +126,12 @@ const refresh = Effect.fn("ControllerRegistry.refresh")(function* () {
 Use `Effect.withSpan` for important operations:
 
 ```ts
-yield* client.executeCommand(cmd).pipe(
-  Effect.withSpan("lsp.executeCommand", { attributes: { command: cmd.command } }),
-);
+yield *
+  client
+    .executeCommand(cmd)
+    .pipe(
+      Effect.withSpan("lsp.executeCommand", {
+        attributes: { command: cmd.command },
+      }),
+    );
+```

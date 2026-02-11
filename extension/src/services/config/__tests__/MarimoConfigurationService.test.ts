@@ -1,13 +1,15 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Stream, TestClock } from "effect";
+
+import type { NotebookId } from "../../../schemas.ts";
+import type { MarimoConfig } from "../../../types.ts";
+
 import { TestTelemetryLive } from "../../../__mocks__/TestTelemetry.ts";
 import {
   createTestNotebookDocument,
   createTestNotebookEditor,
   TestVsCode,
 } from "../../../__mocks__/TestVsCode.ts";
-import type { NotebookId } from "../../../schemas.ts";
-import type { MarimoConfig } from "../../../types.ts";
 import { LanguageClient } from "../../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../NotebookEditorRegistry.ts";
 import { VsCode } from "../../VsCode.ts";

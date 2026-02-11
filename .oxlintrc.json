@@ -1,0 +1,24 @@
+{
+  "$schema": "./extension/node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "pedantic": "off",
+    "perf": "warn",
+    "style": "off",
+    "restriction": "off"
+  },
+  "jsPlugins": ["./extension/lint/marimo-plugin.mjs"],
+  "plugins": ["typescript", "react", "import"],
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "import/extensions": ["error", "always", { "ignorePackages": true }],
+    "import/no-unassigned-import": [
+      "error",
+      { "allow": ["**/*.css", "**/*.scss"] }
+    ],
+    "typescript/non-nullable-type-assertion-style": "error",
+    "marimo/vscode-type-only": "error",
+    "marimo/no-at-imports": "error"
+  }
+}

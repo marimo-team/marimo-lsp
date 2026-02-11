@@ -1,7 +1,9 @@
-import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Brand, Cause, Effect, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
+
+import * as semver from "@std/semver";
+import { Brand, Cause, Effect, Option, Runtime, Stream } from "effect";
+
 import { unreachable } from "../assert.ts";
 import { type MarimoNotebookCell, MarimoNotebookDocument } from "../schemas.ts";
 import { Constants } from "../services/Constants.ts";

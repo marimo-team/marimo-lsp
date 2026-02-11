@@ -1,8 +1,10 @@
+import { Cause, Data, Effect, flow, Option, pipe } from "effect";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
-import { Cause, Data, Effect, flow, Option, pipe } from "effect";
 import * as lsp from "vscode-languageclient/node";
+
 import type { ClientNotebookSync } from "../services/completions/NotebookSyncService.ts";
+
 import { ExtensionContext } from "../services/Storage.ts";
 import { Uv } from "../services/Uv.ts";
 

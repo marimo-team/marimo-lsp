@@ -2,6 +2,7 @@ import { vi } from "vitest";
 
 vi.mock("vscode", () => ({}));
 vi.mock("vscode-languageclient/node", () => ({
+  // oxlint-disable-next-line no-extraneous-class
   LanguageClient: class {
     constructor() {
       throw new Error(

@@ -1,6 +1,6 @@
+import { Option } from "effect";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
-import { Option } from "effect";
 
 /**
  * Resolves a path to a virtual environment directory.
