@@ -46,9 +46,6 @@ jobs:
         run: pnpm exec oxfmt --check .
         working-directory: extension
 
-      - name: Validate marimo CSS variable overrides
-        run: node extension/scripts/check-css-variables.mjs
-
   typescript-typecheck:
     name: TypeScript / Typecheck
     runs-on: ubuntu-latest
@@ -91,6 +88,9 @@ jobs:
           # make sure our types are up to date
           node scripts/codegen.mjs
           pnpm turbo typecheck-ci
+
+      - name: Validate marimo CSS variable overrides
+        run: node marimo-lsp/extension/scripts/check-css-variables.mjs
 
   typescript-test:
     name: TypeScript / Test / ${{ matrix.os }}
