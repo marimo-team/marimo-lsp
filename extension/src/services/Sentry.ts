@@ -168,11 +168,18 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
         const extra: Record<string, unknown> = {};
         for (const [key, value] of HashMap.toEntries(opts.annotations)) {
           extra[key] = structuredMessage(value);
+          if (Cause.isCause(value) && !Cause.isEmpty(value)) {
+            extra[`${key}.pretty`] = Cause.pretty(value, {
+              renderErrorCause: true,
+            });
+          }
         }
 
         // Include cause if present
         if (!Cause.isEmpty(opts.cause)) {
-          extra.cause = Cause.pretty(opts.cause, { renderErrorCause: true });
+          extra["logger.cause"] = Cause.pretty(opts.cause, {
+            renderErrorCause: true,
+          });
         }
 
         if (opts.logLevel === LogLevel.Error) {
@@ -223,10 +230,6 @@ function isMarimoStackTrace(frames: SentrySDK.StackFrame[]) {
  * We flatten these to strings to ensure full visibility in Sentry.
  */
 function structuredMessage(u: unknown): unknown {
-  // Cause values should be pretty-printed, not serialized as nested objects
-  if (Cause.isCause(u)) {
-    return Cause.pretty(u, { renderErrorCause: true });
-  }
   switch (typeof u) {
     case "bigint":
     case "function":
