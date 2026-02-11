@@ -181,6 +181,7 @@ channel for all kernel state updates.
 ```
 
 Currently implemented operations:
+
 - `cell-op` - Cell execution state transitions (queued, running, idle)
 - `variables` - Variable state updates for the variables panel
 - `data-column-preview` - Datasource column preview data

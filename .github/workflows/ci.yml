@@ -17,7 +17,6 @@ env:
   TURBO_TEAM: marimo
 
 jobs:
-
   typescript-lint:
     name: TypeScript / Lint
     runs-on: ubuntu-latest
@@ -31,7 +30,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'pnpm'
+          cache: "pnpm"
           cache-dependency-path: extension/pnpm-lock.yaml
 
       - name: Install dependencies
@@ -71,7 +70,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'pnpm'
+          cache: "pnpm"
           cache-dependency-path: |
             marimo/pnpm-lock.yaml
             marimo-lsp/extension/pnpm-lock.yaml
@@ -124,7 +123,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'pnpm'
+          cache: "pnpm"
           cache-dependency-path: |
             marimo/pnpm-lock.yaml
             marimo-lsp/extension/pnpm-lock.yaml
