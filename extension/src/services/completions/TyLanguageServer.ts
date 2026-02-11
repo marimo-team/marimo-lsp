@@ -1,5 +1,3 @@
-import type * as lsp from "vscode-languageclient/node";
-
 import { NodeContext } from "@effect/platform-node";
 import {
   type Cause,
@@ -12,6 +10,7 @@ import {
   Runtime,
   Stream,
 } from "effect";
+import type * as lsp from "vscode-languageclient/node";
 import { ResponseError } from "vscode-languageclient/node";
 
 import {

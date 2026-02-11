@@ -1,5 +1,4 @@
 import type * as py from "@vscode/python-extension";
-
 import {
   Data,
   Effect,

@@ -1,6 +1,3 @@
-import type * as vscode from "vscode";
-import type * as lsp from "vscode-languageclient/node";
-
 import {
   type Cause,
   Data,
@@ -11,6 +8,8 @@ import {
   Runtime,
   Stream,
 } from "effect";
+import type * as vscode from "vscode";
+import type * as lsp from "vscode-languageclient/node";
 
 import {
   createManagedLanguageClient,

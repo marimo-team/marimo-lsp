@@ -1,9 +1,7 @@
+import { Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import { Effect, Option, Stream } from "effect";
-
 import type { NotebookId } from "../schemas.ts";
-
 import { MarimoNotebookDocument } from "../schemas.ts";
 import { VsCode } from "./VsCode.ts";
 

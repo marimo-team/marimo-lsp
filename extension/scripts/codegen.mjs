@@ -14,48 +14,40 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodeUrl from "node:url";
 
+import * as semver from "@std/semver";
+import { Schema } from "effect";
+
 import pkg from "../package.json" with { type: "json" };
 
-/** @returns {{ major: number; minor: number; patch: number }} */
-function getMinimumMarimoVersion() {
-  const pyproject = NodeFs.readFileSync(
-    NodeUrl.fileURLToPath(new URL("../../pyproject.toml", import.meta.url)),
-    "utf-8",
-  );
-  const match = pyproject.match(/marimo>=([\d.]+)/);
-  assert(match, "Could not find marimo lower bound in pyproject.toml");
-  const parts = match[1].split(".").map(Number);
-  assert(parts.length === 3, `Expected semver with 3 parts, got "${match[1]}"`);
-  const [major, minor, patch] = parts;
-  return { major, minor, patch };
-}
+const Command = Schema.Struct({ command: Schema.String });
+const View = Schema.Struct({ id: Schema.String });
+const Notebook = Schema.Struct({ type: Schema.String });
+const PackageJson = Schema.Struct({
+  contributes: Schema.Struct({
+    commands: Schema.Array(Command),
+    views: Schema.Record({ key: Schema.String, value: Schema.Array(View) }),
+    notebooks: Schema.Tuple(Notebook),
+  }),
+});
 
-const minimumMarimoVersion = getMinimumMarimoVersion();
+const { contributes } = Schema.decodeUnknownSync(PackageJson)(pkg);
+const commands = contributes.commands.map((c) => c.command);
+const notebookType = contributes.notebooks[0].type;
 
-/** @type {(arr: Array<string>) => string} */
-const union = (arr) =>
-  arr
-    .toSorted()
-    .map((name) => JSON.stringify(name))
-    .join(" | ");
-
-const commands = pkg.contributes.commands.map((command) => command.command);
-
-const viewNames =
-  /** @type {Array<keyof typeof pkg["contributes"]['views']>} */ (
-    Object.keys(pkg.contributes.views)
-  );
-assert(
-  viewNames.length === 1,
-  `Expected view contribution, found multiple: ${viewNames}`,
+const pyproject = NodeFs.readFileSync(
+  NodeUrl.fileURLToPath(new URL("../../pyproject.toml", import.meta.url)),
+  "utf-8",
 );
-const views = pkg.contributes.views[viewNames[0]].map((view) => view.id);
-
-assert(
-  pkg.contributes.notebooks.length === 1,
-  "Expected one notebook contribution",
+const minimumMarimoVersion = semver.parse(
+  pyproject.match(/marimo>=([\d.]+)/)?.[1] ?? "",
 );
-const [notebook] = pkg.contributes.notebooks;
+
+const views = Object.keys(contributes.views);
+assert(
+  views.length === 1,
+  `Expected view contribution, found multiple: ${JSON.stringify(views)}`,
+);
+const viewIds = contributes.views[views[0]].map((v) => v.id);
 
 const contextKeys = [
   "marimo.notebook.hasStaleCells",
@@ -64,6 +56,13 @@ const contextKeys = [
   "marimo.config.runtime.auto_reload",
   "marimo.isPythonFileMarimoNotebook",
 ];
+
+/** @type {(arr: Array<string>) => string} */
+const union = (arr) =>
+  arr
+    .toSorted()
+    .map((name) => JSON.stringify(name))
+    .join(" | ");
 
 const code = NodeChildProcess.execFileSync(
   NodeUrl.fileURLToPath(
@@ -77,9 +76,9 @@ const code = NodeChildProcess.execFileSync(
 
 export type MarimoCommand = ${union(commands)};
 
-export type MarimoView = ${union(views)};
+export type MarimoView = ${union(viewIds)};
 
-export const NOTEBOOK_TYPE = "${notebook.type}";
+export const NOTEBOOK_TYPE = "${notebookType}";
 
 export const SETUP_CELL_NAME = "setup";
 

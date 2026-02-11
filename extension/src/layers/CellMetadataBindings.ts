@@ -1,7 +1,6 @@
 import { Effect, Layer, Option } from "effect";
 
 import type { CellMetadata } from "../schemas.ts";
-
 import { CellMetadataUIBindingService } from "../services/CellMetadataUIBindingService.ts";
 import { Constants } from "../services/Constants.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";

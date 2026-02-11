@@ -1,9 +1,7 @@
+import { Effect, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import { Effect, Stream } from "effect";
-
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
-
 import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { VsCode } from "./VsCode.ts";
 
@@ -23,7 +21,7 @@ export class NotebookRenderer extends Effect.Service<NotebookRenderer>()(
         postMessage(
           message: RendererReceiveMessage,
           editor?: vscode.NotebookEditor,
-        ): Effect.Effect<boolean, never, never> {
+        ): Effect.Effect<boolean> {
           return Effect.promise(() => channel.postMessage(message, editor));
         },
         messages(): Stream.Stream<{

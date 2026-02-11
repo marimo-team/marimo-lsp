@@ -1,4 +1,5 @@
-import type * as vscode from "vscode";
+import * as NodeEvents from "node:events";
+import * as NodePath from "node:path";
 
 import {
   Data,
@@ -14,11 +15,9 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import * as NodeEvents from "node:events";
-import * as NodePath from "node:path";
+import type * as vscode from "vscode";
 
 import type { DynamicCommand } from "../commands.ts";
-
 import { type MarimoCommand, NOTEBOOK_TYPE } from "../constants.ts";
 import {
   Auth,
@@ -444,7 +443,7 @@ class Range implements vscode.Range {
   ) {
     if (typeof startOrLine === "number") {
       this.start = new Position(startOrLine, endOrCharacter as number);
-      this.end = new Position(endLine as number, endCharacter as number);
+      this.end = new Position(endLine!, endCharacter!);
     } else {
       this.start = startOrLine;
       this.end = endOrCharacter as Position;
@@ -571,7 +570,7 @@ class Selection extends Range implements vscode.Selection {
 
     if (typeof anchorOrLine === "number") {
       anchor = new Position(anchorOrLine, activeOrCharacter as number);
-      active = new Position(activeLine as number, activeCharacter as number);
+      active = new Position(activeLine!, activeCharacter!);
     } else {
       anchor = anchorOrLine;
       active = activeOrCharacter as Position;
@@ -684,7 +683,7 @@ class WorkspaceEdit implements vscode.WorkspaceEdit {
   }
   get(uri: Uri): TextEdit[] {
     const edits = this.#edits.get(uri.toString()) || [];
-    return edits.filter((e) => e instanceof TextEdit) as TextEdit[];
+    return edits.filter((e) => e instanceof TextEdit);
   }
   createFile(_uri: Uri): void {
     this.#fileOperationCount += 1;
@@ -698,9 +697,7 @@ class WorkspaceEdit implements vscode.WorkspaceEdit {
   entries(): [Uri, TextEdit[]][] {
     const result: [Uri, TextEdit[]][] = [];
     for (const [uriString, edits] of this.#edits) {
-      const textEdits = edits.filter(
-        (e) => e instanceof TextEdit,
-      ) as TextEdit[];
+      const textEdits = edits.filter((e) => e instanceof TextEdit);
       result.push([Uri.parse(uriString, true), textEdits]);
     }
     return result;

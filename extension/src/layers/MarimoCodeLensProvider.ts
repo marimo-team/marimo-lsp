@@ -1,6 +1,5 @@
-import type * as vscode from "vscode";
-
 import { Effect, Layer } from "effect";
+import type * as vscode from "vscode";
 
 import { VsCode } from "../services/VsCode.ts";
 

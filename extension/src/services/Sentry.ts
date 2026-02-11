@@ -242,6 +242,7 @@ function structuredMessage(u: unknown): unknown {
         try {
           return Inspectable.format(json);
         } catch {
+          // oxlint-disable-next-line typescrip/no-base-to-string
           return String(u);
         }
       }
@@ -263,6 +264,7 @@ function formatValue(value: unknown) {
   try {
     return JSON.stringify(structuredMessage(value));
   } catch {
+    // oxlint-disable-next-line typescrip/no-base-to-string
     return String(value);
   }
 }

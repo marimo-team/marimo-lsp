@@ -6,8 +6,6 @@
  * @see https://github.com/microsoft/vscode-jupyter/blob/main/src/api.d.ts
  */
 
-import type * as vscode from "vscode";
-
 import {
   Effect,
   Option,
@@ -15,6 +13,7 @@ import {
   Runtime,
   Stream,
 } from "effect";
+import type * as vscode from "vscode";
 
 import { MarimoNotebookDocument } from "../schemas.ts";
 import { Config } from "./Config.ts";

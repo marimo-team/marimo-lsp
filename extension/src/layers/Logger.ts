@@ -1,6 +1,7 @@
-import { Effect, Layer, Logger, type LogLevel } from "effect";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
+
+import { Effect, Layer, Logger, type LogLevel } from "effect";
 
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { Sentry } from "../services/Sentry.ts";
@@ -22,12 +23,12 @@ const makeFileLogger = (logFilePath: string) =>
 const makeVsCodeLogger = (channel: OutputChannel) => {
   type Level = Exclude<LogLevel.LogLevel["label"], "OFF" | "ALL">;
   const mapping = {
-    INFO: channel.info,
-    TRACE: channel.trace,
-    DEBUG: channel.debug,
-    WARN: channel.warn,
-    ERROR: channel.error,
-    FATAL: channel.error,
+    INFO: channel.info.bind(channel),
+    TRACE: channel.trace.bind(channel),
+    DEBUG: channel.debug.bind(channel),
+    WARN: channel.warn.bind(channel),
+    ERROR: channel.error.bind(channel),
+    FATAL: channel.error.bind(channel),
   } as const;
   return Logger.map(Logger.logfmtLogger, (str) => {
     // parse out the level from the default formatter
@@ -35,7 +36,7 @@ const makeVsCodeLogger = (channel: OutputChannel) => {
     const [level, message] = match
       ? [match[1] as Level, match[2].trim()]
       : ["INFO" as Level, str];
-    const log = mapping[level] ?? channel.info;
+    const log = mapping[level] ?? channel.info.bind(channel);
     log(message);
   });
 };

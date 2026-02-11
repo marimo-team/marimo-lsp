@@ -1,6 +1,5 @@
-import type * as vscode from "vscode";
-
 import { Effect, Option, Runtime, Stream } from "effect";
+import type * as vscode from "vscode";
 
 import { MarimoNotebookDocument } from "../schemas.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";

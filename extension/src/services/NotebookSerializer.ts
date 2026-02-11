@@ -1,5 +1,3 @@
-import type * as vscode from "vscode";
-
 import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import {
   Effect,
@@ -9,6 +7,7 @@ import {
   Runtime,
   Schema,
 } from "effect";
+import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import {
@@ -25,6 +24,11 @@ import { VsCode } from "./VsCode.ts";
 type BooleanMap<T> = {
   [key in keyof T]: boolean;
 };
+
+const NotebookCellKind = {
+  Markup: 1,
+  Code: 2,
+} as const satisfies typeof vscode.NotebookCellKind;
 
 /**
  * Handles serialization and deserialization of marimo notebooks,
@@ -86,8 +90,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                 const result = markdownParser.transformIn(cell.code);
                 if (!result.metadata.quotePrefix.includes("f")) {
                   return {
-                    // Hard code to avoid taking dep on VsCode
-                    kind: 1 satisfies vscode.NotebookCellKind.Markup,
+                    kind: NotebookCellKind.Markup,
                     value: result.code,
                     languageId: constants.LanguageId.Markdown,
                     metadata: {
@@ -106,8 +109,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               if (isNonEmpty && sqlParser.isSupported(cell.code)) {
                 const result = sqlParser.transformIn(cell.code);
                 return {
-                  // Hard code to avoid taking dep on VsCode
-                  kind: 2 satisfies vscode.NotebookCellKind.Code,
+                  kind: NotebookCellKind.Code,
                   value: result.code,
                   languageId: constants.LanguageId.Sql,
                   metadata: {
@@ -123,8 +125,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
 
               // Default Python cell
               return {
-                // Hard code to avoid taking dep on VsCode
-                kind: 2 satisfies vscode.NotebookCellKind.Code,
+                kind: NotebookCellKind.Code,
                 value: cell.code,
                 languageId: constants.LanguageId.Python,
                 metadata: {
@@ -248,7 +249,7 @@ function notebookDataToMarimoNotebook(
   }: {
     LanguageId: Constants["LanguageId"];
   },
-): Effect.Effect<typeof MarimoNotebook.Type, ParseResult.ParseError, never> {
+): Effect.Effect<typeof MarimoNotebook.Type, ParseResult.ParseError> {
   const { cells, metadata = {} } = notebook;
   const sqlParser = new SQLParser();
   const markdownParser = new MarkdownParser();
@@ -263,8 +264,8 @@ function notebookDataToMarimoNotebook(
     cells: cells.map((cell) => {
       const cellMeta = decodeCellMetadata(cell.metadata);
 
-      // Handle markup cells
-      if (cell.kind === (1 satisfies vscode.NotebookCellKind.Markup)) {
+      // oxlint-disable-next-line typescript/no-unsafe-enum-comparison
+      if (cell.kind === NotebookCellKind.Markup) {
         // Check if this is a markdown cell with metadata
         if (cell.languageId === LanguageId.Markdown) {
           const result = markdownParser.transformOut(

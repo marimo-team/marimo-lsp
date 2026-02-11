@@ -1,5 +1,6 @@
-import { Effect, Layer, Stream } from "effect";
 import * as NodeChildProcess from "node:child_process";
+
+import { Effect, Layer, Stream } from "effect";
 import * as rpc from "vscode-jsonrpc/node";
 
 import {

@@ -18,7 +18,7 @@ const ANONYMOUS_ID_KEY = createStorageKey(
  * Get or create an anonymous ID for telemetry tracking.
  * The ID is persisted in global storage and generated once per installation.
  */
-export function anonymousId(storage: Storage): Effect.Effect<string, never> {
+export function anonymousId(storage: Storage): Effect.Effect<string> {
   return Effect.gen(function* () {
     // Try to get existing ID
     const maybeId = yield* storage.global.get(ANONYMOUS_ID_KEY);

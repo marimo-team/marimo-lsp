@@ -1,6 +1,7 @@
+import * as NodeProcess from "node:process";
+
 import * as semver from "@std/semver";
 import { Effect, Option } from "effect";
-import * as NodeProcess from "node:process";
 
 import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
 import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
@@ -94,7 +95,7 @@ export class HealthService extends Effect.Service<HealthService>()(
               .pipe(Effect.option);
             const env = Option.flatten(resolved);
             if (Option.isNone(env)) {
-              lines.push(`\tInterpreter: ${pyEnvPath.value}`);
+              lines.push(`\tInterpreter: ${pyEnvPath.value.path}`);
               lines.push("\tVersion: Unknown");
             } else {
               const e = env.value;

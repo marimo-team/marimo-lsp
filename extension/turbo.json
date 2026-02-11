@@ -14,8 +14,8 @@
     "patch-tsc": {
       "inputs": ["package.json"]
     },
-    "typecheck": {},
     "typecheck-ci": {},
+    "check": {},
     "fix": {},
     "test:extension": {
       "dependsOn": ["build:extension"]

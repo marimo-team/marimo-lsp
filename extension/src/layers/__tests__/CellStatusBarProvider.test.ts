@@ -1,9 +1,6 @@
-import type * as vscode from "vscode";
-
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
-
-import type { CellMetadata } from "../../schemas.ts";
+import type * as vscode from "vscode";
 
 import {
   createNotebookCell,
@@ -11,6 +8,7 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import type { CellMetadata } from "../../schemas.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
 
 const withTestCtx = Effect.fnUntraced(function* () {
@@ -244,7 +242,7 @@ it.effect(
       // Check name provider
       const nameItems = providers[1]?.provider.provideCellStatusBarItems(
         cell,
-        {} as vscode.CancellationToken,
+        noopToken,
       );
       const nameArray = Array.isArray(nameItems) ? nameItems : [];
       expect(nameArray.some((item) => item.text.includes("my_cell"))).toBe(

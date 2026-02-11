@@ -1,8 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, Stream, TestClock } from "effect";
 
-import type { MarimoCommand } from "../../types.ts";
-
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
   createTestNotebookDocument,
@@ -10,6 +8,7 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas.ts";
+import type { MarimoCommand } from "../../types.ts";
 import { CellStateManager } from "../CellStateManager.ts";
 import { LanguageClient } from "../LanguageClient.ts";
 import { VsCode } from "../VsCode.ts";

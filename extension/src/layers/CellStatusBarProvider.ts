@@ -1,6 +1,5 @@
-import type * as vscode from "vscode";
-
 import { Effect, Layer, Option, Stream } from "effect";
+import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
 import { MarimoNotebookCell, MarimoNotebookDocument } from "../schemas.ts";

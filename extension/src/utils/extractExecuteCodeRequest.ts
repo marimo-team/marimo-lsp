@@ -1,10 +1,8 @@
+import { Option } from "effect";
 import type * as vscode from "vscode";
 
-import { Option } from "effect";
-
-import type { Constants } from "../services/Constants.ts";
-
 import { MarimoNotebookCell, type NotebookCellId } from "../schemas.ts";
+import type { Constants } from "../services/Constants.ts";
 import { getCellExecutableCode } from "./getCellExecutableCode.ts";
 
 export function extractExecuteCodeRequest(

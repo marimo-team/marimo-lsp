@@ -1,5 +1,6 @@
-import { Data } from "effect";
 import * as process from "node:process";
+
+import { Data } from "effect";
 
 export class AssertionError extends Data.TaggedError("AssertionError")<{
   message: unknown;
