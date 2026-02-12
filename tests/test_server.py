@@ -624,6 +624,10 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
+                "operation": {"op": "update-cell-ids", "cell_ids": ["cell1"]},
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
                 "operation": {
                     "op": "cell-op",
                     "cell_id": "cell1",
@@ -876,6 +880,10 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                         }
                     ],
                 },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {"op": "update-cell-ids", "cell_ids": ["cell1", "cell2"]},
             },
             {
                 "notebookUri": "file:///exec_test.py",
