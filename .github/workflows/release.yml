@@ -326,17 +326,17 @@ jobs:
       - name: Publish to VS Code Marketplace
         run: |
           if [ "${{ inputs.pre-release }}" = "true" ]; then
-            vsce publish --pat ${{ secrets.VSCE_PAT }} --packagePath ./dist/*.vsix --pre-release
+            vsce publish --pat ${{ secrets.VSCE_PAT }} --packagePath ./dist/*.vsix --pre-release --skip-duplicate
           else
-            vsce publish --pat ${{ secrets.VSCE_PAT }} --packagePath ./dist/*.vsix
+            vsce publish --pat ${{ secrets.VSCE_PAT }} --packagePath ./dist/*.vsix --skip-duplicate
           fi
 
       - name: Publish to Open VSX Registry
         run: |
           if [ "${{ inputs.pre-release }}" = "true" ]; then
-            ovsx publish --pat ${{ secrets.OPEN_VSX_TOKEN }} --packagePath ./dist/*.vsix --pre-release
+            ovsx publish --pat ${{ secrets.OPEN_VSX_TOKEN }} --packagePath ./dist/*.vsix --pre-release --skip-duplicate
           else
-            ovsx publish --pat ${{ secrets.OPEN_VSX_TOKEN }} --packagePath ./dist/*.vsix
+            ovsx publish --pat ${{ secrets.OPEN_VSX_TOKEN }} --packagePath ./dist/*.vsix --skip-duplicate
           fi
 
       - uses: astral-sh/setup-uv@v6

@@ -12,6 +12,7 @@ import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Uv } from "../../services/Uv.ts";
 
 const python = "3.13";
+const timeout = 30_000;
 
 class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
   scoped: Effect.gen(function* () {
@@ -48,6 +49,7 @@ describe("Uv", () => {
         yield* uv.venv(target, { python });
         assert(NodeFs.existsSync(target), "Expected new venv.");
       }),
+      { timeout },
     );
   });
 
@@ -63,6 +65,7 @@ describe("Uv", () => {
         assert(Either.isLeft(result), "Expected failure");
         assert.strictEqual(result.left._tag, "UvMissingPyProjectError");
       }),
+      { timeout },
     );
   });
 
@@ -87,6 +90,7 @@ describe("Uv", () => {
           `Expected httpx to be in ${sitePackages}`,
         );
       }),
+      { timeout },
     );
   });
 
@@ -114,6 +118,7 @@ describe("Uv", () => {
         "
       `);
       }),
+      { timeout },
     );
   });
 
@@ -145,6 +150,7 @@ print("This should fail to sync")
         assert(Either.isLeft(result), "Expected failure");
         assert.strictEqual(result.left._tag, "UvResolutionError");
       }),
+      { timeout },
     );
   });
 
@@ -171,6 +177,7 @@ print("This script has no PEP 723 metadata")
         assert(Either.isLeft(result), "Expected failure");
         assert.strictEqual(result.left._tag, "UvMissingPep723MetadataError");
       }),
+      { timeout },
     );
   });
 
@@ -216,6 +223,7 @@ print("hello")
           `Expected environment path to exist: ${envPath}`,
         );
       }),
+      { timeout },
     );
   });
 
@@ -242,7 +250,7 @@ print("hello")
 
           assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
         }),
-        { timeout: 30_000 },
+        { timeout },
       );
 
       it.scoped(
@@ -259,6 +267,7 @@ print("hello")
 
           assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
         }),
+        { timeout },
       );
 
       it.scoped(
@@ -281,6 +290,7 @@ print("hello")
 
           assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
         }),
+        { timeout },
       );
 
       it.scoped(
@@ -310,6 +320,7 @@ print("hello")
 
           expect(output.trim()).toMatchInlineSnapshot(`"ruff 0.11.5"`);
         }),
+        { timeout },
       );
     });
   });
