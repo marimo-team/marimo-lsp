@@ -11,7 +11,7 @@ import { SemVerFromString } from "../schemas.ts";
 export const MINIMUM_MARIMO_VERSION = {
   major: 0,
   minor: 19,
-  patch: 0,
+  patch: 10,
 } satisfies semver.SemVer;
 
 class InvalidExecutableError extends Data.TaggedError(
