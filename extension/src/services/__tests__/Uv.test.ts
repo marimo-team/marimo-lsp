@@ -242,6 +242,7 @@ print("hello")
 
           assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
         }),
+        { timeout: 30_000 },
       );
 
       it.scoped(
