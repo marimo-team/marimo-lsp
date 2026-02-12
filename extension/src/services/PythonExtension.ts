@@ -1,6 +1,8 @@
 import * as py from "@vscode/python-extension";
 import { Effect, Option, Stream } from "effect";
 
+import { acquireDisposable } from "../utils/acquireDisposable.ts";
+
 /**
  * Provides access to the VS Code Python extension API for
  * querying and managing Python environments.
@@ -22,25 +24,19 @@ export class PythonExtension extends Effect.Service<PythonExtension>()(
         },
         environmentChanges() {
           return Stream.asyncPush<py.EnvironmentsChangeEvent>((emit) =>
-            Effect.acquireRelease(
-              Effect.sync(() =>
-                api.environments.onDidChangeEnvironments((evt) =>
-                  emit.single(evt),
-                ),
+            acquireDisposable(() =>
+              api.environments.onDidChangeEnvironments((evt) =>
+                emit.single(evt),
               ),
-              (disposable) => Effect.sync(() => disposable.dispose()),
             ),
           );
         },
         activeEnvironmentPathChanges() {
           return Stream.asyncPush<py.ActiveEnvironmentPathChangeEvent>((emit) =>
-            Effect.acquireRelease(
-              Effect.sync(() =>
-                api.environments.onDidChangeActiveEnvironmentPath((evt) =>
-                  emit.single(evt),
-                ),
+            acquireDisposable(() =>
+              api.environments.onDidChangeActiveEnvironmentPath((evt) =>
+                emit.single(evt),
               ),
-              (disposable) => Effect.sync(() => disposable.dispose()),
             ),
           );
         },

@@ -32,6 +32,7 @@ import {
   Window,
   Workspace,
 } from "../services/VsCode.ts";
+import { acquireDisposable } from "../utils/acquireDisposable.ts";
 
 class NotebookCellData implements vscode.NotebookCellData {
   kind: vscode.NotebookCellKind;
@@ -1410,31 +1411,28 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             });
           },
           createLogOutputChannel(name) {
-            return Effect.acquireRelease(
-              Effect.sync(() => {
-                const emitter = new EventEmitter<vscode.LogLevel>();
-                return {
-                  name,
-                  logLevel: 0,
-                  onDidChangeLogLevel: emitter.event,
-                  dispose() {
-                    emitter.dispose();
-                  },
-                  append() {},
-                  appendLine() {},
-                  replace() {},
-                  clear() {},
-                  show() {},
-                  hide() {},
-                  trace() {},
-                  debug() {},
-                  info() {},
-                  warn() {},
-                  error() {},
-                };
-              }),
-              (disposable) => Effect.sync(() => disposable.dispose()),
-            );
+            return acquireDisposable(() => {
+              const emitter = new EventEmitter<vscode.LogLevel>();
+              return {
+                name,
+                logLevel: 0,
+                onDidChangeLogLevel: emitter.event,
+                dispose() {
+                  emitter.dispose();
+                },
+                append() {},
+                appendLine() {},
+                replace() {},
+                clear() {},
+                show() {},
+                hide() {},
+                trace() {},
+                debug() {},
+                info() {},
+                warn() {},
+                error() {},
+              };
+            });
           },
           getVisibleNotebookEditors() {
             return SubscriptionRef.get(visibleNotebookEditors);
@@ -1509,24 +1507,21 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             alignment: vscode.StatusBarAlignment,
             priority?: number,
           ) {
-            return Effect.acquireRelease(
-              Effect.sync(() => ({
-                id,
-                alignment,
-                priority,
-                text: "",
-                name: undefined,
-                tooltip: undefined,
-                color: undefined,
-                backgroundColor: undefined,
-                command: undefined,
-                accessibilityInformation: undefined,
-                show() {},
-                hide() {},
-                dispose() {},
-              })),
-              (disposable) => Effect.sync(() => disposable.dispose()),
-            );
+            return acquireDisposable(() => ({
+              id,
+              alignment,
+              priority,
+              text: "",
+              name: undefined,
+              tooltip: undefined,
+              color: undefined,
+              backgroundColor: undefined,
+              command: undefined,
+              accessibilityInformation: undefined,
+              show() {},
+              hide() {},
+              dispose() {},
+            }));
           },
           showNotebookDocument(
             doc: vscode.NotebookDocument,
@@ -1681,16 +1676,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         }),
         debug: Debug.make({
           registerDebugConfigurationProvider() {
-            return Effect.acquireRelease(
-              Effect.succeed({ dispose() {} }),
-              (disposable) => Effect.sync(() => disposable.dispose()),
-            );
+            return acquireDisposable(() => ({ dispose() {} }));
           },
           registerDebugAdapterDescriptorFactory() {
-            return Effect.acquireRelease(
-              Effect.succeed({ dispose() {} }),
-              (disposable) => Effect.sync(() => disposable.dispose()),
-            );
+            return acquireDisposable(() => ({ dispose() {} }));
           },
         }),
         notebooks: Notebooks.make({
