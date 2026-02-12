@@ -1,0 +1,73 @@
+name: Republish 0.10.3
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/republish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download artifacts from failed run
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 21953399647
+          path: dist
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List artifacts
+        run: ls -al ./dist
+
+      - name: Install vsce and ovsx
+        run: npm install -g @vscode/vsce ovsx
+
+      - name: Publish to VS Code Marketplace
+        run: vsce publish --pat ${{ secrets.VSCE_PAT }} --packagePath ./dist/*.vsix --skip-duplicate
+
+      - name: Publish to Open VSX Registry
+        run: ovsx publish --pat ${{ secrets.OPEN_VSX_TOKEN }} --packagePath ./dist/*.vsix --skip-duplicate
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Get previous tag
+        run: |
+          echo "PREVIOUS_TAG=$(git tag --sort=-version:refname | head -n 1)" >> $GITHUB_ENV
+
+      - name: Generate release notes
+        run: |
+          uv run scripts/generate_release_notes.py "$PREVIOUS_TAG" "0.10.3" > release_notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Create GitHub Release
+        run: |
+          gh release create 0.10.3 \
+            --repo ${{ github.repository }} \
+            --title "0.10.3" \
+            --notes-file release_notes.md \
+            ./dist/*.vsix
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Commit version bump
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          cd extension
+          npm version 0.10.3 --no-git-tag-version --allow-same-version
+          git add package.json
+          git commit -m "v0.10.3"
+          git push origin HEAD:main
