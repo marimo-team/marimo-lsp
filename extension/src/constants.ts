@@ -51,6 +51,12 @@ export const LanguageId = {
   Markdown: "markdown",
 } as const;
 
+export const MINIMUM_MARIMO_VERSION = {
+  major: 0,
+  minor: 19,
+  patch: 10,
+} as const;
+
 export type MarimoContextKey =
   | "marimo.config.runtime.auto_reload"
   | "marimo.config.runtime.on_cell_change"

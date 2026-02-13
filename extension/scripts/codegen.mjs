@@ -16,6 +16,22 @@ import * as NodeUrl from "node:url";
 
 import pkg from "../package.json" with { type: "json" };
 
+/** @returns {{ major: number; minor: number; patch: number }} */
+function getMinimumMarimoVersion() {
+  const pyproject = NodeFs.readFileSync(
+    NodeUrl.fileURLToPath(new URL("../../pyproject.toml", import.meta.url)),
+    "utf-8",
+  );
+  const match = pyproject.match(/marimo>=([\d.]+)/);
+  assert(match, "Could not find marimo lower bound in pyproject.toml");
+  const parts = match[1].split(".").map(Number);
+  assert(parts.length === 3, `Expected semver with 3 parts, got "${match[1]}"`);
+  const [major, minor, patch] = parts;
+  return { major, minor, patch };
+}
+
+const minimumMarimoVersion = getMinimumMarimoVersion();
+
 /** @type {(arr: Array<string>) => string} */
 const union = (arr) =>
   arr
@@ -82,6 +98,12 @@ export const LanguageId = {
   Sql: "sql",
   /** Language ID for Markdown cells in marimo notebooks. */
   Markdown: "markdown",
+} as const;
+
+export const MINIMUM_MARIMO_VERSION = {
+  major: ${minimumMarimoVersion.major},
+  minor: ${minimumMarimoVersion.minor},
+  patch: ${minimumMarimoVersion.patch},
 } as const;
 
 export type MarimoContextKey = ${union(contextKeys)};
