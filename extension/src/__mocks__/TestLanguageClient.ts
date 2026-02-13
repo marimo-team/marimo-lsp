@@ -7,6 +7,7 @@ import {
   findLspExecutable,
   LanguageClient,
 } from "../services/LanguageClient.ts";
+import { acquireDisposable } from "../utils/acquireDisposable.ts";
 
 export const TestLanguageClientLive = Layer.scoped(
   LanguageClient,
@@ -55,11 +56,8 @@ export const TestLanguageClientLive = Layer.scoped(
       },
       streamOf(notification) {
         return Stream.asyncPush((emit) =>
-          Effect.acquireRelease(
-            Effect.sync(() =>
-              conn.onNotification(notification, (msg) => emit.single(msg)),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
+          acquireDisposable(() =>
+            conn.onNotification(notification, (msg) => emit.single(msg)),
           ),
         );
       },

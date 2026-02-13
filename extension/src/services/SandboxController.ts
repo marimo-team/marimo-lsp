@@ -9,6 +9,7 @@ import {
   MarimoNotebookDocument,
   SemVerFromString,
 } from "../schemas.ts";
+import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../utils/extractExecuteCodeRequest.ts";
 import { getVenvPythonPath } from "../utils/getVenvPythonPath.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
@@ -189,11 +190,8 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             notebook: vscode.NotebookDocument;
             selected: boolean;
           }>((emit) =>
-            Effect.acquireRelease(
-              Effect.sync(() =>
-                controller.onDidChangeSelectedNotebooks((e) => emit.single(e)),
-              ),
-              (disposable) => Effect.sync(() => disposable.dispose()),
+            acquireDisposable(() =>
+              controller.onDidChangeSelectedNotebooks((e) => emit.single(e)),
             ),
           );
         },

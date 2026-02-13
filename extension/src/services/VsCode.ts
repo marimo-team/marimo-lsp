@@ -23,6 +23,7 @@ import * as vscode from "vscode";
 import type { DynamicCommand, VscodeBuiltinCommand } from "../commands.ts";
 import type { MarimoCommand, MarimoContextKey } from "../constants.ts";
 
+import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
@@ -45,10 +46,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         never,
         Scope.Scope
       > {
-        return Effect.acquireRelease(
-          Effect.sync(() => api.createTerminal(options)),
-          (term) => Effect.sync(() => term.dispose()),
-        );
+        return acquireDisposable(() => api.createTerminal(options));
       },
       showSaveDialog(options?: vscode.SaveDialogOptions) {
         return Effect.map(
@@ -121,15 +119,11 @@ export class Window extends Effect.Service<Window>()("Window", {
         );
       },
       createOutputChannel(name: string) {
-        return Effect.acquireRelease(
-          Effect.sync(() => api.createOutputChannel(name)),
-          (disposable) => Effect.sync(() => disposable.dispose()),
-        );
+        return acquireDisposable(() => api.createOutputChannel(name));
       },
       createLogOutputChannel(name: string) {
-        return Effect.acquireRelease(
-          Effect.sync(() => api.createOutputChannel(name, { log: true })),
-          (disposable) => Effect.sync(() => disposable.dispose()),
+        return acquireDisposable(() =>
+          api.createOutputChannel(name, { log: true }),
         );
       },
       getActiveNotebookEditor() {
@@ -161,32 +155,25 @@ export class Window extends Effect.Service<Window>()("Window", {
         );
       },
       createTreeView<T>(viewId: string, options: vscode.TreeViewOptions<T>) {
-        return Effect.acquireRelease(
-          Effect.sync(() => api.createTreeView(viewId, options)),
-          (disposable) => Effect.sync(() => disposable.dispose()),
-        );
+        return acquireDisposable(() => api.createTreeView(viewId, options));
       },
       createStatusBarItem(
         id: string,
         alignment: vscode.StatusBarAlignment,
         priority?: number,
       ) {
-        return Effect.acquireRelease(
-          Effect.sync(() => api.createStatusBarItem(id, alignment, priority)),
-          (disposable) => Effect.sync(() => disposable.dispose()),
+        return acquireDisposable(() =>
+          api.createStatusBarItem(id, alignment, priority),
         );
       },
       activeNotebookEditorChanges(): Stream.Stream<
         Option.Option<vscode.NotebookEditor>
       > {
         return Stream.asyncPush((emit) =>
-          Effect.acquireRelease(
-            Effect.sync(() =>
-              api.onDidChangeActiveNotebookEditor((e) =>
-                emit.single(Option.fromNullable(e)),
-              ),
+          acquireDisposable(() =>
+            api.onDidChangeActiveNotebookEditor((e) =>
+              emit.single(Option.fromNullable(e)),
             ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
           ),
         );
       },
@@ -194,11 +181,8 @@ export class Window extends Effect.Service<Window>()("Window", {
         ReadonlyArray<vscode.NotebookEditor>
       > {
         return Stream.asyncPush((emit) =>
-          Effect.acquireRelease(
-            Effect.sync(() =>
-              api.onDidChangeVisibleNotebookEditors((e) => emit.single(e)),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
+          acquireDisposable(() =>
+            api.onDidChangeVisibleNotebookEditors((e) => emit.single(e)),
           ),
         );
       },
@@ -206,11 +190,8 @@ export class Window extends Effect.Service<Window>()("Window", {
         ReadonlyArray<vscode.TextEditor>
       > {
         return Stream.asyncPush((emit) =>
-          Effect.acquireRelease(
-            Effect.sync(() =>
-              api.onDidChangeVisibleTextEditors((e) => emit.single(e)),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
+          acquireDisposable(() =>
+            api.onDidChangeVisibleTextEditors((e) => emit.single(e)),
           ),
         );
       },
@@ -218,13 +199,10 @@ export class Window extends Effect.Service<Window>()("Window", {
         Option.Option<vscode.TextEditor>
       > {
         return Stream.asyncPush((emit) =>
-          Effect.acquireRelease(
-            Effect.sync(() =>
-              api.onDidChangeActiveTextEditor((e) =>
-                emit.single(Option.fromNullable(e)),
-              ),
+          acquireDisposable(() =>
+            api.onDidChangeActiveTextEditor((e) =>
+              emit.single(Option.fromNullable(e)),
             ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
           ),
         );
       },
@@ -259,9 +237,8 @@ export class Window extends Effect.Service<Window>()("Window", {
                 Effect.gen(function* () {
                   const fiber = yield* Effect.forkScoped(fn(progress));
                   const kill = () => runPromise(Fiber.interrupt(fiber));
-                  yield* Effect.acquireRelease(
-                    Effect.sync(() => token.onCancellationRequested(kill)),
-                    (disposable) => Effect.sync(() => disposable.dispose()),
+                  yield* acquireDisposable(() =>
+                    token.onCancellationRequested(kill),
                   );
                   yield* Fiber.join(fiber);
                 }).pipe(Effect.scoped),
@@ -330,9 +307,8 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
               runPromise,
             );
 
-          yield* Effect.acquireRelease(
-            Effect.sync(() => api.registerCommand(command, callback)),
-            (disposable) => Effect.sync(() => disposable.dispose()),
+          yield* acquireDisposable(() =>
+            api.registerCommand(command, callback),
           );
         });
       },
@@ -375,40 +351,28 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
         impl: vscode.NotebookSerializer,
         options?: vscode.NotebookDocumentContentOptions,
       ) {
-        return Effect.acquireRelease(
-          Effect.sync(() =>
-            api.registerNotebookSerializer(notebookType, impl, options),
-          ),
-          (disposable) => Effect.sync(() => disposable.dispose()),
+        return acquireDisposable(() =>
+          api.registerNotebookSerializer(notebookType, impl, options),
         ).pipe(Effect.andThen(Effect.void));
       },
       notebookDocumentChanges() {
         return Stream.asyncPush<vscode.NotebookDocumentChangeEvent>((emit) =>
-          Effect.acquireRelease(
-            Effect.sync(() =>
-              api.onDidChangeNotebookDocument((event) => emit.single(event)),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
+          acquireDisposable(() =>
+            api.onDidChangeNotebookDocument((event) => emit.single(event)),
           ),
         );
       },
       notebookDocumentOpened() {
         return Stream.asyncPush<vscode.NotebookDocument>((emit) =>
-          Effect.acquireRelease(
-            Effect.sync(() =>
-              api.onDidOpenNotebookDocument((event) => emit.single(event)),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
+          acquireDisposable(() =>
+            api.onDidOpenNotebookDocument((event) => emit.single(event)),
           ),
         );
       },
       configurationChanges() {
         return Stream.asyncPush<vscode.ConfigurationChangeEvent>((emit) =>
-          Effect.acquireRelease(
-            Effect.sync(() =>
-              api.onDidChangeConfiguration((event) => emit.single(event)),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
+          acquireDisposable(() =>
+            api.onDidChangeConfiguration((event) => emit.single(event)),
           ),
         );
       },
@@ -459,22 +423,16 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
         debugType: string,
         factory: vscode.DebugConfigurationProvider,
       ) {
-        return Effect.acquireRelease(
-          Effect.sync(() =>
-            api.registerDebugConfigurationProvider(debugType, factory),
-          ),
-          (disposable) => Effect.sync(() => disposable.dispose()),
+        return acquireDisposable(() =>
+          api.registerDebugConfigurationProvider(debugType, factory),
         );
       },
       registerDebugAdapterDescriptorFactory(
         debugType: string,
         factory: vscode.DebugAdapterDescriptorFactory,
       ) {
-        return Effect.acquireRelease(
-          Effect.sync(() =>
-            api.registerDebugAdapterDescriptorFactory(debugType, factory),
-          ),
-          (disposable) => Effect.sync(() => disposable.dispose()),
+        return acquireDisposable(() =>
+          api.registerDebugAdapterDescriptorFactory(debugType, factory),
         );
       },
     };
@@ -497,25 +455,16 @@ export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
         never,
         Scope.Scope
       > {
-        return Effect.acquireRelease(
-          Effect.sync(() =>
-            api.createNotebookController(id, notebookType, label),
-          ),
-          (disposable) => Effect.sync(() => disposable.dispose()),
+        return acquireDisposable(() =>
+          api.createNotebookController(id, notebookType, label),
         );
       },
       registerNotebookCellStatusBarItemProvider(
         notebookType: string,
         provider: vscode.NotebookCellStatusBarItemProvider,
       ) {
-        return Effect.acquireRelease(
-          Effect.sync(() =>
-            api.registerNotebookCellStatusBarItemProvider(
-              notebookType,
-              provider,
-            ),
-          ),
-          (disposable) => Effect.sync(() => disposable.dispose()),
+        return acquireDisposable(() =>
+          api.registerNotebookCellStatusBarItemProvider(notebookType, provider),
         );
       },
     };

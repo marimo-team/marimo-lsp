@@ -4,6 +4,7 @@ import { Effect, Stream } from "effect";
 
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 
+import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { VsCode } from "./VsCode.ts";
 
 /**
@@ -30,11 +31,8 @@ export class NotebookRenderer extends Effect.Service<NotebookRenderer>()(
           message: RendererCommand;
         }> {
           return Stream.asyncPush((emit) =>
-            Effect.acquireRelease(
-              Effect.sync(() =>
-                channel.onDidReceiveMessage((msg) => emit.single(msg)),
-              ),
-              (disposable) => Effect.sync(() => disposable.dispose()),
+            acquireDisposable(() =>
+              channel.onDidReceiveMessage((msg) => emit.single(msg)),
             ),
           );
         },

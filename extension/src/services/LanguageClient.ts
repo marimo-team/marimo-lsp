@@ -10,6 +10,7 @@ import type {
 } from "../types.ts";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
+import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 import { Config } from "./Config.ts";
@@ -151,13 +152,10 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
         ) {
           return Stream.asyncPush<MarimoLspNotificationOf<Notification>>(
             (emit) =>
-              Effect.acquireRelease(
-                Effect.sync(() =>
-                  client.onNotification(notification, (msg) => {
-                    emit.single(msg);
-                  }),
-                ),
-                (disposable) => Effect.sync(() => disposable.dispose()),
+              acquireDisposable(() =>
+                client.onNotification(notification, (msg) => {
+                  emit.single(msg);
+                }),
               ),
           );
         },

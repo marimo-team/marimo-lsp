@@ -7,6 +7,7 @@ import { Brand, Cause, Effect, Option, Runtime, Stream } from "effect";
 import { unreachable } from "../assert.ts";
 import { type MarimoNotebookCell, MarimoNotebookDocument } from "../schemas.ts";
 import { Constants } from "../services/Constants.ts";
+import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../utils/extractExecuteCodeRequest.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
@@ -270,11 +271,8 @@ export class PythonController {
       notebook: vscode.NotebookDocument;
       selected: boolean;
     }>((emit) =>
-      Effect.acquireRelease(
-        Effect.sync(() =>
-          this.#inner.onDidChangeSelectedNotebooks((e) => emit.single(e)),
-        ),
-        (disposable) => Effect.sync(() => disposable.dispose()),
+      acquireDisposable(() =>
+        this.#inner.onDidChangeSelectedNotebooks((e) => emit.single(e)),
       ),
     );
   }
