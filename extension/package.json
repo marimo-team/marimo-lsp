@@ -1,7 +1,7 @@
 {
   "name": "vscode-marimo",
   "displayName": "marimo",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "description": "A marimo notebook extension for VS Code.",
   "categories": [
     "Data Science",
