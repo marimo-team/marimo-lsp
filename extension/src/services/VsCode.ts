@@ -28,11 +28,13 @@ import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
   cause: unknown;
-}> {}
+}> {
+}
 
 export class FileSystemError extends Data.TaggedError("FileSystemError")<{
   cause: unknown;
-}> {}
+}> {
+}
 
 export class Window extends Effect.Service<Window>()("Window", {
   effect: Effect.sync(() => {
@@ -229,12 +231,12 @@ export class Window extends Effect.Service<Window>()("Window", {
           }>,
         ) => Effect.Effect<A, E, R>,
       ) {
-        return Effect.gen(function* () {
+        return Effect.gen(function*() {
           const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
           yield* Effect.promise((signal) =>
             api.withProgress(options, (progress, token) =>
               runPromise(
-                Effect.gen(function* () {
+                Effect.gen(function*() {
                   const fiber = yield* Effect.forkScoped(fn(progress));
                   const kill = () => runPromise(Fiber.interrupt(fiber));
                   yield* acquireDisposable(() =>
@@ -250,7 +252,8 @@ export class Window extends Effect.Service<Window>()("Window", {
       },
     };
   }),
-}) {}
+}) {
+}
 
 type ExecutableCommand = VscodeBuiltinCommand | MarimoCommand | DynamicCommand;
 
@@ -264,7 +267,7 @@ type ContextMap = {
 
 export class Commands extends Effect.Service<Commands>()("Commands", {
   dependencies: [Window.Default],
-  scoped: Effect.gen(function* () {
+  scoped: Effect.gen(function*() {
     const win = yield* Window;
     const api = vscode.commands;
     // Pubsub of the commands run and their results
@@ -288,7 +291,7 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
         command: MarimoCommand | DynamicCommand,
         fn: () => Effect.Effect<A, E, R>,
       ) {
-        return Effect.gen(function* () {
+        return Effect.gen(function*() {
           const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
           const callback = () =>
             fn().pipe(
@@ -296,7 +299,7 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
                 PubSub.publish(commandPubSub, Either.right(command)),
               ),
               Effect.catchAllCause(
-                Effect.fnUntraced(function* (cause) {
+                Effect.fnUntraced(function*(cause) {
                   yield* Effect.logError(cause);
                   yield* PubSub.publish(commandPubSub, Either.left(command));
                   yield* win.showWarningMessage(
@@ -306,7 +309,6 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
               ),
               runPromise,
             );
-
           yield* acquireDisposable(() =>
             api.registerCommand(command, callback),
           );
@@ -314,7 +316,8 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
       },
     };
   }),
-}) {}
+}) {
+}
 
 export class Workspace extends Effect.Service<Workspace>()("Workspace", {
   sync: () => {
@@ -398,7 +401,8 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
       },
     };
   },
-}) {}
+}) {
+}
 
 export class Env extends Effect.Service<Env>()("Env", {
   sync: () => {
@@ -413,7 +417,8 @@ export class Env extends Effect.Service<Env>()("Env", {
       },
     };
   },
-}) {}
+}) {
+}
 
 export class Debug extends Effect.Service<Debug>()("Debug", {
   effect: Effect.sync(() => {
@@ -437,7 +442,8 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
       },
     };
   }),
-}) {}
+}) {
+}
 
 export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
   effect: Effect.sync(() => {
@@ -469,11 +475,13 @@ export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
       },
     };
   }),
-}) {}
+}) {
+}
 
 export class AuthError extends Data.TaggedError("AuthError")<{
   cause: unknown;
-}> {}
+}> {
+}
 
 export class Auth extends Effect.Service<Auth>()("Auth", {
   effect: Effect.sync(() => {
@@ -494,17 +502,19 @@ export class Auth extends Effect.Service<Auth>()("Auth", {
       },
     };
   }),
-}) {}
+}) {
+}
 
 export class ParseUriError extends Data.TaggedError("ParseUriError")<{
   cause: unknown;
-}> {}
+}> {
+}
 
 /**
  * Wraps VS Code API functionality in Effect services
  */
 export class VsCode extends Effect.Service<VsCode>()("VsCode", {
-  effect: Effect.gen(function* () {
+  effect: Effect.gen(function*() {
     return {
       // namespaces
       window: yield* Window,
@@ -520,37 +530,28 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
           provider: vscode.SignatureHelpProvider,
           ...triggerCharacters: readonly string[]
         ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              vscode.languages.registerSignatureHelpProvider(
-                selector,
-                provider,
-                ...triggerCharacters,
-              ),
+          return acquireDisposable(() =>
+            vscode.languages.registerSignatureHelpProvider(
+              selector,
+              provider,
+              ...triggerCharacters,
             ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
           ).pipe(Effect.andThen(Effect.void));
         },
         registerDefinitionProvider(
           selector: vscode.DocumentSelector,
           provider: vscode.DefinitionProvider,
         ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              vscode.languages.registerDefinitionProvider(selector, provider),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
+          return acquireDisposable(() =>
+            vscode.languages.registerDefinitionProvider(selector, provider),
           ).pipe(Effect.andThen(Effect.void));
         },
         registerHoverProvider(
           selector: vscode.DocumentSelector,
           provider: vscode.HoverProvider,
         ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              vscode.languages.registerHoverProvider(selector, provider),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
+          return acquireDisposable(() =>
+            vscode.languages.registerHoverProvider(selector, provider),
           ).pipe(Effect.andThen(Effect.void));
         },
         registerCompletionItemProvider(
@@ -558,26 +559,20 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
           provider: vscode.CompletionItemProvider,
           ...triggerCharacters: readonly string[]
         ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              vscode.languages.registerCompletionItemProvider(
-                selector,
-                provider,
-                ...triggerCharacters,
-              ),
+          return acquireDisposable(() =>
+            vscode.languages.registerCompletionItemProvider(
+              selector,
+              provider,
+              ...triggerCharacters,
             ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
           ).pipe(Effect.andThen(Effect.void));
         },
         registerCodeLensProvider(
           selector: vscode.DocumentSelector,
           provider: vscode.CodeLensProvider,
         ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              vscode.languages.registerCodeLensProvider(selector, provider),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
+          return acquireDisposable(() =>
+            vscode.languages.registerCodeLensProvider(selector, provider),
           ).pipe(Effect.andThen(Effect.void));
         },
         registerDocumentSemanticTokensProvider(
@@ -585,17 +580,27 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
           provider: vscode.DocumentSemanticTokensProvider,
           legend: vscode.SemanticTokensLegend,
         ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              vscode.languages.registerDocumentSemanticTokensProvider(
-                selector,
-                provider,
-                legend,
-              ),
+          return acquireDisposable(() =>
+            vscode.languages.registerDocumentSemanticTokensProvider(
+              selector,
+              provider,
+              legend,
             ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
           ).pipe(Effect.andThen(Effect.void));
         },
+      },
+      lm: {
+        get tools() {
+          return vscode.lm.tools;
+        },
+        registerTool: <T = unknown>(
+          name: string,
+          tool: vscode.LanguageModelTool<T>,
+        ) =>
+          Effect.andThen(
+            acquireDisposable(() => vscode.lm.registerTool(name, tool)),
+            Effect.void,
+          ),
       },
       Hover: vscode.Hover,
       CompletionTriggerKind: vscode.CompletionTriggerKind,
@@ -632,6 +637,9 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       Location: vscode.Location,
       Uri: vscode.Uri,
       Range: vscode.Range,
+      LanguageModelTextPart: vscode.LanguageModelTextPart,
+      LanguageModelToolResult: vscode.LanguageModelToolResult,
+      LanguageModelChatMessage: vscode.LanguageModelChatMessage,
       version: vscode.version,
       extensions: {
         getExtension<T = unknown>(extensionId: string) {
@@ -660,4 +668,5 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
     Notebooks.Default,
     Auth.Default,
   ],
-}) {}
+}) {
+}
