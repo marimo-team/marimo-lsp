@@ -515,86 +515,16 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       notebooks: yield* Notebooks,
       auth: yield* Auth,
       languages: {
-        registerSignatureHelpProvider(
-          selector: vscode.DocumentSelector,
-          provider: vscode.SignatureHelpProvider,
-          ...triggerCharacters: readonly string[]
-        ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              vscode.languages.registerSignatureHelpProvider(
-                selector,
-                provider,
-                ...triggerCharacters,
-              ),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          ).pipe(Effect.andThen(Effect.void));
-        },
-        registerDefinitionProvider(
-          selector: vscode.DocumentSelector,
-          provider: vscode.DefinitionProvider,
-        ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              vscode.languages.registerDefinitionProvider(selector, provider),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          ).pipe(Effect.andThen(Effect.void));
-        },
-        registerHoverProvider(
-          selector: vscode.DocumentSelector,
-          provider: vscode.HoverProvider,
-        ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              vscode.languages.registerHoverProvider(selector, provider),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          ).pipe(Effect.andThen(Effect.void));
-        },
-        registerCompletionItemProvider(
-          selector: vscode.DocumentSelector,
-          provider: vscode.CompletionItemProvider,
-          ...triggerCharacters: readonly string[]
-        ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              vscode.languages.registerCompletionItemProvider(
-                selector,
-                provider,
-                ...triggerCharacters,
-              ),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          ).pipe(Effect.andThen(Effect.void));
-        },
         registerCodeLensProvider(
           selector: vscode.DocumentSelector,
           provider: vscode.CodeLensProvider,
         ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
+          return Effect.andThen(
+            acquireDisposable(() =>
               vscode.languages.registerCodeLensProvider(selector, provider),
             ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          ).pipe(Effect.andThen(Effect.void));
-        },
-        registerDocumentSemanticTokensProvider(
-          selector: vscode.DocumentSelector,
-          provider: vscode.DocumentSemanticTokensProvider,
-          legend: vscode.SemanticTokensLegend,
-        ) {
-          return Effect.acquireRelease(
-            Effect.sync(() =>
-              vscode.languages.registerDocumentSemanticTokensProvider(
-                selector,
-                provider,
-                legend,
-              ),
-            ),
-            (disposable) => Effect.sync(() => disposable.dispose()),
-          ).pipe(Effect.andThen(Effect.void));
+            Effect.void,
+          );
         },
       },
       Hover: vscode.Hover,

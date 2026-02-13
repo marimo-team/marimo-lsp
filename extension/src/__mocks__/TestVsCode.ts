@@ -1852,22 +1852,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           getExtension: () => Option.none(),
         },
         languages: {
-          registerHoverProvider() {
-            return Effect.void;
-          },
-          registerSignatureHelpProvider() {
-            return Effect.void;
-          },
-          registerDefinitionProvider() {
-            return Effect.void;
-          },
-          registerCompletionItemProvider() {
-            return Effect.void;
-          },
           registerCodeLensProvider() {
-            return Effect.void;
-          },
-          registerDocumentSemanticTokensProvider() {
             return Effect.void;
           },
         },
