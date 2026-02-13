@@ -6,13 +6,8 @@ import { NodeContext } from "@effect/platform-node";
 import * as semver from "@std/semver";
 import { Data, Effect, type ParseResult, Schema } from "effect";
 
+import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
 import { SemVerFromString } from "../schemas.ts";
-
-export const MINIMUM_MARIMO_VERSION = {
-  major: 0,
-  minor: 19,
-  patch: 10,
-} satisfies semver.SemVer;
 
 class InvalidExecutableError extends Data.TaggedError(
   "InvalidExecutableError",

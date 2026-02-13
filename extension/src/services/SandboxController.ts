@@ -3,6 +3,7 @@ import type * as vscode from "vscode";
 import * as semver from "@std/semver";
 import { Effect, Option, Runtime, Schema, Stream } from "effect";
 
+import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
 import {
   type MarimoNotebookCell,
@@ -15,7 +16,6 @@ import { getVenvPythonPath } from "../utils/getVenvPythonPath.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { Constants } from "./Constants.ts";
-import { MINIMUM_MARIMO_VERSION } from "./EnvironmentValidator.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { OutputChannel } from "./OutputChannel.ts";
 import { PythonExtension } from "./PythonExtension.ts";
