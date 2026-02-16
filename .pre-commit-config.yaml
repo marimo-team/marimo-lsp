@@ -12,7 +12,7 @@ repos:
       - id: trailing-whitespace
 
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.10
+    rev: v1.7.11
     hooks:
       - id: actionlint
         args: [-ignore, SC]
@@ -23,13 +23,13 @@ repos:
       - id: validate-pyproject
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.43.4
+    rev: v1
     hooks:
       - id: typos
         pass_filenames: false
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.0
+    rev: v0.15.1
     hooks:
       # Run the linter
       - id: ruff
@@ -38,7 +38,7 @@ repos:
       - id: ruff-format
 
   - repo: https://github.com/oxc-project/mirrors-oxlint
-    rev: v1.46.0
+    rev: v1.48.0
     hooks:
       - id: oxlint
         args: [--fix]
