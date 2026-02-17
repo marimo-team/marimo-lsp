@@ -1,12 +1,8 @@
 import { Cause, Data, Effect, flow, Option, pipe } from "effect";
-import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 import * as lsp from "vscode-languageclient/node";
 
 import type { ClientNotebookSync } from "../services/completions/NotebookSyncService.ts";
-
-import { ExtensionContext } from "../services/Storage.ts";
-import { Uv } from "../services/Uv.ts";
 
 /**
  * LanguageClient that namespaces LSP executeCommand registrations on the client
@@ -118,29 +114,13 @@ export const createManagedLanguageClient = Effect.fn(function* (
     name: "ty" | "ruff";
     version: `${number}.${number}.${number}`;
   },
+  binaryPath: string,
   options: {
     notebookSync: ClientNotebookSync;
     clientOptions: lsp.LanguageClientOptions;
   },
 ) {
-  const uv = yield* Uv;
-  const context = yield* ExtensionContext;
-
-  const targetPath = NodePath.resolve(context.globalStorageUri.fsPath, "libs");
-
-  yield* Effect.logInfo("Installing language server binary").pipe(
-    Effect.annotateLogs({
-      server: server.name,
-      version: server.version,
-      targetPath,
-    }),
-  );
-
-  const binaryPath = yield* uv.ensureLanguageServerBinaryInstalled(server, {
-    targetPath,
-  });
-
-  yield* Effect.logInfo("Language server binary installed").pipe(
+  yield* Effect.logInfo("Creating language client with binary").pipe(
     Effect.annotateLogs({
       server: server.name,
       version: server.version,
