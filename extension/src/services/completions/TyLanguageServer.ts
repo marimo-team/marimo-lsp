@@ -11,8 +11,10 @@ import {
   Runtime,
   Stream,
 } from "effect";
+import * as NodePath from "node:path";
 import { ResponseError } from "vscode-languageclient/node";
 
+import { validateBinary } from "../../utils/binaryResolution.ts";
 import {
   createManagedLanguageClient,
   type ManagedLanguageClient,
@@ -24,7 +26,8 @@ import { Constants } from "../Constants.ts";
 import { OutputChannel } from "../OutputChannel.ts";
 import { PythonExtension } from "../PythonExtension.ts";
 import { Sentry } from "../Sentry.ts";
-import { Uv } from "../Uv.ts";
+import { ExtensionContext } from "../Storage.ts";
+import { resolvePlatformBinaryName, Uv } from "../Uv.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
 import { VsCode } from "../VsCode.ts";
 import {
@@ -35,6 +38,7 @@ import {
 // TODO: make TY_VERSION configurable?
 // For now, since we are doing rolling releases, we can bump this as needed.
 const TY_SERVER = { name: "ty", version: "0.0.15" } as const;
+const TY_EXTENSION_ID = "astral-sh.ty";
 
 export const TyLanguageServerStatus = Data.taggedEnum<TyLanguageServerStatus>();
 
@@ -102,7 +106,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
             return;
           }
 
-          // Phase 1: Install the language server
+          // Phase 1: Resolve the ty binary using 3-tier strategy
           yield* Effect.logInfo("Starting language server").pipe(
             Effect.annotateLogs({
               server: TY_SERVER.name,
@@ -110,11 +114,13 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
             }),
           );
 
+          const binaryPath = yield* resolveTyBinary();
+
           // Create isolated sync instance with its own cell count tracking
           const notebookSync = yield* sync.forClient();
 
           const installExit = yield* Effect.exit(
-            createManagedLanguageClient(TY_SERVER, {
+            createManagedLanguageClient(TY_SERVER, binaryPath, {
               notebookSync,
               clientOptions: {
                 outputChannelName: "marimo (ty)",
@@ -264,6 +270,85 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
     }),
   },
 ) {}
+
+/**
+ * Resolves the ty binary path using a 3-tier strategy:
+ * 1. User-configured path (marimo.ty.path)
+ * 2. Companion extension discovery (astral-sh.ty bundled binary or ty.path setting)
+ * 3. Fallback to uv installation
+ */
+const resolveTyBinary = Effect.fn(function* () {
+  const code = yield* VsCode;
+  const config = yield* Config;
+  const uv = yield* Uv;
+  const context = yield* ExtensionContext;
+
+  // Tier 1: User-configured path
+  const userPath = yield* config.ty.path;
+  if (Option.isSome(userPath)) {
+    const validated = yield* validateBinary(userPath.value, TY_SERVER.version);
+    if (Option.isSome(validated)) {
+      yield* Effect.logInfo(
+        `Using user-configured ty binary: ${validated.value}`,
+      );
+      return validated.value;
+    }
+    yield* Effect.logWarning(
+      `User-configured ty path "${userPath.value}" is invalid, falling back to discovery`,
+    );
+  }
+
+  // Tier 2: Companion extension discovery
+  const tyExtension = code.extensions.getExtension(TY_EXTENSION_ID);
+  if (Option.isSome(tyExtension)) {
+    // First check the companion extension's ty.path setting
+    const tyExtConfig = yield* code.workspace.getConfiguration("ty");
+    const extConfiguredPath = Option.fromNullable(
+      tyExtConfig.get<string[]>("path"),
+    ).pipe(
+      Option.filter((p) => p.length > 0),
+      Option.map((p) => p[0]),
+    );
+
+    if (Option.isSome(extConfiguredPath)) {
+      const validated = yield* validateBinary(
+        extConfiguredPath.value,
+        TY_SERVER.version,
+      );
+      if (Option.isSome(validated)) {
+        yield* Effect.logInfo(
+          `Using ty binary from ty.path setting: ${validated.value}`,
+        );
+        return validated.value;
+      }
+    }
+
+    // Then check bundled binary in the extension's install directory
+    const bundledPath = NodePath.join(
+      tyExtension.value.extensionPath,
+      "bundled",
+      "libs",
+      "bin",
+      resolvePlatformBinaryName("ty"),
+    );
+    const validated = yield* validateBinary(bundledPath, TY_SERVER.version);
+    if (Option.isSome(validated)) {
+      yield* Effect.logInfo(
+        `Using bundled ty binary from ${TY_EXTENSION_ID}: ${validated.value}`,
+      );
+      return validated.value;
+    }
+  }
+
+  // Tier 3: Fallback to uv installation
+  yield* Effect.logInfo(
+    "No custom or companion ty binary found, falling back to uv installation",
+  );
+  const targetPath = NodePath.resolve(context.globalStorageUri.fsPath, "libs");
+  return yield* uv.ensureLanguageServerBinaryInstalled(TY_SERVER, {
+    targetPath,
+  });
+});
 
 interface InitializationOptions {
   logLevel?: "error" | "warn" | "info" | "debug" | "trace";

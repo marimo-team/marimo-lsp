@@ -18,6 +18,12 @@ export class Config extends Effect.Service<Config>()("Config", {
           path: Effect.succeed(Option.none<string>()),
           enabled: Effect.succeed(false),
         },
+        ruff: {
+          path: Effect.succeed(Option.none<string>()),
+        },
+        ty: {
+          path: Effect.succeed(Option.none<string>()),
+        },
         lsp: {
           executable: Effect.succeed(Option.none()),
         },
@@ -42,6 +48,28 @@ export class Config extends Effect.Service<Config>()("Config", {
           return Effect.andThen(
             code.value.workspace.getConfiguration("marimo"),
             (config) => !config.get<boolean>("disableUvIntegration", false),
+          );
+        },
+      },
+      ruff: {
+        get path() {
+          return Effect.map(
+            code.value.workspace.getConfiguration("marimo.ruff"),
+            (config) =>
+              Option.fromNullable(config.get<string>("path")).pipe(
+                Option.filter((p) => p.length > 0),
+              ),
+          );
+        },
+      },
+      ty: {
+        get path() {
+          return Effect.map(
+            code.value.workspace.getConfiguration("marimo.ty"),
+            (config) =>
+              Option.fromNullable(config.get<string>("path")).pipe(
+                Option.filter((p) => p.length > 0),
+              ),
           );
         },
       },

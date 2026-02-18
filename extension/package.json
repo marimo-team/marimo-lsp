@@ -95,6 +95,18 @@
           "default": true,
           "description": "Anonymous usage data. This helps us prioritize features for the marimo VSCode extension."
         },
+        "marimo.ruff.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to a custom `ruff` binary, e.g., `/usr/local/bin/ruff`. Useful for offline environments. Leave empty to auto-discover or install via uv.",
+          "scope": "resource"
+        },
+        "marimo.ty.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to a custom `ty` binary, e.g., `/usr/local/bin/ty`. Useful for offline environments. Leave empty to auto-discover or install via uv.",
+          "scope": "resource"
+        },
         "marimo.disableManagedLanguageFeatures": {
           "type": "boolean",
           "default": false,
