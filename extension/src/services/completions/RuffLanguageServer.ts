@@ -30,7 +30,7 @@ import {
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
 // Bump this as needed for new features or fixes.
-const RUFF_SERVER = { name: "ruff", version: "0.15.0" } as const;
+const RUFF_SERVER = { name: "ruff", version: "0.15.1" } as const;
 const RUFF_EXTENSION_ID = "charliermarsh.ruff";
 
 export const RuffLanguageServerStatus =
