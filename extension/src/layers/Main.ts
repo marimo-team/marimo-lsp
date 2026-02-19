@@ -53,6 +53,7 @@ import { TreeView } from "../views/TreeView.ts";
 import { VariablesViewLive } from "../views/VariablesView.ts";
 import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
+import { ChatParticipantLive } from "./ChatParticipant.ts";
 import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
@@ -74,6 +75,7 @@ const MainLive = Layer.empty
     Layer.merge(PackagesViewLive),
     Layer.merge(CellStatusBarProviderLive),
     Layer.merge(CellMetadataBindingsLive),
+    Layer.merge(ChatParticipantLive),
   )
   .pipe(
     Layer.provideMerge(Api.Default),
