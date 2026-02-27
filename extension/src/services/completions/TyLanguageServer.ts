@@ -10,7 +10,7 @@ import {
   Runtime,
   Stream,
 } from "effect";
-import type * as lsp from "vscode-languageclient/node";
+import * as lsp from "vscode-languageclient/node";
 import { ResponseError } from "vscode-languageclient/node";
 
 import {
@@ -118,6 +118,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
               notebookSync,
               clientOptions: {
                 outputChannelName: "marimo (ty)",
+                revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
                 middleware: yield* createTyMiddleware(notebookSync),
                 documentSelector: sync.getDocumentSelector(),
                 transformServerCapabilities: sync.extendNotebookCellLanguages(),
