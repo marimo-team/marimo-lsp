@@ -4,6 +4,7 @@ import { NodeContext } from "@effect/platform-node";
 import {
   type Cause,
   Data,
+  Duration,
   Effect,
   Exit,
   Option,
@@ -201,11 +202,17 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
                 );
               });
 
-              // Restart the language server when Python environment changes
+              // Restart the language server when Python environment changes.
               // ty needs restart to pick up environment changes since it doesn't
-              // support workspace/didChangeConfiguration for environment updates
+              // support workspace/didChangeConfiguration for environment updates.
+              //
+              // Debounce to avoid restart storms: the Python extension can fire
+              // multiple rapid environment-change events during workspace
+              // activation (e.g. when opening a notebook). We collapse them into
+              // a single restart after 2 seconds of quiet.
               yield* Effect.forkScoped(
                 pyExt.activeEnvironmentPathChanges().pipe(
+                  Stream.debounce(Duration.seconds(2)),
                   Stream.runForEach(
                     Effect.fnUntraced(function* (event) {
                       yield* client
