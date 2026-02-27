@@ -1,5 +1,3 @@
-import type * as vscode from "vscode";
-
 import {
   Context,
   Effect,
@@ -10,18 +8,13 @@ import {
   pipe,
   Scope,
 } from "effect";
-
-import type { RuffLanguageServer } from "../services/completions/RuffLanguageServer.ts";
-import type { TyLanguageServer } from "../services/completions/TyLanguageServer.ts";
-import type { LanguageClient } from "../services/LanguageClient.ts";
-import type { PythonExtension } from "../services/PythonExtension.ts";
-import type { Sentry } from "../services/Sentry.ts";
-import type { Telemetry } from "../services/Telemetry.ts";
-import type { VsCode } from "../services/VsCode.ts";
+import type * as vscode from "vscode";
 
 import { Api, type MarimoApi } from "../services/Api.ts";
 import { CellMetadataUIBindingService } from "../services/CellMetadataUIBindingService.ts";
 import { CellStateManager } from "../services/CellStateManager.ts";
+import type { RuffLanguageServer } from "../services/completions/RuffLanguageServer.ts";
+import type { TyLanguageServer } from "../services/completions/TyLanguageServer.ts";
 import { Config } from "../services/Config.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
@@ -33,16 +26,21 @@ import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
 import { HealthService } from "../services/HealthService.ts";
 import { KernelManager } from "../services/KernelManager.ts";
+import type { LanguageClient } from "../services/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../services/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { PackagesService } from "../services/packages/PackagesService.ts";
+import type { PythonExtension } from "../services/PythonExtension.ts";
 import { SandboxController } from "../services/SandboxController.ts";
+import type { Sentry } from "../services/Sentry.ts";
 import { SessionStateManager } from "../services/SessionStateManager.ts";
 import { ExtensionContext, Storage } from "../services/Storage.ts";
+import type { Telemetry } from "../services/Telemetry.ts";
 import { Uv } from "../services/Uv.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
+import type { VsCode } from "../services/VsCode.ts";
 import { DatasourcesViewLive } from "../views/DatasourcesView.ts";
 import { MarimoStatusBarLive } from "../views/MarimoStatusBar.ts";
 import { PackagesViewLive } from "../views/PackagesView.ts";

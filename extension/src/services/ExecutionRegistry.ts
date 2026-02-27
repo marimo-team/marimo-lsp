@@ -1,14 +1,12 @@
+// @ts-expect-error
+import { transitionCell as untypedTransitionCell } from "@marimo-team/frontend/unstable_internal/core/cells/cell.ts?nocheck";
+import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import type {
   CellOutput,
   OutputMessage,
 } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
-import type * as vscode from "vscode";
-
-// @ts-expect-error
-import { transitionCell as untypedTransitionCell } from "@marimo-team/frontend/unstable_internal/core/cells/cell.ts?nocheck";
-import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import {
-  type Brand,
+  Brand,
   Data,
   Effect,
   String as EffectString,
@@ -17,9 +15,7 @@ import {
   Ref,
   Runtime,
 } from "effect";
-
-import type { PythonController } from "./NotebookControllerFactory.ts";
-import type { SandboxController } from "./SandboxController.ts";
+import type * as vscode from "vscode";
 
 import { logUnreachable } from "../assert.ts";
 import { SCRATCH_CELL_ID } from "../constants.ts";
@@ -36,6 +32,8 @@ import {
 } from "../types.ts";
 import { prettyErrorMessage } from "../utils/errors.ts";
 import { CellStateManager } from "./CellStateManager.ts";
+import type { PythonController } from "./NotebookControllerFactory.ts";
+import type { SandboxController } from "./SandboxController.ts";
 import { VsCode } from "./VsCode.ts";
 
 export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
@@ -426,8 +424,11 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
 }
 
 type RunId = Brand.Branded<string, "RunId">;
-function extractRunId(msg: CellOperationNotification) {
-  return Option.fromNullable(msg.run_id) as Option.Option<RunId>;
+const RunId = Brand.nominal<RunId>();
+function extractRunId(msg: CellOperationNotification): Option.Option<RunId> {
+  return Option.fromNullable(msg.run_id).pipe(
+    Option.map((idStr) => RunId(idStr)),
+  );
 }
 
 /* Type-safe wrapper around marimo's `transitionCell` we import above */
@@ -622,7 +623,10 @@ function buildOutputItem(
 ): vscode.NotebookCellOutputItem | null {
   // Handle stdout/stderr with proper VSCode helpers
   if (output.mimetype === "text/plain") {
-    const text = String(output.data);
+    const text =
+      typeof output.data === "object"
+        ? JSON.stringify(output.data)
+        : String(output.data);
     if (!text) {
       return null;
     }
@@ -639,7 +643,10 @@ function buildOutputItem(
 
   // Handle traceback
   if (output.mimetype === "application/vnd.marimo+traceback") {
-    const text = String(output.data);
+    const text =
+      typeof output.data === "object"
+        ? JSON.stringify(output.data)
+        : String(output.data);
     if (!text) {
       return null;
     }

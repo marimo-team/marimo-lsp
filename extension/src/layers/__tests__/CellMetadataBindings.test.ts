@@ -1,9 +1,6 @@
-import type * as vscode from "vscode";
-
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
-
-import type { CellMetadata } from "../../schemas.ts";
+import type * as vscode from "vscode";
 
 import {
   createNotebookCell,
@@ -11,6 +8,7 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import type { CellMetadata } from "../../schemas.ts";
 import { CellMetadataUIBindingService } from "../../services/CellMetadataUIBindingService.ts";
 import { Constants } from "../../services/Constants.ts";
 import { DatasourcesService } from "../../services/datasources/DatasourcesService.ts";

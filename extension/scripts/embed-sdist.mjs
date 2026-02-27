@@ -6,6 +6,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeUrl from "node:url";
+
 import * as tar from "tar";
 
 const extensionDir = new URL("..", import.meta.url);

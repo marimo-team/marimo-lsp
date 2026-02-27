@@ -1,6 +1,5 @@
-import type * as vscode from "vscode";
-
 import { Effect, Option, Stream } from "effect";
+import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
 import { dynamicCommand } from "../commands.ts";
@@ -83,7 +82,7 @@ export interface MetadataBinding {
    */
   getOptions?: (
     cell: MarimoNotebookCell,
-  ) => Effect.Effect<Array<{ label: string; value: string }>, never, never>;
+  ) => Effect.Effect<Array<{ label: string; value: string }>>;
 }
 
 /**

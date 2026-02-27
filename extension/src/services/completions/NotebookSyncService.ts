@@ -1,6 +1,3 @@
-import type * as vscode from "vscode";
-import type * as lsp from "vscode-languageclient/node";
-
 import {
   Effect,
   HashMap,
@@ -10,6 +7,8 @@ import {
   Stream,
   SynchronizedRef,
 } from "effect";
+import type * as vscode from "vscode";
+import type * as lsp from "vscode-languageclient/node";
 
 import { MarimoNotebookDocument, type NotebookId } from "../../schemas.ts";
 import { getTopologicalCells } from "../../utils/getTopologicalCells.ts";

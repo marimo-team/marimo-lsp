@@ -8,8 +8,6 @@ import {
   Stream,
 } from "effect";
 
-import type { CellOperationNotification, Notification } from "../types.ts";
-
 import { unreachable } from "../assert.ts";
 import { SCRATCH_CELL_ID } from "../constants.ts";
 import { handleMissingPackageAlert } from "../operations.ts";
@@ -18,6 +16,7 @@ import {
   MarimoNotebookDocument,
   type NotebookId,
 } from "../schemas.ts";
+import type { CellOperationNotification, Notification } from "../types.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { TyLanguageServer } from "./completions/TyLanguageServer.ts";
 import { Config } from "./Config.ts";
@@ -242,7 +241,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
 
 function processOperation(
   { notebookUri, operation }: MarimoOperation,
-  runPromise: <A, E>(effect: Effect.Effect<A, E, never>) => Promise<A>,
+  runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>,
   scratchOps: PubSub.PubSub<CellOperationNotification>,
 ) {
   return Effect.gen(function* () {
@@ -300,7 +299,7 @@ function processOperation(
       }
       case "missing-package-alert": {
         // Handle in a separate fork (we don't want to block resolution)
-        runPromise(
+        void runPromise(
           handleMissingPackageAlert(operation, notebook, controller).pipe(
             Effect.provideService(Uv, uv),
             Effect.provideService(VsCode, code),
@@ -345,7 +344,7 @@ function processOperation(
       case "function-call-result":
       case "send-ui-element-message":
       case "model-lifecycle": {
-        runPromise(renderer.postMessage(operation, editor));
+        void runPromise(renderer.postMessage(operation, editor));
         break;
       }
       case "update-cell-codes":

@@ -1,9 +1,7 @@
+import { Effect } from "effect";
 import type * as vscode from "vscode";
 
-import { Effect } from "effect";
-
 import type { MarimoView } from "../constants.ts";
-
 import { VsCode } from "../services/VsCode.ts";
 
 /**
@@ -40,9 +38,9 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
        */
       createTreeDataProvider: Effect.fnUntraced(function* <T>(options: {
         viewId: MarimoView;
-        getChildren: (element?: T) => Effect.Effect<T[], never, never>;
-        getTreeItem: (element: T) => Effect.Effect<TreeItem, never, never>;
-        getParent?: (element: T) => Effect.Effect<T | undefined, never, never>;
+        getChildren: (element?: T) => Effect.Effect<T[]>;
+        getTreeItem: (element: T) => Effect.Effect<TreeItem>;
+        getParent?: (element: T) => Effect.Effect<T | undefined>;
       }) {
         // Create event emitter for refresh events
         const eventEmitter = new code.EventEmitter<T | undefined | null>();
@@ -93,9 +91,9 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
            */
           reveal(
             element: T,
-            options?: { select?: boolean; focus?: boolean; expand?: boolean },
+            opts?: { select?: boolean; focus?: boolean; expand?: boolean },
           ) {
-            return Effect.promise(() => treeView.reveal(element, options));
+            return Effect.promise(() => treeView.reveal(element, opts));
           },
         };
       }),

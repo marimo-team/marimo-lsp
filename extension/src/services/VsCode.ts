@@ -22,7 +22,6 @@ import * as vscode from "vscode";
 
 import type { DynamicCommand, VscodeBuiltinCommand } from "../commands.ts";
 import type { MarimoCommand, MarimoContextKey } from "../constants.ts";
-
 import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 

@@ -1,13 +1,13 @@
-import type { PlatformError } from "@effect/platform/Error";
-import type * as vscode from "vscode";
-
-import { Command, CommandExecutor } from "@effect/platform";
-import { NodeContext } from "@effect/platform-node";
-import { Data, Effect, Option, Schema, Stream, String } from "effect";
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
+
+import { Command, CommandExecutor } from "@effect/platform";
+import { NodeContext } from "@effect/platform-node";
+import type { PlatformError } from "@effect/platform/Error";
+import { Data, Effect, Option, Schema, Stream, String } from "effect";
+import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
 import { Config } from "./Config.ts";
@@ -230,7 +230,10 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         return uv({
           args: ["tree", "--script", options.script, "-d", "0", "--quiet"],
         }).pipe(
-          Effect.catchTag("UvUnknownError", UvResolutionError.refine),
+          Effect.catchTag(
+            "UvUnknownError",
+            UvResolutionError.refine.bind(null),
+          ),
           Effect.catchTag(
             "UvUnknownError",
             UvMissingPep723MetadataError.refine.bind(null, options.script),
@@ -276,7 +279,10 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
             "UvUnknownError",
             UvMissingPep723MetadataError.refine.bind(null, options.script),
           ),
-          Effect.catchTag("UvUnknownError", UvResolutionError.refine),
+          Effect.catchTag(
+            "UvUnknownError",
+            UvResolutionError.refine.bind(null),
+          ),
         );
       },
       addScript(options: {
@@ -301,7 +307,10 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
           options.directory,
         ];
         return uv({ args }).pipe(
-          Effect.catchTag("UvUnknownError", UvResolutionError.refine),
+          Effect.catchTag(
+            "UvUnknownError",
+            UvResolutionError.refine.bind(null),
+          ),
           Effect.catchTag(
             "UvUnknownError",
             UvMissingPyProjectError.refine.bind(null, options.directory),

@@ -1,7 +1,6 @@
-import type * as vscode from "vscode";
-
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
+import type * as vscode from "vscode";
 
 import {
   createNotebookCell,

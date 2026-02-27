@@ -1,7 +1,6 @@
-import type * as vscode from "vscode";
-
 import * as semver from "@std/semver";
 import { Effect, Option, Runtime, Schema, Stream } from "effect";
+import type * as vscode from "vscode";
 
 import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";

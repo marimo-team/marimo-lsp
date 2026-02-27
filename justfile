@@ -9,8 +9,7 @@ default:
 check:
     uv run ruff check
     uv run ty check
-    pnpm -C extension lint
-    pnpm -C extension typecheck
+    pnpm -C extension check
 
 # Fix linting issues and format code
 fix:

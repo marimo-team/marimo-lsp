@@ -1,6 +1,5 @@
-import type * as py from "@vscode/python-extension";
-
 import { assert, expect, it } from "@effect/vitest";
+import type * as py from "@vscode/python-extension";
 import { Effect, Layer, Option, Stream, TestClock } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";

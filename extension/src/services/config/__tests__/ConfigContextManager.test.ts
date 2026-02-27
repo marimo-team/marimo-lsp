@@ -9,13 +9,12 @@ import {
   TestClock,
 } from "effect";
 
+import { partialService } from "../../../__tests__/__utils__/partial.ts";
 import type { NotebookId } from "../../../schemas.ts";
 import type { MarimoConfig } from "../../../types.ts";
-import type { VsCode } from "../../VsCode.ts";
-
-import { partialService } from "../../../__tests__/__utils__/partial.ts";
 import { LanguageClient } from "../../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../NotebookEditorRegistry.ts";
+import type { VsCode } from "../../VsCode.ts";
 import { VsCode as VsCodeService } from "../../VsCode.ts";
 import { ConfigContextManager } from "../ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";
@@ -127,18 +126,24 @@ const TestLanguageClientLive = Layer.effect(
   LanguageClient,
   Effect.gen(function* () {
     const ctx = yield* TestContext;
-    return {
+    return LanguageClient.make({
+      channel: {
+        name: "mock-language-client",
+        show() {},
+      },
+      restart: () => Effect.void,
+      streamOf: () => Stream.never,
       executeCommand: ({ command, params }) =>
         Effect.gen(function* () {
           if (!(command === "marimo.api")) {
-            return yield* Effect.fail(new Error(`Unknown command: ${command}`));
+            return yield* Effect.die(`Unknown command: ${command}`);
           }
 
           if (params.method === "get-configuration") {
             const config = ctx.configStore.get(params.params.notebookUri);
             if (!config) {
-              return yield* Effect.fail(
-                new Error(`Config not found for ${params.params.notebookUri}`),
+              return yield* Effect.die(
+                `Config not found for ${params.params.notebookUri}`,
               );
             }
             return { config };
@@ -159,11 +164,11 @@ const TestLanguageClientLive = Layer.effect(
             return { config };
           }
 
-          return yield* Effect.fail(
-            new Error(`Unknown marimo.api method: ${params.method}`),
+          return yield* Effect.die(
+            `Unknown marimo.api method: ${params.method}`,
           );
         }),
-    } as LanguageClient;
+    });
   }),
 );
 

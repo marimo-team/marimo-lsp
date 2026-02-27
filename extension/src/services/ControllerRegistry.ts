@@ -1,6 +1,6 @@
-import type * as py from "@vscode/python-extension";
-import type * as vscode from "vscode";
+import * as NodePath from "node:path";
 
+import type * as py from "@vscode/python-extension";
 import {
   Cause,
   Effect,
@@ -12,7 +12,7 @@ import {
   Stream,
   SynchronizedRef,
 } from "effect";
-import * as NodePath from "node:path";
+import type * as vscode from "vscode";
 
 import { MarimoNotebookDocument, type NotebookId } from "../schemas.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";

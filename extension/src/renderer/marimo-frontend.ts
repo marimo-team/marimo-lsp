@@ -9,6 +9,9 @@ import type {
   CellId,
   UIElementId,
 } from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
+import { FUNCTIONS_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/functions/FunctionRegistry.ts";
+import { initialModeAtom } from "@marimo-team/frontend/unstable_internal/core/mode.ts";
+import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts";
 /**
  * Type imports from @marimo-team/frontend
  *
@@ -21,10 +24,6 @@ import type {
   EditRequests,
   RunRequests,
 } from "@marimo-team/frontend/unstable_internal/core/network/types.ts";
-
-import { FUNCTIONS_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/functions/FunctionRegistry.ts";
-import { initialModeAtom } from "@marimo-team/frontend/unstable_internal/core/mode.ts";
-import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts";
 import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts";
 import {
   handleWidgetMessage,
@@ -79,7 +78,7 @@ export function handleSendUiElementMessage(
 }
 
 export function handleModelLifecycle(msg: NotificationOf<"model-lifecycle">) {
-  handleWidgetMessage(MODEL_MANAGER, msg);
+  void handleWidgetMessage(MODEL_MANAGER, msg);
 }
 
 export function handleFunctionCallResult(

@@ -122,7 +122,7 @@ it.effect(
   Effect.fnUntraced(function* () {
     // initial state
     const workspaceState = new Memento();
-    workspaceState.update("key", { value: 2 });
+    yield* Effect.promise(() => workspaceState.update("key", { value: 2 }));
 
     const { key, layer } = yield* withTestCtx({ workspaceState });
 
@@ -163,7 +163,7 @@ it.effect(
   "should throw StorageDecodeError badly encoded value",
   Effect.fnUntraced(function* () {
     const workspaceState = new Memento();
-    workspaceState.update("key", "blah");
+    yield* Effect.promise(() => workspaceState.update("key", "blah"));
 
     const { key, layer } = yield* withTestCtx({ workspaceState });
 

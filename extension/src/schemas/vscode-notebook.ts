@@ -1,13 +1,11 @@
+import { Brand, Data, Effect, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 
-import { Brand, Data, Effect, Option, Schema } from "effect";
-
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import type {
   CellOperationNotification,
   VariablesNotification,
 } from "../types.ts";
-
-import { NOTEBOOK_TYPE } from "../constants.ts";
 import { MarimoNotebook } from "./ir.ts";
 
 const SQLMetadata = Schema.Struct({

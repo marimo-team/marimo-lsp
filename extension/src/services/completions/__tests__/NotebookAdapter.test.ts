@@ -1,7 +1,6 @@
+import { describe, expect, it } from "@effect/vitest";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
-
-import { describe, expect, it } from "@effect/vitest";
 
 import {
   createNotebookCell,

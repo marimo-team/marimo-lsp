@@ -1,7 +1,7 @@
 export type DynamicCommand = `marimo.dynamic.${string}`;
 
 export function dynamicCommand(command: string): DynamicCommand {
-  return `marimo.dynamic.${command}` as DynamicCommand;
+  return `marimo.dynamic.${command}`;
 }
 
 // Pulled from https://code.visualstudio.com/api/references/commands
@@ -126,8 +126,6 @@ export type VscodeBuiltinCommand =
   | "notebook.fold"
   // Unfold Cell
   | "notebook.unfold"
-  // Notebook Kernel Args
-  | "notebook.selectKernel"
   // Change Cell Language
   | "notebook.cell.changeLanguage"
   // Run All

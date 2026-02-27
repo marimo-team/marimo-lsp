@@ -6,7 +6,6 @@ import type {
   VariablesNotification,
   VariableValuesNotification,
 } from "../../../types.ts";
-
 import { VariablesService } from "../VariablesService.ts";
 
 const withTestCtx = () =>

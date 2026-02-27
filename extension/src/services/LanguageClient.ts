@@ -1,15 +1,15 @@
-import { Cause, Data, Effect, Option, Stream } from "effect";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
+
+import { Cause, Data, Effect, Option, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
 
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import type {
   MarimoCommand,
   MarimoLspNotification,
   MarimoLspNotificationOf,
 } from "../types.ts";
-
-import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { tokenFromSignal } from "../utils/tokenFromSignal.ts";

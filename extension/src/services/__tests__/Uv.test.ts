@@ -1,10 +1,11 @@
-import { assert, describe, expect, it } from "@effect/vitest";
-import { Effect, Either, Layer, Option } from "effect";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
+
+import { assert, describe, expect, it } from "@effect/vitest";
+import { Effect, Either, Layer, Option } from "effect";
 
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
