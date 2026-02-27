@@ -9,7 +9,7 @@ import {
   Stream,
 } from "effect";
 import type * as vscode from "vscode";
-import type * as lsp from "vscode-languageclient/node";
+import * as lsp from "vscode-languageclient/node";
 
 import {
   createManagedLanguageClient,
@@ -120,6 +120,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
               notebookSync,
               clientOptions: {
                 outputChannelName: "marimo (ruff)",
+                revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
                 middleware: yield* createRuffMiddleware(notebookSync),
                 documentSelector: sync.getDocumentSelector(),
                 transformServerCapabilities: sync.extendNotebookCellLanguages(),
