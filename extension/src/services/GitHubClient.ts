@@ -13,7 +13,6 @@ import { Effect, flow, Option, Schema } from "effect";
 import { VsCode } from "./VsCode.ts";
 
 const GistRequest = Schema.Struct({
-  description: Schema.String,
   public: Schema.Boolean,
   files: Schema.Record({
     key: Schema.String,
@@ -26,12 +25,26 @@ const GistResponse = Schema.Struct({
   html_url: Schema.String,
 });
 
+const GistUpdateRequest = Schema.Struct({
+  files: Schema.Record({
+    key: Schema.String,
+    value: Schema.Struct({ content: Schema.String }),
+  }),
+});
+
 const GitHubApi = HttpApi.make("GitHubApi").add(
-  HttpApiGroup.make("Gists").add(
-    HttpApiEndpoint.post("create", "/gists")
-      .setPayload(GistRequest)
-      .addSuccess(GistResponse, { status: 201 }),
-  ),
+  HttpApiGroup.make("Gists")
+    .add(
+      HttpApiEndpoint.post("create", "/gists")
+        .setPayload(GistRequest)
+        .addSuccess(GistResponse, { status: 201 }),
+    )
+    .add(
+      HttpApiEndpoint.patch("update", "/gists/:id")
+        .setPath(Schema.Struct({ id: Schema.String }))
+        .setPayload(GistUpdateRequest)
+        .addSuccess(GistResponse),
+    ),
 );
 
 export class GitHubClient extends Effect.Service<GitHubClient>()(

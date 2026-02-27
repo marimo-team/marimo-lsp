@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from typing import TYPE_CHECKING, cast
 
 import msgspec
@@ -17,6 +18,7 @@ from marimo._schemas.serialization import NotebookSerialization
 from marimo._server.export.exporter import Exporter
 from marimo._server.models.export import ExportAsHTMLRequest
 from marimo._server.models.models import InstantiateNotebookRequest
+from marimo._session.state.serialize import serialize_session_view
 from marimo._utils.parse_dataclass import parse_raw
 
 from marimo_lsp.debug_adapter import handle_debug_adapter_request
@@ -29,6 +31,7 @@ from marimo_lsp.models import (
     DeserializeRequest,
     ExecuteCellsRequest,
     ExecuteScratchRequest,
+    ExportAsIpynbRequest,
     GetConfigurationRequest,
     InterruptRequest,
     ListPackagesRequest,
@@ -310,6 +313,32 @@ async def export_as_html(
     return html
 
 
+async def export_as_ipynb(
+    manager: LspSessionManager,
+    args: NotebookCommand[ExportAsIpynbRequest],
+) -> str:
+    """Export the notebook as ipynb with current outputs."""
+    logger.info(f"export_as_ipynb for {args.notebook_uri}")
+    session = manager.get_session(args.notebook_uri)
+    assert session, f"No session in workspace for {args.notebook_uri}"
+
+    ipynb_str = Exporter().export_as_ipynb(
+        app=session.app_file_manager.app,
+        sort_mode="top-down",
+        session_view=session.session_view,
+    )
+
+    # inject 'session.json' under top-level notebook metadata
+    # -> metadata.marimo.session
+    ipynb = json.loads(ipynb_str)
+    session_data = serialize_session_view(
+        session.session_view,
+        cell_ids=session.app_file_manager.app.cell_manager.cell_ids(),
+    )
+    ipynb.setdefault("metadata", {}).setdefault("marimo", {})["session"] = session_data
+    return json.dumps(ipynb)
+
+
 async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
     ls: LanguageServer, manager: LspSessionManager, method: str, params: dict
 ) -> object:
@@ -396,6 +425,12 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
         return await export_as_html(
             manager,
             msgspec.convert(params, type=NotebookCommand[ExportAsHTMLRequest]),
+        )
+
+    if method == "export-as-ipynb":
+        return await export_as_ipynb(
+            manager,
+            msgspec.convert(params, type=NotebookCommand[ExportAsIpynbRequest]),
         )
 
     if method == "execute-scratchpad":

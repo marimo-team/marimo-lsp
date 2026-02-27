@@ -76,6 +76,7 @@ class LspSession:
             while not self._closed:
                 try:
                     msg = stream_queue.get(timeout=0.1)
+                    self.session_view.add_raw_notification(msg)
                     self._consumer.notify(msg)
                 except queue.Empty:  # noqa: PERF203
                     continue
