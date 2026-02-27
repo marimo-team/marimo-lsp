@@ -53,8 +53,8 @@ export const LanguageId = {
 
 export const MINIMUM_MARIMO_VERSION = {
   major: 0,
-  minor: 19,
-  patch: 10,
+  minor: 20,
+  patch: 2,
 } as const;
 
 export type MarimoContextKey =
