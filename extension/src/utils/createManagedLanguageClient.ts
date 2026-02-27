@@ -191,7 +191,11 @@ export const createManagedLanguageClient = Effect.fn(function* (
 
   const stop = () =>
     Effect.tryPromise({
-      try: () => client.stop(Infinity),
+      // Use a finite timeout (10s) so a hung server process doesn't block
+      // restarts indefinitely. The outer restart() has its own 30s timeout,
+      // but letting stop() wait forever (Infinity) can deadlock when the
+      // server is stuck mid-initialization and can't respond to shutdown.
+      try: () => client.stop(10_000),
       catch: (cause) => new LanguageClientError({ cause }),
     });
 
