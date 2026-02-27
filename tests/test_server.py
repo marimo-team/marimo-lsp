@@ -621,7 +621,8 @@ x\
                         check_order=False,
                     ),
                 },
-            }, {
+            },
+            {
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
                     "op": "cell-op",
@@ -875,7 +876,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                         }
                     ],
                 },
-            }, {
+            },
+            {
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
                     "op": "cell-op",
