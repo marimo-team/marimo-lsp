@@ -16,13 +16,13 @@
     "build": "turbo build:renderer && turbo build:extension",
     "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
     "build:renderer": "vite build",
-    "fix": "oxlint --fix && oxfmt --write .",
+    "fix": "oxlint --fix && oxfmt --write . '!dist'",
     "typecheck-ci": "tsc",
     "test": "vitest",
     "test:extension": "vscode-test",
     "embed-sdist": "node scripts/embed-sdist.mjs",
-    "check": "tsgo && oxlint --type-aware --type-check && oxfmt --check . && node ./scripts/check-css-variables.mjs",
-    "fmt": "oxfmt --write ."
+    "check": "tsgo && oxlint --type-aware --type-check && oxfmt --check . '!dist' && node ./scripts/check-css-variables.mjs",
+    "fmt": "oxfmt --write . '!dist'"
   },
   "devDependencies": {
     "@effect/language-service": "^0.45.0",
