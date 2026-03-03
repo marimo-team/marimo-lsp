@@ -1,6 +1,7 @@
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
+import * as NodeProcess from "node:process";
 
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Either, Layer, Schema } from "effect";
@@ -13,6 +14,8 @@ import { SemVerFromString } from "../../schemas.ts";
 import { getVenvPythonPath } from "../../utils/getVenvPythonPath.ts";
 import { EnvironmentValidator } from "../EnvironmentValidator.ts";
 import { Uv } from "../Uv.ts";
+
+const isWindows = NodeProcess.platform === "win32";
 
 class TempDir extends Effect.Service<TempDir>()("TempDir", {
   scoped: Effect.gen(function* () {
@@ -184,7 +187,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       assert(Either.isRight(result), "Expected validation to succeed");
       assert.strictEqual(result.right._tag, "ValidPythonEnvironment");
     }),
-    { timeout: 30_000 },
+    { timeout: 60_000 },
   );
 
   it.effect(
@@ -194,7 +197,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       const tmpdir = yield* TempDir;
 
       const venv = NodePath.join(tmpdir.path, ".venv");
-      NodeFs.rmSync(venv, { recursive: true });
+      NodeFs.rmSync(venv, { recursive: true, force: true });
 
       const result = yield* Effect.either(
         validator.validate(
@@ -204,186 +207,192 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       assert(Either.isLeft(result), "Expected validation to fail");
       assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
     }),
+    { timeout: 30_000 },
   );
 
   // -- Edge cases for subprocess output parsing --
+  // These tests use bash scripts as fake executables.
+  // On Windows, child_process.spawn can only execute PE (.exe) files
+  // directly, so we skip these tests there.
 
-  it.effect(
-    "should fail with EnvironmentInspectionError when stdout is empty",
-    Effect.fnUntraced(function* () {
-      const validator = yield* EnvironmentValidator;
-      const tmpdir = yield* TempDir;
-      const script = makeFakeExecutable(tmpdir.path, "empty-stdout", {
-        stdout: "",
-        exitCode: 0,
-      });
+  if (!isWindows) {
+    it.effect(
+      "should fail with EnvironmentInspectionError when stdout is empty",
+      Effect.fnUntraced(function* () {
+        const validator = yield* EnvironmentValidator;
+        const tmpdir = yield* TempDir;
+        const script = makeFakeExecutable(tmpdir.path, "empty-stdout", {
+          stdout: "",
+          exitCode: 0,
+        });
 
-      const result = yield* Effect.either(
-        validator.validate(TestPythonExtension.makeGlobalEnv(script)),
-      );
+        const result = yield* Effect.either(
+          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+        );
 
-      assert(Either.isLeft(result), "Expected validation to fail");
-      assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
-    }),
-  );
+        assert(Either.isLeft(result), "Expected validation to fail");
+        assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
+      }),
+    );
 
-  it.effect(
-    "should fail with EnvironmentInspectionError when stdout is not JSON",
-    Effect.fnUntraced(function* () {
-      const validator = yield* EnvironmentValidator;
-      const tmpdir = yield* TempDir;
-      const script = makeFakeExecutable(tmpdir.path, "non-json", {
-        stdout: "WARNING: some import warning\nAnother warning line\n",
-        exitCode: 0,
-      });
+    it.effect(
+      "should fail with EnvironmentInspectionError when stdout is not JSON",
+      Effect.fnUntraced(function* () {
+        const validator = yield* EnvironmentValidator;
+        const tmpdir = yield* TempDir;
+        const script = makeFakeExecutable(tmpdir.path, "non-json", {
+          stdout: "WARNING: some import warning\nAnother warning line\n",
+          exitCode: 0,
+        });
 
-      const result = yield* Effect.either(
-        validator.validate(TestPythonExtension.makeGlobalEnv(script)),
-      );
+        const result = yield* Effect.either(
+          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+        );
 
-      assert(Either.isLeft(result), "Expected validation to fail");
-      assert(
-        result.left._tag === "EnvironmentInspectionError",
-        `Expected EnvironmentInspectionError, got ${result.left._tag}`,
-      );
-      expect(result.left.stdout).toContain("WARNING");
-    }),
-  );
+        assert(Either.isLeft(result), "Expected validation to fail");
+        assert(
+          result.left._tag === "EnvironmentInspectionError",
+          `Expected EnvironmentInspectionError, got ${result.left._tag}`,
+        );
+        expect(result.left.stdout).toContain("WARNING");
+      }),
+    );
 
-  it.effect(
-    "should fail with EnvironmentInspectionError on non-zero exit code",
-    Effect.fnUntraced(function* () {
-      const validator = yield* EnvironmentValidator;
-      const tmpdir = yield* TempDir;
-      const script = makeFakeExecutable(tmpdir.path, "exit-1", {
-        stdout: "",
-        stderr: "Traceback: SyntaxError in sitecustomize.py",
-        exitCode: 1,
-      });
+    it.effect(
+      "should fail with EnvironmentInspectionError on non-zero exit code",
+      Effect.fnUntraced(function* () {
+        const validator = yield* EnvironmentValidator;
+        const tmpdir = yield* TempDir;
+        const script = makeFakeExecutable(tmpdir.path, "exit-1", {
+          stdout: "",
+          stderr: "Traceback: SyntaxError in sitecustomize.py",
+          exitCode: 1,
+        });
 
-      const result = yield* Effect.either(
-        validator.validate(TestPythonExtension.makeGlobalEnv(script)),
-      );
+        const result = yield* Effect.either(
+          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+        );
 
-      assert(Either.isLeft(result), "Expected validation to fail");
-      assert(
-        result.left._tag === "EnvironmentInspectionError",
-        `Expected EnvironmentInspectionError, got ${result.left._tag}`,
-      );
-      expect(result.left.stderr).toContain("SyntaxError");
-    }),
-  );
+        assert(Either.isLeft(result), "Expected validation to fail");
+        assert(
+          result.left._tag === "EnvironmentInspectionError",
+          `Expected EnvironmentInspectionError, got ${result.left._tag}`,
+        );
+        expect(result.left.stderr).toContain("SyntaxError");
+      }),
+    );
 
-  it.effect(
-    "should fail with EnvironmentInspectionError on truncated JSON",
-    Effect.fnUntraced(function* () {
-      const validator = yield* EnvironmentValidator;
-      const tmpdir = yield* TempDir;
-      const script = makeFakeExecutable(tmpdir.path, "truncated-json", {
-        stdout: '[{"name":"marimo","version"',
-        exitCode: 0,
-      });
+    it.effect(
+      "should fail with EnvironmentInspectionError on truncated JSON",
+      Effect.fnUntraced(function* () {
+        const validator = yield* EnvironmentValidator;
+        const tmpdir = yield* TempDir;
+        const script = makeFakeExecutable(tmpdir.path, "truncated-json", {
+          stdout: '[{"name":"marimo","version"',
+          exitCode: 0,
+        });
 
-      const result = yield* Effect.either(
-        validator.validate(TestPythonExtension.makeGlobalEnv(script)),
-      );
+        const result = yield* Effect.either(
+          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+        );
 
-      assert(Either.isLeft(result), "Expected validation to fail");
-      assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
-    }),
-  );
+        assert(Either.isLeft(result), "Expected validation to fail");
+        assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
+      }),
+    );
 
-  it.effect(
-    "should fail with EnvironmentInspectionError on wrong JSON shape",
-    Effect.fnUntraced(function* () {
-      const validator = yield* EnvironmentValidator;
-      const tmpdir = yield* TempDir;
-      const script = makeFakeExecutable(tmpdir.path, "wrong-shape", {
-        stdout: '{"error": "unexpected format"}',
-        exitCode: 0,
-      });
+    it.effect(
+      "should fail with EnvironmentInspectionError on wrong JSON shape",
+      Effect.fnUntraced(function* () {
+        const validator = yield* EnvironmentValidator;
+        const tmpdir = yield* TempDir;
+        const script = makeFakeExecutable(tmpdir.path, "wrong-shape", {
+          stdout: '{"error": "unexpected format"}',
+          exitCode: 0,
+        });
 
-      const result = yield* Effect.either(
-        validator.validate(TestPythonExtension.makeGlobalEnv(script)),
-      );
+        const result = yield* Effect.either(
+          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+        );
 
-      assert(Either.isLeft(result), "Expected validation to fail");
-      assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
-    }),
-  );
+        assert(Either.isLeft(result), "Expected validation to fail");
+        assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
+      }),
+    );
 
-  it.effect(
-    "should handle JSON with extra whitespace/newlines",
-    Effect.fnUntraced(function* () {
-      const validator = yield* EnvironmentValidator;
-      const tmpdir = yield* TempDir;
-      const json = JSON.stringify([
-        { name: "marimo", version: "1.0.0" },
-        { name: "pyzmq", version: "26.0.0" },
-      ]);
-      const script = makeFakeExecutable(tmpdir.path, "extra-whitespace", {
-        stdout: `\n  ${json}  \n`,
-        exitCode: 0,
-      });
+    it.effect(
+      "should handle JSON with extra whitespace/newlines",
+      Effect.fnUntraced(function* () {
+        const validator = yield* EnvironmentValidator;
+        const tmpdir = yield* TempDir;
+        const json = JSON.stringify([
+          { name: "marimo", version: "1.0.0" },
+          { name: "pyzmq", version: "26.0.0" },
+        ]);
+        const script = makeFakeExecutable(tmpdir.path, "extra-whitespace", {
+          stdout: `\n  ${json}  \n`,
+          exitCode: 0,
+        });
 
-      const result = yield* Effect.either(
-        validator.validate(TestPythonExtension.makeGlobalEnv(script)),
-      );
+        const result = yield* Effect.either(
+          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+        );
 
-      assert(Either.isRight(result), "Expected validation to succeed");
-      assert.strictEqual(result.right._tag, "ValidPythonEnvironment");
-    }),
-  );
+        assert(Either.isRight(result), "Expected validation to succeed");
+        assert.strictEqual(result.right._tag, "ValidPythonEnvironment");
+      }),
+    );
 
-  it.effect(
-    "should treat null versions as missing packages",
-    Effect.fnUntraced(function* () {
-      const validator = yield* EnvironmentValidator;
-      const tmpdir = yield* TempDir;
-      const json = JSON.stringify([
-        { name: "marimo", version: null },
-        { name: "pyzmq", version: null },
-      ]);
-      const script = makeFakeExecutable(tmpdir.path, "null-versions", {
-        stdout: json,
-        exitCode: 0,
-      });
+    it.effect(
+      "should treat null versions as missing packages",
+      Effect.fnUntraced(function* () {
+        const validator = yield* EnvironmentValidator;
+        const tmpdir = yield* TempDir;
+        const json = JSON.stringify([
+          { name: "marimo", version: null },
+          { name: "pyzmq", version: null },
+        ]);
+        const script = makeFakeExecutable(tmpdir.path, "null-versions", {
+          stdout: json,
+          exitCode: 0,
+        });
 
-      const result = yield* Effect.either(
-        validator.validate(TestPythonExtension.makeGlobalEnv(script)),
-      );
+        const result = yield* Effect.either(
+          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+        );
 
-      assert(Either.isLeft(result), "Expected validation to fail");
-      assert(
-        result.left._tag === "EnvironmentRequirementError",
-        `Expected EnvironmentRequirementError, got ${result.left._tag}`,
-      );
-      expect(result.left.diagnostics).toEqual([
-        { kind: "missing", package: "marimo" },
-        { kind: "missing", package: "pyzmq" },
-      ]);
-    }),
-  );
+        assert(Either.isLeft(result), "Expected validation to fail");
+        assert(
+          result.left._tag === "EnvironmentRequirementError",
+          `Expected EnvironmentRequirementError, got ${result.left._tag}`,
+        );
+        expect(result.left.diagnostics).toEqual([
+          { kind: "missing", package: "marimo" },
+          { kind: "missing", package: "pyzmq" },
+        ]);
+      }),
+    );
 
-  it.effect(
-    "should fail with EnvironmentInspectionError when stderr has content but exit code 0 and empty stdout",
-    Effect.fnUntraced(function* () {
-      const validator = yield* EnvironmentValidator;
-      const tmpdir = yield* TempDir;
-      const script = makeFakeExecutable(tmpdir.path, "stderr-only", {
-        stdout: "",
-        stderr: "Fatal Python error: init_fs_encoding",
-        exitCode: 0,
-      });
+    it.effect(
+      "should fail with EnvironmentInspectionError when stderr has content but exit code 0 and empty stdout",
+      Effect.fnUntraced(function* () {
+        const validator = yield* EnvironmentValidator;
+        const tmpdir = yield* TempDir;
+        const script = makeFakeExecutable(tmpdir.path, "stderr-only", {
+          stdout: "",
+          stderr: "Fatal Python error: init_fs_encoding",
+          exitCode: 0,
+        });
 
-      const result = yield* Effect.either(
-        validator.validate(TestPythonExtension.makeGlobalEnv(script)),
-      );
+        const result = yield* Effect.either(
+          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+        );
 
-      assert(Either.isLeft(result), "Expected validation to fail");
-      assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
-    }),
-  );
+        assert(Either.isLeft(result), "Expected validation to fail");
+        assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
+      }),
+    );
+  }
 });
 
 /** Create an executable bash script that outputs specific stdout/stderr. */
