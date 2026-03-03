@@ -1,3 +1,4 @@
+import { Option } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -6,14 +7,14 @@ import {
 } from "../extractPythonError.ts";
 
 describe("extractPythonError", () => {
-  it("returns undefined for null/undefined", () => {
-    expect(extractPythonError(null)).toBeUndefined();
-    expect(extractPythonError(undefined)).toBeUndefined();
+  it("returns none for null/undefined", () => {
+    expect(extractPythonError(null)).toEqual(Option.none());
+    expect(extractPythonError(undefined)).toEqual(Option.none());
   });
 
-  it("returns undefined for non-object", () => {
-    expect(extractPythonError("string")).toBeUndefined();
-    expect(extractPythonError(42)).toBeUndefined();
+  it("returns none for non-object", () => {
+    expect(extractPythonError("string")).toEqual(Option.none());
+    expect(extractPythonError(42)).toEqual(Option.none());
   });
 
   it("extracts from Error.cause with Python traceback", () => {
@@ -26,8 +27,10 @@ describe("extractPythonError", () => {
           "  ImportError: cannot import name 'namedtuple' from 'collections'",
       ),
     });
-    expect(extractPythonError(error)).toBe(
-      "ImportError: cannot import name 'namedtuple' from 'collections'",
+    expect(extractPythonError(error)).toEqual(
+      Option.some(
+        "ImportError: cannot import name 'namedtuple' from 'collections'",
+      ),
     );
   });
 
@@ -39,8 +42,10 @@ describe("extractPythonError", () => {
           "  msgspec.ValidationError: Expected `str`, got `object` - at `$.user_config.ai.rules`",
       ),
     });
-    expect(extractPythonError(error)).toBe(
-      "msgspec.ValidationError: Expected `str`, got `object` - at `$.user_config.ai.rules`",
+    expect(extractPythonError(error)).toEqual(
+      Option.some(
+        "msgspec.ValidationError: Expected `str`, got `object` - at `$.user_config.ai.rules`",
+      ),
     );
   });
 
@@ -53,19 +58,23 @@ describe("extractPythonError", () => {
           "  AttributeError: module 'marimo' has no attribute 'App' (consider renaming '/Users/user/projects/marimo.py')",
       ),
     });
-    expect(extractPythonError(error)).toBe(
-      "AttributeError: module 'marimo' has no attribute 'App' (consider renaming '/Users/user/projects/marimo.py')",
+    expect(extractPythonError(error)).toEqual(
+      Option.some(
+        "AttributeError: module 'marimo' has no attribute 'App' (consider renaming '/Users/user/projects/marimo.py')",
+      ),
     );
   });
 
   it("falls back to .message when not generic", () => {
     const error = new Error("Something specific went wrong");
-    expect(extractPythonError(error)).toBe("Something specific went wrong");
+    expect(extractPythonError(error)).toEqual(
+      Option.some("Something specific went wrong"),
+    );
   });
 
-  it("returns undefined when message is generic", () => {
+  it("returns none when message is generic", () => {
     const error = new Error("An error has occurred");
-    expect(extractPythonError(error)).toBeUndefined();
+    expect(extractPythonError(error)).toEqual(Option.none());
   });
 
   it("truncates very long error messages", () => {
@@ -74,33 +83,37 @@ describe("extractPythonError", () => {
       cause: new Error(longMessage),
     });
     const result = extractPythonError(error);
-    expect(result).toBeDefined();
-    expect(result!.length).toBeLessThanOrEqual(501); // 500 + ellipsis
+    expect(Option.isSome(result)).toBe(true);
+    if (Option.isSome(result)) {
+      expect(result.value.length).toBeLessThanOrEqual(501); // 500 + ellipsis
+    }
   });
 });
 
 describe("extractModuleShadowingError", () => {
-  it("returns undefined for null/undefined", () => {
-    expect(extractModuleShadowingError(null)).toBeUndefined();
-    expect(extractModuleShadowingError(undefined)).toBeUndefined();
+  it("returns none for null/undefined", () => {
+    expect(extractModuleShadowingError(null)).toEqual(Option.none());
+    expect(extractModuleShadowingError(undefined)).toEqual(Option.none());
   });
 
-  it("returns undefined for non-object", () => {
-    expect(extractModuleShadowingError("string")).toBeUndefined();
-    expect(extractModuleShadowingError(42)).toBeUndefined();
+  it("returns none for non-object", () => {
+    expect(extractModuleShadowingError("string")).toEqual(Option.none());
+    expect(extractModuleShadowingError(42)).toEqual(Option.none());
   });
 
-  it("returns undefined for errors without consider renaming", () => {
+  it("returns none for errors without consider renaming", () => {
     const error = new Error("ImportError: No module named 'foo'");
-    expect(extractModuleShadowingError(error)).toBeUndefined();
+    expect(extractModuleShadowingError(error)).toEqual(Option.none());
   });
 
   it("extracts marimo.py shadowing from direct message", () => {
     const error = new Error(
       "AttributeError: module 'marimo' has no attribute 'App' (consider renaming '/Users/user/projects/marimo.py' if it has the same name as a library you intended to import)",
     );
-    expect(extractModuleShadowingError(error)).toBe(
-      "A file in your project named 'marimo.py' is shadowing a Python module. Consider renaming it.",
+    expect(extractModuleShadowingError(error)).toEqual(
+      Option.some(
+        "A file in your project named 'marimo.py' is shadowing a Python module. Consider renaming it.",
+      ),
     );
   });
 
@@ -113,8 +126,10 @@ describe("extractModuleShadowingError", () => {
           "  AttributeError: module 'marimo' has no attribute 'App' (consider renaming '/Users/user/projects/marimo.py')",
       ),
     });
-    expect(extractModuleShadowingError(error)).toBe(
-      "A file in your project named 'marimo.py' is shadowing a Python module. Consider renaming it.",
+    expect(extractModuleShadowingError(error)).toEqual(
+      Option.some(
+        "A file in your project named 'marimo.py' is shadowing a Python module. Consider renaming it.",
+      ),
     );
   });
 
@@ -124,8 +139,10 @@ describe("extractModuleShadowingError", () => {
         "ImportError: cannot import name 'namedtuple' from 'collections' (consider renaming '/home/user/collections.py')",
       ),
     });
-    expect(extractModuleShadowingError(error)).toBe(
-      "A file in your project named 'collections.py' is shadowing a Python module. Consider renaming it.",
+    expect(extractModuleShadowingError(error)).toEqual(
+      Option.some(
+        "A file in your project named 'collections.py' is shadowing a Python module. Consider renaming it.",
+      ),
     );
   });
 
@@ -133,13 +150,15 @@ describe("extractModuleShadowingError", () => {
     const error = new Error(
       "AttributeError: module 'bah' has no attribute 'foo' (consider renaming '/Users/tmanz/github/marimo-team/marimo-lsp/bah.py' if it has the same name as a library you intended to import)",
     );
-    expect(extractModuleShadowingError(error)).toBe(
-      "A file in your project named 'bah.py' is shadowing a Python module. Consider renaming it.",
+    expect(extractModuleShadowingError(error)).toEqual(
+      Option.some(
+        "A file in your project named 'bah.py' is shadowing a Python module. Consider renaming it.",
+      ),
     );
   });
 
-  it("returns undefined for generic error", () => {
+  it("returns none for generic error", () => {
     const error = new Error("An error has occurred");
-    expect(extractModuleShadowingError(error)).toBeUndefined();
+    expect(extractModuleShadowingError(error)).toEqual(Option.none());
   });
 });

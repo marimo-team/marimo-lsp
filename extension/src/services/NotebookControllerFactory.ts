@@ -119,16 +119,16 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                     const shadowError = extractModuleShadowingError(
                       error.cause,
                     );
-                    if (shadowError) {
-                      yield* code.window.showErrorMessage(shadowError, {
+                    if (Option.isSome(shadowError)) {
+                      yield* code.window.showErrorMessage(shadowError.value, {
                         modal: true,
                       });
                       return;
                     }
                     const detail = extractPythonError(error.cause);
                     yield* code.window.showErrorMessage(
-                      detail
-                        ? `Failed to execute marimo command:\n\n${detail}`
+                      Option.isSome(detail)
+                        ? `Failed to execute marimo command:\n\n${detail.value}`
                         : "Failed to execute marimo command. Please check the logs for details.",
                       { modal: true },
                     );

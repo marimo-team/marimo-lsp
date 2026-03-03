@@ -147,15 +147,17 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             ),
             Effect.catchTag("ExecuteCommandError", (error) => {
               const shadowError = extractModuleShadowingError(error.cause);
-              if (shadowError) {
-                return showErrorAndPromptLogs(shadowError, {
+
+              if (Option.isSome(shadowError)) {
+                return showErrorAndPromptLogs(shadowError.value, {
                   channel: client.channel,
                 });
               }
+
               const detail = extractPythonError(error.cause);
               return showErrorAndPromptLogs(
-                detail
-                  ? `Failed to execute marimo command:\n\n${detail}`
+                Option.isSome(detail)
+                  ? `Failed to execute marimo command:\n\n${detail.value}`
                   : "Failed to communicate with marimo language server.",
                 { channel: client.channel },
               );
