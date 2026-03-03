@@ -230,7 +230,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
             Effect.catchTag("InvalidCellError", (error) =>
               Effect.logWarning(
                 "Cell is no longer valid, skipping execution",
-              ).pipe(Effect.annotateLogs({ cause: Cause.die(error.cause) })),
+              ).pipe(Effect.annotateLogs({ cause: Cause.fail(error.cause) })),
             ),
             Effect.annotateLogs({ cellId: extractCellIdFromCellMessage(msg) }),
           ),
