@@ -8,10 +8,14 @@ import { type MarimoNotebookCell, MarimoNotebookDocument } from "../schemas.ts";
 import { Constants } from "../services/Constants.ts";
 import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../utils/extractExecuteCodeRequest.ts";
-import { extractPythonError } from "../utils/extractPythonError.ts";
+import {
+  extractModuleShadowingError,
+  extractPythonError,
+} from "../utils/extractPythonError.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
 import { installPackages } from "../utils/installPackages.ts";
+import { isProblematicFilename } from "../utils/validateNotebookFilename.ts";
 import { Config } from "./Config.ts";
 import { EnvironmentValidator } from "./EnvironmentValidator.ts";
 import { LanguageClient } from "./LanguageClient.ts";
@@ -73,6 +77,15 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                 }
 
                 const notebook = MarimoNotebookDocument.from(rawNotebook);
+
+                const validation = isProblematicFilename(rawNotebook.uri);
+                if (validation.problematic) {
+                  yield* code.window.showErrorMessage(validation.message, {
+                    modal: true,
+                  });
+                  return;
+                }
+
                 const validEnv = yield* validator.validate(options.env);
 
                 yield* marimo.executeCommand({
@@ -103,6 +116,15 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                         command: error.command.command,
                       }),
                     );
+                    const shadowError = extractModuleShadowingError(
+                      error.cause,
+                    );
+                    if (shadowError) {
+                      yield* code.window.showErrorMessage(shadowError, {
+                        modal: true,
+                      });
+                      return;
+                    }
                     const detail = extractPythonError(error.cause);
                     yield* code.window.showErrorMessage(
                       detail

@@ -3,6 +3,7 @@ import { Cause, Effect, flow, Option } from "effect";
 import { Telemetry } from "../services/Telemetry.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
+import { isProblematicFilename } from "../utils/validateNotebookFilename.ts";
 
 export const newMarimoNotebook = Effect.fn("command.newMarimoNotebook")(
   function* () {
@@ -14,6 +15,12 @@ export const newMarimoNotebook = Effect.fn("command.newMarimoNotebook")(
     });
 
     if (Option.isNone(uri)) {
+      return;
+    }
+
+    const validation = isProblematicFilename(uri.value);
+    if (validation.problematic) {
+      yield* code.window.showErrorMessage(validation.message, { modal: true });
       return;
     }
 

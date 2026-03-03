@@ -32,6 +32,40 @@ export function extractPythonError(cause: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Detect module-shadowing errors from Python's own error messages.
+ * Python includes "(consider renaming '/path/to/file.py' ...)" when a local
+ * file shadows a module. We extract and surface this as a user-friendly message.
+ */
+export function extractModuleShadowingError(
+  cause: unknown,
+): string | undefined {
+  const text = extractErrorText(cause);
+  if (!text) return undefined;
+
+  const match = /\(consider renaming '([^']+)'/i.exec(text);
+  if (match) {
+    const filePath = match[1];
+    const fileName = filePath.split("/").pop() ?? filePath;
+    return `A file in your project named '${fileName}' is shadowing a Python module. Consider renaming it.`;
+  }
+
+  return undefined;
+}
+
+/** Walk the cause chain and return the first non-empty error message. */
+function extractErrorText(cause: unknown): string | undefined {
+  if (cause && typeof cause === "object" && hasErrorCause(cause)) {
+    return cause.cause.message;
+  }
+  if (cause instanceof Error && cause.message) return cause.message;
+  return undefined;
+}
+
+function hasErrorCause(value: object): value is { cause: Error } {
+  return "cause" in value && value.cause instanceof Error;
+}
+
 /** Find the last Python exception line (e.g. "ImportError: ...") in a traceback string. */
 function extractLastException(text: string): string | undefined {
   const lines = text.split("\n");
