@@ -3,7 +3,7 @@ import { NodeContext } from "@effect/platform-node";
 import type { PlatformError } from "@effect/platform/Error";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Data, Effect, type ParseResult, Schema } from "effect";
+import { Data, Effect, type ParseResult, Schema, Stream, String } from "effect";
 
 import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
 import { SemVerFromString } from "../schemas.ts";
@@ -22,6 +22,8 @@ class EnvironmentInspectionError extends Data.TaggedError(
     | PlatformError
     | ParseResult.ParseError
     | InvalidExecutableError;
+  readonly stdout?: string;
+  readonly stderr?: string;
 }> {}
 
 class EnvironmentRequirementError extends Data.TaggedError(
@@ -62,28 +64,64 @@ export class EnvironmentValidator extends Effect.Service<EnvironmentValidator>()
             env.path,
             "-c",
             `\
-import json
+import json, sys, io
+
+# Redirect stdout during imports so that noisy packages
+# (e.g. those that print warnings on import) don't pollute
+# the JSON we emit.
+_real_stdout = sys.stdout
+sys.stdout = io.StringIO()
 
 packages = []
 
 try:
     import marimo
     packages.append({"name":"marimo","version":marimo.__version__})
-except ImportError:
+except Exception:
     packages.append({"name":"marimo","version":None})
-    pass
 
 try:
     import zmq
     packages.append({"name":"pyzmq","version":zmq.__version__})
-except ImportError:
+except Exception:
     packages.append({"name":"pyzmq","version":None})
-    pass
 
-print(json.dumps(packages))`,
+# Restore stdout and emit the result
+sys.stdout = _real_stdout
+print(json.dumps(packages), flush=True)`,
           ).pipe(
-            Command.string,
-            Effect.andThen(Schema.decodeUnknown(Schema.parseJson(EnvCheck))),
+            Command.start,
+            Effect.flatMap((process) =>
+              Effect.all(
+                [
+                  process.exitCode,
+                  collectString(process.stdout),
+                  collectString(process.stderr),
+                ],
+                { concurrency: 3 },
+              ),
+            ),
+            Effect.scoped,
+            Effect.andThen(([exitCode, stdout, stderr]) => {
+              if (exitCode !== 0) {
+                return Effect.fail(
+                  new EnvironmentInspectionError({ env, stdout, stderr }),
+                );
+              }
+              return Schema.decodeUnknown(Schema.parseJson(EnvCheck))(
+                stdout,
+              ).pipe(
+                Effect.catchAll(
+                  (cause) =>
+                    new EnvironmentInspectionError({
+                      env,
+                      cause,
+                      stdout,
+                      stderr,
+                    }),
+                ),
+              );
+            }),
             Effect.catchTag(
               "SystemError",
               Effect.fnUntraced(function* (error) {
@@ -93,8 +131,19 @@ print(json.dumps(packages))`,
                   : new InvalidExecutableError({ env });
               }),
             ),
-            Effect.catchAll(
-              (cause) => new EnvironmentInspectionError({ env, cause }),
+            Effect.catchTag(
+              "BadArgument",
+              Effect.fnUntraced(function* (error) {
+                const exists = yield* fs.exists(env.path);
+                return yield* exists
+                  ? error
+                  : new InvalidExecutableError({ env });
+              }),
+            ),
+            Effect.catchAll((cause) =>
+              cause._tag === "EnvironmentInspectionError"
+                ? cause
+                : new EnvironmentInspectionError({ env, cause }),
             ),
             Effect.provideService(CommandExecutor.CommandExecutor, executor),
           );
@@ -150,3 +199,13 @@ type RequirementDiagnostic =
       currentVersion: semver.SemVer;
       requiredVersion: semver.SemVer;
     };
+
+/** Collect a stream of Uint8Array chunks into a single string. */
+function collectString<E, R>(
+  stream: Stream.Stream<Uint8Array, E, R>,
+): Effect.Effect<string, E, R> {
+  return stream.pipe(
+    Stream.decodeText(),
+    Stream.runFold(String.empty, String.concat),
+  );
+}

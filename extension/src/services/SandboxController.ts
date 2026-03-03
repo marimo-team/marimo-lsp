@@ -11,6 +11,7 @@ import {
 } from "../schemas.ts";
 import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../utils/extractExecuteCodeRequest.ts";
+import { extractPythonError } from "../utils/extractPythonError.ts";
 import { getVenvPythonPath } from "../utils/getVenvPythonPath.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
@@ -132,9 +133,11 @@ export class SandboxController extends Effect.Service<SandboxController>()(
                 { channel: uv.channel },
               ),
             ),
-            Effect.catchTag("ExecuteCommandError", () =>
+            Effect.catchTag("ExecuteCommandError", (error) =>
               showErrorAndPromptLogs(
-                "Failed to communicate with marimo language server.",
+                extractPythonError(error.cause)
+                  ? `Failed to execute marimo command:\n\n${extractPythonError(error.cause)}`
+                  : "Failed to communicate with marimo language server.",
                 { channel: client.channel },
               ),
             ),
