@@ -6,20 +6,18 @@ export class Constants extends Effect.Service<Constants>()("Constants", {
   dependencies: [Config.Default],
   effect: Effect.gen(function* () {
     const config = yield* Config;
-    const useManagedLanguageFeatures =
-      yield* config.getManagedLanguageFeaturesEnabled();
+    const languageFeaturesMode = yield* config.getLanguageFeaturesMode();
 
     const constants = {
       LanguageId: {
-        Python: useManagedLanguageFeatures ? "mo-python" : "python",
+        Python: languageFeaturesMode === "external" ? "python" : "mo-python",
         Sql: "sql",
         Markdown: "markdown",
       } as const,
     };
 
     yield* Effect.logDebug(
-      "Managed Language Features: " +
-        (useManagedLanguageFeatures ? "Enabled" : "Disabled"),
+      `Language Features Mode: ${languageFeaturesMode}`,
     ).pipe(Effect.annotateLogs({ constants }));
 
     return constants;

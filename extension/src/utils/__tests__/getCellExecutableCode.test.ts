@@ -81,7 +81,7 @@ describe("getCellExecutableCode", () => {
       const { LanguageId } = yield* Constants;
 
       const pythonCode = "x = 1 + 2";
-      const cell = createMockCell(notebookUri, "python", pythonCode, {
+      const cell = createMockCell(notebookUri, LanguageId.Python, pythonCode, {
         stableId: "test-cell-id",
       });
 

@@ -94,11 +94,28 @@
           "default": true,
           "description": "Anonymous usage data. This helps us prioritize features for the marimo VSCode extension."
         },
+        "marimo.languageFeatures": {
+          "type": "string",
+          "enum": [
+            "managed",
+            "external",
+            "none"
+          ],
+          "default": "none",
+          "enumDescriptions": [
+            "marimo manages Python language features (ty + Ruff). Cells use the `mo-python` language ID to prevent conflicts with external servers.",
+            "Cells use the standard `python` language ID so external language servers (Pylance, pyright, etc.) can attach. marimo's managed ty and Ruff servers are not started.",
+            "No language features at all. Cells use `mo-python` to prevent external servers from attaching, and marimo's managed servers are not started."
+          ],
+          "markdownDescription": "Controls how Python language features are provided for marimo notebook cells.",
+          "scope": "resource"
+        },
         "marimo.disableManagedLanguageFeatures": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "Disable marimo's managed Python language features (completions, diagnostics, formatting). When enabled, notebook cells use the standard `python` language ID and rely on external language servers.",
-          "scope": "resource"
+          "scope": "resource",
+          "deprecationMessage": "Use `marimo.languageFeatures` instead. Set to \"external\" to use external language servers, or \"none\" to disable all language features."
         }
       }
     },
