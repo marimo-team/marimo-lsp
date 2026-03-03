@@ -15,6 +15,7 @@ import { extractPythonError } from "../utils/extractPythonError.ts";
 import { getVenvPythonPath } from "../utils/getVenvPythonPath.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
+import { isProblematicFilename } from "../utils/validateNotebookFilename.ts";
 import { Constants } from "./Constants.ts";
 import { LanguageClient } from "./LanguageClient.ts";
 import { OutputChannel } from "./OutputChannel.ts";
@@ -60,6 +61,14 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             }
 
             const notebook = MarimoNotebookDocument.from(rawNotebook);
+
+            const validation = isProblematicFilename(rawNotebook.uri);
+            if (validation.problematic) {
+              yield* code.window.showErrorMessage(validation.message, {
+                modal: true,
+              });
+              return;
+            }
 
             // sandboxing only works with titled (saved) notebooks
             if (notebook.isUntitled) {
@@ -133,14 +142,15 @@ export class SandboxController extends Effect.Service<SandboxController>()(
                 { channel: uv.channel },
               ),
             ),
-            Effect.catchTag("ExecuteCommandError", (error) =>
-              showErrorAndPromptLogs(
-                extractPythonError(error.cause)
-                  ? `Failed to execute marimo command:\n\n${extractPythonError(error.cause)}`
+            Effect.catchTag("ExecuteCommandError", (error) => {
+              const detail = extractPythonError(error.cause);
+              return showErrorAndPromptLogs(
+                Option.isSome(detail)
+                  ? `Failed to execute marimo command:\n\n${detail.value}`
                   : "Failed to communicate with marimo language server.",
                 { channel: client.channel },
-              ),
-            ),
+              );
+            }),
             Effect.catchTag("LanguageClientStartError", () =>
               showErrorAndPromptLogs(
                 "Failed to start marimo language server (marimo-lsp).",
