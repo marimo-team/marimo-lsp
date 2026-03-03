@@ -3,7 +3,7 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
-import { assert, expect, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Either, Layer, Schema } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
@@ -210,12 +210,10 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
     { timeout: 30_000 },
   );
 
-  // -- Edge cases for subprocess output parsing --
   // These tests use bash scripts as fake executables.
   // On Windows, child_process.spawn can only execute PE (.exe) files
   // directly, so we skip these tests there.
-
-  if (!isWindows) {
+  describe.skipIf(isWindows)("subprocess output parsing", () => {
     it.effect(
       "should fail with EnvironmentInspectionError when stdout is empty",
       Effect.fnUntraced(function* () {
@@ -392,7 +390,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
       }),
     );
-  }
+  });
 });
 
 /** Create an executable bash script that outputs specific stdout/stderr. */
