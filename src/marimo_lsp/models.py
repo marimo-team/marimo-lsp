@@ -91,6 +91,10 @@ class CloseSessionRequest(msgspec.Struct, rename="camel"):
     """A request to close the current session."""
 
 
+class ExportAsIpynbRequest(msgspec.Struct, rename="camel"):
+    """A request to export the notebook as ipynb."""
+
+
 class ExecuteScratchRequest(msgspec.Struct, rename="camel"):
     """Execute arbitrary Python code outside the dependency graph."""
 

@@ -57,6 +57,7 @@ type ListPackagesRequest = {};
 type DependencyTreeRequest = {};
 type GetConfigurationRequest = {};
 type CloseSessionRequest = {};
+type ExportAsIpynbRequest = {};
 
 interface ExecuteScratchRequest {
   code: string;
@@ -81,6 +82,7 @@ type MarimoApiMethodMap = {
   "close-session": NotebookScoped<CloseSessionRequest>;
   "execute-scratchpad": NotebookScoped<ExecuteScratchRequest>;
   "export-as-html": NotebookScoped<ExportAsHtmlRequest>;
+  "export-as-ipynb": NotebookScoped<ExportAsIpynbRequest>;
   interrupt: NotebookScoped<InterruptRequest>;
   // marimo-lsp API
   dap: NotebookScoped<DebugAdapterRequest>;
