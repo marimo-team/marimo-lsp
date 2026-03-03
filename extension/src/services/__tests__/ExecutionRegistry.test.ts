@@ -1018,3 +1018,138 @@ it.scoped(
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
+
+/**
+ * Creates a PythonController whose `createNotebookCellExecution` throws,
+ * simulating VS Code's "invalid cell" error when a cell is deleted.
+ */
+function makeThrowingController(): PythonController {
+  const inner: Omit<vscode.NotebookController, "dispose"> = {
+    id: "throwing-controller",
+    notebookType: NOTEBOOK_TYPE,
+    label: "throwing-controller",
+    supportedLanguages: undefined,
+    description: undefined,
+    detail: undefined,
+    supportsExecutionOrder: undefined,
+    executeHandler: () => {},
+    interruptHandler: undefined,
+    onDidChangeSelectedNotebooks: () => ({ dispose() {} }),
+    updateNotebookAffinity() {},
+    createNotebookCellExecution() {
+      throw new Error("invalid cell");
+    },
+  };
+  return new PythonController(inner, "/usr/bin/python3");
+}
+
+it.scoped(
+  "handles InvalidCellError when createNotebookCellExecution throws on queued",
+  Effect.fnUntraced(function* () {
+    const editor = TestVsCode.makeNotebookEditor(
+      "file:///test/notebook_mo.py",
+      {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: { stableId: "cell-1" },
+            },
+          ],
+        },
+      },
+    );
+
+    const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+    yield* Effect.gen(function* () {
+      const registry = yield* ExecutionRegistry;
+
+      const notebook = MarimoNotebookDocument.from(editor.notebook);
+      const cell = notebook.cellAt(0);
+      const cellId = Option.getOrThrow(cell.id);
+
+      yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
+      yield* TestClock.adjust("10 millis");
+
+      const controller = makeThrowingController();
+
+      // Should not throw — the InvalidCellError is caught and logged as warning
+      const message: CellOperationNotification = {
+        op: "cell-op",
+        cell_id: cellId,
+        status: "queued",
+        run_id: "test-run-id",
+      };
+
+      yield* registry.handleCellOperation(message, {
+        editor,
+        controller,
+      });
+
+      // If we get here, the error was handled gracefully
+      expect(true).toBe(true);
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.scoped(
+  "handles InvalidCellError on ephemeral execution for marimo error",
+  Effect.fnUntraced(function* () {
+    const editor = TestVsCode.makeNotebookEditor(
+      "file:///test/notebook_mo.py",
+      {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: { stableId: "cell-1" },
+            },
+          ],
+        },
+      },
+    );
+
+    const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+    yield* Effect.gen(function* () {
+      const registry = yield* ExecutionRegistry;
+
+      const notebook = MarimoNotebookDocument.from(editor.notebook);
+      const cell = notebook.cellAt(0);
+      const cellId = Option.getOrThrow(cell.id);
+
+      yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
+      yield* TestClock.adjust("10 millis");
+
+      const controller = makeThrowingController();
+
+      // Send an idle message with a marimo error output — this triggers the
+      // ephemeral execution path where createNotebookCellExecution is called
+      // without a prior queued message.
+      const message: CellOperationNotification = {
+        op: "cell-op",
+        cell_id: cellId,
+        status: "idle",
+        output: {
+          mimetype: "application/vnd.marimo+error",
+          channel: "marimo-error",
+          data: [{ type: "syntax", msg: "Invalid syntax" }],
+          timestamp: 0,
+        },
+      };
+
+      yield* registry.handleCellOperation(message, {
+        editor,
+        controller,
+      });
+
+      // If we get here, the error was handled gracefully
+      expect(true).toBe(true);
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);

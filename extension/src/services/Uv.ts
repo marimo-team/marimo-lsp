@@ -368,7 +368,9 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
             ],
             env: {
               UV_NO_CONFIG: "1",
-              UV_PYTHON: "3.10",
+              // We don't want to set UV_PYTHON here so it can find any valid python version
+              // otherwise it will fail when the user has a different python version installed.
+              // UV_PYTHON: "3.10",
               UV_DEFAULT_INDEX: "https://pypi.org/simple/",
               ...strategyToEnv[strategy],
             },

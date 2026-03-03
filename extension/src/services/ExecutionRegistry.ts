@@ -7,6 +7,7 @@ import type {
 } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
 import {
   Brand,
+  Cause,
   Data,
   Effect,
   String as EffectString,
@@ -35,6 +36,16 @@ import { CellStateManager } from "./CellStateManager.ts";
 import type { PythonController } from "./NotebookControllerFactory.ts";
 import type { SandboxController } from "./SandboxController.ts";
 import { VsCode } from "./VsCode.ts";
+
+/**
+ * Thrown when VS Code's `createNotebookCellExecution` fails because the cell
+ * is no longer part of the notebook (e.g., deleted between the time we looked
+ * it up and the time we tried to create an execution for it).
+ */
+export class InvalidCellError extends Data.TaggedError("InvalidCellError")<{
+  readonly cellId: NotebookCellId;
+  readonly cause: unknown;
+}> {}
 
 export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
   "ExecutionRegistry",
@@ -109,6 +120,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                 // Clear stale state when cell is queued for execution
                 yield* cellStateManager.clearCellStale(notebook.id, cellId);
 
+                // End any in-progress execution before creating a new one
                 yield* Ref.update(ref, (map) => {
                   const handle = HashMap.get(map, cellId).pipe(
                     Option.andThen((v) => v.pendingExecution),
@@ -117,19 +129,31 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                     Option.isSome(handle) &&
                     handle.value.kind !== "completed"
                   ) {
-                    // Need to clear existing
                     handle.value.end(true);
                   }
-                  const update = CellEntry.withExecution(
-                    cell,
-                    new PendingExecutionHandle({
-                      runId: Option.getOrThrow(extractRunId(msg)),
-                      inner:
-                        controller.createNotebookCellExecution(notebookCell),
-                    }),
-                  );
-                  return HashMap.set(map, cellId, update);
+                  return map;
                 });
+
+                // Create new execution — can fail if the cell was removed
+                const execution = yield* Effect.try({
+                  try: () =>
+                    controller.createNotebookCellExecution(notebookCell),
+                  catch: (cause) => new InvalidCellError({ cellId, cause }),
+                });
+
+                yield* Ref.update(ref, (map) =>
+                  HashMap.set(
+                    map,
+                    cellId,
+                    CellEntry.withExecution(
+                      cell,
+                      new PendingExecutionHandle({
+                        runId: Option.getOrThrow(extractRunId(msg)),
+                        inner: execution,
+                      }),
+                    ),
+                  ),
+                );
                 return;
               }
 
@@ -203,6 +227,11 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
             Effect.catchTag("NotebookCellNotFoundError", () =>
               Effect.logWarning("Notebook cell not found for cell operation"),
             ),
+            Effect.catchTag("InvalidCellError", (error) =>
+              Effect.logWarning(
+                "Cell is no longer valid, skipping execution",
+              ).pipe(Effect.annotateLogs({ cause: Cause.die(error.cause) })),
+            ),
             Effect.annotateLogs({ cellId: extractCellIdFromCellMessage(msg) }),
           ),
       };
@@ -258,7 +287,10 @@ class RunningExecutionHandle extends Data.TaggedClass(
     return Effect.tryPromise(() => this.inner.replaceOutput(outputs)).pipe(
       Effect.annotateLogs({ cellId }),
       Effect.catchAllCause((cause) =>
-        Effect.logError("Failed to update cell output").pipe(
+        // Race condition: execution may have been ended by a concurrent
+        // operation (e.g., a new queued message ending the old execution).
+        // This is expected and not an actionable error.
+        Effect.logWarning("Failed to update cell output").pipe(
           Effect.annotateLogs({ cause }),
         ),
       ),
@@ -372,8 +404,10 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
           MarimoNotebookDocument.from(deps.editor.notebook),
           cellId,
         );
-        const execution =
-          deps.controller.createNotebookCellExecution(notebookCell);
+        const execution = yield* Effect.try({
+          try: () => deps.controller.createNotebookCellExecution(notebookCell),
+          catch: (cause) => new InvalidCellError({ cellId, cause }),
+        });
 
         execution.start();
         const outputs = buildCellOutputs(
@@ -384,7 +418,7 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
         );
         yield* Effect.tryPromise(() => execution.replaceOutput(outputs)).pipe(
           Effect.catchAllCause((cause) =>
-            Effect.logError(
+            Effect.logWarning(
               "Failed to update cell output for ephemeral execution",
               cause,
             ),
@@ -414,7 +448,7 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
       })
       .pipe(
         Effect.catchAllCause((cause) =>
-          Effect.logError("Failed to update cell output").pipe(
+          Effect.logWarning("Failed to update cell output").pipe(
             Effect.annotateLogs({ cause }),
           ),
         ),

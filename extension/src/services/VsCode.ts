@@ -1,4 +1,5 @@
 import {
+  Cause,
   Data,
   Effect,
   Either,
@@ -296,6 +297,19 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
               ),
               Effect.catchAllCause(
                 Effect.fnUntraced(function* (cause) {
+                  // Skip logging for interruptions/cancellations (e.g., user
+                  // cancels a progress dialog, VS Code disposes resources
+                  // during kernel restart). These are expected and not errors.
+                  if (
+                    Cause.isInterruptedOnly(cause) ||
+                    [...Cause.defects(cause)].some(
+                      (defect: unknown) =>
+                        defect instanceof Error && defect.name === "Canceled",
+                    )
+                  ) {
+                    yield* PubSub.publish(commandPubSub, Either.left(command));
+                    return;
+                  }
                   yield* Effect.logError(cause);
                   yield* PubSub.publish(commandPubSub, Either.left(command));
                   yield* win.showWarningMessage(

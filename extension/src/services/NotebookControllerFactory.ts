@@ -8,6 +8,7 @@ import { type MarimoNotebookCell, MarimoNotebookDocument } from "../schemas.ts";
 import { Constants } from "../services/Constants.ts";
 import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../utils/extractExecuteCodeRequest.ts";
+import { extractPythonError } from "../utils/extractPythonError.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
 import { installPackages } from "../utils/installPackages.ts";
@@ -102,15 +103,23 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                         command: error.command.command,
                       }),
                     );
+                    const detail = extractPythonError(error.cause);
                     yield* code.window.showErrorMessage(
-                      "Failed to execute marimo command. Please check the logs for details.",
+                      detail
+                        ? `Failed to execute marimo command:\n\n${detail}`
+                        : "Failed to execute marimo command. Please check the logs for details.",
                       { modal: true },
                     );
                   }),
                   EnvironmentInspectionError: Effect.fnUntraced(
                     function* (error) {
                       yield* Effect.logError("Python venv check failed").pipe(
-                        Effect.annotateLogs({ cause: Cause.fail(error) }),
+                        Effect.annotateLogs({
+                          cause: Cause.fail(error),
+                          pythonPath: error.env.path,
+                          stdout: error.stdout,
+                          stderr: error.stderr,
+                        }),
                       );
 
                       if (error.cause?._tag === "InvalidExecutableError") {
@@ -119,9 +128,13 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                           { modal: true },
                         );
                       } else {
+                        const stderrSnippet = error.stderr
+                          ? `\n\nstderr:\n${truncate(error.stderr.trim(), 500)}`
+                          : "";
                         yield* code.window.showErrorMessage(
                           `Failed to check dependencies in ${formatControllerLabel(code, options.env)}.\n\n` +
-                            `Python path: ${error.env.path}`,
+                            `Python path: ${error.env.path}` +
+                            stderrSnippet,
                           { modal: true },
                         );
                       }
@@ -283,4 +296,11 @@ export class PythonController {
       this.#inner.updateNotebookAffinity(notebook, affinity);
     });
   }
+}
+
+function truncate(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength)}…`;
 }
