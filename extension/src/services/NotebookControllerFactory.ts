@@ -8,10 +8,7 @@ import { type MarimoNotebookCell, MarimoNotebookDocument } from "../schemas.ts";
 import { Constants } from "../services/Constants.ts";
 import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../utils/extractExecuteCodeRequest.ts";
-import {
-  extractModuleShadowingError,
-  extractPythonError,
-} from "../utils/extractPythonError.ts";
+import { extractPythonError } from "../utils/extractPythonError.ts";
 import { findVenvPath } from "../utils/findVenvPath.ts";
 import { formatControllerLabel } from "../utils/formatControllerLabel.ts";
 import { installPackages } from "../utils/installPackages.ts";
@@ -116,15 +113,6 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                         command: error.command.command,
                       }),
                     );
-                    const shadowError = extractModuleShadowingError(
-                      error.cause,
-                    );
-                    if (Option.isSome(shadowError)) {
-                      yield* code.window.showErrorMessage(shadowError.value, {
-                        modal: true,
-                      });
-                      return;
-                    }
                     const detail = extractPythonError(error.cause);
                     yield* code.window.showErrorMessage(
                       Option.isSome(detail)

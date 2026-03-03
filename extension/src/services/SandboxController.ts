@@ -11,10 +11,7 @@ import {
 } from "../schemas.ts";
 import { acquireDisposable } from "../utils/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../utils/extractExecuteCodeRequest.ts";
-import {
-  extractModuleShadowingError,
-  extractPythonError,
-} from "../utils/extractPythonError.ts";
+import { extractPythonError } from "../utils/extractPythonError.ts";
 import { getVenvPythonPath } from "../utils/getVenvPythonPath.ts";
 import { uvAddScriptSafe } from "../utils/installPackages.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
@@ -146,14 +143,6 @@ export class SandboxController extends Effect.Service<SandboxController>()(
               ),
             ),
             Effect.catchTag("ExecuteCommandError", (error) => {
-              const shadowError = extractModuleShadowingError(error.cause);
-
-              if (Option.isSome(shadowError)) {
-                return showErrorAndPromptLogs(shadowError.value, {
-                  channel: client.channel,
-                });
-              }
-
               const detail = extractPythonError(error.cause);
               return showErrorAndPromptLogs(
                 Option.isSome(detail)
