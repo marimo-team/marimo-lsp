@@ -114,10 +114,9 @@ export class HealthService extends Effect.Service<HealthService>()(
           lines.push("");
 
           // Python Language Server (ty) - only show if managed language features enabled
-          const managedLanguageFeaturesEnabled =
-            yield* config.getManagedLanguageFeaturesEnabled();
+          const languageFeaturesMode = yield* config.getLanguageFeaturesMode();
 
-          if (managedLanguageFeaturesEnabled) {
+          if (languageFeaturesMode === "managed") {
             lines.push("Python Language Server (ty):");
 
             TyLanguageServerStatus.$match(yield* tyLsp.getHealthStatus(), {
@@ -175,6 +174,7 @@ export class HealthService extends Effect.Service<HealthService>()(
           lines.push(
             `\tVersion: ${Option.getOrElse(extVersion, () => "unknown")} `,
           );
+          lines.push(`\tLanguage Features Mode: ${languageFeaturesMode} `);
           lines.push(`\tUV integration disabled: ${uvDisabled} `);
 
           lines.push("");

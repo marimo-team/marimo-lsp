@@ -2,6 +2,8 @@ import { Effect, Option } from "effect";
 
 import { VsCode } from "./VsCode.ts";
 
+export type LanguageFeaturesMode = "managed" | "external" | "none";
+
 /**
  * Provides access to the extension configuration settings.
  */
@@ -21,8 +23,8 @@ export class Config extends Effect.Service<Config>()("Config", {
         lsp: {
           executable: Effect.succeed(Option.none()),
         },
-        getManagedLanguageFeaturesEnabled() {
-          return Effect.succeed(false);
+        getLanguageFeaturesMode() {
+          return Effect.succeed("none" as LanguageFeaturesMode);
         },
       };
     }
@@ -60,11 +62,43 @@ export class Config extends Effect.Service<Config>()("Config", {
           });
         },
       },
-      getManagedLanguageFeaturesEnabled() {
+      getLanguageFeaturesMode() {
         return Effect.andThen(
           code.value.workspace.getConfiguration("marimo"),
-          (config) =>
-            !config.get<boolean>("disableManagedLanguageFeatures", false),
+          (config): LanguageFeaturesMode => {
+            // If the new setting was explicitly set, use it
+            const inspected =
+              config.inspect<LanguageFeaturesMode>("languageFeatures");
+            if (
+              inspected?.workspaceFolderValue !== undefined ||
+              inspected?.workspaceValue !== undefined ||
+              inspected?.globalValue !== undefined
+            ) {
+              return config.get<LanguageFeaturesMode>(
+                "languageFeatures",
+                "managed",
+              );
+            }
+
+            // Fall back to deprecated boolean
+            const inspectedOld = config.inspect<boolean>(
+              "disableManagedLanguageFeatures",
+            );
+            if (
+              inspectedOld?.workspaceFolderValue !== undefined ||
+              inspectedOld?.workspaceValue !== undefined ||
+              inspectedOld?.globalValue !== undefined
+            ) {
+              const disabled = config.get<boolean>(
+                "disableManagedLanguageFeatures",
+                false,
+              );
+              return disabled ? "external" : "managed";
+            }
+
+            // Neither setting explicitly set — default to "none"
+            return "none";
+          },
         );
       },
     };

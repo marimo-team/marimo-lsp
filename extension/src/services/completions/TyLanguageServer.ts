@@ -471,21 +471,20 @@ function createTyMiddleware(
 
 /**
  * Checks if the managed ty language server should be enabled.
- * Returns Some(FailedHealth) if disabled, None if enabled.
+ * Returns Some(reason) if disabled, None if enabled.
  */
 const getTyDisabledReason = Effect.fn(function* () {
   const config = yield* Config;
 
-  const managedFeaturesEnabled =
-    yield* config.getManagedLanguageFeaturesEnabled();
+  const mode = yield* config.getLanguageFeaturesMode();
 
-  if (!managedFeaturesEnabled) {
-    yield* Effect.logInfo(
-      "Managed language features are disabled. Not starting managed ty language server.",
-    );
-    return Option.some(
-      "Managed language features are disabled in marimo settings.",
-    );
+  if (mode !== "managed") {
+    const reason =
+      mode === "external"
+        ? 'Language features mode is set to "external". Using external language servers instead of managed ty.'
+        : 'Language features mode is set to "none". All language features are disabled.';
+    yield* Effect.logInfo(`Not starting managed ty language server: ${reason}`);
+    return Option.some(reason);
   }
 
   return Option.none();

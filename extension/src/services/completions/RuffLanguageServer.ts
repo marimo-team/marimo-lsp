@@ -368,16 +368,17 @@ const getRuffDisabledReason = Effect.fn(function* () {
   const code = yield* VsCode;
   const config = yield* Config;
 
-  const managedFeaturesEnabled =
-    yield* config.getManagedLanguageFeaturesEnabled();
+  const mode = yield* config.getLanguageFeaturesMode();
 
-  if (!managedFeaturesEnabled) {
+  if (mode !== "managed") {
+    const reason =
+      mode === "external"
+        ? 'Language features mode is set to "external". Using external language servers instead of managed Ruff.'
+        : 'Language features mode is set to "none". All language features are disabled.';
     yield* Effect.logInfo(
-      "Managed language features are disabled. Not starting managed Ruff language server.",
+      `Not starting managed Ruff language server: ${reason}`,
     );
-    return Option.some(
-      "Managed language features are disabled in marimo settings.",
-    );
+    return Option.some(reason);
   }
 
   const ruffExtension = code.extensions.getExtension(RUFF_EXTENSION_ID);
