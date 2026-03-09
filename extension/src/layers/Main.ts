@@ -32,6 +32,7 @@ import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { PackagesService } from "../services/packages/PackagesService.ts";
+import { PositronDetection } from "../services/PositronDetection.ts";
 import type { PythonExtension } from "../services/PythonExtension.ts";
 import { SandboxController } from "../services/SandboxController.ts";
 import type { Sentry } from "../services/Sentry.ts";
@@ -53,6 +54,7 @@ import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
+import { PositronNotebookHandlerLive } from "./PositronNotebookHandler.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
 import { ReloadOnConfigChangeLive } from "./ReloadOnConfigChange.ts";
 
@@ -74,6 +76,7 @@ const MainLive = Layer.empty
     Layer.merge(CellStatusBarProviderLive),
     Layer.merge(CellMetadataBindingsLive),
     Layer.merge(ReloadOnConfigChangeLive),
+    Layer.merge(PositronNotebookHandlerLive),
   )
   .pipe(
     Layer.provideMerge(Api.Default),
@@ -97,6 +100,7 @@ const MainLive = Layer.empty
     Layer.provide(ControllerRegistry.Default),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(SandboxController.Default),
+    Layer.provide(PositronDetection.Default),
     Layer.provide(Uv.Default),
     Layer.provide(TreeView.Default),
     Layer.provide(StatusBar.Default),
