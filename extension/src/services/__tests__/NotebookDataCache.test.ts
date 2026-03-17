@@ -18,7 +18,7 @@ function makeCacheLayer(vscode: TestVsCode) {
 
 it.effect(
   "should gracefully handle file read errors when matching notebooks from bytes",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const deletedFileUri = Uri.file("/test/deleted_mo.py");
     const notebookContent = "x = 1";
 
@@ -69,7 +69,7 @@ it.effect(
 
 it.effect(
   "should skip deleted files and continue checking other notebooks in MRU list",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const deletedFileUri = Uri.file("/test/deleted_mo.py");
     const existingFileUri = Uri.file("/test/existing_mo.py");
     const notebookContent = "print('hello')";
@@ -137,7 +137,7 @@ it.effect(
 
 it.effect(
   "should return None when file exists but content does not match",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const existingFileUri = Uri.file("/test/existing_mo.py");
     const fileContent = "x = 1";
     const differentContent = "y = 2";

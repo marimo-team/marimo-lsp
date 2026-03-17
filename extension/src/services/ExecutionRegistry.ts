@@ -380,7 +380,7 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
       pendingExecution: Option.none(),
     });
   }
-  static maybeUpdateCellOutput = Effect.fnUntraced(function* (
+  static maybeUpdateCellOutput = Effect.fn(function* (
     cell: CellEntry,
     code: VsCode,
     deps?: {

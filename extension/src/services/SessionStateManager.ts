@@ -21,7 +21,7 @@ export class SessionStateManager extends Effect.Service<SessionStateManager>()(
       const controllerRegistry = yield* ControllerRegistry;
 
       // Helper to update context based on current state
-      const updateContext = Effect.fnUntraced(function* () {
+      const updateContext = Effect.fn(function* () {
         const activeNotebook = Option.filterMap(
           yield* code.window.getActiveNotebookEditor(),
           (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),

@@ -182,7 +182,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
               },
             }),
             Effect.catchAllCause(
-              Effect.fnUntraced(function* (cause) {
+              Effect.fn(function* (cause) {
                 yield* Effect.logError("Failed to interrupt execution").pipe(
                   Effect.annotateLogs({ cause }),
                 );
@@ -259,7 +259,7 @@ const findRequirements = (uv: Uv, notebook: MarimoNotebookDocument) =>
   }).pipe(
     Effect.catchTag(
       "UvMissingPep723MetadataError",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         yield* Effect.logDebug("No PEP 723 metadata.");
         return ["marimo", "pyzmq"];
       }),

@@ -14,7 +14,7 @@ import { NOTEBOOK_TYPE } from "../constants.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
 import { makeActivate } from "../layers/Main.ts";
 
-const withTestCtx = Effect.fnUntraced(function* () {
+const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
     Layer.provideMerge(vscode.layer),
@@ -35,7 +35,7 @@ const withTestCtx = Effect.fnUntraced(function* () {
 describe("extension.activate", () => {
   it.scoped(
     "should return a disposable",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const { activate } = yield* withTestCtx();
 
       const context = yield* getTestExtensionContext();
@@ -56,7 +56,7 @@ describe("extension.activate", () => {
 
   it.scoped(
     "should register contributions on activation",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const { vscode, activate } = yield* withTestCtx();
 
       // activate the extension

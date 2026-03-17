@@ -59,7 +59,7 @@ export class GitHubClient extends Effect.Service<GitHubClient>()(
         transformClient: flow(
           HttpClient.mapRequest(HttpClientRequest.acceptJson),
           HttpClient.mapRequestEffect(
-            Effect.fnUntraced(function* (request) {
+            Effect.fn(function* (request) {
               // lazily try to get session when making requests
               const session = yield* code.auth
                 .getSession("github", ["gist"], { createIfNone: true })

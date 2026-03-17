@@ -8,7 +8,7 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { MarimoFileDetectorLive } from "../MarimoFileDetector.ts";
 
-const withTestCtx = Effect.fnUntraced(function* () {
+const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
     Layer.provideMerge(MarimoFileDetectorLive),
@@ -19,7 +19,7 @@ const withTestCtx = Effect.fnUntraced(function* () {
 
 it.effect(
   "should be false on initialization without active editor",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     // build the layer
     yield* Effect.provide(Effect.void, ctx.layer);
@@ -93,7 +93,7 @@ if __name__ == "__main__":
   ],
 ] as const)(
   "should be true on initialization with active editor: %s",
-  Effect.fnUntraced(function* ([_, pythonCode]) {
+  Effect.fn(function* ([_, pythonCode]) {
     const ctx = yield* withTestCtx();
 
     const editor = createTestTextEditor(
@@ -116,7 +116,7 @@ if __name__ == "__main__":
 
 it.effect(
   "should set context to true for valid marimo notebook",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     const pythonCode = `import marimo
 
@@ -227,7 +227,7 @@ my_app = marimo.App()
   ],
 ] as const)(
   "should set context to false for non-marimo Python files: %s",
-  Effect.fnUntraced(function* ([_, pythonCode]) {
+  Effect.fn(function* ([_, pythonCode]) {
     const ctx = yield* withTestCtx();
     const editor = createTestTextEditor(
       createTestTextDocument("/test/notebook.py", "python", pythonCode),

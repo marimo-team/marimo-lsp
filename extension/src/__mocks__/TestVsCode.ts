@@ -1312,7 +1312,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     return PubSub.publish(this.documentOpenedPubSub, doc);
   }
 
-  static make = Effect.fnUntraced(function* (
+  static make = Effect.fn(function* (
     options: {
       initialDocuments?: Array<vscode.NotebookDocument>;
       version?: string;

@@ -235,7 +235,7 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
     });
 
     // Helper to rebuild the datasources list from current state
-    const refreshDatasources = Effect.fnUntraced(function* () {
+    const refreshDatasources = Effect.fn(function* () {
       const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
 
       yield* Effect.logTrace("Refreshing datasources").pipe(
@@ -379,7 +379,7 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
     yield* Effect.forkScoped(
       datasourcesService.streamConnectionsChanges().pipe(
         Stream.mapEffect(
-          Effect.fnUntraced(function* (_connectionsMap) {
+          Effect.fn(function* (_connectionsMap) {
             yield* refreshDatasources();
           }),
         ),
@@ -391,7 +391,7 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
     yield* Effect.forkScoped(
       datasourcesService.streamDatasetsChanges().pipe(
         Stream.mapEffect(
-          Effect.fnUntraced(function* (_datasetsMap) {
+          Effect.fn(function* (_datasetsMap) {
             yield* refreshDatasources();
           }),
         ),

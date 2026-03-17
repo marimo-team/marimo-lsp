@@ -36,7 +36,7 @@ const TestLanguageClientMock = Layer.succeed(
   }),
 );
 
-const withTestCtx = Effect.fnUntraced(function* (
+const withTestCtx = Effect.fn(function* (
   options: Parameters<(typeof TestVsCode)["make"]>[0] = {},
 ) {
   const vscode = yield* TestVsCode.make(options);
@@ -85,7 +85,7 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles stdout output",
 
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
@@ -110,7 +110,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles stderr output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
@@ -136,7 +136,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles multiple console outputs",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
@@ -174,7 +174,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles marimo error output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
@@ -203,7 +203,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles HTML output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode;
@@ -226,7 +226,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles JSON output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
@@ -249,7 +249,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles mixed output and console streams",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode;
@@ -286,7 +286,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles stdin output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
@@ -312,7 +312,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles empty state",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
@@ -328,7 +328,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles multiple errors in marimo error output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
@@ -362,7 +362,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles multiple stderr errors",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
@@ -400,7 +400,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles stdout + stderr + output together",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
@@ -444,7 +444,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles application/vnd.marimo+traceback output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
@@ -467,7 +467,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "filters out empty text/plain stdout output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const state: CellRuntimeState = {
@@ -493,7 +493,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "filters out empty text/plain stderr output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const state: CellRuntimeState = {
@@ -519,7 +519,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "filters out empty traceback output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const state: CellRuntimeState = {
@@ -542,7 +542,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "filters out null output data",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const state: CellRuntimeState = {
@@ -565,7 +565,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "filters out undefined output data",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const state: CellRuntimeState = {
@@ -588,7 +588,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles mix of empty and non-empty console outputs",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
@@ -631,7 +631,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles null output object",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const state: CellRuntimeState = {
@@ -650,7 +650,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles empty marimo error data array",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
@@ -673,7 +673,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "preserves whitespace-only output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
@@ -698,7 +698,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles numeric zero output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
@@ -721,7 +721,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles boolean false output",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
@@ -744,7 +744,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles media channel in console outputs",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
@@ -769,7 +769,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "ignores output/marimo-error/pdb channels in console outputs",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
@@ -813,7 +813,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "separates console outputs from main output correctly",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
@@ -845,7 +845,7 @@ describe("buildCellOutputs", () => {
 
   it.effect(
     "handles media channel with stdout in console outputs",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
@@ -878,7 +878,7 @@ describe("buildCellOutputs", () => {
 
 it.scoped(
   "marks cell as stale when message has staleInputs",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(
       "file:///test/notebook_mo.py",
       {
@@ -951,7 +951,7 @@ it.scoped(
 
 it.scoped(
   "clears stale state when cell is queued for execution",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
 
     yield* Effect.gen(function* () {
@@ -1045,7 +1045,7 @@ function makeThrowingController(): PythonController {
 
 it.scoped(
   "handles InvalidCellError when createNotebookCellExecution throws on queued",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(
       "file:///test/notebook_mo.py",
       {
@@ -1097,7 +1097,7 @@ it.scoped(
 
 it.scoped(
   "handles InvalidCellError on ephemeral execution for marimo error",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(
       "file:///test/notebook_mo.py",
       {

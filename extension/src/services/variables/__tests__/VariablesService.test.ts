@@ -47,7 +47,7 @@ function createMockVariableValuesOp(
 
 it.effect(
   "should return None when no variables exist for a notebook",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer } = yield* withTestCtx();
 
     const result = yield* Effect.gen(function* () {
@@ -67,7 +67,7 @@ it.effect(
 
 it.effect(
   "should update and retrieve variable declarations",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer } = yield* withTestCtx();
 
     const variables = yield* Effect.gen(function* () {
@@ -95,7 +95,7 @@ it.effect(
 
 it.effect(
   "should update and retrieve variable values",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer } = yield* withTestCtx();
 
     const values = yield* Effect.gen(function* () {
@@ -123,7 +123,7 @@ it.effect(
 
 it.effect(
   "should get all variable data for a notebook",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer } = yield* withTestCtx();
 
     const allData = yield* Effect.gen(function* () {
@@ -154,7 +154,7 @@ it.effect(
 
 it.effect(
   "should handle multiple notebooks independently",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer } = yield* withTestCtx();
 
     const result = yield* Effect.gen(function* () {
@@ -189,7 +189,7 @@ it.effect(
 
 it.effect(
   "should clear all data for a notebook",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer } = yield* withTestCtx();
 
     const result = yield* Effect.gen(function* () {
@@ -235,7 +235,7 @@ it.effect(
 
 it.effect(
   "should stream variable declaration changes",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer } = yield* withTestCtx();
 
     const count = yield* Effect.gen(function* () {
@@ -292,7 +292,7 @@ it.effect(
 
 it.effect(
   "should stream variable value changes",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer } = yield* withTestCtx();
 
     const count = yield* Effect.gen(function* () {
@@ -336,7 +336,7 @@ it.effect(
 
 it.effect(
   "should preserve variable values when updating variable declarations",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer } = yield* withTestCtx();
 
     const values = yield* Effect.gen(function* () {

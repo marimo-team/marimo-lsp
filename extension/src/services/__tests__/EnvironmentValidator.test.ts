@@ -47,7 +47,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
   it.effect(
     "should build",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const api = yield* EnvironmentValidator;
       expect(api).toBeDefined();
     }),
@@ -55,7 +55,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
   it.effect(
     "should fail with missing marimo",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const uv = yield* Uv;
       const validator = yield* EnvironmentValidator;
       const tmpdir = yield* TempDir;
@@ -91,7 +91,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
   it.effect(
     "should fail with missing pyzmq",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const uv = yield* Uv;
       const validator = yield* EnvironmentValidator;
       const tmpdir = yield* TempDir;
@@ -125,7 +125,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
   it.effect(
     "Should fail with outdated marimo",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const uv = yield* Uv;
       const validator = yield* EnvironmentValidator;
       const tmpdir = yield* TempDir;
@@ -169,7 +169,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
   it.effect(
     "should succeed with marimo and pyzmq installed",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const uv = yield* Uv;
       const validator = yield* EnvironmentValidator;
       const tmpdir = yield* TempDir;
@@ -192,7 +192,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
   it.effect(
     "should fail for no python interpreter",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const validator = yield* EnvironmentValidator;
       const tmpdir = yield* TempDir;
 
@@ -216,7 +216,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   describe.skipIf(isWindows)("subprocess output parsing", () => {
     it.effect(
       "should fail with EnvironmentInspectionError when stdout is empty",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
         const tmpdir = yield* TempDir;
         const script = makeFakeExecutable(tmpdir.path, "empty-stdout", {
@@ -235,7 +235,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
     it.effect(
       "should fail with EnvironmentInspectionError when stdout is not JSON",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
         const tmpdir = yield* TempDir;
         const script = makeFakeExecutable(tmpdir.path, "non-json", {
@@ -258,7 +258,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
     it.effect(
       "should fail with EnvironmentInspectionError on non-zero exit code",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
         const tmpdir = yield* TempDir;
         const script = makeFakeExecutable(tmpdir.path, "exit-1", {
@@ -282,7 +282,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
     it.effect(
       "should fail with EnvironmentInspectionError on truncated JSON",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
         const tmpdir = yield* TempDir;
         const script = makeFakeExecutable(tmpdir.path, "truncated-json", {
@@ -301,7 +301,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
     it.effect(
       "should fail with EnvironmentInspectionError on wrong JSON shape",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
         const tmpdir = yield* TempDir;
         const script = makeFakeExecutable(tmpdir.path, "wrong-shape", {
@@ -320,7 +320,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
     it.effect(
       "should handle JSON with extra whitespace/newlines",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
         const tmpdir = yield* TempDir;
         const json = JSON.stringify([
@@ -343,7 +343,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
     it.effect(
       "should treat null versions as missing packages",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
         const tmpdir = yield* TempDir;
         const json = JSON.stringify([
@@ -373,7 +373,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
     it.effect(
       "should fail with EnvironmentInspectionError when stderr has content but exit code 0 and empty stdout",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
         const tmpdir = yield* TempDir;
         const script = makeFakeExecutable(tmpdir.path, "stderr-only", {
@@ -422,7 +422,7 @@ const decodeSemVer = Schema.decodeUnknownEither(SemVerFromString);
 
 it.effect(
   "SemVerFromString: parses standard semver",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     yield* Effect.void;
     const result = decodeSemVer("1.2.3");
     assert(Either.isRight(result));
@@ -432,7 +432,7 @@ it.effect(
 
 it.effect(
   "SemVerFromString: parses two-part version (PyPI style)",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     yield* Effect.void;
     const result = decodeSemVer("26.2");
     assert(Either.isRight(result));
@@ -442,7 +442,7 @@ it.effect(
 
 it.effect(
   "SemVerFromString: parses version with prerelease suffix",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     yield* Effect.void;
     const result = decodeSemVer("0.21.0-rc1");
     assert(Either.isRight(result));
@@ -452,7 +452,7 @@ it.effect(
 
 it.effect(
   "SemVerFromString: fails on garbage input",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     yield* Effect.void;
     const result = decodeSemVer("not-a-version");
     assert(Either.isLeft(result));
@@ -461,7 +461,7 @@ it.effect(
 
 it.effect(
   "SemVerFromString: fails on empty string",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     yield* Effect.void;
     const result = decodeSemVer("");
     assert(Either.isLeft(result));

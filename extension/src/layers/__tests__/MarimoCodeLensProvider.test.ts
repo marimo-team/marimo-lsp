@@ -97,7 +97,7 @@ describe("findMarimoAppLine", () => {
 // ============================================================================
 
 describe("MarimoCodeLensProviderLive", () => {
-  const withTestCtx = Effect.fnUntraced(function* () {
+  const withTestCtx = Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
     const layer = Layer.empty.pipe(
       Layer.provideMerge(MarimoCodeLensProviderLive),
@@ -108,7 +108,7 @@ describe("MarimoCodeLensProviderLive", () => {
 
   it.effect(
     "registers CodeLens provider successfully",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       yield* Effect.provide(Effect.void, ctx.layer);
       // If we get here without errors, the provider was registered successfully
@@ -118,7 +118,7 @@ describe("MarimoCodeLensProviderLive", () => {
 
   it.effect(
     "happy path: provides CodeLens for valid marimo file",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const pythonCode = `import marimo
 

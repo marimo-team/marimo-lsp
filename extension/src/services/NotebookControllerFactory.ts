@@ -106,7 +106,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                 }),
                 // Known exceptions
                 Effect.catchTags({
-                  ExecuteCommandError: Effect.fnUntraced(function* (error) {
+                  ExecuteCommandError: Effect.fn(function* (error) {
                     yield* Effect.logError("Failed to execute command").pipe(
                       Effect.annotateLogs({
                         cause: Cause.fail(error),
@@ -121,101 +121,97 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                       { modal: true },
                     );
                   }),
-                  EnvironmentInspectionError: Effect.fnUntraced(
-                    function* (error) {
-                      yield* Effect.logError("Python venv check failed").pipe(
-                        Effect.annotateLogs({
-                          cause: Cause.fail(error),
-                          pythonPath: error.env.path,
-                          stdout: error.stdout,
-                          stderr: error.stderr,
-                        }),
-                      );
+                  EnvironmentInspectionError: Effect.fn(function* (error) {
+                    yield* Effect.logError("Python venv check failed").pipe(
+                      Effect.annotateLogs({
+                        cause: Cause.fail(error),
+                        pythonPath: error.env.path,
+                        stdout: error.stdout,
+                        stderr: error.stderr,
+                      }),
+                    );
 
-                      if (error.cause?._tag === "InvalidExecutableError") {
-                        yield* code.window.showErrorMessage(
-                          `Python executable does not exist for env: ${error.env.path}.`,
-                          { modal: true },
-                        );
-                      } else {
-                        const stderrSnippet = error.stderr
-                          ? `\n\nstderr:\n${truncate(error.stderr.trim(), 500)}`
-                          : "";
-                        yield* code.window.showErrorMessage(
-                          `Failed to check dependencies in ${formatControllerLabel(code, options.env)}.\n\n` +
-                            `Python path: ${error.env.path}` +
-                            stderrSnippet,
-                          { modal: true },
-                        );
-                      }
-                    },
-                  ),
-                  EnvironmentRequirementError: Effect.fnUntraced(
-                    function* (error) {
-                      yield* Effect.logWarning(
-                        "Environment requirements not met",
-                      ).pipe(
-                        Effect.annotateLogs({
-                          pythonPath: error.env.path,
-                          diagnostics: error.diagnostics,
-                        }),
+                    if (error.cause?._tag === "InvalidExecutableError") {
+                      yield* code.window.showErrorMessage(
+                        `Python executable does not exist for env: ${error.env.path}.`,
+                        { modal: true },
                       );
-                      const messages = error.diagnostics.map((d) => {
-                        switch (d.kind) {
-                          case "missing":
-                            return `• ${d.package}: not installed`;
-                          case "outdated":
-                            return `• ${d.package}: v${semver.format(d.currentVersion)} (requires >=v${semver.format(d.requiredVersion)})`;
-                          case "unknown":
-                            return `• ${d.package}: unable to detect`;
-                          default:
-                            return unreachable(d);
-                        }
+                    } else {
+                      const stderrSnippet = error.stderr
+                        ? `\n\nstderr:\n${truncate(error.stderr.trim(), 500)}`
+                        : "";
+                      yield* code.window.showErrorMessage(
+                        `Failed to check dependencies in ${formatControllerLabel(code, options.env)}.\n\n` +
+                          `Python path: ${error.env.path}` +
+                          stderrSnippet,
+                        { modal: true },
+                      );
+                    }
+                  }),
+                  EnvironmentRequirementError: Effect.fn(function* (error) {
+                    yield* Effect.logWarning(
+                      "Environment requirements not met",
+                    ).pipe(
+                      Effect.annotateLogs({
+                        pythonPath: error.env.path,
+                        diagnostics: error.diagnostics,
+                      }),
+                    );
+                    const messages = error.diagnostics.map((d) => {
+                      switch (d.kind) {
+                        case "missing":
+                          return `• ${d.package}: not installed`;
+                        case "outdated":
+                          return `• ${d.package}: v${semver.format(d.currentVersion)} (requires >=v${semver.format(d.requiredVersion)})`;
+                        case "unknown":
+                          return `• ${d.package}: unable to detect`;
+                        default:
+                          return unreachable(d);
+                      }
+                    });
+
+                    // Only prompt to install if uv is enabled and we have a venv
+                    // Non-venv environments (pixi, conda, bazel, global) don't have pyvenv.cfg
+                    // so uv can't install packages there
+                    const venv = findVenvPath(options.env.path);
+                    const canInstallWithUv =
+                      config.uv.enabled && Option.isSome(venv);
+
+                    if (canInstallWithUv) {
+                      const msg =
+                        `${formatControllerLabel(code, options.env)} cannot run the marimo kernel:\n\n` +
+                        messages.join("\n") +
+                        `\n\nPackages are missing or outdated.\n\nInstall with uv?`;
+
+                      const choice = yield* code.window.showErrorMessage(msg, {
+                        modal: true,
+                        items: ["Yes"],
                       });
-
-                      // Only prompt to install if uv is enabled and we have a venv
-                      // Non-venv environments (pixi, conda, bazel, global) don't have pyvenv.cfg
-                      // so uv can't install packages there
-                      const venv = findVenvPath(options.env.path);
-                      const canInstallWithUv =
-                        config.uv.enabled && Option.isSome(venv);
-
-                      if (canInstallWithUv) {
-                        const msg =
-                          `${formatControllerLabel(code, options.env)} cannot run the marimo kernel:\n\n` +
-                          messages.join("\n") +
-                          `\n\nPackages are missing or outdated.\n\nInstall with uv?`;
-
-                        const choice = yield* code.window.showErrorMessage(
-                          msg,
-                          { modal: true, items: ["Yes"] },
-                        );
-                        if (!choice) {
-                          return;
-                        }
-                        const packages = error.diagnostics.map((d) =>
-                          d.kind === "outdated"
-                            ? `${d.package}>=${semver.format(d.requiredVersion)}`
-                            : d.package,
-                        );
-                        yield* installPackages(packages, {
-                          venvPath: venv.value,
-                        }).pipe(
-                          Effect.provideService(VsCode, code),
-                          Effect.provideService(Uv, uv),
-                        );
-                      } else {
-                        const msg =
-                          `${formatControllerLabel(code, options.env)} cannot run the marimo kernel:\n\n` +
-                          messages.join("\n") +
-                          `\n\nPlease install or update the missing packages.`;
-
-                        yield* code.window.showErrorMessage(msg, {
-                          modal: true,
-                        });
+                      if (!choice) {
+                        return;
                       }
-                    },
-                  ),
+                      const packages = error.diagnostics.map((d) =>
+                        d.kind === "outdated"
+                          ? `${d.package}>=${semver.format(d.requiredVersion)}`
+                          : d.package,
+                      );
+                      yield* installPackages(packages, {
+                        venvPath: venv.value,
+                      }).pipe(
+                        Effect.provideService(VsCode, code),
+                        Effect.provideService(Uv, uv),
+                      );
+                    } else {
+                      const msg =
+                        `${formatControllerLabel(code, options.env)} cannot run the marimo kernel:\n\n` +
+                        messages.join("\n") +
+                        `\n\nPlease install or update the missing packages.`;
+
+                      yield* code.window.showErrorMessage(msg, {
+                        modal: true,
+                      });
+                    }
+                  }),
                 }),
               ),
             );

@@ -43,7 +43,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should create a new python venv",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
         const target = NodePath.join(tmpdir.path, ".venv");
@@ -57,7 +57,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should fail `uv add` without pyproject.toml",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
         const result = yield* Effect.either(
@@ -73,7 +73,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should `uv pip install` into venv",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
         const venv = NodePath.join(tmpdir.path, ".venv");
@@ -98,7 +98,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should `uv init` a new project",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
 
@@ -126,7 +126,7 @@ describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should fail with UvResolutionError on conflicting dependencies",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
 
@@ -158,7 +158,7 @@ print("This should fail to sync")
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should fail with UvMissingPep723MetadataError when script has no metadata",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
 
@@ -185,7 +185,7 @@ print("This script has no PEP 723 metadata")
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
       "should return absolute path from syncScript even if uv outputs relative path",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
 
@@ -239,7 +239,7 @@ print("hello")
     it.layer(Layer.fresh(UvLive))((it) => {
       it.scoped(
         "installs with default strategy",
-        Effect.fnUntraced(function* () {
+        Effect.fn(function* () {
           const uv = yield* Uv;
           const tmpdir = yield* TmpDir;
           const targetPath = NodePath.join(tmpdir.path, "default");
@@ -256,7 +256,7 @@ print("hello")
 
       it.scoped(
         "installs with native-tls strategy",
-        Effect.fnUntraced(function* () {
+        Effect.fn(function* () {
           const uv = yield* Uv;
           const tmpdir = yield* TmpDir;
           const targetPath = NodePath.join(tmpdir.path, "native-tls");
@@ -273,7 +273,7 @@ print("hello")
 
       it.scoped(
         "installs with offline strategy",
-        Effect.fnUntraced(function* () {
+        Effect.fn(function* () {
           const uv = yield* Uv;
           const tmpdir = yield* TmpDir;
           const targetPath = NodePath.join(tmpdir.path, "offline");
@@ -296,7 +296,7 @@ print("hello")
 
       it.scoped(
         "reinstalling with a new version replaces the binary",
-        Effect.fnUntraced(function* () {
+        Effect.fn(function* () {
           const uv = yield* Uv;
           const tmpdir = yield* TmpDir;
           const targetPath = NodePath.join(tmpdir.path, "upgrade");

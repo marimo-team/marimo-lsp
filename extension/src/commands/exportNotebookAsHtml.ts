@@ -52,7 +52,7 @@ export const exportNotebookAsHtml = Effect.fn("command.exportNotebookAsHtml")(
         title: "Exporting notebook as HTML",
         cancellable: false,
       },
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         // Call the LSP API to export the notebook
         const result = yield* client
           .executeCommand({

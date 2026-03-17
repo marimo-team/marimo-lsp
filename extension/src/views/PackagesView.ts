@@ -82,7 +82,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
     });
 
     // Helper to rebuild the package tree from current state
-    const refreshPackages = Effect.fnUntraced(function* () {
+    const refreshPackages = Effect.fn(function* () {
       const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
 
       yield* Effect.logDebug("Refreshing packages").pipe(
@@ -154,7 +154,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
     yield* Effect.forkScoped(
       packagesService.streamDependencyTreeChanges().pipe(
         Stream.mapEffect(
-          Effect.fnUntraced(function* (_treeMap) {
+          Effect.fn(function* (_treeMap) {
             yield* refreshPackages();
           }),
         ),

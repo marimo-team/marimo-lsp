@@ -94,7 +94,7 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     yield* Effect.forkScoped(
       queue.pipe(
         Stream.runForEach(
-          Effect.fnUntraced(function* (result) {
+          Effect.fn(function* (result) {
             if (Either.isLeft(result)) {
               yield* telemetry.capture("executed_command", {
                 command: result.left,

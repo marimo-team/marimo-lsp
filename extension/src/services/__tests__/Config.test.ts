@@ -12,7 +12,7 @@ const ConfigLive = Layer.empty.pipe(
 it.layer(ConfigLive)("Config", (it) => {
   it.effect(
     "should build",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const api = yield* Config;
       expect(api).toBeDefined();
     }),

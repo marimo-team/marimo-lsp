@@ -100,7 +100,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
               title: "Restarting marimo-lsp",
               cancellable: true,
             },
-            Effect.fnUntraced(function* (progress) {
+            Effect.fn(function* (progress) {
               if (client.isRunning()) {
                 progress.report({ message: "Stopping..." });
                 yield* Effect.promise(() => client.stop());
@@ -109,7 +109,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
               yield* startClient().pipe(
                 Effect.catchTag(
                   "LanguageClientStartError",
-                  Effect.fnUntraced(function* (error) {
+                  Effect.fn(function* (error) {
                     const msg = "Failed to restart marimo-lsp.";
                     yield* Effect.logError(msg).pipe(
                       Effect.annotateLogs({ cause: Cause.fail(error) }),
@@ -123,7 +123,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
               progress.report({ message: "Done." });
             }),
           ),
-        executeCommand: Effect.fnUntraced(function* (cmd: MarimoCommand) {
+        executeCommand: Effect.fn(function* (cmd: MarimoCommand) {
           if (!client.isRunning()) {
             yield* startClient();
           }
@@ -164,7 +164,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
   },
 ) {}
 
-export const findLspExecutable = Effect.fnUntraced(function* (
+export const findLspExecutable = Effect.fn("findLspExecutable")(function* (
   uvBinary: string,
 ) {
   // Look for bundled wheel matching marimo_lsp-* pattern

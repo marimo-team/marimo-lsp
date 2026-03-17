@@ -50,7 +50,7 @@ def _():
   flow(
     Effect.catchTag(
       "FileSystemError",
-      Effect.fnUntraced(function* (error) {
+      Effect.fn(function* (error) {
         yield* Effect.logError("Failed to create notebook").pipe(
           Effect.annotateLogs({ cause: Cause.fail(error) }),
         );

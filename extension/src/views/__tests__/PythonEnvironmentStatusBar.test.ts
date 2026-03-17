@@ -54,7 +54,7 @@ const withTestCtx = Effect.gen(function* () {
 
 it.scoped(
   "should show status bar when marimo notebook is active",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx;
     yield* Effect.gen(function* () {
       const marimoEditor = TestVsCode.makeNotebookEditor(
@@ -73,7 +73,7 @@ it.scoped(
 
 it.scoped(
   "should hide status bar when Jupyter notebook becomes active",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx;
     yield* Effect.gen(function* () {
       // Start with marimo notebook active
@@ -104,7 +104,7 @@ it.scoped(
 
 it.scoped(
   "should hide status bar when no notebook is active",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx;
     yield* Effect.gen(function* () {
       // Start with marimo notebook active
@@ -128,7 +128,7 @@ it.scoped(
 
 it.scoped(
   "should hide status bar initially when no marimo notebook is open",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx;
     yield* Effect.gen(function* () {
       yield* TestClock.adjust("10 millis");

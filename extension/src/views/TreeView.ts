@@ -36,7 +36,7 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
        *
        * @param options - Configuration for the tree view
        */
-      createTreeDataProvider: Effect.fnUntraced(function* <T>(options: {
+      createTreeDataProvider: Effect.fn(function* <T>(options: {
         viewId: MarimoView;
         getChildren: (element?: T) => Effect.Effect<T[]>;
         getTreeItem: (element: T) => Effect.Effect<TreeItem>;
