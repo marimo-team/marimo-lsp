@@ -317,8 +317,23 @@ export class Uri implements vscode.Uri {
     return new Uri(scheme, authority, path, query, fragment);
   }
   toString(skipEncoding?: boolean): string {
-    if (skipEncoding !== undefined) {
-      throw new Error("skipEncoding parameter not supported in test mock");
+    if (skipEncoding) {
+      // Return the URI without percent-encoding (matches real VS Code behavior)
+      let result = "";
+      if (this.scheme) {
+        result += `${this.scheme}://`;
+      }
+      if (this.authority) {
+        result += this.authority;
+      }
+      result += this.path;
+      if (this.query) {
+        result += `?${this.query}`;
+      }
+      if (this.fragment) {
+        result += `#${this.fragment}`;
+      }
+      return result;
     }
     const url = new URL(this.scheme ? `${this.scheme}:` : "");
     url.protocol = this.scheme ? `${this.scheme}:` : "";
