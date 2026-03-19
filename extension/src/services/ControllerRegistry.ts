@@ -194,7 +194,7 @@ const updateNotebookAffinityEffect = Effect.fnUntraced(function* (options: {
   if (notebook.header.includes("/// script")) {
     yield* Effect.logDebug(
       "Setting affinity to sandbox controller (script header detected)",
-    ).pipe(Effect.annotateLogs({ notebookUri: notebook.uri.toString() }));
+    ).pipe(Effect.annotateLogs({ notebookUri: notebook.id }));
 
     // Prefer sandbox controller
     yield* sandboxController.updateNotebookAffinity(
@@ -214,7 +214,7 @@ const updateNotebookAffinityEffect = Effect.fnUntraced(function* (options: {
       "Setting affinity to venv controller (venv detected)",
     ).pipe(
       Effect.annotateLogs({
-        notebookUri: notebook.uri.toString(),
+        notebookUri: notebook.id,
         venvPath: venvPath.value,
       }),
     );
@@ -260,7 +260,7 @@ const trackControllerSelections = (
         yield* Effect.logDebug("Updated controller for notebook").pipe(
           Effect.annotateLogs({
             controllerId: controller.id,
-            notebookUri: e.notebook.uri.toString(),
+            notebookUri: notebook.id,
           }),
         );
       }),

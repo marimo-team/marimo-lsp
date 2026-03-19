@@ -115,7 +115,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
               config.type = "marimo";
               config.name = config.name ?? "Debug Marimo";
               config.request = config.request ?? "launch";
-              config.notebookUri = notebook.value.uri.toString();
+              config.notebookUri = notebook.value.id;
               yield* Effect.logInfo("Configuration resolved").pipe(
                 Effect.annotateLogs({
                   notebookUri: config.notebookUri,
