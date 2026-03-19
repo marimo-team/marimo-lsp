@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pathlib
 from typing import TYPE_CHECKING, Any, cast
+from urllib.parse import unquote
 
 from marimo._ast.app import App, InternalApp
 from pygls.uris import to_fs_path
@@ -11,6 +12,7 @@ from pygls.uris import to_fs_path
 from marimo_lsp.utils import decode_marimo_cell_metadata
 
 if TYPE_CHECKING:
+    import lsprotocol.types as lsp
     from marimo._ast.cell import CellConfig
     from marimo._types.ids import CellId_t
     from pygls.lsp.server import LanguageServer
@@ -107,11 +109,33 @@ class LspAppFileManager:
         return None
 
 
+def _find_notebook_document(
+    workspace: Workspace, notebook_uri: str
+) -> lsp.NotebookDocument:
+    """Find a notebook document, handling percent-encoded URIs.
+
+    VS Code may percent-encode the Windows drive letter colon in file URIs
+    (e.g., ``file:///c%3A/...`` vs ``file:///c:/...``). This helper normalizes
+    both the lookup URI and the stored keys so the document is found regardless
+    of encoding.
+    """
+    doc = workspace.notebook_documents.get(notebook_uri)
+    if doc is not None:
+        return doc
+
+    normalized = unquote(notebook_uri)
+    for key, doc in workspace.notebook_documents.items():
+        if unquote(key) == normalized:
+            return doc
+
+    raise KeyError(notebook_uri)
+
+
 def sync_app_with_workspace(
     workspace: Workspace, notebook_uri: str, app: InternalApp | None
 ) -> InternalApp:
     """Sync workspace with InternalApp."""
-    notebook = workspace.notebook_documents[notebook_uri]
+    notebook = _find_notebook_document(workspace, notebook_uri)
 
     # lsp.LSPObject at runtime is just a dict...
     app_config = cast("dict", notebook.metadata or {})

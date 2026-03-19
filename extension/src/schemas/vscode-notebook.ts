@@ -270,7 +270,9 @@ export class MarimoNotebookDocument {
   }
 
   get id() {
-    return NotebookId(this.#raw.uri.toString());
+    // The LSP server keys notebook documents by the URI from notebookDocument/didOpen,
+    // which VS Code sends without percent-encoding. We should match that form here.
+    return NotebookId(this.#raw.uri.toString(/* skipEncoding */ true));
   }
 
   get header() {

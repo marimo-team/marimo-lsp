@@ -30,7 +30,7 @@ export const runStale = Effect.fn("command.runStale")(
     yield* Effect.logInfo("Running stale cells").pipe(
       Effect.annotateLogs({
         staleCount: staleCells.length,
-        notebook: notebook.value.uri.toString(),
+        notebook: notebook.value.id,
       }),
     );
 

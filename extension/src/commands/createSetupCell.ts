@@ -53,7 +53,7 @@ export const createSetupCell = Effect.fn(function* () {
 
   yield* Effect.logInfo("Created setup cell").pipe(
     Effect.annotateLogs({
-      notebook: notebook.value.uri.toString(),
+      notebook: notebook.value.id,
     }),
   );
 });
