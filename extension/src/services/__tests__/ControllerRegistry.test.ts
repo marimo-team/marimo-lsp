@@ -30,7 +30,7 @@ const TestLanguageClientMock = Layer.succeed(
   }),
 );
 
-const withTestCtx = Effect.fnUntraced(function* (
+const withTestCtx = Effect.fn(function* (
   options: { initialEnvs?: Array<py.ResolvedEnvironment> } = {},
 ) {
   const { initialEnvs = [] } = options;
@@ -52,7 +52,7 @@ const withTestCtx = Effect.fnUntraced(function* (
 
 it.effect(
   "should return None for active controller when no notebook is selected",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer } = yield* withTestCtx();
 
     const controller = yield* Effect.gen(function* () {
@@ -72,7 +72,7 @@ it.effect(
 
 it.effect(
   "should create controllers for initial python environments",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer } = yield* withTestCtx({
       initialEnvs: [
         TestPythonExtension.makeVenv("/home/user/.venv/bin/python"),
@@ -105,7 +105,7 @@ it.effect(
 
 it.effect(
   "should add controller when new python environment is added",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer, py } = yield* withTestCtx({
       initialEnvs: [TestPythonExtension.makeVenv("/usr/local/bin/python3.11")],
     });
@@ -153,7 +153,7 @@ it.effect(
 
 it.effect(
   "should remove controller when python environment is removed",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer, py } = yield* withTestCtx({
       initialEnvs: [
         TestPythonExtension.makeVenv("/usr/local/bin/python3.11"),
@@ -221,7 +221,7 @@ it.effect(
 
 it.effect(
   "should track controller selections for notebooks",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer, vscode } = yield* withTestCtx({
       initialEnvs: [
         TestPythonExtension.makeVenv("/usr/local/bin/python3.11"),
@@ -286,7 +286,7 @@ it.effect(
 
 it.effect(
   "should not remove controller when it's in use by a notebook",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer, py } = yield* withTestCtx({
       initialEnvs: [
         TestPythonExtension.makeVenv("/usr/local/bin/python3.11"),
@@ -345,7 +345,7 @@ it.effect(
 
 it.effect(
   "should handle multiple environment additions and removals",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer, py } = yield* withTestCtx({
       initialEnvs: [
         TestPythonExtension.makeVenv("/usr/local/bin/python3.11"),
@@ -483,7 +483,7 @@ it.effect(
 
 it.effect(
   "should update controller description when environment changes",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer, py } = yield* withTestCtx({
       initialEnvs: [TestPythonExtension.makeVenv("/usr/local/bin/python3.11")],
     });
@@ -532,7 +532,7 @@ it.effect(
 );
 it.effect(
   "should not set affinity when notebook has no script header or venv",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer, vscode } = yield* withTestCtx({
       initialEnvs: [TestPythonExtension.makeVenv("/usr/local/bin/python3.11")],
     });
@@ -564,7 +564,7 @@ it.effect(
 
 it.effect(
   "should handle opening multiple notebooks",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { layer, vscode } = yield* withTestCtx({
       initialEnvs: [TestPythonExtension.makeVenv("/usr/local/bin/python3.11")],
     });

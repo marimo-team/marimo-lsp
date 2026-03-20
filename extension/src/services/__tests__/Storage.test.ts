@@ -9,7 +9,7 @@ import {
   Storage,
 } from "../../services/Storage.ts";
 
-const withTestCtx = Effect.fnUntraced(function* (
+const withTestCtx = Effect.fn(function* (
   ctx: { globalState?: Memento; workspaceState?: Memento } = {},
 ) {
   const vscode = yield* TestVsCode.make();
@@ -34,7 +34,7 @@ const withTestCtx = Effect.fnUntraced(function* (
 
 it.effect(
   "should return Option.None when no entry",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { key, layer } = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const storage = yield* Storage;
@@ -46,7 +46,7 @@ it.effect(
 
 it.effect(
   "should fallback to default without updating storage",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { key, layer } = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const storage = yield* Storage;
@@ -82,7 +82,7 @@ it.effect(
 
 it.effect(
   "should encode value into the underlying store",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const { key, layer } = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const storage = yield* Storage;
@@ -119,7 +119,7 @@ it.effect(
 
 it.effect(
   "should replace existing value in the underlying store",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     // initial state
     const workspaceState = new Memento();
     yield* Effect.promise(() => workspaceState.update("key", { value: 2 }));
@@ -161,7 +161,7 @@ it.effect(
 
 it.effect(
   "should throw StorageDecodeError badly encoded value",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const workspaceState = new Memento();
     yield* Effect.promise(() => workspaceState.update("key", "blah"));
 

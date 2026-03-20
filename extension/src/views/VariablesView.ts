@@ -52,7 +52,7 @@ export const VariablesViewLive = Layer.scopedDiscard(
     });
 
     // Helper to rebuild the variables list from current state
-    const refreshVariables = Effect.fnUntraced(function* () {
+    const refreshVariables = Effect.fn(function* () {
       const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
 
       yield* Effect.logDebug("Refreshing variables").pipe(
@@ -125,7 +125,7 @@ export const VariablesViewLive = Layer.scopedDiscard(
     yield* Effect.forkScoped(
       variablesService.streamVariableValuesChanges().pipe(
         Stream.mapEffect(
-          Effect.fnUntraced(function* (valuesMap) {
+          Effect.fn(function* (valuesMap) {
             const activeNotebookUri =
               yield* editorRegistry.getActiveNotebookUri();
 

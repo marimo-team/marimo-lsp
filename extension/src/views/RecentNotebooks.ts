@@ -42,7 +42,7 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
       .pipe(
         Effect.catchTag(
           "StorageDecodeError",
-          Effect.fnUntraced(function* (error) {
+          Effect.fn(function* (error) {
             yield* Effect.logWarning(
               "Failed to decode recent notebooks from storage, using empty list",
               error.cause,
@@ -100,7 +100,7 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
     });
 
     // Helper to add a notebook to recent list
-    const addRecentNotebook = Effect.fnUntraced(function* (
+    const addRecentNotebook = Effect.fn(function* (
       uri: Uri,
       document: MarimoNotebookDocument,
     ) {
@@ -141,7 +141,7 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
     yield* Effect.forkScoped(
       code.window.activeNotebookEditorChanges().pipe(
         Stream.mapEffect(
-          Effect.fnUntraced(function* (maybeEditor) {
+          Effect.fn(function* (maybeEditor) {
             const notebook = maybeEditor.pipe(
               Option.flatMap((editor) =>
                 MarimoNotebookDocument.tryFrom(editor.notebook),

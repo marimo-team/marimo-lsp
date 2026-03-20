@@ -11,7 +11,7 @@ import {
 import type { CellMetadata } from "../../schemas.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
 
-const withTestCtx = Effect.fnUntraced(function* () {
+const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
     Layer.provideMerge(CellStatusBarProviderLive),
@@ -43,7 +43,7 @@ function createMockCell(uri: vscode.Uri, metadata: Partial<CellMetadata> = {}) {
 
 it.effect(
   "should register staleness provider",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       // Verify that registerNotebookCellStatusBarItemProvider was called
@@ -56,7 +56,7 @@ it.effect(
 
 it.effect(
   "should not show staleness for fresh cell",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const uri = notebookUri;
@@ -81,7 +81,7 @@ it.effect(
 
 it.effect(
   "should show staleness indicator for stale cell",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const uri = notebookUri;
@@ -114,7 +114,7 @@ it.effect(
 
 it.effect(
   "should not show name for default cell name",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const cell = createMockCell(notebookUri, {
@@ -132,7 +132,7 @@ it.effect(
 
 it.effect(
   "should show custom cell name",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const cell = createMockCell(notebookUri, {
@@ -157,7 +157,7 @@ it.effect(
 
 it.effect(
   "should show setup cell with gear icon",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const cell = createMockCell(notebookUri, {
@@ -183,7 +183,7 @@ it.effect(
 
 it.effect(
   "should handle cell with no metadata",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const cell = createMockCell(notebookUri);
@@ -201,7 +201,7 @@ it.effect(
 
 it.effect(
   "should provide change event emitter",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
@@ -217,7 +217,7 @@ it.effect(
 
 it.effect(
   "should handle both staleness and name simultaneously",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const cell = createMockCell(notebookUri, {

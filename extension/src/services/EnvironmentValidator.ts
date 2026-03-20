@@ -124,7 +124,7 @@ print(json.dumps(packages), flush=True)`,
             }),
             Effect.catchTag(
               "SystemError",
-              Effect.fnUntraced(function* (error) {
+              Effect.fn(function* (error) {
                 const exists = yield* fs.exists(env.path);
                 return yield* exists
                   ? error
@@ -133,7 +133,7 @@ print(json.dumps(packages), flush=True)`,
             ),
             Effect.catchTag(
               "BadArgument",
-              Effect.fnUntraced(function* (error) {
+              Effect.fn(function* (error) {
                 const exists = yield* fs.exists(env.path);
                 return yield* exists
                   ? error

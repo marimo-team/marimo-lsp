@@ -77,7 +77,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       yield* Effect.forkScoped(
         client.streamOf("marimo/operation").pipe(
           Stream.mapEffect(
-            Effect.fnUntraced(function* (msg) {
+            Effect.fn(function* (msg) {
               yield* Queue.offer(queue, msg);
             }),
           ),
@@ -96,7 +96,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
               }),
               Effect.withSpan("process-operation"),
               Effect.catchAllCause(
-                Effect.fnUntraced(function* (cause) {
+                Effect.fn(function* (cause) {
                   yield* Effect.logError(
                     "Failed to process marimo operation",
                   ).pipe(Effect.annotateLogs({ cause }));
@@ -116,7 +116,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       yield* Effect.forkScoped(
         renderer.messages().pipe(
           Stream.mapEffect(
-            Effect.fnUntraced(function* ({ editor, message }) {
+            Effect.fn(function* ({ editor, message }) {
               const notebook = MarimoNotebookDocument.from(editor.notebook);
               switch (message.command) {
                 case "update-ui-element": {

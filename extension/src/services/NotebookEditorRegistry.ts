@@ -23,7 +23,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
       yield* Effect.forkScoped(
         code.window.activeNotebookEditorChanges().pipe(
           Stream.mapEffect(
-            Effect.fnUntraced(function* (editor) {
+            Effect.fn(function* (editor) {
               const notebook = Option.filterMap(editor, (editor) =>
                 MarimoNotebookDocument.tryFrom(editor.notebook),
               );

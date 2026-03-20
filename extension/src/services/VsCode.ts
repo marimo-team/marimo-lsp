@@ -296,7 +296,7 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
                 PubSub.publish(commandPubSub, Either.right(command)),
               ),
               Effect.catchAllCause(
-                Effect.fnUntraced(function* (cause) {
+                Effect.fn(function* (cause) {
                   // Skip logging for interruptions/cancellations (e.g., user
                   // cancels a progress dialog, VS Code disposes resources
                   // during kernel restart). These are expected and not errors.

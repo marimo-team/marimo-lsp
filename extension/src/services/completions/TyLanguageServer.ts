@@ -185,7 +185,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
                 yield* sentry.value.setTag("ty.version", serverVersion);
               }
 
-              const updateRunningStatus = Effect.fnUntraced(function* () {
+              const updateRunningStatus = Effect.fn(function* () {
                 const activePath = yield* pyExt.getActiveEnvironmentPath();
                 const resolved = yield* pyExt.resolveEnvironment(activePath);
                 const pythonEnvironment = Option.map(resolved, (env) => ({
@@ -214,7 +214,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
                 pyExt.activeEnvironmentPathChanges().pipe(
                   Stream.debounce(Duration.seconds(2)),
                   Stream.runForEach(
-                    Effect.fnUntraced(function* (event) {
+                    Effect.fn(function* (event) {
                       yield* client
                         .restart(`Python environment changed to: ${event.path}`)
                         .pipe(
@@ -248,7 +248,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
          * This is useful after installing packages, as ty doesn't support
          * workspace/didChangeConfiguration.
          */
-        restart: Effect.fnUntraced(function* (reason: string) {
+        restart: Effect.fn(function* (reason: string) {
           const status = yield* Ref.get(statusRef);
           if (!TyLanguageServerStatus.$is("Running")(status)) {
             yield* Effect.logWarning(
@@ -387,7 +387,7 @@ function createTyMiddleware(
           const enrichedResponse = await runPromise(
             Effect.all(
               params.items.map(
-                Effect.fnUntraced(function* (param, index) {
+                Effect.fn(function* (param, index) {
                   const code = yield* VsCode;
                   const pythonExtension = yield* PythonExtension;
 

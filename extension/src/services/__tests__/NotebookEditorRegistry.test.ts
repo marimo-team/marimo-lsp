@@ -20,7 +20,7 @@ function makeRegistryLayer(vscode: TestVsCode) {
 
 it.effect(
   "should return None when no active notebook editor",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
 
     yield* Effect.provide(
@@ -40,7 +40,7 @@ it.effect(
 
 it.effect(
   "should track active notebook editor changes",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
 
     yield* Effect.provide(
@@ -96,7 +96,7 @@ it.effect(
 
 it.effect(
   "should track stream of active notebook editor changes",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
 
     yield* Effect.provide(

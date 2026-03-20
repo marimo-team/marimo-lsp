@@ -91,7 +91,7 @@ export class NotebookDataCache extends Effect.Service<NotebookDataCache>()(
       }
 
       return {
-        set: Effect.fnUntraced(function* (data: vscode.NotebookData) {
+        set: Effect.fn(function* (data: vscode.NotebookData) {
           const notebook = matchRecentNotebookFromData(data, recentlyEdited);
 
           if (Option.isNone(notebook)) {
@@ -104,7 +104,7 @@ export class NotebookDataCache extends Effect.Service<NotebookDataCache>()(
             Effect.annotateLogs({ notebookId: notebook.value.id }),
           );
         }),
-        get: Effect.fnUntraced(function* (bytes: Uint8Array) {
+        get: Effect.fn(function* (bytes: Uint8Array) {
           if (Option.isNone(code)) {
             yield* Effect.logDebug(
               "Cache lookup requires VsCode service, skipping",
@@ -189,30 +189,32 @@ const matchRecentNotebookFromData = (
   return Option.none();
 };
 
-const matchRecentNotebookFromBytes = Effect.fnUntraced(function* (
-  bytes: Uint8Array,
-  deps: {
-    code: VsCode;
-    recentlyEdited: MruList<NotebookId, MarimoNotebookDocument>;
+const matchRecentNotebookFromBytes = Effect.fn("matchRecentNotebookFromBytes")(
+  function* (
+    bytes: Uint8Array,
+    deps: {
+      code: VsCode;
+      recentlyEdited: MruList<NotebookId, MarimoNotebookDocument>;
+    },
+  ) {
+    const { code, recentlyEdited } = deps;
+    const incomingContent = new TextDecoder().decode(bytes);
+
+    for (const doc of recentlyEdited.take(5)) {
+      const fileBytes = yield* code.workspace.fs
+        .readFile(doc.uri)
+        .pipe(Effect.option);
+
+      if (Option.isNone(fileBytes)) {
+        continue;
+      }
+
+      const fileContent = new TextDecoder().decode(fileBytes.value);
+      if (fileContent === incomingContent) {
+        return Option.some(doc.id);
+      }
+    }
+
+    return Option.none<NotebookId>();
   },
-) {
-  const { code, recentlyEdited } = deps;
-  const incomingContent = new TextDecoder().decode(bytes);
-
-  for (const doc of recentlyEdited.take(5)) {
-    const fileBytes = yield* code.workspace.fs
-      .readFile(doc.uri)
-      .pipe(Effect.option);
-
-    if (Option.isNone(fileBytes)) {
-      continue;
-    }
-
-    const fileContent = new TextDecoder().decode(fileBytes.value);
-    if (fileContent === incomingContent) {
-      return Option.some(doc.id);
-    }
-  }
-
-  return Option.none<NotebookId>();
-});
+);

@@ -193,7 +193,7 @@ const lifecycle = Effect.gen(function* () {
 it.layer(TestLayer)("ConfigContextManager", (it) => {
   it.scoped(
     "should build",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const manager = yield* ConfigContextManager;
       yield* lifecycle;
       expect(manager).toBeDefined();
@@ -202,7 +202,7 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
 
   it.scoped(
     "should update VSCode context when config changes",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* TestContext;
       const configService = yield* MarimoConfigurationService;
       const _manager = yield* ConfigContextManager;
@@ -234,7 +234,7 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
 
   it.scoped(
     "should default to autorun when config is None",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* TestContext;
       const _manager = yield* ConfigContextManager;
 
@@ -253,7 +253,7 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
 
   it.scoped(
     "should stream on_cell_change mode changes",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* TestContext;
       const configService = yield* MarimoConfigurationService;
       const manager = yield* ConfigContextManager;
@@ -314,7 +314,7 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
 
   it.scoped(
     "should handle switching between notebooks",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* TestContext;
       const configService = yield* MarimoConfigurationService;
       const _manager = yield* ConfigContextManager;
@@ -356,7 +356,7 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
 
   it.scoped(
     "should default auto_reload to off when config is None",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* TestContext;
       const _manager = yield* ConfigContextManager;
 
@@ -377,7 +377,7 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
 
   it.scoped(
     "should update auto_reload context when config changes",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* TestContext;
       const configService = yield* MarimoConfigurationService;
       const _manager = yield* ConfigContextManager;
@@ -419,7 +419,7 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
 
   it.scoped(
     "should stream auto_reload mode changes",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* TestContext;
       const configService = yield* MarimoConfigurationService;
       const manager = yield* ConfigContextManager;
@@ -484,7 +484,7 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
 
   it.scoped(
     "should handle switching between notebooks with different auto_reload configs",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* TestContext;
       const configService = yield* MarimoConfigurationService;
       const _manager = yield* ConfigContextManager;

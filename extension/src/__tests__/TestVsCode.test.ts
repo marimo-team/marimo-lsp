@@ -8,7 +8,7 @@ import { VsCode } from "../services/VsCode.ts";
 describe("TestVsCode", () => {
   it.effect(
     "defaults to None active editor",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const vscode = yield* TestVsCode.make();
 
       const editor = yield* Effect.gen(function* () {
@@ -23,7 +23,7 @@ describe("TestVsCode", () => {
 
   it.effect(
     "supports initializing with notebook documents",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const editor1 = TestVsCode.makeNotebookEditor("/test/foo_mo.py");
       const editor2 = TestVsCode.makeNotebookEditor("/test/bar_mo.py");
       const vscode = yield* TestVsCode.make({
@@ -47,7 +47,7 @@ describe("TestVsCode", () => {
 
   it.effect(
     "supports setting notebook editor",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/foo_mo.py");
       const vscode = yield* TestVsCode.make({
         initialDocuments: [editor.notebook],
@@ -67,7 +67,7 @@ describe("TestVsCode", () => {
 
   it.effect(
     "should emit changes to active editor stream",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const editors = [
         TestVsCode.makeNotebookEditor("/test/foo_mo.py"),
         TestVsCode.makeNotebookEditor("/test/foo_mo.py"),

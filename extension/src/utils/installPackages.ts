@@ -46,7 +46,7 @@ export function installPackages(
             yield* uv.addProject({ directory: venvPath, packages }).pipe(
               Effect.catchTag(
                 "UvMissingPyProjectError",
-                Effect.fnUntraced(function* () {
+                Effect.fn(function* () {
                   yield* Effect.logWarning(
                     "Failed to `uv add`, attempting `uv pip install`.",
                   );
@@ -77,7 +77,7 @@ export function installPackages(
           });
         }).pipe(
           Effect.catchAllCause(
-            Effect.fnUntraced(function* (cause) {
+            Effect.fn(function* (cause) {
               yield* Effect.logError("Failed to install").pipe(
                 Effect.annotateLogs({ cause }),
               );
@@ -91,7 +91,7 @@ export function installPackages(
   });
 }
 
-export const uvAddScriptSafe = Effect.fnUntraced(function* (
+export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
   packages: ReadonlyArray<string>,
   notebook: MarimoNotebookDocument,
 ) {

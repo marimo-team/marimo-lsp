@@ -15,7 +15,7 @@ import { ControllerRegistry } from "../ControllerRegistry.ts";
 import { LanguageClient } from "../LanguageClient.ts";
 import { VsCode } from "../VsCode.ts";
 
-const withTestCtx = Effect.fnUntraced(function* (
+const withTestCtx = Effect.fn(function* (
   options: Parameters<(typeof TestVsCode)["make"]>[0] = {},
 ) {
   const testVsCode = yield* TestVsCode.make(options);
@@ -52,7 +52,7 @@ const withTestCtx = Effect.fnUntraced(function* (
 describe("Api", () => {
   it.scoped(
     "has experimental.kernels namespace",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const api = yield* Api.pipe(Effect.provide(ctx.layer));
@@ -66,7 +66,7 @@ describe("Api", () => {
 
   it.scoped(
     "getKernel returns undefined for non-existent notebook",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const kernel = yield* Effect.gen(function* () {
@@ -87,7 +87,7 @@ describe("Api", () => {
 
   it.scoped(
     "getKernel returns undefined when notebook exists but no controller",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const notebookDoc = createTestNotebookDocument(
         "file:///test/notebook_mo.py",
         {

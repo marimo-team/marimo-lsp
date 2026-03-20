@@ -12,7 +12,7 @@ const OutputChannelLive = Layer.empty.pipe(
 it.layer(OutputChannelLive)("OutputChannel", (it) => {
   it.effect(
     "should build",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const api = yield* OutputChannel;
       expect(api).toBeDefined();
     }),

@@ -80,7 +80,7 @@ it.effect("should register a binding and create status bar provider", () =>
 
 it.scoped(
   "should show status bar item based on shouldShow predicate",
-  Effect.fnUntraced(function* () {
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx;
     yield* Effect.gen(function* () {
       const service = yield* CellMetadataUIBindingService;

@@ -67,7 +67,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
           case "tutorials": {
             yield* tutorialCommands().pipe(
               Effect.catchAll(
-                Effect.fnUntraced(function* (error) {
+                Effect.fn(function* (error) {
                   yield* Effect.logError("Failed to open tutorial").pipe(
                     Effect.annotateLogs({ cause: Cause.fail(error) }),
                   );

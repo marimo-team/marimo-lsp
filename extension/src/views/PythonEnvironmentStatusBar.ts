@@ -78,7 +78,7 @@ export const PythonEnvironmentStatusBarLive = Layer.scopedDiscard(
     // Listen for environment changes and update the status bar
     yield* pythonExtension.activeEnvironmentPathChanges().pipe(
       Stream.runForEach(
-        Effect.fnUntraced(function* (event) {
+        Effect.fn(function* (event) {
           yield* updateDisplay(item, Option.some(event.path));
           yield* updateVisibility(item);
         }),

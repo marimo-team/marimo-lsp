@@ -32,7 +32,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
 
       yield* client.streamOf("marimo/dap").pipe(
         Stream.mapEffect(
-          Effect.fnUntraced(function* ({ sessionId, message }) {
+          Effect.fn(function* ({ sessionId, message }) {
             yield* Effect.logDebug("Received DAP message from LSP").pipe(
               Effect.annotateLogs({
                 sessionId,
@@ -80,7 +80,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
                 }).pipe(
                   Effect.catchTags({
                     ExecuteCommandError: Effect.logError,
-                    LanguageClientStartError: Effect.fnUntraced(function* () {
+                    LanguageClientStartError: Effect.fn(function* () {
                       yield* showErrorAndPromptLogs(
                         "marimo-lsp failed to start.",
                       );

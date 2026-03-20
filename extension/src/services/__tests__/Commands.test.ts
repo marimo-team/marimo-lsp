@@ -4,7 +4,7 @@ import { Effect, Either, PubSub, Queue } from "effect";
 describe("Commands pubsub", () => {
   it.effect(
     "should receive command events through subscription",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const result = yield* Effect.scoped(
         Effect.gen(function* () {
           const commandPubSub =
@@ -57,7 +57,7 @@ describe("Commands pubsub", () => {
 
   it.effect(
     "should support multiple subscribers",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const result = yield* Effect.scoped(
         Effect.gen(function* () {
           const commandPubSub =

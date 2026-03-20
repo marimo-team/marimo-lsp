@@ -13,7 +13,7 @@ import { CellStateManager } from "../CellStateManager.ts";
 import { LanguageClient } from "../LanguageClient.ts";
 import { VsCode } from "../VsCode.ts";
 
-const withTestCtx = Effect.fnUntraced(function* () {
+const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const executions = yield* Ref.make<ReadonlyArray<MarimoCommand>>([]);
   const layer = Layer.empty.pipe(
@@ -45,7 +45,7 @@ const withTestCtx = Effect.fnUntraced(function* () {
 describe("CellStateManager", () => {
   it.effect(
     "getNotebookCellId returns consistent cell IDs",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
@@ -93,7 +93,7 @@ describe("CellStateManager", () => {
 
   it.effect(
     "deleting cell from notebook sends delete_cell command",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
@@ -167,7 +167,7 @@ describe("CellStateManager", () => {
 
   it.effect(
     "moving cell does not send delete_cell command",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
@@ -229,7 +229,7 @@ describe("CellStateManager", () => {
 
   it.effect(
     "updates marimo.notebook.hasStaleCells context when cells become stale",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
@@ -291,7 +291,7 @@ describe("CellStateManager", () => {
 
   it.effect(
     "does not mark cell stale when content matches last executed (undo case)",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {

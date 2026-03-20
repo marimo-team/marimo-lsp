@@ -33,7 +33,7 @@ export const restartKernel = Effect.fn("command.restartKernel")(function* () {
       title: "Restarting kernel",
       cancellable: true,
     },
-    Effect.fnUntraced(function* (progress) {
+    Effect.fn(function* (progress) {
       progress.report({ message: "Closing session..." });
 
       const result = yield* client

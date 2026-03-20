@@ -48,9 +48,7 @@ export class TestPythonExtension extends Data.TaggedClass(
       },
     };
   }
-  static make = Effect.fnUntraced(function* (
-    envs: Array<py.ResolvedEnvironment> = [],
-  ) {
+  static make = Effect.fn(function* (envs: Array<py.ResolvedEnvironment> = []) {
     const known = yield* Ref.make(HashSet.make(...envs));
     const pubsub = yield* PubSub.unbounded<py.EnvironmentsChangeEvent>();
     const activePathPubsub =

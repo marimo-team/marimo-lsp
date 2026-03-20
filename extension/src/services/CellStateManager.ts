@@ -42,7 +42,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
       );
 
       // Helper to update context based on current state
-      const updateContext = Effect.fnUntraced(function* () {
+      const updateContext = Effect.fn(function* () {
         const [staleMap, activeMarimoNotebook] = yield* Effect.all([
           SubscriptionRef.get(staleStateRef),
           editorRegistry.getActiveNotebookUri(),
@@ -91,7 +91,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
             ),
           ),
           Stream.runForEach(
-            Effect.fnUntraced(function* (event) {
+            Effect.fn(function* (event) {
               // Process cell deletions
               // When a cell is moved, VSCode reports it as removed AND added
               // We need to filter out moved cells to find truly deleted cells

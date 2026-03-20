@@ -30,7 +30,7 @@ const LAZY_CONFIG = {
   },
 } as MarimoConfig;
 
-const withTestCtx = Effect.fnUntraced(function* (
+const withTestCtx = Effect.fn(function* (
   options: { configStore?: Map<NotebookId, MarimoConfig> } = {},
 ) {
   const vscode = yield* TestVsCode.make();
@@ -48,7 +48,7 @@ const withTestCtx = Effect.fnUntraced(function* (
           },
           restart: () => Effect.void,
           streamOf: () => Stream.never,
-          executeCommand: Effect.fnUntraced(function* ({ command, params }) {
+          executeCommand: Effect.fn(function* ({ command, params }) {
             if (!(command === "marimo.api")) {
               return yield* Effect.die(`Unknown command: ${command}`);
             }
@@ -102,7 +102,7 @@ const withTestCtx = Effect.fnUntraced(function* (
 describe("MarimoConfigurationService", () => {
   it.effect(
     "should build",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const service = yield* Effect.provide(
         MarimoConfigurationService,
@@ -114,7 +114,7 @@ describe("MarimoConfigurationService", () => {
 
   it.effect(
     "should fetch configuration from the language server",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const mockConfig = AUTORUN_CONFIG;
       const notebookUri = NOTEBOOK_URI;
 
@@ -133,7 +133,7 @@ describe("MarimoConfigurationService", () => {
 
   it.effect(
     "should cache configuration after first fetch",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const notebookUri = NOTEBOOK_URI;
       const mockConfig = AUTORUN_CONFIG;
       const ctx = yield* withTestCtx({
@@ -164,7 +164,7 @@ describe("MarimoConfigurationService", () => {
 
   it.effect(
     "should update configuration and cache",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const notebookUri = NOTEBOOK_URI;
       const initialConfig = AUTORUN_CONFIG;
 
@@ -198,7 +198,7 @@ describe("MarimoConfigurationService", () => {
 
   it.effect(
     "should clear notebook configuration",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const notebookUri = NOTEBOOK_URI;
       const mockConfig = AUTORUN_CONFIG;
 
@@ -231,7 +231,7 @@ describe("MarimoConfigurationService", () => {
 
   it.effect(
     "should stream configuration changes and dedupe",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const notebookUri = NOTEBOOK_URI;
       const initialConfig = AUTORUN_CONFIG;
 
@@ -319,7 +319,7 @@ describe("MarimoConfigurationService", () => {
 
   it.effect(
     "should stream configuration changes when active notebook changes",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const notebook1Uri = NOTEBOOK_URI_1;
       const notebook2Uri = NOTEBOOK_URI_2;
 
@@ -430,7 +430,7 @@ describe("MarimoConfigurationService", () => {
 
   it.effect(
     "should stream mapped configuration values",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const notebookUri = NOTEBOOK_URI;
       const mockConfig = AUTORUN_CONFIG;
       const ctx = yield* withTestCtx();
@@ -490,7 +490,7 @@ describe("MarimoConfigurationService", () => {
 
   it.effect(
     "should handle multiple notebooks independently",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const notebook1Uri = NOTEBOOK_URI_1;
       const notebook2Uri = NOTEBOOK_URI_2;
 
@@ -537,7 +537,7 @@ describe("MarimoConfigurationService", () => {
 
   it.effect(
     "should return cached config when available without LSP call",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const notebookUri = NOTEBOOK_URI;
       const mockConfig = AUTORUN_CONFIG;
 
@@ -562,7 +562,7 @@ describe("MarimoConfigurationService", () => {
 
   it.effect(
     "should stream auto_reload configuration changes and dedupe",
-    Effect.fnUntraced(function* () {
+    Effect.fn(function* () {
       const notebookUri = NOTEBOOK_URI;
       const initialConfig = {
         runtime: {

@@ -26,7 +26,7 @@ export const MarimoFileDetectorLive = Layer.scopedDiscard(
     };
 
     // Update context based on active editor
-    const updateContext = Effect.fnUntraced(function* (
+    const updateContext = Effect.fn(function* (
       editor: Option.Option<vscode.TextEditor>,
     ) {
       const isMarimoNotebook = Option.match(editor, {

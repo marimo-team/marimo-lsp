@@ -28,7 +28,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
 
     it.effect(
       "serializes notebook cells to marimo format",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
         const serializer = yield* NotebookSerializer;
         const bytes = yield* serializer.serializeEffect({
@@ -74,7 +74,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
 
     it.effect(
       "serializes markdown notebook cells to marimo format",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
         const serializer = yield* NotebookSerializer;
         const bytes = yield* serializer.serializeEffect({
@@ -136,7 +136,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
 
     it.effect(
       "deserializes mo.md() without f-strings to markdown cells",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
         const serializer = yield* NotebookSerializer;
         const source = `import marimo
@@ -194,7 +194,7 @@ if __name__ == "__main__":
 
     it.effect(
       "keeps mo.md() with f-strings as Python cells",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
         const serializer = yield* NotebookSerializer;
         const source = `import marimo
@@ -240,7 +240,7 @@ if __name__ == "__main__":
 
     it.effect(
       "round-trip markdown cells maintain mo.md() format",
-      Effect.fnUntraced(function* () {
+      Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
         const serializer = yield* NotebookSerializer;
         const source = `import marimo
