@@ -518,6 +518,12 @@ export class ParseUriError extends Data.TaggedError("ParseUriError")<{
  */
 export class VsCode extends Effect.Service<VsCode>()("VsCode", {
   effect: Effect.gen(function* () {
+    // Expose the raw vscode module for runtime inspection via --inspect-extensions.
+    // Only active when MARIMO_DEBUG=1 (set by launch-dev.sh).
+    if (process.env.MARIMO_DEBUG === "1") {
+      (globalThis as any).__marimoVsCode = vscode;
+    }
+
     return {
       // namespaces
       window: yield* Window,
