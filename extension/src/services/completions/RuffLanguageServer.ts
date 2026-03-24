@@ -1,3 +1,5 @@
+import * as NodePath from "node:path";
+
 import {
   type Cause,
   Data,
@@ -12,6 +14,13 @@ import type * as vscode from "vscode";
 import * as lsp from "vscode-languageclient/node";
 
 import {
+  BinarySource,
+  companionExtensionBundledBinary,
+  companionExtensionConfiguredPath,
+  resolveBinary,
+  userConfiguredPath,
+} from "../../utils/binaryResolution.ts";
+import {
   createManagedLanguageClient,
   type ManagedLanguageClient,
 } from "../../utils/createManagedLanguageClient.ts";
@@ -19,6 +28,8 @@ import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
 import { Config } from "../Config.ts";
 import { OutputChannel } from "../OutputChannel.ts";
 import { Sentry } from "../Sentry.ts";
+import { ExtensionContext } from "../Storage.ts";
+import { Telemetry } from "../Telemetry.ts";
 import { Uv } from "../Uv.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
 import { VsCode } from "../VsCode.ts";
@@ -41,6 +52,7 @@ type RuffLanguageServerStatus = Data.TaggedEnum<{
   Running: {
     readonly client: ManagedLanguageClient;
     readonly serverVersion: string;
+    readonly binarySource: BinarySource;
   };
   Failed: {
     readonly message: string;
@@ -69,6 +81,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       const code = yield* VsCode;
       const sync = yield* NotebookSyncService;
       const sentry = yield* Effect.serviceOption(Sentry);
+      const telemetry = yield* Effect.serviceOption(Telemetry);
 
       const statusRef = yield* Ref.make<RuffLanguageServerStatus>(
         RuffLanguageServerStatus.Starting(),
@@ -91,13 +104,15 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
             return;
           }
 
-          // Phase 1: Install the language server
+          // Phase 1: Resolve the ruff binary using 3-tier strategy
           yield* Effect.logInfo("Starting language server").pipe(
             Effect.annotateLogs({
               server: RUFF_SERVER.name,
               version: RUFF_SERVER.version,
             }),
           );
+
+          const resolved = yield* resolveRuffBinary();
 
           // Create isolated sync instance with its own cell count tracking.
           const notebookSync = yield* sync.forClient();
@@ -116,7 +131,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
           });
 
           const installExit = yield* Effect.exit(
-            createManagedLanguageClient(RUFF_SERVER, {
+            createManagedLanguageClient(RUFF_SERVER, resolved.path, {
               notebookSync,
               clientOptions: {
                 outputChannelName: "marimo (ruff)",
@@ -186,10 +201,21 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
               if (Option.isSome(sentry)) {
                 yield* sentry.value.setTag("ruff.version", serverVersion);
               }
+              if (Option.isSome(telemetry)) {
+                yield* telemetry.value.reportBinaryResolved(
+                  "ruff",
+                  resolved,
+                  serverVersion,
+                );
+              }
 
               yield* Ref.set(
                 statusRef,
-                RuffLanguageServerStatus.Running({ client, serverVersion }),
+                RuffLanguageServerStatus.Running({
+                  client,
+                  serverVersion,
+                  binarySource: resolved,
+                }),
               );
 
               // Restart the language server when ruff.* settings change
@@ -223,6 +249,63 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
     }),
   },
 ) {}
+
+/**
+ * Resolves the ruff binary path using a 3-tier strategy:
+ * 1. User-configured path (`marimo.ruff.path`)
+ * 2. Companion extension discovery — first `ruff.path` setting, then bundled binary
+ * 3. Fallback to `uv pip install`
+ */
+const resolveRuffBinary = Effect.fn(function* () {
+  const code = yield* VsCode;
+  const config = yield* Config;
+  const uv = yield* Uv;
+  const context = yield* ExtensionContext;
+
+  const ruffExtension = code.extensions.getExtension(RUFF_EXTENSION_ID);
+
+  const ruffExtConfiguredPath = Effect.gen(function* () {
+    const ruffExtConfig = yield* code.workspace.getConfiguration("ruff");
+    return Option.fromNullable(ruffExtConfig.get<string>("path")).pipe(
+      Option.filter((p) => p.length > 0),
+    );
+  });
+
+  return yield* resolveBinary(
+    RUFF_SERVER.name,
+    [
+      userConfiguredPath("ruff", RUFF_SERVER.version, config.ruff.path),
+      companionExtensionConfiguredPath(
+        "ruff",
+        RUFF_SERVER.version,
+        RUFF_EXTENSION_ID,
+        ruffExtConfiguredPath,
+      ),
+      companionExtensionBundledBinary(
+        "ruff",
+        RUFF_SERVER.version,
+        RUFF_EXTENSION_ID,
+        ruffExtension,
+      ),
+    ],
+    {
+      label: "uv install",
+      resolve: Effect.gen(function* () {
+        const targetPath = NodePath.resolve(
+          context.globalStorageUri.fsPath,
+          "libs",
+        );
+        const binaryPath = yield* uv.ensureLanguageServerBinaryInstalled(
+          RUFF_SERVER,
+          {
+            targetPath,
+          },
+        );
+        return Option.some(BinarySource.UvInstalled({ path: binaryPath }));
+      }),
+    },
+  );
+});
 
 /**
  * Read ruff.* settings from a WorkspaceConfiguration and return them in the format

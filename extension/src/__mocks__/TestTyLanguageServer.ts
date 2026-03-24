@@ -4,6 +4,7 @@ import {
   TyLanguageServer,
   TyLanguageServerStatus,
 } from "../services/completions/TyLanguageServer.ts";
+import { BinarySource } from "../utils/binaryResolution.ts";
 
 /**
  * Test mock for TyLanguageServer.
@@ -27,6 +28,7 @@ export const TestTyLanguageServerLive = Layer.effect(
               restart: () => Effect.void,
             },
             serverVersion: "0.0.0-test",
+            binarySource: BinarySource.UvInstalled({ path: "/test/ty" }),
             pythonEnvironment: Option.none(),
           }),
         ),

@@ -1,3 +1,5 @@
+import * as NodePath from "node:path";
+
 import { NodeContext } from "@effect/platform-node";
 import {
   type Cause,
@@ -14,6 +16,13 @@ import * as lsp from "vscode-languageclient/node";
 import { ResponseError } from "vscode-languageclient/node";
 
 import {
+  BinarySource,
+  companionExtensionBundledBinary,
+  companionExtensionConfiguredPath,
+  resolveBinary,
+  userConfiguredPath,
+} from "../../utils/binaryResolution.ts";
+import {
   createManagedLanguageClient,
   type ManagedLanguageClient,
 } from "../../utils/createManagedLanguageClient.ts";
@@ -24,6 +33,8 @@ import { Constants } from "../Constants.ts";
 import { OutputChannel } from "../OutputChannel.ts";
 import { PythonExtension } from "../PythonExtension.ts";
 import { Sentry } from "../Sentry.ts";
+import { ExtensionContext } from "../Storage.ts";
+import { Telemetry } from "../Telemetry.ts";
 import { Uv } from "../Uv.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
 import { VsCode } from "../VsCode.ts";
@@ -35,6 +46,7 @@ import {
 // TODO: make TY_VERSION configurable?
 // For now, since we are doing rolling releases, we can bump this as needed.
 const TY_SERVER = { name: "ty", version: "0.0.23" } as const;
+const TY_EXTENSION_ID = "astral-sh.ty";
 
 export const TyLanguageServerStatus = Data.taggedEnum<TyLanguageServerStatus>();
 
@@ -44,6 +56,7 @@ type TyLanguageServerStatus = Data.TaggedEnum<{
   Running: {
     readonly client: ManagedLanguageClient;
     readonly serverVersion: string;
+    readonly binarySource: BinarySource;
     readonly pythonEnvironment: Option.Option<{
       path: string;
       version: string | null;
@@ -80,6 +93,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
       const pyExt = yield* PythonExtension;
       const sync = yield* NotebookSyncService;
       const sentry = yield* Effect.serviceOption(Sentry);
+      const telemetry = yield* Effect.serviceOption(Telemetry);
 
       const statusRef = yield* Ref.make<TyLanguageServerStatus>(
         TyLanguageServerStatus.Starting(),
@@ -102,7 +116,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
             return;
           }
 
-          // Phase 1: Install the language server
+          // Phase 1: Resolve the ty binary using 3-tier strategy
           yield* Effect.logInfo("Starting language server").pipe(
             Effect.annotateLogs({
               server: TY_SERVER.name,
@@ -110,11 +124,13 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
             }),
           );
 
+          const resolved = yield* resolveTyBinary();
+
           // Create isolated sync instance with its own cell count tracking
           const notebookSync = yield* sync.forClient();
 
           const installExit = yield* Effect.exit(
-            createManagedLanguageClient(TY_SERVER, {
+            createManagedLanguageClient(TY_SERVER, resolved.path, {
               notebookSync,
               clientOptions: {
                 outputChannelName: "marimo (ty)",
@@ -184,11 +200,18 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
               if (Option.isSome(sentry)) {
                 yield* sentry.value.setTag("ty.version", serverVersion);
               }
+              if (Option.isSome(telemetry)) {
+                yield* telemetry.value.reportBinaryResolved(
+                  "ty",
+                  resolved,
+                  serverVersion,
+                );
+              }
 
               const updateRunningStatus = Effect.fn(function* () {
                 const activePath = yield* pyExt.getActiveEnvironmentPath();
-                const resolved = yield* pyExt.resolveEnvironment(activePath);
-                const pythonEnvironment = Option.map(resolved, (env) => ({
+                const resolvedEnv = yield* pyExt.resolveEnvironment(activePath);
+                const pythonEnvironment = Option.map(resolvedEnv, (env) => ({
                   path: env.executable.uri?.fsPath ?? env.path ?? "Unknown",
                   version: env.version?.sysVersion ?? null,
                 }));
@@ -197,6 +220,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
                   TyLanguageServerStatus.Running({
                     client,
                     serverVersion,
+                    binarySource: resolved,
                     pythonEnvironment,
                   }),
                 );
@@ -271,6 +295,65 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
     }),
   },
 ) {}
+
+/**
+ * Resolves the ty binary path using a 3-tier strategy:
+ * 1. User-configured path (`marimo.ty.path`)
+ * 2. Companion extension discovery — first `ty.path` setting, then bundled binary
+ * 3. Fallback to `uv pip install`
+ */
+const resolveTyBinary = Effect.fn(function* () {
+  const code = yield* VsCode;
+  const config = yield* Config;
+  const uv = yield* Uv;
+  const context = yield* ExtensionContext;
+
+  const tyExtension = code.extensions.getExtension(TY_EXTENSION_ID);
+
+  // ty.path is string[] (first element), unlike ruff.path which is string
+  const tyExtConfiguredPath = Effect.gen(function* () {
+    const tyExtConfig = yield* code.workspace.getConfiguration("ty");
+    return Option.fromNullable(tyExtConfig.get<string[]>("path")).pipe(
+      Option.filter((p) => p.length > 0),
+      Option.map((p) => p[0]),
+    );
+  });
+
+  return yield* resolveBinary(
+    TY_SERVER.name,
+    [
+      userConfiguredPath("ty", TY_SERVER.version, config.ty.path),
+      companionExtensionConfiguredPath(
+        "ty",
+        TY_SERVER.version,
+        TY_EXTENSION_ID,
+        tyExtConfiguredPath,
+      ),
+      companionExtensionBundledBinary(
+        "ty",
+        TY_SERVER.version,
+        TY_EXTENSION_ID,
+        tyExtension,
+      ),
+    ],
+    {
+      label: "uv install",
+      resolve: Effect.gen(function* () {
+        const targetPath = NodePath.resolve(
+          context.globalStorageUri.fsPath,
+          "libs",
+        );
+        const binaryPath = yield* uv.ensureLanguageServerBinaryInstalled(
+          TY_SERVER,
+          {
+            targetPath,
+          },
+        );
+        return Option.some(BinarySource.UvInstalled({ path: binaryPath }));
+      }),
+    },
+  );
+});
 
 interface InitializationOptions {
   logLevel?: "error" | "warn" | "info" | "debug" | "trace";

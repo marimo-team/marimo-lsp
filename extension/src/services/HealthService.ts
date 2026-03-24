@@ -4,6 +4,7 @@ import * as semver from "@std/semver";
 import { Effect, Option } from "effect";
 
 import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
+import { BinarySource } from "../utils/binaryResolution.ts";
 import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
 import {
   RuffLanguageServer,
@@ -128,9 +129,10 @@ export class HealthService extends Effect.Service<HealthService>()(
               Starting: () => {
                 lines.push("\tStatus: starting...");
               },
-              Running: ({ serverVersion, pythonEnvironment }) => {
+              Running: ({ serverVersion, binarySource, pythonEnvironment }) => {
                 lines.push("\tStatus: running ✓");
                 lines.push(`\tVersion: ${serverVersion}`);
+                lines.push(`\tBinary: ${formatBinarySource(binarySource)}`);
                 if (Option.isSome(pythonEnvironment)) {
                   const pyPath = pythonEnvironment.value.path;
                   const pyVersion = pythonEnvironment.value.version
@@ -157,9 +159,10 @@ export class HealthService extends Effect.Service<HealthService>()(
               Starting: () => {
                 lines.push("\tStatus: starting...");
               },
-              Running: ({ serverVersion }) => {
+              Running: ({ serverVersion, binarySource }) => {
                 lines.push("\tStatus: running ✓");
                 lines.push(`\tVersion: ${serverVersion}`);
+                lines.push(`\tBinary: ${formatBinarySource(binarySource)}`);
               },
               Failed: ({ message }) => {
                 lines.push("\tStatus: failed ✗");
@@ -260,3 +263,12 @@ export class HealthService extends Effect.Service<HealthService>()(
     }),
   },
 ) {}
+
+function formatBinarySource(source: BinarySource): string {
+  return BinarySource.$match(source, {
+    UserConfigured: ({ path }) => `UserConfigured (${path})`,
+    CompanionExtension: ({ extensionId, path, kind }) =>
+      `CompanionExtension/${kind} (${extensionId}, ${path})`,
+    UvInstalled: ({ path }) => `UvInstalled (${path})`,
+  });
+}

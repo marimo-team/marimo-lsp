@@ -4,6 +4,7 @@ import {
   RuffLanguageServer,
   RuffLanguageServerStatus,
 } from "../services/completions/RuffLanguageServer.ts";
+import { BinarySource } from "../utils/binaryResolution.ts";
 
 /**
  * Test mock for RuffLanguageServer
@@ -22,6 +23,7 @@ export const TestRuffLanguageServerLive = Layer.effect(
         Effect.succeed(
           RuffLanguageServerStatus.Running({
             serverVersion: "0.0.0-test",
+            binarySource: BinarySource.UvInstalled({ path: "/test/ruff" }),
             client: {
               start: () => Effect.succeed(Option.none()),
               restart: () => Effect.void,

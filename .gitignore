@@ -10,3 +10,4 @@ extension/.vscode-test/
 *.vsix
 .vscode-test/
 .claude/
+CLAUDE.md
