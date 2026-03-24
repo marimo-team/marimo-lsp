@@ -1,6 +1,7 @@
 import { Effect, Option, Ref, Schema, Stream } from "effect";
 import { PostHog } from "posthog-node";
 
+import { type BinarySource } from "../utils/binaryResolution.ts";
 import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
 import { createStorageKey, Storage } from "./Storage.ts";
 import { VsCode } from "./VsCode.ts";
@@ -168,6 +169,22 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
               }),
             },
           });
+        });
+      },
+
+      /**
+       * Report which binary source was resolved for a language server.
+       */
+      reportBinaryResolved(
+        server: "ruff" | "ty",
+        source: BinarySource,
+        version: string,
+      ): Effect.Effect<void> {
+        return this.capture("lsp_binary_resolved", {
+          server,
+          source: source._tag,
+          ...("kind" in source ? { kind: source.kind } : {}),
+          version,
         });
       },
 

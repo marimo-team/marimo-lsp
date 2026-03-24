@@ -29,6 +29,7 @@ import { Config } from "../Config.ts";
 import { OutputChannel } from "../OutputChannel.ts";
 import { Sentry } from "../Sentry.ts";
 import { ExtensionContext } from "../Storage.ts";
+import { Telemetry } from "../Telemetry.ts";
 import { Uv } from "../Uv.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
 import { VsCode } from "../VsCode.ts";
@@ -80,6 +81,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       const code = yield* VsCode;
       const sync = yield* NotebookSyncService;
       const sentry = yield* Effect.serviceOption(Sentry);
+      const telemetry = yield* Effect.serviceOption(Telemetry);
 
       const statusRef = yield* Ref.make<RuffLanguageServerStatus>(
         RuffLanguageServerStatus.Starting(),
@@ -198,6 +200,13 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
 
               if (Option.isSome(sentry)) {
                 yield* sentry.value.setTag("ruff.version", serverVersion);
+              }
+              if (Option.isSome(telemetry)) {
+                yield* telemetry.value.reportBinaryResolved(
+                  "ruff",
+                  resolved,
+                  serverVersion,
+                );
               }
 
               yield* Ref.set(

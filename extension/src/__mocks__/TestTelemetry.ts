@@ -9,6 +9,7 @@ export const TestTelemetryLive = Layer.succeed(
   Telemetry,
   Telemetry.make({
     capture: () => Effect.void,
+    reportBinaryResolved: () => Effect.void,
     identify: () => Effect.void,
   }),
 );
