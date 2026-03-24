@@ -21,7 +21,7 @@ jobs:
     name: TypeScript / Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v4
         with:
@@ -49,7 +49,7 @@ jobs:
     name: TypeScript / Typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           path: marimo-lsp
 
@@ -57,7 +57,7 @@ jobs:
         id: marimo-version
         run: echo "ref=$(cat marimo-lsp/.marimo-version)" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: marimo-team/marimo
           ref: ${{ steps.marimo-version.outputs.ref }}
@@ -99,7 +99,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           path: marimo-lsp
 
@@ -108,13 +108,13 @@ jobs:
         shell: bash
         run: echo "ref=$(cat marimo-lsp/.marimo-version)" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: marimo-team/marimo
           ref: ${{ steps.marimo-version.outputs.ref }}
           path: marimo
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
 
       - uses: pnpm/action-setup@v4
         with:
@@ -161,8 +161,8 @@ jobs:
     name: Python / Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
       - run: |
           uv run ruff format --check
           uv run ruff check
@@ -171,14 +171,14 @@ jobs:
     name: Python / Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
       - run: uv run pytest
 
   python-typecheck:
     name: Python / Typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
       - run: uv run ty check
