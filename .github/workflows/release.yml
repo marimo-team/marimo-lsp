@@ -33,7 +33,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -90,7 +90,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           path: marimo-lsp
 
@@ -102,7 +102,7 @@ jobs:
         id: marimo-version
         run: echo "ref=$(cat marimo-lsp/.marimo-version)" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: marimo-team/marimo
           ref: ${{ steps.marimo-version.outputs.ref }}
@@ -182,13 +182,13 @@ jobs:
           fi
 
       # Install system uv for building sdist (bundled uv may be cross-compiled and not executable on the runner)
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
 
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: marimo-lsp/extension/package.json
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: "pnpm"
@@ -233,7 +233,7 @@ jobs:
     name: Build (universal)
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           path: marimo-lsp
 
@@ -245,19 +245,19 @@ jobs:
         id: marimo-version
         run: echo "ref=$(cat marimo-lsp/.marimo-version)" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: marimo-team/marimo
           ref: ${{ steps.marimo-version.outputs.ref }}
           path: marimo
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
 
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: marimo-lsp/extension/package.json
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: "pnpm"
@@ -302,12 +302,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           path: marimo-lsp
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
 
@@ -339,7 +339,7 @@ jobs:
             ovsx publish --pat ${{ secrets.OPEN_VSX_TOKEN }} --packagePath ./dist/*.vsix --skip-duplicate
           fi
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
 
       - name: Get previous tag
         working-directory: marimo-lsp
