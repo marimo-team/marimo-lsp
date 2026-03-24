@@ -49,6 +49,12 @@ type EventMap = {
     version: string;
   };
   uv_install_clicked: undefined;
+  lsp_binary_resolved: {
+    server: "ruff" | "ty";
+    source: "UserConfigured" | "CompanionExtension" | "UvInstalled";
+    kind?: "configured" | "bundled";
+    version: string;
+  };
 };
 
 /**

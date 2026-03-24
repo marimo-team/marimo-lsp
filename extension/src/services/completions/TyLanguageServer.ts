@@ -15,7 +15,13 @@ import {
 import * as lsp from "vscode-languageclient/node";
 import { ResponseError } from "vscode-languageclient/node";
 
-import { validateBinary } from "../../utils/binaryResolution.ts";
+import {
+  BinarySource,
+  companionExtensionBundledBinary,
+  companionExtensionConfiguredPath,
+  resolveBinary,
+  userConfiguredPath,
+} from "../../utils/binaryResolution.ts";
 import {
   createManagedLanguageClient,
   type ManagedLanguageClient,
@@ -28,7 +34,7 @@ import { OutputChannel } from "../OutputChannel.ts";
 import { PythonExtension } from "../PythonExtension.ts";
 import { Sentry } from "../Sentry.ts";
 import { ExtensionContext } from "../Storage.ts";
-import { resolvePlatformBinaryName, Uv } from "../Uv.ts";
+import { Uv } from "../Uv.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
 import { VsCode } from "../VsCode.ts";
 import {
@@ -49,6 +55,7 @@ type TyLanguageServerStatus = Data.TaggedEnum<{
   Running: {
     readonly client: ManagedLanguageClient;
     readonly serverVersion: string;
+    readonly binarySource: BinarySource;
     readonly pythonEnvironment: Option.Option<{
       path: string;
       version: string | null;
@@ -115,13 +122,13 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
             }),
           );
 
-          const binaryPath = yield* resolveTyBinary();
+          const resolved = yield* resolveTyBinary();
 
           // Create isolated sync instance with its own cell count tracking
           const notebookSync = yield* sync.forClient();
 
           const installExit = yield* Effect.exit(
-            createManagedLanguageClient(TY_SERVER, binaryPath, {
+            createManagedLanguageClient(TY_SERVER, resolved.path, {
               notebookSync,
               clientOptions: {
                 outputChannelName: "marimo (ty)",
@@ -194,8 +201,8 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
 
               const updateRunningStatus = Effect.fn(function* () {
                 const activePath = yield* pyExt.getActiveEnvironmentPath();
-                const resolved = yield* pyExt.resolveEnvironment(activePath);
-                const pythonEnvironment = Option.map(resolved, (env) => ({
+                const resolvedEnv = yield* pyExt.resolveEnvironment(activePath);
+                const pythonEnvironment = Option.map(resolvedEnv, (env) => ({
                   path: env.executable.uri?.fsPath ?? env.path ?? "Unknown",
                   version: env.version?.sysVersion ?? null,
                 }));
@@ -204,6 +211,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
                   TyLanguageServerStatus.Running({
                     client,
                     serverVersion,
+                    binarySource: resolved,
                     pythonEnvironment,
                   }),
                 );
@@ -281,9 +289,9 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
 
 /**
  * Resolves the ty binary path using a 3-tier strategy:
- * 1. User-configured path (marimo.ty.path)
- * 2. Companion extension discovery (astral-sh.ty bundled binary or ty.path setting)
- * 3. Fallback to uv installation
+ * 1. User-configured path (`marimo.ty.path`)
+ * 2. Companion extension discovery — first `ty.path` setting, then bundled binary
+ * 3. Fallback to `uv pip install`
  */
 const resolveTyBinary = Effect.fn(function* () {
   const code = yield* VsCode;
@@ -291,71 +299,51 @@ const resolveTyBinary = Effect.fn(function* () {
   const uv = yield* Uv;
   const context = yield* ExtensionContext;
 
-  // Tier 1: User-configured path
-  const userPath = yield* config.ty.path;
-  if (Option.isSome(userPath)) {
-    const validated = yield* validateBinary(userPath.value, TY_SERVER.version);
-    if (Option.isSome(validated)) {
-      yield* Effect.logInfo(
-        `Using user-configured ty binary: ${validated.value}`,
-      );
-      return validated.value;
-    }
-    yield* Effect.logWarning(
-      `User-configured ty path "${userPath.value}" is invalid, falling back to discovery`,
-    );
-  }
-
-  // Tier 2: Companion extension discovery
   const tyExtension = code.extensions.getExtension(TY_EXTENSION_ID);
-  if (Option.isSome(tyExtension)) {
-    // First check the companion extension's ty.path setting
+
+  // ty.path is string[] (first element), unlike ruff.path which is string
+  const tyExtConfiguredPath = Effect.gen(function* () {
     const tyExtConfig = yield* code.workspace.getConfiguration("ty");
-    const extConfiguredPath = Option.fromNullable(
-      tyExtConfig.get<string[]>("path"),
-    ).pipe(
+    return Option.fromNullable(tyExtConfig.get<string[]>("path")).pipe(
       Option.filter((p) => p.length > 0),
       Option.map((p) => p[0]),
     );
-
-    if (Option.isSome(extConfiguredPath)) {
-      const validated = yield* validateBinary(
-        extConfiguredPath.value,
-        TY_SERVER.version,
-      );
-      if (Option.isSome(validated)) {
-        yield* Effect.logInfo(
-          `Using ty binary from ty.path setting: ${validated.value}`,
-        );
-        return validated.value;
-      }
-    }
-
-    // Then check bundled binary in the extension's install directory
-    const bundledPath = NodePath.join(
-      tyExtension.value.extensionPath,
-      "bundled",
-      "libs",
-      "bin",
-      resolvePlatformBinaryName("ty"),
-    );
-    const validated = yield* validateBinary(bundledPath, TY_SERVER.version);
-    if (Option.isSome(validated)) {
-      yield* Effect.logInfo(
-        `Using bundled ty binary from ${TY_EXTENSION_ID}: ${validated.value}`,
-      );
-      return validated.value;
-    }
-  }
-
-  // Tier 3: Fallback to uv installation
-  yield* Effect.logInfo(
-    "No custom or companion ty binary found, falling back to uv installation",
-  );
-  const targetPath = NodePath.resolve(context.globalStorageUri.fsPath, "libs");
-  return yield* uv.ensureLanguageServerBinaryInstalled(TY_SERVER, {
-    targetPath,
   });
+
+  return yield* resolveBinary(
+    TY_SERVER.name,
+    [
+      userConfiguredPath("ty", TY_SERVER.version, config.ty.path),
+      companionExtensionConfiguredPath(
+        "ty",
+        TY_SERVER.version,
+        TY_EXTENSION_ID,
+        tyExtConfiguredPath,
+      ),
+      companionExtensionBundledBinary(
+        "ty",
+        TY_SERVER.version,
+        TY_EXTENSION_ID,
+        tyExtension,
+      ),
+    ],
+    {
+      label: "uv install",
+      resolve: Effect.gen(function* () {
+        const targetPath = NodePath.resolve(
+          context.globalStorageUri.fsPath,
+          "libs",
+        );
+        const binaryPath = yield* uv.ensureLanguageServerBinaryInstalled(
+          TY_SERVER,
+          {
+            targetPath,
+          },
+        );
+        return Option.some(BinarySource.UvInstalled({ path: binaryPath }));
+      }),
+    },
+  );
 });
 
 interface InitializationOptions {
