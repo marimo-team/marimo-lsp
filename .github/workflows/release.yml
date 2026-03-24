@@ -37,7 +37,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           package_json_file: extension/package.json
 
@@ -117,7 +117,7 @@ jobs:
       # complexity. Using pip everywhere keeps the workflow simple and consistent.
       # The speed difference is negligible for a single package install.
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
@@ -184,7 +184,7 @@ jobs:
       # Install system uv for building sdist (bundled uv may be cross-compiled and not executable on the runner)
       - uses: astral-sh/setup-uv@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           package_json_file: marimo-lsp/extension/package.json
 
@@ -221,7 +221,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-${{ matrix.target }}
           path: marimo-lsp/extension/dist/
@@ -253,7 +253,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           package_json_file: marimo-lsp/extension/package.json
 
@@ -291,7 +291,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-universal
           path: marimo-lsp/extension/dist/
@@ -312,7 +312,7 @@ jobs:
           node-version: 24
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -380,7 +380,7 @@ jobs:
 
       - name: Notify Slack - Release Success
         if: success() && github.event.pull_request.head.repo.fork == false
-        uses: slackapi/slack-github-action@v2.1.1
+        uses: slackapi/slack-github-action@v3.0.1
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL_RELEASES }}
           webhook-type: incoming-webhook
@@ -400,7 +400,7 @@ jobs:
 
       - name: Notify Slack - Release Failed
         if: failure() && github.event.pull_request.head.repo.fork == false
-        uses: slackapi/slack-github-action@v2.1.1
+        uses: slackapi/slack-github-action@v3.0.1
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL_RELEASES }}
           webhook-type: incoming-webhook
