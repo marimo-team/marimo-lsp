@@ -61,6 +61,17 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
               },
             });
 
+            // The LSP may return null when the server is restarting, the
+            // request was cancelled, or the connection was disposed.
+            // Fall back to an empty config rather than crashing with a
+            // ParseError.
+            if (result == null || typeof result !== "object") {
+              yield* Effect.logWarning(
+                "get-configuration returned a non-object response, using empty config",
+              ).pipe(Effect.annotateLogs({ notebookUri, result }));
+              return {} as MarimoConfig;
+            }
+
             const config = yield* Schema.decodeUnknown(
               MarimoConfigResponseSchema,
             )(result);
@@ -103,6 +114,13 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
                 },
               },
             });
+
+            if (result == null || typeof result !== "object") {
+              yield* Effect.logWarning(
+                "update-configuration returned a non-object response",
+              ).pipe(Effect.annotateLogs({ notebookUri, result }));
+              return (partialConfig ?? {}) as MarimoConfig;
+            }
 
             const config = yield* Schema.decodeUnknown(
               MarimoConfigResponseSchema,
