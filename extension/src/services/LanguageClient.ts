@@ -76,8 +76,35 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
         },
       );
 
+      /**
+       * Stop the client, with a timeout to avoid hanging indefinitely.
+       *
+       * Some LSP lifecycle errors occur because `client.stop()` never
+       * resolves (e.g. the server process is stuck). A bounded stop
+       * prevents the restart flow from blocking forever (VSCODE-MARIMO-2KA).
+       */
+      const stopClient = Effect.fn(function* () {
+        yield* Effect.tryPromise(() => client.stop()).pipe(
+          Effect.timeout("5 seconds"),
+          Effect.ignore,
+        );
+        yield* Effect.logInfo("marimo-lsp client stopped");
+      });
+
+      /**
+       * Start the client. Waits until the client is fully stopped first,
+       * avoiding the "Client is currently stopping" race (VSCODE-MARIMO-2KZ).
+       */
       const startClient = () =>
         Effect.gen(function* () {
+          // If the client is in a "stopping" state, wait for it to finish
+          // before attempting to start again.
+          if (!client.isRunning() && client.needsStop()) {
+            yield* Effect.logInfo(
+              "Client is still stopping, waiting before start",
+            );
+            yield* stopClient();
+          }
           yield* Effect.tryPromise({
             try: () => client.start(),
             catch: (cause) => new LanguageClientStartError({ exec, cause }),
@@ -103,7 +130,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
             Effect.fn(function* (progress) {
               if (client.isRunning()) {
                 progress.report({ message: "Stopping..." });
-                yield* Effect.promise(() => client.stop());
+                yield* stopClient();
               }
               progress.report({ message: "Starting..." });
               yield* startClient().pipe(

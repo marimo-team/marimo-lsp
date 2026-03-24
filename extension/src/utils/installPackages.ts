@@ -1,10 +1,10 @@
 import * as NodeFs from "node:fs";
 
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 
 import { assert } from "../assert.ts";
 import type { MarimoNotebookDocument } from "../schemas.ts";
-import { Uv } from "../services/Uv.ts";
+import { Uv, UvUnknownError } from "../services/Uv.ts";
 import { VsCode } from "../services/VsCode.ts";
 
 export function installPackages(
@@ -81,8 +81,15 @@ export function installPackages(
               yield* Effect.logError("Failed to install").pipe(
                 Effect.annotateLogs({ cause }),
               );
+
+              // Extract actionable detail from the uv error, if available
+              const detail = extractUvErrorDetail(cause);
+              const suffix = detail
+                ? `\n\n${detail}`
+                : " See marimo logs for details.";
+
               yield* code.window.showErrorMessage(
-                `Failed to install ${packages.join(", ")}. See marimo logs for details.`,
+                `Failed to install ${packages.join(", ")}.${suffix}`,
               );
             }),
           ),
@@ -139,3 +146,18 @@ export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
     yield* Effect.promise(() => doc.save());
   }
 });
+
+/**
+ * Walk the Cause tree looking for a UvUnknownError and return the last
+ * line of its stderr (typically the most actionable message).
+ */
+function extractUvErrorDetail(cause: Cause.Cause<unknown>): string | null {
+  const failures = Cause.failures(cause);
+  for (const failure of failures) {
+    if (failure instanceof UvUnknownError && failure.stderr) {
+      const lines = failure.stderr.trim().split("\n");
+      return lines[lines.length - 1] ?? null;
+    }
+  }
+  return null;
+}
