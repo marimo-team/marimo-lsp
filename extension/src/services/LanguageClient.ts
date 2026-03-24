@@ -83,18 +83,13 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
        * resolves (e.g. the server process is stuck). A bounded stop
        * prevents the restart flow from blocking forever (VSCODE-MARIMO-2KA).
        */
-      const stopClient = () =>
-        Effect.gen(function* () {
-          yield* Effect.tryPromise({
-            try: () =>
-              Promise.race([
-                client.stop(),
-                new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
-              ]),
-            catch: () => void 0, // swallow – we will start fresh
-          });
-          yield* Effect.logInfo("marimo-lsp client stopped");
-        });
+      const stopClient = Effect.fn(function* () {
+        yield* Effect.tryPromise(() => client.stop()).pipe(
+          Effect.timeout("5 seconds"),
+          Effect.ignore,
+        );
+        yield* Effect.logInfo("marimo-lsp client stopped");
+      });
 
       /**
        * Start the client. Waits until the client is fully stopped first,
