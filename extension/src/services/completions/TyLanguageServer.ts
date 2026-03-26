@@ -45,7 +45,7 @@ import {
 
 // TODO: make TY_VERSION configurable?
 // For now, since we are doing rolling releases, we can bump this as needed.
-const TY_SERVER = { name: "ty", version: "0.0.23" } as const;
+const TY_SERVER = { name: "ty", version: "0.0.26" } as const;
 const TY_EXTENSION_ID = "astral-sh.ty";
 
 export const TyLanguageServerStatus = Data.taggedEnum<TyLanguageServerStatus>();
