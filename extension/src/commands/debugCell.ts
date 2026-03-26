@@ -40,6 +40,12 @@ export const debugCell = Effect.fn("command.debugCell")(
   },
   flow(
     Effect.tapErrorCause(Effect.logError),
+    Effect.catchTags({
+      DebugSessionStartError: () =>
+        showErrorAndPromptLogs(
+          "Failed to start debug session. Is the kernel running?",
+        ),
+    }),
     Effect.catchAllCause(() => showErrorAndPromptLogs("Failed to debug cell.")),
   ),
 );

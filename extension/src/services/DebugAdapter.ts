@@ -93,12 +93,17 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
 
       yield* code.debug.onDidTerminateDebugSession((session) =>
         Effect.gen(function* () {
-          // Find which notebook this session belonged to
           const sessions = yield* Ref.get(activeSessions);
           const entry = HashMap.findFirst(sessions, (id) => id === session.id);
 
           if (Option.isSome(entry)) {
             yield* Ref.update(activeSessions, HashMap.remove(entry.value[0]));
+            yield* Effect.logInfo("Debug session ended").pipe(
+              Effect.annotateLogs({
+                sessionId: session.id,
+                notebookUri: entry.value[0],
+              }),
+            );
           }
         }),
       );
@@ -169,8 +174,8 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
 
           const cellId = cell.id;
           if (Option.isNone(cellId)) {
-            yield* showErrorAndPromptLogs(
-              "Cell has no stable ID. Run the cell first.",
+            yield* code.window.showWarningMessage(
+              "No notebook kernel is running. Run a cell first to start the kernel.",
             );
             return;
           }
@@ -219,19 +224,22 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
               cellMappings[c.document.uri.toString()] = filePath;
               NodeFs.writeFileSync(filePath, c.document.getText(), "utf-8");
             }
-          });
+          }).pipe(
+            Effect.tapError((error) =>
+              Effect.logError("Failed to write cell files to disk").pipe(
+                Effect.annotateLogs({
+                  error: String(error),
+                  tmpdir: state.tmpdir,
+                }),
+              ),
+            ),
+          );
 
           yield* code.debug.startDebugging(undefined, {
             type: DEBUG_TYPE,
             request: "attach",
             name: "Debug Cell",
-            justMyCode: true,
-            rules: [
-              {
-                path: NodePath.join(state.tmpdir, "**"),
-                include: true,
-              },
-            ],
+            justMyCode: false,
             marimo: {
               notebookUri,
               port: state.port,
