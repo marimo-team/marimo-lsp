@@ -37,6 +37,7 @@ from marimo_lsp.models import (
     NotebookCommand,
     SerializeRequest,
     SessionCommand,
+    StdinRequest,
     UpdateConfigurationRequest,
     UpdateUIElementRequest,
 )
@@ -136,6 +137,18 @@ async def delete_cell(
     if session:
         session.put_control_request(args.inner.as_command(), from_consumer_id=None)
         logger.info(f"Delete cell request sent for {args.notebook_uri}")
+    else:
+        logger.warning(f"No session found for {args.notebook_uri}")
+
+
+async def send_stdin(
+    manager: LspSessionManager,
+    args: NotebookCommand[StdinRequest],
+):
+    logger.info(f"send_stdin for {args.notebook_uri}")
+    session = manager.get_session(args.notebook_uri)
+    if session:
+        session.put_input(args.inner.text)
     else:
         logger.warning(f"No session found for {args.notebook_uri}")
 
@@ -331,6 +344,11 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
             ls,
             manager,
             msgspec.convert(params, type=SessionCommand[ExecuteCellsRequest]),
+        )
+
+    if method == "send-stdin":
+        return await send_stdin(
+            manager, msgspec.convert(params, type=NotebookCommand[StdinRequest])
         )
 
     if method == "interrupt":

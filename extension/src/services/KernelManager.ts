@@ -288,6 +288,10 @@ function processOperation(
           editor,
           controller,
         });
+
+        // If the operation contains a stdin console message, prompt for input
+        // Fork so we don't block the operation processing loop
+        yield* Effect.fork(handleStdinPrompt(operation, notebookUri));
         break;
       }
       case "interrupted": {
@@ -355,6 +359,51 @@ function processOperation(
       default: {
         yield* Effect.logWarning("Unknown operation");
         break;
+      }
+    }
+  });
+}
+
+/**
+ * Detects stdin console messages in a cell-op and prompts the user for input.
+ * Sends the response back to the kernel via the `send-stdin` API method.
+ */
+function handleStdinPrompt(
+  operation: CellOperationNotification,
+  notebookUri: NotebookId,
+) {
+  return Effect.gen(function* () {
+    const consoleOutputs = operation.console;
+    if (consoleOutputs == null) return;
+
+    const outputs = Array.isArray(consoleOutputs)
+      ? consoleOutputs
+      : [consoleOutputs];
+
+    for (const output of outputs) {
+      if (output.channel !== "stdin") continue;
+
+      const prompt = typeof output.data === "string" ? output.data : "";
+      const isPassword = output.mimetype === "text/password";
+      const code = yield* VsCode;
+      const client = yield* LanguageClient;
+
+      const result = yield* code.window.showInputBox({
+        prompt: prompt || "input()",
+        password: isPassword,
+      });
+
+      if (Option.isSome(result)) {
+        yield* client.executeCommand({
+          command: "marimo.api",
+          params: {
+            method: "send-stdin",
+            params: {
+              notebookUri,
+              inner: { text: result.value },
+            },
+          },
+        });
       }
     }
   });

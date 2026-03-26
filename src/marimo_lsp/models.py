@@ -113,3 +113,4 @@ ExecuteCellsRequest = core.ExecuteCellsRequest
 UpdateUIElementRequest = core.UpdateUIElementRequest
 ModelRequest = core.ModelRequest
 DeleteCellRequest = core.DeleteCellRequest
+StdinRequest = core.StdinRequest

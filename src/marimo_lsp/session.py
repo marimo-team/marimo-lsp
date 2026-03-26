@@ -84,6 +84,10 @@ class LspSession:
         self._listener_thread = threading.Thread(target=listen, daemon=True)
         self._listener_thread.start()
 
+    def put_input(self, text: str) -> None:
+        """Send user input to the kernel's stdin."""
+        self._queue_manager.input_queue.put(text)
+
     def try_interrupt(self) -> None:
         """Interrupt the kernel."""
         self._kernel_manager.interrupt_kernel()
