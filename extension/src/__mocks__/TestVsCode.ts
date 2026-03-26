@@ -1688,10 +1688,16 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         }),
         debug: Debug.make({
           registerDebugConfigurationProvider() {
-            return acquireDisposable(() => ({ dispose() {} }));
+            return Effect.acquireRelease(Effect.void, () => Effect.void);
           },
           registerDebugAdapterDescriptorFactory() {
-            return acquireDisposable(() => ({ dispose() {} }));
+            return Effect.acquireRelease(Effect.void, () => Effect.void);
+          },
+          startDebugging() {
+            return Effect.succeed(true);
+          },
+          onDidTerminateDebugSession() {
+            return Effect.acquireRelease(Effect.void, () => Effect.void);
           },
         }),
         notebooks: Notebooks.make({

@@ -131,6 +131,24 @@
         "path": "./syntaxes/python.tmLanguage.json"
       }
     ],
+    "debuggers": [
+      {
+        "type": "marimo",
+        "label": "Marimo Debugger",
+        "languages": [
+          "python",
+          "mo-python"
+        ]
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "python"
+      },
+      {
+        "language": "mo-python"
+      }
+    ],
     "walkthroughs": [
       {
         "id": "marimo-getting-started",
@@ -241,6 +259,14 @@
         "title": "Publish notebook as ...",
         "shortTitle": "Publish notebook",
         "category": "marimo",
+        "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
+        "command": "marimo.debugCell",
+        "title": "Debug cell",
+        "shortTitle": "Debug",
+        "category": "marimo",
+        "icon": "$(debug-alt)",
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {

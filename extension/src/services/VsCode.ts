@@ -34,6 +34,12 @@ export class FileSystemError extends Data.TaggedError("FileSystemError")<{
   cause: unknown;
 }> {}
 
+export class DebugSessionStartError extends Data.TaggedError(
+  "DebugSessionStartError",
+)<{
+  readonly configuration: string | vscode.DebugConfiguration;
+}> {}
+
 export class Window extends Effect.Service<Window>()("Window", {
   effect: Effect.sync(() => {
     const api = vscode.window;
@@ -429,8 +435,9 @@ export class Env extends Effect.Service<Env>()("Env", {
 }) {}
 
 export class Debug extends Effect.Service<Debug>()("Debug", {
-  effect: Effect.sync(() => {
+  effect: Effect.gen(function* () {
     const api = vscode.debug;
+    const runPromise = Runtime.runPromise(yield* Effect.runtime());
     return {
       registerDebugConfigurationProvider(
         debugType: string,
@@ -438,15 +445,52 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
       ) {
         return acquireDisposable(() =>
           api.registerDebugConfigurationProvider(debugType, factory),
-        );
+        ).pipe(Effect.asVoid);
       },
       registerDebugAdapterDescriptorFactory(
         debugType: string,
-        factory: vscode.DebugAdapterDescriptorFactory,
+        factory: {
+          createDebugAdapterDescriptor(
+            session: vscode.DebugSession,
+            executable: vscode.DebugAdapterExecutable | undefined,
+          ): Effect.Effect<vscode.DebugAdapterDescriptor | undefined>;
+        },
       ) {
         return acquireDisposable(() =>
-          api.registerDebugAdapterDescriptorFactory(debugType, factory),
+          api.registerDebugAdapterDescriptorFactory(debugType, {
+            createDebugAdapterDescriptor: (session, executable) =>
+              runPromise(
+                factory.createDebugAdapterDescriptor(session, executable),
+              ),
+          }),
+        ).pipe(Effect.asVoid);
+      },
+      startDebugging(
+        folder: vscode.WorkspaceFolder | undefined,
+        nameOrConfiguration: string | vscode.DebugConfiguration,
+      ) {
+        return Effect.tryPromise({
+          try: () => api.startDebugging(folder, nameOrConfiguration),
+          catch: (cause) => new VsCodeError({ cause }),
+        }).pipe(
+          Effect.filterOrFail(
+            (success) => success,
+            () =>
+              new DebugSessionStartError({
+                configuration: nameOrConfiguration,
+              }),
+          ),
+          Effect.asVoid,
         );
+      },
+      onDidTerminateDebugSession(
+        listener: (session: vscode.DebugSession) => Effect.Effect<void>,
+      ) {
+        return acquireDisposable(() =>
+          api.onDidTerminateDebugSession((session) => {
+            void Effect.runPromise(listener(session));
+          }),
+        ).pipe(Effect.asVoid);
       },
     };
   }),

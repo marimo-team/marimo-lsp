@@ -21,6 +21,7 @@ import { MarimoConfigurationService } from "../services/config/MarimoConfigurati
 import { Constants } from "../services/Constants.ts";
 import { ControllerRegistry } from "../services/ControllerRegistry.ts";
 import { DatasourcesService } from "../services/datasources/DatasourcesService.ts";
+import { DebugAdapter } from "../services/DebugAdapter.ts";
 import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
 import { GitHubClient } from "../services/GitHubClient.ts";
 import { HealthService } from "../services/HealthService.ts";
@@ -78,6 +79,7 @@ const MainLive = Layer.empty
   )
   .pipe(
     Layer.provideMerge(Api.Default),
+    Layer.provide(DebugAdapter.Default),
     Layer.provide(KernelManager.Default),
     Layer.provide(GitHubClient.Default),
     Layer.provide(NotebookRenderer.Default),
