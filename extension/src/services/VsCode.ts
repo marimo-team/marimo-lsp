@@ -483,6 +483,15 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
           Effect.asVoid,
         );
       },
+      stopDebugging(sessionId?: string) {
+        // Find the session by ID if provided, otherwise stop all
+        const session = sessionId
+          ? vscode.debug.activeDebugSession?.id === sessionId
+            ? vscode.debug.activeDebugSession
+            : undefined
+          : undefined;
+        return Effect.promise(() => api.stopDebugging(session));
+      },
       onDidTerminateDebugSession(
         listener: (session: vscode.DebugSession) => Effect.Effect<void>,
       ) {

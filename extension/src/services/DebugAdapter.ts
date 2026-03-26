@@ -19,14 +19,17 @@ const DEBUG_TYPE = "marimo";
 
 /** Activation script injected into the kernel to start debugpy. */
 function activationScript(debugpyLibsPath: string): string {
-  return [
-    "import sys as _sys, json as _json, tempfile as _tf, os as _os",
-    `_sys.path.insert(0, ${JSON.stringify(debugpyLibsPath)})`,
-    "import debugpy as _debugpy",
-    '_host, _port = _debugpy.listen(("127.0.0.1", 0))',
-    '_tmpdir = _os.path.join(_tf.gettempdir(), "marimo_" + str(_os.getpid()))',
-    'print(_json.dumps({"port": _port, "tmpdir": _tmpdir}))',
-  ].join("; ");
+  // Idempotent: stores the port in a global so subsequent calls
+  // skip `debugpy.listen()` and just report the cached port.
+  return `
+import sys as _sys, json as _json, tempfile as _tf, os as _os
+if not hasattr(_sys, "_marimo_debugpy_port"):
+    _sys.path.insert(0, ${JSON.stringify(debugpyLibsPath)})
+    import debugpy as _debugpy
+    _, _sys._marimo_debugpy_port = _debugpy.listen(("127.0.0.1", 0))
+_tmpdir = _os.path.join(_tf.gettempdir(), "marimo_" + str(_os.getpid()))
+print(_json.dumps({"port": _sys._marimo_debugpy_port, "tmpdir": _tmpdir}))
+`.trim();
 }
 
 /** Resolve the bundled debugpy libs path from the ms-python.debugpy extension. */
@@ -53,6 +56,7 @@ const MarimoDebugConfiguration = Schema.Struct({
   justMyCode: Schema.Boolean,
   marimo: Schema.Struct({
     notebookUri: NotebookIdFromString,
+    port: Schema.Number,
     cellIndex: Schema.Number,
     cellMappings: Schema.Record({
       key: Schema.String,
@@ -82,18 +86,21 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
 
       const debugpyLibsPath = yield* resolveDebugpyPath(code);
 
-      // Per-notebook debugpy state (activated once per kernel)
-      const debugpyStates = yield* Ref.make(
-        HashMap.empty<NotebookId, DebugpyState>(),
-      );
-
-      // Map from debug session ID -> notebookUri for cleanup
-      const sessionNotebooks = yield* Ref.make(
-        HashMap.empty<string, NotebookId>(),
+      // Map from notebookUri -> debug session ID for lifecycle management
+      const activeSessions = yield* Ref.make(
+        HashMap.empty<NotebookId, string>(),
       );
 
       yield* code.debug.onDidTerminateDebugSession((session) =>
-        Ref.update(sessionNotebooks, HashMap.remove(session.id)),
+        Effect.gen(function* () {
+          // Find which notebook this session belonged to
+          const sessions = yield* Ref.get(activeSessions);
+          const entry = HashMap.findFirst(sessions, (id) => id === session.id);
+
+          if (Option.isSome(entry)) {
+            yield* Ref.update(activeSessions, HashMap.remove(entry.value[0]));
+          }
+        }),
       );
 
       yield* code.debug.registerDebugAdapterDescriptorFactory(DEBUG_TYPE, {
@@ -111,23 +118,19 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
             return undefined;
           }
 
-          const { notebookUri, cellIndex, cellMappings } = config.value.marimo;
-          const state = HashMap.get(yield* Ref.get(debugpyStates), notebookUri);
-
-          if (Option.isNone(state)) {
-            return undefined;
-          }
+          const { notebookUri, port, cellIndex, cellMappings } =
+            config.value.marimo;
 
           yield* Ref.update(
-            sessionNotebooks,
-            HashMap.set(session.id, notebookUri),
+            activeSessions,
+            HashMap.set(notebookUri, session.id),
           );
 
           const mapping = createSourceMapping(cellMappings);
 
           const proxy = new MarimoDebugProxy(
             "127.0.0.1",
-            state.value.port,
+            port,
             mapping,
             new code.EventEmitter(),
             () => {
@@ -172,54 +175,50 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
             return;
           }
 
-          const notebookUri = cell.notebook.id;
-          const cellIndex = cell.index;
-          const cellDocumentUri = cell.document.uri.toString();
-          const cellCode = cell.document.getText();
+          const notebook = cell.notebook;
+          const notebookUri = notebook.id;
 
-          // Activate debugpy in the kernel if not already done
-          const existing = HashMap.get(
-            yield* Ref.get(debugpyStates),
+          // Stop any existing debug session for this notebook
+          const existingSessionId = HashMap.get(
+            yield* Ref.get(activeSessions),
             notebookUri,
           );
-          const state: DebugpyState = Option.isSome(existing)
-            ? existing.value
-            : yield* Effect.gen(function* () {
-                yield* Effect.logInfo("Activating debugpy in kernel");
-                const activated = yield* activateDebugpy(
-                  kernelManager,
-                  notebookUri,
-                  debugpyLibsPath,
-                );
-                yield* Ref.update(
-                  debugpyStates,
-                  HashMap.set(notebookUri, activated),
-                );
-                yield* Effect.logInfo("debugpy activated").pipe(
-                  Effect.annotateLogs({
-                    port: activated.port,
-                    tmpdir: activated.tmpdir,
-                  }),
-                );
-                return activated;
-              });
+          if (Option.isSome(existingSessionId)) {
+            yield* Effect.logInfo("Stopping existing debug session");
+            yield* code.debug.stopDebugging(existingSessionId.value);
+          }
+          const cellIndex = cell.index;
+          const allCells = notebook.getCells();
 
-          // Build cell mappings: cellDocumentUri -> tmpdir/__marimo__cell_{cellId}_.py
-          const cellFilePath = NodePath.join(
-            state.tmpdir,
-            `__marimo__cell_${cellId.value}_.py`,
+          // Activate debugpy (idempotent — returns existing port if already running)
+          yield* Effect.logInfo("Activating debugpy in kernel");
+          const state = yield* activateDebugpy(
+            kernelManager,
+            notebookUri,
+            debugpyLibsPath,
           );
-          const cellMappings: Record<string, string> = {
-            [cellDocumentUri]: cellFilePath,
-          };
+          yield* Effect.logInfo("debugpy ready").pipe(
+            Effect.annotateLogs({
+              port: state.port,
+              tmpdir: state.tmpdir,
+            }),
+          );
 
-          // Write cell source to disk so debugpy can find it for breakpoints.
-          // The kernel's linecache has this content but debugpy needs real files.
+          // Build mappings for ALL cells so stepping across cells works.
+          // Each cell URI maps to its temp file path on disk.
+          const cellMappings: Record<string, string> = {};
           yield* Effect.try(() => {
-            NodeFs.mkdirSync(NodePath.dirname(cellFilePath), {
-              recursive: true,
-            });
-            NodeFs.writeFileSync(cellFilePath, cellCode, "utf-8");
+            NodeFs.mkdirSync(state.tmpdir, { recursive: true });
+            for (const c of allCells) {
+              const id = c.id;
+              if (Option.isNone(id)) continue;
+              const filePath = NodePath.join(
+                state.tmpdir,
+                `__marimo__cell_${id.value}_.py`,
+              );
+              cellMappings[c.document.uri.toString()] = filePath;
+              NodeFs.writeFileSync(filePath, c.document.getText(), "utf-8");
+            }
           });
 
           yield* code.debug.startDebugging(undefined, {
@@ -227,9 +226,15 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
             request: "attach",
             name: "Debug Cell",
             justMyCode: true,
-            rules: [{ include: cellFilePath }],
+            rules: [
+              {
+                path: NodePath.join(state.tmpdir, "**"),
+                include: true,
+              },
+            ],
             marimo: {
               notebookUri,
+              port: state.port,
               cellIndex,
               cellMappings,
             },

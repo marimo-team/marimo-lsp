@@ -1696,6 +1696,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           startDebugging() {
             return Effect.succeed(true);
           },
+          stopDebugging(_sessionId?: string) {
+            return Effect.void;
+          },
           onDidTerminateDebugSession() {
             return Effect.acquireRelease(Effect.void, () => Effect.void);
           },
