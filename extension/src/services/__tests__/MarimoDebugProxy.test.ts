@@ -1,0 +1,281 @@
+import * as NodeNet from "node:net";
+
+import { describe, expect, it } from "@effect/vitest";
+import { Deferred, Effect, Array as EffectArray, Layer, Stream } from "effect";
+import type * as vscode from "vscode";
+
+import { acquireDisposable } from "../../utils/acquireDisposable.ts";
+import { createSourceMapping, MarimoDebugProxy } from "../MarimoDebugProxy.ts";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function encodeDap(msg: unknown): string {
+  const json = JSON.stringify(msg);
+  return `Content-Length: ${Buffer.byteLength(json, "utf-8")}\r\n\r\n${json}`;
+}
+
+function parseDapMessages(raw: string): unknown[] {
+  const messages: unknown[] = [];
+  let buf = raw;
+  while (buf.length > 0) {
+    const headerEnd = buf.indexOf("\r\n\r\n");
+    if (headerEnd === -1) break;
+    const header = buf.slice(0, headerEnd);
+    const match = /Content-Length:\s*(\d+)/i.exec(header);
+    if (!match) break;
+    const len = Number.parseInt(match[1], 10);
+    const bodyStart = headerEnd + 4;
+    if (buf.length < bodyStart + len) break;
+    messages.push(JSON.parse(buf.slice(bodyStart, bodyStart + len)));
+    buf = buf.slice(bodyStart + len);
+  }
+  return messages;
+}
+
+class MockEventEmitter<T> {
+  #listeners: Array<(e: T) => void> = [];
+  event = (listener: (e: T) => void) => {
+    this.#listeners.push(listener);
+    return { dispose: () => {} };
+  };
+  fire(data: T) {
+    for (const listener of this.#listeners) {
+      listener(data);
+    }
+  }
+  dispose() {
+    this.#listeners = [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mock debugpy TCP server as a scoped Effect service
+// ---------------------------------------------------------------------------
+
+type Connection = {
+  dispatch(msg: unknown): void;
+  messages: Stream.Stream<Uint8Array, Error>;
+};
+
+class MockDebugpy extends Effect.Service<MockDebugpy>()("MockDebugpy", {
+  scoped: Effect.gen(function* () {
+    const port = yield* Deferred.make<number, Error>();
+    const connection = yield* Deferred.make<Connection, Error>();
+    const server = NodeNet.createServer((socket) =>
+      Effect.runSync(
+        Deferred.succeed(connection, {
+          dispatch: (msg) => socket.write(encodeDap(msg)),
+          messages: Stream.async<Uint8Array, Error>((emit) => {
+            socket.on("data", (chunk) => emit.single(chunk));
+            socket.on("end", () => emit.end());
+            socket.on("error", (err) => emit.fail(err));
+          }),
+        }),
+      ),
+    );
+    yield* Effect.addFinalizer(() => Effect.sync(() => server.close()));
+
+    server.listen(0, () => {
+      const addr = server.address();
+      if (addr == null || typeof addr === "string") {
+        return;
+      }
+      Effect.runSync(Deferred.succeed(port, addr.port));
+    });
+
+    return {
+      port: yield* Deferred.await(port),
+      /** Wait for a client to connect, then return the connection. */
+      connection: () => Deferred.await(connection),
+    };
+  }),
+}) {}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+const CELL_URI = "vscode-notebook-cell://auth/cell-abc123";
+const TEMP_FILE = "/tmp/marimo_12345/__marimo__cell_abc123_.py";
+
+/** Take the first chunk from the connection's message stream and parse DAP messages from it. */
+function takeFirstMessage(conn: Connection) {
+  return conn.messages.pipe(
+    Stream.take(1),
+    Stream.runFold("", (acc, chunk) => acc + chunk.toString()),
+    Effect.map(parseDapMessages),
+    Effect.flatMap(EffectArray.head),
+  );
+}
+
+function acquireProxy(
+  port: number,
+  mapping: ReturnType<typeof createSourceMapping>,
+  onConfigurationDone = () => {},
+) {
+  return acquireDisposable(
+    () =>
+      new MarimoDebugProxy(
+        "127.0.0.1",
+        port,
+        mapping,
+        new MockEventEmitter<vscode.DebugProtocolMessage>(),
+        onConfigurationDone,
+      ),
+  );
+}
+
+describe("MarimoDebugProxy", () => {
+  it.layer(Layer.fresh(MockDebugpy.Default))((it) => {
+    it.scoped(
+      "rewrites source.path in setBreakpoints (cell URI -> temp file)",
+      Effect.fn(function* () {
+        const server = yield* MockDebugpy;
+        const proxy = yield* acquireProxy(
+          server.port,
+          createSourceMapping({ [CELL_URI]: TEMP_FILE }),
+        );
+        const conn = yield* server.connection();
+
+        proxy.handleMessage({
+          type: "request",
+          seq: 1,
+          command: "setBreakpoints",
+          arguments: {
+            source: { path: CELL_URI },
+            breakpoints: [{ line: 5 }],
+          },
+        });
+
+        expect(yield* takeFirstMessage(conn)).toMatchInlineSnapshot(`
+          {
+            "arguments": {
+              "breakpoints": [
+                {
+                  "line": 5,
+                },
+              ],
+              "source": {
+                "path": "/tmp/marimo_12345/__marimo__cell_abc123_.py",
+              },
+            },
+            "command": "setBreakpoints",
+            "seq": 1,
+            "type": "request",
+          }
+        `);
+      }),
+    );
+  });
+
+  it.layer(Layer.fresh(MockDebugpy.Default))((it) => {
+    it.scoped(
+      "triggers onConfigurationDone callback and forwards message",
+      Effect.fn(function* () {
+        const server = yield* MockDebugpy;
+        let called = false;
+        const proxy = yield* acquireProxy(
+          server.port,
+          createSourceMapping({}),
+          () => {
+            called = true;
+          },
+        );
+        const conn = yield* server.connection();
+
+        proxy.handleMessage({
+          type: "request",
+          seq: 2,
+          command: "configurationDone",
+        });
+
+        expect(called).toBe(true);
+        expect(yield* takeFirstMessage(conn)).toMatchInlineSnapshot(`
+          {
+            "command": "configurationDone",
+            "seq": 2,
+            "type": "request",
+          }
+        `);
+      }),
+    );
+  });
+
+  it.layer(Layer.fresh(MockDebugpy.Default))((it) => {
+    it.scoped(
+      "rewrites source.path in responses from debugpy (temp file -> cell URI)",
+      Effect.fn(function* () {
+        const server = yield* MockDebugpy;
+        const proxy = yield* acquireProxy(
+          server.port,
+          createSourceMapping({ [CELL_URI]: TEMP_FILE }),
+        );
+        const conn = yield* server.connection();
+
+        // Subscribe to proxy's outgoing messages (debugpy -> VS Code)
+        const received = yield* Deferred.make<vscode.DebugProtocolMessage>();
+        proxy.onDidSendMessage((msg) => {
+          Effect.runFork(Deferred.succeed(received, msg));
+        });
+
+        conn.dispatch({
+          type: "event",
+          seq: 10,
+          event: "stopped",
+          body: {
+            reason: "breakpoint",
+            source: { path: TEMP_FILE },
+          },
+        });
+
+        expect(yield* Deferred.await(received)).toMatchInlineSnapshot(`
+          {
+            "body": {
+              "reason": "breakpoint",
+              "source": {
+                "path": "vscode-notebook-cell://auth/cell-abc123",
+              },
+            },
+            "event": "stopped",
+            "seq": 10,
+            "type": "event",
+          }
+        `);
+      }),
+    );
+  });
+
+  it.layer(Layer.fresh(MockDebugpy.Default))((it) => {
+    it.scoped(
+      "forwards unrecognized messages unchanged",
+      Effect.fn(function* () {
+        const server = yield* MockDebugpy;
+        const proxy = yield* acquireProxy(
+          server.port,
+          createSourceMapping({ [CELL_URI]: TEMP_FILE }),
+        );
+        const conn = yield* server.connection();
+
+        proxy.handleMessage({
+          type: "request",
+          seq: 3,
+          command: "continue",
+          arguments: { threadId: 1 },
+        });
+
+        expect(yield* takeFirstMessage(conn)).toMatchInlineSnapshot(`
+          {
+            "arguments": {
+              "threadId": 1,
+            },
+            "command": "continue",
+            "seq": 3,
+            "type": "request",
+          }
+        `);
+      }),
+    );
+  });
+});

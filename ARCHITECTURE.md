@@ -135,22 +135,6 @@ NotebookCommand<InterruptRequest> {
 }
 ```
 
-<a name="marimo.dap" href="#marimo.dap">#</a> **marimo.dap** ·
-[Source](src/marimo_lsp/server.py#L222)
-
-Handles Debug Adapter Protocol requests. Responses are sent via `marimo/dap`
-notification.
-
-```typescript
-NotebookCommand<DebugAdapterRequest> {
-  notebookUri: string;
-  inner: {
-    sessionId: string;
-    message: DebugProtocolMessage;
-  }
-}
-```
-
 <a name="marimo.convert" href="#marimo.convert">#</a> **marimo.convert** ·
 [Source](src/marimo_lsp/server.py#L237)
 
@@ -191,19 +175,6 @@ Currently implemented operations:
 - `package-install-start` - Package installation started
 - `package-install-complete` - Package installation completed
 - And other marimo kernel operations
-
-<a name="marimo/dap" href="#marimo/dap">#</a> **marimo/dap** ·
-[Source](src/marimo_lsp/debug_adapter.py#L59)
-
-Debug Adapter Protocol response notifications (in response to `marimo.dap`
-command).
-
-```typescript
-{
-  sessionId: string;
-  message: DebugProtocolMessage;
-}
-```
 
 ## Components
 

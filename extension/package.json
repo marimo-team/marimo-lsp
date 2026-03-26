@@ -138,23 +138,6 @@
         "languages": [
           "python",
           "mo-python"
-        ],
-        "configurationAttributes": {
-          "launch": {
-            "properties": {
-              "notebookUri": {
-                "type": "string",
-                "description": "URI of the notebook to debug"
-              }
-            }
-          }
-        },
-        "initialConfigurations": [
-          {
-            "type": "marimo",
-            "request": "launch",
-            "name": "Debug Marimo Notebook"
-          }
         ]
       }
     ],
@@ -276,6 +259,14 @@
         "title": "Publish notebook as ...",
         "shortTitle": "Publish notebook",
         "category": "marimo",
+        "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
+        "command": "marimo.debugCell",
+        "title": "Debug cell",
+        "shortTitle": "Debug",
+        "category": "marimo",
+        "icon": "$(debug-alt)",
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {

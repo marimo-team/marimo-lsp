@@ -32,6 +32,17 @@ const NotebookCellId = Brand.nominal<NotebookCellId>();
 const VariableName = Brand.nominal<VariableName>();
 
 /**
+ * Schema that decodes a string into a branded {@link NotebookId}.
+ *
+ * Only use this for parsing data from external sources (e.g., debug
+ * configurations, serialized state). Prefer obtaining NotebookId values
+ * from {@link MarimoNotebookDocument.id} in normal code paths.
+ */
+export const NotebookIdFromString = Schema.String.pipe(
+  Schema.fromBrand(NotebookId),
+);
+
+/**
  * Cell execution state
  */
 export const CellState = Schema.Literal("idle", "queued", "running", "stale");

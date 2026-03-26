@@ -9,6 +9,7 @@ export type MarimoCommand =
   | "marimo.config.toggleOnCellChangeAutoRun"
   | "marimo.config.toggleOnCellChangeLazy"
   | "marimo.createSetupCell"
+  | "marimo.debugCell"
   | "marimo.exportStaticHTML"
   | "marimo.newMarimoNotebook"
   | "marimo.openAsMarimoNotebook"
