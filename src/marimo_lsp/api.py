@@ -21,11 +21,9 @@ from marimo._server.models.models import InstantiateNotebookRequest
 from marimo._session.state.serialize import serialize_session_view
 from marimo._utils.parse_dataclass import parse_raw
 
-from marimo_lsp.debug_adapter import handle_debug_adapter_request
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     CloseSessionRequest,
-    DebugAdapterRequest,
     DeleteCellRequest,
     DependencyTreeRequest,
     DeserializeRequest,
@@ -233,21 +231,6 @@ async def deserialize(args: DeserializeRequest):
     return dataclasses.asdict(ir)
 
 
-async def dap(
-    ls: LanguageServer,
-    manager: LspSessionManager,
-    args: NotebookCommand[DebugAdapterRequest],
-):
-    """Handle DAP messages forwarded from VS Code extension."""
-    return handle_debug_adapter_request(
-        ls=ls,
-        manager=manager,
-        notebook_uri=args.notebook_uri,
-        session_id=args.inner.session_id,
-        message=args.inner.message,
-    )
-
-
 async def get_configuration(
     manager: LspSessionManager,
     args: NotebookCommand[GetConfigurationRequest],
@@ -376,13 +359,6 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
         return await function_call_request(
             manager,
             msgspec.convert(params, type=NotebookCommand[InvokeFunctionCommand]),
-        )
-
-    if method == "dap":
-        return await dap(
-            ls,
-            manager,
-            msgspec.convert(params, type=NotebookCommand[DebugAdapterRequest]),
         )
 
     if method == "close-session":

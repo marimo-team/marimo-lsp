@@ -61,16 +61,6 @@ class ConvertRequest(msgspec.Struct, rename="camel"):
     """The identifier for the text document to convert"""
 
 
-class DebugAdapterRequest(msgspec.Struct, rename="camel"):
-    """A forwarded DAP request."""
-
-    session_id: str
-    """A UUID for the debug session."""
-
-    message: dict
-    """The DAP message."""
-
-
 class InterruptRequest(msgspec.Struct, rename="camel"):
     """A request to interrupt the kernel execution."""
 

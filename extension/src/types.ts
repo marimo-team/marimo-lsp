@@ -1,5 +1,4 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
-import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageclient/node";
 
 import type { MarimoNotebook, NotebookCellId, NotebookId } from "./schemas.ts";
@@ -48,10 +47,6 @@ interface DeserializeRequest {
 interface SerializeRequest {
   notebook: typeof MarimoNotebook.Type;
 }
-interface DebugAdapterRequest {
-  sessionId: string;
-  message: vscode.DebugProtocolMessage;
-}
 type InterruptRequest = {};
 type ListPackagesRequest = {};
 type DependencyTreeRequest = {};
@@ -85,7 +80,6 @@ type MarimoApiMethodMap = {
   "export-as-ipynb": NotebookScoped<ExportAsIpynbRequest>;
   interrupt: NotebookScoped<InterruptRequest>;
   // marimo-lsp API
-  dap: NotebookScoped<DebugAdapterRequest>;
   serialize: SerializeRequest;
   deserialize: DeserializeRequest;
 };
@@ -159,7 +153,6 @@ export type RendererReceiveMessage =
 // Language server -> client
 type MarimoLspNotificationMap = {
   "marimo/operation": { notebookUri: NotebookId; operation: Notification };
-  "marimo/dap": { sessionId: string; message: vscode.DebugProtocolMessage };
   "window/logMessage": lsp.LogMessageParams;
 };
 export type MarimoLspNotification = keyof MarimoLspNotificationMap;

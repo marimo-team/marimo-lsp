@@ -131,41 +131,6 @@
         "path": "./syntaxes/python.tmLanguage.json"
       }
     ],
-    "debuggers": [
-      {
-        "type": "marimo",
-        "label": "Marimo Debugger",
-        "languages": [
-          "python",
-          "mo-python"
-        ],
-        "configurationAttributes": {
-          "launch": {
-            "properties": {
-              "notebookUri": {
-                "type": "string",
-                "description": "URI of the notebook to debug"
-              }
-            }
-          }
-        },
-        "initialConfigurations": [
-          {
-            "type": "marimo",
-            "request": "launch",
-            "name": "Debug Marimo Notebook"
-          }
-        ]
-      }
-    ],
-    "breakpoints": [
-      {
-        "language": "python"
-      },
-      {
-        "language": "mo-python"
-      }
-    ],
     "walkthroughs": [
       {
         "id": "marimo-getting-started",
