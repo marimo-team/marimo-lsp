@@ -103,20 +103,8 @@ export class MarimoDebugProxy implements vscode.DebugAdapter {
   /** VS Code -> debugpy */
   handleMessage(message: vscode.DebugProtocolMessage): void {
     // setBreakpoints: rewrite source.path from cell URI to temp file
-    const sbp = decodeSetBreakpoints(message);
-    if (Option.isSome(sbp)) {
-      const { source } = sbp.value.arguments;
-      const mapped = this.#mapping.cellToFile.get(source.path);
-      if (mapped) {
-        this.#sendToDebugpy({
-          ...sbp.value,
-          arguments: {
-            ...sbp.value.arguments,
-            source: { ...source, path: mapped },
-          },
-        });
-        return;
-      }
+    if (Option.isSome(decodeSetBreakpoints(message))) {
+      this.#rewriteSourcePaths(message, this.#mapping.cellToFile);
     }
 
     // configurationDone: forward to debugpy, then trigger cell execution
@@ -162,13 +150,14 @@ export class MarimoDebugProxy implements vscode.DebugAdapter {
 
       try {
         const json: unknown = JSON.parse(body);
-        const msg = decodeProtocolMessage(json);
-        if (Option.isNone(msg)) continue;
+        if (Option.isNone(decodeProtocolMessage(json))) continue;
 
-        // Rewrite source paths in responses/events from debugpy
+        // Rewrite source paths in responses/events from debugpy.
+        // Mutates `json` in place — this is the raw parsed object,
+        // not a decoded schema value.
         this.#rewriteSourcePaths(json, this.#mapping.fileToCell);
 
-        this.#emitter.fire(msg.value);
+        this.#emitter.fire(json as vscode.DebugProtocolMessage);
       } catch {
         console.error("[MarimoDebugProxy] failed to parse DAP message:", body);
       }

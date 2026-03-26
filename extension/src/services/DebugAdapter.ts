@@ -226,7 +226,8 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
             type: DEBUG_TYPE,
             request: "attach",
             name: "Debug Cell",
-            justMyCode: false,
+            justMyCode: true,
+            rules: [{ include: cellFilePath }],
             marimo: {
               notebookUri,
               cellIndex,
