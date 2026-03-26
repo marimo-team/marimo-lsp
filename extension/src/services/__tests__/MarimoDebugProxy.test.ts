@@ -1,7 +1,7 @@
 import * as NodeNet from "node:net";
 
 import { describe, expect, it } from "@effect/vitest";
-import { Deferred, Effect, Layer, Stream } from "effect";
+import { Deferred, Effect, Array as EffectArray, Layer, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { acquireDisposable } from "../../utils/acquireDisposable.ts";
@@ -104,8 +104,9 @@ const TEMP_FILE = "/tmp/marimo_12345/__marimo__cell_abc123_.py";
 function takeFirstMessage(conn: Connection) {
   return conn.messages.pipe(
     Stream.take(1),
-    Stream.map((chunk) => parseDapMessages(chunk.toString())),
-    Stream.runHead,
+    Stream.runFold("", (acc, chunk) => acc + chunk.toString()),
+    Effect.map(parseDapMessages),
+    Effect.flatMap(EffectArray.head),
   );
 }
 
@@ -150,25 +151,19 @@ describe("MarimoDebugProxy", () => {
 
         expect(yield* takeFirstMessage(conn)).toMatchInlineSnapshot(`
           {
-            "_id": "Option",
-            "_tag": "Some",
-            "value": [
-              {
-                "arguments": {
-                  "breakpoints": [
-                    {
-                      "line": 5,
-                    },
-                  ],
-                  "source": {
-                    "path": "/tmp/marimo_12345/__marimo__cell_abc123_.py",
-                  },
+            "arguments": {
+              "breakpoints": [
+                {
+                  "line": 5,
                 },
-                "command": "setBreakpoints",
-                "seq": 1,
-                "type": "request",
+              ],
+              "source": {
+                "path": "/tmp/marimo_12345/__marimo__cell_abc123_.py",
               },
-            ],
+            },
+            "command": "setBreakpoints",
+            "seq": 1,
+            "type": "request",
           }
         `);
       }),
@@ -199,15 +194,9 @@ describe("MarimoDebugProxy", () => {
         expect(called).toBe(true);
         expect(yield* takeFirstMessage(conn)).toMatchInlineSnapshot(`
           {
-            "_id": "Option",
-            "_tag": "Some",
-            "value": [
-              {
-                "command": "configurationDone",
-                "seq": 2,
-                "type": "request",
-              },
-            ],
+            "command": "configurationDone",
+            "seq": 2,
+            "type": "request",
           }
         `);
       }),
@@ -278,18 +267,12 @@ describe("MarimoDebugProxy", () => {
 
         expect(yield* takeFirstMessage(conn)).toMatchInlineSnapshot(`
           {
-            "_id": "Option",
-            "_tag": "Some",
-            "value": [
-              {
-                "arguments": {
-                  "threadId": 1,
-                },
-                "command": "continue",
-                "seq": 3,
-                "type": "request",
-              },
-            ],
+            "arguments": {
+              "threadId": 1,
+            },
+            "command": "continue",
+            "seq": 3,
+            "type": "request",
           }
         `);
       }),
