@@ -10,6 +10,7 @@ import {
   Runtime,
   Scope,
   Stream,
+  SubscriptionRef,
 } from "effect";
 // VsCode.ts centralizes and restricts access to the VS Code API.
 //
@@ -42,8 +43,21 @@ export class DebugSessionStartError extends Data.TaggedError(
 }> {}
 
 export class Window extends Effect.Service<Window>()("Window", {
-  effect: Effect.sync(() => {
+  effect: Effect.gen(function* () {
     const api = vscode.window;
+
+    const resolve = (kind: vscode.ColorThemeKind): "light" | "dark" =>
+      kind === vscode.ColorThemeKind.Dark ||
+      kind === vscode.ColorThemeKind.HighContrast
+        ? "dark"
+        : "light";
+
+    const colorThemeRef = yield* SubscriptionRef.make(
+      resolve(api.activeColorTheme.kind),
+    );
+    api.onDidChangeActiveColorTheme((theme) => {
+      Effect.runSync(SubscriptionRef.set(colorThemeRef, resolve(theme.kind)));
+    });
 
     return {
       createTerminal(
@@ -172,6 +186,9 @@ export class Window extends Effect.Service<Window>()("Window", {
         return acquireDisposable(() =>
           api.createStatusBarItem(id, alignment, priority),
         );
+      },
+      colorThemeChanges(): Stream.Stream<"light" | "dark"> {
+        return colorThemeRef.changes;
       },
       activeNotebookEditorChanges(): Stream.Stream<
         Option.Option<vscode.NotebookEditor>

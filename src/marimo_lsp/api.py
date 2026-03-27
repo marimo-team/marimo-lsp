@@ -37,6 +37,7 @@ from marimo_lsp.models import (
     NotebookCommand,
     SerializeRequest,
     SessionCommand,
+    SetDisplayThemeRequest,
     StdinRequest,
     UpdateConfigurationRequest,
     UpdateUIElementRequest,
@@ -286,6 +287,21 @@ async def update_configuration(
         return {"success": False, "error": str(e)}
 
 
+async def set_display_theme(
+    manager: LspSessionManager,
+    args: SetDisplayThemeRequest,
+):
+    """Set the display theme in all kernels without persisting to disk."""
+    for session in manager.sessions():
+        config = session.config_manager.get_config(hide_secrets=False)
+        updated = {**config, "display": {**config["display"], "theme": args.theme}}  # type: ignore[index]
+        session.put_control_request(
+            UpdateUserConfigCommand(config=updated),  # type: ignore[arg-type]
+            from_consumer_id=None,
+        )
+    return {"success": True}
+
+
 async def export_as_html(
     manager: LspSessionManager,
     args: NotebookCommand[ExportAsHTMLRequest],
@@ -413,6 +429,12 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
         return await update_configuration(
             manager,
             msgspec.convert(params, type=NotebookCommand[UpdateConfigurationRequest]),
+        )
+
+    if method == "set-display-theme":
+        return await set_display_theme(
+            manager,
+            msgspec.convert(params, type=SetDisplayThemeRequest),
         )
 
     if method == "export-as-html":

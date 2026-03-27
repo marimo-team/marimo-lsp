@@ -64,6 +64,10 @@ interface UpdateConfigurationRequest {
   config: Record<string, unknown>;
 }
 
+interface SetDisplayThemeRequest {
+  theme: "light" | "dark";
+}
+
 // API methods routed through marimo.api
 type MarimoApiMethodMap = {
   // marimo core API
@@ -80,6 +84,7 @@ type MarimoApiMethodMap = {
   "execute-scratchpad": NotebookScoped<ExecuteScratchRequest>;
   "export-as-html": NotebookScoped<ExportAsHtmlRequest>;
   "export-as-ipynb": NotebookScoped<ExportAsIpynbRequest>;
+  "set-display-theme": SetDisplayThemeRequest;
   interrupt: NotebookScoped<InterruptRequest>;
   "send-stdin": NotebookScoped<SendStdinRequest>;
   // marimo-lsp API

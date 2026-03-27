@@ -1471,6 +1471,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           activeTextEditorChanges() {
             return activeTextEditor.changes;
           },
+          colorThemeChanges:
+            options.window?.colorThemeChanges ??
+            (() => Stream.make("light" as const)),
           closeTextEditorTab: () => Effect.void,
           createTreeView<T>(viewId: string) {
             return Effect.acquireRelease(

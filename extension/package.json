@@ -21,7 +21,7 @@
     "test": "vitest",
     "test:extension": "vscode-test",
     "embed-sdist": "node scripts/embed-sdist.mjs",
-    "check": "tsgo && oxlint --type-aware --type-check && oxfmt --check . '!dist' && node ./scripts/check-css-variables.mjs",
+    "check": "oxlint --type-aware --type-check && oxfmt --check . '!dist' && node ./scripts/check-css-variables.mjs",
     "fmt": "oxfmt --write . '!dist'"
   },
   "devDependencies": {
