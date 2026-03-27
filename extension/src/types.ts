@@ -58,6 +58,8 @@ interface ExecuteScratchRequest {
   code: string;
 }
 
+type SendStdinRequest = Schemas["StdinRequest"];
+
 interface UpdateConfigurationRequest {
   config: Record<string, unknown>;
 }
@@ -79,6 +81,7 @@ type MarimoApiMethodMap = {
   "export-as-html": NotebookScoped<ExportAsHtmlRequest>;
   "export-as-ipynb": NotebookScoped<ExportAsIpynbRequest>;
   interrupt: NotebookScoped<InterruptRequest>;
+  "send-stdin": NotebookScoped<SendStdinRequest>;
   // marimo-lsp API
   serialize: SerializeRequest;
   deserialize: DeserializeRequest;

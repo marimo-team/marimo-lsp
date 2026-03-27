@@ -6,6 +6,7 @@ import {
   Queue,
   Runtime,
   Stream,
+  Array as EffectArray,
 } from "effect";
 
 import { unreachable } from "../assert.ts";
@@ -288,6 +289,10 @@ function processOperation(
           editor,
           controller,
         });
+
+        // If the operation contains a stdin console message, prompt for input
+        // Fork so we don't block the operation processing loop
+        yield* Effect.fork(handleStdinPrompt(operation, notebookUri));
         break;
       }
       case "interrupted": {
@@ -355,6 +360,62 @@ function processOperation(
       default: {
         yield* Effect.logWarning("Unknown operation");
         break;
+      }
+    }
+  });
+}
+
+/**
+ * Detects stdin console messages in a cell-op and prompts the user for input.
+ * Sends the response back to the kernel via the `send-stdin` API method.
+ */
+function handleStdinPrompt(
+  operation: CellOperationNotification,
+  notebookUri: NotebookId,
+) {
+  return Effect.gen(function* () {
+    const code = yield* VsCode;
+    const client = yield* LanguageClient;
+    if (operation.console == null) {
+      return;
+    }
+
+    const consoleOutputs = EffectArray.ensure(operation.console);
+    for (const output of consoleOutputs) {
+      if (output.channel !== "stdin") {
+        continue;
+      }
+
+      const prompt = typeof output.data === "string" ? output.data : "";
+
+      const result = yield* code.window.showInputBox({
+        prompt: prompt || "input()",
+        password: output.mimetype === "text/password",
+      });
+
+      if (Option.isSome(result)) {
+        yield* client.executeCommand({
+          command: "marimo.api",
+          params: {
+            method: "send-stdin",
+            params: {
+              notebookUri,
+              inner: { text: result.value },
+            },
+          },
+        });
+      } else {
+        // User cancelled — interrupt the kernel so it stops waiting for input
+        yield* client.executeCommand({
+          command: "marimo.api",
+          params: {
+            method: "interrupt",
+            params: {
+              notebookUri,
+              inner: {},
+            },
+          },
+        });
       }
     }
   });

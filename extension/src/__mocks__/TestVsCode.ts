@@ -1317,6 +1317,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       initialDocuments?: Array<vscode.NotebookDocument>;
       version?: string;
       fileSystem?: Map<string, Uint8Array | Error>;
+      window?: Partial<Window>;
     } = {},
   ) {
     const activeTextEditor = yield* SubscriptionRef.make(
@@ -1386,9 +1387,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           showSaveDialog() {
             return Effect.succeed(Option.none());
           },
-          showInputBox() {
-            return Effect.succeed(Option.none());
-          },
+          showInputBox:
+            options.window?.showInputBox ??
+            (() => Effect.succeed(Option.none())),
           showInformationMessage() {
             return Effect.succeed(Option.none());
           },
