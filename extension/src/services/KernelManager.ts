@@ -6,6 +6,7 @@ import {
   Queue,
   Runtime,
   Stream,
+  Array as EffectArray,
 } from "effect";
 
 import { unreachable } from "../assert.ts";
@@ -373,24 +374,23 @@ function handleStdinPrompt(
   notebookUri: NotebookId,
 ) {
   return Effect.gen(function* () {
-    const consoleOutputs = operation.console;
-    if (consoleOutputs == null) return;
+    const code = yield* VsCode;
+    const client = yield* LanguageClient;
+    if (operation.console == null) {
+      return;
+    }
 
-    const outputs = Array.isArray(consoleOutputs)
-      ? consoleOutputs
-      : [consoleOutputs];
-
-    for (const output of outputs) {
-      if (output.channel !== "stdin") continue;
+    const consoleOutputs = EffectArray.ensure(operation.console);
+    for (const output of consoleOutputs) {
+      if (output.channel !== "stdin") {
+        continue;
+      }
 
       const prompt = typeof output.data === "string" ? output.data : "";
-      const isPassword = output.mimetype === "text/password";
-      const code = yield* VsCode;
-      const client = yield* LanguageClient;
 
       const result = yield* code.window.showInputBox({
         prompt: prompt || "input()",
-        password: isPassword,
+        password: output.mimetype === "text/password",
       });
 
       if (Option.isSome(result)) {
@@ -401,6 +401,18 @@ function handleStdinPrompt(
             params: {
               notebookUri,
               inner: { text: result.value },
+            },
+          },
+        });
+      } else {
+        // User cancelled — interrupt the kernel so it stops waiting for input
+        yield* client.executeCommand({
+          command: "marimo.api",
+          params: {
+            method: "interrupt",
+            params: {
+              notebookUri,
+              inner: {},
             },
           },
         });
