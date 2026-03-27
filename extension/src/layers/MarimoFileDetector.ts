@@ -1,6 +1,7 @@
 import { Effect, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../services/VsCode.ts";
 
 /**
@@ -10,6 +11,9 @@ import { VsCode } from "../services/VsCode.ts";
 export const MarimoFileDetectorLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
+
+    // Track URIs currently being auto-opened to prevent re-triggering
+    const autoOpeningUris = new Set<string>();
 
     // Helper to check if a text document is a marimo notebook
     const isMarimoFile = (document: vscode.TextDocument): boolean => {
@@ -40,13 +44,36 @@ export const MarimoFileDetectorLive = Layer.scopedDiscard(
       );
 
       if (isMarimoNotebook) {
-        yield* Effect.logDebug("Detected marimo notebook file").pipe(
-          Effect.annotateLogs({
-            uri: Option.map(editor, (e) => e.document.uri.toString()).pipe(
-              Option.getOrThrow,
-            ),
-          }),
+        const uri = Option.map(editor, (e) => e.document.uri).pipe(
+          Option.getOrThrow,
         );
+
+        yield* Effect.logDebug("Detected marimo notebook file").pipe(
+          Effect.annotateLogs({ uri: uri.toString() }),
+        );
+
+        // Auto-open as notebook if the setting is enabled
+        const uriString = uri.toString();
+        if (!autoOpeningUris.has(uriString)) {
+          const config = yield* code.workspace.getConfiguration("marimo");
+          const autoOpen = config.get<boolean>("autoOpenNotebook", false);
+          if (autoOpen) {
+            autoOpeningUris.add(uriString);
+            try {
+              yield* code.commands.executeCommand(
+                "vscode.openWith",
+                uri,
+                NOTEBOOK_TYPE,
+              );
+              yield* code.window.closeTextEditorTab(uri);
+              yield* Effect.logInfo(
+                "Auto-opened Python file as marimo notebook",
+              ).pipe(Effect.annotateLogs({ uri: uriString }));
+            } finally {
+              autoOpeningUris.delete(uriString);
+            }
+          }
+        }
       }
     });
 
