@@ -17,7 +17,11 @@ import {
   MarimoNotebookDocument,
   type NotebookId,
 } from "../schemas.ts";
-import type { CellOperationNotification, Notification } from "../types.ts";
+import type {
+  CellOperationNotification,
+  Notification,
+  NotificationOf,
+} from "../types.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { TyLanguageServer } from "./completions/TyLanguageServer.ts";
 import { Config } from "./Config.ts";
@@ -66,7 +70,6 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       const client = yield* LanguageClient;
       const renderer = yield* NotebookRenderer;
 
-      const runPromise = Runtime.runPromise(yield* Effect.runtime());
       const queue = yield* Queue.unbounded<MarimoOperation>();
 
       // PubSub for scratch cell operations
@@ -90,7 +93,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
         Effect.gen(function* () {
           while (true) {
             const msg = yield* Queue.take(queue);
-            yield* processOperation(msg, runPromise, scratchOps).pipe(
+            yield* processOperation(msg, scratchOps).pipe(
               Effect.annotateLogs({
                 notebookUri: msg.notebookUri,
                 operation: msg.operation.op,
@@ -242,7 +245,101 @@ export class KernelManager extends Effect.Service<KernelManager>()(
 
 function processOperation(
   { notebookUri, operation }: MarimoOperation,
-  runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>,
+  scratchOps: PubSub.PubSub<CellOperationNotification>,
+) {
+  return Effect.gen(function* () {
+    const variables = yield* VariablesService;
+    const datasources = yield* DatasourcesService;
+
+    switch (operation.op) {
+      // These operations don't require an active editor or controller
+      case "variables": {
+        yield* variables.updateVariables(notebookUri, operation);
+        break;
+      }
+      case "variable-values": {
+        yield* variables.updateVariableValues(notebookUri, operation);
+        break;
+      }
+      case "data-source-connections": {
+        yield* datasources.updateConnections(notebookUri, operation);
+        break;
+      }
+      case "datasets": {
+        yield* datasources.updateDatasets(notebookUri, operation);
+        break;
+      }
+      case "sql-table-preview": {
+        yield* datasources.updateTablePreview(notebookUri, operation);
+        break;
+      }
+      case "sql-table-list-preview": {
+        yield* datasources.updateTableListPreview(notebookUri, operation);
+        break;
+      }
+      case "data-column-preview": {
+        yield* datasources.updateColumnPreview(notebookUri, operation);
+        break;
+      }
+      // Ignored — not relevant in VS Code context
+      case "alert":
+      case "banner":
+      case "cache-cleared":
+      case "cache-info":
+      case "completed-run":
+      case "completion-result":
+      case "focus-cell":
+      case "installing-package-alert":
+      case "kernel-ready":
+      case "kernel-startup-error":
+      case "query-params-append":
+      case "query-params-clear":
+      case "query-params-delete":
+      case "query-params-set":
+      case "reconnected":
+      case "reload":
+      case "secret-keys-result":
+      case "startup-logs":
+      case "storage-namespaces":
+      case "update-cell-codes":
+      case "update-cell-ids":
+      case "validate-sql-result": {
+        break;
+      }
+      // These operations require an active editor and controller
+      case "cell-op":
+      case "interrupted":
+      case "missing-package-alert":
+      case "remove-ui-elements":
+      case "function-call-result":
+      case "send-ui-element-message":
+      case "model-lifecycle": {
+        yield* processSessionOperation(notebookUri, operation, scratchOps);
+        break;
+      }
+      default: {
+        yield* Effect.logWarning("Unknown operation").pipe(
+          Effect.annotateLogs({ op: (operation as Notification).op }),
+        );
+        unreachable(operation, "Unknown operation");
+      }
+    }
+  });
+}
+
+/**
+ * Handle operations that require an active notebook editor and controller.
+ */
+function processSessionOperation(
+  notebookUri: NotebookId,
+  operation:
+    | CellOperationNotification
+    | NotificationOf<"interrupted">
+    | NotificationOf<"missing-package-alert">
+    | NotificationOf<"remove-ui-elements">
+    | NotificationOf<"function-call-result">
+    | NotificationOf<"send-ui-element-message">
+    | NotificationOf<"model-lifecycle">,
   scratchOps: PubSub.PubSub<CellOperationNotification>,
 ) {
   return Effect.gen(function* () {
@@ -253,9 +350,8 @@ function processOperation(
     const renderer = yield* NotebookRenderer;
     const executions = yield* ExecutionRegistry;
     const controllers = yield* ControllerRegistry;
-    const variables = yield* VariablesService;
-    const datasources = yield* DatasourcesService;
     const tyLsp = yield* TyLanguageServer;
+    const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
     const maybeEditor = yield* editors.getLastNotebookEditor(notebookUri);
 
@@ -299,9 +395,6 @@ function processOperation(
         yield* executions.handleInterrupted(editor);
         break;
       }
-      case "completed-run": {
-        break;
-      }
       case "missing-package-alert": {
         // Handle in a separate fork (we don't want to block resolution)
         void runPromise(
@@ -314,36 +407,6 @@ function processOperation(
         );
         break;
       }
-      // Update variable state
-      case "variables": {
-        yield* variables.updateVariables(notebookUri, operation);
-        break;
-      }
-      case "variable-values": {
-        yield* variables.updateVariableValues(notebookUri, operation);
-        break;
-      }
-      // Update datasource state
-      case "data-source-connections": {
-        yield* datasources.updateConnections(notebookUri, operation);
-        break;
-      }
-      case "datasets": {
-        yield* datasources.updateDatasets(notebookUri, operation);
-        break;
-      }
-      case "sql-table-preview": {
-        yield* datasources.updateTablePreview(notebookUri, operation);
-        break;
-      }
-      case "sql-table-list-preview": {
-        yield* datasources.updateTableListPreview(notebookUri, operation);
-        break;
-      }
-      case "data-column-preview": {
-        yield* datasources.updateColumnPreview(notebookUri, operation);
-        break;
-      }
       // Forward to renderer (front end) (non-blocking)
       case "remove-ui-elements":
       case "function-call-result":
@@ -352,14 +415,8 @@ function processOperation(
         void runPromise(renderer.postMessage(operation, editor));
         break;
       }
-      case "update-cell-codes":
-      case "focus-cell": {
-        // Ignore
-        break;
-      }
       default: {
-        yield* Effect.logWarning("Unknown operation");
-        break;
+        unreachable(operation, "Unknown session operation");
       }
     }
   });
