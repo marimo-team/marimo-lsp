@@ -1,16 +1,16 @@
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 
-import { Effect, HashMap, Option, Ref, Runtime, Schema, Stream } from "effect";
+import { Effect, HashMap, Option, Ref, Schema, Stream } from "effect";
 
 import {
   MarimoNotebookCell,
   type NotebookId,
   NotebookIdFromString,
 } from "../schemas.ts";
+import { createSourceMapping, makeDapProxy } from "../utils/dap-proxy.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
 import { KernelManager } from "./KernelManager.ts";
-import { createSourceMapping, MarimoDebugProxy } from "./MarimoDebugProxy.ts";
 import { NotebookSerializer } from "./NotebookSerializer.ts";
 import { OutputChannel } from "./OutputChannel.ts";
 import { VsCode } from "./VsCode.ts";
@@ -81,9 +81,6 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
       const code = yield* VsCode;
       const kernelManager = yield* KernelManager;
 
-      const runtime = yield* Effect.runtime<VsCode>();
-      const runFork = Runtime.runFork(runtime);
-
       const debugpyLibsPath = yield* resolveDebugpyPath(code);
 
       // Map from notebookUri -> debug session ID for lifecycle management
@@ -109,7 +106,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
       );
 
       yield* code.debug.registerDebugAdapterDescriptorFactory(DEBUG_TYPE, {
-        createDebugAdapterDescriptor: Effect.fn(function* (session) {
+        createDebugAdapter: Effect.fn(function* (session) {
           const config = Schema.decodeUnknownOption(MarimoDebugConfiguration)(
             session.configuration,
           );
@@ -120,7 +117,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
             ).pipe(
               Effect.annotateLogs({ configuration: session.configuration }),
             );
-            return undefined;
+            return Option.none();
           }
 
           const { notebookUri, port, cellIndex, cellMappings } =
@@ -133,21 +130,18 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
 
           const mapping = createSourceMapping(cellMappings);
 
-          const proxy = new MarimoDebugProxy(
-            "127.0.0.1",
-            port,
-            mapping,
-            new code.EventEmitter(),
-            () => {
-              runFork(
-                code.commands.executeCommand("notebook.cell.execute", {
-                  ranges: [{ start: cellIndex, end: cellIndex + 1 }],
-                }),
-              );
-            },
+          const proxy = yield* makeDapProxy("127.0.0.1", port, mapping);
+
+          yield* proxy.ready.pipe(
+            Effect.andThen(
+              code.commands.executeCommand("notebook.cell.execute", {
+                ranges: [{ start: cellIndex, end: cellIndex + 1 }],
+              }),
+            ),
+            Effect.forkScoped,
           );
 
-          return new code.DebugAdapterInlineImplementation(proxy);
+          return Option.some(proxy.adapter);
         }),
       });
 
