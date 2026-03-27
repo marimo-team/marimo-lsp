@@ -84,12 +84,12 @@ type MarimoApiMethodMap = {
   "execute-scratchpad": NotebookScoped<ExecuteScratchRequest>;
   "export-as-html": NotebookScoped<ExportAsHtmlRequest>;
   "export-as-ipynb": NotebookScoped<ExportAsIpynbRequest>;
-  "set-display-theme": SetDisplayThemeRequest;
   interrupt: NotebookScoped<InterruptRequest>;
   "send-stdin": NotebookScoped<SendStdinRequest>;
   // marimo-lsp API
   serialize: SerializeRequest;
   deserialize: DeserializeRequest;
+  "set-display-theme": SetDisplayThemeRequest;
 };
 
 type ApiRequest<K extends keyof MarimoApiMethodMap> = {

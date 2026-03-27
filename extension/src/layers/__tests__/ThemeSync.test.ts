@@ -17,128 +17,126 @@ import { NotebookEditorRegistry } from "../../services/NotebookEditorRegistry.ts
 import type { MarimoCommand } from "../../types.ts";
 import { ThemeSyncLive } from "../ThemeSync.ts";
 
-function makeMockLanguageClient(
-  executions: Ref.Ref<ReadonlyArray<MarimoCommand>>,
+const withTestCtx = Effect.fn(function* (
+  initialTheme: "light" | "dark" = "light",
 ) {
-  return Layer.succeed(
-    LanguageClient,
-    LanguageClient.make({
-      channel: { name: "marimo-lsp", show() {} },
-      restart: () => Effect.void,
-      executeCommand(cmd) {
-        return Ref.update(executions, (arr) => [...arr, cmd]);
-      },
-      streamOf() {
-        return Stream.empty as never;
-      },
-    }),
-  );
-}
+  const themeRef = yield* SubscriptionRef.make<"light" | "dark">(initialTheme);
+  const executions = yield* Ref.make<ReadonlyArray<MarimoCommand>>([]);
 
-function themeCommands(cmds: ReadonlyArray<MarimoCommand>) {
-  return cmds
-    .filter(
-      (c) =>
-        c.command === "marimo.api" && c.params.method === "set-display-theme",
-    )
-    .map((c) => (c.params as { params: { theme: string } }).params);
-}
+  const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+    data: {
+      cells: [
+        {
+          kind: 1,
+          value: "",
+          languageId: "python",
+          metadata: { stableId: "cell-1" },
+        },
+      ],
+    },
+  });
+
+  const vscode = yield* TestVsCode.make({
+    initialDocuments: [editor.notebook],
+    window: {
+      colorThemeChanges: () => themeRef.changes,
+    },
+  });
+
+  const layer = Layer.empty.pipe(
+    Layer.provideMerge(ThemeSyncLive),
+    Layer.provide(NotebookEditorRegistry.Default),
+    Layer.provide(
+      Layer.succeed(
+        LanguageClient,
+        LanguageClient.make({
+          channel: { name: "marimo-lsp", show() {} },
+          restart: () => Effect.void,
+          executeCommand(cmd) {
+            return Ref.update(executions, (arr) => [...arr, cmd]);
+          },
+          streamOf() {
+            return Stream.never;
+          },
+        }),
+      ),
+    ),
+    Layer.provide(TestTelemetryLive),
+    Layer.provide(TestSentryLive),
+    Layer.provide(vscode.layer),
+  );
+
+  return {
+    layer,
+    vscode,
+    editor,
+    themeRef,
+    executions,
+  };
+});
 
 describe("ThemeSync", () => {
   it.scoped(
     "sends set-display-theme on theme change",
     Effect.fn(function* () {
-      const themeRef = yield* SubscriptionRef.make<"light" | "dark">("light");
-      const executions = yield* Ref.make<ReadonlyArray<MarimoCommand>>([]);
-
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
-        data: {
-          cells: [
-            {
-              kind: 1,
-              value: "import marimo as mo",
-              languageId: "python",
-              metadata: { stableId: "cell-1" },
-            },
-          ],
-        },
-      });
-
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: [editor.notebook],
-        window: {
-          colorThemeChanges: () => themeRef.changes,
-        },
-      });
-
-      const layer = Layer.empty.pipe(
-        Layer.provideMerge(ThemeSyncLive),
-        Layer.provide(NotebookEditorRegistry.Default),
-        Layer.provide(makeMockLanguageClient(executions)),
-        Layer.provide(TestTelemetryLive),
-        Layer.provide(TestSentryLive),
-        Layer.provide(vscode.layer),
-      );
+      const ctx = yield* withTestCtx("light");
 
       yield* Effect.gen(function* () {
-        yield* vscode.setActiveNotebookEditor(Option.some(editor));
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
 
-        // Change theme
-        yield* SubscriptionRef.set(themeRef, "dark");
+        yield* SubscriptionRef.set(ctx.themeRef, "dark");
         yield* TestClock.adjust("1 millis");
 
-        const cmds = themeCommands(yield* Ref.get(executions));
-        const darkCmd = cmds.find((c) => c.theme === "dark");
-        expect(darkCmd).toBeDefined();
-      }).pipe(Effect.provide(layer));
+        expect(yield* ctx.executions).toMatchInlineSnapshot(`
+          [
+            {
+              "command": "marimo.api",
+              "params": {
+                "method": "set-display-theme",
+                "params": {
+                  "theme": "light",
+                },
+              },
+            },
+            {
+              "command": "marimo.api",
+              "params": {
+                "method": "set-display-theme",
+                "params": {
+                  "theme": "dark",
+                },
+              },
+            },
+          ]
+        `);
+      }).pipe(Effect.provide(ctx.layer));
     }),
   );
 
   it.scoped(
     "syncs theme when a new notebook becomes active",
     Effect.fn(function* () {
-      const themeRef = yield* SubscriptionRef.make<"light" | "dark">("dark");
-      const executions = yield* Ref.make<ReadonlyArray<MarimoCommand>>([]);
-
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
-        data: {
-          cells: [
-            {
-              kind: 1,
-              value: "",
-              languageId: "python",
-              metadata: { stableId: "cell-1" },
-            },
-          ],
-        },
-      });
-
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: [editor.notebook],
-        window: {
-          colorThemeChanges: () => themeRef.changes,
-        },
-      });
-
-      const layer = Layer.empty.pipe(
-        Layer.provideMerge(ThemeSyncLive),
-        Layer.provide(NotebookEditorRegistry.Default),
-        Layer.provide(makeMockLanguageClient(executions)),
-        Layer.provide(TestTelemetryLive),
-        Layer.provide(TestSentryLive),
-        Layer.provide(vscode.layer),
-      );
+      const ctx = yield* withTestCtx("dark");
 
       yield* Effect.gen(function* () {
-        // Activate the notebook — should trigger theme sync
-        yield* vscode.setActiveNotebookEditor(Option.some(editor));
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
 
-        const cmds = themeCommands(yield* Ref.get(executions));
-        const darkCmd = cmds.find((c) => c.theme === "dark");
-        expect(darkCmd).toBeDefined();
-      }).pipe(Effect.provide(layer));
+        expect(yield* ctx.executions).toMatchInlineSnapshot(`
+          [
+            {
+              "command": "marimo.api",
+              "params": {
+                "method": "set-display-theme",
+                "params": {
+                  "theme": "dark",
+                },
+              },
+            },
+          ]
+        `);
+      }).pipe(Effect.provide(ctx.layer));
     }),
   );
 });

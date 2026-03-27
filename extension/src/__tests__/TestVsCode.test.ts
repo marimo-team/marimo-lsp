@@ -69,9 +69,9 @@ describe("TestVsCode", () => {
     "should emit changes to active editor stream",
     Effect.fn(function* () {
       const editors = [
-        TestVsCode.makeNotebookEditor("/test/foo_mo.py"),
-        TestVsCode.makeNotebookEditor("/test/foo_mo.py"),
-        TestVsCode.makeNotebookEditor("/test/foo_mo.py"),
+        TestVsCode.makeNotebookEditor("/test/foo_mo1.py"),
+        TestVsCode.makeNotebookEditor("/test/foo_mo2.py"),
+        TestVsCode.makeNotebookEditor("/test/foo_mo3.py"),
       ];
       const vscode = yield* TestVsCode.make({
         initialDocuments: editors.map((e) => e.notebook),
@@ -105,32 +105,13 @@ describe("TestVsCode", () => {
         );
       }).pipe(Effect.provide(vscode.layer));
 
-      expect(result).toMatchInlineSnapshot(`
+      expect(result.map(Option.getOrNull)).toMatchInlineSnapshot(`
         [
-          {
-            "_id": "Option",
-            "_tag": "Some",
-            "value": "file:///test/foo_mo.py",
-          },
-          {
-            "_id": "Option",
-            "_tag": "Some",
-            "value": "file:///test/foo_mo.py",
-          },
-          {
-            "_id": "Option",
-            "_tag": "Some",
-            "value": "file:///test/foo_mo.py",
-          },
-          {
-            "_id": "Option",
-            "_tag": "Some",
-            "value": "file:///test/foo_mo.py",
-          },
-          {
-            "_id": "Option",
-            "_tag": "None",
-          },
+          "file:///test/foo_mo1.py",
+          "file:///test/foo_mo2.py",
+          "file:///test/foo_mo3.py",
+          "file:///test/foo_mo3.py",
+          null,
         ]
       `);
     }),
