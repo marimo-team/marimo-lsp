@@ -98,6 +98,7 @@ class NotebookGraphUpdater:
             notebook_uri=self._notebook_uri
         )
         if not notebook:
+            logger.warning(f"Notebook not found in workspace: {self._notebook_uri}")
             return
 
         current_ids: set[CellId_t] = set()
@@ -136,7 +137,15 @@ class NotebookGraphUpdater:
         snapshot = _snapshot_variables(self._graph)
         if snapshot != self._last_published:
             self._last_published = snapshot
+            logger.info(
+                f"Publishing variables for {self._notebook_uri}: "
+                f"{len(snapshot)} variable(s), {len(current_ids)} cell(s)"
+            )
             _publish_variables(self._server, notebook, self._graph)
+        else:
+            logger.debug(
+                f"Variables unchanged for {self._notebook_uri}, skipping publish"
+            )
 
 
 class GraphUpdaterRegistry:

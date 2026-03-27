@@ -153,6 +153,17 @@ export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
                 cellCountsRef,
               ).pipe(Effect.provideService(VariablesService, variables)),
               connect: (client: lsp.LanguageClient) =>
+                // Two mechanisms ensure managed servers always have correct
+                // cell ordering:
+                //
+                // 1. PubSub stream: resyncs when variables change at runtime
+                // 2. resyncAll (called after client.start): catches up with
+                //    variables published before this client subscribed
+                //
+                // We use PubSub (not SubscriptionRef) because the initial
+                // SubscriptionRef emission fires before didOpen populates
+                // cellCountsRef, which would send deleteCount:0 and create
+                // duplicate cells.
                 variables.notebookUpdates().pipe(
                   Stream.filter((evt) => evt.kind === "declaration"),
                   Stream.mapEffect((evt) =>
@@ -177,7 +188,13 @@ export class NotebookSyncService extends Effect.Service<NotebookSyncService>()(
 ) {}
 
 /**
- * Sends a resync notification to a client for a specific notebook.
+ * Sends a two-phase resync to a client for a specific notebook:
+ *
+ * 1. Delete all cells (clean slate)
+ * 2. Insert all cells in topological order with full text
+ *
+ * Two separate `notebookDocument/didChange` notifications avoid edge cases
+ * with Ruff/ty's reverse-insertion and TextDocument reuse logic.
  */
 const sendResyncNotification = Effect.fn(function* (
   client: lsp.LanguageClient,
@@ -188,7 +205,6 @@ const sendResyncNotification = Effect.fn(function* (
   const code = yield* VsCode;
   const notebooks = yield* code.workspace.getNotebookDocuments();
 
-  // Find the notebook document for this ID
   const raw = notebooks.find((nb) => {
     const doc = MarimoNotebookDocument.tryFrom(nb);
     return Option.isSome(doc) && doc.value.id === notebookId;
@@ -203,19 +219,76 @@ const sendResyncNotification = Effect.fn(function* (
     return;
   }
 
-  const notification = yield* buildResyncNotification(
-    doc.value,
-    adapter,
-    cellCountsRef,
-  );
+  const [previousCellCount, reorderedCells] =
+    yield* SynchronizedRef.modifyEffect(cellCountsRef, (cellCounts) =>
+      Effect.map(getTopologicalCells(doc.value), (cells) => {
+        const prev = Option.getOrElse(
+          HashMap.get(cellCounts, doc.value.id),
+          () => 0,
+        );
+        const next = HashMap.set(cellCounts, doc.value.id, cells.length);
+        return [[prev, cells] as const, next];
+      }),
+    );
 
-  if (Option.isNone(notification)) {
+  if (reorderedCells.length === 0 && previousCellCount === 0) {
     return;
   }
 
-  yield* Effect.promise(() =>
-    client.sendNotification("notebookDocument/didChange", notification.value),
-  );
+  const notebookDoc = adapter.notebookDocument(raw);
+  const notebookHeader = {
+    uri: notebookDoc.uri.toString(),
+    version: notebookDoc.version,
+  };
+
+  // Phase 1: Delete all existing cells
+  if (previousCellCount > 0) {
+    yield* Effect.promise(() =>
+      client.sendNotification("notebookDocument/didChange", {
+        notebookDocument: notebookHeader,
+        change: {
+          cells: {
+            structure: {
+              array: { start: 0, deleteCount: previousCellCount },
+              didOpen: [],
+              didClose: [],
+            },
+          },
+        },
+      }),
+    );
+  }
+
+  // Phase 2: Insert all cells in topological order with full text
+  if (reorderedCells.length > 0) {
+    const adapted = reorderedCells.map((cell) => adapter.cell(cell));
+    yield* Effect.promise(() =>
+      client.sendNotification("notebookDocument/didChange", {
+        notebookDocument: notebookHeader,
+        change: {
+          cells: {
+            structure: {
+              array: {
+                start: 0,
+                deleteCount: 0,
+                cells: adapted.map((cell) => ({
+                  kind: cell.kind,
+                  document: cell.document.uri.toString(),
+                })),
+              },
+              didOpen: adapted.map((cell) => ({
+                uri: cell.document.uri.toString(),
+                languageId: cell.document.languageId,
+                version: cell.document.version,
+                text: cell.document.getText(),
+              })),
+              didClose: [],
+            },
+          },
+        },
+      }),
+    );
+  }
 });
 
 /**
@@ -323,98 +396,6 @@ function isVirtualWorkspace(
 }
 
 /**
- * Build a resync notification for a notebook when cell order changes.
- * Returns None if no resync is needed.
- *
- * Uses SynchronizedRef.modifyEffect to atomically get previous count,
- * fetch reordered cells, and update the count - serializing with other
- * notebook operations.
- */
-function buildResyncNotification(
-  doc: MarimoNotebookDocument,
-  adapter: NotebookAdapter,
-  cellCountsRef: SynchronizedRef.SynchronizedRef<CellCountsMap>,
-) {
-  return SynchronizedRef.modifyEffect(cellCountsRef, (cellCounts) =>
-    Effect.gen(function* () {
-      const previousCellCount = Option.getOrElse(
-        HashMap.get(cellCounts, doc.id),
-        () => 0,
-      );
-
-      const reorderedCells = yield* getTopologicalCells(doc);
-
-      if (reorderedCells.length === 0 && previousCellCount === 0) {
-        return [Option.none(), cellCounts] as const;
-      }
-
-      // Track the count of cells we actually send, not doc.cellCount
-      const newCellCounts = HashMap.set(
-        cellCounts,
-        doc.id,
-        reorderedCells.length,
-      );
-
-      // Send all cells in didOpen so the server refreshes its TextDocuments
-      // and re-lints. This is idempotent in Ruff/ty — the server just replaces
-      // the TextDocument even if the content is identical. Without didOpen,
-      // the server reuses saved content but may skip re-linting repositioned
-      // cells (the order changed but the documents weren't "touched").
-      const transformedCells = adapter.cellsEvent({
-        structure: {
-          array: {
-            start: 0,
-            deleteCount: previousCellCount,
-            cells: reorderedCells,
-          },
-          didOpen: reorderedCells,
-          didClose: [],
-        },
-      });
-
-      const structure = transformedCells?.structure;
-      if (!structure) {
-        return [Option.none(), newCellCounts] as const;
-      }
-
-      const notebookDoc = adapter.notebookDocument(doc.rawNotebookDocument);
-
-      const notification = Option.some({
-        notebookDocument: {
-          uri: notebookDoc.uri.toString(),
-          version: notebookDoc.version,
-        },
-        change: {
-          cells: {
-            structure: {
-              array: {
-                start: structure.array.start,
-                deleteCount: structure.array.deleteCount,
-                cells: structure.array.cells?.map((cell) => ({
-                  kind: cell.kind,
-                  document: cell.document.uri.toString(),
-                })),
-              } satisfies lsp.NotebookCellArrayChange,
-              didOpen: structure.didOpen?.map((cell) => ({
-                uri: cell.document.uri.toString(),
-                languageId: cell.document.languageId,
-                version: cell.document.version,
-                text: cell.document.getText(),
-              })),
-              didClose: structure.didClose?.map((cell) => ({
-                uri: cell.document.uri.toString(),
-              })),
-            },
-          },
-        },
-      });
-
-      return [notification, newCellCounts] as const;
-    }),
-  );
-}
-
-/**
  * Creates notebook middleware for a client.
  * Uses its own cellCountsRef for isolation.
  */
@@ -426,10 +407,35 @@ function createNotebookMiddleware(
     const runtime = yield* Effect.runtime<VariablesService>();
     const runPromise = Runtime.runPromise(runtime);
 
+    const variables = yield* VariablesService;
+
     const notebookMiddleware: lsp.Middleware["notebooks"] = {
       didOpen: async (raw, _cells, next) => {
         const doc = MarimoNotebookDocument.from(raw);
-        // SynchronizedRef.modifyEffect serializes with other operations
+
+        // Wait briefly for variables to become available.
+        // The marimo-lsp server publishes them on didOpen, but managed
+        // servers (Ruff/ty) may start before the variables are processed.
+        // Without this, cells fall back to document order and cross-cell
+        // references appear undefined.
+        //
+        // This must be outside the SynchronizedRef lock to avoid deadlocks.
+        await runPromise(
+          Effect.gen(function* () {
+            const hasVars = yield* variables.getVariables(doc.id);
+            if (Option.isNone(hasVars)) {
+              yield* variables.streamVariablesChanges().pipe(
+                Stream.filter((m) => HashMap.has(m, doc.id)),
+                Stream.take(1),
+                Stream.runDrain,
+                Effect.timeout("2 seconds"),
+                Effect.catchAll(() => Effect.void),
+              );
+            }
+          }),
+        );
+
+        // Now lock and get topological cells
         const orderedCells = await runPromise(
           SynchronizedRef.modifyEffect(cellCountsRef, (cellCounts) =>
             Effect.map(getTopologicalCells(doc), (cells) => {
