@@ -99,6 +99,13 @@ class UpdateConfigurationRequest(msgspec.Struct, rename="camel"):
     """The partial configuration to merge with the current config."""
 
 
+class SetDisplayThemeRequest(msgspec.Struct, rename="camel"):
+    """A request to set the display theme without persisting to disk."""
+
+    theme: str
+    """The theme to set ('light' or 'dark')."""
+
+
 class ApiRequest(msgspec.Struct, rename="camel"):
     """A unified API request for all marimo internal methods."""
 

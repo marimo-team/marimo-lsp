@@ -64,6 +64,10 @@ interface UpdateConfigurationRequest {
   config: Record<string, unknown>;
 }
 
+interface SetDisplayThemeRequest {
+  theme: "light" | "dark";
+}
+
 // API methods routed through marimo.api
 type MarimoApiMethodMap = {
   // marimo core API
@@ -85,6 +89,7 @@ type MarimoApiMethodMap = {
   // marimo-lsp API
   serialize: SerializeRequest;
   deserialize: DeserializeRequest;
+  "set-display-theme": SetDisplayThemeRequest;
 };
 
 type ApiRequest<K extends keyof MarimoApiMethodMap> = {

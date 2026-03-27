@@ -43,6 +43,10 @@ class LspSessionManager:
         """Get a session by notebook URI."""
         return self._sessions.get(notebook_uri)
 
+    def sessions(self) -> list[LspSession]:
+        """Get all active sessions."""
+        return list(self._sessions.values())
+
     def add_session(self, notebook_uri: str, session: LspSession) -> None:
         """Add a session to the manager."""
         logger.info(f"Adding session for {notebook_uri}")

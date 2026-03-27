@@ -56,6 +56,7 @@ import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
 import { ReloadOnConfigChangeLive } from "./ReloadOnConfigChange.ts";
+import { ThemeSyncLive } from "./ThemeSync.ts";
 
 /**
  * Main application layer that wires together all services and layers
@@ -75,6 +76,7 @@ const MainLive = Layer.empty
     Layer.merge(CellStatusBarProviderLive),
     Layer.merge(CellMetadataBindingsLive),
     Layer.merge(ReloadOnConfigChangeLive),
+    Layer.merge(ThemeSyncLive),
     Layer.merge(DebugLayerLive),
   )
   .pipe(
