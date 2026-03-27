@@ -3,11 +3,12 @@ import {
   Data,
   Effect,
   Either,
+  Exit,
   Fiber,
   Option,
   PubSub,
   Runtime,
-  type Scope,
+  Scope,
   Stream,
 } from "effect";
 // VsCode.ts centralizes and restricts access to the VS Code API.
@@ -435,9 +436,8 @@ export class Env extends Effect.Service<Env>()("Env", {
 }) {}
 
 export class Debug extends Effect.Service<Debug>()("Debug", {
-  effect: Effect.gen(function* () {
+  effect: Effect.sync(() => {
     const api = vscode.debug;
-    const runPromise = Runtime.runPromise(yield* Effect.runtime());
     return {
       registerDebugConfigurationProvider(
         debugType: string,
@@ -447,23 +447,48 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
           api.registerDebugConfigurationProvider(debugType, factory),
         ).pipe(Effect.asVoid);
       },
-      registerDebugAdapterDescriptorFactory(
+      registerDebugAdapterDescriptorFactory<R = never>(
         debugType: string,
         factory: {
-          createDebugAdapterDescriptor(
+          createDebugAdapter(
             session: vscode.DebugSession,
             executable: vscode.DebugAdapterExecutable | undefined,
-          ): Effect.Effect<vscode.DebugAdapterDescriptor | undefined>;
+          ): Effect.Effect<
+            Option.Option<Omit<vscode.DebugAdapter, "dispose">>,
+            never,
+            Scope.Scope | R
+          >;
         },
-      ) {
-        return acquireDisposable(() =>
-          api.registerDebugAdapterDescriptorFactory(debugType, {
-            createDebugAdapterDescriptor: (session, executable) =>
-              runPromise(
-                factory.createDebugAdapterDescriptor(session, executable),
-              ),
-          }),
-        ).pipe(Effect.asVoid);
+      ): Effect.Effect<void, never, Scope.Scope | R> {
+        return Effect.gen(function* () {
+          const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
+
+          yield* acquireDisposable(() =>
+            api.registerDebugAdapterDescriptorFactory(debugType, {
+              createDebugAdapterDescriptor: (session, executable) =>
+                runPromise(
+                  Effect.gen(function* () {
+                    const scope = yield* Scope.make();
+                    const adapter = yield* factory
+                      .createDebugAdapter(session, executable)
+                      .pipe(Scope.extend(scope));
+
+                    if (Option.isNone(adapter)) {
+                      yield* Scope.close(scope, Exit.void);
+                      return null;
+                    }
+
+                    return new vscode.DebugAdapterInlineImplementation(
+                      Object.assign(adapter.value, {
+                        dispose: () =>
+                          Effect.runFork(Scope.close(scope, Exit.void)),
+                      }),
+                    );
+                  }),
+                ),
+            }),
+          );
+        });
       },
       startDebugging(
         folder: vscode.WorkspaceFolder | undefined,

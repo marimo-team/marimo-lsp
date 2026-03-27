@@ -64,6 +64,9 @@ importers:
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20251015.1
         version: 7.0.0-dev.20251015.1
+      '@vscode/debugprotocol':
+        specifier: ^1.68.0
+        version: 1.68.0
       '@vscode/python-extension':
         specifier: ^1.0.6
         version: 1.0.6
@@ -1432,6 +1435,9 @@ packages:
 
   '@vitest/utils@4.0.18':
     resolution: {integrity: sha512-msMRKLMVLWygpK3u2Hybgi4MNjcYJvwTb0Ru09+fOyCXIgT5raYP041DRRdiJiI3k/2U6SEbAETB3YtBrUkCFA==}
+
+  '@vscode/debugprotocol@1.68.0':
+    resolution: {integrity: sha512-2J27dysaXmvnfuhFGhfeuxfHRXunqNPxtBoR3koiTOA9rdxWNDTa1zIFLCFMSHJ9MPTPKFcBeblsyaCJCIlQxg==}
 
   '@vscode/python-extension@1.0.6':
     resolution: {integrity: sha512-q7KYf+mymM67G0yS6xfhczFwu2teBi5oXHVdNgtCsYhErdSOkwMPtE291SqQahrjTcgKxn7O56i1qb1EQR6o4w==}
@@ -3672,6 +3678,8 @@ snapshots:
     dependencies:
       '@vitest/pretty-format': 4.0.18
       tinyrainbow: 3.0.3
+
+  '@vscode/debugprotocol@1.68.0': {}
 
   '@vscode/python-extension@1.0.6': {}
 

@@ -5,9 +5,9 @@ interface Disposable {
   dispose: () => Awaitable<void>;
 }
 
-export function acquireDisposable<T extends Disposable>(
+export function acquireDisposable<T extends Disposable, E = never, R = never>(
   createDisposable: () => Awaitable<T>,
-): Effect.Effect<T, never, Scope.Scope> {
+): Effect.Effect<T, E, Scope.Scope | R> {
   return Effect.acquireRelease(
     Effect.promise(async () => createDisposable()),
     (disposable) => Effect.promise(async () => disposable.dispose()),
