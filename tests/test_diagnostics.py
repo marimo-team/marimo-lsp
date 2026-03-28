@@ -1,270 +1,327 @@
-"""Tests for incremental graph management and diagnostics."""
+"""Tests for debounced graph compilation and variable publishing."""
 
 from __future__ import annotations
 
 from typing import cast
+from unittest.mock import MagicMock, patch
 
 import lsprotocol.types as lsp
 from marimo._types.ids import CellId_t
 
 from marimo_lsp.diagnostics import (
-    CellDocumentUri,
-    GraphManagerRegistry,
-    LRUCache,
-    NotebookGraphManager,
+    GraphUpdaterRegistry,
+    NotebookGraphUpdater,
+    _snapshot_variables,
 )
 from marimo_lsp.utils import decode_marimo_cell_metadata, get_stable_id
 
 
-class TestNotebookGraphManager:
-    """Unit tests for NotebookGraphManager."""
+def _make_server(
+    cells: list[tuple[str, str]],
+    notebook_uri: str = "file:///test.py",
+) -> MagicMock:
+    """Create a mock server whose workspace contains the given cells.
 
-    def test_only_recompiles_on_change(self) -> None:
-        """Test that cells aren't recompiled when source hasn't changed."""
-        manager = NotebookGraphManager()
-        cell_id = CellId_t("cell1")
+    Parameters
+    ----------
+    cells
+        List of (stable_id, source) tuples.
+    notebook_uri
+        URI of the notebook.
+    """
+    server = MagicMock()
 
-        # First update - should compile and mark stale
-        manager.update_cell(cell_id, "x = 1")
-        assert manager.is_stale()
-        assert cell_id in manager.get_graph().cells
-        manager.mark_clean()
+    lsp_cells = []
+    text_docs: dict[str, MagicMock] = {}
 
-        # Second update with same source - should not mark stale
-        manager.update_cell(cell_id, "x = 1")
-        assert not manager.is_stale()  # Should still be clean!
+    for stable_id, source in cells:
+        cell_uri = f"{notebook_uri}#cell-{stable_id}"
+        lsp_cells.append(
+            lsp.NotebookCell(
+                kind=lsp.NotebookCellKind.Code,
+                document=cell_uri,
+                metadata=cast("lsp.LSPObject", {"stableId": stable_id}),
+            )
+        )
+        doc_mock = MagicMock()
+        doc_mock.source = source
+        text_docs[cell_uri] = doc_mock
 
-        # Third update with different source - should recompile and mark stale
-        manager.update_cell(cell_id, "x = 2")
-        assert manager.is_stale()
+    notebook = lsp.NotebookDocument(
+        uri=notebook_uri,
+        notebook_type="marimo-notebook",
+        version=1,
+        cells=lsp_cells,
+    )
+    server.workspace.get_notebook_document.return_value = notebook
+    server.workspace.text_documents = text_docs
+    return server
+
+
+class TestNotebookGraphUpdater:
+    """Tests for NotebookGraphUpdater."""
+
+    def test_flush_compiles_and_publishes(self) -> None:
+        """flush() should compile all cells and publish variables."""
+        server = _make_server(
+            [
+                ("cell1", "x = 1"),
+                ("cell2", "y = x + 1"),
+            ]
+        )
+        updater = NotebookGraphUpdater(server, "file:///test.py")
+
+        updater.flush()
+
+        server.protocol.notify.assert_called_once()
+        call_args = server.protocol.notify.call_args
+        assert call_args[0][0] == "marimo/operation"
+
+    def test_flush_skips_publish_when_variables_unchanged(self) -> None:
+        """Second flush with same sources should not publish again."""
+        server = _make_server([("cell1", "x = 1")])
+        updater = NotebookGraphUpdater(server, "file:///test.py")
+
+        updater.flush()
+        assert server.protocol.notify.call_count == 1
+
+        # Same sources — should not publish again
+        updater.flush()
+        assert server.protocol.notify.call_count == 1
+
+    def test_flush_publishes_when_variables_change(self) -> None:
+        """Changing a cell's source to alter variables should trigger publish."""
+        server = _make_server([("cell1", "x = 1")])
+        updater = NotebookGraphUpdater(server, "file:///test.py")
+        updater.flush()
+        assert server.protocol.notify.call_count == 1
+
+        # Change cell source to introduce a new variable
+        server.workspace.text_documents[
+            "file:///test.py#cell-cell1"
+        ].source = "x = 1\ny = 2"
+        updater.flush()
+        assert server.protocol.notify.call_count == 2
+
+    def test_flush_skips_publish_when_source_changes_but_variables_dont(self) -> None:
+        """Changing source without altering variables should not publish."""
+        server = _make_server([("cell1", "x = 1")])
+        updater = NotebookGraphUpdater(server, "file:///test.py")
+        updater.flush()
+        assert server.protocol.notify.call_count == 1
+
+        # Change value but not variable structure
+        server.workspace.text_documents["file:///test.py#cell-cell1"].source = "x = 2"
+        updater.flush()
+        assert server.protocol.notify.call_count == 1
 
     def test_handles_syntax_errors(self) -> None:
-        """Test that cells with syntax errors are handled gracefully."""
-        manager = NotebookGraphManager()
-        cell_id = CellId_t("cell1")
+        """Cells with syntax errors should not crash the updater."""
+        server = _make_server([("cell1", "x = (")])
+        updater = NotebookGraphUpdater(server, "file:///test.py")
 
-        # Add valid cell
-        manager.update_cell(cell_id, "x = 1")
-        assert cell_id in manager.get_graph().cells
+        # Should not raise
+        updater.flush()
 
-        # Update with syntax error - should be removed from graph
-        manager.update_cell(cell_id, "x = (")
-        assert cell_id not in manager.get_graph().cells
+        # Fix the syntax error
+        server.workspace.text_documents["file:///test.py#cell-cell1"].source = "x = 1"
+        updater.flush()
 
-        # Fix syntax error - should be added back
-        manager.update_cell(cell_id, "x = 2")
-        assert cell_id in manager.get_graph().cells
+        # Should have published (new variable x)
+        assert server.protocol.notify.call_count >= 1
 
-    def test_cell_removal(self) -> None:
-        """Test that removing cells works correctly."""
-        manager = NotebookGraphManager()
-        cell_id = CellId_t("cell1")
+    def test_removed_cells_cleaned_up(self) -> None:
+        """Cells removed from notebook should be cleaned from the graph."""
+        server = _make_server(
+            [
+                ("cell1", "x = 1"),
+                ("cell2", "y = x + 1"),
+            ]
+        )
+        updater = NotebookGraphUpdater(server, "file:///test.py")
+        updater.flush()
 
-        manager.update_cell(cell_id, "x = 1")
-        assert cell_id in manager.get_graph().cells
+        # Remove cell2 from the notebook
+        notebook = server.workspace.get_notebook_document.return_value
+        notebook.cells = [notebook.cells[0]]
+        del server.workspace.text_documents["file:///test.py#cell-cell2"]
 
-        manager.remove_cell(cell_id)
-        assert cell_id not in manager.get_graph().cells
-        assert manager.is_stale()
+        updater.flush()
 
-    def test_removes_before_reregistering(self) -> None:
-        """Test that cells are deleted before being re-registered."""
-        manager = NotebookGraphManager()
-        cell_id = CellId_t("cell1")
+        # Variable y should no longer be published
+        last_call = server.protocol.notify.call_args
+        operation = last_call[0][1]["operation"]
+        var_names = [v["name"] for v in operation["variables"]]
+        assert "y" not in var_names
+        assert "x" in var_names
 
-        # Add cell
-        manager.update_cell(cell_id, "x = 1")
-        assert cell_id in manager.get_graph().cells
+    def test_cells_without_stable_id_skipped(self) -> None:
+        """Cells missing stableId metadata should be silently skipped."""
+        server = MagicMock()
 
-        # Update same cell (should delete then re-add)
-        manager.update_cell(cell_id, "x = 2")
-        assert cell_id in manager.get_graph().cells
+        cell_with_id = lsp.NotebookCell(
+            kind=lsp.NotebookCellKind.Code,
+            document="file:///test.py#cell-1",
+            metadata=cast("lsp.LSPObject", {"stableId": "cell1"}),
+        )
+        cell_without_id = lsp.NotebookCell(
+            kind=lsp.NotebookCellKind.Code,
+            document="file:///test.py#cell-2",
+            metadata=cast("lsp.LSPObject", {}),
+        )
 
-        # Should not raise AssertionError
-        manager.update_cell(cell_id, "x = 3")
-        assert cell_id in manager.get_graph().cells
-
-    def test_tracks_multiple_cells(self) -> None:
-        """Test that multiple cells are tracked independently."""
-        manager = NotebookGraphManager()
-        cell1 = CellId_t("cell1")
-        cell2 = CellId_t("cell2")
-
-        manager.update_cell(cell1, "x = 1")
-        manager.update_cell(cell2, "y = x + 1")
-        manager.mark_clean()
-
-        # Update only cell1
-        manager.update_cell(cell1, "x = 2")
-        assert manager.is_stale()
-        manager.mark_clean()
-
-        # Update with same value - should not mark stale
-        manager.update_cell(cell2, "y = x + 1")
-        assert not manager.is_stale()
-
-    def test_graph_has_correct_dependencies(self) -> None:
-        """Test that the graph correctly tracks variable dependencies."""
-        manager = NotebookGraphManager()
-        cell1 = CellId_t("cell1")
-        cell2 = CellId_t("cell2")
-
-        manager.update_cell(cell1, "x = 1")
-        manager.update_cell(cell2, "y = x + 1")
-
-        graph = manager.get_graph()
-
-        # x should be declared by cell1
-        assert "x" in graph.definitions
-        assert cell1 in graph.definitions["x"]
-
-        # y should be declared by cell2
-        assert "y" in graph.definitions
-        assert cell2 in graph.definitions["y"]
-
-        # cell2 should reference x
-        assert cell2 in graph.get_referring_cells("x", language="python")
-
-
-class TestGraphManagerRegistry:
-    """Unit tests for GraphManagerRegistry."""
-
-    def test_init_creates_manager(self) -> None:
-        """Test that init creates and initializes a manager."""
-        registry = GraphManagerRegistry()
-
-        # Mock notebook and server (simplified)
-        lsp.NotebookDocument(
+        notebook = lsp.NotebookDocument(
             uri="file:///test.py",
             notebook_type="marimo-notebook",
             version=1,
-            cells=[],
+            cells=[cell_with_id, cell_without_id],
         )
+        server.workspace.get_notebook_document.return_value = notebook
 
-        # We can't easily test this without a full server mock
-        # Just verify the manager is stored
-        assert registry.get("file:///test.py") is None
+        doc1 = MagicMock()
+        doc1.source = "x = 1"
+        doc2 = MagicMock()
+        doc2.source = "# no id"
+        server.workspace.text_documents = {
+            "file:///test.py#cell-1": doc1,
+            "file:///test.py#cell-2": doc2,
+        }
 
-    def test_get_returns_none_when_not_found(self) -> None:
-        """Test that get returns None for non-existent notebooks."""
-        registry = GraphManagerRegistry()
-        assert registry.get("file:///nonexistent.py") is None
+        updater = NotebookGraphUpdater(server, "file:///test.py")
+        updater.flush()  # Should not raise
 
-    def test_remove_deletes_manager(self) -> None:
-        """Test that remove deletes a manager."""
-        registry = GraphManagerRegistry()
+    def test_missing_notebook_is_noop(self) -> None:
+        """flush() when notebook not found in workspace should be a no-op."""
+        server = MagicMock()
+        server.workspace.get_notebook_document.return_value = None
 
-        # Manually add a manager for testing
-        registry._managers["file:///test.py"] = NotebookGraphManager()
-        assert registry.get("file:///test.py") is not None
+        updater = NotebookGraphUpdater(server, "file:///missing.py")
+        updater.flush()  # Should not raise
 
-        registry.remove("file:///test.py")
-        assert registry.get("file:///test.py") is None
+        server.protocol.notify.assert_not_called()
+
+    def test_dependency_tracking(self) -> None:
+        """Variables operation should include correct declared_by and used_by."""
+        server = _make_server(
+            [
+                ("cell1", "x = 1"),
+                ("cell2", "y = x + 1"),
+            ]
+        )
+        updater = NotebookGraphUpdater(server, "file:///test.py")
+        updater.flush()
+
+        call_args = server.protocol.notify.call_args
+        operation = call_args[0][1]["operation"]
+        variables = {v["name"]: v for v in operation["variables"]}
+
+        assert "x" in variables
+        assert CellId_t("cell1") in variables["x"]["declared_by"]
+        assert CellId_t("cell2") in variables["x"]["used_by"]
+
+    def test_schedule_sets_debounce_handle(self) -> None:
+        """schedule() should set a debounce handle."""
+        server = _make_server([("cell1", "x = 1")])
+        updater = NotebookGraphUpdater(server, "file:///test.py")
+
+        with patch("marimo_lsp.diagnostics.asyncio") as mock_asyncio:
+            mock_loop = MagicMock()
+            mock_asyncio.get_event_loop.return_value = mock_loop
+
+            updater.schedule()
+
+            mock_loop.call_later.assert_called_once()
+            assert mock_loop.call_later.call_args[0][0] == 0.15
+
+    def test_flush_cancels_pending_schedule(self) -> None:
+        """flush() should cancel any pending debounce timer."""
+        server = _make_server([("cell1", "x = 1")])
+        updater = NotebookGraphUpdater(server, "file:///test.py")
+
+        # Simulate a pending timer
+        mock_handle = MagicMock()
+        updater._debounce_handle = mock_handle
+
+        updater.flush()
+
+        mock_handle.cancel.assert_called_once()
+        assert updater._debounce_handle is None
+
+
+class TestGraphUpdaterRegistry:
+    """Tests for GraphUpdaterRegistry."""
+
+    def test_get_or_create_returns_same_instance(self) -> None:
+        """get_or_create should return the same updater for the same URI."""
+        server = MagicMock()
+        registry = GraphUpdaterRegistry(server)
+
+        u1 = registry.get_or_create("file:///test.py")
+        u2 = registry.get_or_create("file:///test.py")
+        assert u1 is u2
+
+    def test_get_or_create_different_uris(self) -> None:
+        """get_or_create should return different updaters for different URIs."""
+        server = MagicMock()
+        registry = GraphUpdaterRegistry(server)
+
+        u1 = registry.get_or_create("file:///a.py")
+        u2 = registry.get_or_create("file:///b.py")
+        assert u1 is not u2
+
+    def test_remove_cancels_timer(self) -> None:
+        """remove() should cancel any pending debounce timer."""
+        server = MagicMock()
+        registry = GraphUpdaterRegistry(server)
+
+        updater = registry.get_or_create("file:///test.py")
+
+        with patch.object(updater, "cancel") as mock_cancel:
+            registry.remove("file:///test.py")
+            mock_cancel.assert_called_once()
+
+        # New get_or_create should return a fresh instance
+        assert registry.get_or_create("file:///test.py") is not updater
 
     def test_remove_nonexistent_is_safe(self) -> None:
-        """Test that removing a non-existent manager doesn't error."""
-        registry = GraphManagerRegistry()
+        """Removing a non-existent notebook should not raise."""
+        server = MagicMock()
+        registry = GraphUpdaterRegistry(server)
         registry.remove("file:///nonexistent.py")  # Should not raise
 
 
-class TestIncrementalBehavior:
-    """Tests for incremental graph updates."""
+class TestSnapshotVariables:
+    """Tests for the _snapshot_variables helper."""
 
-    def test_empty_notebook_initializes(self) -> None:
-        """Test that an empty notebook can be initialized."""
-        manager = NotebookGraphManager()
-        # Should not error with no cells
-        graph = manager.get_graph()
-        assert len(graph.cells) == 0
+    def test_empty_graph(self) -> None:
+        """Empty graph should produce empty snapshot."""
+        from marimo._runtime.dataflow import DirectedGraph
 
-    def test_multiple_changes_to_same_cell(self) -> None:
-        """Test rapidly changing the same cell multiple times."""
-        manager = NotebookGraphManager()
-        cell_id = CellId_t("cell1")
+        graph = DirectedGraph()
+        snapshot = _snapshot_variables(graph)
+        assert snapshot == {}
 
-        # Simulate rapid edits
-        for i in range(10):
-            manager.update_cell(cell_id, f"x = {i}")
-            assert manager.is_stale()
-            manager.mark_clean()
+    def test_snapshot_captures_dependencies(self) -> None:
+        """Snapshot should capture declared_by and used_by as frozensets."""
+        from marimo._ast.compiler import compile_cell
+        from marimo._runtime.dataflow import DirectedGraph
 
-        # Final state should be x = 9
-        graph = manager.get_graph()
-        assert cell_id in graph.cells
-
-    def test_cell_order_independence(self) -> None:
-        """Test that cells can be added in any order."""
-        manager = NotebookGraphManager()
+        graph = DirectedGraph()
         cell1 = CellId_t("cell1")
         cell2 = CellId_t("cell2")
 
-        # Add cell2 first (depends on cell1)
-        manager.update_cell(cell2, "y = x + 1")
-        # Add cell1 second
-        manager.update_cell(cell1, "x = 1")
+        compiled1 = compile_cell(cell_id=cell1, code="x = 1")
+        graph.register_cell(cell_id=cell1, cell=compiled1)
 
-        graph = manager.get_graph()
-        assert cell1 in graph.cells
-        assert cell2 in graph.cells
-        assert "x" in graph.definitions
-        assert "y" in graph.definitions
+        compiled2 = compile_cell(cell_id=cell2, code="y = x + 1")
+        graph.register_cell(cell_id=cell2, cell=compiled2)
 
+        snapshot = _snapshot_variables(graph)
 
-class TestLRUCache:
-    """Unit tests for LRUCache."""
-
-    def test_basic_get_put(self) -> None:
-        """Test basic get and put operations."""
-        cache: LRUCache[str, int] = LRUCache(capacity=2)
-
-        cache.put("a", 1)
-        cache.put("b", 2)
-
-        assert cache.get("a") == 1
-        assert cache.get("b") == 2
-        assert cache.get("c") is None
-
-    def test_eviction_policy(self) -> None:
-        """Test that least recently used items are evicted."""
-        cache: LRUCache[str, int] = LRUCache(capacity=2)
-
-        cache.put("a", 1)
-        cache.put("b", 2)
-        # Access "a" to make it recently used
-        cache.get("a")
-        # Add "c" - should evict "b" (least recently used)
-        cache.put("c", 3)
-
-        assert cache.get("a") == 1
-        assert cache.get("b") is None  # Evicted
-        assert cache.get("c") == 3
-
-    def test_update_existing_key(self) -> None:
-        """Test updating an existing key updates its value and position."""
-        cache: LRUCache[str, int] = LRUCache(capacity=2)
-
-        cache.put("a", 1)
-        cache.put("b", 2)
-        cache.put("a", 10)  # Update "a"
-
-        assert cache.get("a") == 10
-
-        # Add new item - should evict "b" since "a" was just updated
-        cache.put("c", 3)
-        assert cache.get("b") is None
-        assert cache.get("a") == 10
-        assert cache.get("c") == 3
-
-    def test_capacity_one(self) -> None:
-        """Test cache with capacity of one."""
-        cache: LRUCache[str, int] = LRUCache(capacity=1)
-
-        cache.put("a", 1)
-        assert cache.get("a") == 1
-
-        cache.put("b", 2)
-        assert cache.get("a") is None  # Evicted
-        assert cache.get("b") == 2
+        assert "x" in snapshot
+        declared_by, used_by = snapshot["x"]
+        assert cell1 in declared_by
+        assert cell2 in used_by
 
 
 class TestCellMetadataHelpers:
@@ -334,99 +391,3 @@ class TestCellMetadataHelpers:
         assert cell_id is None
         assert config == {}
         assert name == "_"
-
-
-class TestURIMapping:
-    """Unit tests for URI-to-cell-id mapping functionality."""
-
-    def test_uri_cache_initialization(self) -> None:
-        """Test that NotebookGraphManager initializes the URI cache."""
-        manager = NotebookGraphManager()
-        assert manager.uri_to_cell_id_cache is not None
-
-    def test_update_cell_document_with_cached_mapping(self) -> None:
-        """Test _update_cell_document uses cached URI mapping."""
-        manager = NotebookGraphManager()
-        cell_id = CellId_t("cell1")
-        uri = CellDocumentUri("file:///test.py#cell1")
-
-        # Pre-populate the cache
-        manager.uri_to_cell_id_cache.put(uri, cell_id)
-
-        # Create a text document identifier
-        doc = lsp.VersionedTextDocumentIdentifier(uri=uri, version=1)
-
-        # Update should use the cached mapping
-        manager._update_cell_document(doc, "x = 1")
-
-        # Verify the cell was updated
-        assert cell_id in manager.get_graph().cells
-
-    def test_remove_cell_document_with_cached_mapping(self) -> None:
-        """Test _remove_cell_document uses cached URI mapping."""
-        manager = NotebookGraphManager()
-        cell_id = CellId_t("cell1")
-        uri = CellDocumentUri("file:///test.py#cell1")
-
-        # Add cell and populate cache
-        manager.update_cell(cell_id, "x = 1")
-        manager.uri_to_cell_id_cache.put(uri, cell_id)
-
-        assert cell_id in manager.get_graph().cells
-
-        # Remove via URI
-        doc = lsp.TextDocumentIdentifier(uri=uri)
-        manager._remove_cell_document(doc)
-
-        # Verify the cell was removed
-        assert cell_id not in manager.get_graph().cells
-
-    def test_persist_mapping_from_data(self) -> None:
-        """Test _persist_mapping stores mappings from cell data."""
-        manager = NotebookGraphManager()
-
-        cell = lsp.NotebookCell(
-            kind=lsp.NotebookCellKind.Code,
-            document="file:///test.py#cell1",
-            metadata=cast("lsp.LSPObject", {"stableId": "abc-123"}),
-        )
-
-        change = lsp.NotebookDocumentChangeEvent(
-            cells=lsp.NotebookDocumentCellChanges(data=[cell])
-        )
-
-        manager._persist_mapping(change)
-
-        # Verify mapping was stored
-        cached_id = manager.uri_to_cell_id_cache.get(
-            CellDocumentUri("file:///test.py#cell1")
-        )
-        assert cached_id == CellId_t("abc-123")
-
-    def test_persist_mapping_from_structure(self) -> None:
-        """Test _persist_mapping stores mappings from structure array."""
-        manager = NotebookGraphManager()
-
-        cell = lsp.NotebookCell(
-            kind=lsp.NotebookCellKind.Code,
-            document="file:///test.py#cell1",
-            metadata=cast("lsp.LSPObject", {"stableId": "abc-123"}),
-        )
-
-        change = lsp.NotebookDocumentChangeEvent(
-            cells=lsp.NotebookDocumentCellChanges(
-                structure=lsp.NotebookDocumentCellChangeStructure(
-                    array=lsp.NotebookCellArrayChange(
-                        start=0, delete_count=0, cells=[cell]
-                    )
-                )
-            )
-        )
-
-        manager._persist_mapping(change)
-
-        # Verify mapping was stored
-        cached_id = manager.uri_to_cell_id_cache.get(
-            CellDocumentUri("file:///test.py#cell1")
-        )
-        assert cached_id == CellId_t("abc-123")

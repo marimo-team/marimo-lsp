@@ -355,6 +355,11 @@ function buildResyncNotification(
         reorderedCells.length,
       );
 
+      // Send all cells in didOpen so the server refreshes its TextDocuments
+      // and re-lints. This is idempotent in Ruff/ty — the server just replaces
+      // the TextDocument even if the content is identical. Without didOpen,
+      // the server reuses saved content but may skip re-linting repositioned
+      // cells (the order changed but the documents weren't "touched").
       const transformedCells = adapter.cellsEvent({
         structure: {
           array: {
@@ -499,8 +504,10 @@ function buildCellReplacement(
     return Effect.succeed(cells);
   }
 
-  // Delete all old cells, insert all in new order.
-  // We must provide ALL cells in didOpen so the server gets their text content.
+  // Replace the structural array with topologically-sorted cells and send
+  // all cells in didOpen so the server refreshes TextDocuments and re-lints.
+  // This is idempotent — Ruff/ty just replace the TextDocument even for
+  // cells that already existed with identical content.
   return SynchronizedRef.modifyEffect(cellCountsRef, (cellCounts) =>
     Effect.map(getTopologicalCells(doc), (reorderedCells) => {
       const prevCount = Option.getOrElse(
