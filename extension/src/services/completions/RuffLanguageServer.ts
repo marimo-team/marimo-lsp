@@ -1,17 +1,7 @@
 import * as NodePath from "node:path";
 
-import {
-  type Cause,
-  Data,
-  Effect,
-  Exit,
-  Option,
-  Ref,
-  Runtime,
-  Stream,
-} from "effect";
+import { type Cause, Data, Effect, Exit, Option, Ref } from "effect";
 import type * as vscode from "vscode";
-import * as lsp from "vscode-languageclient/node";
 
 import {
   BinarySource,
@@ -20,10 +10,6 @@ import {
   resolveBinary,
   userConfiguredPath,
 } from "../../utils/binaryResolution.ts";
-import {
-  createManagedLanguageClient,
-  type ManagedLanguageClient,
-} from "../../utils/createManagedLanguageClient.ts";
 import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
 import { Config } from "../Config.ts";
 import { OutputChannel } from "../OutputChannel.ts";
@@ -31,12 +17,11 @@ import { Sentry } from "../Sentry.ts";
 import { ExtensionContext } from "../Storage.ts";
 import { Telemetry } from "../Telemetry.ts";
 import { Uv } from "../Uv.ts";
-import { VariablesService } from "../variables/VariablesService.ts";
 import { VsCode } from "../VsCode.ts";
 import {
-  type ClientNotebookSync,
-  NotebookSyncService,
-} from "./NotebookSyncService.ts";
+  makeNotebookLspClient,
+  type NotebookLspClient,
+} from "./NotebookLspClient.ts";
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
 // Bump this as needed for new features or fixes.
@@ -50,7 +35,7 @@ type RuffLanguageServerStatus = Data.TaggedEnum<{
   Starting: {};
   Disabled: { readonly reason: string };
   Running: {
-    readonly client: ManagedLanguageClient;
+    readonly client: NotebookLspClient;
     readonly serverVersion: string;
     readonly binarySource: BinarySource;
   };
@@ -64,22 +49,15 @@ type RuffLanguageServerStatus = Data.TaggedEnum<{
  * Manages a dedicated Ruff language server instance for marimo notebooks.
  * Provides linting diagnostics for notebook cells.
  *
- * Ruff has native notebook support. We configure automatic notebook sync
- * and use middleware to map mo-python -> python language IDs.
+ * Uses NotebookLspClient (custom Effect-based LSP client) instead of
+ * vscode-languageclient, giving us full control over notebook cell ordering.
  */
 export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
   "RuffLanguageServer",
   {
-    dependencies: [
-      Uv.Default,
-      Config.Default,
-      VariablesService.Default,
-      NotebookSyncService.Default,
-      OutputChannel.Default,
-    ],
+    dependencies: [Uv.Default, Config.Default, OutputChannel.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
-      const sync = yield* NotebookSyncService;
       const sentry = yield* Effect.serviceOption(Sentry);
       const telemetry = yield* Effect.serviceOption(Telemetry);
 
@@ -100,11 +78,9 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       yield* Effect.forkScoped(
         Effect.gen(function* () {
           if (Option.isSome(disabledReasonOption)) {
-            // Skip startup completely if disabled for any reason
             return;
           }
 
-          // Phase 1: Resolve the ruff binary using 3-tier strategy
           yield* Effect.logInfo("Starting language server").pipe(
             Effect.annotateLogs({
               server: RUFF_SERVER.name,
@@ -114,9 +90,6 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
 
           const resolved = yield* resolveRuffBinary();
 
-          // Create isolated sync instance with its own cell count tracking.
-          const notebookSync = yield* sync.forClient();
-
           // Build initializationOptions from ruff.* settings
           const ruffConfig = yield* code.workspace.getConfiguration("ruff");
           const workspaceFolders = yield* code.workspace.getWorkspaceFolders();
@@ -125,28 +98,26 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
           );
           const globalSettings = getGlobalRuffSettings(ruffConfig);
 
-          yield* Effect.logDebug("Ruff initialization options", {
-            settings,
-            globalSettings,
-          });
-
-          const installExit = yield* Effect.exit(
-            createManagedLanguageClient(RUFF_SERVER, resolved.path, {
-              notebookSync,
-              clientOptions: {
-                outputChannelName: "marimo (ruff)",
-                revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
-                middleware: yield* createRuffMiddleware(notebookSync),
-                documentSelector: sync.getDocumentSelector(),
-                transformServerCapabilities: sync.extendNotebookCellLanguages(),
-                initializationOptions: { settings, globalSettings },
-              },
+          // Create the LSP client
+          const clientExit = yield* Effect.exit(
+            makeNotebookLspClient({
+              name: RUFF_SERVER.name,
+              command: resolved.path,
+              args: ["server"],
+              initializationOptions: { settings, globalSettings },
+              workspaceFolders: Option.getOrElse(
+                workspaceFolders,
+                () => [],
+              ).map((f) => ({
+                uri: f.uri.toString(),
+                name: f.name,
+              })),
             }),
           );
 
-          if (!Exit.isSuccess(installExit)) {
-            const cause = installExit.cause;
-            const message = "Failed to install language server";
+          if (!Exit.isSuccess(clientExit)) {
+            const cause = clientExit.cause;
+            const message = "Failed to start language server";
             yield* Ref.set(
               statusRef,
               RuffLanguageServerStatus.Failed({ message, cause }),
@@ -162,84 +133,40 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
             return;
           }
 
-          // Phase 2: Start the server
-          const client = installExit.value;
-          yield* Effect.forkScoped(
-            Effect.gen(function* () {
-              const startExit = yield* Effect.exit(client.start());
+          const client = clientExit.value;
+          const serverVersion = client.serverInfo.version;
 
-              if (!Exit.isSuccess(startExit)) {
-                const cause = startExit.cause;
-                const message = "Failed to start language server";
-                yield* Ref.set(
-                  statusRef,
-                  RuffLanguageServerStatus.Failed({ message, cause }),
-                );
-                yield* Effect.logError(message).pipe(
-                  Effect.annotateLogs({
-                    server: RUFF_SERVER.name,
-                    version: RUFF_SERVER.version,
-                    cause,
-                  }),
-                );
-                yield* Effect.forkScoped(showErrorAndPromptLogs(message));
-                return;
-              }
-
-              const serverVersion = startExit.value.pipe(
-                Option.map((info) => info.version),
-                Option.getOrElse(() => "unknown"),
-              );
-
-              yield* Effect.logInfo("Language server started").pipe(
-                Effect.annotateLogs({
-                  server: RUFF_SERVER.name,
-                  version: serverVersion,
-                }),
-              );
-
-              if (Option.isSome(sentry)) {
-                yield* sentry.value.setTag("ruff.version", serverVersion);
-              }
-              if (Option.isSome(telemetry)) {
-                yield* telemetry.value.reportBinaryResolved(
-                  "ruff",
-                  resolved,
-                  serverVersion,
-                );
-              }
-
-              yield* Ref.set(
-                statusRef,
-                RuffLanguageServerStatus.Running({
-                  client,
-                  serverVersion,
-                  binarySource: resolved,
-                }),
-              );
-
-              // Restart the language server when ruff.* settings change
-              yield* Effect.forkScoped(
-                code.workspace.configurationChanges().pipe(
-                  Stream.filter((event) => event.affectsConfiguration("ruff")),
-                  Stream.runForEach(() =>
-                    client.restart("Ruff settings changed").pipe(
-                      Effect.catchAllCause((cause) =>
-                        Effect.logError(
-                          "Failed to restart language server",
-                        ).pipe(
-                          Effect.annotateLogs({
-                            server: RUFF_SERVER.name,
-                            cause,
-                          }),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
+          yield* Effect.logInfo("Language server started").pipe(
+            Effect.annotateLogs({
+              server: RUFF_SERVER.name,
+              version: serverVersion,
             }),
           );
+
+          if (Option.isSome(sentry)) {
+            yield* sentry.value.setTag("ruff.version", serverVersion);
+          }
+          if (Option.isSome(telemetry)) {
+            yield* telemetry.value.reportBinaryResolved(
+              "ruff",
+              resolved,
+              serverVersion,
+            );
+          }
+
+          yield* Ref.set(
+            statusRef,
+            RuffLanguageServerStatus.Running({
+              client,
+              serverVersion,
+              binarySource: resolved,
+            }),
+          );
+
+          // TODO: Wire up VS Code notebook events → client.openNotebook/reorderCells/changeCellText
+          // TODO: Wire up client.onNotification("textDocument/publishDiagnostics") → VS Code diagnostics
+          // TODO: Register VS Code providers for formatting, code actions, hover
+          // TODO: Restart on ruff.* config changes
         }),
       );
 
@@ -297,9 +224,7 @@ const resolveRuffBinary = Effect.fn(function* () {
         );
         const binaryPath = yield* uv.ensureLanguageServerBinaryInstalled(
           RUFF_SERVER,
-          {
-            targetPath,
-          },
+          { targetPath },
         );
         return Option.some(BinarySource.UvInstalled({ path: binaryPath }));
       }),
@@ -310,9 +235,6 @@ const resolveRuffBinary = Effect.fn(function* () {
 /**
  * Read ruff.* settings from a WorkspaceConfiguration and return them in the format
  * expected by the Ruff language server's initializationOptions.
- *
- * Based on ruff-vscode's getWorkspaceSettings:
- * https://github.com/astral-sh/ruff-vscode/blob/main/src/common/settings.ts
  */
 function getRuffSettings(
   config: vscode.WorkspaceConfiguration,
@@ -348,9 +270,6 @@ function getRuffSettings(
 
 /**
  * Read global ruff.* settings (not workspace-specific).
- *
- * Based on ruff-vscode's getGlobalSettings:
- * https://github.com/astral-sh/ruff-vscode/blob/main/src/common/settings.ts
  */
 function getGlobalRuffSettings(
   config: vscode.WorkspaceConfiguration,
@@ -387,61 +306,6 @@ function getGlobalRuffSettings(
     logLevel: getGlobal("logLevel"),
     logFile: getGlobal("logFile"),
   };
-}
-
-/**
- * Creates LSP middleware that adapts marimo notebook documents for Ruff.
- *
- * Uses the provided notebook middleware for base notebook handling,
- * and adds Ruff-specific formatting and code action middleware.
- */
-function createRuffMiddleware(
-  sync: ClientNotebookSync,
-): Effect.Effect<lsp.Middleware, never, VsCode> {
-  return Effect.gen(function* () {
-    const runtime = yield* Effect.runtime<VsCode>();
-    const runPromise = Runtime.runPromise(runtime);
-
-    const isRuffFormatEnabled = () =>
-      ruffConfiguredAsDefaultPythonFormatter().pipe(
-        Effect.tap((enabled) =>
-          enabled
-            ? Effect.void
-            : Effect.logWarning(
-                `Ruff is not configured as default Python formatter; skipping marimo format.`,
-              ),
-        ),
-        runPromise,
-      );
-
-    return {
-      notebooks: sync.notebookMiddleware,
-      didOpen: (doc, next) => next(sync.adapter.document(doc)),
-      didClose: (doc, next) => next(sync.adapter.document(doc)),
-      didChange: (change, next) =>
-        next({ ...change, document: sync.adapter.document(change.document) }),
-      async provideDocumentFormattingEdits(document, options, token, next) {
-        const shouldFormat = await isRuffFormatEnabled();
-        return shouldFormat
-          ? next(sync.adapter.document(document), options, token)
-          : null;
-      },
-      async provideDocumentRangeFormattingEdits(
-        document,
-        range,
-        options,
-        token,
-        next,
-      ) {
-        const shouldFormat = await isRuffFormatEnabled();
-        return shouldFormat
-          ? next(sync.adapter.document(document), range, options, token)
-          : null;
-      },
-      provideCodeActions: (document, range, context, token, next) =>
-        next(sync.adapter.document(document), range, context, token),
-    };
-  });
 }
 
 /**
@@ -484,19 +348,4 @@ const getRuffDisabledReason = Effect.fn(function* () {
   }
 
   return Option.none();
-});
-
-/**
- * Checks if Ruff is configured as the default Python formatter in VS Code settings.
- *
- * Ref: https://github.com/astral-sh/ruff-vscode?tab=readme-ov-file#configuring-vs-code
- */
-const ruffConfiguredAsDefaultPythonFormatter = Effect.fn(function* () {
-  const code = yield* VsCode;
-  const pythonConfig = yield* code.workspace.getConfiguration("", {
-    languageId: "python",
-  });
-  return (
-    pythonConfig.get<unknown>("editor.defaultFormatter") === RUFF_EXTENSION_ID
-  );
 });

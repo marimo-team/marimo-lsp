@@ -13,12 +13,9 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeProcess from "node:process";
 
-import { Effect, HashMap, Ref, type Scope } from "effect";
-import type * as vscode from "vscode";
+import { Effect, HashMap, Ref } from "effect";
 import * as rpc from "vscode-jsonrpc/node";
 import * as lspTypes from "vscode-languageserver-protocol";
-
-import { acquireDisposable } from "../../utils/acquireDisposable.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,9 +84,18 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
 
     // -- 2. Create JSON-RPC connection --------------------------------------
 
+    // stdio: ["pipe", "pipe", "pipe"] guarantees these are non-null
+    const stdout = proc.stdout;
+    const stdin = proc.stdin;
+    if (!stdout || !stdin) {
+      return yield* Effect.die(
+        new Error("Failed to get stdio streams from server process"),
+      );
+    }
+
     const connection = rpc.createMessageConnection(
-      new rpc.StreamMessageReader(proc.stdout!),
-      new rpc.StreamMessageWriter(proc.stdin!),
+      new rpc.StreamMessageReader(stdout),
+      new rpc.StreamMessageWriter(stdin),
     );
     connection.listen();
 
@@ -101,130 +107,124 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
 
     // -- 3. Initialize handshake --------------------------------------------
 
-    const initResult =
-      yield* Effect.promise(() =>
-        connection.sendRequest<lspTypes.InitializeResult>(
-          "initialize",
-          {
-            processId: NodeProcess.pid,
-            capabilities: {
-              general: {
-                positionEncodings: [
-                  lspTypes.PositionEncodingKind.UTF32,
-                  lspTypes.PositionEncodingKind.UTF16,
+    const initResult = yield* Effect.promise(() =>
+      connection.sendRequest<lspTypes.InitializeResult>("initialize", {
+        processId: NodeProcess.pid,
+        capabilities: {
+          general: {
+            positionEncodings: [
+              lspTypes.PositionEncodingKind.UTF32,
+              lspTypes.PositionEncodingKind.UTF16,
+            ],
+          },
+          textDocument: {
+            synchronization: {
+              dynamicRegistration: false,
+              didSave: false,
+            },
+            publishDiagnostics: {
+              relatedInformation: true,
+              codeDescriptionSupport: true,
+              dataSupport: true,
+              tagSupport: {
+                valueSet: [
+                  lspTypes.DiagnosticTag.Unnecessary,
+                  lspTypes.DiagnosticTag.Deprecated,
                 ],
               },
-              textDocument: {
-                synchronization: {
-                  dynamicRegistration: false,
-                  didSave: false,
-                },
-                publishDiagnostics: {
-                  relatedInformation: true,
-                  codeDescriptionSupport: true,
-                  dataSupport: true,
-                  tagSupport: {
-                    valueSet: [
-                      lspTypes.DiagnosticTag.Unnecessary,
-                      lspTypes.DiagnosticTag.Deprecated,
-                    ],
-                  },
-                },
-                codeAction: {
-                  codeActionLiteralSupport: {
-                    codeActionKind: {
-                      valueSet: [
-                        lspTypes.CodeActionKind.QuickFix,
-                        lspTypes.CodeActionKind.SourceFixAll,
-                        lspTypes.CodeActionKind.SourceOrganizeImports,
-                        "notebook.source.fixAll",
-                        "notebook.source.organizeImports",
-                      ],
-                    },
-                  },
-                  resolveSupport: { properties: ["edit"] },
-                  dataSupport: true,
-                },
-                completion: {
-                  completionItem: {
-                    snippetSupport: false,
-                    documentationFormat: [
-                      lspTypes.MarkupKind.Markdown,
-                      lspTypes.MarkupKind.PlainText,
-                    ],
-                  },
-                },
-                hover: {
-                  contentFormat: [
-                    lspTypes.MarkupKind.Markdown,
-                    lspTypes.MarkupKind.PlainText,
+            },
+            codeAction: {
+              codeActionLiteralSupport: {
+                codeActionKind: {
+                  valueSet: [
+                    lspTypes.CodeActionKind.QuickFix,
+                    lspTypes.CodeActionKind.SourceFixAll,
+                    lspTypes.CodeActionKind.SourceOrganizeImports,
+                    "notebook.source.fixAll",
+                    "notebook.source.organizeImports",
                   ],
                 },
-                signatureHelp: {
-                  signatureInformation: {
-                    documentationFormat: [
-                      lspTypes.MarkupKind.Markdown,
-                      lspTypes.MarkupKind.PlainText,
-                    ],
-                    parameterInformation: {
-                      labelOffsetSupport: true,
-                    },
-                  },
-                },
-                rename: { prepareSupport: true },
-                semanticTokens: {
-                  requests: { full: true, range: true },
-                  tokenTypes: [
-                    "namespace",
-                    "class",
-                    "parameter",
-                    "selfParameter",
-                    "clsParameter",
-                    "variable",
-                    "property",
-                    "function",
-                    "method",
-                    "keyword",
-                    "string",
-                    "number",
-                    "decorator",
-                    "builtinConstant",
-                    "typeParameter",
-                  ],
-                  tokenModifiers: [
-                    "definition",
-                    "readonly",
-                    "async",
-                    "documentation",
-                  ],
-                  formats: [lspTypes.TokenFormat.Relative],
-                },
-                inlayHint: { resolveSupport: { properties: [] } },
               },
-              notebookDocument: {
-                synchronization: {
-                  dynamicRegistration: false,
-                  executionSummarySupport: false,
+              resolveSupport: { properties: ["edit"] },
+              dataSupport: true,
+            },
+            completion: {
+              completionItem: {
+                snippetSupport: false,
+                documentationFormat: [
+                  lspTypes.MarkupKind.Markdown,
+                  lspTypes.MarkupKind.PlainText,
+                ],
+              },
+            },
+            hover: {
+              contentFormat: [
+                lspTypes.MarkupKind.Markdown,
+                lspTypes.MarkupKind.PlainText,
+              ],
+            },
+            signatureHelp: {
+              signatureInformation: {
+                documentationFormat: [
+                  lspTypes.MarkupKind.Markdown,
+                  lspTypes.MarkupKind.PlainText,
+                ],
+                parameterInformation: {
+                  labelOffsetSupport: true,
                 },
               },
-              workspace: {
-                workspaceFolders: true,
-              },
-            } satisfies lspTypes.ClientCapabilities,
-            rootUri: config.workspaceFolders?.[0]?.uri ?? null,
-            workspaceFolders:
-              config.workspaceFolders?.map((f) => ({
-                uri: f.uri,
-                name: f.name,
-              })) ?? null,
-            initializationOptions: config.initializationOptions ?? {},
-          } satisfies lspTypes.InitializeParams,
-        ),
-      );
-
-    yield* Effect.promise(() =>
-      connection.sendNotification("initialized", {}),
+            },
+            rename: { prepareSupport: true },
+            semanticTokens: {
+              requests: { full: true, range: true },
+              tokenTypes: [
+                "namespace",
+                "class",
+                "parameter",
+                "selfParameter",
+                "clsParameter",
+                "variable",
+                "property",
+                "function",
+                "method",
+                "keyword",
+                "string",
+                "number",
+                "decorator",
+                "builtinConstant",
+                "typeParameter",
+              ],
+              tokenModifiers: [
+                "definition",
+                "readonly",
+                "async",
+                "documentation",
+              ],
+              formats: [lspTypes.TokenFormat.Relative],
+            },
+            inlayHint: { resolveSupport: { properties: [] } },
+          },
+          notebookDocument: {
+            synchronization: {
+              dynamicRegistration: false,
+              executionSummarySupport: false,
+            },
+          },
+          workspace: {
+            workspaceFolders: true,
+          },
+        } satisfies lspTypes.ClientCapabilities,
+        rootUri: config.workspaceFolders?.[0]?.uri ?? null,
+        workspaceFolders:
+          config.workspaceFolders?.map((f) => ({
+            uri: f.uri,
+            name: f.name,
+          })) ?? null,
+        initializationOptions: config.initializationOptions ?? {},
+      } satisfies lspTypes.InitializeParams),
     );
+
+    yield* Effect.promise(() => connection.sendNotification("initialized", {}));
 
     const serverInfo: ServerInfo = {
       name: initResult.serverInfo?.name ?? config.name,
@@ -243,15 +243,13 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
 
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
-        yield* Effect.promise(() =>
-          connection.sendRequest("shutdown"),
-        ).pipe(
+        yield* Effect.promise(() => connection.sendRequest("shutdown")).pipe(
           Effect.timeout("5 seconds"),
           Effect.catchAll(() => Effect.void),
         );
-        yield* Effect.promise(() =>
-          connection.sendNotification("exit"),
-        ).pipe(Effect.catchAll(() => Effect.void));
+        yield* Effect.promise(() => connection.sendNotification("exit")).pipe(
+          Effect.catchAll(() => Effect.void),
+        );
       }),
     );
 
@@ -285,9 +283,10 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
               notebookType: "marimo-notebook",
               version: notebookVersion,
               cells: cells.map((c) => ({
-                kind: c.kind === 2
-                  ? lspTypes.NotebookCellKind.Code
-                  : lspTypes.NotebookCellKind.Markup,
+                kind:
+                  c.kind === 2
+                    ? lspTypes.NotebookCellKind.Code
+                    : lspTypes.NotebookCellKind.Markup,
                 document: c.uri,
               })),
             },
@@ -342,9 +341,10 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
                     start: 0,
                     deleteCount: oldCells.length,
                     cells: newCells.map((c) => ({
-                      kind: c.kind === 2
-                        ? lspTypes.NotebookCellKind.Code
-                        : lspTypes.NotebookCellKind.Markup,
+                      kind:
+                        c.kind === 2
+                          ? lspTypes.NotebookCellKind.Code
+                          : lspTypes.NotebookCellKind.Markup,
                       document: c.uri,
                     })),
                   },
@@ -392,9 +392,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
       /**
        * Send `notebookDocument/didClose`.
        */
-      closeNotebook: Effect.fn(function* (
-        notebookUri: string,
-      ) {
+      closeNotebook: Effect.fn(function* (notebookUri: string) {
         const current = yield* Ref.get(cellOrderRef).pipe(
           Effect.map(HashMap.get(notebookUri)),
         );
@@ -418,9 +416,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
        * Send an LSP request and return the response.
        */
       sendRequest<R>(method: string, params: unknown): Effect.Effect<R> {
-        return Effect.promise(
-          () => connection.sendRequest(method, params) as Promise<R>,
-        );
+        return Effect.promise(() => connection.sendRequest<R>(method, params));
       },
 
       /**

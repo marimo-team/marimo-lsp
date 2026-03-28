@@ -23,10 +23,7 @@ export const TestTyLanguageServerLive = Layer.effect(
       getHealthStatus: () =>
         Effect.succeed(
           TyLanguageServerStatus.Running({
-            client: {
-              start: () => Effect.succeed(Option.none()),
-              restart: () => Effect.void,
-            },
+            client: null as any,
             serverVersion: "0.0.0-test",
             binarySource: BinarySource.UvInstalled({ path: "/test/ty" }),
             pythonEnvironment: Option.none(),
