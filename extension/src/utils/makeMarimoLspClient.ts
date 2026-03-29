@@ -22,7 +22,16 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeProcess from "node:process";
 import * as NodeReadline from "node:readline";
 
-import { Effect, HashMap, Option, PubSub, Ref, Runtime, Stream } from "effect";
+import {
+  Effect,
+  HashMap,
+  Option,
+  PubSub,
+  Ref,
+  Runtime,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import type * as vscode from "vscode";
 import * as rpc from "vscode-jsonrpc/node";
 import * as lsp from "vscode-languageserver-protocol";
@@ -231,7 +240,7 @@ const makeMarimoNotebookRegistry = Effect.gen(function* () {
  */
 function makeDynamicRegistrations(conn: rpc.MessageConnection) {
   return Effect.gen(function* () {
-    const ref = yield* Ref.make(
+    const ref = yield* SubscriptionRef.make(
       HashMap.empty<string, ReadonlyArray<lsp.Registration>>(),
     );
     const runFork = Runtime.runFork(yield* Effect.runtime());
@@ -240,7 +249,7 @@ function makeDynamicRegistrations(conn: rpc.MessageConnection) {
       lsp.RegistrationRequest.method,
       (params: lsp.RegistrationParams) => {
         runFork(
-          Ref.update(ref, (regs) => {
+          SubscriptionRef.update(ref, (regs) => {
             let updated = regs;
             for (const reg of params.registrations) {
               const existing = HashMap.get(updated, reg.method);
@@ -260,7 +269,7 @@ function makeDynamicRegistrations(conn: rpc.MessageConnection) {
       lsp.UnregistrationRequest.method,
       (params: lsp.UnregistrationParams) => {
         runFork(
-          Ref.update(ref, (regs) => {
+          SubscriptionRef.update(ref, (regs) => {
             let updated = regs;
             for (const unreg of params.unregisterations) {
               const existing = HashMap.get(updated, unreg.method);
@@ -281,9 +290,24 @@ function makeDynamicRegistrations(conn: rpc.MessageConnection) {
     );
     return {
       /** Check if the server has registered a specific method dynamically. */
-      has: (method: string) => Effect.map(Ref.get(ref), HashMap.has(method)),
+      has: (method: string) =>
+        Effect.map(SubscriptionRef.get(ref), HashMap.has(method)),
       /** Get all registrations for a method. */
-      get: (method: string) => Effect.map(Ref.get(ref), HashMap.get(method)),
+      get: (method: string) =>
+        Effect.map(SubscriptionRef.get(ref), HashMap.get(method)),
+      /**
+       * Wait for a specific method to be registered, then return its
+       * registrations. Completes immediately if already registered.
+       */
+      await: (method: string) =>
+        ref.changes.pipe(
+          Stream.map(HashMap.get(method)),
+          Stream.filter(Option.isSome),
+          Stream.take(1),
+          Stream.runHead,
+          // Safe to unwrap — we took 1 element that passed the filter
+          Effect.map((opt) => (Option.isSome(opt) ? opt.value.value : [])),
+        ),
     };
   });
 }
@@ -507,6 +531,8 @@ function clientCapabilities(): lsp.ClientCapabilities {
 export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
   function* (config: NotebookLspClientConfig) {
     const out = config.outputChannel;
+    const runPromise = Runtime.runPromise(yield* Effect.runtime());
+
     // -- 1. Spawn process ---------------------------------------------------
 
     const proc = NodeChildProcess.spawn(config.command, config.args, {
@@ -618,8 +644,6 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
 
     const diagnosticsPubSub =
       yield* PubSub.unbounded<lsp.PublishDiagnosticsParams>();
-
-    const runPromise = Runtime.runPromise(yield* Effect.runtime());
     conn.onNotification(
       lsp.PublishDiagnosticsNotification.method,
       (params: lsp.PublishDiagnosticsParams) => {

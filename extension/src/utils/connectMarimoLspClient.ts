@@ -120,18 +120,20 @@ export const connectMarimoNotebookLspClient = Effect.fn(
 
   yield* Effect.forkScoped(
     Effect.gen(function* () {
-      // Give the server time to send registerCapability
-      yield* Effect.sleep("500 millis");
+      // Wait for the server to dynamically register file watchers.
+      // Times out after 10s — if the server doesn't register, we skip.
+      const regs = yield* client.registrations
+        .await("workspace/didChangeWatchedFiles")
+        .pipe(Effect.timeout("10 seconds"), Effect.option);
 
-      const regsOption = yield* client.registrations.get(
-        "workspace/didChangeWatchedFiles",
-      );
-
-      if (Option.isNone(regsOption) || regsOption.value.length === 0) {
+      if (Option.isNone(regs)) {
+        yield* Effect.logWarning(
+          "Server did not register workspace/didChangeWatchedFiles within timeout",
+        );
         return;
       }
 
-      for (const reg of regsOption.value) {
+      for (const reg of regs.value) {
         const watchers = getFileWatchers(reg.registerOptions);
         if (!watchers) {
           continue;
