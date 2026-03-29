@@ -1216,6 +1216,28 @@ class SelectionRange implements vscode.SelectionRange {
   }
 }
 
+class SnippetString implements vscode.SnippetString {
+  value: string;
+  constructor(value?: string) {
+    this.value = value ?? "";
+  }
+  appendText(): SnippetString {
+    return this;
+  }
+  appendTabstop(): SnippetString {
+    return this;
+  }
+  appendPlaceholder(): SnippetString {
+    return this;
+  }
+  appendChoice(): SnippetString {
+    return this;
+  }
+  appendVariable(): SnippetString {
+    return this;
+  }
+}
+
 class InlayHintLabelPart implements vscode.InlayHintLabelPart {
   value: string;
   tooltip?: string | MarkdownString;
@@ -2050,6 +2072,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         SignatureHelp,
         InlayHint,
         InlayHintLabelPart,
+        SnippetString,
         SignatureInformation,
         ParameterInformation,
         CodeLens,
@@ -2085,6 +2108,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           registerDocumentRangeFormattingEditProvider: () => Effect.void,
           registerSignatureHelpProvider: () => Effect.void,
           registerInlayHintsProvider: () => Effect.void,
+          registerCompletionItemProvider: () => Effect.void,
         }),
         Diagnostic,
         // helper

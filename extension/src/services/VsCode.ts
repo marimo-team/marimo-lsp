@@ -849,11 +849,7 @@ export class Languages extends Effect.Service<Languages>()("Langauges", {
           api.registerDocumentRangeFormattingEditProvider(selector, {
             provideDocumentRangeFormattingEdits(doc, range, opts, tok) {
               return runPromise(
-                impl.provideDocumentRangeFormattingEdits(
-                  doc,
-                  range,
-                  opts,
-                ),
+                impl.provideDocumentRangeFormattingEdits(doc, range, opts),
                 { signal: signalFromToken(tok) },
               );
             },
@@ -868,9 +864,7 @@ export class Languages extends Effect.Service<Languages>()("Langauges", {
             pos: vscode.Position,
           ): Effect.Effect<vscode.SignatureHelp | undefined>;
         },
-        metadata:
-          | vscode.SignatureHelpProviderMetadata
-          | string[],
+        metadata: vscode.SignatureHelpProviderMetadata | string[],
       ) {
         return acquireDisposable(() => {
           if (Array.isArray(metadata)) {
@@ -878,10 +872,9 @@ export class Languages extends Effect.Service<Languages>()("Langauges", {
               selector,
               {
                 provideSignatureHelp(doc, pos, tok) {
-                  return runPromise(
-                    impl.provideSignatureHelp(doc, pos),
-                    { signal: signalFromToken(tok) },
-                  );
+                  return runPromise(impl.provideSignatureHelp(doc, pos), {
+                    signal: signalFromToken(tok),
+                  });
                 },
               },
               ...metadata,
@@ -891,10 +884,9 @@ export class Languages extends Effect.Service<Languages>()("Langauges", {
             selector,
             {
               provideSignatureHelp(doc, pos, tok) {
-                return runPromise(
-                  impl.provideSignatureHelp(doc, pos),
-                  { signal: signalFromToken(tok) },
-                );
+                return runPromise(impl.provideSignatureHelp(doc, pos), {
+                  signal: signalFromToken(tok),
+                });
               },
             },
             metadata,
@@ -927,6 +919,40 @@ export class Languages extends Effect.Service<Languages>()("Langauges", {
                   })
               : undefined,
           }),
+        ).pipe(Effect.asVoid);
+      },
+      registerCompletionItemProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideCompletionItems(
+            doc: vscode.TextDocument,
+            pos: vscode.Position,
+            ctx: vscode.CompletionContext,
+          ): Effect.Effect<vscode.CompletionItem[]>;
+          resolveCompletionItem?: (
+            item: vscode.CompletionItem,
+          ) => Effect.Effect<vscode.CompletionItem>;
+        },
+        triggerCharacters: string[],
+      ) {
+        return acquireDisposable(() =>
+          api.registerCompletionItemProvider(
+            selector,
+            {
+              provideCompletionItems(doc, pos, tok, ctx) {
+                return runPromise(impl.provideCompletionItems(doc, pos, ctx), {
+                  signal: signalFromToken(tok),
+                });
+              },
+              resolveCompletionItem: impl.resolveCompletionItem
+                ? (item, tok) =>
+                    runPromise(impl.resolveCompletionItem!(item), {
+                      signal: signalFromToken(tok),
+                    })
+                : undefined,
+            },
+            ...triggerCharacters,
+          ),
         ).pipe(Effect.asVoid);
       },
     };
@@ -964,6 +990,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       SignatureHelp: vscode.SignatureHelp,
       InlayHint: vscode.InlayHint,
       InlayHintLabelPart: vscode.InlayHintLabelPart,
+      SnippetString: vscode.SnippetString,
       CompletionTriggerKind: vscode.CompletionTriggerKind,
       CompletionItem: vscode.CompletionItem,
       CompletionList: vscode.CompletionList,

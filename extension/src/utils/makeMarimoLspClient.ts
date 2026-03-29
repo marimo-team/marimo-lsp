@@ -49,6 +49,10 @@ export type LspRequestMap = {
     lsp.CompletionParams,
     lsp.CompletionList | null,
   ];
+  [lsp.CompletionResolveRequest.method]: [
+    lsp.CompletionItem,
+    lsp.CompletionItem,
+  ];
   [lsp.DocumentFormattingRequest.method]: [
     lsp.DocumentFormattingParams,
     lsp.TextEdit[] | null,

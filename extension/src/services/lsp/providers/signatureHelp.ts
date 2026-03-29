@@ -29,9 +29,7 @@ export function toSignatureHelp(
   const result = new code.SignatureHelp();
   result.activeSignature = item.activeSignature ?? 0;
   result.activeParameter =
-    item.activeParameter === null
-      ? -1
-      : (item.activeParameter ?? 0);
+    item.activeParameter === null ? -1 : (item.activeParameter ?? 0);
   result.signatures = (item.signatures ?? []).map((sig) => {
     const info = new code.SignatureInformation(
       sig.label,

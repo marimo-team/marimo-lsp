@@ -12,6 +12,7 @@ import * as vscode from "vscode";
 
 import { LanguageId } from "../../constants.ts";
 import type { NotebookLspClient } from "../../utils/makeMarimoLspClient.ts";
+import { registerCompletionProvider } from "../lsp/providers/completion.ts";
 import {
   registerDeclarationProvider,
   registerDefinitionProvider,
@@ -49,5 +50,6 @@ export const registerLspProviders = Effect.fn("registerLspProviders")(
     yield* registerDocumentRangeFormattingProvider(sel, client);
     yield* registerSignatureHelpProvider(sel, client);
     yield* registerInlayHintProvider(sel, client);
+    yield* registerCompletionProvider(sel, client);
   },
 );

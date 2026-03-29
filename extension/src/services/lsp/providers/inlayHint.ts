@@ -20,15 +20,7 @@ import { toVsCodeRange } from "./converters.ts";
 // Data stashing for resolve round-trip
 // ---------------------------------------------------------------------------
 
-const DATA_KEY = Symbol("lsp.inlayHint.data");
-
-function stashData(hint: vscode.InlayHint, data: unknown): void {
-  (hint as any)[DATA_KEY] = data;
-}
-
-function unstashData(hint: vscode.InlayHint): unknown {
-  return (hint as any)[DATA_KEY];
-}
+const lspData = new WeakMap<vscode.InlayHint, unknown>();
 
 // ---------------------------------------------------------------------------
 // LSP → VS Code converters
@@ -83,11 +75,12 @@ export function toInlayHint(
   );
   if (item.tooltip !== undefined)
     result.tooltip = toTooltip(code, item.tooltip);
-  if (item.paddingLeft !== undefined)
-    result.paddingLeft = item.paddingLeft;
-  if (item.paddingRight !== undefined)
-    result.paddingRight = item.paddingRight;
-  if (item.data !== undefined) stashData(result, item.data);
+  if (item.paddingLeft !== undefined) result.paddingLeft = item.paddingLeft;
+  if (item.paddingRight !== undefined) result.paddingRight = item.paddingRight;
+
+  if (item.data !== undefined) {
+    lspData.set(result, item.data);
+  }
   return result;
 }
 
@@ -119,12 +112,10 @@ function toLspInlayHint(hint: vscode.InlayHint): lsp.InlayHint {
     label,
   );
   if (hint.kind !== undefined) result.kind = hint.kind;
-  if (hint.paddingLeft !== undefined)
-    result.paddingLeft = hint.paddingLeft;
-  if (hint.paddingRight !== undefined)
-    result.paddingRight = hint.paddingRight;
+  if (hint.paddingLeft !== undefined) result.paddingLeft = hint.paddingLeft;
+  if (hint.paddingRight !== undefined) result.paddingRight = hint.paddingRight;
 
-  const data = unstashData(hint);
+  const data = lspData.get(hint);
   if (data !== undefined) result.data = data;
   return result;
 }
@@ -141,18 +132,14 @@ export const registerInlayHintProvider = Effect.fn(function* (
   if (!caps) return;
   const code = yield* VsCode;
 
-  const resolveProvider =
-    typeof caps === "object" && caps.resolveProvider;
+  const resolveProvider = typeof caps === "object" && caps.resolveProvider;
 
   yield* code.languages.registerInlayHintsProvider(sel, {
     provideInlayHints: Effect.fn(function* (doc, range) {
-      const result = yield* client.sendRequest(
-        lsp.InlayHintRequest.method,
-        {
-          textDocument: { uri: doc.uri.toString() },
-          range: toLspRange(range),
-        } satisfies lsp.InlayHintParams,
-      );
+      const result = yield* client.sendRequest(lsp.InlayHintRequest.method, {
+        textDocument: { uri: doc.uri.toString() },
+        range: toLspRange(range),
+      } satisfies lsp.InlayHintParams);
       return result?.map((h) => toInlayHint(code, h)) ?? [];
     }),
     resolveInlayHint: resolveProvider

@@ -4,6 +4,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import { TestVsCode } from "../../../__mocks__/TestVsCode.ts";
 import { VsCode } from "../../VsCode.ts";
+import { toCompletionItem } from "../providers/completion.ts";
 import { toLocationResult, toVsCodeRange } from "../providers/converters.ts";
 import { toDocumentHighlight } from "../providers/documentHighlight.ts";
 import { toDocumentSymbol } from "../providers/documentSymbol.ts";
@@ -736,8 +737,129 @@ describe("toInlayHint", () => {
         label: "hint",
         data: { id: 42 },
       });
-      // data is stashed via symbol, not visible in snapshot
+      // data is stashed via WeakMap, not visible in snapshot
       expect(result.label).toBe("hint");
+    }),
+  );
+});
+
+describe("toCompletionItem", () => {
+  it.scoped(
+    "converts basic item with kind offset",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCompletionItem(code, {
+        label: "my_var",
+        kind: lsp.CompletionItemKind.Variable,
+        detail: "int",
+        documentation: {
+          kind: lsp.MarkupKind.Markdown,
+          value: "A variable",
+        },
+      });
+      expect(result).toMatchInlineSnapshot(`
+        CompletionItem {
+          "additionalTextEdits": undefined,
+          "command": undefined,
+          "commitCharacters": undefined,
+          "detail": "int",
+          "documentation": MarkdownString {
+            "baseUri": undefined,
+            "isTrusted": undefined,
+            "supportHtml": undefined,
+            "supportThemeIcons": undefined,
+            "value": "A variable",
+          },
+          "filterText": undefined,
+          "insertText": undefined,
+          "keepWhitespace": undefined,
+          "kind": 5,
+          "label": "my_var",
+          "preselect": undefined,
+          "range": undefined,
+          "sortText": undefined,
+          "tags": undefined,
+          "textEdit": undefined,
+        }
+      `);
+    }),
+  );
+
+  it.scoped(
+    "converts item with textEdit",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCompletionItem(code, {
+        label: "print",
+        kind: lsp.CompletionItemKind.Function,
+        textEdit: {
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 3 },
+          },
+          newText: "print",
+        },
+      });
+      expect(result.insertText).toBe("print");
+      expect(result.range).toBeDefined();
+    }),
+  );
+
+  it.scoped(
+    "converts snippet insertTextFormat",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCompletionItem(code, {
+        label: "for",
+        kind: lsp.CompletionItemKind.Snippet,
+        insertText: "for ${1:item} in ${2:iterable}:\n\t$0",
+        insertTextFormat: lsp.InsertTextFormat.Snippet,
+      });
+      // Should be wrapped in SnippetString
+      expect(result.insertText).toMatchInlineSnapshot(`
+        SnippetString {
+          "value": "for \${1:item} in \${2:iterable}:
+        	$0",
+        }
+      `);
+    }),
+  );
+
+  it.scoped(
+    "converts labelDetails",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCompletionItem(code, {
+        label: "foo",
+        labelDetails: {
+          detail: "(x: int)",
+          description: "module.foo",
+        },
+        kind: lsp.CompletionItemKind.Function,
+      });
+      expect(result.label).toMatchInlineSnapshot(`
+        {
+          "description": "module.foo",
+          "detail": "(x: int)",
+          "label": "foo",
+        }
+      `);
+    }),
+  );
+
+  it.scoped(
+    "converts deprecated tag",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCompletionItem(code, {
+        label: "old_fn",
+        tags: [lsp.CompletionItemTag.Deprecated],
+      });
+      expect(result.tags).toMatchInlineSnapshot(`
+        [
+          1,
+        ]
+      `);
     }),
   );
 });
