@@ -20,9 +20,14 @@ import {
 import { registerDocumentHighlightProvider } from "../lsp/providers/documentHighlight.ts";
 import { registerDocumentSymbolProvider } from "../lsp/providers/documentSymbol.ts";
 import { registerFoldingRangeProvider } from "../lsp/providers/foldingRange.ts";
+import {
+  registerDocumentFormattingProvider,
+  registerDocumentRangeFormattingProvider,
+} from "../lsp/providers/formatting.ts";
 import { registerHoverProvider } from "../lsp/providers/hover.ts";
 import { registerReferenceProvider } from "../lsp/providers/references.ts";
 import { registerSelectionRangeProvider } from "../lsp/providers/selectionRange.ts";
+import { registerSignatureHelpProvider } from "../lsp/providers/signatureHelp.ts";
 
 export const registerLspProviders = Effect.fn("registerLspProviders")(
   function* (client: NotebookLspClient) {
@@ -39,5 +44,8 @@ export const registerLspProviders = Effect.fn("registerLspProviders")(
     yield* registerDocumentSymbolProvider(sel, client);
     yield* registerFoldingRangeProvider(sel, client);
     yield* registerSelectionRangeProvider(sel, client);
+    yield* registerDocumentFormattingProvider(sel, client);
+    yield* registerDocumentRangeFormattingProvider(sel, client);
+    yield* registerSignatureHelpProvider(sel, client);
   },
 );

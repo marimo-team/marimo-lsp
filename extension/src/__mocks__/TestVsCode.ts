@@ -1216,6 +1216,12 @@ class SelectionRange implements vscode.SelectionRange {
   }
 }
 
+class SignatureHelp implements vscode.SignatureHelp {
+  signatures: SignatureInformation[] = [];
+  activeSignature = 0;
+  activeParameter = 0;
+}
+
 class SignatureInformation implements vscode.SignatureInformation {
   label: string;
   documentation?: string | MarkdownString;
@@ -2011,6 +2017,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         Range,
         Location,
         Hover,
+        TextEdit,
+        SignatureHelp,
         SignatureInformation,
         ParameterInformation,
         CodeLens,
@@ -2042,6 +2050,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           registerDocumentSymbolProvider: () => Effect.void,
           registerFoldingRangeProvider: () => Effect.void,
           registerSelectionRangeProvider: () => Effect.void,
+          registerDocumentFormattingEditProvider: () => Effect.void,
+          registerDocumentRangeFormattingEditProvider: () => Effect.void,
+          registerSignatureHelpProvider: () => Effect.void,
         }),
         Diagnostic,
         // helper

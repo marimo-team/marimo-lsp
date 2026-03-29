@@ -815,6 +815,92 @@ export class Languages extends Effect.Service<Languages>()("Langauges", {
           }),
         ).pipe(Effect.asVoid);
       },
+      registerDocumentFormattingEditProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideDocumentFormattingEdits(
+            doc: vscode.TextDocument,
+            opts: vscode.FormattingOptions,
+          ): Effect.Effect<vscode.TextEdit[]>;
+        },
+      ) {
+        return acquireDisposable(() =>
+          api.registerDocumentFormattingEditProvider(selector, {
+            provideDocumentFormattingEdits(doc, opts, tok) {
+              return runPromise(
+                impl.provideDocumentFormattingEdits(doc, opts),
+                { signal: signalFromToken(tok) },
+              );
+            },
+          }),
+        ).pipe(Effect.asVoid);
+      },
+      registerDocumentRangeFormattingEditProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideDocumentRangeFormattingEdits(
+            doc: vscode.TextDocument,
+            range: vscode.Range,
+            opts: vscode.FormattingOptions,
+          ): Effect.Effect<vscode.TextEdit[]>;
+        },
+      ) {
+        return acquireDisposable(() =>
+          api.registerDocumentRangeFormattingEditProvider(selector, {
+            provideDocumentRangeFormattingEdits(doc, range, opts, tok) {
+              return runPromise(
+                impl.provideDocumentRangeFormattingEdits(
+                  doc,
+                  range,
+                  opts,
+                ),
+                { signal: signalFromToken(tok) },
+              );
+            },
+          }),
+        ).pipe(Effect.asVoid);
+      },
+      registerSignatureHelpProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideSignatureHelp(
+            doc: vscode.TextDocument,
+            pos: vscode.Position,
+          ): Effect.Effect<vscode.SignatureHelp | undefined>;
+        },
+        metadata:
+          | vscode.SignatureHelpProviderMetadata
+          | string[],
+      ) {
+        return acquireDisposable(() => {
+          if (Array.isArray(metadata)) {
+            return api.registerSignatureHelpProvider(
+              selector,
+              {
+                provideSignatureHelp(doc, pos, tok) {
+                  return runPromise(
+                    impl.provideSignatureHelp(doc, pos),
+                    { signal: signalFromToken(tok) },
+                  );
+                },
+              },
+              ...metadata,
+            );
+          }
+          return api.registerSignatureHelpProvider(
+            selector,
+            {
+              provideSignatureHelp(doc, pos, tok) {
+                return runPromise(
+                  impl.provideSignatureHelp(doc, pos),
+                  { signal: signalFromToken(tok) },
+                );
+              },
+            },
+            metadata,
+          );
+        }).pipe(Effect.asVoid);
+      },
     };
   }),
 }) {}
@@ -846,6 +932,8 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       languages: yield* Languages,
       Diagnostic: vscode.Diagnostic,
       Hover: vscode.Hover,
+      TextEdit: vscode.TextEdit,
+      SignatureHelp: vscode.SignatureHelp,
       CompletionTriggerKind: vscode.CompletionTriggerKind,
       CompletionItem: vscode.CompletionItem,
       CompletionList: vscode.CompletionList,

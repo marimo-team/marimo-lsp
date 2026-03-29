@@ -8,8 +8,10 @@ import { toLocationResult, toVsCodeRange } from "../providers/converters.ts";
 import { toDocumentHighlight } from "../providers/documentHighlight.ts";
 import { toDocumentSymbol } from "../providers/documentSymbol.ts";
 import { toFoldingRange } from "../providers/foldingRange.ts";
+import { toTextEdit } from "../providers/formatting.ts";
 import { toHoverContent } from "../providers/hover.ts";
 import { toSelectionRange } from "../providers/selectionRange.ts";
+import { toSignatureHelp } from "../providers/signatureHelp.ts";
 
 const withVsCode = Effect.gen(function* () {
   const test = yield* TestVsCode.make();
@@ -504,6 +506,133 @@ describe("toSelectionRange", () => {
           },
         }
       `);
+    }),
+  );
+});
+
+describe("toTextEdit", () => {
+  it.scoped(
+    "converts LSP TextEdit",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toTextEdit(code, {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 5 },
+        },
+        newText: "hello",
+      });
+      expect(result).toMatchInlineSnapshot(`
+        TextEdit {
+          "newEol": undefined,
+          "newText": "hello",
+          "range": Range {
+            "end": Position {
+              "character": 5,
+              "line": 0,
+            },
+            "start": Position {
+              "character": 0,
+              "line": 0,
+            },
+          },
+        }
+      `);
+    }),
+  );
+});
+
+describe("toSignatureHelp", () => {
+  it.scoped(
+    "converts with signatures and parameters",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toSignatureHelp(code, {
+        signatures: [
+          {
+            label: "fn(x: int, y: str)",
+            documentation: {
+              kind: lsp.MarkupKind.Markdown,
+              value: "A function",
+            },
+            parameters: [
+              { label: "x: int", documentation: "The x param" },
+              {
+                label: "y: str",
+                documentation: {
+                  kind: lsp.MarkupKind.Markdown,
+                  value: "The y param",
+                },
+              },
+            ],
+          },
+        ],
+        activeSignature: 0,
+        activeParameter: 1,
+      });
+      expect(result).toMatchInlineSnapshot(`
+        SignatureHelp {
+          "activeParameter": 1,
+          "activeSignature": 0,
+          "signatures": [
+            SignatureInformation {
+              "activeParameter": undefined,
+              "documentation": MarkdownString {
+                "baseUri": undefined,
+                "isTrusted": undefined,
+                "supportHtml": undefined,
+                "supportThemeIcons": undefined,
+                "value": "A function",
+              },
+              "label": "fn(x: int, y: str)",
+              "parameters": [
+                ParameterInformation {
+                  "documentation": "The x param",
+                  "label": "x: int",
+                },
+                ParameterInformation {
+                  "documentation": MarkdownString {
+                    "baseUri": undefined,
+                    "isTrusted": undefined,
+                    "supportHtml": undefined,
+                    "supportThemeIcons": undefined,
+                    "value": "The y param",
+                  },
+                  "label": "y: str",
+                },
+              ],
+            },
+          ],
+        }
+      `);
+    }),
+  );
+
+  it.scoped(
+    "defaults activeParameter to 0 when undefined",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toSignatureHelp(code, {
+        signatures: [{ label: "fn()" }],
+        activeSignature: 0,
+      });
+      expect(result.activeParameter).toBe(0);
+    }),
+  );
+
+  // The LSP protocol allows null for activeParameter (meaning "no active
+  // parameter") even though our TypeScript types don't model it. Servers
+  // can send this at runtime.
+  it.scoped(
+    "maps null activeParameter to -1",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toSignatureHelp(code, {
+        signatures: [{ label: "fn()" }],
+        activeSignature: 0,
+        activeParameter: null as any,
+      });
+      expect(result.activeParameter).toBe(-1);
     }),
   );
 });
