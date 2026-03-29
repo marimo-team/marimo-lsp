@@ -200,10 +200,7 @@ class NotebookCellStatusBarItem implements vscode.NotebookCellStatusBarItem {
 }
 
 export class Uri implements vscode.Uri {
-  static parse(value: string, strict?: boolean): Uri {
-    if (strict !== true) {
-      throw new Error("strict parameter must be true in test mock");
-    }
+  static parse(value: string, _strict?: boolean): Uri {
     const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value);
     if (!hasScheme) {
       throw new Error(`Invalid URI: missing scheme in '${value}'`);

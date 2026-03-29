@@ -56,7 +56,7 @@ function toLocationLink(
  *
  * Reference: protocolConverter.ts asLocationResult
  */
-function toLocationResult(
+export function toLocationResult(
   code: VsCode,
   item: lsp.Definition | lsp.DefinitionLink[] | null,
 ): vscode.Location | vscode.Location[] | vscode.LocationLink[] | undefined {

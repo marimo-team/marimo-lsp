@@ -18,7 +18,7 @@ import { VsCode } from "../../VsCode.ts";
 // Converters
 // ---------------------------------------------------------------------------
 
-function toVsCodeRange(code: VsCode, range: lsp.Range): vscode.Range {
+export function toVsCodeRange(code: VsCode, range: lsp.Range): vscode.Range {
   return new code.Range(
     range.start.line,
     range.start.character,
@@ -32,7 +32,7 @@ function toVsCodeRange(code: VsCode, range: lsp.Range): vscode.Range {
  *
  * Reference: protocolConverter.ts asHoverContent
  */
-function toHoverContent(
+export function toHoverContent(
   code: VsCode,
   contents: lsp.Hover["contents"],
 ): vscode.MarkdownString | vscode.MarkdownString[] {
