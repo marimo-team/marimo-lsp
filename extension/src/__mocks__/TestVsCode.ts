@@ -1164,6 +1164,58 @@ class Hover implements vscode.Hover {
   }
 }
 
+class DocumentHighlight implements vscode.DocumentHighlight {
+  range: Range;
+  kind?: vscode.DocumentHighlightKind;
+  constructor(range: Range, kind?: vscode.DocumentHighlightKind) {
+    this.range = range;
+    this.kind = kind;
+  }
+}
+
+class DocumentSymbol implements vscode.DocumentSymbol {
+  name: string;
+  detail: string;
+  kind: vscode.SymbolKind;
+  tags?: readonly vscode.SymbolTag[];
+  range: Range;
+  selectionRange: Range;
+  children: DocumentSymbol[] = [];
+  constructor(
+    name: string,
+    detail: string,
+    kind: vscode.SymbolKind,
+    range: Range,
+    selectionRange: Range,
+  ) {
+    this.name = name;
+    this.detail = detail;
+    this.kind = kind;
+    this.range = range;
+    this.selectionRange = selectionRange;
+  }
+}
+
+class FoldingRange implements vscode.FoldingRange {
+  start: number;
+  end: number;
+  kind?: vscode.FoldingRangeKind;
+  constructor(start: number, end: number, kind?: vscode.FoldingRangeKind) {
+    this.start = start;
+    this.end = end;
+    this.kind = kind;
+  }
+}
+
+class SelectionRange implements vscode.SelectionRange {
+  range: Range;
+  parent?: SelectionRange;
+  constructor(range: Range, parent?: SelectionRange) {
+    this.range = range;
+    this.parent = parent;
+  }
+}
+
 class SignatureInformation implements vscode.SignatureInformation {
   label: string;
   documentation?: string | MarkdownString;
@@ -1962,6 +2014,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         SignatureInformation,
         ParameterInformation,
         CodeLens,
+        DocumentHighlight,
+        DocumentSymbol,
+        FoldingRange,
+        SelectionRange,
         SemanticTokensLegend,
         SemanticTokens,
         CompletionTriggerKind: {
@@ -1981,6 +2037,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           registerDefinitionProvider: () => Effect.void,
           registerDeclarationProvider: () => Effect.void,
           registerTypeDefinitionProvider: () => Effect.void,
+          registerReferenceProvider: () => Effect.void,
+          registerDocumentHighlightProvider: () => Effect.void,
+          registerDocumentSymbolProvider: () => Effect.void,
+          registerFoldingRangeProvider: () => Effect.void,
+          registerSelectionRangeProvider: () => Effect.void,
         }),
         Diagnostic,
         // helper

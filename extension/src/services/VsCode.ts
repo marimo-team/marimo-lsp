@@ -721,6 +721,100 @@ export class Languages extends Effect.Service<Languages>()("Langauges", {
           }),
         ).pipe(Effect.asVoid);
       },
+      registerReferenceProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideReferences(
+            doc: vscode.TextDocument,
+            pos: vscode.Position,
+            ctx: vscode.ReferenceContext,
+          ): Effect.Effect<vscode.Location[]>;
+        },
+      ) {
+        return acquireDisposable(() =>
+          api.registerReferenceProvider(selector, {
+            provideReferences(doc, pos, ctx, tok) {
+              return runPromise(impl.provideReferences(doc, pos, ctx), {
+                signal: signalFromToken(tok),
+              });
+            },
+          }),
+        ).pipe(Effect.asVoid);
+      },
+      registerDocumentHighlightProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideDocumentHighlights(
+            doc: vscode.TextDocument,
+            pos: vscode.Position,
+          ): Effect.Effect<vscode.DocumentHighlight[]>;
+        },
+      ) {
+        return acquireDisposable(() =>
+          api.registerDocumentHighlightProvider(selector, {
+            provideDocumentHighlights(doc, pos, tok) {
+              return runPromise(impl.provideDocumentHighlights(doc, pos), {
+                signal: signalFromToken(tok),
+              });
+            },
+          }),
+        ).pipe(Effect.asVoid);
+      },
+      registerDocumentSymbolProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideDocumentSymbols(
+            doc: vscode.TextDocument,
+          ): Effect.Effect<vscode.DocumentSymbol[]>;
+        },
+      ) {
+        return acquireDisposable(() =>
+          api.registerDocumentSymbolProvider(selector, {
+            provideDocumentSymbols(doc, tok) {
+              return runPromise(impl.provideDocumentSymbols(doc), {
+                signal: signalFromToken(tok),
+              });
+            },
+          }),
+        ).pipe(Effect.asVoid);
+      },
+      registerFoldingRangeProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideFoldingRanges(
+            doc: vscode.TextDocument,
+          ): Effect.Effect<vscode.FoldingRange[]>;
+        },
+      ) {
+        return acquireDisposable(() =>
+          api.registerFoldingRangeProvider(selector, {
+            provideFoldingRanges(doc, _ctx, tok) {
+              return runPromise(impl.provideFoldingRanges(doc), {
+                signal: signalFromToken(tok),
+              });
+            },
+          }),
+        ).pipe(Effect.asVoid);
+      },
+      registerSelectionRangeProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideSelectionRanges(
+            doc: vscode.TextDocument,
+            positions: readonly vscode.Position[],
+          ): Effect.Effect<vscode.SelectionRange[]>;
+        },
+      ) {
+        return acquireDisposable(() =>
+          api.registerSelectionRangeProvider(selector, {
+            provideSelectionRanges(doc, positions, tok) {
+              return runPromise(impl.provideSelectionRanges(doc, positions), {
+                signal: signalFromToken(tok),
+              });
+            },
+          }),
+        ).pipe(Effect.asVoid);
+      },
     };
   }),
 }) {}
@@ -759,6 +853,10 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       SignatureInformation: vscode.SignatureInformation,
       ParameterInformation: vscode.ParameterInformation,
       CodeLens: vscode.CodeLens,
+      DocumentHighlight: vscode.DocumentHighlight,
+      DocumentSymbol: vscode.DocumentSymbol,
+      FoldingRange: vscode.FoldingRange,
+      SelectionRange: vscode.SelectionRange,
       SemanticTokensLegend: vscode.SemanticTokensLegend,
       SemanticTokens: vscode.SemanticTokens,
       // data types

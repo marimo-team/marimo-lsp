@@ -4,8 +4,12 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import { TestVsCode } from "../../../__mocks__/TestVsCode.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toLocationResult } from "../providers/definition.ts";
-import { toHoverContent, toVsCodeRange } from "../providers/hover.ts";
+import { toLocationResult, toVsCodeRange } from "../providers/converters.ts";
+import { toDocumentHighlight } from "../providers/documentHighlight.ts";
+import { toDocumentSymbol } from "../providers/documentSymbol.ts";
+import { toFoldingRange } from "../providers/foldingRange.ts";
+import { toHoverContent } from "../providers/hover.ts";
+import { toSelectionRange } from "../providers/selectionRange.ts";
 
 const withVsCode = Effect.gen(function* () {
   const test = yield* TestVsCode.make();
@@ -51,7 +55,7 @@ describe("toHoverContent", () => {
           "supportThemeIcons": undefined,
           "value": "hello",
         }
-      `)
+      `);
     }),
   );
 
@@ -71,7 +75,7 @@ describe("toHoverContent", () => {
           "supportThemeIcons": undefined,
           "value": "# Title",
         }
-      `)
+      `);
     }),
   );
 
@@ -278,6 +282,228 @@ describe("toLocationResult", () => {
       const code = yield* withVsCode;
       const result = toLocationResult(code, []);
       expect(result).toMatchInlineSnapshot(`[]`);
+    }),
+  );
+});
+
+describe("toDocumentHighlight", () => {
+  it.scoped(
+    "converts with kind",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toDocumentHighlight(code, {
+        range: {
+          start: { line: 1, character: 0 },
+          end: { line: 1, character: 5 },
+        },
+        kind: lsp.DocumentHighlightKind.Write,
+      });
+      expect(result).toMatchInlineSnapshot(`
+        DocumentHighlight {
+          "kind": 2,
+          "range": Range {
+            "end": Position {
+              "character": 5,
+              "line": 1,
+            },
+            "start": Position {
+              "character": 0,
+              "line": 1,
+            },
+          },
+        }
+      `);
+    }),
+  );
+
+  it.scoped(
+    "converts without kind",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toDocumentHighlight(code, {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 3 },
+        },
+      });
+      expect(result).toMatchInlineSnapshot(`
+        DocumentHighlight {
+          "kind": undefined,
+          "range": Range {
+            "end": Position {
+              "character": 3,
+              "line": 0,
+            },
+            "start": Position {
+              "character": 0,
+              "line": 0,
+            },
+          },
+        }
+      `);
+    }),
+  );
+});
+
+describe("toDocumentSymbol", () => {
+  it.scoped(
+    "converts with children",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toDocumentSymbol(code, {
+        name: "MyClass",
+        detail: "A class",
+        kind: lsp.SymbolKind.Class,
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 10, character: 0 },
+        },
+        selectionRange: {
+          start: { line: 0, character: 6 },
+          end: { line: 0, character: 13 },
+        },
+        children: [
+          {
+            name: "method",
+            detail: "",
+            kind: lsp.SymbolKind.Method,
+            range: {
+              start: { line: 2, character: 4 },
+              end: { line: 5, character: 0 },
+            },
+            selectionRange: {
+              start: { line: 2, character: 8 },
+              end: { line: 2, character: 14 },
+            },
+          },
+        ],
+      });
+      expect(result).toMatchInlineSnapshot(`
+        DocumentSymbol {
+          "children": [
+            DocumentSymbol {
+              "children": [],
+              "detail": "",
+              "kind": 5,
+              "name": "method",
+              "range": Range {
+                "end": Position {
+                  "character": 0,
+                  "line": 5,
+                },
+                "start": Position {
+                  "character": 4,
+                  "line": 2,
+                },
+              },
+              "selectionRange": Range {
+                "end": Position {
+                  "character": 14,
+                  "line": 2,
+                },
+                "start": Position {
+                  "character": 8,
+                  "line": 2,
+                },
+              },
+              "tags": undefined,
+            },
+          ],
+          "detail": "A class",
+          "kind": 4,
+          "name": "MyClass",
+          "range": Range {
+            "end": Position {
+              "character": 0,
+              "line": 10,
+            },
+            "start": Position {
+              "character": 0,
+              "line": 0,
+            },
+          },
+          "selectionRange": Range {
+            "end": Position {
+              "character": 13,
+              "line": 0,
+            },
+            "start": Position {
+              "character": 6,
+              "line": 0,
+            },
+          },
+          "tags": undefined,
+        }
+      `);
+    }),
+  );
+});
+
+describe("toFoldingRange", () => {
+  it.scoped(
+    "converts with kind",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toFoldingRange(code, {
+        startLine: 0,
+        endLine: 10,
+        kind: lsp.FoldingRangeKind.Imports,
+      });
+      expect(result).toMatchInlineSnapshot(`
+        FoldingRange {
+          "end": 10,
+          "kind": "imports",
+          "start": 0,
+        }
+      `);
+    }),
+  );
+});
+
+describe("toSelectionRange", () => {
+  it.scoped(
+    "converts nested selection ranges",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toSelectionRange(code, {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 5, character: 0 },
+        },
+        parent: {
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 10, character: 0 },
+          },
+        },
+      });
+      expect(result).toMatchInlineSnapshot(`
+        SelectionRange {
+          "parent": SelectionRange {
+            "parent": undefined,
+            "range": Range {
+              "end": Position {
+                "character": 0,
+                "line": 10,
+              },
+              "start": Position {
+                "character": 0,
+                "line": 0,
+              },
+            },
+          },
+          "range": Range {
+            "end": Position {
+              "character": 0,
+              "line": 5,
+            },
+            "start": Position {
+              "character": 0,
+              "line": 0,
+            },
+          },
+        }
+      `);
     }),
   );
 });
