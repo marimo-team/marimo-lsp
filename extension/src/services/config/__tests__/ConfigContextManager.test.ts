@@ -15,7 +15,7 @@ import type { MarimoConfig } from "../../../types.ts";
 import { LanguageClient } from "../../LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../NotebookEditorRegistry.ts";
 import type { VsCode } from "../../VsCode.ts";
-import { VsCode as VsCodeService } from "../../VsCode.ts";
+import { Commands, VsCode as VsCodeService } from "../../VsCode.ts";
 import { ConfigContextManager } from "../ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";
 
@@ -95,7 +95,7 @@ const TestVsCodeLive = Layer.effect(
   Effect.gen(function* () {
     const ctx = yield* TestContext;
     return partialService<VsCode>({
-      commands: {
+      commands: Commands.make({
         setContext: (key: string, value: unknown) =>
           ctx.recordContextCall(key, value),
         subscribeToCommands() {
@@ -103,8 +103,7 @@ const TestVsCodeLive = Layer.effect(
         },
         executeCommand: () => Effect.void,
         registerCommand: () => Effect.void,
-        _tag: "Commands",
-      },
+      }),
     });
   }),
 );
@@ -205,7 +204,6 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
     Effect.fn(function* () {
       const ctx = yield* TestContext;
       const configService = yield* MarimoConfigurationService;
-      const _manager = yield* ConfigContextManager;
 
       const notebookUri = NOTEBOOK_URI;
       yield* ctx.setConfig(notebookUri, AUTORUN_CONFIG);
@@ -236,7 +234,6 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
     "should default to autorun when config is None",
     Effect.fn(function* () {
       const ctx = yield* TestContext;
-      const _manager = yield* ConfigContextManager;
 
       yield* TestClock.adjust("10 millis");
 
@@ -317,7 +314,6 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
     Effect.fn(function* () {
       const ctx = yield* TestContext;
       const configService = yield* MarimoConfigurationService;
-      const _manager = yield* ConfigContextManager;
 
       yield* ctx.setConfig(NOTEBOOK_URI_1, AUTORUN_CONFIG);
       yield* ctx.setConfig(NOTEBOOK_URI_2, LAZY_CONFIG);
@@ -358,7 +354,6 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
     "should default auto_reload to off when config is None",
     Effect.fn(function* () {
       const ctx = yield* TestContext;
-      const _manager = yield* ConfigContextManager;
 
       yield* TestClock.adjust("10 millis");
 
@@ -380,7 +375,6 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
     Effect.fn(function* () {
       const ctx = yield* TestContext;
       const configService = yield* MarimoConfigurationService;
-      const _manager = yield* ConfigContextManager;
 
       const notebookUri = NOTEBOOK_URI;
       yield* ctx.setConfig(notebookUri, AUTORUN_CONFIG);
@@ -487,7 +481,6 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
     Effect.fn(function* () {
       const ctx = yield* TestContext;
       const configService = yield* MarimoConfigurationService;
-      const _manager = yield* ConfigContextManager;
 
       yield* ctx.setConfig(NOTEBOOK_URI_1, AUTO_RELOAD_LAZY_CONFIG);
       yield* ctx.setConfig(NOTEBOOK_URI_2, AUTO_RELOAD_AUTORUN_CONFIG);

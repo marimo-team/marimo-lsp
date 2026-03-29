@@ -2158,6 +2158,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           registerInlayHintsProvider: () => Effect.void,
           registerCompletionItemProvider: () => Effect.void,
           registerCodeActionsProvider: () => Effect.void,
+          registerRenameProvider: () => Effect.void,
+          registerDocumentSemanticTokensProvider: () => Effect.void,
+          registerDocumentRangeSemanticTokensProvider: () => Effect.void,
         }),
         Diagnostic,
         DiagnosticSeverity: {

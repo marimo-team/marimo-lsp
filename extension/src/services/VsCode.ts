@@ -989,6 +989,88 @@ export class Languages extends Effect.Service<Languages>()("Langauges", {
           ),
         ).pipe(Effect.asVoid);
       },
+      registerRenameProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideRenameEdits(
+            doc: vscode.TextDocument,
+            pos: vscode.Position,
+            newName: string,
+          ): Effect.Effect<vscode.WorkspaceEdit | undefined>;
+          prepareRename?: (
+            doc: vscode.TextDocument,
+            pos: vscode.Position,
+          ) => Effect.Effect<
+            | vscode.Range
+            | { range: vscode.Range; placeholder: string }
+            | undefined
+          >;
+        },
+      ) {
+        return acquireDisposable(() =>
+          api.registerRenameProvider(selector, {
+            provideRenameEdits(doc, pos, newName, tok) {
+              return runPromise(impl.provideRenameEdits(doc, pos, newName), {
+                signal: signalFromToken(tok),
+              });
+            },
+            prepareRename: impl.prepareRename
+              ? (doc, pos, tok) =>
+                  runPromise(impl.prepareRename!(doc, pos), {
+                    signal: signalFromToken(tok),
+                  })
+              : undefined,
+          }),
+        ).pipe(Effect.asVoid);
+      },
+      registerDocumentSemanticTokensProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideDocumentSemanticTokens(
+            doc: vscode.TextDocument,
+          ): Effect.Effect<vscode.SemanticTokens | undefined>;
+        },
+        legend: vscode.SemanticTokensLegend,
+      ) {
+        return acquireDisposable(() =>
+          api.registerDocumentSemanticTokensProvider(
+            selector,
+            {
+              provideDocumentSemanticTokens(doc, tok) {
+                return runPromise(impl.provideDocumentSemanticTokens(doc), {
+                  signal: signalFromToken(tok),
+                });
+              },
+            },
+            legend,
+          ),
+        ).pipe(Effect.asVoid);
+      },
+      registerDocumentRangeSemanticTokensProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideDocumentRangeSemanticTokens(
+            doc: vscode.TextDocument,
+            range: vscode.Range,
+          ): Effect.Effect<vscode.SemanticTokens | undefined>;
+        },
+        legend: vscode.SemanticTokensLegend,
+      ) {
+        return acquireDisposable(() =>
+          api.registerDocumentRangeSemanticTokensProvider(
+            selector,
+            {
+              provideDocumentRangeSemanticTokens(doc, range, tok) {
+                return runPromise(
+                  impl.provideDocumentRangeSemanticTokens(doc, range),
+                  { signal: signalFromToken(tok) },
+                );
+              },
+            },
+            legend,
+          ),
+        ).pipe(Effect.asVoid);
+      },
     };
   }),
 }) {}

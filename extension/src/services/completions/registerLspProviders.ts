@@ -29,12 +29,16 @@ import {
 import { registerHoverProvider } from "../lsp/providers/hover.ts";
 import { registerInlayHintProvider } from "../lsp/providers/inlayHint.ts";
 import { registerReferenceProvider } from "../lsp/providers/references.ts";
+import { registerRenameProvider } from "../lsp/providers/rename.ts";
 import { registerSelectionRangeProvider } from "../lsp/providers/selectionRange.ts";
+import { registerSemanticTokensProvider } from "../lsp/providers/semanticTokens.ts";
 import { registerSignatureHelpProvider } from "../lsp/providers/signatureHelp.ts";
 
 export const registerLspProviders = Effect.fn("registerLspProviders")(
   function* (client: NotebookLspClient) {
     const sel: vscode.DocumentSelector = [
+      { scheme: "file", language: LanguageId.Python },
+      { scheme: "untitled", language: LanguageId.Python },
       { scheme: "vscode-notebook-cell", language: LanguageId.Python },
     ];
 
@@ -53,5 +57,7 @@ export const registerLspProviders = Effect.fn("registerLspProviders")(
     yield* registerInlayHintProvider(sel, client);
     yield* registerCompletionProvider(sel, client);
     yield* registerCodeActionProvider(sel, client);
+    yield* registerRenameProvider(sel, client);
+    yield* registerSemanticTokensProvider(sel, client);
   },
 );

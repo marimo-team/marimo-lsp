@@ -79,7 +79,12 @@ export type LspRequestMap = {
   [lsp.RenameRequest.method]: [lsp.RenameParams, lsp.WorkspaceEdit | null];
   [lsp.PrepareRenameRequest.method]: [
     lsp.PrepareRenameParams,
-    lsp.Range | null,
+    (
+      | lsp.Range
+      | { range: lsp.Range; placeholder: string }
+      | { defaultBehavior: boolean }
+      | null
+    ),
   ];
   [lsp.SignatureHelpRequest.method]: [
     lsp.SignatureHelpParams,
