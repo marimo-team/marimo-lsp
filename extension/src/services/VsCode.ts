@@ -447,6 +447,9 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
       }) {
         return Effect.promise(() => api.openTextDocument(options));
       },
+      createFileSystemWatcher(globPattern: string) {
+        return api.createFileSystemWatcher(globPattern);
+      },
     };
   },
 }) {}

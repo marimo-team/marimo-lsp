@@ -1739,6 +1739,14 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           textDocumentChanges() {
             return Stream.empty;
           },
+          createFileSystemWatcher() {
+            return {
+              onDidCreate: () => ({ dispose() {} }),
+              onDidChange: () => ({ dispose() {} }),
+              onDidDelete: () => ({ dispose() {} }),
+              dispose() {},
+            } as unknown as vscode.FileSystemWatcher;
+          },
           applyEdit() {
             return Effect.succeed(true);
           },

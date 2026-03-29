@@ -3,7 +3,6 @@ import * as NodePath from "node:path";
 import { type Cause, Data, Effect, Exit, Option, Ref } from "effect";
 import type * as vscode from "vscode";
 
-import { NOTEBOOK_TYPE } from "../../constants.ts";
 import {
   BinarySource,
   companionExtensionBundledBinary,
@@ -11,6 +10,10 @@ import {
   resolveBinary,
   userConfiguredPath,
 } from "../../utils/binaryResolution.ts";
+import {
+  connectMarimoNotebookLspClient,
+  type MarimoNotebookLspClient,
+} from "../../utils/connectMarimoLspClient.ts";
 import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
 import { Config } from "../Config.ts";
 import { OutputChannel } from "../OutputChannel.ts";
@@ -20,12 +23,6 @@ import { Telemetry } from "../Telemetry.ts";
 import { Uv } from "../Uv.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
 import { VsCode } from "../VsCode.ts";
-import { connectNotebookClient } from "./connectNotebookClient.ts";
-import {
-  makeNotebookLspClient,
-  type NotebookLspClient,
-} from "./NotebookLspClient.ts";
-import { registerLspProviders } from "./registerLspProviders.ts";
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
 // Bump this as needed for new features or fixes.
@@ -39,7 +36,7 @@ type RuffLanguageServerStatus = Data.TaggedEnum<{
   Starting: {};
   Disabled: { readonly reason: string };
   Running: {
-    readonly client: NotebookLspClient;
+    readonly client: MarimoNotebookLspClient;
     readonly serverVersion: string;
     readonly binarySource: BinarySource;
   };
@@ -107,16 +104,14 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
           );
           const globalSettings = getGlobalRuffSettings(ruffConfig);
 
-          // Create the LSP client
           const outputChannel = yield* code.window.createLogOutputChannel(
             `marimo (${RUFF_SERVER.name})`,
           );
           const clientExit = yield* Effect.exit(
-            makeNotebookLspClient({
+            connectMarimoNotebookLspClient({
               name: RUFF_SERVER.name,
               command: resolved.path,
               args: ["server"],
-              notebookType: NOTEBOOK_TYPE,
               outputChannel,
               initializationOptions: { settings, globalSettings },
               workspaceFolders: Option.getOrElse(
@@ -176,10 +171,6 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
               binarySource: resolved,
             }),
           );
-
-          // Wire up VS Code events, diagnostics, and feature providers
-          yield* connectNotebookClient(client);
-          yield* registerLspProviders(client);
 
           // TODO: Restart on ruff.* config changes
         }),

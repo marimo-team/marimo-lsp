@@ -18,7 +18,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import { LanguageId } from "../../constants.ts";
 import { acquireDisposable } from "../../utils/acquireDisposable.ts";
-import type { NotebookLspClient } from "./NotebookLspClient.ts";
+import type { NotebookLspClient } from "../../utils/makeMarimoLspClient.ts";
 
 // ---------------------------------------------------------------------------
 // Conversion helpers: vscode ↔ LSP

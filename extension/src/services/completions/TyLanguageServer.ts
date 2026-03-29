@@ -1,8 +1,16 @@
 import * as NodePath from "node:path";
 
-import { type Cause, Data, Effect, Exit, Option, Ref } from "effect";
+import {
+  type Cause,
+  Data,
+  Duration,
+  Effect,
+  Exit,
+  Option,
+  Ref,
+  Stream,
+} from "effect";
 
-import { NOTEBOOK_TYPE } from "../../constants.ts";
 import {
   BinarySource,
   companionExtensionBundledBinary,
@@ -10,6 +18,10 @@ import {
   resolveBinary,
   userConfiguredPath,
 } from "../../utils/binaryResolution.ts";
+import {
+  connectMarimoNotebookLspClient,
+  type MarimoNotebookLspClient,
+} from "../../utils/connectMarimoLspClient.ts";
 import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
 import { Config } from "../Config.ts";
 import { OutputChannel } from "../OutputChannel.ts";
@@ -20,12 +32,6 @@ import { Telemetry } from "../Telemetry.ts";
 import { Uv } from "../Uv.ts";
 import { VariablesService } from "../variables/VariablesService.ts";
 import { VsCode } from "../VsCode.ts";
-import { connectNotebookClient } from "./connectNotebookClient.ts";
-import {
-  makeNotebookLspClient,
-  type NotebookLspClient,
-} from "./NotebookLspClient.ts";
-import { registerLspProviders } from "./registerLspProviders.ts";
 
 const TY_SERVER = { name: "ty", version: "0.0.26" } as const;
 const TY_EXTENSION_ID = "astral-sh.ty";
@@ -36,7 +42,7 @@ type TyLanguageServerStatus = Data.TaggedEnum<{
   Starting: {};
   Disabled: { readonly reason: string };
   Running: {
-    readonly client: NotebookLspClient;
+    readonly client: MarimoNotebookLspClient;
     readonly serverVersion: string;
     readonly binarySource: BinarySource;
     readonly pythonEnvironment: Option.Option<{
@@ -108,11 +114,10 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
             `marimo (${TY_SERVER.name})`,
           );
           const clientExit = yield* Effect.exit(
-            makeNotebookLspClient({
+            connectMarimoNotebookLspClient({
               name: TY_SERVER.name,
               command: resolved.path,
               args: ["server"],
-              notebookType: NOTEBOOK_TYPE,
               outputChannel,
               initializationOptions: {},
               workspaceFolders: Option.getOrElse(
@@ -228,11 +233,19 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
             );
           });
 
-          // Wire up VS Code events, diagnostics, and feature providers
-          yield* connectNotebookClient(client);
-          yield* registerLspProviders(client);
-
-          // TODO: Restart on Python environment changes (debounced 2s)
+          // When the Python environment changes, notify the server so it
+          // re-pulls configuration (which includes the Python env info).
+          // This matches what the official ty-vscode extension does.
+          yield* Effect.forkScoped(
+            pyExt.activeEnvironmentPathChanges().pipe(
+              Stream.debounce(Duration.seconds(2)),
+              Stream.runForEach(() =>
+                client
+                  .sendDidChangeConfiguration()
+                  .pipe(Effect.tap(() => updateRunningStatus())),
+              ),
+            ),
+          );
 
           yield* updateRunningStatus();
         }),
