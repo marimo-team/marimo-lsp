@@ -406,6 +406,20 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
           ),
         );
       },
+      textDocumentChanges() {
+        return Stream.asyncPush<vscode.TextDocumentChangeEvent>((emit) =>
+          acquireDisposable(() =>
+            api.onDidChangeTextDocument((event) => emit.single(event)),
+          ),
+        );
+      },
+      notebookDocumentClosed() {
+        return Stream.asyncPush<vscode.NotebookDocument>((emit) =>
+          acquireDisposable(() =>
+            api.onDidCloseNotebookDocument((event) => emit.single(event)),
+          ),
+        );
+      },
       configurationChanges() {
         return Stream.asyncPush<vscode.ConfigurationChangeEvent>((emit) =>
           acquireDisposable(() =>

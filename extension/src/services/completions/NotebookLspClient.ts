@@ -20,8 +20,10 @@
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeProcess from "node:process";
+import * as NodeReadline from "node:readline";
 
 import { Effect, HashMap, Option, PubSub, Ref, Runtime, Stream } from "effect";
+import type * as vscode from "vscode";
 import * as rpc from "vscode-jsonrpc/node";
 import * as lsp from "vscode-languageserver-protocol";
 
@@ -32,7 +34,7 @@ import * as lsp from "vscode-languageserver-protocol";
 type NotebookUri = string;
 
 /** The cells we last told the server about, in server order. */
-interface SyncedCell {
+export interface SyncedCell {
   readonly uri: string;
   readonly languageId: string;
   readonly version: number;
@@ -56,6 +58,10 @@ export interface NotebookLspClientConfig {
     uri: string;
     name: string;
   }>;
+  /** Notebook type identifier (e.g. "marimo-notebook"). */
+  notebookType: string;
+  /** Output channel for server log messages. */
+  outputChannel?: vscode.LogOutputChannel;
 }
 
 export interface ServerInfo {
@@ -75,8 +81,7 @@ export interface ServerInfo {
  * when the scope closes, the server is shut down and the process killed.
  */
 export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
-  function* (config: NotebookLspClientConfig) {
-    const runFork = Runtime.runFork(yield* Effect.runtime());
+  function*(config: NotebookLspClientConfig) {
     // -- 1. Spawn process ---------------------------------------------------
 
     const proc = NodeChildProcess.spawn(config.command, config.args, {
@@ -85,6 +90,18 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
     });
 
     yield* Effect.addFinalizer(() => Effect.sync(() => proc.kill()));
+
+    // Pipe stderr to output channel, line by line (matches LanguageClient behavior)
+    if (config.outputChannel && proc.stderr) {
+      const channel = config.outputChannel;
+      const it = NodeReadline.createInterface({
+        input: proc.stderr,
+        crlfDelay: Number.POSITIVE_INFINITY,
+        terminal: false,
+        historySize: 0,
+      });
+      it.on("line", (data) => channel.error(data));
+    }
 
     const stdout = proc.stdout;
     const stdin = proc.stdin;
@@ -237,7 +254,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
     // -- 4. Shutdown finalizer (graceful before kill) -----------------------
 
     yield* Effect.addFinalizer(() =>
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         yield* Effect.promise(() => conn.sendRequest("shutdown")).pipe(
           Effect.timeout("5 seconds"),
           Effect.catchAll(() => Effect.void),
@@ -259,12 +276,39 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
     const diagnosticsPubSub =
       yield* PubSub.unbounded<lsp.PublishDiagnosticsParams>();
 
+    const runFork = Runtime.runFork(yield* Effect.runtime());
     conn.onNotification(
       lsp.PublishDiagnosticsNotification.method,
       (params: lsp.PublishDiagnosticsParams) => {
         runFork(PubSub.publish(diagnosticsPubSub, params));
       },
     );
+
+    // -- 6b. Server log messages → output channel ---------------------------
+
+    const out = config.outputChannel;
+    if (out) {
+      conn.onNotification(
+        lsp.LogMessageNotification.method,
+        (params: lsp.LogMessageParams) => {
+          switch (params.type) {
+            case lsp.MessageType.Error:
+              out.error(params.message);
+              break;
+            case lsp.MessageType.Warning:
+              out.warn(params.message);
+              break;
+            case lsp.MessageType.Info:
+              out.info(params.message);
+              break;
+            case lsp.MessageType.Log:
+            default:
+              out.debug(params.message);
+              break;
+          }
+        },
+      );
+    }
 
     // -- 7. LSP cell helpers ------------------------------------------------
 
@@ -281,41 +325,63 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
       text: c.text,
     });
 
-    // -- 8. Public API ------------------------------------------------------
+    // -- 8. Notebook sync helpers -------------------------------------------
+
+    const sendDidOpen = (
+      uri: string,
+      version: number,
+      cells: ReadonlyArray<SyncedCell>,
+    ) =>
+      Effect.promise(() =>
+        conn.sendNotification("notebookDocument/didOpen", {
+          notebookDocument: {
+            uri,
+            notebookType: config.notebookType,
+            version,
+            cells: cells.map(c => toLspCell(c)),
+          },
+          cellTextDocuments: cells.map(c => toLspTextDocument(c)),
+        } satisfies lsp.DidOpenNotebookDocumentParams),
+      );
+
+    const sendDidClose = (uri: string, cells: ReadonlyArray<SyncedCell>) =>
+      Effect.promise(() =>
+        conn.sendNotification("notebookDocument/didClose", {
+          notebookDocument: { uri },
+          cellTextDocuments: cells.map((c) => ({ uri: c.uri })),
+        } satisfies lsp.DidCloseNotebookDocumentParams),
+      );
+
+    // -- 9. Public API ------------------------------------------------------
 
     return {
       serverInfo,
 
       // ---- Notebook sync ------------------------------------------------
 
-      openNotebook: Effect.fn(function* (
+      openNotebook: Effect.fn(function*(
         notebookUri: string,
         notebookVersion: number,
         cells: ReadonlyArray<SyncedCell>,
       ) {
         yield* Ref.update(cellOrderRef, HashMap.set(notebookUri, cells));
-        yield* Effect.promise(() =>
-          conn.sendNotification("notebookDocument/didOpen", {
-            notebookDocument: {
-              uri: notebookUri,
-              notebookType: "marimo-notebook",
-              version: notebookVersion,
-              cells: cells.map(toLspCell),
-            },
-            cellTextDocuments: cells.map(toLspTextDocument),
-          } satisfies lsp.DidOpenNotebookDocumentParams),
-        );
+        yield* sendDidOpen(notebookUri, notebookVersion, cells);
       }),
 
-      reorderCells: Effect.fn(function* (
+      /**
+       * Reorder cells by closing and reopening the notebook.
+       *
+       * A structural `notebookDocument/didChange` would be more efficient,
+       * but both Ruff and ty use a reverse-insertion algorithm that produces
+       * swapped diagnostic-to-cell URI mappings. A clean close + open
+       * sidesteps this entirely.
+       */
+      reorderCells: Effect.fn(function*(
         notebookUri: string,
         notebookVersion: number,
         newCells: ReadonlyArray<SyncedCell>,
       ) {
-        const current = yield* Ref.get(cellOrderRef).pipe(
-          Effect.map(HashMap.get(notebookUri)),
-        );
-
+        const current = HashMap.get(yield* Ref.get(cellOrderRef), notebookUri);
         if (Option.isNone(current)) {
           return;
         }
@@ -328,28 +394,12 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
           return;
         }
 
+        yield* sendDidClose(notebookUri, oldCells);
         yield* Ref.update(cellOrderRef, HashMap.set(notebookUri, newCells));
-        yield* Effect.promise(() =>
-          conn.sendNotification("notebookDocument/didChange", {
-            notebookDocument: { uri: notebookUri, version: notebookVersion },
-            change: {
-              cells: {
-                structure: {
-                  array: {
-                    start: 0,
-                    deleteCount: oldCells.length,
-                    cells: newCells.map(toLspCell),
-                  },
-                  didOpen: newCells.map(toLspTextDocument),
-                  didClose: [],
-                },
-              },
-            },
-          } satisfies lsp.DidChangeNotebookDocumentParams),
-        );
+        yield* sendDidOpen(notebookUri, notebookVersion, newCells);
       }),
 
-      changeCellText: Effect.fn(function* (
+      changeCellText: Effect.fn(function*(
         notebookUri: string,
         notebookVersion: number,
         cellUri: string,
@@ -373,21 +423,12 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
         );
       }),
 
-      closeNotebook: Effect.fn(function* (notebookUri: string) {
+      closeNotebook: Effect.fn(function*(notebookUri: string) {
         const current = HashMap.get(yield* Ref.get(cellOrderRef), notebookUri);
         yield* Ref.update(cellOrderRef, HashMap.remove(notebookUri));
-
-        const cellTextDocuments = current.pipe(
-          Option.map((cells) => cells.map((c) => ({ uri: c.uri }))),
-          Option.getOrElse(() => []),
-        );
-
-        yield* Effect.promise(() =>
-          conn.sendNotification("notebookDocument/didClose", {
-            notebookDocument: { uri: notebookUri },
-            cellTextDocuments: cellTextDocuments,
-          } satisfies lsp.DidCloseNotebookDocumentParams),
-        );
+        if (Option.isSome(current)) {
+          yield* sendDidClose(notebookUri, current.value);
+        }
       }),
 
       // ---- Typed requests -----------------------------------------------

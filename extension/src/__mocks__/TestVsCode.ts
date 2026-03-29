@@ -1226,13 +1226,13 @@ class DiagnosticCollection implements vscode.DiagnosticCollection {
       | ReadonlyArray<[vscode.Uri, readonly vscode.Diagnostic[]]>,
     diagnostics?: readonly vscode.Diagnostic[],
   ): void {
-    if (Array.isArray(uriOrEntries)) {
+    if ("path" in uriOrEntries) {
+      const key = uriOrEntries.toString();
+      this.store.set(key, diagnostics ? [...diagnostics] : []);
+    } else {
       for (const [uri, diags] of uriOrEntries) {
         this.store.set(uri.toString(), [...diags]);
       }
-    } else {
-      const key = (uriOrEntries as vscode.Uri).toString();
-      this.store.set(key, diagnostics ? [...diagnostics] : []);
     }
   }
 
@@ -1732,6 +1732,12 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           },
           notebookDocumentChanges() {
             return Stream.fromPubSub(documentChanges);
+          },
+          notebookDocumentClosed() {
+            return Stream.empty;
+          },
+          textDocumentChanges() {
+            return Stream.empty;
           },
           applyEdit() {
             return Effect.succeed(true);

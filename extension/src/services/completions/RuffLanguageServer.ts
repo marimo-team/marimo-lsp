@@ -3,6 +3,7 @@ import * as NodePath from "node:path";
 import { type Cause, Data, Effect, Exit, Option, Ref } from "effect";
 import type * as vscode from "vscode";
 
+import { NOTEBOOK_TYPE } from "../../constants.ts";
 import {
   BinarySource,
   companionExtensionBundledBinary,
@@ -17,7 +18,9 @@ import { Sentry } from "../Sentry.ts";
 import { ExtensionContext } from "../Storage.ts";
 import { Telemetry } from "../Telemetry.ts";
 import { Uv } from "../Uv.ts";
+import { VariablesService } from "../variables/VariablesService.ts";
 import { VsCode } from "../VsCode.ts";
+import { connectNotebookClient } from "./connectNotebookClient.ts";
 import {
   makeNotebookLspClient,
   type NotebookLspClient,
@@ -55,7 +58,12 @@ type RuffLanguageServerStatus = Data.TaggedEnum<{
 export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
   "RuffLanguageServer",
   {
-    dependencies: [Uv.Default, Config.Default, OutputChannel.Default],
+    dependencies: [
+      Uv.Default,
+      Config.Default,
+      OutputChannel.Default,
+      VariablesService.Default,
+    ],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const sentry = yield* Effect.serviceOption(Sentry);
@@ -99,11 +107,16 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
           const globalSettings = getGlobalRuffSettings(ruffConfig);
 
           // Create the LSP client
+          const outputChannel = yield* code.window.createLogOutputChannel(
+            `marimo (${RUFF_SERVER.name})`,
+          );
           const clientExit = yield* Effect.exit(
             makeNotebookLspClient({
               name: RUFF_SERVER.name,
               command: resolved.path,
               args: ["server"],
+              notebookType: NOTEBOOK_TYPE,
+              outputChannel,
               initializationOptions: { settings, globalSettings },
               workspaceFolders: Option.getOrElse(
                 workspaceFolders,
@@ -163,8 +176,9 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
             }),
           );
 
-          // TODO: Wire up VS Code notebook events → client.openNotebook/reorderCells/changeCellText
-          // TODO: Wire up client.onNotification("textDocument/publishDiagnostics") → VS Code diagnostics
+          // Wire up VS Code events, diagnostics, and (TODO) feature providers
+          yield* connectNotebookClient(client);
+
           // TODO: Register VS Code providers for formatting, code actions, hover
           // TODO: Restart on ruff.* config changes
         }),
