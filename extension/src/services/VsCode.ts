@@ -640,7 +640,11 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
             Effect.void,
           );
         },
+        createDiagnosticCollection(name: string) {
+          return vscode.languages.createDiagnosticCollection(name);
+        },
       },
+      Diagnostic: vscode.Diagnostic,
       Hover: vscode.Hover,
       CompletionTriggerKind: vscode.CompletionTriggerKind,
       CompletionItem: vscode.CompletionItem,

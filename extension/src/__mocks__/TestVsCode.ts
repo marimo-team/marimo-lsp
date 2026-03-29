@@ -1190,6 +1190,91 @@ class ParameterInformation implements vscode.ParameterInformation {
   }
 }
 
+class Diagnostic implements vscode.Diagnostic {
+  range: Range;
+  message: string;
+  severity: vscode.DiagnosticSeverity;
+  source?: string;
+  code?: string | number | { value: string | number; target: vscode.Uri };
+  relatedInformation?: vscode.DiagnosticRelatedInformation[];
+  tags?: vscode.DiagnosticTag[];
+
+  constructor(
+    range: Range,
+    message: string,
+    severity?: vscode.DiagnosticSeverity,
+  ) {
+    this.range = range;
+    this.message = message;
+    this.severity = severity ?? 0; // Error
+  }
+}
+
+class DiagnosticCollection implements vscode.DiagnosticCollection {
+  readonly name: string;
+  private store = new Map<string, vscode.Diagnostic[]>();
+
+  constructor(name: string) {
+    this.name = name;
+  }
+
+  set(uri: vscode.Uri, diagnostics: readonly vscode.Diagnostic[]): void;
+  set(entries: ReadonlyArray<[vscode.Uri, readonly vscode.Diagnostic[]]>): void;
+  set(
+    uriOrEntries:
+      | vscode.Uri
+      | ReadonlyArray<[vscode.Uri, readonly vscode.Diagnostic[]]>,
+    diagnostics?: readonly vscode.Diagnostic[],
+  ): void {
+    if (Array.isArray(uriOrEntries)) {
+      for (const [uri, diags] of uriOrEntries) {
+        this.store.set(uri.toString(), [...diags]);
+      }
+    } else {
+      const key = (uriOrEntries as vscode.Uri).toString();
+      this.store.set(key, diagnostics ? [...diagnostics] : []);
+    }
+  }
+
+  delete(uri: vscode.Uri): void {
+    this.store.delete(uri.toString());
+  }
+
+  clear(): void {
+    this.store.clear();
+  }
+
+  get(uri: vscode.Uri): readonly vscode.Diagnostic[] {
+    return this.store.get(uri.toString()) ?? [];
+  }
+
+  has(uri: vscode.Uri): boolean {
+    return this.store.has(uri.toString());
+  }
+
+  forEach(
+    callback: (
+      uri: vscode.Uri,
+      diagnostics: readonly vscode.Diagnostic[],
+      collection: vscode.DiagnosticCollection,
+    ) => void,
+  ): void {
+    for (const [uriStr, diags] of this.store) {
+      callback(Uri.parse(uriStr), diags, this);
+    }
+  }
+
+  *[Symbol.iterator](): Iterator<[vscode.Uri, readonly vscode.Diagnostic[]]> {
+    for (const [uriStr, diags] of this.store) {
+      yield [Uri.parse(uriStr), diags];
+    }
+  }
+
+  dispose(): void {
+    this.store.clear();
+  }
+}
+
 export function createTestNotebookDocument(
   uri: Uri | string,
   options: {
@@ -1880,7 +1965,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           registerCodeLensProvider() {
             return Effect.void;
           },
+          createDiagnosticCollection(name: string) {
+            return new DiagnosticCollection(name);
+          },
         },
+        Diagnostic,
         // helper
         utils: {
           parseUri(value: string) {
