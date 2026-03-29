@@ -25,6 +25,7 @@ import {
   makeNotebookLspClient,
   type NotebookLspClient,
 } from "./NotebookLspClient.ts";
+import { registerLspProviders } from "./registerLspProviders.ts";
 
 const TY_SERVER = { name: "ty", version: "0.0.26" } as const;
 const TY_EXTENSION_ID = "astral-sh.ty";
@@ -181,10 +182,10 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
             );
           });
 
-          // Wire up VS Code events, diagnostics, and (TODO) feature providers
+          // Wire up VS Code events, diagnostics, and feature providers
           yield* connectNotebookClient(client);
+          yield* registerLspProviders(client);
 
-          // TODO: Register VS Code providers for completions, hover, definitions, etc.
           // TODO: Restart on Python environment changes (debounced 2s)
 
           yield* updateRunningStatus();

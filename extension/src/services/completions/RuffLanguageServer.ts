@@ -25,6 +25,7 @@ import {
   makeNotebookLspClient,
   type NotebookLspClient,
 } from "./NotebookLspClient.ts";
+import { registerLspProviders } from "./registerLspProviders.ts";
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
 // Bump this as needed for new features or fixes.
@@ -176,10 +177,10 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
             }),
           );
 
-          // Wire up VS Code events, diagnostics, and (TODO) feature providers
+          // Wire up VS Code events, diagnostics, and feature providers
           yield* connectNotebookClient(client);
+          yield* registerLspProviders(client);
 
-          // TODO: Register VS Code providers for formatting, code actions, hover
           // TODO: Restart on ruff.* config changes
         }),
       );

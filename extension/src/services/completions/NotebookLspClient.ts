@@ -31,6 +31,79 @@ import * as lsp from "vscode-languageserver-protocol";
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * Maps LSP request methods to their `[Params, Result]` types.
+ *
+ * This is the union of all request methods supported by Ruff and ty.
+ * Adding an entry here automatically makes it available via
+ * `client.sendRequest(method, params)` with full type safety.
+ */
+export type LspRequestMap = {
+  [lsp.HoverRequest.method]: [lsp.HoverParams, lsp.Hover | null];
+  [lsp.CompletionRequest.method]: [
+    lsp.CompletionParams,
+    lsp.CompletionList | null,
+  ];
+  [lsp.DocumentFormattingRequest.method]: [
+    lsp.DocumentFormattingParams,
+    lsp.TextEdit[] | null,
+  ];
+  [lsp.DocumentRangeFormattingRequest.method]: [
+    lsp.DocumentRangeFormattingParams,
+    lsp.TextEdit[] | null,
+  ];
+  [lsp.CodeActionRequest.method]: [
+    lsp.CodeActionParams,
+    (lsp.Command | lsp.CodeAction)[] | null,
+  ];
+  [lsp.CodeActionResolveRequest.method]: [lsp.CodeAction, lsp.CodeAction];
+  [lsp.DefinitionRequest.method]: [lsp.DefinitionParams, lsp.Definition | null];
+  [lsp.TypeDefinitionRequest.method]: [
+    lsp.TypeDefinitionParams,
+    lsp.Definition | null,
+  ];
+  [lsp.DeclarationRequest.method]: [
+    lsp.DeclarationParams,
+    lsp.Declaration | null,
+  ];
+  [lsp.ReferencesRequest.method]: [lsp.ReferenceParams, lsp.Location[] | null];
+  [lsp.RenameRequest.method]: [lsp.RenameParams, lsp.WorkspaceEdit | null];
+  [lsp.PrepareRenameRequest.method]: [
+    lsp.PrepareRenameParams,
+    lsp.Range | null,
+  ];
+  [lsp.SignatureHelpRequest.method]: [
+    lsp.SignatureHelpParams,
+    lsp.SignatureHelp | null,
+  ];
+  [lsp.DocumentHighlightRequest.method]: [
+    lsp.DocumentHighlightParams,
+    lsp.DocumentHighlight[] | null,
+  ];
+  [lsp.DocumentSymbolRequest.method]: [
+    lsp.DocumentSymbolParams,
+    lsp.DocumentSymbol[] | null,
+  ];
+  [lsp.InlayHintRequest.method]: [lsp.InlayHintParams, lsp.InlayHint[] | null];
+  [lsp.SemanticTokensRequest.method]: [
+    lsp.SemanticTokensParams,
+    lsp.SemanticTokens | null,
+  ];
+  [lsp.SemanticTokensRangeRequest.method]: [
+    lsp.SemanticTokensRangeParams,
+    lsp.SemanticTokens | null,
+  ];
+  [lsp.FoldingRangeRequest.method]: [
+    lsp.FoldingRangeParams,
+    lsp.FoldingRange[] | null,
+  ];
+  [lsp.SelectionRangeRequest.method]: [
+    lsp.SelectionRangeParams,
+    lsp.SelectionRange[] | null,
+  ];
+  [lsp.ExecuteCommandRequest.method]: [lsp.ExecuteCommandParams, unknown];
+};
+
 type NotebookUri = string;
 
 /** The cells we last told the server about, in server order. */
@@ -81,7 +154,7 @@ export interface ServerInfo {
  * when the scope closes, the server is shut down and the process killed.
  */
 export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
-  function*(config: NotebookLspClientConfig) {
+  function* (config: NotebookLspClientConfig) {
     // -- 1. Spawn process ---------------------------------------------------
 
     const proc = NodeChildProcess.spawn(config.command, config.args, {
@@ -254,7 +327,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
     // -- 4. Shutdown finalizer (graceful before kill) -----------------------
 
     yield* Effect.addFinalizer(() =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         yield* Effect.promise(() => conn.sendRequest("shutdown")).pipe(
           Effect.timeout("5 seconds"),
           Effect.catchAll(() => Effect.void),
@@ -338,9 +411,9 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
             uri,
             notebookType: config.notebookType,
             version,
-            cells: cells.map(c => toLspCell(c)),
+            cells: cells.map((c) => toLspCell(c)),
           },
-          cellTextDocuments: cells.map(c => toLspTextDocument(c)),
+          cellTextDocuments: cells.map((c) => toLspTextDocument(c)),
         } satisfies lsp.DidOpenNotebookDocumentParams),
       );
 
@@ -359,7 +432,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
 
       // ---- Notebook sync ------------------------------------------------
 
-      openNotebook: Effect.fn(function*(
+      openNotebook: Effect.fn(function* (
         notebookUri: string,
         notebookVersion: number,
         cells: ReadonlyArray<SyncedCell>,
@@ -376,7 +449,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
        * swapped diagnostic-to-cell URI mappings. A clean close + open
        * sidesteps this entirely.
        */
-      reorderCells: Effect.fn(function*(
+      reorderCells: Effect.fn(function* (
         notebookUri: string,
         notebookVersion: number,
         newCells: ReadonlyArray<SyncedCell>,
@@ -399,7 +472,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
         yield* sendDidOpen(notebookUri, notebookVersion, newCells);
       }),
 
-      changeCellText: Effect.fn(function*(
+      changeCellText: Effect.fn(function* (
         notebookUri: string,
         notebookVersion: number,
         cellUri: string,
@@ -423,7 +496,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
         );
       }),
 
-      closeNotebook: Effect.fn(function*(notebookUri: string) {
+      closeNotebook: Effect.fn(function* (notebookUri: string) {
         const current = HashMap.get(yield* Ref.get(cellOrderRef), notebookUri);
         yield* Ref.update(cellOrderRef, HashMap.remove(notebookUri));
         if (Option.isSome(current)) {
@@ -433,187 +506,16 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
 
       // ---- Typed requests -----------------------------------------------
 
-      requestHover(params: lsp.HoverParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.Hover | null>(lsp.HoverRequest.method, params),
-        );
-      },
-
-      requestCompletion(params: lsp.CompletionParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.CompletionList | null>(
-            lsp.CompletionRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestFormatting(params: lsp.DocumentFormattingParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.TextEdit[] | null>(
-            lsp.DocumentFormattingRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestRangeFormatting(params: lsp.DocumentRangeFormattingParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.TextEdit[] | null>(
-            lsp.DocumentRangeFormattingRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestCodeAction(params: lsp.CodeActionParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.CodeAction[] | null>(
-            lsp.CodeActionRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestCodeActionResolve(params: lsp.CodeAction) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.CodeAction>(
-            lsp.CodeActionResolveRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestDefinition(params: lsp.DefinitionParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.Definition | null>(
-            lsp.DefinitionRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestTypeDefinition(params: lsp.TypeDefinitionParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.Definition | null>(
-            lsp.TypeDefinitionRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestDeclaration(params: lsp.DeclarationParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.Declaration | null>(
-            lsp.DeclarationRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestReferences(params: lsp.ReferenceParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.Location[] | null>(
-            lsp.ReferencesRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestRename(params: lsp.RenameParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.WorkspaceEdit | null>(
-            lsp.RenameRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestPrepareRename(params: lsp.PrepareRenameParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.Range | null>(
-            lsp.PrepareRenameRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestSignatureHelp(params: lsp.SignatureHelpParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.SignatureHelp | null>(
-            lsp.SignatureHelpRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestDocumentHighlight(params: lsp.DocumentHighlightParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.DocumentHighlight[] | null>(
-            lsp.DocumentHighlightRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestDocumentSymbol(params: lsp.DocumentSymbolParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.DocumentSymbol[] | null>(
-            lsp.DocumentSymbolRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestInlayHint(params: lsp.InlayHintParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.InlayHint[] | null>(
-            lsp.InlayHintRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestSemanticTokensFull(params: lsp.SemanticTokensParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.SemanticTokens | null>(
-            lsp.SemanticTokensRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestSemanticTokensRange(params: lsp.SemanticTokensRangeParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.SemanticTokens | null>(
-            lsp.SemanticTokensRangeRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestFoldingRange(params: lsp.FoldingRangeParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.FoldingRange[] | null>(
-            lsp.FoldingRangeRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestSelectionRange(params: lsp.SelectionRangeParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<lsp.SelectionRange[] | null>(
-            lsp.SelectionRangeRequest.method,
-            params,
-          ),
-        );
-      },
-
-      requestExecuteCommand(params: lsp.ExecuteCommandParams) {
-        return Effect.promise(() =>
-          conn.sendRequest<unknown>(lsp.ExecuteCommandRequest.method, params),
-        );
+      /**
+       * Send a typed LSP request. The method string determines
+       * the param/result types via {@link LspRequestMap}.
+       */
+      sendRequest<M extends keyof LspRequestMap>(
+        method: M,
+        params: LspRequestMap[M][0],
+      ): Effect.Effect<LspRequestMap[M][1]> {
+        // eslint-disable-next-line -- cast needed: conn.sendRequest returns Promise<any>
+        return Effect.promise(() => conn.sendRequest(method, params)) as any;
       },
 
       // ---- Notifications stream -----------------------------------------
