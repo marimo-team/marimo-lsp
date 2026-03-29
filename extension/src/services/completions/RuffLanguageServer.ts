@@ -104,7 +104,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
           );
           const globalSettings = getGlobalRuffSettings(ruffConfig);
 
-          const outputChannel = yield* code.window.createLogOutputChannel(
+          const outputChannel = yield* code.window.createOutputChannel(
             `marimo (${RUFF_SERVER.name})`,
           );
           const clientExit = yield* Effect.exit(

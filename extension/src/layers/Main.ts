@@ -32,6 +32,7 @@ import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { PackagesService } from "../services/packages/PackagesService.ts";
+import { PythonEnvInvalidation } from "../services/PythonEnvInvalidation.ts";
 import type { PythonExtension } from "../services/PythonExtension.ts";
 import { SandboxController } from "../services/SandboxController.ts";
 import type { Sentry } from "../services/Sentry.ts";
@@ -108,6 +109,7 @@ const MainLive = Layer.empty
     Layer.provide(Constants.Default),
     Layer.provide(Config.Default),
     Layer.provide(OutputChannel.Default),
+    Layer.provide(PythonEnvInvalidation.Default),
   );
 
 export function makeActivate(

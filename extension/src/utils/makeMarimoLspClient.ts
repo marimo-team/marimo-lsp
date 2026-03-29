@@ -126,7 +126,7 @@ export interface NotebookLspClientConfig {
     name: string;
   }>;
   /** Output channel for server log messages. */
-  outputChannel: vscode.LogOutputChannel;
+  outputChannel: vscode.OutputChannel;
   /**
    * Handler for `workspace/configuration` requests from the server.
    *
@@ -513,7 +513,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
         crlfDelay: Number.POSITIVE_INFINITY,
         terminal: false,
         historySize: 0,
-      }).on("line", (data) => out.error(data));
+      }).on("line", (data) => out.appendLine(data));
     }
 
     const stdout = proc.stdout;
@@ -621,23 +621,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
 
     conn.onNotification(
       lsp.LogMessageNotification.method,
-      (params: lsp.LogMessageParams) => {
-        switch (params.type) {
-          case lsp.MessageType.Error:
-            out.error(params.message);
-            break;
-          case lsp.MessageType.Warning:
-            out.warn(params.message);
-            break;
-          case lsp.MessageType.Info:
-            out.info(params.message);
-            break;
-          case lsp.MessageType.Log:
-          default:
-            out.debug(params.message);
-            break;
-        }
-      },
+      (params: lsp.LogMessageParams) => out.appendLine(params.message),
     );
 
     // -- 7. Internal notebook sync ------------------------------------------
@@ -721,23 +705,6 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
     return {
       serverInfo,
       registrations,
-
-      /**
-       * Send `workspace/didChangeConfiguration` to the server.
-       * Only has effect if the server dynamically registered for it
-       * via `client/registerCapability`.
-       */
-      sendDidChangeConfiguration: Effect.fn(function* () {
-        const hasReg = yield* registrations.has(
-          lsp.DidChangeConfigurationNotification.method,
-        );
-        if (!hasReg) return;
-        yield* Effect.promise(() =>
-          conn.sendNotification(lsp.DidChangeConfigurationNotification.method, {
-            settings: null,
-          }),
-        );
-      }),
 
       // ---- Notebook lifecycle -------------------------------------------
 

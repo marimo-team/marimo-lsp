@@ -19,7 +19,6 @@ export const TestTyLanguageServerLive = Layer.effect(
       "Using test mock for TyLanguageServer - skipping actual server startup",
     );
     return TyLanguageServer.make({
-      restart: () => Effect.void,
       getHealthStatus: () =>
         Effect.succeed(
           TyLanguageServerStatus.Running({

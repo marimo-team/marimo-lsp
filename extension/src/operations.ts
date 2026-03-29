@@ -1,9 +1,9 @@
 import { Effect, Option } from "effect";
 
 import type { MarimoNotebookDocument } from "./schemas.ts";
-import { TyLanguageServer } from "./services/completions/TyLanguageServer.ts";
 import { Config } from "./services/Config.ts";
 import type { PythonController } from "./services/NotebookControllerFactory.ts";
+import { PythonEnvInvalidation } from "./services/PythonEnvInvalidation.ts";
 import type { SandboxController } from "./services/SandboxController.ts";
 import { VsCode } from "./services/VsCode.ts";
 import type { NotificationOf } from "./types.ts";
@@ -18,7 +18,7 @@ export const handleMissingPackageAlert = Effect.fn("handleMissingPackageAlert")(
   ) {
     const code = yield* VsCode;
     const config = yield* Config;
-    const tyLsp = yield* TyLanguageServer;
+    const envInvalidation = yield* PythonEnvInvalidation;
 
     if (operation.packages.length === 0) {
       // Nothing to do
@@ -85,8 +85,7 @@ export const handleMissingPackageAlert = Effect.fn("handleMissingPackageAlert")(
         yield* installPackages(operation.packages, options);
       }
 
-      // Restart ty to pick up newly installed packages
-      yield* tyLsp.restart("packages installed via missing-package-alert");
+      yield* envInvalidation.invalidate("package-install");
       return;
     }
 
@@ -112,8 +111,7 @@ export const handleMissingPackageAlert = Effect.fn("handleMissingPackageAlert")(
         yield* installPackages(newPackages, options);
       }
 
-      // Restart ty to pick up newly installed packages
-      yield* tyLsp.restart("packages installed via missing-package-alert");
+      yield* envInvalidation.invalidate("package-install");
     }
   },
 );

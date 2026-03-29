@@ -4,7 +4,7 @@
  *
  * This is the single entry point for managed servers (Ruff, ty). Callers
  * pass configuration and get back an opaque handle with `serverInfo` and
- * `sendDidChangeConfiguration`. Everything else — cell ordering, event
+ * `serverInfo`. Everything else — cell ordering, event
  * listeners, provider registration — is managed internally.
  */
 
@@ -178,7 +178,6 @@ export const connectMarimoNotebookLspClient = Effect.fn(
 
   return {
     serverInfo: client.serverInfo,
-    sendDidChangeConfiguration: client.sendDidChangeConfiguration,
   };
 });
 

@@ -1,15 +1,6 @@
 import * as NodePath from "node:path";
 
-import {
-  type Cause,
-  Data,
-  Duration,
-  Effect,
-  Exit,
-  Option,
-  Ref,
-  Stream,
-} from "effect";
+import { type Cause, Data, Effect, Option, Ref, Stream } from "effect";
 
 import {
   BinarySource,
@@ -25,6 +16,7 @@ import {
 import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
 import { Config } from "../Config.ts";
 import { OutputChannel } from "../OutputChannel.ts";
+import { PythonEnvInvalidation } from "../PythonEnvInvalidation.ts";
 import { PythonExtension } from "../PythonExtension.ts";
 import { Sentry } from "../Sentry.ts";
 import { ExtensionContext } from "../Storage.ts";
@@ -58,11 +50,10 @@ type TyLanguageServerStatus = Data.TaggedEnum<{
 
 /**
  * Manages a dedicated ty language server instance for marimo notebooks.
- * Provides LSP features (completions, hover, definitions, signature help,
- * semantic tokens) for notebook cells.
  *
- * Uses NotebookLspClient (custom Effect-based LSP client) instead of
- * vscode-languageclient, giving us full control over notebook cell ordering.
+ * The server is restarted when the Python environment changes, matching
+ * the official ty-vscode extension behavior (ty doesn't support
+ * `workspace/didChangeConfiguration` — a full restart is required).
  */
 export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
   "TyLanguageServer",
@@ -72,9 +63,11 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
       Config.Default,
       OutputChannel.Default,
       VariablesService.Default,
+      PythonEnvInvalidation.Default,
     ],
     scoped: Effect.gen(function* () {
       const pyExt = yield* PythonExtension;
+      const envInvalidation = yield* PythonEnvInvalidation;
       const sentry = yield* Effect.serviceOption(Sentry);
       const telemetry = yield* Effect.serviceOption(Telemetry);
       const code = yield* VsCode;
@@ -95,26 +88,29 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
 
       yield* Effect.forkScoped(
         Effect.gen(function* () {
-          if (Option.isSome(disabledReasonOption)) {
-            return;
-          }
+          if (Option.isSome(disabledReasonOption)) return;
 
-          yield* Effect.logInfo("Starting language server").pipe(
-            Effect.annotateLogs({
-              server: TY_SERVER.name,
-              version: TY_SERVER.version,
-            }),
-          );
-
-          const resolved = yield* resolveTyBinary();
-
-          const workspaceFolders = yield* code.workspace.getWorkspaceFolders();
-
-          const outputChannel = yield* code.window.createLogOutputChannel(
+          const outputChannel = yield* code.window.createOutputChannel(
             `marimo (${TY_SERVER.name})`,
           );
-          const clientExit = yield* Effect.exit(
-            connectMarimoNotebookLspClient({
+
+          // One server cycle: start → run → wait for env change → return.
+          // The Effect.scoped wrapper ensures the server process and all
+          // resources are cleaned up before the next cycle begins.
+          const serverCycle = Effect.gen(function* () {
+            yield* Ref.set(statusRef, TyLanguageServerStatus.Starting());
+            yield* Effect.logInfo("Starting language server").pipe(
+              Effect.annotateLogs({
+                server: TY_SERVER.name,
+                version: TY_SERVER.version,
+              }),
+            );
+
+            const resolved = yield* resolveTyBinary();
+            const workspaceFolders =
+              yield* code.workspace.getWorkspaceFolders();
+
+            const client = yield* connectMarimoNotebookLspClient({
               name: TY_SERVER.name,
               command: resolved.path,
               args: ["server"],
@@ -137,8 +133,9 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
                       : undefined;
                     const path =
                       yield* pyExt.getActiveEnvironmentPath(scopeUri);
-                    const resolved = yield* pyExt.resolveEnvironment(path);
-                    const env = Option.getOrNull(resolved);
+                    const env = Option.getOrNull(
+                      yield* pyExt.resolveEnvironment(path),
+                    );
 
                     return {
                       pythonExtension: {
@@ -173,49 +170,29 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
                     };
                   }),
                 ),
-            }),
-          );
+            });
 
-          if (!Exit.isSuccess(clientExit)) {
-            const cause = clientExit.cause;
-            const message = "Failed to start language server";
-            yield* Ref.set(
-              statusRef,
-              TyLanguageServerStatus.Failed({ message, cause }),
-            );
-            yield* Effect.logError(message).pipe(
+            const serverVersion = client.serverInfo.version;
+
+            yield* Effect.logInfo("Language server started").pipe(
               Effect.annotateLogs({
                 server: TY_SERVER.name,
-                version: TY_SERVER.version,
-                cause,
+                version: serverVersion,
               }),
             );
-            yield* Effect.forkScoped(showErrorAndPromptLogs(message));
-            return;
-          }
 
-          const client = clientExit.value;
-          const serverVersion = client.serverInfo.version;
+            if (Option.isSome(sentry)) {
+              yield* sentry.value.setTag("ty.version", serverVersion);
+            }
+            if (Option.isSome(telemetry)) {
+              yield* telemetry.value.reportBinaryResolved(
+                "ty",
+                resolved,
+                serverVersion,
+              );
+            }
 
-          yield* Effect.logInfo("Language server started").pipe(
-            Effect.annotateLogs({
-              server: TY_SERVER.name,
-              version: serverVersion,
-            }),
-          );
-
-          if (Option.isSome(sentry)) {
-            yield* sentry.value.setTag("ty.version", serverVersion);
-          }
-          if (Option.isSome(telemetry)) {
-            yield* telemetry.value.reportBinaryResolved(
-              "ty",
-              resolved,
-              serverVersion,
-            );
-          }
-
-          const updateRunningStatus = Effect.fn(function* () {
+            // Update running status with current Python environment
             const activePath = yield* pyExt.getActiveEnvironmentPath();
             const resolvedEnv = yield* pyExt.resolveEnvironment(activePath);
             const pythonEnvironment = Option.map(resolvedEnv, (env) => ({
@@ -231,34 +208,44 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
                 pythonEnvironment,
               }),
             );
-          });
 
-          // When the Python environment changes, notify the server so it
-          // re-pulls configuration (which includes the Python env info).
-          // This matches what the official ty-vscode extension does.
-          yield* Effect.forkScoped(
-            pyExt.activeEnvironmentPathChanges().pipe(
-              Stream.debounce(Duration.seconds(2)),
-              Stream.runForEach(() =>
-                client
-                  .sendDidChangeConfiguration()
-                  .pipe(Effect.tap(() => updateRunningStatus())),
-              ),
+            // Block until env invalidation, then return to let
+            // Effect.scoped clean up and the loop restart.
+            yield* envInvalidation
+              .changes()
+              .pipe(Stream.take(1), Stream.runDrain);
+
+            yield* Effect.logInfo("Restarting language server").pipe(
+              Effect.annotateLogs({ server: TY_SERVER.name }),
+            );
+          }).pipe(Effect.scoped);
+
+          // Run the server in a loop: start → invalidation → restart.
+          // On failure, the error propagates to catchAllCause and stops.
+          yield* Effect.forever(serverCycle).pipe(
+            Effect.catchAllCause((cause) =>
+              Effect.gen(function* () {
+                const message = "Failed to start language server";
+                yield* Ref.set(
+                  statusRef,
+                  TyLanguageServerStatus.Failed({ message, cause }),
+                );
+                yield* Effect.logError(message).pipe(
+                  Effect.annotateLogs({
+                    server: TY_SERVER.name,
+                    version: TY_SERVER.version,
+                    cause,
+                  }),
+                );
+                yield* showErrorAndPromptLogs(message);
+              }),
             ),
           );
-
-          yield* updateRunningStatus();
         }),
       );
 
       return {
         getHealthStatus: () => Ref.get(statusRef),
-        restart: Effect.fn(function* (_reason: string) {
-          // TODO: Implement restart using NotebookLspClient
-          yield* Effect.logWarning(
-            "ty restart not yet implemented with NotebookLspClient",
-          );
-        }),
       };
     }),
   },
@@ -312,7 +299,9 @@ const resolveTyBinary = Effect.fn(function* () {
         );
         const binaryPath = yield* uv.ensureLanguageServerBinaryInstalled(
           TY_SERVER,
-          { targetPath },
+          {
+            targetPath,
+          },
         );
         return Option.some(BinarySource.UvInstalled({ path: binaryPath }));
       }),
