@@ -90,6 +90,7 @@ export type LspRequestMap = {
     lsp.DocumentSymbol[] | null,
   ];
   [lsp.InlayHintRequest.method]: [lsp.InlayHintParams, lsp.InlayHint[] | null];
+  [lsp.InlayHintResolveRequest.method]: [lsp.InlayHint, lsp.InlayHint];
   [lsp.SemanticTokensRequest.method]: [
     lsp.SemanticTokensParams,
     lsp.SemanticTokens | null,

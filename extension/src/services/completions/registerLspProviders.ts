@@ -25,6 +25,7 @@ import {
   registerDocumentRangeFormattingProvider,
 } from "../lsp/providers/formatting.ts";
 import { registerHoverProvider } from "../lsp/providers/hover.ts";
+import { registerInlayHintProvider } from "../lsp/providers/inlayHint.ts";
 import { registerReferenceProvider } from "../lsp/providers/references.ts";
 import { registerSelectionRangeProvider } from "../lsp/providers/selectionRange.ts";
 import { registerSignatureHelpProvider } from "../lsp/providers/signatureHelp.ts";
@@ -47,5 +48,6 @@ export const registerLspProviders = Effect.fn("registerLspProviders")(
     yield* registerDocumentFormattingProvider(sel, client);
     yield* registerDocumentRangeFormattingProvider(sel, client);
     yield* registerSignatureHelpProvider(sel, client);
+    yield* registerInlayHintProvider(sel, client);
   },
 );

@@ -901,6 +901,34 @@ export class Languages extends Effect.Service<Languages>()("Langauges", {
           );
         }).pipe(Effect.asVoid);
       },
+      registerInlayHintsProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideInlayHints(
+            doc: vscode.TextDocument,
+            range: vscode.Range,
+          ): Effect.Effect<vscode.InlayHint[]>;
+          resolveInlayHint?: (
+            hint: vscode.InlayHint,
+          ) => Effect.Effect<vscode.InlayHint>;
+        },
+      ) {
+        return acquireDisposable(() =>
+          api.registerInlayHintsProvider(selector, {
+            provideInlayHints(doc, range, tok) {
+              return runPromise(impl.provideInlayHints(doc, range), {
+                signal: signalFromToken(tok),
+              });
+            },
+            resolveInlayHint: impl.resolveInlayHint
+              ? (hint, tok) =>
+                  runPromise(impl.resolveInlayHint!(hint), {
+                    signal: signalFromToken(tok),
+                  })
+              : undefined,
+          }),
+        ).pipe(Effect.asVoid);
+      },
     };
   }),
 }) {}
@@ -934,6 +962,8 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       Hover: vscode.Hover,
       TextEdit: vscode.TextEdit,
       SignatureHelp: vscode.SignatureHelp,
+      InlayHint: vscode.InlayHint,
+      InlayHintLabelPart: vscode.InlayHintLabelPart,
       CompletionTriggerKind: vscode.CompletionTriggerKind,
       CompletionItem: vscode.CompletionItem,
       CompletionList: vscode.CompletionList,

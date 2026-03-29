@@ -1216,6 +1216,35 @@ class SelectionRange implements vscode.SelectionRange {
   }
 }
 
+class InlayHintLabelPart implements vscode.InlayHintLabelPart {
+  value: string;
+  tooltip?: string | MarkdownString;
+  location?: Location;
+  command?: vscode.Command;
+  constructor(value: string) {
+    this.value = value;
+  }
+}
+
+class InlayHint implements vscode.InlayHint {
+  position: Position;
+  label: string | InlayHintLabelPart[];
+  kind?: vscode.InlayHintKind;
+  textEdits?: TextEdit[];
+  tooltip?: string | MarkdownString;
+  paddingLeft?: boolean;
+  paddingRight?: boolean;
+  constructor(
+    position: Position,
+    label: string | InlayHintLabelPart[],
+    kind?: vscode.InlayHintKind,
+  ) {
+    this.position = position;
+    this.label = label;
+    this.kind = kind;
+  }
+}
+
 class SignatureHelp implements vscode.SignatureHelp {
   signatures: SignatureInformation[] = [];
   activeSignature = 0;
@@ -2019,6 +2048,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         Hover,
         TextEdit,
         SignatureHelp,
+        InlayHint,
+        InlayHintLabelPart,
         SignatureInformation,
         ParameterInformation,
         CodeLens,
@@ -2053,6 +2084,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           registerDocumentFormattingEditProvider: () => Effect.void,
           registerDocumentRangeFormattingEditProvider: () => Effect.void,
           registerSignatureHelpProvider: () => Effect.void,
+          registerInlayHintsProvider: () => Effect.void,
         }),
         Diagnostic,
         // helper

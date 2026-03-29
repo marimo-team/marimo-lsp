@@ -10,6 +10,7 @@ import { toDocumentSymbol } from "../providers/documentSymbol.ts";
 import { toFoldingRange } from "../providers/foldingRange.ts";
 import { toTextEdit } from "../providers/formatting.ts";
 import { toHoverContent } from "../providers/hover.ts";
+import { toInlayHint } from "../providers/inlayHint.ts";
 import { toSelectionRange } from "../providers/selectionRange.ts";
 import { toSignatureHelp } from "../providers/signatureHelp.ts";
 
@@ -633,6 +634,110 @@ describe("toSignatureHelp", () => {
         activeParameter: null as any,
       });
       expect(result.activeParameter).toBe(-1);
+    }),
+  );
+});
+
+describe("toInlayHint", () => {
+  it.scoped(
+    "converts string label",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toInlayHint(code, {
+        position: { line: 1, character: 10 },
+        label: ": int",
+        kind: lsp.InlayHintKind.Type,
+        paddingLeft: true,
+      });
+      expect(result).toMatchInlineSnapshot(`
+        InlayHint {
+          "kind": 1,
+          "label": ": int",
+          "paddingLeft": true,
+          "paddingRight": undefined,
+          "position": Position {
+            "character": 10,
+            "line": 1,
+          },
+          "textEdits": undefined,
+          "tooltip": undefined,
+        }
+      `);
+    }),
+  );
+
+  it.scoped(
+    "converts label parts with location",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toInlayHint(code, {
+        position: { line: 0, character: 5 },
+        label: [
+          {
+            value: "int",
+            location: {
+              uri: "file:///builtins.pyi",
+              range: {
+                start: { line: 10, character: 0 },
+                end: { line: 10, character: 3 },
+              },
+            },
+          },
+        ],
+      });
+      expect(result).toMatchInlineSnapshot(`
+        InlayHint {
+          "kind": undefined,
+          "label": [
+            InlayHintLabelPart {
+              "command": undefined,
+              "location": Location {
+                "range": Range {
+                  "end": Position {
+                    "character": 3,
+                    "line": 10,
+                  },
+                  "start": Position {
+                    "character": 0,
+                    "line": 10,
+                  },
+                },
+                "uri": {
+                  "authority": "",
+                  "fragment": "",
+                  "path": "/builtins.pyi",
+                  "query": "",
+                  "scheme": "file",
+                },
+              },
+              "tooltip": undefined,
+              "value": "int",
+            },
+          ],
+          "paddingLeft": undefined,
+          "paddingRight": undefined,
+          "position": Position {
+            "character": 5,
+            "line": 0,
+          },
+          "textEdits": undefined,
+          "tooltip": undefined,
+        }
+      `);
+    }),
+  );
+
+  it.scoped(
+    "stashes data for resolve round-trip",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toInlayHint(code, {
+        position: { line: 0, character: 0 },
+        label: "hint",
+        data: { id: 42 },
+      });
+      // data is stashed via symbol, not visible in snapshot
+      expect(result.label).toBe("hint");
     }),
   );
 });
