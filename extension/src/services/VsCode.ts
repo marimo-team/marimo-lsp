@@ -622,7 +622,7 @@ export class Auth extends Effect.Service<Auth>()("Auth", {
   }),
 }) {}
 
-export class Languages extends Effect.Service<Languages>()("Langauges", {
+export class Languages extends Effect.Service<Languages>()("Languages", {
   effect: Effect.gen(function* () {
     const api = vscode.languages;
     const runPromise = Runtime.runPromise(yield* Effect.runtime());

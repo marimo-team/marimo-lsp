@@ -10,10 +10,7 @@ import {
   resolveBinary,
   userConfiguredPath,
 } from "../../utils/binaryResolution.ts";
-import {
-  connectMarimoNotebookLspClient,
-  type MarimoNotebookLspClient,
-} from "../../utils/connectMarimoLspClient.ts";
+import { connectMarimoNotebookLspClient } from "../../utils/connectMarimoLspClient.ts";
 import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
 import { Config } from "../Config.ts";
 import { OutputChannel } from "../OutputChannel.ts";
@@ -36,7 +33,6 @@ type RuffLanguageServerStatus = Data.TaggedEnum<{
   Starting: {};
   Disabled: { readonly reason: string };
   Running: {
-    readonly client: MarimoNotebookLspClient;
     readonly serverVersion: string;
     readonly binarySource: BinarySource;
   };
@@ -166,7 +162,6 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
           yield* Ref.set(
             statusRef,
             RuffLanguageServerStatus.Running({
-              client,
               serverVersion,
               binarySource: resolved,
             }),

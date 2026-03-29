@@ -134,26 +134,22 @@ export const connectMarimoNotebookLspClient = Effect.fn(
       }
 
       for (const reg of regsOption.value) {
-        const opts = reg.registerOptions as
-          | { watchers?: Array<{ globPattern: string }> }
-          | undefined;
-
-        if (!opts?.watchers) {
+        const watchers = getFileWatchers(reg.registerOptions);
+        if (!watchers) {
           continue;
         }
 
-        for (const watcher of opts.watchers) {
-          const pattern =
-            typeof watcher.globPattern === "string"
-              ? watcher.globPattern
-              : undefined;
-          if (!pattern) continue;
+        for (const watcher of watchers) {
+          if (typeof watcher.globPattern !== "string") {
+            continue;
+          }
+          const pattern = watcher.globPattern;
 
           const fsWatcher = yield* acquireDisposable(() =>
             code.workspace.createFileSystemWatcher(pattern),
           );
 
-          const sendChange = (uri: { toString(): string }, type: number) =>
+          const sendChange = (uri: vscode.Uri, type: number) =>
             client
               .sendNotification("workspace/didChangeWatchedFiles", {
                 changes: [{ uri: uri.toString(), type }],
@@ -188,6 +184,23 @@ export type MarimoNotebookLspClient = Effect.Effect.Success<
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Extract file watchers from a dynamic registration's options.
+ */
+function getFileWatchers(
+  options: unknown,
+): Array<{ globPattern: unknown }> | undefined {
+  if (
+    typeof options === "object" &&
+    options !== null &&
+    "watchers" in options &&
+    Array.isArray(options.watchers)
+  ) {
+    return options.watchers;
+  }
+  return undefined;
+}
 
 /**
  * Convert an LSP diagnostic to a VS Code Diagnostic.

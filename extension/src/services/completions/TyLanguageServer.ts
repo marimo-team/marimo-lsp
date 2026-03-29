@@ -9,10 +9,7 @@ import {
   resolveBinary,
   userConfiguredPath,
 } from "../../utils/binaryResolution.ts";
-import {
-  connectMarimoNotebookLspClient,
-  type MarimoNotebookLspClient,
-} from "../../utils/connectMarimoLspClient.ts";
+import { connectMarimoNotebookLspClient } from "../../utils/connectMarimoLspClient.ts";
 import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
 import { Config } from "../Config.ts";
 import { OutputChannel } from "../OutputChannel.ts";
@@ -34,7 +31,6 @@ type TyLanguageServerStatus = Data.TaggedEnum<{
   Starting: {};
   Disabled: { readonly reason: string };
   Running: {
-    readonly client: MarimoNotebookLspClient;
     readonly serverVersion: string;
     readonly binarySource: BinarySource;
     readonly pythonEnvironment: Option.Option<{
@@ -202,7 +198,6 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
             yield* Ref.set(
               statusRef,
               TyLanguageServerStatus.Running({
-                client,
                 serverVersion,
                 binarySource: resolved,
                 pythonEnvironment,

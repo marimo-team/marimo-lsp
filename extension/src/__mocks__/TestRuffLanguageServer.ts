@@ -24,7 +24,6 @@ export const TestRuffLanguageServerLive = Layer.effect(
           RuffLanguageServerStatus.Running({
             serverVersion: "0.0.0-test",
             binarySource: BinarySource.UvInstalled({ path: "/test/ruff" }),
-            client: null as any,
           }),
         ),
     });
