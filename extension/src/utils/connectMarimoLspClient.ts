@@ -8,7 +8,7 @@
  * listeners, provider registration — is managed internally.
  */
 
-import { Effect, Option, Runtime, Stream } from "effect";
+import { Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageserver-protocol";
 
@@ -33,8 +33,6 @@ export const connectMarimoNotebookLspClient = Effect.fn(
   "connectMarimoNotebookLspClient",
 )(function* (config: NotebookLspClientConfig) {
   const code = yield* VsCode;
-  const runPromise = Runtime.runPromise(yield* Effect.runtime());
-
   // -- Create the LSP client -----------------------------------------------
 
   const client = yield* makeNotebookLspClient(config);
@@ -140,31 +138,19 @@ export const connectMarimoNotebookLspClient = Effect.fn(
         }
 
         for (const watcher of watchers) {
-          if (typeof watcher.globPattern !== "string") {
-            continue;
-          }
-          const pattern = watcher.globPattern;
+          if (typeof watcher.globPattern !== "string") continue;
 
-          const fsWatcher = yield* acquireDisposable(() =>
-            code.workspace.createFileSystemWatcher(pattern),
+          yield* Effect.forkScoped(
+            code.workspace.createFileSystemWatcher(watcher.globPattern).pipe(
+              Stream.runForEach(({ uri, type }) =>
+                client
+                  .sendNotification("workspace/didChangeWatchedFiles", {
+                    changes: [{ uri: uri.toString(), type }],
+                  })
+                  .pipe(Effect.catchAll(() => Effect.void)),
+              ),
+            ),
           );
-
-          const sendChange = (uri: vscode.Uri, type: number) =>
-            client
-              .sendNotification("workspace/didChangeWatchedFiles", {
-                changes: [{ uri: uri.toString(), type }],
-              })
-              .pipe(Effect.catchAll(() => Effect.void));
-
-          fsWatcher.onDidCreate((uri) => {
-            void runPromise(sendChange(uri, 1));
-          });
-          fsWatcher.onDidChange((uri) => {
-            void runPromise(sendChange(uri, 2));
-          });
-          fsWatcher.onDidDelete((uri) => {
-            void runPromise(sendChange(uri, 3));
-          });
         }
       }
     }),

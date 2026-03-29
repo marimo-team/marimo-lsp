@@ -449,7 +449,15 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
         return Effect.promise(() => api.openTextDocument(options));
       },
       createFileSystemWatcher(globPattern: string) {
-        return api.createFileSystemWatcher(globPattern);
+        return Stream.asyncPush<{ uri: vscode.Uri; type: 1 | 2 | 3 }>((emit) =>
+          acquireDisposable(() => {
+            const watcher = api.createFileSystemWatcher(globPattern);
+            watcher.onDidCreate((uri) => emit.single({ uri, type: 1 }));
+            watcher.onDidChange((uri) => emit.single({ uri, type: 2 }));
+            watcher.onDidDelete((uri) => emit.single({ uri, type: 3 }));
+            return watcher;
+          }),
+        );
       },
     };
   },
@@ -627,7 +635,6 @@ export class Languages extends Effect.Service<Languages>()("Languages", {
     const api = vscode.languages;
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
     return {
-      // TODO make effectful
       registerCodeLensProvider(
         selector: vscode.DocumentSelector,
         provider: vscode.CodeLensProvider,

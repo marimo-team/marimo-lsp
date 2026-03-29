@@ -1893,12 +1893,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             return Stream.empty;
           },
           createFileSystemWatcher() {
-            return {
-              onDidCreate: () => ({ dispose() {} }),
-              onDidChange: () => ({ dispose() {} }),
-              onDidDelete: () => ({ dispose() {} }),
-              dispose() {},
-            } as unknown as vscode.FileSystemWatcher;
+            return Stream.never;
           },
           applyEdit() {
             return Effect.succeed(true);
