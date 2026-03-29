@@ -12,7 +12,12 @@ import * as vscode from "vscode";
 
 import { LanguageId } from "../../constants.ts";
 import type { NotebookLspClient } from "../../utils/makeMarimoLspClient.ts";
-import { registerHoverProvider } from "./providers/hover.ts";
+import {
+  registerDeclarationProvider,
+  registerDefinitionProvider,
+  registerTypeDefinitionProvider,
+} from "../lsp/providers/definition.ts";
+import { registerHoverProvider } from "../lsp/providers/hover.ts";
 
 export const registerLspProviders = Effect.fn("registerLspProviders")(
   function* (client: NotebookLspClient) {
@@ -21,5 +26,8 @@ export const registerLspProviders = Effect.fn("registerLspProviders")(
     ];
 
     yield* registerHoverProvider(sel, client);
+    yield* registerDefinitionProvider(sel, client);
+    yield* registerDeclarationProvider(sel, client);
+    yield* registerTypeDefinitionProvider(sel, client);
   },
 );

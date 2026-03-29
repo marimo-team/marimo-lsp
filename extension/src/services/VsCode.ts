@@ -31,25 +31,25 @@ import { tokenFromSignal } from "../utils/tokenFromSignal.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
   cause: unknown;
-}> { }
+}> {}
 
 export class FileSystemError extends Data.TaggedError("FileSystemError")<{
   cause: unknown;
-}> { }
+}> {}
 
 export class DebugSessionStartError extends Data.TaggedError(
   "DebugSessionStartError",
 )<{
   readonly configuration: string | vscode.DebugConfiguration;
-}> { }
+}> {}
 
 export class Window extends Effect.Service<Window>()("Window", {
-  effect: Effect.gen(function*() {
+  effect: Effect.gen(function* () {
     const api = vscode.window;
 
     const resolve = (kind: vscode.ColorThemeKind): "light" | "dark" =>
       kind === vscode.ColorThemeKind.Dark ||
-        kind === vscode.ColorThemeKind.HighContrast
+      kind === vscode.ColorThemeKind.HighContrast
         ? "dark"
         : "light";
 
@@ -254,12 +254,12 @@ export class Window extends Effect.Service<Window>()("Window", {
           }>,
         ) => Effect.Effect<A, E, R>,
       ) {
-        return Effect.gen(function*() {
+        return Effect.gen(function* () {
           const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
           yield* Effect.promise((signal) =>
             api.withProgress(options, (progress, token) =>
               runPromise(
-                Effect.gen(function*() {
+                Effect.gen(function* () {
                   const fiber = yield* Effect.forkScoped(fn(progress));
                   const kill = () => runPromise(Fiber.interrupt(fiber));
                   yield* acquireDisposable(() =>
@@ -275,7 +275,7 @@ export class Window extends Effect.Service<Window>()("Window", {
       },
     };
   }),
-}) { }
+}) {}
 
 type ExecutableCommand = VscodeBuiltinCommand | MarimoCommand | DynamicCommand;
 
@@ -289,7 +289,7 @@ type ContextMap = {
 
 export class Commands extends Effect.Service<Commands>()("Commands", {
   dependencies: [Window.Default],
-  scoped: Effect.gen(function*() {
+  scoped: Effect.gen(function* () {
     const win = yield* Window;
     const api = vscode.commands;
     // Pubsub of the commands run and their results
@@ -313,7 +313,7 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
         command: MarimoCommand | DynamicCommand,
         fn: () => Effect.Effect<A, E, R>,
       ) {
-        return Effect.gen(function*() {
+        return Effect.gen(function* () {
           const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
           const callback = () =>
             fn().pipe(
@@ -321,7 +321,7 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
                 PubSub.publish(commandPubSub, Either.right(command)),
               ),
               Effect.catchAllCause(
-                Effect.fn(function*(cause) {
+                Effect.fn(function* (cause) {
                   // Skip logging for interruptions/cancellations (e.g., user
                   // cancels a progress dialog, VS Code disposes resources
                   // during kernel restart). These are expected and not errors.
@@ -352,7 +352,7 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
       },
     };
   }),
-}) { }
+}) {}
 
 export class Workspace extends Effect.Service<Workspace>()("Workspace", {
   sync: () => {
@@ -453,7 +453,7 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
       },
     };
   },
-}) { }
+}) {}
 
 export class Env extends Effect.Service<Env>()("Env", {
   sync: () => {
@@ -468,7 +468,7 @@ export class Env extends Effect.Service<Env>()("Env", {
       },
     };
   },
-}) { }
+}) {}
 
 export class Debug extends Effect.Service<Debug>()("Debug", {
   effect: Effect.sync(() => {
@@ -495,14 +495,14 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
           >;
         },
       ): Effect.Effect<void, never, Scope.Scope | R> {
-        return Effect.gen(function*() {
+        return Effect.gen(function* () {
           const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
 
           yield* acquireDisposable(() =>
             api.registerDebugAdapterDescriptorFactory(debugType, {
               createDebugAdapterDescriptor: (session, executable) =>
                 runPromise(
-                  Effect.gen(function*() {
+                  Effect.gen(function* () {
                     const scope = yield* Scope.make();
                     const adapter = yield* factory
                       .createDebugAdapter(session, executable)
@@ -563,7 +563,7 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
       },
     };
   }),
-}) { }
+}) {}
 
 export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
   effect: Effect.sync(() => {
@@ -595,11 +595,11 @@ export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
       },
     };
   }),
-}) { }
+}) {}
 
 export class AuthError extends Data.TaggedError("AuthError")<{
   cause: unknown;
-}> { }
+}> {}
 
 export class Auth extends Effect.Service<Auth>()("Auth", {
   effect: Effect.sync(() => {
@@ -620,10 +620,10 @@ export class Auth extends Effect.Service<Auth>()("Auth", {
       },
     };
   }),
-}) { }
+}) {}
 
 export class Languages extends Effect.Service<Languages>()("Langauges", {
-  effect: Effect.gen(function*() {
+  effect: Effect.gen(function* () {
     const api = vscode.languages;
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
     return {
@@ -656,21 +656,84 @@ export class Languages extends Effect.Service<Languages>()("Langauges", {
               });
             },
           }),
-        );
+        ).pipe(Effect.asVoid);
+      },
+      registerDefinitionProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideDefinition(
+            doc: vscode.TextDocument,
+            pos: vscode.Position,
+          ): Effect.Effect<
+            vscode.Definition | vscode.DefinitionLink[] | undefined
+          >;
+        },
+      ) {
+        return acquireDisposable(() =>
+          api.registerDefinitionProvider(selector, {
+            provideDefinition(doc, pos, tok) {
+              return runPromise(impl.provideDefinition(doc, pos), {
+                signal: signalFromToken(tok),
+              });
+            },
+          }),
+        ).pipe(Effect.asVoid);
+      },
+      registerDeclarationProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideDeclaration(
+            doc: vscode.TextDocument,
+            pos: vscode.Position,
+          ): Effect.Effect<
+            vscode.Declaration | vscode.LocationLink[] | undefined
+          >;
+        },
+      ) {
+        return acquireDisposable(() =>
+          api.registerDeclarationProvider(selector, {
+            provideDeclaration(doc, pos, tok) {
+              return runPromise(impl.provideDeclaration(doc, pos), {
+                signal: signalFromToken(tok),
+              });
+            },
+          }),
+        ).pipe(Effect.asVoid);
+      },
+      registerTypeDefinitionProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideTypeDefinition(
+            doc: vscode.TextDocument,
+            pos: vscode.Position,
+          ): Effect.Effect<
+            vscode.Definition | vscode.DefinitionLink[] | undefined
+          >;
+        },
+      ) {
+        return acquireDisposable(() =>
+          api.registerTypeDefinitionProvider(selector, {
+            provideTypeDefinition(doc, pos, tok) {
+              return runPromise(impl.provideTypeDefinition(doc, pos), {
+                signal: signalFromToken(tok),
+              });
+            },
+          }),
+        ).pipe(Effect.asVoid);
       },
     };
   }),
-}) { }
+}) {}
 
 export class ParseUriError extends Data.TaggedError("ParseUriError")<{
   cause: unknown;
-}> { }
+}> {}
 
 /**
  * Wraps VS Code API functionality in Effect services
  */
 export class VsCode extends Effect.Service<VsCode>()("VsCode", {
-  effect: Effect.gen(function*() {
+  effect: Effect.gen(function* () {
     // Expose the raw vscode module for runtime inspection via --inspect-extensions.
     // Only active when MARIMO_DEBUG=1 (set by launch-dev.sh).
     if (process.env.MARIMO_DEBUG === "1") {
@@ -750,5 +813,6 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
     Debug.Default,
     Notebooks.Default,
     Auth.Default,
+    Languages.Default,
   ],
-}) { }
+}) {}

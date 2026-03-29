@@ -62,11 +62,10 @@ function toHoverContent(
 // Registration
 // ---------------------------------------------------------------------------
 
-export const registerHoverProvider = Effect.fn(function*(
+export const registerHoverProvider = Effect.fn(function* (
   sel: vscode.DocumentSelector,
   client: NotebookLspClient,
 ) {
-
   if (!client.serverInfo.capabilities.hoverProvider) {
     return;
   }
@@ -74,7 +73,7 @@ export const registerHoverProvider = Effect.fn(function*(
   const code = yield* VsCode;
 
   yield* code.languages.registerHoverProvider(sel, {
-    provideHover: Effect.fn(function*(doc, pos) {
+    provideHover: Effect.fn(function* (doc, pos) {
       const result = yield* client.sendRequest(lsp.HoverRequest.method, {
         textDocument: { uri: doc.uri.toString() },
         position: { line: pos.line, character: pos.character },
@@ -88,6 +87,6 @@ export const registerHoverProvider = Effect.fn(function*(
         toHoverContent(code, result.contents),
         result.range ? toVsCodeRange(code, result.range) : undefined,
       );
-    })
+    }),
   });
 });

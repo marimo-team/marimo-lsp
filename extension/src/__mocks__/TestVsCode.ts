@@ -27,6 +27,7 @@ import {
   FileSystemError,
   Notebooks,
   ParseUriError,
+  Languages,
   VsCode,
   Window,
   Workspace,
@@ -1975,14 +1976,15 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         extensions: {
           getExtension: () => Option.none(),
         },
-        languages: {
-          registerCodeLensProvider() {
-            return Effect.void;
-          },
-          createDiagnosticCollection(name: string) {
-            return new DiagnosticCollection(name);
-          },
-        },
+        languages: Languages.make({
+          registerCodeLensProvider: () => Effect.void,
+          createDiagnosticCollection: (name: string) =>
+            new DiagnosticCollection(name),
+          registerHoverProvider: () => Effect.void,
+          registerDefinitionProvider: () => Effect.void,
+          registerDeclarationProvider: () => Effect.void,
+          registerTypeDefinitionProvider: () => Effect.void,
+        }),
         Diagnostic,
         // helper
         utils: {
