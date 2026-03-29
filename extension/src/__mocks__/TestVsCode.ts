@@ -1216,6 +1216,52 @@ class SelectionRange implements vscode.SelectionRange {
   }
 }
 
+class CodeActionKind {
+  readonly value: string;
+  private constructor(value: string) {
+    this.value = value;
+  }
+  static readonly Empty = new CodeActionKind("");
+  static readonly QuickFix = new CodeActionKind("quickfix");
+  static readonly Refactor = new CodeActionKind("refactor");
+  static readonly Source = new CodeActionKind("source");
+  static readonly RefactorExtract = new CodeActionKind("refactor.extract");
+  static readonly RefactorInline = new CodeActionKind("refactor.inline");
+  static readonly RefactorMove = new CodeActionKind("refactor.move");
+  static readonly RefactorRewrite = new CodeActionKind("refactor.rewrite");
+  static readonly SourceFixAll = new CodeActionKind("source.fixAll");
+  static readonly SourceOrganizeImports = new CodeActionKind(
+    "source.organizeImports",
+  );
+  static readonly Notebook = new CodeActionKind("notebook");
+  append(part: string): CodeActionKind {
+    const value = this.value ? `${this.value}.${part}` : part;
+    return new CodeActionKind(value);
+  }
+  intersects(other: CodeActionKind): boolean {
+    return this.contains(other) || other.contains(this);
+  }
+  contains(other: CodeActionKind): boolean {
+    return (
+      other.value === this.value || other.value.startsWith(`${this.value}.`)
+    );
+  }
+}
+
+class CodeAction {
+  title: string;
+  edit?: WorkspaceEdit;
+  diagnostics?: Diagnostic[];
+  command?: vscode.Command;
+  kind?: CodeActionKind;
+  isPreferred?: boolean;
+  disabled?: { readonly reason: string };
+  constructor(title: string, kind?: CodeActionKind) {
+    this.title = title;
+    this.kind = kind;
+  }
+}
+
 class SnippetString implements vscode.SnippetString {
   value: string;
   constructor(value?: string) {
@@ -2073,6 +2119,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         InlayHint,
         InlayHintLabelPart,
         SnippetString,
+        CodeAction,
+        CodeActionKind,
         SignatureInformation,
         ParameterInformation,
         CodeLens,
@@ -2109,8 +2157,19 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           registerSignatureHelpProvider: () => Effect.void,
           registerInlayHintsProvider: () => Effect.void,
           registerCompletionItemProvider: () => Effect.void,
+          registerCodeActionsProvider: () => Effect.void,
         }),
         Diagnostic,
+        DiagnosticSeverity: {
+          Error: 0,
+          Warning: 1,
+          Information: 2,
+          Hint: 3,
+        },
+        CodeActionTriggerKind: {
+          Invoke: 1,
+          Automatic: 2,
+        },
         // helper
         utils: {
           parseUri(value: string) {

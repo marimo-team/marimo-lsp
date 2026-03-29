@@ -955,6 +955,40 @@ export class Languages extends Effect.Service<Languages>()("Langauges", {
           ),
         ).pipe(Effect.asVoid);
       },
+      registerCodeActionsProvider(
+        selector: vscode.DocumentSelector,
+        impl: {
+          provideCodeActions(
+            doc: vscode.TextDocument,
+            range: vscode.Range,
+            ctx: vscode.CodeActionContext,
+          ): Effect.Effect<vscode.CodeAction[]>;
+          resolveCodeAction?: (
+            item: vscode.CodeAction,
+          ) => Effect.Effect<vscode.CodeAction>;
+        },
+        metadata: vscode.CodeActionProviderMetadata | undefined,
+      ) {
+        return acquireDisposable(() =>
+          api.registerCodeActionsProvider(
+            selector,
+            {
+              provideCodeActions(doc, range, ctx, tok) {
+                return runPromise(impl.provideCodeActions(doc, range, ctx), {
+                  signal: signalFromToken(tok),
+                });
+              },
+              resolveCodeAction: impl.resolveCodeAction
+                ? (item, tok) =>
+                    runPromise(impl.resolveCodeAction!(item), {
+                      signal: signalFromToken(tok),
+                    })
+                : undefined,
+            },
+            metadata,
+          ),
+        ).pipe(Effect.asVoid);
+      },
     };
   }),
 }) {}
@@ -985,12 +1019,16 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       auth: yield* Auth,
       languages: yield* Languages,
       Diagnostic: vscode.Diagnostic,
+      DiagnosticSeverity: vscode.DiagnosticSeverity,
+      CodeActionTriggerKind: vscode.CodeActionTriggerKind,
       Hover: vscode.Hover,
       TextEdit: vscode.TextEdit,
       SignatureHelp: vscode.SignatureHelp,
       InlayHint: vscode.InlayHint,
       InlayHintLabelPart: vscode.InlayHintLabelPart,
       SnippetString: vscode.SnippetString,
+      CodeAction: vscode.CodeAction,
+      CodeActionKind: vscode.CodeActionKind,
       CompletionTriggerKind: vscode.CompletionTriggerKind,
       CompletionItem: vscode.CompletionItem,
       CompletionList: vscode.CompletionList,

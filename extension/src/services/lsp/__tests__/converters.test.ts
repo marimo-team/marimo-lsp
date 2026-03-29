@@ -4,6 +4,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import { TestVsCode } from "../../../__mocks__/TestVsCode.ts";
 import { VsCode } from "../../VsCode.ts";
+import { toCodeAction, toCodeActionKind } from "../providers/codeAction.ts";
 import { toCompletionItem } from "../providers/completion.ts";
 import { toLocationResult, toVsCodeRange } from "../providers/converters.ts";
 import { toDocumentHighlight } from "../providers/documentHighlight.ts";
@@ -860,6 +861,150 @@ describe("toCompletionItem", () => {
           1,
         ]
       `);
+    }),
+  );
+});
+
+describe("toCodeActionKind", () => {
+  it.scoped(
+    "builds from dotted string",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const kind = toCodeActionKind(code, "notebook.source.fixAll");
+      expect(kind.value).toBe("notebook.source.fixAll");
+    }),
+  );
+
+  it.scoped(
+    "builds simple kind",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const kind = toCodeActionKind(code, "quickfix");
+      expect(kind.value).toBe("quickfix");
+    }),
+  );
+});
+
+describe("toCodeAction", () => {
+  it.scoped(
+    "converts basic code action",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCodeAction(code, {
+        title: "Fix import",
+        kind: "quickfix",
+      });
+      expect(result).toMatchInlineSnapshot(`
+        CodeAction {
+          "command": undefined,
+          "diagnostics": undefined,
+          "disabled": undefined,
+          "edit": undefined,
+          "isPreferred": undefined,
+          "kind": CodeActionKind {
+            "value": "quickfix",
+          },
+          "title": "Fix import",
+        }
+      `);
+    }),
+  );
+
+  it.scoped(
+    "converts with edit and diagnostics",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCodeAction(code, {
+        title: "Organize imports",
+        kind: "source.organizeImports",
+        isPreferred: true,
+        edit: {
+          changes: {
+            "file:///test.py": [
+              {
+                range: {
+                  start: { line: 0, character: 0 },
+                  end: { line: 2, character: 0 },
+                },
+                newText: "import os\n",
+              },
+            ],
+          },
+        },
+        diagnostics: [
+          {
+            range: {
+              start: { line: 1, character: 0 },
+              end: { line: 1, character: 10 },
+            },
+            message: "Unused import",
+            severity: lsp.DiagnosticSeverity.Warning,
+            source: "ruff",
+          },
+        ],
+      });
+      expect(result).toMatchInlineSnapshot(`
+        CodeAction {
+          "command": undefined,
+          "diagnostics": [
+            Diagnostic {
+              "code": undefined,
+              "message": "Unused import",
+              "range": Range {
+                "end": Position {
+                  "character": 10,
+                  "line": 1,
+                },
+                "start": Position {
+                  "character": 0,
+                  "line": 1,
+                },
+              },
+              "relatedInformation": undefined,
+              "severity": 1,
+              "source": "ruff",
+              "tags": undefined,
+            },
+          ],
+          "disabled": undefined,
+          "edit": WorkspaceEdit {},
+          "isPreferred": true,
+          "kind": CodeActionKind {
+            "value": "source.organizeImports",
+          },
+          "title": "Organize imports",
+        }
+      `);
+    }),
+  );
+
+  it.scoped(
+    "converts disabled action",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCodeAction(code, {
+        title: "Extract variable",
+        kind: "refactor.extract",
+        disabled: { reason: "No expression selected" },
+      });
+      expect(result.disabled).toMatchInlineSnapshot(`
+        {
+          "reason": "No expression selected",
+        }
+      `);
+    }),
+  );
+
+  it.scoped(
+    "stashes data for resolve",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCodeAction(code, {
+        title: "Fix all",
+        kind: "source.fixAll",
+        data: { uri: "file:///test.py" },
+      });
+      expect(result.title).toBe("Fix all");
     }),
   );
 });
