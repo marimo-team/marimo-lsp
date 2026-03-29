@@ -135,6 +135,16 @@ export interface NotebookLspClientConfig {
   notebookType: string;
   /** Output channel for server log messages. */
   outputChannel?: vscode.LogOutputChannel;
+  /**
+   * Handler for `workspace/configuration` requests from the server.
+   *
+   * The server sends a list of `{ section, scopeUri }` items and expects
+   * a configuration value for each. If not provided, the client responds
+   * with `null` for every item.
+   */
+  onConfigurationRequest?: (
+    params: lsp.ConfigurationParams,
+  ) => Effect.Effect<unknown[]>;
 }
 
 export interface ServerInfo {
@@ -297,7 +307,10 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
               executionSummarySupport: false,
             },
           },
-          workspace: { workspaceFolders: true },
+          workspace: {
+            workspaceFolders: true,
+            configuration: true,
+          },
         } satisfies lsp.ClientCapabilities,
         rootUri: config.workspaceFolders?.[0]?.uri ?? null,
         workspaceFolders:
@@ -324,7 +337,19 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
       }),
     );
 
-    // -- 4. Shutdown finalizer (graceful before kill) -----------------------
+    // -- 4. Server → client request handlers --------------------------------
+
+    conn.onRequest(
+      lsp.ConfigurationRequest.method,
+      (params: lsp.ConfigurationParams) => {
+        if (config.onConfigurationRequest) {
+          return runPromise(config.onConfigurationRequest(params));
+        }
+        return params.items.map(() => null);
+      },
+    );
+
+    // -- 5. Shutdown finalizer (graceful before kill) -----------------------
 
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
@@ -349,11 +374,11 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
     const diagnosticsPubSub =
       yield* PubSub.unbounded<lsp.PublishDiagnosticsParams>();
 
-    const runFork = Runtime.runFork(yield* Effect.runtime());
+    const runPromise = Runtime.runPromise(yield* Effect.runtime());
     conn.onNotification(
       lsp.PublishDiagnosticsNotification.method,
       (params: lsp.PublishDiagnosticsParams) => {
-        runFork(PubSub.publish(diagnosticsPubSub, params));
+        void runPromise(PubSub.publish(diagnosticsPubSub, params));
       },
     );
 

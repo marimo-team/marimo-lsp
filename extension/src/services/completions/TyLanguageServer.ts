@@ -122,6 +122,52 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
                 uri: f.uri.toString(),
                 name: f.name,
               })),
+              onConfigurationRequest: (params) =>
+                Effect.forEach(params.items, (item) =>
+                  Effect.gen(function* () {
+                    if (item.section !== "ty") return null;
+
+                    const scopeUri = item.scopeUri
+                      ? code.Uri.parse(item.scopeUri, true)
+                      : undefined;
+                    const path =
+                      yield* pyExt.getActiveEnvironmentPath(scopeUri);
+                    const resolved = yield* pyExt.resolveEnvironment(path);
+                    const env = Option.getOrNull(resolved);
+
+                    return {
+                      pythonExtension: {
+                        activeEnvironment:
+                          env == null
+                            ? null
+                            : {
+                                version:
+                                  env.version == null
+                                    ? null
+                                    : {
+                                        major: env.version.major,
+                                        minor: env.version.minor,
+                                        patch: env.version.micro,
+                                        sysVersion: env.version.sysVersion,
+                                      },
+                                environment:
+                                  env.environment == null
+                                    ? null
+                                    : {
+                                        folderUri:
+                                          env.environment.folderUri.toString(),
+                                        name: env.environment.name,
+                                        type: env.environment.type,
+                                      },
+                                executable: {
+                                  uri: env.executable.uri?.toString(),
+                                  sysPrefix: env.executable.sysPrefix,
+                                },
+                              },
+                      },
+                    };
+                  }),
+                ),
             }),
           );
 
