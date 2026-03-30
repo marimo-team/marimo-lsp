@@ -31,7 +31,7 @@ export const registerInlayHintProvider = Effect.fn(function* (
       const result = yield* client.sendRequest(lsp.InlayHintRequest.method, {
         textDocument: { uri: doc.uri.toString() },
         range: toLspRange(range),
-      } satisfies lsp.InlayHintParams);
+      });
       return result?.map((h) => toInlayHint(code, h)) ?? [];
     }),
     resolveInlayHint: resolveProvider

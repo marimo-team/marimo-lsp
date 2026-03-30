@@ -49,7 +49,7 @@ export const registerCodeActionProvider = Effect.fn(function* (
           textDocument: { uri: doc.uri.toString() },
           range: toLspRange(range),
           context: toLspCodeActionContext(code, ctx),
-        } satisfies lsp.CodeActionParams);
+        });
         if (!result) return [];
         return result
           .filter((a): a is lsp.CodeAction => !lsp.Command.is(a))

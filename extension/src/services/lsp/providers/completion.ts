@@ -42,7 +42,7 @@ export const registerCompletionProvider = Effect.fn(function* (
             triggerKind: toLspCompletionTriggerKind(code, ctx.triggerKind),
             triggerCharacter: ctx.triggerCharacter,
           },
-        } satisfies lsp.CompletionParams);
+        });
         if (!result) return [];
         return result.items.map((item) => toCompletionItem(code, item));
       }),

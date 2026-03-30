@@ -1887,10 +1887,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             return Stream.fromPubSub(documentChanges);
           },
           notebookDocumentClosed() {
-            return Stream.empty;
+            return Stream.never;
           },
           textDocumentChanges() {
-            return Stream.empty;
+            return Stream.never;
           },
           createFileSystemWatcher() {
             return Stream.never;

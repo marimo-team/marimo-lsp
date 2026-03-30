@@ -36,7 +36,7 @@ export const registerRenameProvider = Effect.fn(function* (
         textDocument: { uri: doc.uri.toString() },
         position: { line: pos.line, character: pos.character },
         newName,
-      } satisfies lsp.RenameParams);
+      });
       if (!result) return undefined;
       return toWorkspaceEdit(code, result);
     }),

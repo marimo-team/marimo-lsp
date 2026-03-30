@@ -25,7 +25,7 @@ export const registerReferenceProvider = Effect.fn(function* (
         textDocument: { uri: doc.uri.toString() },
         position: { line: pos.line, character: pos.character },
         context: { includeDeclaration: ctx.includeDeclaration },
-      } satisfies lsp.ReferenceParams);
+      });
       return result?.map((l) => toLocation(code, l)) ?? [];
     }),
   });
