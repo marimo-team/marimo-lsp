@@ -111,7 +111,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
               return (mo,)
 
 
-          @app.cell
+          @app.cell(hide_code=True)
           def _(mo):
               mo.md(r"""
               # single line markdown
@@ -119,7 +119,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
               return
 
 
-          @app.cell
+          @app.cell(hide_code=True)
           def _(mo):
               mo.md(r"""
               - multiline
