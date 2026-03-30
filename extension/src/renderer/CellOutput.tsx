@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { ImageToolbar } from "./ImageToolbar.tsx";
 import {
   type CellId,
   type CellRuntimeState,
@@ -8,6 +9,7 @@ import {
   TooltipProvider,
   useTheme,
 } from "./marimo-frontend.ts";
+import { useEventListener } from "./useEventListener.ts";
 
 interface CellOutputProps {
   cellId: CellId;
@@ -20,6 +22,7 @@ interface CellOutputProps {
 export function CellOutput({ cellId, state }: CellOutputProps) {
   const { theme } = useTheme();
   const container = React.useRef<HTMLDivElement>(null);
+  const { target: hoveredImage, clear: clearHover } = useImageHover(container);
 
   useStopUnmodifiedInputKeys(container);
 
@@ -44,8 +47,40 @@ export function CellOutput({ cellId, state }: CellOutputProps) {
           />
         )}
       </TooltipProvider>
+      {hoveredImage && (
+        <ImageToolbar target={hoveredImage} onMouseLeave={clearHover} />
+      )}
     </div>
   );
+}
+
+/**
+ * Detect when the user hovers over an <img> inside the container.
+ * Uses native DOM events via useEventListener so we can call stopPropagation.
+ */
+function useImageHover(ref: React.RefObject<HTMLDivElement | null>) {
+  const [target, setTarget] = React.useState<HTMLImageElement | null>(null);
+  const clear = React.useCallback(() => setTarget(null), []);
+
+  useEventListener(ref, "mouseover", (e) => {
+    if (!(e.target instanceof Element)) return;
+    const img = e.target.closest("img");
+    if (img instanceof HTMLImageElement) {
+      e.stopPropagation();
+      setTarget(img);
+    }
+  });
+
+  useEventListener(ref, "mouseout", (e) => {
+    const related = e.relatedTarget;
+    if (related instanceof Element && related.closest(".image-toolbar")) return;
+    if (e.target instanceof Element && e.target.closest("img")) {
+      e.stopPropagation();
+      setTarget(null);
+    }
+  });
+
+  return { target, clear };
 }
 
 /**
@@ -77,36 +112,22 @@ export function CellOutput({ cellId, state }: CellOutputProps) {
  *     `delegatesFocus: true` on the shadow root.
  */
 function useStopUnmodifiedInputKeys(
-  containerRef: React.RefObject<HTMLDivElement | null>,
+  ref: React.RefObject<HTMLDivElement | null>,
 ) {
-  React.useEffect(() => {
-    const container = containerRef.current;
-    if (!container) {
-      return undefined;
+  const handler = React.useCallback((e: KeyboardEvent) => {
+    if (isModifierKey(e.key)) {
+      return;
     }
+    if ((e.ctrlKey || e.metaKey) && !e.getModifierState("AltGraph")) {
+      return;
+    }
+    if (isFromInput(e)) {
+      e.stopPropagation();
+    }
+  }, []);
 
-    const controller = new AbortController();
-    const handler = (e: KeyboardEvent) => {
-      if (isModifierKey(e.key)) {
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && !e.getModifierState("AltGraph")) {
-        return;
-      }
-      if (isFromInput(e)) {
-        e.stopPropagation();
-      }
-    };
-
-    container.addEventListener("keydown", handler, {
-      signal: controller.signal,
-    });
-    container.addEventListener("keyup", handler, {
-      signal: controller.signal,
-    });
-
-    return () => controller.abort();
-  }, [containerRef]);
+  useEventListener(ref, "keydown", handler);
+  useEventListener(ref, "keyup", handler);
 }
 
 function isModifierKey(key: string): boolean {
