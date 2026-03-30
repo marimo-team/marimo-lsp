@@ -11,9 +11,9 @@ import { Effect } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toDocumentSymbol } from "./converters.ts";
+import type { NotebookLspClient } from "../client.ts";
+import { toDocumentSymbol } from "../converters.ts";
 
 export const registerDocumentSymbolProvider = Effect.fn(function* (
   sel: vscode.DocumentSelector,

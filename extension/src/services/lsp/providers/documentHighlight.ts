@@ -8,9 +8,12 @@ import { Effect } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toDocumentHighlight, toDocumentPositionParams } from "./converters.ts";
+import type { NotebookLspClient } from "../client.ts";
+import {
+  toDocumentHighlight,
+  toDocumentPositionParams,
+} from "../converters.ts";
 
 export const registerDocumentHighlightProvider = Effect.fn(function* (
   sel: vscode.DocumentSelector,

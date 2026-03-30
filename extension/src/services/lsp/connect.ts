@@ -12,16 +12,16 @@ import { Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageserver-protocol";
 
-import { NOTEBOOK_TYPE } from "../constants.ts";
-import { MarimoNotebookDocument } from "../schemas.ts";
-import { registerLspProviders } from "../services/completions/registerLspProviders.ts";
-import { toVsCodeDiagnosticSeverity } from "../services/lsp/providers/converters.ts";
-import { VsCode } from "../services/VsCode.ts";
-import { acquireDisposable } from "./acquireDisposable.ts";
+import { NOTEBOOK_TYPE } from "../../constants.ts";
+import { MarimoNotebookDocument } from "../../schemas.ts";
+import { acquireDisposable } from "../../utils/acquireDisposable.ts";
+import { VsCode } from "../VsCode.ts";
 import {
   makeNotebookLspClient,
   type NotebookLspClientConfig,
-} from "./makeMarimoLspClient.ts";
+} from "./client.ts";
+import { toVsCodeDiagnosticSeverity } from "./converters.ts";
+import { registerLspProviders } from "./registerLspProviders.ts";
 
 /**
  * Create a managed LSP client connected to VS Code events.

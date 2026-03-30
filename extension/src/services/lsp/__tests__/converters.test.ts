@@ -18,7 +18,7 @@ import {
   toSignatureHelp,
   toTextEdit,
   toVsCodeRange,
-} from "../providers/converters.ts";
+} from "../converters.ts";
 
 const withVsCode = Effect.gen(function* () {
   const test = yield* TestVsCode.make();

@@ -3,7 +3,7 @@ import { Effect, Layer, Option } from "effect";
 import {
   TyLanguageServer,
   TyLanguageServerStatus,
-} from "../services/completions/TyLanguageServer.ts";
+} from "../services/TyLanguageServer.ts";
 import { BinarySource } from "../utils/binaryResolution.ts";
 
 /**

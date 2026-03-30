@@ -2,13 +2,13 @@ import { Layer, LogLevel } from "effect";
 
 import { LoggerLive } from "./layers/Logger.ts";
 import { makeActivate } from "./layers/Main.ts";
-import { RuffLanguageServer } from "./services/completions/RuffLanguageServer.ts";
-import { TyLanguageServer } from "./services/completions/TyLanguageServer.ts";
 import { LanguageClient } from "./services/LanguageClient.ts";
 import { OutputChannel } from "./services/OutputChannel.ts";
 import { PythonExtension } from "./services/PythonExtension.ts";
+import { RuffLanguageServer } from "./services/RuffLanguageServer.ts";
 import { Sentry } from "./services/Sentry.ts";
 import { Telemetry } from "./services/Telemetry.ts";
+import { TyLanguageServer } from "./services/TyLanguageServer.ts";
 import { VsCode } from "./services/VsCode.ts";
 
 export const activate = makeActivate(

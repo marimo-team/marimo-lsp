@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect";
 import {
   RuffLanguageServer,
   RuffLanguageServerStatus,
-} from "../services/completions/RuffLanguageServer.ts";
+} from "../services/RuffLanguageServer.ts";
 import { BinarySource } from "../utils/binaryResolution.ts";
 
 /**

@@ -8,19 +8,19 @@ import {
   companionExtensionConfiguredPath,
   resolveBinary,
   userConfiguredPath,
-} from "../../utils/binaryResolution.ts";
-import { connectMarimoNotebookLspClient } from "../../utils/connectMarimoLspClient.ts";
-import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
-import { Config } from "../Config.ts";
-import { OutputChannel } from "../OutputChannel.ts";
-import { PythonEnvInvalidation } from "../PythonEnvInvalidation.ts";
-import { PythonExtension } from "../PythonExtension.ts";
-import { Sentry } from "../Sentry.ts";
-import { ExtensionContext } from "../Storage.ts";
-import { Telemetry } from "../Telemetry.ts";
-import { Uv } from "../Uv.ts";
-import { VariablesService } from "../variables/VariablesService.ts";
-import { VsCode } from "../VsCode.ts";
+} from "../utils/binaryResolution.ts";
+import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
+import { Config } from "./Config.ts";
+import { connectMarimoNotebookLspClient } from "./lsp/connect.ts";
+import { OutputChannel } from "./OutputChannel.ts";
+import { PythonEnvInvalidation } from "./PythonEnvInvalidation.ts";
+import { PythonExtension } from "./PythonExtension.ts";
+import { Sentry } from "./Sentry.ts";
+import { ExtensionContext } from "./Storage.ts";
+import { Telemetry } from "./Telemetry.ts";
+import { Uv } from "./Uv.ts";
+import { VariablesService } from "./variables/VariablesService.ts";
+import { VsCode } from "./VsCode.ts";
 
 const TY_SERVER = { name: "ty", version: "0.0.26" } as const;
 const TY_EXTENSION_ID = "astral-sh.ty";

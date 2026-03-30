@@ -11,9 +11,9 @@ import { Effect } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toLspRange, toTextEdit } from "./converters.ts";
+import type { NotebookLspClient } from "../client.ts";
+import { toLspRange, toTextEdit } from "../converters.ts";
 
 /**
  * Read file-level formatting options from workspace config.

@@ -2,7 +2,7 @@
  * Registers VS Code language feature providers for a notebook LSP client,
  * driven by the server's advertised capabilities.
  *
- * Each provider is implemented in its own file under `../lsp/providers/`,
+ * Each provider is implemented in its own file under `./providers/`,
  * modeled after the reference implementation in vscode-languageserver-node.
  */
 
@@ -11,28 +11,28 @@ import { Effect } from "effect";
 import * as vscode from "vscode";
 
 import { LanguageId } from "../../constants.ts";
-import type { NotebookLspClient } from "../../utils/makeMarimoLspClient.ts";
-import { registerCodeActionProvider } from "../lsp/providers/codeAction.ts";
-import { registerCompletionProvider } from "../lsp/providers/completion.ts";
+import type { NotebookLspClient } from "./client.ts";
+import { registerCodeActionProvider } from "./providers/codeAction.ts";
+import { registerCompletionProvider } from "./providers/completion.ts";
 import {
   registerDeclarationProvider,
   registerDefinitionProvider,
   registerTypeDefinitionProvider,
-} from "../lsp/providers/definition.ts";
-import { registerDocumentHighlightProvider } from "../lsp/providers/documentHighlight.ts";
-import { registerDocumentSymbolProvider } from "../lsp/providers/documentSymbol.ts";
-import { registerFoldingRangeProvider } from "../lsp/providers/foldingRange.ts";
+} from "./providers/definition.ts";
+import { registerDocumentHighlightProvider } from "./providers/documentHighlight.ts";
+import { registerDocumentSymbolProvider } from "./providers/documentSymbol.ts";
+import { registerFoldingRangeProvider } from "./providers/foldingRange.ts";
 import {
   registerDocumentFormattingProvider,
   registerDocumentRangeFormattingProvider,
-} from "../lsp/providers/formatting.ts";
-import { registerHoverProvider } from "../lsp/providers/hover.ts";
-import { registerInlayHintProvider } from "../lsp/providers/inlayHint.ts";
-import { registerReferenceProvider } from "../lsp/providers/references.ts";
-import { registerRenameProvider } from "../lsp/providers/rename.ts";
-import { registerSelectionRangeProvider } from "../lsp/providers/selectionRange.ts";
-import { registerSemanticTokensProvider } from "../lsp/providers/semanticTokens.ts";
-import { registerSignatureHelpProvider } from "../lsp/providers/signatureHelp.ts";
+} from "./providers/formatting.ts";
+import { registerHoverProvider } from "./providers/hover.ts";
+import { registerInlayHintProvider } from "./providers/inlayHint.ts";
+import { registerReferenceProvider } from "./providers/references.ts";
+import { registerRenameProvider } from "./providers/rename.ts";
+import { registerSelectionRangeProvider } from "./providers/selectionRange.ts";
+import { registerSemanticTokensProvider } from "./providers/semanticTokens.ts";
+import { registerSignatureHelpProvider } from "./providers/signatureHelp.ts";
 
 export const registerLspProviders = Effect.fn("registerLspProviders")(
   function* (client: NotebookLspClient) {

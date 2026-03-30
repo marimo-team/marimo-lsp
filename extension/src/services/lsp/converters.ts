@@ -5,7 +5,7 @@
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import type { VsCode } from "../../VsCode.ts";
+import type { VsCode } from "../VsCode.ts";
 
 export function toVsCodeRange(code: VsCode, range: lsp.Range): vscode.Range {
   return new code.Range(

@@ -9,17 +9,17 @@ import {
   companionExtensionConfiguredPath,
   resolveBinary,
   userConfiguredPath,
-} from "../../utils/binaryResolution.ts";
-import { connectMarimoNotebookLspClient } from "../../utils/connectMarimoLspClient.ts";
-import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
-import { Config } from "../Config.ts";
-import { OutputChannel } from "../OutputChannel.ts";
-import { Sentry } from "../Sentry.ts";
-import { ExtensionContext } from "../Storage.ts";
-import { Telemetry } from "../Telemetry.ts";
-import { Uv } from "../Uv.ts";
-import { VariablesService } from "../variables/VariablesService.ts";
-import { VsCode } from "../VsCode.ts";
+} from "../utils/binaryResolution.ts";
+import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
+import { Config } from "./Config.ts";
+import { connectMarimoNotebookLspClient } from "./lsp/connect.ts";
+import { OutputChannel } from "./OutputChannel.ts";
+import { Sentry } from "./Sentry.ts";
+import { ExtensionContext } from "./Storage.ts";
+import { Telemetry } from "./Telemetry.ts";
+import { Uv } from "./Uv.ts";
+import { VariablesService } from "./variables/VariablesService.ts";
+import { VsCode } from "./VsCode.ts";
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
 // Bump this as needed for new features or fixes.

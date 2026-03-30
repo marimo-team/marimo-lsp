@@ -12,9 +12,9 @@ import { Effect } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toVsCodeRange, toWorkspaceEdit } from "./converters.ts";
+import type { NotebookLspClient } from "../client.ts";
+import { toVsCodeRange, toWorkspaceEdit } from "../converters.ts";
 
 // ---------------------------------------------------------------------------
 // Registration

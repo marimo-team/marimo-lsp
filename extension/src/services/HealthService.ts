@@ -6,16 +6,16 @@ import { Effect, Option } from "effect";
 import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
 import { BinarySource } from "../utils/binaryResolution.ts";
 import { getExtensionVersion } from "../utils/getExtensionVersion.ts";
+import { Config } from "./Config.ts";
+import { PythonExtension } from "./PythonExtension.ts";
 import {
   RuffLanguageServer,
   RuffLanguageServerStatus,
-} from "./completions/RuffLanguageServer.ts";
+} from "./RuffLanguageServer.ts";
 import {
   TyLanguageServer,
   TyLanguageServerStatus,
-} from "./completions/TyLanguageServer.ts";
-import { Config } from "./Config.ts";
-import { PythonExtension } from "./PythonExtension.ts";
+} from "./TyLanguageServer.ts";
 import { Uv, UvBin } from "./Uv.ts";
 import { VsCode } from "./VsCode.ts";
 

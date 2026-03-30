@@ -37,10 +37,10 @@ import type * as vscode from "vscode";
 import * as rpc from "vscode-jsonrpc/node";
 import * as lsp from "vscode-languageserver-protocol";
 
-import { NOTEBOOK_TYPE } from "../constants.ts";
-import { MarimoNotebookDocument, type NotebookId } from "../schemas.ts";
-import { VariablesService } from "../services/variables/VariablesService.ts";
-import { getTopologicalCells } from "./getTopologicalCells.ts";
+import { NOTEBOOK_TYPE } from "../../constants.ts";
+import { MarimoNotebookDocument, type NotebookId } from "../../schemas.ts";
+import { getTopologicalCells } from "../../utils/getTopologicalCells.ts";
+import { VariablesService } from "../variables/VariablesService.ts";
 
 // ---------------------------------------------------------------------------
 // Errors
