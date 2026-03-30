@@ -1,10 +1,9 @@
-/// <reference types="vitest" />
 // @ts-check
 
 import * as process from "node:process";
 
 import tailwindcss from "@tailwindcss/vite";
-import * as vite from "vite";
+import * as vite from "vite-plus";
 
 import stylesheet from "./scripts/vite-plugin-virtual-stylesheet.mjs";
 
@@ -31,10 +30,6 @@ export default vite.defineConfig({
     "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV),
     "import.meta.env.MODE": JSON.stringify("test"),
   },
-  experimental: {
-    enableNativePlugin: true,
-  },
-  // @ts-expect-error - vite-rolldown doesn't have this overload
   test: {
     globals: true,
     environment: "node",

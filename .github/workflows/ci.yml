@@ -37,12 +37,8 @@ jobs:
         run: pnpm install
         working-directory: extension
 
-      - name: Run oxlint
-        run: pnpm exec oxlint
-        working-directory: extension
-
-      - name: Run oxfmt
-        run: pnpm exec oxfmt --check .
+      - name: Check (lint + format)
+        run: pnpm check
         working-directory: extension
 
   typescript-typecheck:
