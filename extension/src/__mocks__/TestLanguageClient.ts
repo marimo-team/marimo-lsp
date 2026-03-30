@@ -3,12 +3,12 @@ import * as NodeChildProcess from "node:child_process";
 import { Effect, Layer, Stream } from "effect";
 import * as rpc from "vscode-jsonrpc/node";
 
+import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import {
   ExecuteCommandError,
   findLspExecutable,
   LanguageClient,
-} from "../services/LanguageClient.ts";
-import { acquireDisposable } from "../utils/acquireDisposable.ts";
+} from "../lsp/LanguageClient.ts";
 
 export const TestLanguageClientLive = Layer.scoped(
   LanguageClient,

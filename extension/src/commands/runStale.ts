@@ -1,8 +1,8 @@
 import { Effect, flow, Option } from "effect";
 
-import { MarimoNotebookDocument } from "../schemas.ts";
-import { VsCode } from "../services/VsCode.ts";
-import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
+import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const runStale = Effect.fn("command.runStale")(
   function* () {

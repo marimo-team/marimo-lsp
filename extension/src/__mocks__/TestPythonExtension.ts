@@ -11,7 +11,7 @@ import {
 } from "effect";
 
 import { Uri } from "../__mocks__/TestVsCode.ts";
-import { PythonExtension } from "../services/PythonExtension.ts";
+import { PythonExtension } from "../python/PythonExtension.ts";
 
 export class TestPythonExtension extends Data.TaggedClass(
   "TestPythonExtension",

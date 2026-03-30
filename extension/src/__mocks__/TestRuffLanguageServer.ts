@@ -1,10 +1,10 @@
 import { Effect, Layer } from "effect";
 
+import { BinarySource } from "../lib/binaryResolution.ts";
 import {
   RuffLanguageServer,
   RuffLanguageServerStatus,
-} from "../services/RuffLanguageServer.ts";
-import { BinarySource } from "../utils/binaryResolution.ts";
+} from "../lsp/RuffLanguageServer.ts";
 
 /**
  * Test mock for RuffLanguageServer

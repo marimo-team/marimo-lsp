@@ -1,7 +1,11 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
 import type * as lsp from "vscode-languageclient/node";
 
-import type { MarimoNotebook, NotebookCellId, NotebookId } from "./schemas.ts";
+import type {
+  NotebookCellId,
+  NotebookId,
+} from "./schemas/MarimoNotebookDocument.ts";
+import type { SerializedNotebook } from "./schemas/SerializedNotebook.ts";
 
 export type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 
@@ -45,7 +49,7 @@ interface DeserializeRequest {
   source: string;
 }
 interface SerializeRequest {
-  notebook: typeof MarimoNotebook.Type;
+  notebook: typeof SerializedNotebook.Type;
 }
 type InterruptRequest = {};
 type ListPackagesRequest = {};

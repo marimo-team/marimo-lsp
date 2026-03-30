@@ -1,12 +1,12 @@
 import { Effect, Either, Option } from "effect";
 
-import { MarimoNotebookDocument } from "../schemas.ts";
-import { ControllerRegistry } from "../services/ControllerRegistry.ts";
-import { PythonExtension } from "../services/PythonExtension.ts";
-import { Uv } from "../services/Uv.ts";
-import { VsCode } from "../services/VsCode.ts";
-import { getVenvPythonPath } from "../utils/getVenvPythonPath.ts";
-import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
+import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
+import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
+import { PythonExtension } from "../python/PythonExtension.ts";
+import { Uv } from "../python/Uv.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const updateActivePythonEnvironment = Effect.fn(
   "command.updateActivePythonEnvironment",

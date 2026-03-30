@@ -2,12 +2,12 @@ import * as NodePath from "node:path";
 
 import { Cause, Chunk, Effect, Either, flow, Schema, Option } from "effect";
 
-import { MarimoNotebookDocument } from "../schemas.ts";
-import { GitHubClient } from "../services/GitHubClient.ts";
-import { LanguageClient } from "../services/LanguageClient.ts";
-import { NotebookSerializer } from "../services/NotebookSerializer.ts";
-import { VsCode } from "../services/VsCode.ts";
-import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
+import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
+import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
+import { GitHubClient } from "../platform/GitHubClient.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const publishMarimoNotebookGist = Effect.fn(
   "command.publishMarimoNotebookGist",

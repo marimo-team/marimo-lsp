@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { VsCode } from "../services/VsCode.ts";
+import { VsCode } from "../platform/VsCode.ts";
 
 export const openAsMarimoNotebook = Effect.fn("command.openAsMarimoNotebook")(
   function* () {

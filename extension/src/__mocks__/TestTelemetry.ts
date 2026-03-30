@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 
-import { Telemetry } from "../services/Telemetry.ts";
+import { Telemetry } from "../telemetry/Telemetry.ts";
 
 /**
  * Test implementation of Telemetry that does nothing

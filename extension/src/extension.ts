@@ -1,15 +1,15 @@
 import { Layer, LogLevel } from "effect";
 
-import { LoggerLive } from "./layers/Logger.ts";
-import { makeActivate } from "./layers/Main.ts";
-import { LanguageClient } from "./services/LanguageClient.ts";
-import { OutputChannel } from "./services/OutputChannel.ts";
-import { PythonExtension } from "./services/PythonExtension.ts";
-import { RuffLanguageServer } from "./services/RuffLanguageServer.ts";
-import { Sentry } from "./services/Sentry.ts";
-import { Telemetry } from "./services/Telemetry.ts";
-import { TyLanguageServer } from "./services/TyLanguageServer.ts";
-import { VsCode } from "./services/VsCode.ts";
+import { LoggerLive } from "./features/Logger.ts";
+import { makeActivate } from "./features/Main.ts";
+import { LanguageClient } from "./lsp/LanguageClient.ts";
+import { RuffLanguageServer } from "./lsp/RuffLanguageServer.ts";
+import { TyLanguageServer } from "./lsp/TyLanguageServer.ts";
+import { OutputChannel } from "./platform/OutputChannel.ts";
+import { VsCode } from "./platform/VsCode.ts";
+import { PythonExtension } from "./python/PythonExtension.ts";
+import { Sentry } from "./telemetry/Sentry.ts";
+import { Telemetry } from "./telemetry/Telemetry.ts";
 
 export const activate = makeActivate(
   Layer.empty.pipe(

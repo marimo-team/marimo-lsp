@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect";
 
-import { VsCode } from "../services/VsCode.ts";
+import { VsCode } from "../platform/VsCode.ts";
 
 export const publishMarimoNotebook = Effect.fn(function* () {
   const code = yield* VsCode;

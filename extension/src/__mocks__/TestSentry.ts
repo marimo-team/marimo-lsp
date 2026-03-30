@@ -1,6 +1,6 @@
 import { Effect, Layer, Logger } from "effect";
 
-import { Sentry } from "../services/Sentry.ts";
+import { Sentry } from "../telemetry/Sentry.ts";
 
 /**
  * Test implementation of Sentry that does nothing

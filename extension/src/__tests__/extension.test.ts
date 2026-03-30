@@ -11,8 +11,8 @@ import { TestTelemetryLive } from "../__mocks__/TestTelemetry.ts";
 import { TestTyLanguageServerLive } from "../__mocks__/TestTyLanguageServer.ts";
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
+import { makeActivate } from "../features/Main.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
-import { makeActivate } from "../layers/Main.ts";
 
 const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
