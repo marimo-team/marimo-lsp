@@ -17,7 +17,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toLspRange } from "./converters.ts";
+import { catchLspError, toLspRange } from "./converters.ts";
 
 export const registerSemanticTokensProvider = Effect.fn(function* (
   sel: vscode.DocumentSelector,
@@ -41,12 +41,11 @@ export const registerSemanticTokensProvider = Effect.fn(function* (
       sel,
       {
         provideDocumentSemanticTokens: Effect.fn(function* (doc) {
-          const result = yield* client.sendRequest(
-            lsp.SemanticTokensRequest.method,
-            {
+          const result = yield* client
+            .sendRequest(lsp.SemanticTokensRequest.method, {
               textDocument: { uri: doc.uri.toString() },
-            } satisfies lsp.SemanticTokensParams,
-          );
+            } satisfies lsp.SemanticTokensParams)
+            .pipe(catchLspError(null));
           if (!result) return undefined;
           return new code.SemanticTokens(
             new Uint32Array(result.data),
@@ -63,13 +62,12 @@ export const registerSemanticTokensProvider = Effect.fn(function* (
       sel,
       {
         provideDocumentRangeSemanticTokens: Effect.fn(function* (doc, range) {
-          const result = yield* client.sendRequest(
-            lsp.SemanticTokensRangeRequest.method,
-            {
+          const result = yield* client
+            .sendRequest(lsp.SemanticTokensRangeRequest.method, {
               textDocument: { uri: doc.uri.toString() },
               range: toLspRange(range),
-            } satisfies lsp.SemanticTokensRangeParams,
-          );
+            } satisfies lsp.SemanticTokensRangeParams)
+            .pipe(catchLspError(null));
           if (!result) return undefined;
           return new code.SemanticTokens(
             new Uint32Array(result.data),

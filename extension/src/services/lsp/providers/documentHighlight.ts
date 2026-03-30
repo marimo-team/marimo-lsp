@@ -10,7 +10,11 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toDocumentPositionParams, toVsCodeRange } from "./converters.ts";
+import {
+  catchLspError,
+  toDocumentPositionParams,
+  toVsCodeRange,
+} from "./converters.ts";
 
 /**
  * Reference: protocolConverter.ts asDocumentHighlightKind
@@ -49,10 +53,12 @@ export const registerDocumentHighlightProvider = Effect.fn(function* (
 
   yield* code.languages.registerDocumentHighlightProvider(sel, {
     provideDocumentHighlights: Effect.fn(function* (doc, pos) {
-      const result = yield* client.sendRequest(
-        lsp.DocumentHighlightRequest.method,
-        toDocumentPositionParams(doc, pos),
-      );
+      const result = yield* client
+        .sendRequest(
+          lsp.DocumentHighlightRequest.method,
+          toDocumentPositionParams(doc, pos),
+        )
+        .pipe(catchLspError(null));
       return result?.map((h) => toDocumentHighlight(code, h)) ?? [];
     }),
   });

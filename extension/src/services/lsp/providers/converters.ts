@@ -2,10 +2,30 @@
  * Shared LSP → VS Code type converters used across providers.
  */
 
+import { Effect } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
+import { LspRequestError } from "../../../utils/makeMarimoLspClient.ts";
 import type { VsCode } from "../../VsCode.ts";
+
+/**
+ * Catch an {@link LspRequestError} and return a fallback value.
+ *
+ * Used in provider callbacks so that a server error (e.g. MethodNotFound,
+ * connection lost) returns empty results instead of crashing the fiber.
+ */
+export function catchLspError<T>(fallback: T) {
+  return <A>(self: Effect.Effect<A, LspRequestError>) =>
+    self.pipe(
+      Effect.catchTag("LspRequestError", (err) =>
+        Effect.logDebug("LSP request failed").pipe(
+          Effect.annotateLogs({ method: err.method, code: err.code }),
+          Effect.as(fallback),
+        ),
+      ),
+    );
+}
 
 export function toVsCodeRange(code: VsCode, range: lsp.Range): vscode.Range {
   return new code.Range(
@@ -163,6 +183,41 @@ export function toWorkspaceEdit(
     }
   }
   return ws;
+}
+
+export function toLspCompletionTriggerKind(
+  code: VsCode,
+  kind: vscode.CompletionTriggerKind,
+): lsp.CompletionTriggerKind {
+  switch (kind) {
+    case code.CompletionTriggerKind.Invoke:
+      return lsp.CompletionTriggerKind.Invoked;
+    case code.CompletionTriggerKind.TriggerCharacter:
+      return lsp.CompletionTriggerKind.TriggerCharacter;
+    case code.CompletionTriggerKind.TriggerForIncompleteCompletions:
+      return lsp.CompletionTriggerKind.TriggerForIncompleteCompletions;
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
+}
+
+// Not exhaustive: LSP FoldingRangeKind is `string`, extensible by servers.
+// Unknown kinds get no VS Code FoldingRangeKind (renders as generic fold).
+export function toLspFoldingRangeKind(
+  kind: lsp.FoldingRangeKind,
+): vscode.FoldingRangeKind | undefined {
+  switch (kind) {
+    case lsp.FoldingRangeKind.Comment:
+      return 1 satisfies typeof vscode.FoldingRangeKind.Comment;
+    case lsp.FoldingRangeKind.Imports:
+      return 2 satisfies typeof vscode.FoldingRangeKind.Imports;
+    case lsp.FoldingRangeKind.Region:
+      return 3 satisfies typeof vscode.FoldingRangeKind.Region;
+    default:
+      return undefined;
+  }
 }
 
 export function toDocumentPositionParams(

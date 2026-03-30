@@ -13,7 +13,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toVsCodeRange } from "./converters.ts";
+import { catchLspError, toVsCodeRange } from "./converters.ts";
 
 /**
  * LSP SymbolKind is 1-based, VS Code SymbolKind is 0-based.
@@ -110,10 +110,11 @@ export const registerDocumentSymbolProvider = Effect.fn(function* (
 
   yield* code.languages.registerDocumentSymbolProvider(sel, {
     provideDocumentSymbols: Effect.fn(function* (doc) {
-      const result = yield* client.sendRequest(
-        lsp.DocumentSymbolRequest.method,
-        { textDocument: { uri: doc.uri.toString() } },
-      );
+      const result = yield* client
+        .sendRequest(lsp.DocumentSymbolRequest.method, {
+          textDocument: { uri: doc.uri.toString() },
+        })
+        .pipe(catchLspError(null));
       return result?.map((s) => toDocumentSymbol(code, s)) ?? [];
     }),
   });

@@ -14,7 +14,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toVsCodeRange, toWorkspaceEdit } from "./converters.ts";
+import { catchLspError, toVsCodeRange, toWorkspaceEdit } from "./converters.ts";
 
 // ---------------------------------------------------------------------------
 // Registration
@@ -32,23 +32,24 @@ export const registerRenameProvider = Effect.fn(function* (
 
   yield* code.languages.registerRenameProvider(sel, {
     provideRenameEdits: Effect.fn(function* (doc, pos, newName) {
-      const result = yield* client.sendRequest(lsp.RenameRequest.method, {
-        textDocument: { uri: doc.uri.toString() },
-        position: { line: pos.line, character: pos.character },
-        newName,
-      } satisfies lsp.RenameParams);
+      const result = yield* client
+        .sendRequest(lsp.RenameRequest.method, {
+          textDocument: { uri: doc.uri.toString() },
+          position: { line: pos.line, character: pos.character },
+          newName,
+        } satisfies lsp.RenameParams)
+        .pipe(catchLspError(null));
       if (!result) return undefined;
       return toWorkspaceEdit(code, result);
     }),
     prepareRename: prepareProvider
       ? Effect.fn(function* (doc, pos) {
-          const result = yield* client.sendRequest(
-            lsp.PrepareRenameRequest.method,
-            {
+          const result = yield* client
+            .sendRequest(lsp.PrepareRenameRequest.method, {
               textDocument: { uri: doc.uri.toString() },
               position: { line: pos.line, character: pos.character },
-            },
-          );
+            })
+            .pipe(catchLspError(null));
           if (!result) return undefined;
           // Shape 1: Range
           if (lsp.Range.is(result)) {

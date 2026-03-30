@@ -14,7 +14,12 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toDocumentation, toVsCodeRange } from "./converters.ts";
+import {
+  catchLspError,
+  toDocumentation,
+  toLspCompletionTriggerKind,
+  toVsCodeRange,
+} from "./converters.ts";
 
 // ---------------------------------------------------------------------------
 // Data stashing for resolve round-trip
@@ -174,24 +179,28 @@ export const registerCompletionProvider = Effect.fn(function* (
     sel,
     {
       provideCompletionItems: Effect.fn(function* (doc, pos, ctx) {
-        const result = yield* client.sendRequest(lsp.CompletionRequest.method, {
-          textDocument: { uri: doc.uri.toString() },
-          position: { line: pos.line, character: pos.character },
-          context: {
-            triggerKind: (ctx.triggerKind + 1) as lsp.CompletionTriggerKind,
-            triggerCharacter: ctx.triggerCharacter,
-          },
-        } satisfies lsp.CompletionParams);
+        const result = yield* client
+          .sendRequest(lsp.CompletionRequest.method, {
+            textDocument: { uri: doc.uri.toString() },
+            position: { line: pos.line, character: pos.character },
+            context: {
+              triggerKind: toLspCompletionTriggerKind(code, ctx.triggerKind),
+              triggerCharacter: ctx.triggerCharacter,
+            },
+          } satisfies lsp.CompletionParams)
+          .pipe(catchLspError(null));
         if (!result) return [];
         return result.items.map((item) => toCompletionItem(code, item));
       }),
       resolveCompletionItem: resolveProvider
         ? Effect.fn(function* (item) {
-            const resolved = yield* client.sendRequest(
-              lsp.CompletionResolveRequest.method,
-              toLspCompletionItem(item),
-            );
-            return toCompletionItem(code, resolved);
+            const resolved = yield* client
+              .sendRequest(
+                lsp.CompletionResolveRequest.method,
+                toLspCompletionItem(item),
+              )
+              .pipe(catchLspError(null));
+            return resolved ? toCompletionItem(code, resolved) : item;
           })
         : undefined,
     },

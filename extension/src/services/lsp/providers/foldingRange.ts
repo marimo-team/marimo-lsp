@@ -10,6 +10,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
+import { catchLspError, toLspFoldingRangeKind } from "./converters.ts";
 
 /**
  * Reference: protocolConverter.ts asFoldingRangeKind
@@ -23,7 +24,7 @@ export function toFoldingRange(
   return new code.FoldingRange(
     r.startLine,
     r.endLine,
-    r.kind as unknown as vscode.FoldingRangeKind | undefined,
+    r.kind ? toLspFoldingRangeKind(r.kind) : undefined,
   );
 }
 
@@ -36,9 +37,11 @@ export const registerFoldingRangeProvider = Effect.fn(function* (
 
   yield* code.languages.registerFoldingRangeProvider(sel, {
     provideFoldingRanges: Effect.fn(function* (doc) {
-      const result = yield* client.sendRequest(lsp.FoldingRangeRequest.method, {
-        textDocument: { uri: doc.uri.toString() },
-      });
+      const result = yield* client
+        .sendRequest(lsp.FoldingRangeRequest.method, {
+          textDocument: { uri: doc.uri.toString() },
+        })
+        .pipe(catchLspError(null));
       return result?.map((f) => toFoldingRange(code, f)) ?? [];
     }),
   });

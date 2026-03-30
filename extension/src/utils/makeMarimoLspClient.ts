@@ -23,6 +23,7 @@ import * as NodeProcess from "node:process";
 import * as NodeReadline from "node:readline";
 
 import {
+  Data,
   Effect,
   HashMap,
   Option,
@@ -40,6 +41,37 @@ import { NOTEBOOK_TYPE } from "../constants.ts";
 import { MarimoNotebookDocument, type NotebookId } from "../schemas.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
 import { getTopologicalCells } from "./getTopologicalCells.ts";
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+/**
+ * Typed error for LSP request failures.
+ *
+ * Wraps `vscode-jsonrpc`'s `ResponseError` — the server returned an error
+ * response, the connection died mid-request, or the request couldn't be
+ * written. The `code` field carries the JSON-RPC error code (e.g. -32601
+ * for MethodNotFound).
+ */
+export class LspRequestError extends Data.TaggedError("LspRequestError")<{
+  readonly method: string;
+  readonly code: number;
+  readonly message: string;
+}> {}
+
+function hasCode(value: unknown): value is { code: number } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    typeof value.code === "number"
+  );
+}
+
+function getErrorCode(cause: unknown): number {
+  return hasCode(cause) ? cause.code : -1;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -823,9 +855,16 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
       sendRequest<M extends keyof LspRequestMap>(
         method: M,
         params: LspRequestMap[M][0],
-      ): Effect.Effect<LspRequestMap[M][1]> {
-        // eslint-disable-next-line -- cast needed: conn.sendRequest returns Promise<any>
-        return Effect.promise(() => conn.sendRequest(method, params)) as any;
+      ): Effect.Effect<LspRequestMap[M][1], LspRequestError> {
+        return Effect.tryPromise({
+          try: () => conn.sendRequest(method, params),
+          catch: (cause) =>
+            new LspRequestError({
+              method,
+              code: getErrorCode(cause),
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
       },
 
       /** Send a raw notification to the server. */

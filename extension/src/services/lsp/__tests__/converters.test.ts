@@ -457,7 +457,7 @@ describe("toFoldingRange", () => {
       expect(result).toMatchInlineSnapshot(`
         FoldingRange {
           "end": 10,
-          "kind": "imports",
+          "kind": 2,
           "start": 0,
         }
       `);
