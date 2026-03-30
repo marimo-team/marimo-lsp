@@ -37,8 +37,6 @@ import { registerSignatureHelpProvider } from "../lsp/providers/signatureHelp.ts
 export const registerLspProviders = Effect.fn("registerLspProviders")(
   function* (client: NotebookLspClient) {
     const sel: vscode.DocumentSelector = [
-      { scheme: "file", language: LanguageId.Python },
-      { scheme: "untitled", language: LanguageId.Python },
       { scheme: "vscode-notebook-cell", language: LanguageId.Python },
     ];
 

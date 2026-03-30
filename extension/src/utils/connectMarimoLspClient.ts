@@ -15,6 +15,7 @@ import type * as lsp from "vscode-languageserver-protocol";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { MarimoNotebookDocument } from "../schemas.ts";
 import { registerLspProviders } from "../services/completions/registerLspProviders.ts";
+import { toVsCodeDiagnosticSeverity } from "../services/lsp/providers/converters.ts";
 import { VsCode } from "../services/VsCode.ts";
 import { acquireDisposable } from "./acquireDisposable.ts";
 import {
@@ -202,9 +203,10 @@ function toLspDiagnostic(
     new code.Position(d.range.start.line, d.range.start.character),
     new code.Position(d.range.end.line, d.range.end.character),
   );
-  // LSP severity is 1-based (1=Error, 2=Warning, 3=Info, 4=Hint)
-  // VS Code DiagnosticSeverity is 0-based (0=Error, 1=Warning, 2=Info, 3=Hint)
-  const severity = d.severity != null ? d.severity - 1 : 0;
+  const severity =
+    d.severity != null
+      ? toVsCodeDiagnosticSeverity(code, d.severity)
+      : code.DiagnosticSeverity.Error;
   const diag = new code.Diagnostic(range, d.message, severity);
   diag.source = source;
   if (d.code != null) {

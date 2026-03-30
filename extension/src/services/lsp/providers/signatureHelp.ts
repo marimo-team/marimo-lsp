@@ -12,15 +12,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-
-function toDocumentation(
-  code: VsCode,
-  doc: string | lsp.MarkupContent | undefined,
-): string | vscode.MarkdownString | undefined {
-  if (!doc) return undefined;
-  if (typeof doc === "string") return doc;
-  return new code.MarkdownString(doc.value);
-}
+import { toDocumentation } from "./converters.ts";
 
 export function toSignatureHelp(
   code: VsCode,

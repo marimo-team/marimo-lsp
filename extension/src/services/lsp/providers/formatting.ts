@@ -13,14 +13,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toVsCodeRange } from "./converters.ts";
-
-function toLspRange(range: vscode.Range): lsp.Range {
-  return {
-    start: { line: range.start.line, character: range.start.character },
-    end: { line: range.end.line, character: range.end.character },
-  };
-}
+import { toLspRange, toVsCodeRange } from "./converters.ts";
 
 /**
  * Read file-level formatting options from workspace config.

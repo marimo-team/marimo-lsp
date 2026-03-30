@@ -14,43 +14,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toVsCodeRange } from "./converters.ts";
-
-// ---------------------------------------------------------------------------
-// Converters
-// ---------------------------------------------------------------------------
-
-function toWorkspaceEdit(
-  code: VsCode,
-  edit: lsp.WorkspaceEdit,
-): vscode.WorkspaceEdit {
-  const ws = new code.WorkspaceEdit();
-  if (edit.changes) {
-    for (const [uri, edits] of Object.entries(edit.changes)) {
-      ws.set(
-        code.Uri.parse(uri),
-        edits.map(
-          (e) => new code.TextEdit(toVsCodeRange(code, e.range), e.newText),
-        ),
-      );
-    }
-  }
-  if (edit.documentChanges) {
-    for (const change of edit.documentChanges) {
-      if ("textDocument" in change) {
-        ws.set(
-          code.Uri.parse(change.textDocument.uri),
-          change.edits
-            .filter((e): e is lsp.TextEdit => "range" in e)
-            .map(
-              (e) => new code.TextEdit(toVsCodeRange(code, e.range), e.newText),
-            ),
-        );
-      }
-    }
-  }
-  return ws;
-}
+import { toVsCodeRange, toWorkspaceEdit } from "./converters.ts";
 
 // ---------------------------------------------------------------------------
 // Registration

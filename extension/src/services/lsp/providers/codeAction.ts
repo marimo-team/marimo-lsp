@@ -18,7 +18,13 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toVsCodeRange } from "./converters.ts";
+import {
+  toLspDiagnostic,
+  toLspRange,
+  toVsCodeDiagnosticSeverity,
+  toVsCodeRange,
+  toWorkspaceEdit,
+} from "./converters.ts";
 
 // ---------------------------------------------------------------------------
 // Data stashing for resolve round-trip
@@ -51,67 +57,6 @@ export function toCodeActionKind(
 // LSP → VS Code converters
 // ---------------------------------------------------------------------------
 
-function toLspPosition(pos: vscode.Position): lsp.Position {
-  return { line: pos.line, character: pos.character };
-}
-
-function toLspRange(range: vscode.Range): lsp.Range {
-  return { start: toLspPosition(range.start), end: toLspPosition(range.end) };
-}
-
-function toLspDiagnosticSeverity(
-  code: VsCode,
-  severity: vscode.DiagnosticSeverity,
-): lsp.DiagnosticSeverity {
-  switch (severity) {
-    case code.DiagnosticSeverity.Error:
-      return lsp.DiagnosticSeverity.Error;
-    case code.DiagnosticSeverity.Warning:
-      return lsp.DiagnosticSeverity.Warning;
-    case code.DiagnosticSeverity.Information:
-      return lsp.DiagnosticSeverity.Information;
-    case code.DiagnosticSeverity.Hint:
-      return lsp.DiagnosticSeverity.Hint;
-    default: {
-      const _exhaustive: never = severity;
-      return _exhaustive;
-    }
-  }
-}
-
-function toVsCodeDiagnosticSeverity(
-  code: VsCode,
-  severity: lsp.DiagnosticSeverity,
-): vscode.DiagnosticSeverity {
-  switch (severity) {
-    case lsp.DiagnosticSeverity.Error:
-      return code.DiagnosticSeverity.Error;
-    case lsp.DiagnosticSeverity.Warning:
-      return code.DiagnosticSeverity.Warning;
-    case lsp.DiagnosticSeverity.Information:
-      return code.DiagnosticSeverity.Information;
-    case lsp.DiagnosticSeverity.Hint:
-      return code.DiagnosticSeverity.Hint;
-    default: {
-      const _exhaustive: never = severity;
-      return _exhaustive;
-    }
-  }
-}
-
-function toLspDiagnostic(code: VsCode, d: vscode.Diagnostic): lsp.Diagnostic {
-  return {
-    range: toLspRange(d.range),
-    message: d.message,
-    severity:
-      d.severity != null
-        ? toLspDiagnosticSeverity(code, d.severity)
-        : undefined,
-    code: typeof d.code === "object" && d.code != null ? d.code.value : d.code,
-    source: d.source,
-  };
-}
-
 function toLspCodeActionTriggerKind(
   code: VsCode,
   kind: vscode.CodeActionTriggerKind,
@@ -143,38 +88,6 @@ function toLspCodeActionContext(
     only,
     toLspCodeActionTriggerKind(code, ctx.triggerKind),
   );
-}
-
-function toWorkspaceEdit(
-  code: VsCode,
-  edit: lsp.WorkspaceEdit,
-): vscode.WorkspaceEdit {
-  const ws = new code.WorkspaceEdit();
-  if (edit.changes) {
-    for (const [uri, edits] of Object.entries(edit.changes)) {
-      ws.set(
-        code.Uri.parse(uri),
-        edits.map(
-          (e) => new code.TextEdit(toVsCodeRange(code, e.range), e.newText),
-        ),
-      );
-    }
-  }
-  if (edit.documentChanges) {
-    for (const change of edit.documentChanges) {
-      if ("textDocument" in change) {
-        ws.set(
-          code.Uri.parse(change.textDocument.uri),
-          change.edits
-            .filter((e): e is lsp.TextEdit => "range" in e)
-            .map(
-              (e) => new code.TextEdit(toVsCodeRange(code, e.range), e.newText),
-            ),
-        );
-      }
-    }
-  }
-  return ws;
 }
 
 export function toCodeAction(

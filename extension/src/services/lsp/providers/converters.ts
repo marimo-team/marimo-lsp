@@ -57,6 +57,114 @@ export function toLocationResult(
   return toLocation(code, item);
 }
 
+export function toVsCodeDiagnosticSeverity(
+  code: VsCode,
+  severity: lsp.DiagnosticSeverity,
+): vscode.DiagnosticSeverity {
+  switch (severity) {
+    case lsp.DiagnosticSeverity.Error:
+      return code.DiagnosticSeverity.Error;
+    case lsp.DiagnosticSeverity.Warning:
+      return code.DiagnosticSeverity.Warning;
+    case lsp.DiagnosticSeverity.Information:
+      return code.DiagnosticSeverity.Information;
+    case lsp.DiagnosticSeverity.Hint:
+      return code.DiagnosticSeverity.Hint;
+    default: {
+      const _exhaustive: never = severity;
+      return _exhaustive;
+    }
+  }
+}
+
+export function toLspPosition(pos: vscode.Position): lsp.Position {
+  return { line: pos.line, character: pos.character };
+}
+
+export function toLspRange(range: vscode.Range): lsp.Range {
+  return {
+    start: { line: range.start.line, character: range.start.character },
+    end: { line: range.end.line, character: range.end.character },
+  };
+}
+
+export function toLspDiagnosticSeverity(
+  code: VsCode,
+  severity: vscode.DiagnosticSeverity,
+): lsp.DiagnosticSeverity {
+  switch (severity) {
+    case code.DiagnosticSeverity.Error:
+      return lsp.DiagnosticSeverity.Error;
+    case code.DiagnosticSeverity.Warning:
+      return lsp.DiagnosticSeverity.Warning;
+    case code.DiagnosticSeverity.Information:
+      return lsp.DiagnosticSeverity.Information;
+    case code.DiagnosticSeverity.Hint:
+      return lsp.DiagnosticSeverity.Hint;
+    default: {
+      const _exhaustive: never = severity;
+      return _exhaustive;
+    }
+  }
+}
+
+export function toLspDiagnostic(
+  code: VsCode,
+  d: vscode.Diagnostic,
+): lsp.Diagnostic {
+  return {
+    range: toLspRange(d.range),
+    message: d.message,
+    severity:
+      d.severity != null
+        ? toLspDiagnosticSeverity(code, d.severity)
+        : undefined,
+    code: typeof d.code === "object" && d.code != null ? d.code.value : d.code,
+    source: d.source,
+  };
+}
+
+export function toDocumentation(
+  code: VsCode,
+  doc: string | lsp.MarkupContent | undefined,
+): string | vscode.MarkdownString | undefined {
+  if (!doc) return undefined;
+  if (typeof doc === "string") return doc;
+  return new code.MarkdownString(doc.value);
+}
+
+export function toWorkspaceEdit(
+  code: VsCode,
+  edit: lsp.WorkspaceEdit,
+): vscode.WorkspaceEdit {
+  const ws = new code.WorkspaceEdit();
+  if (edit.changes) {
+    for (const [uri, edits] of Object.entries(edit.changes)) {
+      ws.set(
+        code.Uri.parse(uri),
+        edits.map(
+          (e) => new code.TextEdit(toVsCodeRange(code, e.range), e.newText),
+        ),
+      );
+    }
+  }
+  if (edit.documentChanges) {
+    for (const change of edit.documentChanges) {
+      if ("textDocument" in change) {
+        ws.set(
+          code.Uri.parse(change.textDocument.uri),
+          change.edits
+            .filter((e): e is lsp.TextEdit => "range" in e)
+            .map(
+              (e) => new code.TextEdit(toVsCodeRange(code, e.range), e.newText),
+            ),
+        );
+      }
+    }
+  }
+  return ws;
+}
+
 export function toDocumentPositionParams(
   doc: vscode.TextDocument,
   pos: vscode.Position,

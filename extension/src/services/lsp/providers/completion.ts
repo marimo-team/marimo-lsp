@@ -14,7 +14,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toVsCodeRange } from "./converters.ts";
+import { toDocumentation, toVsCodeRange } from "./converters.ts";
 
 // ---------------------------------------------------------------------------
 // Data stashing for resolve round-trip
@@ -41,15 +41,6 @@ function toCompletionItemKind(
     return (value - 1) as vscode.CompletionItemKind;
   }
   return 0 satisfies typeof vscode.CompletionItemKind.Text;
-}
-
-function toDocumentation(
-  code: VsCode,
-  doc: string | lsp.MarkupContent | undefined,
-): string | vscode.MarkdownString | undefined {
-  if (!doc) return undefined;
-  if (typeof doc === "string") return doc;
-  return new code.MarkdownString(doc.value);
 }
 
 export function toCompletionItem(

@@ -14,7 +14,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toVsCodeRange } from "./converters.ts";
+import { toLspRange, toVsCodeRange } from "./converters.ts";
 
 // ---------------------------------------------------------------------------
 // Data stashing for resolve round-trip
@@ -25,13 +25,6 @@ const lspData = new WeakMap<vscode.InlayHint, unknown>();
 // ---------------------------------------------------------------------------
 // LSP → VS Code converters
 // ---------------------------------------------------------------------------
-
-function toLspRange(range: vscode.Range): lsp.Range {
-  return {
-    start: { line: range.start.line, character: range.start.character },
-    end: { line: range.end.line, character: range.end.character },
-  };
-}
 
 function toTooltip(
   code: VsCode,
