@@ -43,10 +43,9 @@ repos:
       - id: oxlint
         args: [--fix]
 
-  - repo: local
+  - repo: https://github.com/oxc-project/mirrors-oxfmt
+    rev: v0.42.0
     hooks:
       - id: oxfmt
-        name: oxfmt
-        entry: pnpm exec oxfmt --write
-        language: system
+        args: [--write]
         'types_or': [javascript, jsx, ts, tsx]

@@ -280,14 +280,14 @@ function notebookDataToSerializedNotebook(
           return {
             code: result.code,
             name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
-            options: cell.metadata?.options ?? {},
+            options: cell.metadata?.options ?? { hide_code: true },
           };
         }
         // Otherwise use the default wrapInMarkdown
         return {
           code: wrapInMarkdown(cell.value),
           name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
-          options: cell.metadata?.options ?? {},
+          options: cell.metadata?.options ?? { hide_code: true },
         };
       }
 
