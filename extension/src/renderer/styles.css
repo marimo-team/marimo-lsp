@@ -59,6 +59,7 @@
   marimo-date,
   marimo-date-range,
   marimo-datetime,
+  marimo-dropdown[data-searchable="true"],
   marimo-multiselect
 ) {
   min-height: 350px;
