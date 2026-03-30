@@ -1,9 +1,9 @@
 import { Effect, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 
 /**
  * Manages communication with the marimo notebook renderer.

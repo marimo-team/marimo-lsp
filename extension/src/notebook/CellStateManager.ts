@@ -1,15 +1,17 @@
 import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
 
+import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { VsCode } from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
-  type NotebookCellId,
-  type NotebookId,
-} from "./schemas/vscode-notebook.ts";
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+} from "../schemas/MarimoNotebookDocument.ts";
+import type {
+  NotebookCellId,
+  NotebookId,
+} from "../schemas/MarimoNotebookDocument.ts";
 import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
-import { VsCode } from "../platform/VsCode.ts";
 
 /**
  * Manages cell stale state across all notebooks.
@@ -43,13 +45,13 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
       // Helper to update context based on current state
       const updateContext = Effect.fn(function* () {
-        const [staleMap, activeMarimoNotebook] = yield* Effect.all([
+        const [staleMap, activeSerializedNotebook] = yield* Effect.all([
           SubscriptionRef.get(staleStateRef),
           editorRegistry.getActiveNotebookUri(),
         ]);
 
         // Check if the active marimo notebook has any stale cells
-        const hasStaleCells = Option.match(activeMarimoNotebook, {
+        const hasStaleCells = Option.match(activeSerializedNotebook, {
           onNone: () => false,
           onSome: (notebookUri) => {
             const cellMap = HashMap.get(staleMap, notebookUri);

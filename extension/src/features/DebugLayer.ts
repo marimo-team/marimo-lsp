@@ -1,11 +1,11 @@
 import { Effect, Layer } from "effect";
 
-import { CellStateManager } from "../notebook/CellStateManager.ts";
 import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
 import { ExecutionRegistry } from "../kernel/ExecutionRegistry.ts";
 import { KernelManager } from "../kernel/KernelManager.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { SessionStateManager } from "../kernel/SessionStateManager.ts";
+import { CellStateManager } from "../notebook/CellStateManager.ts";
+import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { VariablesService } from "../panel/variables/VariablesService.ts";
 
 /**

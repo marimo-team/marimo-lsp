@@ -8,10 +8,10 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import type { CellMetadata } from "../../notebook/schemas/vscode-notebook.ts";
 import { CellMetadataUIBindingService } from "../../notebook/CellMetadataUIBindingService.ts";
-import { Constants } from "../../platform/Constants.ts";
 import { DatasourcesService } from "../../panel/datasources/DatasourcesService.ts";
+import { Constants } from "../../platform/Constants.ts";
+import type { CellMetadata } from "../../schemas/CellMetadata.ts";
 import {
   CellMetadataBindingsLive,
   DEFAULT_SQL_ENGINE,

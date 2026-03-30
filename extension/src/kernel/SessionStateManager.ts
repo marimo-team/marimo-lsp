@@ -1,9 +1,9 @@
 import { Effect, Option, Stream } from "effect";
 
-import { MarimoNotebookDocument } from "../notebook/schemas/vscode-notebook.ts";
-import { ControllerRegistry } from "./ControllerRegistry.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import { ControllerRegistry } from "./ControllerRegistry.ts";
 
 /**
  * Manages session state for notebooks.

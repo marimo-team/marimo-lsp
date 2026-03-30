@@ -4,7 +4,6 @@ import type * as vscode from "vscode";
 import type { MarimoView } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 
-
 /**
  * Manages VS Code tree view items with automatic disposal.
  *

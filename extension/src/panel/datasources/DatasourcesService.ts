@@ -1,6 +1,6 @@
 import { Effect, HashMap, SubscriptionRef } from "effect";
 
-import type { NotebookId } from "../../notebook/schemas/vscode-notebook.ts";
+import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type {
   DataColumnPreviewNotification,
   DataSourceConnectionsNotification,

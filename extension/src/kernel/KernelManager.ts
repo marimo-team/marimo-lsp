@@ -10,32 +10,32 @@ import {
 } from "effect";
 
 import { unreachable } from "../assert.ts";
+import { Config } from "../config/Config.ts";
 import { SCRATCH_CELL_ID } from "../constants.ts";
-import { handleMissingPackageAlert } from "./operations.ts";
+import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
+import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
+import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
+import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
+import { VariablesService } from "../panel/variables/VariablesService.ts";
+import { Constants } from "../platform/Constants.ts";
+import { OutputChannel } from "../platform/OutputChannel.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
+import { Uv } from "../python/Uv.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import {
   extractCellIdFromCellMessage,
-  MarimoNotebookDocument,
   type NotebookId,
-} from "../notebook/schemas/vscode-notebook.ts";
+} from "../schemas/MarimoNotebookDocument.ts";
 import type {
   CellOperationNotification,
   Notification,
   NotificationOf,
 } from "../types.ts";
-import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { Config } from "../config/Config.ts";
-import { Constants } from "../platform/Constants.ts";
 import { ControllerRegistry } from "./ControllerRegistry.ts";
-import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
 import { ExecutionRegistry } from "./ExecutionRegistry.ts";
-import { LanguageClient } from "../lsp/LanguageClient.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
-import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
-import { OutputChannel } from "../platform/OutputChannel.ts";
-import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
-import { Uv } from "../python/Uv.ts";
-import { VariablesService } from "../panel/variables/VariablesService.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import { handleMissingPackageAlert } from "./operations.ts";
 
 interface MarimoOperation {
   notebookUri: NotebookId;

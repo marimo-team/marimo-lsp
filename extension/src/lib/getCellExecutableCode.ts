@@ -2,8 +2,8 @@ import { SQLParser } from "@marimo-team/smart-cells";
 import { Option } from "effect";
 
 import { assert } from "../assert.ts";
-import type { MarimoNotebookCell } from "../notebook/schemas/vscode-notebook.ts";
 import type { Constants } from "../platform/Constants.ts";
+import type { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 
 /**
  * Get the executable code for a cell, transforming SQL cells to Python mo.sql() wrapper

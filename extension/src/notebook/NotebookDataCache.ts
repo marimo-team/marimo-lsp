@@ -1,11 +1,9 @@
 import { Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import {
-  MarimoNotebookDocument,
-  type NotebookId,
-} from "./schemas/vscode-notebook.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 
 /**
  * A cache for preserving notebook cell outputs and stable IDs across

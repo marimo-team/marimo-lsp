@@ -1,14 +1,14 @@
 import { Effect, Option } from "effect";
 
-import type { MarimoNotebookDocument } from "../notebook/schemas/vscode-notebook.ts";
 import { Config } from "../config/Config.ts";
-import type { PythonController } from "./NotebookControllerFactory.ts";
-import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
-import type { SandboxController } from "./SandboxController.ts";
-import { VsCode } from "../platform/VsCode.ts";
-import type { NotificationOf } from "../types.ts";
-import { findVenvPath } from "../python/findVenvPath.ts";
 import { installPackages } from "../lib/installPackages.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { findVenvPath } from "../python/findVenvPath.ts";
+import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
+import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import type { NotificationOf } from "../types.ts";
+import type { PythonController } from "./NotebookControllerFactory.ts";
+import type { SandboxController } from "./SandboxController.ts";
 
 export const handleMissingPackageAlert = Effect.fn("handleMissingPackageAlert")(
   function* (

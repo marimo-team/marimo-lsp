@@ -1,9 +1,9 @@
 import { Effect, Layer, Option, Ref, Stream } from "effect";
 
-import type { NotebookId } from "../../notebook/schemas/vscode-notebook.ts";
-import { DatasourcesService } from "./DatasourcesService.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
+import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import { TreeView } from "../TreeView.ts";
+import { DatasourcesService } from "./DatasourcesService.ts";
 
 type DatasourceTreeItem =
   | ConnectionItem

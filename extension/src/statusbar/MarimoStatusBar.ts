@@ -4,11 +4,11 @@ import * as NodePath from "node:path";
 import { Cause, Effect, Either, Layer, Option } from "effect";
 
 import { unreachable } from "../assert.ts";
+import { Links } from "../lib/links.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { ExtensionContext } from "../platform/Storage.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { Links } from "../lib/links.ts";
+import { Telemetry } from "../telemetry/Telemetry.ts";
 import { StatusBar } from "./StatusBar.ts";
 
 /**

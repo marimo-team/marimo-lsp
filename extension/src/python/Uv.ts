@@ -11,9 +11,9 @@ import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
 import { Config } from "../config/Config.ts";
+import { VsCode } from "../platform/VsCode.ts";
 import { Sentry } from "../telemetry/Sentry.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
-import { VsCode } from "../platform/VsCode.ts";
 
 export const UvBin = Data.taggedEnum<UvBin>();
 type UvBin = Data.TaggedEnum<{

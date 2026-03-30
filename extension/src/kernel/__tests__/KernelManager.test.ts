@@ -15,20 +15,18 @@ import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import {
-  MarimoNotebookDocument,
-  type NotebookId,
-} from "../../notebook/schemas/vscode-notebook.ts";
+import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
+import { KernelManager } from "../../kernel/KernelManager.ts";
+import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
+import { LanguageClient } from "../../lsp/LanguageClient.ts";
+import { VsCode } from "../../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
+import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type {
   CellOperationNotification,
   MarimoCommand,
   MarimoLspNotificationOf,
 } from "../../types.ts";
-import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
-import { KernelManager } from "../../kernel/KernelManager.ts";
-import { LanguageClient } from "../../lsp/LanguageClient.ts";
-import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
-import { VsCode } from "../../platform/VsCode.ts";
 
 const withTestCtx = Effect.fn(function* () {
   // Controllable showInputBox via Queue

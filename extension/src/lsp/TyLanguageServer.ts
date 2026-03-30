@@ -2,6 +2,7 @@ import * as NodePath from "node:path";
 
 import { type Cause, Data, Effect, Option, Ref, Stream } from "effect";
 
+import { Config } from "../config/Config.ts";
 import {
   BinarySource,
   companionExtensionBundledBinary,
@@ -10,17 +11,16 @@ import {
   userConfiguredPath,
 } from "../lib/binaryResolution.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { Config } from "../config/Config.ts";
-import { connectMarimoNotebookLspClient } from "./connect.ts";
+import { VariablesService } from "../panel/variables/VariablesService.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
+import { ExtensionContext } from "../platform/Storage.ts";
+import { VsCode } from "../platform/VsCode.ts";
 import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
-import { Sentry } from "../telemetry/Sentry.ts";
-import { ExtensionContext } from "../platform/Storage.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
 import { Uv } from "../python/Uv.ts";
-import { VariablesService } from "../panel/variables/VariablesService.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import { Sentry } from "../telemetry/Sentry.ts";
+import { Telemetry } from "../telemetry/Telemetry.ts";
+import { connectMarimoNotebookLspClient } from "./connect.ts";
 
 const TY_SERVER = { name: "ty", version: "0.0.26" } as const;
 const TY_EXTENSION_ID = "astral-sh.ty";

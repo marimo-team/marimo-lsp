@@ -10,16 +10,16 @@ import {
 import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { MarimoNotebook } from "./schemas/ir.ts";
+import { enrichNotebookFromCached } from "../lib/enrichNotebookFromCached.ts";
+import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { Constants } from "../platform/Constants.ts";
+import { VsCode } from "../platform/VsCode.ts";
 import {
   type CellMetadata,
   decodeCellMetadata,
-} from "./schemas/vscode-notebook.ts";
-import { enrichNotebookFromCached } from "../lib/enrichNotebookFromCached.ts";
-import { Constants } from "../platform/Constants.ts";
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+} from "../schemas/CellMetadata.ts";
+import { SerializedNotebook } from "../schemas/SerializedNotebook.ts";
 import { NotebookDataCache } from "./NotebookDataCache.ts";
-import { VsCode } from "../platform/VsCode.ts";
 
 type BooleanMap<T> = {
   [key in keyof T]: boolean;
@@ -54,7 +54,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
             params: {
               method: "serialize",
               params: {
-                notebook: yield* notebookDataToMarimoNotebook(
+                notebook: yield* notebookDataToSerializedNotebook(
                   notebook,
                   constants,
                 ),
@@ -221,7 +221,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               cells: true,
               violations: false,
               valid: false,
-            } satisfies BooleanMap<MarimoNotebook>,
+            } satisfies BooleanMap<SerializedNotebook>,
           },
         );
       }
@@ -235,21 +235,21 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   },
 ) {}
 
-const decodeDeserializeResponse = Schema.decodeUnknown(MarimoNotebook);
+const decodeDeserializeResponse = Schema.decodeUnknown(SerializedNotebook);
 const decodeSerializeResponse = Schema.decodeUnknown(
   Schema.Struct({ source: Schema.String }),
 );
 
 const DEFAULT_CELL_NAME = "_";
 
-function notebookDataToMarimoNotebook(
+function notebookDataToSerializedNotebook(
   notebook: vscode.NotebookData,
   {
     LanguageId,
   }: {
     LanguageId: Constants["LanguageId"];
   },
-): Effect.Effect<typeof MarimoNotebook.Type, ParseResult.ParseError> {
+): Effect.Effect<typeof SerializedNotebook.Type, ParseResult.ParseError> {
   const { cells, metadata = {} } = notebook;
   const sqlParser = new SQLParser();
   const markdownParser = new MarkdownParser();

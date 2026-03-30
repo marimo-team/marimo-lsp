@@ -1,9 +1,9 @@
 import { Cause, Effect, flow, Option } from "effect";
 
-import { Telemetry } from "../telemetry/Telemetry.ts";
-import { VsCode } from "../platform/VsCode.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { Telemetry } from "../telemetry/Telemetry.ts";
 
 export const newMarimoNotebook = Effect.fn("command.newMarimoNotebook")(
   function* () {

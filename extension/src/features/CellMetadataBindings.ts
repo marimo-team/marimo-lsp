@@ -1,10 +1,10 @@
 import { Effect, Layer, Option } from "effect";
 
-import type { CellMetadata } from "../notebook/schemas/vscode-notebook.ts";
 import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
-import { Constants } from "../platform/Constants.ts";
 import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
+import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import type { CellMetadata } from "../schemas/CellMetadata.ts";
 
 export const DEFAULT_SQL_ENGINE = "__marimo_duckdb";
 const DEFAULT_LABEL = "duckdb (In-Memory)";

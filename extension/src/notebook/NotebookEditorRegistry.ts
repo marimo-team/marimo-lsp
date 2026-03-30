@@ -1,12 +1,10 @@
 import { Effect, HashMap, Option, Ref, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
 
-import {
-  MarimoNotebookDocument,
-  type NotebookId,
-} from "./schemas/vscode-notebook.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
+import { Telemetry } from "../telemetry/Telemetry.ts";
 
 export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistry>()(
   "NotebookEditorRegistry",

@@ -20,22 +20,24 @@ import type * as vscode from "vscode";
 
 import { logUnreachable } from "../assert.ts";
 import { SCRATCH_CELL_ID } from "../constants.ts";
+import { prettyErrorMessage } from "../lib/errors.ts";
+import { CellStateManager } from "../notebook/CellStateManager.ts";
+import { VsCode } from "../platform/VsCode.ts";
 import {
-  extractCellIdFromCellMessage,
   findNotebookCell,
   MarimoNotebookDocument,
+} from "../schemas/MarimoNotebookDocument.ts";
+import {
+  extractCellIdFromCellMessage,
   type NotebookCellId,
-} from "../notebook/schemas/vscode-notebook.ts";
+} from "../schemas/MarimoNotebookDocument.ts";
 import {
   type CellOperationNotification,
   type CellRuntimeState,
   createCellNavigationLink,
 } from "../types.ts";
-import { prettyErrorMessage } from "../lib/errors.ts";
-import { CellStateManager } from "../notebook/CellStateManager.ts";
 import type { PythonController } from "./NotebookControllerFactory.ts";
 import type { SandboxController } from "./SandboxController.ts";
-import { VsCode } from "../platform/VsCode.ts";
 
 /**
  * Thrown when VS Code's `createNotebookCellExecution` fails because the cell

@@ -11,18 +11,19 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import {
-  MarimoNotebookDocument,
-  type NotebookCellId,
-} from "../../notebook/schemas/vscode-notebook.ts";
+  buildCellOutputs,
+  ExecutionRegistry,
+} from "../../kernel/ExecutionRegistry.ts";
+import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
+import { LanguageClient } from "../../lsp/LanguageClient.ts";
+import { CellStateManager } from "../../notebook/CellStateManager.ts";
+import { VsCode } from "../../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
+import type { NotebookCellId } from "../../schemas/MarimoNotebookDocument.ts";
 import type {
   CellOperationNotification,
   CellRuntimeState,
 } from "../../types.ts";
-import { CellStateManager } from "../../notebook/CellStateManager.ts";
-import { buildCellOutputs, ExecutionRegistry } from "../../kernel/ExecutionRegistry.ts";
-import { LanguageClient } from "../../lsp/LanguageClient.ts";
-import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
-import { VsCode } from "../../platform/VsCode.ts";
 
 // Simple mock LanguageClient that doesn't spawn a real LSP process
 const TestLanguageClientMock = Layer.succeed(

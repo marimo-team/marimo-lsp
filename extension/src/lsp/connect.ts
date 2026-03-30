@@ -13,9 +13,9 @@ import type * as vscode from "vscode";
 import type * as lsp from "vscode-languageserver-protocol";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { MarimoNotebookDocument } from "../notebook/schemas/vscode-notebook.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import {
   makeNotebookLspClient,
   type NotebookLspClientConfig,

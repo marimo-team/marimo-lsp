@@ -3,11 +3,7 @@ import { Effect, Layer, Option, Schema } from "effect";
 
 import { Memento } from "../../__mocks__/TestExtensionContext.ts";
 import { TestVsCode, Uri } from "../../__mocks__/TestVsCode.ts";
-import {
-  createStorageKey,
-  ExtensionContext,
-  Storage,
-} from "../Storage.ts";
+import { createStorageKey, ExtensionContext, Storage } from "../Storage.ts";
 
 const withTestCtx = Effect.fn(function* (
   ctx: { globalState?: Memento; workspaceState?: Memento } = {},

@@ -1,9 +1,9 @@
 import { Effect, HashMap, Layer, Option, Ref, Stream } from "effect";
 
-import type { NotebookId } from "../../notebook/schemas/vscode-notebook.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
-import { VariablesService } from "./VariablesService.ts";
+import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import { TreeView } from "../TreeView.ts";
+import { VariablesService } from "./VariablesService.ts";
 
 interface VariableTreeItem {
   type: "variable";

@@ -2,11 +2,9 @@ import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 
 import { LanguageId } from "../constants.ts";
-import type {
-  MarimoNotebookDocument,
-  NotebookCellId,
-} from "../notebook/schemas/vscode-notebook.ts";
 import { VariablesService } from "../panel/variables/VariablesService.ts";
+import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import type { NotebookCellId } from "../schemas/MarimoNotebookDocument.ts";
 import { getTopologicalCellIds } from "./getTopologicalCellIds.ts";
 
 /**

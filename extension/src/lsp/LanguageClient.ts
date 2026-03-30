@@ -4,18 +4,18 @@ import * as NodePath from "node:path";
 import { Cause, Data, Effect, Option, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
 
+import { Config } from "../config/Config.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
+import { acquireDisposable } from "../lib/acquireDisposable.ts";
+import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
+import { tokenFromSignal } from "../lib/tokenFromSignal.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { Uv } from "../python/Uv.ts";
 import type {
   MarimoCommand,
   MarimoLspNotification,
   MarimoLspNotificationOf,
 } from "../types.ts";
-import { acquireDisposable } from "../lib/acquireDisposable.ts";
-import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { tokenFromSignal } from "../lib/tokenFromSignal.ts";
-import { Config } from "../config/Config.ts";
-import { Uv } from "../python/Uv.ts";
-import { VsCode } from "../platform/VsCode.ts";
 
 export class LanguageClientStartError extends Data.TaggedError(
   "LanguageClientStartError",

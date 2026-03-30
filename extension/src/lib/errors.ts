@@ -1,7 +1,7 @@
 import type { CellOutput } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
 
 import { unreachable } from "../assert.ts";
-import type { NotebookCellId } from "../notebook/schemas/vscode-notebook.ts";
+import type { NotebookCellId } from "../schemas/MarimoNotebookDocument.ts";
 
 export type ExtendsArray<T> = T extends Array<infer U> ? U : never;
 

@@ -1,19 +1,17 @@
 import { Effect, HashMap, Option, Schema, SubscriptionRef } from "effect";
 
-import {
-  MarimoNotebookDocument,
-  type NotebookId,
-} from "../../notebook/schemas/vscode-notebook.ts";
+import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
+import { SandboxController } from "../../kernel/SandboxController.ts";
+import { LanguageClient } from "../../lsp/LanguageClient.ts";
+import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
+import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
+import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import {
   type DependencyTreeNode,
   DependencyTreeResponse,
   ListPackagesResponse,
   type PackageDescription,
 } from "./schemas.ts";
-import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
-import { LanguageClient } from "../../lsp/LanguageClient.ts";
-import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
-import { SandboxController } from "../../kernel/SandboxController.ts";
 
 // Re-export schema types for convenience
 export type { DependencyTreeNode };

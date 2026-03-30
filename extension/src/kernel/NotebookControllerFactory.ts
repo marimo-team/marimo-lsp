@@ -4,24 +4,24 @@ import { Brand, Cause, Effect, Option, Runtime, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { unreachable } from "../assert.ts";
-import {
-  type MarimoNotebookCell,
-  MarimoNotebookDocument,
-} from "../notebook/schemas/vscode-notebook.ts";
-import { Constants } from "../platform/Constants.ts";
+import { Config } from "../config/Config.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../lib/extractExecuteCodeRequest.ts";
 import { extractPythonError } from "../lib/extractPythonError.ts";
-import { findVenvPath } from "../python/findVenvPath.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
 import { installPackages } from "../lib/installPackages.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
-import { Config } from "../config/Config.ts";
-import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
 import { LanguageClient } from "../lsp/LanguageClient.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
-import { Uv } from "../python/Uv.ts";
+import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
+import { findVenvPath } from "../python/findVenvPath.ts";
+import { Uv } from "../python/Uv.ts";
+import {
+  type MarimoNotebookCell,
+  MarimoNotebookDocument,
+} from "../schemas/MarimoNotebookDocument.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
 export type NotebookControllerId = Brand.Branded<string, "ControllerId">;

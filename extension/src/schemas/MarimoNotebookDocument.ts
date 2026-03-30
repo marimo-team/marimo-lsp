@@ -1,32 +1,19 @@
 import { Brand, Data, Effect, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 
-import { NOTEBOOK_TYPE } from "../../constants.ts";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import type {
   CellOperationNotification,
   VariablesNotification,
-} from "../../types.ts";
-import { MarimoNotebook } from "./ir.ts";
-
-const SQLMetadata = Schema.Struct({
-  dataframeName: Schema.String,
-  quotePrefix: Schema.Literal("", "f", "r", "fr", "rf"),
-  commentLines: Schema.Array(Schema.String),
-  showOutput: Schema.Boolean,
-  engine: Schema.String,
-});
-
-const MarkdownMetadata = Schema.Struct({
-  quotePrefix: Schema.Literal("", "f", "r", "fr", "rf"),
-});
+} from "../types.ts";
+import type { CellMetadata } from "./CellMetadata.ts";
+import { decodeCellMetadata, encodeCellMetadata } from "./CellMetadata.ts";
+import { SerializedNotebook } from "./SerializedNotebook.ts";
 
 export type NotebookId = Brand.Branded<string, "NotebookId">;
 export type NotebookCellId = Brand.Branded<string, "NotebookCellId">;
 export type VariableName = Brand.Branded<string, "VariableName">;
 
-// Do not export constructors from this module.
-//
-// The only way to get our NotebookUid/CellUid type is from modules in this file
 const NotebookId = Brand.nominal<NotebookId>();
 const NotebookCellId = Brand.nominal<NotebookCellId>();
 const VariableName = Brand.nominal<VariableName>();
@@ -42,61 +29,20 @@ export const NotebookIdFromString = Schema.String.pipe(
   Schema.fromBrand(NotebookId),
 );
 
-/**
- * Cell execution state
- */
-export const CellState = Schema.Literal("idle", "queued", "running", "stale");
-export type CellState = typeof CellState.Type;
+export function extractCellIdFromCellMessage(msg: CellOperationNotification) {
+  return NotebookCellId(msg.cell_id);
+}
 
-/**
- * Cell language
- */
-export const CellLanguage = Schema.Literal("python", "sql", "markdown");
-export type CellLanguage = typeof CellLanguage.Type;
-
-// TODO: passthrough unknown fields
-/**
- * VS Code notebook cell metadata (runtime state)
- */
-export const CellMetadata = Schema.partial(
-  Schema.Struct({
-    // Cell execution state
-    state: CellState,
-
-    // Cell name (marimo cell identifier)
-    name: Schema.String,
-
-    // Cell configuration options
-    options: Schema.Record({
-      key: Schema.String,
-      value: Schema.Unknown,
-    }),
-
-    // Language-specific metadata (e.g., SQL engine, output flag)
-    languageMetadata: Schema.partial(
-      Schema.Struct({
-        sql: SQLMetadata,
-        markdown: MarkdownMetadata,
-      }),
-    ),
-
-    // Stable ID for tracking cells across re-deserializations
-    // This is ephemeral (not persisted to .py file) and regenerated on file open
-    stableId: Schema.String,
-  }),
-);
-
-export type CellMetadata = typeof CellMetadata.Type;
-
-/**
- * Safely decode cell metadata with fallback to empty object
- */
-export const decodeCellMetadata = Schema.decodeUnknownOption(CellMetadata);
-
-/**
- * Encode cell metadata for setting on a cell
- */
-export const encodeCellMetadata = Schema.encodeSync(CellMetadata);
+export function decodeVariablesOperation({ variables }: VariablesNotification) {
+  return variables.map(
+    (v) =>
+      ({
+        name: VariableName(v.name),
+        declaredBy: v.declared_by.map((id) => NotebookCellId(id)),
+        usedBy: v.used_by.map((id) => NotebookCellId(id)),
+      }) as const,
+  );
+}
 
 export class MarimoNotebookCell {
   #raw: vscode.NotebookCell;
@@ -182,9 +128,6 @@ export class MarimoNotebookCell {
     );
   }
 
-  /**
-   * The underlying cell kind.
-   */
   get stableId() {
     return this.metadata.pipe(
       Option.flatMap((meta) => Option.fromNullable(meta.stableId)),
@@ -229,7 +172,7 @@ export class MarimoNotebookCell {
 export class MarimoNotebookDocument {
   #raw: vscode.NotebookDocument;
   // we parse lazily, just the header for now... could expand when we need it
-  #cachedMeta: undefined | Option.Option<Pick<MarimoNotebook, "header">>;
+  #cachedMeta: undefined | Option.Option<Pick<SerializedNotebook, "header">>;
 
   private constructor(raw: vscode.NotebookDocument) {
     this.#raw = raw;
@@ -273,7 +216,7 @@ export class MarimoNotebookDocument {
     if (this.#cachedMeta) {
       return this.#cachedMeta;
     }
-    const meta = Schema.decodeUnknownOption(MarimoNotebook.pick("header"))(
+    const meta = Schema.decodeUnknownOption(SerializedNotebook.pick("header"))(
       this.#raw.metadata,
     );
     this.#cachedMeta = meta;
@@ -347,21 +290,6 @@ class NotebookCellNotFoundError extends Data.TaggedError(
       ", ",
     )}`;
   }
-}
-
-export function extractCellIdFromCellMessage(msg: CellOperationNotification) {
-  return NotebookCellId(msg.cell_id);
-}
-
-export function decodeVariablesOperation({ variables }: VariablesNotification) {
-  return variables.map(
-    (v) =>
-      ({
-        name: VariableName(v.name),
-        declaredBy: v.declared_by.map((id) => NotebookCellId(id)),
-        usedBy: v.used_by.map((id) => NotebookCellId(id)),
-      }) as const,
-  );
 }
 
 /**

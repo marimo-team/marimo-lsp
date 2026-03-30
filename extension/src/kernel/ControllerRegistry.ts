@@ -14,22 +14,20 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import {
-  MarimoNotebookDocument,
-  type NotebookId,
-} from "../notebook/schemas/vscode-notebook.ts";
-import { findVenvPath } from "../python/findVenvPath.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
+import { OutputChannel } from "../platform/OutputChannel.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { findVenvPath } from "../python/findVenvPath.ts";
+import { PythonExtension } from "../python/PythonExtension.ts";
+import { Uv } from "../python/Uv.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 import {
   NotebookControllerFactory,
   type NotebookControllerId,
   PythonController,
 } from "./NotebookControllerFactory.ts";
-import { OutputChannel } from "../platform/OutputChannel.ts";
-import { PythonExtension } from "../python/PythonExtension.ts";
 import { SandboxController } from "./SandboxController.ts";
-import { Uv } from "../python/Uv.ts";
-import { VsCode } from "../platform/VsCode.ts";
 
 export type AnyController = PythonController | SandboxController;
 

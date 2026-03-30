@@ -7,11 +7,11 @@ import {
   SubscriptionRef,
 } from "effect";
 
-import type { NotebookId } from "../notebook/schemas/vscode-notebook.ts";
-import { MarimoConfigResponseSchema } from "./schemas.ts";
-import type { MarimoConfig } from "../types.ts";
 import { LanguageClient } from "../lsp/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
+import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
+import type { MarimoConfig } from "../types.ts";
+import { MarimoConfigResponseSchema } from "./schemas.ts";
 
 /**
  * Manages marimo configuration state across all notebooks.

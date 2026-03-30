@@ -10,12 +10,12 @@ import {
 } from "effect";
 
 import { partialService } from "../../__tests__/__utils__/partial.ts";
-import type { NotebookId } from "../../notebook/schemas/vscode-notebook.ts";
-import type { MarimoConfig } from "../../types.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import type { VsCode } from "../../platform/VsCode.ts";
 import { Commands, VsCode as VsCodeService } from "../../platform/VsCode.ts";
+import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
+import type { MarimoConfig } from "../../types.ts";
 import { ConfigContextManager } from "../ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";
 

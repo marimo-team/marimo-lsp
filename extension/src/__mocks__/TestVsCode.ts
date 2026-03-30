@@ -19,6 +19,7 @@ import type * as vscode from "vscode";
 
 import type { DynamicCommand } from "../commands.ts";
 import { type MarimoCommand, NOTEBOOK_TYPE } from "../constants.ts";
+import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import {
   Auth,
   Commands,
@@ -32,7 +33,6 @@ import {
   Window,
   Workspace,
 } from "../platform/VsCode.ts";
-import { acquireDisposable } from "../lib/acquireDisposable.ts";
 
 class NotebookCellData implements vscode.NotebookCellData {
   kind: vscode.NotebookCellKind;

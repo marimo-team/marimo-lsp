@@ -7,11 +7,11 @@ import {
   NotebookRange,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { MarimoNotebookDocument } from "../schemas/vscode-notebook.ts";
-import type { MarimoCommand } from "../../types.ts";
-import { CellStateManager } from "../../notebook/CellStateManager.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
+import { CellStateManager } from "../../notebook/CellStateManager.ts";
 import { VsCode } from "../../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
+import type { MarimoCommand } from "../../types.ts";
 
 const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();

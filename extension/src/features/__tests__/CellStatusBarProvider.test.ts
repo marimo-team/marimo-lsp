@@ -8,7 +8,7 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import type { CellMetadata } from "../../notebook/schemas/vscode-notebook.ts";
+import type { CellMetadata } from "../../schemas/CellMetadata.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
 
 const withTestCtx = Effect.fn(function* () {

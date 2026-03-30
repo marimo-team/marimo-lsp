@@ -6,8 +6,8 @@ import { Effect, Layer } from "effect";
 import packageJson from "../../../package.json";
 import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import { Constants } from "../../platform/Constants.ts";
 import { NotebookSerializer } from "../../notebook/NotebookSerializer.ts";
+import { Constants } from "../../platform/Constants.ts";
 
 const NotebookSerializerLive = Layer.empty.pipe(
   Layer.provideMerge(NotebookSerializer.Default),

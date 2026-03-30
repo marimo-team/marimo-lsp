@@ -9,11 +9,11 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { MarimoNotebookDocument } from "../../notebook/schemas/vscode-notebook.ts";
-import { Constants } from "../../platform/Constants.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
+import { Constants } from "../../platform/Constants.ts";
 import { VsCode } from "../../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 
 // Simple mock LanguageClient that doesn't spawn a real LSP process
 const TestLanguageClientMock = Layer.succeed(

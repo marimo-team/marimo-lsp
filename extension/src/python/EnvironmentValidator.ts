@@ -6,7 +6,7 @@ import type * as py from "@vscode/python-extension";
 import { Data, Effect, type ParseResult, Schema, Stream, String } from "effect";
 
 import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
-import { SemVerFromString } from "../lib/SemVerFromString.ts";
+import { SemVerFromString } from "../schemas/SemVerFromString.ts";
 
 class InvalidExecutableError extends Data.TaggedError(
   "InvalidExecutableError",

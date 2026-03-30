@@ -9,12 +9,12 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { DEFAULT_SQL_ENGINE } from "../../features/CellMetadataBindings.ts";
-import type { CellMetadata } from "../schemas/vscode-notebook.ts";
 import {
   CellMetadataUIBindingService,
   type MetadataBinding,
 } from "../../notebook/CellMetadataUIBindingService.ts";
 import { Constants } from "../../platform/Constants.ts";
+import type { CellMetadata } from "../../schemas/CellMetadata.ts";
 
 const withTestCtx = Effect.gen(function* () {
   const vscode = yield* TestVsCode.make();

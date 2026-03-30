@@ -22,10 +22,10 @@
 
 import { Effect, Layer, Option, Stream } from "effect";
 
-import { MarimoNotebookDocument } from "../notebook/schemas/vscode-notebook.ts";
-import { PythonExtension } from "../python/PythonExtension.ts";
-import { VsCode } from "../platform/VsCode.ts";
 import { formatPythonStatusBarLabel } from "../lib/formatControllerLabel.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { PythonExtension } from "../python/PythonExtension.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { StatusBar, type StatusBarItem } from "./StatusBar.ts";
 
 /**

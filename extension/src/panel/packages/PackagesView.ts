@@ -1,11 +1,11 @@
 import { Effect, Layer, Option, Ref, Stream } from "effect";
 
-import type { NotebookId } from "../../notebook/schemas/vscode-notebook.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
+import { VsCode } from "../../platform/VsCode.ts";
+import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
+import { TreeView } from "../TreeView.ts";
 import type { DependencyTreeNode } from "./PackagesService.ts";
 import { PackagesService } from "./PackagesService.ts";
-import { VsCode } from "../../platform/VsCode.ts";
-import { TreeView } from "../TreeView.ts";
 
 interface PackageTreeItem {
   type: "package";

@@ -4,24 +4,24 @@ import type * as vscode from "vscode";
 
 import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
-import {
-  type MarimoNotebookCell,
-  MarimoNotebookDocument,
-} from "../notebook/schemas/vscode-notebook.ts";
-import { SemVerFromString } from "../lib/SemVerFromString.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../lib/extractExecuteCodeRequest.ts";
 import { extractPythonError } from "../lib/extractPythonError.ts";
-import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
 import { uvAddScriptSafe } from "../lib/installPackages.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
-import { Constants } from "../platform/Constants.ts";
 import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { Constants } from "../platform/Constants.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import {
+  type MarimoNotebookCell,
+  MarimoNotebookDocument,
+} from "../schemas/MarimoNotebookDocument.ts";
+import { SemVerFromString } from "../schemas/SemVerFromString.ts";
 
 export class SandboxController extends Effect.Service<SandboxController>()(
   "SandboxController",

@@ -1,5 +1,5 @@
-import type { NotebookCellId } from "../notebook/schemas/vscode-notebook.ts";
 import type { VariableName } from "../panel/variables/VariablesService.ts";
+import type { NotebookCellId } from "../schemas/MarimoNotebookDocument.ts";
 
 /**
  * Get topologically sorted cell IDs based on variable dependencies.

@@ -3,9 +3,9 @@ import * as NodeFs from "node:fs";
 import { Cause, Effect } from "effect";
 
 import { assert } from "../assert.ts";
-import type { MarimoNotebookDocument } from "../notebook/schemas/vscode-notebook.ts";
-import { Uv, UvUnknownError } from "../python/Uv.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { Uv, UvUnknownError } from "../python/Uv.ts";
+import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export function installPackages(
   packages: ReadonlyArray<string>,

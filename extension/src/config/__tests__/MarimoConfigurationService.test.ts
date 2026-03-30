@@ -7,11 +7,11 @@ import {
   createTestNotebookEditor,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import type { NotebookId } from "../../notebook/schemas/vscode-notebook.ts";
-import type { MarimoConfig } from "../../types.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../../platform/VsCode.ts";
+import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
+import type { MarimoConfig } from "../../types.ts";
 import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";
 
 const NOTEBOOK_URI = "file:///test/notebook.py" as NotebookId;

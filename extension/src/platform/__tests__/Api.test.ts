@@ -9,9 +9,9 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { Api } from "../Api.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
+import { Api } from "../Api.ts";
 import { VsCode } from "../VsCode.ts";
 
 const withTestCtx = Effect.fn(function* (

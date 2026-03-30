@@ -1,10 +1,10 @@
 import { Effect, Option } from "effect";
 
-import { MarimoNotebookDocument } from "../notebook/schemas/vscode-notebook.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
-import { VsCode } from "../platform/VsCode.ts";
-import type { MarimoConfig } from "../types.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import type { MarimoConfig } from "../types.ts";
 
 /**
  * Generic configuration toggle function for marimo config options.

@@ -1,10 +1,9 @@
 import { Effect, Layer, Option, Ref, Schema, Stream } from "effect";
 import type { Uri, WorkspaceFolder } from "vscode";
 
-import { MarimoNotebookDocument } from "../notebook/schemas/vscode-notebook.ts";
 import { createStorageKey, Storage } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
-
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { type TreeItem, TreeView } from "./TreeView.ts";
 
 interface RecentNotebook {

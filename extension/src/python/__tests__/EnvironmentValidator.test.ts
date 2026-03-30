@@ -10,10 +10,10 @@ import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { SemVerFromString } from "../../lib/SemVerFromString.ts";
-import { getVenvPythonPath } from "../../python/getVenvPythonPath.ts";
 import { EnvironmentValidator } from "../../python/EnvironmentValidator.ts";
+import { getVenvPythonPath } from "../../python/getVenvPythonPath.ts";
 import { Uv } from "../../python/Uv.ts";
+import { SemVerFromString } from "../../schemas/SemVerFromString.ts";
 
 const isWindows = NodeProcess.platform === "win32";
 

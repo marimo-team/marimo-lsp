@@ -10,14 +10,13 @@ import {
 import {
   decodeVariablesOperation,
   type NotebookId,
-} from "../../notebook/schemas/vscode-notebook.ts";
+} from "../../schemas/MarimoNotebookDocument.ts";
 import type {
   VariablesNotification,
   VariableValuesNotification,
 } from "../../types.ts";
 
-// Re-export for others using this service
-export type { VariableName } from "../../notebook/schemas/vscode-notebook.ts";
+export type { VariableName } from "../../schemas/MarimoNotebookDocument.ts";
 
 /**
  * Manages variable state across all notebooks.

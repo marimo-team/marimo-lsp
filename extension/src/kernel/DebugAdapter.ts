@@ -3,17 +3,17 @@ import * as NodePath from "node:path";
 
 import { Effect, HashMap, Option, Ref, Schema, Stream } from "effect";
 
-import {
-  MarimoNotebookCell,
-  type NotebookId,
-  NotebookIdFromString,
-} from "../notebook/schemas/vscode-notebook.ts";
 import { createSourceMapping, makeDapProxy } from "../lib/dap-proxy.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { KernelManager } from "./KernelManager.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
+import {
+  type NotebookId,
+  NotebookIdFromString,
+} from "../schemas/MarimoNotebookDocument.ts";
+import { KernelManager } from "./KernelManager.ts";
 
 const DEBUG_TYPE = "marimo";
 

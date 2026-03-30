@@ -4,13 +4,15 @@ import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import { dynamicCommand } from "../commands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
+import { VsCode } from "../platform/VsCode.ts";
 import {
   type CellMetadata,
   encodeCellMetadata,
+} from "../schemas/CellMetadata.ts";
+import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
-} from "./schemas/vscode-notebook.ts";
-import { VsCode } from "../platform/VsCode.ts";
+} from "../schemas/MarimoNotebookDocument.ts";
 
 /**
  * Configuration for a metadata binding

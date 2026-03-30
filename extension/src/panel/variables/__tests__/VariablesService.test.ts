@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, Stream, TestClock } from "effect";
 
-import type { NotebookId } from "../../../notebook/schemas/vscode-notebook.ts";
+import type { NotebookId } from "../../../schemas/MarimoNotebookDocument.ts";
 import type {
   VariablesNotification,
   VariableValuesNotification,

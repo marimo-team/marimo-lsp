@@ -16,8 +16,8 @@ import { toggleAutoReload } from "../commands/toggleAutoReload.ts";
 import { toggleOnCellChange } from "../commands/toggleOnCellChange.ts";
 import { updateActivePythonEnvironment } from "../commands/updateActivePythonEnvironment.ts";
 import type { MarimoCommand } from "../constants.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { Telemetry } from "../telemetry/Telemetry.ts";
 
 /**
  * Registers VS Code commands for the marimo extension.

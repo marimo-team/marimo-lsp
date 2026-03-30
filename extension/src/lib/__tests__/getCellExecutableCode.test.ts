@@ -7,11 +7,9 @@ import {
   createNotebookUri,
   createTestNotebookDocument,
 } from "../../__mocks__/TestVsCode.ts";
-import {
-  type CellMetadata,
-  MarimoNotebookCell,
-} from "../../notebook/schemas/vscode-notebook.ts";
 import { Constants } from "../../platform/Constants.ts";
+import type { CellMetadata } from "../../schemas/CellMetadata.ts";
+import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import { getCellExecutableCode } from "../getCellExecutableCode.ts";
 
 const notebookUri = createNotebookUri("file:///test/notebook_mo.py");

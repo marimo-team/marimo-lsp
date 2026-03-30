@@ -2,11 +2,11 @@ import { Effect, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
+import { VsCode } from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
-} from "../notebook/schemas/vscode-notebook.ts";
-import { VsCode } from "../platform/VsCode.ts";
+} from "../schemas/MarimoNotebookDocument.ts";
 
 const DEFAULT_NAME = "_";
 

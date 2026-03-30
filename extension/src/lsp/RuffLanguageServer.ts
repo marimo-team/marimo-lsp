@@ -3,6 +3,7 @@ import * as NodePath from "node:path";
 import { type Cause, Data, Effect, Exit, Option, Ref } from "effect";
 import type * as vscode from "vscode";
 
+import { Config } from "../config/Config.ts";
 import {
   BinarySource,
   companionExtensionBundledBinary,
@@ -11,15 +12,14 @@ import {
   userConfiguredPath,
 } from "../lib/binaryResolution.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { Config } from "../config/Config.ts";
-import { connectMarimoNotebookLspClient } from "./connect.ts";
-import { OutputChannel } from "../platform/OutputChannel.ts";
-import { Sentry } from "../telemetry/Sentry.ts";
-import { ExtensionContext } from "../platform/Storage.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
-import { Uv } from "../python/Uv.ts";
 import { VariablesService } from "../panel/variables/VariablesService.ts";
+import { OutputChannel } from "../platform/OutputChannel.ts";
+import { ExtensionContext } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { Uv } from "../python/Uv.ts";
+import { Sentry } from "../telemetry/Sentry.ts";
+import { Telemetry } from "../telemetry/Telemetry.ts";
+import { connectMarimoNotebookLspClient } from "./connect.ts";
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
 // Bump this as needed for new features or fixes.

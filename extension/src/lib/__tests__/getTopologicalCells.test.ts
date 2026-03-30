@@ -3,8 +3,8 @@ import { Effect, Layer } from "effect";
 
 import { createTestNotebookDocument, Uri } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import { MarimoNotebookDocument } from "../../notebook/schemas/vscode-notebook.ts";
 import { VariablesService } from "../../panel/variables/VariablesService.ts";
+import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { VariablesNotification } from "../../types.ts";
 import { getTopologicalCells } from "../getTopologicalCells.ts";
 

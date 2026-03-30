@@ -3,11 +3,10 @@ import * as NodeProcess from "node:process";
 import * as semver from "@std/semver";
 import { Effect, Option } from "effect";
 
+import { Config } from "../config/Config.ts";
 import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
 import { BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
-import { Config } from "../config/Config.ts";
-import { PythonExtension } from "../python/PythonExtension.ts";
 import {
   RuffLanguageServer,
   RuffLanguageServerStatus,
@@ -16,8 +15,9 @@ import {
   TyLanguageServer,
   TyLanguageServerStatus,
 } from "../lsp/TyLanguageServer.ts";
-import { Uv, UvBin } from "../python/Uv.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { PythonExtension } from "../python/PythonExtension.ts";
+import { Uv, UvBin } from "../python/Uv.ts";
 
 /**
  * Provides health check and diagnostic information for the marimo extension.
