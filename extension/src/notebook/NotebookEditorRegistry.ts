@@ -1,6 +1,7 @@
 import { Effect, HashMap, Option, Ref, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
 
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
@@ -63,6 +64,29 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
                 activeNotebookRef,
                 Option.some(notebook.value.id),
               );
+            }),
+          ),
+          Stream.runDrain,
+        ),
+      );
+
+      // Remove editors when their notebook is closed
+      yield* Effect.forkScoped(
+        code.workspace.notebookDocumentClosed().pipe(
+          Stream.filter((nb) => nb.notebookType === NOTEBOOK_TYPE),
+          Stream.mapEffect(
+            Effect.fn(function* (nb) {
+              const notebook = MarimoNotebookDocument.tryFrom(nb);
+              if (Option.isSome(notebook)) {
+                yield* Ref.update(ref, HashMap.remove(notebook.value.id));
+                yield* Effect.logInfo(
+                  "Removed closed notebook from registry",
+                ).pipe(
+                  Effect.annotateLogs({
+                    notebookUri: notebook.value.id,
+                  }),
+                );
+              }
             }),
           ),
           Stream.runDrain,

@@ -1474,6 +1474,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   >;
   readonly documentChangesPubSub: PubSub.PubSub<vscode.NotebookDocumentChangeEvent>;
   readonly documentOpenedPubSub: PubSub.PubSub<vscode.NotebookDocument>;
+  readonly documentClosedPubSub: PubSub.PubSub<vscode.NotebookDocument>;
   readonly setActiveNotebookEditor: (
     editor: Option.Option<vscode.NotebookEditor>,
   ) => Effect.Effect<void>;
@@ -1550,6 +1551,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     return PubSub.publish(this.documentOpenedPubSub, doc);
   }
 
+  closeNotebook(doc: vscode.NotebookDocument) {
+    return PubSub.publish(this.documentClosedPubSub, doc);
+  }
+
   static make = Effect.fn(function* (
     options: {
       initialDocuments?: Array<vscode.NotebookDocument>;
@@ -1581,6 +1586,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       yield* PubSub.unbounded<vscode.NotebookDocumentChangeEvent>();
 
     const documentOpened = yield* PubSub.unbounded<vscode.NotebookDocument>();
+    const documentClosed = yield* PubSub.unbounded<vscode.NotebookDocument>();
 
     const commands = yield* Ref.make(
       HashSet.empty<MarimoCommand | DynamicCommand>(),
@@ -1887,7 +1893,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             return Stream.fromPubSub(documentChanges);
           },
           notebookDocumentClosed() {
-            return Stream.never;
+            return Stream.fromPubSub(documentClosed);
           },
           textDocumentChanges() {
             return Stream.never;
@@ -2219,6 +2225,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       statusBarProviders,
       documentChangesPubSub: documentChanges,
       documentOpenedPubSub: documentOpened,
+      documentClosedPubSub: documentClosed,
       affinityUpdates,
       setActiveNotebookEditor: (editor) =>
         Effect.gen(function* () {
