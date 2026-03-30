@@ -1,5 +1,3 @@
-// @ts-check
-
 import * as process from "node:process";
 
 import tailwindcss from "@tailwindcss/vite";
@@ -39,5 +37,11 @@ export default vite.defineConfig({
     // Extension tests live in tests/extension/
     exclude: ["tests/extension/**/*.test.ts"],
     setupFiles: ["./src/__tests__/setup.ts"],
+  },
+  lint: {
+    options: {
+      typeAware: true,
+      typeCheck: true,
+    },
   },
 });
