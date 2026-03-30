@@ -14,6 +14,7 @@ from marimo._messaging.notification import (
 )
 from marimo._runtime.dataflow import DirectedGraph
 
+from marimo_lsp import _rules
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.utils import decode_marimo_cell_metadata
 
@@ -42,18 +43,16 @@ def _snapshot_variables(graph: DirectedGraph) -> _VariablesSnapshot:
 
 
 def _compute_diagnostics(
-    _graph: DirectedGraph,
-    _cell_id_to_uri: dict[CellId_t, str],
-    _cell_names: dict[CellId_t, str],
-    _cell_index: dict[CellId_t, int],
+    graph: DirectedGraph,
+    cell_id_to_uri: dict[CellId_t, str],
+    cell_names: dict[CellId_t, str],
+    cell_index: dict[CellId_t, int],
 ) -> dict[str, list[lsp.Diagnostic]]:
     """Compute all diagnostics from the current graph state.
 
     Returns a dict mapping cell document URIs to their diagnostics.
     """
-    result: dict[str, list[lsp.Diagnostic]] = {}
-    # TODO: add diagnostic rules here
-    return result
+    return _rules.multiple_definitions(graph, cell_id_to_uri, cell_names, cell_index)
 
 
 class NotebookGraphUpdater:
