@@ -3,8 +3,8 @@ import { Effect, Layer, Option } from "effect";
 import {
   TyLanguageServer,
   TyLanguageServerStatus,
-} from "../services/TyLanguageServer.ts";
-import { BinarySource } from "../utils/binaryResolution.ts";
+} from "../lsp/TyLanguageServer.ts";
+import { BinarySource } from "../lib/binaryResolution.ts";
 
 /**
  * Test mock for TyLanguageServer.

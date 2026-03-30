@@ -31,8 +31,8 @@ import {
   VsCode,
   Window,
   Workspace,
-} from "../services/VsCode.ts";
-import { acquireDisposable } from "../utils/acquireDisposable.ts";
+} from "../platform/VsCode.ts";
+import { acquireDisposable } from "../lib/acquireDisposable.ts";
 
 class NotebookCellData implements vscode.NotebookCellData {
   kind: vscode.NotebookCellKind;

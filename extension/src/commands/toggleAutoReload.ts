@@ -1,4 +1,4 @@
-import { createConfigToggle } from "../utils/createConfigToggle.ts";
+import { createConfigToggle } from "../lib/createConfigToggle.ts";
 
 export const toggleAutoReload = () =>
   createConfigToggle({

@@ -1,10 +1,10 @@
 import { Effect, Either, Option } from "effect";
 
-import { MarimoNotebookDocument } from "../schemas.ts";
-import { ExecutionRegistry } from "../services/ExecutionRegistry.ts";
-import { LanguageClient } from "../services/LanguageClient.ts";
-import { VsCode } from "../services/VsCode.ts";
-import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
+import { MarimoNotebookDocument } from "../notebook/schemas/vscode-notebook.ts";
+import { ExecutionRegistry } from "../kernel/ExecutionRegistry.ts";
+import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 
 export const restartKernel = Effect.fn("command.restartKernel")(function* () {
   const code = yield* VsCode;

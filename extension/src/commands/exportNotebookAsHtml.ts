@@ -1,9 +1,9 @@
 import { Effect, Either, Option, Schema } from "effect";
 
-import { MarimoNotebookDocument } from "../schemas.ts";
-import { LanguageClient } from "../services/LanguageClient.ts";
-import { VsCode } from "../services/VsCode.ts";
-import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
+import { MarimoNotebookDocument } from "../notebook/schemas/vscode-notebook.ts";
+import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 
 export const exportNotebookAsHtml = Effect.fn("command.exportNotebookAsHtml")(
   function* () {

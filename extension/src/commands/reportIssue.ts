@@ -1,7 +1,7 @@
 import { Effect, Either } from "effect";
 
-import { VsCode } from "../services/VsCode.ts";
-import { Links } from "../utils/links.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { Links } from "../lib/links.ts";
 
 export const reportIssue = Effect.fn(function* () {
   const code = yield* VsCode;

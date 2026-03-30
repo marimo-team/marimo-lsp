@@ -7,8 +7,8 @@ import {
   ExecuteCommandError,
   findLspExecutable,
   LanguageClient,
-} from "../services/LanguageClient.ts";
-import { acquireDisposable } from "../utils/acquireDisposable.ts";
+} from "../lsp/LanguageClient.ts";
+import { acquireDisposable } from "../lib/acquireDisposable.ts";
 
 export const TestLanguageClientLive = Layer.scoped(
   LanguageClient,

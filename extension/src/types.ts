@@ -1,7 +1,8 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
 import type * as lsp from "vscode-languageclient/node";
 
-import type { MarimoNotebook, NotebookCellId, NotebookId } from "./schemas.ts";
+import type { MarimoNotebook } from "./notebook/schemas/ir.ts";
+import type { NotebookCellId, NotebookId } from "./notebook/schemas/vscode-notebook.ts";
 
 export type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 

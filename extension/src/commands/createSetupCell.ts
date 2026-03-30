@@ -1,8 +1,11 @@
 import { Effect, Option } from "effect";
 
 import { SETUP_CELL_NAME } from "../constants.ts";
-import { encodeCellMetadata, MarimoNotebookDocument } from "../schemas.ts";
-import { VsCode } from "../services/VsCode.ts";
+import {
+  encodeCellMetadata,
+  MarimoNotebookDocument,
+} from "../notebook/schemas/vscode-notebook.ts";
+import { VsCode } from "../platform/VsCode.ts";
 
 export const createSetupCell = Effect.fn(function* () {
   const code = yield* VsCode;

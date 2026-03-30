@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 
-import { ExtensionContext } from "../services/Storage.ts";
+import { ExtensionContext } from "../platform/Storage.ts";
 import { Uri } from "./TestVsCode.ts";
 
 export class Memento {

@@ -1,9 +1,9 @@
 import { Effect, flow, Option } from "effect";
 
-import { MarimoNotebookDocument } from "../schemas.ts";
-import { DebugAdapter } from "../services/DebugAdapter.ts";
-import { VsCode } from "../services/VsCode.ts";
-import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
+import { MarimoNotebookDocument } from "../notebook/schemas/vscode-notebook.ts";
+import { DebugAdapter } from "../kernel/DebugAdapter.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 
 export const debugCell = Effect.fn("command.debugCell")(
   function* () {
