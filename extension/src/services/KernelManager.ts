@@ -23,7 +23,6 @@ import type {
   NotificationOf,
 } from "../types.ts";
 import { showErrorAndPromptLogs } from "../utils/showErrorAndPromptLogs.ts";
-import { TyLanguageServer } from "./completions/TyLanguageServer.ts";
 import { Config } from "./Config.ts";
 import { Constants } from "./Constants.ts";
 import { ControllerRegistry } from "./ControllerRegistry.ts";
@@ -33,6 +32,7 @@ import { LanguageClient } from "./LanguageClient.ts";
 import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "./NotebookRenderer.ts";
 import { OutputChannel } from "./OutputChannel.ts";
+import { PythonEnvInvalidation } from "./PythonEnvInvalidation.ts";
 import { Uv } from "./Uv.ts";
 import { VariablesService } from "./variables/VariablesService.ts";
 import { VsCode } from "./VsCode.ts";
@@ -63,6 +63,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       ExecutionRegistry.Default,
       DatasourcesService.Default,
       NotebookEditorRegistry.Default,
+      PythonEnvInvalidation.Default,
     ],
     scoped: Effect.gen(function* () {
       yield* Effect.logInfo("Setting up kernel manager");
@@ -350,7 +351,7 @@ function processSessionOperation(
     const renderer = yield* NotebookRenderer;
     const executions = yield* ExecutionRegistry;
     const controllers = yield* ControllerRegistry;
-    const tyLsp = yield* TyLanguageServer;
+    const envInvalidation = yield* PythonEnvInvalidation;
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
     const maybeEditor = yield* editors.getLastNotebookEditor(notebookUri);
@@ -402,7 +403,7 @@ function processSessionOperation(
             Effect.provideService(Uv, uv),
             Effect.provideService(VsCode, code),
             Effect.provideService(Config, config),
-            Effect.provideService(TyLanguageServer, tyLsp),
+            Effect.provideService(PythonEnvInvalidation, envInvalidation),
           ),
         );
         break;

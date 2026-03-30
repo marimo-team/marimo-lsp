@@ -13,8 +13,6 @@ import type * as vscode from "vscode";
 import { Api, type MarimoApi } from "../services/Api.ts";
 import { CellMetadataUIBindingService } from "../services/CellMetadataUIBindingService.ts";
 import { CellStateManager } from "../services/CellStateManager.ts";
-import type { RuffLanguageServer } from "../services/completions/RuffLanguageServer.ts";
-import type { TyLanguageServer } from "../services/completions/TyLanguageServer.ts";
 import { Config } from "../services/Config.ts";
 import { ConfigContextManager } from "../services/config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../services/config/MarimoConfigurationService.ts";
@@ -32,12 +30,15 @@ import { NotebookRenderer } from "../services/NotebookRenderer.ts";
 import { NotebookSerializer } from "../services/NotebookSerializer.ts";
 import { OutputChannel } from "../services/OutputChannel.ts";
 import { PackagesService } from "../services/packages/PackagesService.ts";
+import { PythonEnvInvalidation } from "../services/PythonEnvInvalidation.ts";
 import type { PythonExtension } from "../services/PythonExtension.ts";
+import type { RuffLanguageServer } from "../services/RuffLanguageServer.ts";
 import { SandboxController } from "../services/SandboxController.ts";
 import type { Sentry } from "../services/Sentry.ts";
 import { SessionStateManager } from "../services/SessionStateManager.ts";
 import { ExtensionContext, Storage } from "../services/Storage.ts";
 import type { Telemetry } from "../services/Telemetry.ts";
+import type { TyLanguageServer } from "../services/TyLanguageServer.ts";
 import { Uv } from "../services/Uv.ts";
 import { VariablesService } from "../services/variables/VariablesService.ts";
 import type { VsCode } from "../services/VsCode.ts";
@@ -108,6 +109,7 @@ const MainLive = Layer.empty
     Layer.provide(Constants.Default),
     Layer.provide(Config.Default),
     Layer.provide(OutputChannel.Default),
+    Layer.provide(PythonEnvInvalidation.Default),
   );
 
 export function makeActivate(

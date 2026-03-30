@@ -27,6 +27,7 @@ import {
   FileSystemError,
   Notebooks,
   ParseUriError,
+  Languages,
   VsCode,
   Window,
   Workspace,
@@ -199,10 +200,7 @@ class NotebookCellStatusBarItem implements vscode.NotebookCellStatusBarItem {
 }
 
 export class Uri implements vscode.Uri {
-  static parse(value: string, strict?: boolean): Uri {
-    if (strict !== true) {
-      throw new Error("strict parameter must be true in test mock");
-    }
+  static parse(value: string, _strict?: boolean): Uri {
     const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value);
     if (!hasScheme) {
       throw new Error(`Invalid URI: missing scheme in '${value}'`);
@@ -1166,6 +1164,161 @@ class Hover implements vscode.Hover {
   }
 }
 
+class DocumentHighlight implements vscode.DocumentHighlight {
+  range: Range;
+  kind?: vscode.DocumentHighlightKind;
+  constructor(range: Range, kind?: vscode.DocumentHighlightKind) {
+    this.range = range;
+    this.kind = kind;
+  }
+}
+
+class DocumentSymbol implements vscode.DocumentSymbol {
+  name: string;
+  detail: string;
+  kind: vscode.SymbolKind;
+  tags?: readonly vscode.SymbolTag[];
+  range: Range;
+  selectionRange: Range;
+  children: DocumentSymbol[] = [];
+  constructor(
+    name: string,
+    detail: string,
+    kind: vscode.SymbolKind,
+    range: Range,
+    selectionRange: Range,
+  ) {
+    this.name = name;
+    this.detail = detail;
+    this.kind = kind;
+    this.range = range;
+    this.selectionRange = selectionRange;
+  }
+}
+
+class FoldingRange implements vscode.FoldingRange {
+  start: number;
+  end: number;
+  kind?: vscode.FoldingRangeKind;
+  constructor(start: number, end: number, kind?: vscode.FoldingRangeKind) {
+    this.start = start;
+    this.end = end;
+    this.kind = kind;
+  }
+}
+
+class SelectionRange implements vscode.SelectionRange {
+  range: Range;
+  parent?: SelectionRange;
+  constructor(range: Range, parent?: SelectionRange) {
+    this.range = range;
+    this.parent = parent;
+  }
+}
+
+class CodeActionKind {
+  readonly value: string;
+  private constructor(value: string) {
+    this.value = value;
+  }
+  static readonly Empty = new CodeActionKind("");
+  static readonly QuickFix = new CodeActionKind("quickfix");
+  static readonly Refactor = new CodeActionKind("refactor");
+  static readonly Source = new CodeActionKind("source");
+  static readonly RefactorExtract = new CodeActionKind("refactor.extract");
+  static readonly RefactorInline = new CodeActionKind("refactor.inline");
+  static readonly RefactorMove = new CodeActionKind("refactor.move");
+  static readonly RefactorRewrite = new CodeActionKind("refactor.rewrite");
+  static readonly SourceFixAll = new CodeActionKind("source.fixAll");
+  static readonly SourceOrganizeImports = new CodeActionKind(
+    "source.organizeImports",
+  );
+  static readonly Notebook = new CodeActionKind("notebook");
+  append(part: string): CodeActionKind {
+    const value = this.value ? `${this.value}.${part}` : part;
+    return new CodeActionKind(value);
+  }
+  intersects(other: CodeActionKind): boolean {
+    return this.contains(other) || other.contains(this);
+  }
+  contains(other: CodeActionKind): boolean {
+    return (
+      other.value === this.value || other.value.startsWith(`${this.value}.`)
+    );
+  }
+}
+
+class CodeAction {
+  title: string;
+  edit?: WorkspaceEdit;
+  diagnostics?: Diagnostic[];
+  command?: vscode.Command;
+  kind?: CodeActionKind;
+  isPreferred?: boolean;
+  disabled?: { readonly reason: string };
+  constructor(title: string, kind?: CodeActionKind) {
+    this.title = title;
+    this.kind = kind;
+  }
+}
+
+class SnippetString implements vscode.SnippetString {
+  value: string;
+  constructor(value?: string) {
+    this.value = value ?? "";
+  }
+  appendText(): SnippetString {
+    return this;
+  }
+  appendTabstop(): SnippetString {
+    return this;
+  }
+  appendPlaceholder(): SnippetString {
+    return this;
+  }
+  appendChoice(): SnippetString {
+    return this;
+  }
+  appendVariable(): SnippetString {
+    return this;
+  }
+}
+
+class InlayHintLabelPart implements vscode.InlayHintLabelPart {
+  value: string;
+  tooltip?: string | MarkdownString;
+  location?: Location;
+  command?: vscode.Command;
+  constructor(value: string) {
+    this.value = value;
+  }
+}
+
+class InlayHint implements vscode.InlayHint {
+  position: Position;
+  label: string | InlayHintLabelPart[];
+  kind?: vscode.InlayHintKind;
+  textEdits?: TextEdit[];
+  tooltip?: string | MarkdownString;
+  paddingLeft?: boolean;
+  paddingRight?: boolean;
+  constructor(
+    position: Position,
+    label: string | InlayHintLabelPart[],
+    kind?: vscode.InlayHintKind,
+  ) {
+    this.position = position;
+    this.label = label;
+    this.kind = kind;
+  }
+}
+
+class SignatureHelp implements vscode.SignatureHelp {
+  signatures: SignatureInformation[] = [];
+  activeSignature = 0;
+  activeParameter = 0;
+}
+
 class SignatureInformation implements vscode.SignatureInformation {
   label: string;
   documentation?: string | MarkdownString;
@@ -1187,6 +1340,91 @@ class ParameterInformation implements vscode.ParameterInformation {
   ) {
     this.label = label;
     this.documentation = documentation;
+  }
+}
+
+class Diagnostic implements vscode.Diagnostic {
+  range: Range;
+  message: string;
+  severity: vscode.DiagnosticSeverity;
+  source?: string;
+  code?: string | number | { value: string | number; target: vscode.Uri };
+  relatedInformation?: vscode.DiagnosticRelatedInformation[];
+  tags?: vscode.DiagnosticTag[];
+
+  constructor(
+    range: Range,
+    message: string,
+    severity?: vscode.DiagnosticSeverity,
+  ) {
+    this.range = range;
+    this.message = message;
+    this.severity = severity ?? 0; // Error
+  }
+}
+
+class DiagnosticCollection implements vscode.DiagnosticCollection {
+  readonly name: string;
+  private store = new Map<string, vscode.Diagnostic[]>();
+
+  constructor(name: string) {
+    this.name = name;
+  }
+
+  set(uri: vscode.Uri, diagnostics: readonly vscode.Diagnostic[]): void;
+  set(entries: ReadonlyArray<[vscode.Uri, readonly vscode.Diagnostic[]]>): void;
+  set(
+    uriOrEntries:
+      | vscode.Uri
+      | ReadonlyArray<[vscode.Uri, readonly vscode.Diagnostic[]]>,
+    diagnostics?: readonly vscode.Diagnostic[],
+  ): void {
+    if ("path" in uriOrEntries) {
+      const key = uriOrEntries.toString();
+      this.store.set(key, diagnostics ? [...diagnostics] : []);
+    } else {
+      for (const [uri, diags] of uriOrEntries) {
+        this.store.set(uri.toString(), [...diags]);
+      }
+    }
+  }
+
+  delete(uri: vscode.Uri): void {
+    this.store.delete(uri.toString());
+  }
+
+  clear(): void {
+    this.store.clear();
+  }
+
+  get(uri: vscode.Uri): readonly vscode.Diagnostic[] {
+    return this.store.get(uri.toString()) ?? [];
+  }
+
+  has(uri: vscode.Uri): boolean {
+    return this.store.has(uri.toString());
+  }
+
+  forEach(
+    callback: (
+      uri: vscode.Uri,
+      diagnostics: readonly vscode.Diagnostic[],
+      collection: vscode.DiagnosticCollection,
+    ) => void,
+  ): void {
+    for (const [uriStr, diags] of this.store) {
+      callback(Uri.parse(uriStr), diags, this);
+    }
+  }
+
+  *[Symbol.iterator](): Iterator<[vscode.Uri, readonly vscode.Diagnostic[]]> {
+    for (const [uriStr, diags] of this.store) {
+      yield [Uri.parse(uriStr), diags];
+    }
+  }
+
+  dispose(): void {
+    this.store.clear();
   }
 }
 
@@ -1648,6 +1886,15 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           notebookDocumentChanges() {
             return Stream.fromPubSub(documentChanges);
           },
+          notebookDocumentClosed() {
+            return Stream.never;
+          },
+          textDocumentChanges() {
+            return Stream.never;
+          },
+          createFileSystemWatcher() {
+            return Stream.never;
+          },
           applyEdit() {
             return Effect.succeed(true);
           },
@@ -1862,9 +2109,20 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         Range,
         Location,
         Hover,
+        TextEdit,
+        SignatureHelp,
+        InlayHint,
+        InlayHintLabelPart,
+        SnippetString,
+        CodeAction,
+        CodeActionKind,
         SignatureInformation,
         ParameterInformation,
         CodeLens,
+        DocumentHighlight,
+        DocumentSymbol,
+        FoldingRange,
+        SelectionRange,
         SemanticTokensLegend,
         SemanticTokens,
         CompletionTriggerKind: {
@@ -1872,14 +2130,72 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           TriggerCharacter: 1,
           TriggerForIncompleteCompletions: 2,
         },
+        CompletionItemKind: {
+          Text: 0,
+          Method: 1,
+          Function: 2,
+          Constructor: 3,
+          Field: 4,
+          Variable: 5,
+          Class: 6,
+          Interface: 7,
+          Module: 8,
+          Property: 9,
+          Unit: 10,
+          Value: 11,
+          Enum: 12,
+          Keyword: 13,
+          Snippet: 14,
+          Color: 15,
+          File: 16,
+          Reference: 17,
+          Folder: 18,
+          EnumMember: 19,
+          Constant: 20,
+          Struct: 21,
+          Event: 22,
+          Operator: 23,
+          TypeParameter: 24,
+          User: 25,
+          Issue: 26,
+        },
         version: options.version ?? "1.86.0",
         extensions: {
           getExtension: () => Option.none(),
         },
-        languages: {
-          registerCodeLensProvider() {
-            return Effect.void;
-          },
+        languages: Languages.make({
+          registerCodeLensProvider: () => Effect.void,
+          createDiagnosticCollection: (name: string) =>
+            new DiagnosticCollection(name),
+          registerHoverProvider: () => Effect.void,
+          registerDefinitionProvider: () => Effect.void,
+          registerDeclarationProvider: () => Effect.void,
+          registerTypeDefinitionProvider: () => Effect.void,
+          registerReferenceProvider: () => Effect.void,
+          registerDocumentHighlightProvider: () => Effect.void,
+          registerDocumentSymbolProvider: () => Effect.void,
+          registerFoldingRangeProvider: () => Effect.void,
+          registerSelectionRangeProvider: () => Effect.void,
+          registerDocumentFormattingEditProvider: () => Effect.void,
+          registerDocumentRangeFormattingEditProvider: () => Effect.void,
+          registerSignatureHelpProvider: () => Effect.void,
+          registerInlayHintsProvider: () => Effect.void,
+          registerCompletionItemProvider: () => Effect.void,
+          registerCodeActionsProvider: () => Effect.void,
+          registerRenameProvider: () => Effect.void,
+          registerDocumentSemanticTokensProvider: () => Effect.void,
+          registerDocumentRangeSemanticTokensProvider: () => Effect.void,
+        }),
+        Diagnostic,
+        DiagnosticSeverity: {
+          Error: 0,
+          Warning: 1,
+          Information: 2,
+          Hint: 3,
+        },
+        CodeActionTriggerKind: {
+          Invoke: 1,
+          Automatic: 2,
         },
         // helper
         utils: {

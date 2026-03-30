@@ -1,9 +1,9 @@
-import { Effect, Layer, Option } from "effect";
+import { Effect, Layer } from "effect";
 
 import {
   RuffLanguageServer,
   RuffLanguageServerStatus,
-} from "../services/completions/RuffLanguageServer.ts";
+} from "../services/RuffLanguageServer.ts";
 import { BinarySource } from "../utils/binaryResolution.ts";
 
 /**
@@ -24,10 +24,6 @@ export const TestRuffLanguageServerLive = Layer.effect(
           RuffLanguageServerStatus.Running({
             serverVersion: "0.0.0-test",
             binarySource: BinarySource.UvInstalled({ path: "/test/ruff" }),
-            client: {
-              start: () => Effect.succeed(Option.none()),
-              restart: () => Effect.void,
-            },
           }),
         ),
     });

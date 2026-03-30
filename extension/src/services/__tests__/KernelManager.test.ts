@@ -10,9 +10,9 @@ import {
   TestClock,
 } from "effect";
 
+import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import { TestTyLanguageServerLive } from "../../__mocks__/TestTyLanguageServer.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { MarimoNotebookDocument, type NotebookId } from "../../schemas.ts";
@@ -83,7 +83,6 @@ const withTestCtx = Effect.fn(function* () {
         }),
       ),
     ),
-    Layer.provide(TestTyLanguageServerLive),
     Layer.provide(
       Layer.succeed(
         LanguageClient,
@@ -101,6 +100,7 @@ const withTestCtx = Effect.fn(function* () {
     ),
     Layer.provide(TestTelemetryLive),
     Layer.provide(TestSentryLive),
+    Layer.provide(TestPythonExtension.Default),
     Layer.provideMerge(vscode.layer),
   );
 
