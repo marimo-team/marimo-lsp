@@ -141,3 +141,68 @@ def multiple_definitions(
                 )
 
     return result
+
+
+def cycles(  # noqa: C901
+    graph: DirectedGraph,
+    cell_id_to_uri: dict[CellId_t, str],
+    cell_names: dict[CellId_t, str],
+    cell_index: dict[CellId_t, int],
+) -> dict[str, list[lsp.Diagnostic]]:
+    """Diagnostic: cells involved in dependency cycles.
+
+    Highlights the variable definitions in each cell that create outgoing
+    edges in the cycle.
+    """
+    result: dict[str, list[lsp.Diagnostic]] = {}
+
+    for cycle in graph.cycles:
+        # For each edge, find the variables that link from_cell → to_cell
+        outgoing_vars: dict[CellId_t, set[str]] = {}
+        for from_cell, to_cell in cycle:
+            if from_cell not in graph.cells or to_cell not in graph.cells:
+                continue
+            linking = graph.cells[from_cell].defs & graph.cells[to_cell].refs
+            linking |= graph.cells[from_cell].refs & graph.cells[to_cell].deleted_refs
+            outgoing_vars.setdefault(from_cell, set()).update(linking)
+
+        # Build a human-readable cycle description
+        edge_parts: list[str] = []
+        for from_cell, _to_cell in cycle:
+            name = _cell_display_name(from_cell, cell_names, cell_index)
+            vs = outgoing_vars.get(from_cell, set())
+            if vs:
+                edge_parts.append(f"{name} ({', '.join(sorted(vs))})")
+            else:
+                edge_parts.append(name)
+        cycle_desc = " → ".join(edge_parts)
+
+        # Create a diagnostic on each variable definition that creates an edge
+        for cell_id, var_names in outgoing_vars.items():
+            uri = cell_id_to_uri.get(cell_id)
+            cell = graph.cells.get(cell_id)
+            if not uri or not cell:
+                continue
+
+            for var_name in sorted(var_names):
+                positions = (
+                    _find_definition_positions(cell.mod, var_name) if cell.mod else []
+                )
+                if not positions:
+                    positions = [(0, 0, 0)]
+
+                for line, col_start, col_end in positions:
+                    result.setdefault(uri, []).append(
+                        lsp.Diagnostic(
+                            range=lsp.Range(
+                                start=lsp.Position(line=line, character=col_start),
+                                end=lsp.Position(line=line, character=col_end),
+                            ),
+                            message=f"Variable `{var_name}` creates a dependency cycle: {cycle_desc}",
+                            severity=lsp.DiagnosticSeverity.Error,
+                            source="marimo",
+                            code="cycle",
+                        ),
+                    )
+
+    return result

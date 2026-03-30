@@ -52,7 +52,12 @@ def _compute_diagnostics(
 
     Returns a dict mapping cell document URIs to their diagnostics.
     """
-    return _rules.multiple_definitions(graph, cell_id_to_uri, cell_names, cell_index)
+    result: dict[str, list[lsp.Diagnostic]] = {}
+    args = (graph, cell_id_to_uri, cell_names, cell_index)
+    for rule in (_rules.multiple_definitions, _rules.cycles):
+        for uri, diags in rule(*args).items():
+            result.setdefault(uri, []).extend(diags)
+    return result
 
 
 class NotebookGraphUpdater:

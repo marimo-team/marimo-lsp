@@ -9,7 +9,7 @@ from marimo._ast.compiler import compile_cell
 from marimo._runtime.dataflow import DirectedGraph
 from marimo._types.ids import CellId_t
 
-from marimo_lsp._rules import multiple_definitions
+from marimo_lsp._rules import cycles, multiple_definitions
 
 if TYPE_CHECKING:
     import lsprotocol.types as lsp
@@ -55,12 +55,18 @@ def _render_diagnostics(
     return "\n".join(lines)
 
 
-def _run_multiple_definitions(
+def _build_graph(
     cell_sources: list[str],
-) -> tuple[dict[str, str], dict[str, list[lsp.Diagnostic]]]:
-    """Build a graph from cell sources and run the multiple_definitions rule.
+) -> tuple[
+    DirectedGraph,
+    dict[CellId_t, str],
+    dict[CellId_t, str],
+    dict[CellId_t, int],
+    dict[str, str],
+]:
+    """Build a graph from cell sources.
 
-    Returns (cells_by_uri, diagnostics) for use with _render_diagnostics.
+    Returns (graph, cell_id_to_uri, cell_names, cell_index, cells_by_uri).
     """
     graph = DirectedGraph()
     cell_id_to_uri: dict[CellId_t, str] = {}
@@ -83,8 +89,31 @@ def _run_multiple_definitions(
         except SyntaxError:
             pass
 
-    diags = multiple_definitions(graph, cell_id_to_uri, cell_names, cell_index)
+    return graph, cell_id_to_uri, cell_names, cell_index, cells_by_uri
+
+
+def _run_rule(
+    cell_sources: list[str],
+    rule: object,
+) -> tuple[dict[str, str], dict[str, list[lsp.Diagnostic]]]:
+    """Build a graph and run a rule. Returns (cells_by_uri, diagnostics)."""
+    graph, cell_id_to_uri, cell_names, cell_index, cells_by_uri = _build_graph(
+        cell_sources
+    )
+    diags = rule(graph, cell_id_to_uri, cell_names, cell_index)  # type: ignore[operator]
     return cells_by_uri, diags
+
+
+def _run_multiple_definitions(
+    cell_sources: list[str],
+) -> tuple[dict[str, str], dict[str, list[lsp.Diagnostic]]]:
+    return _run_rule(cell_sources, multiple_definitions)
+
+
+def _run_cycles(
+    cell_sources: list[str],
+) -> tuple[dict[str, str], dict[str, list[lsp.Diagnostic]]]:
+    return _run_rule(cell_sources, cycles)
 
 
 class TestMultipleDefinitions:
@@ -414,3 +443,96 @@ x = 2
 ^ multiple-definitions: Variable `x` is also defined in setup\
 """
         )
+
+
+class TestCycles:
+    def test_simple_cycle(self) -> None:
+        """A → B → A: cell 1 defines x used by cell 2, cell 2 defines y used by cell 1."""
+        cells, diags = _run_cycles(["x = 1\nz = y", "y = 1\nw = x"])
+        assert _render_diagnostics(cells, diags) == snapshot("""\
+-- cell 1 --
+x = 1
+^ cycle: Variable `x` creates a dependency cycle: cell 2 (y) → cell 1 (x)
+z = y
+-- cell 2 --
+y = 1
+^ cycle: Variable `y` creates a dependency cycle: cell 2 (y) → cell 1 (x)
+w = x\
+""")
+
+    def test_no_cycle(self) -> None:
+        """Linear dependency: no cycle."""
+        cells, diags = _run_cycles(["x = 1", "y = x + 1"])
+        assert _render_diagnostics(cells, diags) == snapshot("""\
+-- cell 1 --
+x = 1
+-- cell 2 --
+y = x + 1\
+""")
+
+    def test_three_cell_cycle(self) -> None:
+        """A → B → C → A."""
+        cells, diags = _run_cycles(
+            ["a = 1\nuse_c = c", "b = 1\nuse_a = a", "c = 1\nuse_b = b"]
+        )
+        assert _render_diagnostics(cells, diags) == snapshot("""\
+-- cell 1 --
+a = 1
+^ cycle: Variable `a` creates a dependency cycle: cell 3 (c) → cell 1 (a) → cell 2 (b)
+use_c = c
+-- cell 2 --
+b = 1
+^ cycle: Variable `b` creates a dependency cycle: cell 3 (c) → cell 1 (a) → cell 2 (b)
+use_a = a
+-- cell 3 --
+c = 1
+^ cycle: Variable `c` creates a dependency cycle: cell 3 (c) → cell 1 (a) → cell 2 (b)
+use_b = b\
+""")
+
+    def test_self_cycle_via_del(self) -> None:
+        """A cell that deletes a variable defined by another cell creates an edge."""
+        cells, diags = _run_cycles(["x = 1\ndel y", "y = 1\ndel x"])
+        assert _render_diagnostics(cells, diags) == snapshot("""\
+-- cell 1 --
+x = 1
+^ cycle: Variable `x` creates a dependency cycle: cell 2 (y) → cell 1 (x)
+del y
+-- cell 2 --
+y = 1
+^ cycle: Variable `y` creates a dependency cycle: cell 2 (y) → cell 1 (x)
+del x\
+""")
+
+    def test_cycle_highlights_definitions_not_references(self) -> None:
+        """The squiggle should be on the definition (x = 1), not the reference (y)."""
+        cells, diags = _run_cycles(["x = 1\nprint(y)", "y = 1\nprint(x)"])
+        assert _render_diagnostics(cells, diags) == snapshot("""\
+-- cell 1 --
+x = 1
+^ cycle: Variable `x` creates a dependency cycle: cell 2 (y) → cell 1 (x)
+print(y)
+-- cell 2 --
+y = 1
+^ cycle: Variable `y` creates a dependency cycle: cell 2 (y) → cell 1 (x)
+print(x)\
+""")
+
+    def test_cycle_with_function_defs(self) -> None:
+        """Cycle via function definitions."""
+        cells, diags = _run_cycles(
+            [
+                "def foo():\n    return bar()",
+                "def bar():\n    return foo()",
+            ]
+        )
+        assert _render_diagnostics(cells, diags) == snapshot("""\
+-- cell 1 --
+def foo():
+    ^^^ cycle: Variable `foo` creates a dependency cycle: cell 2 (bar) → cell 1 (foo)
+    return bar()
+-- cell 2 --
+def bar():
+    ^^^ cycle: Variable `bar` creates a dependency cycle: cell 2 (bar) → cell 1 (foo)
+    return foo()\
+""")
