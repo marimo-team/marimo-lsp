@@ -1,0 +1,40 @@
+/**
+ * Image toolbar: floating copy/save buttons shown on hover over images.
+ */
+.image-toolbar {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 4px;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  animation: image-toolbar-fade-in 0.15s ease-out forwards;
+}
+
+@keyframes image-toolbar-fade-in {
+  to {
+    opacity: 1;
+  }
+}
+
+.image-toolbar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-editor-foreground, #cccccc);
+  cursor: pointer;
+}
+
+.image-toolbar button:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
