@@ -185,6 +185,134 @@ export function toWorkspaceEdit(
   return ws;
 }
 
+export function toCompletionItemKind(
+  code: VsCode,
+  value: lsp.CompletionItemKind,
+): vscode.CompletionItemKind {
+  switch (value) {
+    case lsp.CompletionItemKind.Text:
+      return code.CompletionItemKind.Text;
+    case lsp.CompletionItemKind.Method:
+      return code.CompletionItemKind.Method;
+    case lsp.CompletionItemKind.Function:
+      return code.CompletionItemKind.Function;
+    case lsp.CompletionItemKind.Constructor:
+      return code.CompletionItemKind.Constructor;
+    case lsp.CompletionItemKind.Field:
+      return code.CompletionItemKind.Field;
+    case lsp.CompletionItemKind.Variable:
+      return code.CompletionItemKind.Variable;
+    case lsp.CompletionItemKind.Class:
+      return code.CompletionItemKind.Class;
+    case lsp.CompletionItemKind.Interface:
+      return code.CompletionItemKind.Interface;
+    case lsp.CompletionItemKind.Module:
+      return code.CompletionItemKind.Module;
+    case lsp.CompletionItemKind.Property:
+      return code.CompletionItemKind.Property;
+    case lsp.CompletionItemKind.Unit:
+      return code.CompletionItemKind.Unit;
+    case lsp.CompletionItemKind.Value:
+      return code.CompletionItemKind.Value;
+    case lsp.CompletionItemKind.Enum:
+      return code.CompletionItemKind.Enum;
+    case lsp.CompletionItemKind.Keyword:
+      return code.CompletionItemKind.Keyword;
+    case lsp.CompletionItemKind.Snippet:
+      return code.CompletionItemKind.Snippet;
+    case lsp.CompletionItemKind.Color:
+      return code.CompletionItemKind.Color;
+    case lsp.CompletionItemKind.File:
+      return code.CompletionItemKind.File;
+    case lsp.CompletionItemKind.Reference:
+      return code.CompletionItemKind.Reference;
+    case lsp.CompletionItemKind.Folder:
+      return code.CompletionItemKind.Folder;
+    case lsp.CompletionItemKind.EnumMember:
+      return code.CompletionItemKind.EnumMember;
+    case lsp.CompletionItemKind.Constant:
+      return code.CompletionItemKind.Constant;
+    case lsp.CompletionItemKind.Struct:
+      return code.CompletionItemKind.Struct;
+    case lsp.CompletionItemKind.Event:
+      return code.CompletionItemKind.Event;
+    case lsp.CompletionItemKind.Operator:
+      return code.CompletionItemKind.Operator;
+    case lsp.CompletionItemKind.TypeParameter:
+      return code.CompletionItemKind.TypeParameter;
+    default: {
+      const _exhaustive: never = value;
+      return _exhaustive;
+    }
+  }
+}
+
+export function toLspCompletionItemKind(
+  code: VsCode,
+  kind: vscode.CompletionItemKind,
+): lsp.CompletionItemKind {
+  switch (kind) {
+    case code.CompletionItemKind.Text:
+      return lsp.CompletionItemKind.Text;
+    case code.CompletionItemKind.Method:
+      return lsp.CompletionItemKind.Method;
+    case code.CompletionItemKind.Function:
+      return lsp.CompletionItemKind.Function;
+    case code.CompletionItemKind.Constructor:
+      return lsp.CompletionItemKind.Constructor;
+    case code.CompletionItemKind.Field:
+      return lsp.CompletionItemKind.Field;
+    case code.CompletionItemKind.Variable:
+      return lsp.CompletionItemKind.Variable;
+    case code.CompletionItemKind.Class:
+      return lsp.CompletionItemKind.Class;
+    case code.CompletionItemKind.Interface:
+      return lsp.CompletionItemKind.Interface;
+    case code.CompletionItemKind.Module:
+      return lsp.CompletionItemKind.Module;
+    case code.CompletionItemKind.Property:
+      return lsp.CompletionItemKind.Property;
+    case code.CompletionItemKind.Unit:
+      return lsp.CompletionItemKind.Unit;
+    case code.CompletionItemKind.Value:
+      return lsp.CompletionItemKind.Value;
+    case code.CompletionItemKind.Enum:
+      return lsp.CompletionItemKind.Enum;
+    case code.CompletionItemKind.Keyword:
+      return lsp.CompletionItemKind.Keyword;
+    case code.CompletionItemKind.Snippet:
+      return lsp.CompletionItemKind.Snippet;
+    case code.CompletionItemKind.Color:
+      return lsp.CompletionItemKind.Color;
+    case code.CompletionItemKind.File:
+      return lsp.CompletionItemKind.File;
+    case code.CompletionItemKind.Reference:
+      return lsp.CompletionItemKind.Reference;
+    case code.CompletionItemKind.Folder:
+      return lsp.CompletionItemKind.Folder;
+    case code.CompletionItemKind.EnumMember:
+      return lsp.CompletionItemKind.EnumMember;
+    case code.CompletionItemKind.Constant:
+      return lsp.CompletionItemKind.Constant;
+    case code.CompletionItemKind.Struct:
+      return lsp.CompletionItemKind.Struct;
+    case code.CompletionItemKind.Event:
+      return lsp.CompletionItemKind.Event;
+    case code.CompletionItemKind.Operator:
+      return lsp.CompletionItemKind.Operator;
+    case code.CompletionItemKind.TypeParameter:
+      return lsp.CompletionItemKind.TypeParameter;
+    // VS Code-only kinds with no LSP equivalent
+    case code.CompletionItemKind.User:
+    case code.CompletionItemKind.Issue:
+      return lsp.CompletionItemKind.Text;
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
+}
+
 export function toLspCompletionTriggerKind(
   code: VsCode,
   kind: vscode.CompletionTriggerKind,

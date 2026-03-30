@@ -171,11 +171,6 @@ export interface NotebookLspClientConfig {
   env?: Record<string, string | undefined>;
   /** Sent as `initializationOptions` in the initialize request. */
   initializationOptions?: unknown;
-  /** Workspace folders to send during initialization. */
-  workspaceFolders?: ReadonlyArray<{
-    uri: string;
-    name: string;
-  }>;
   /** Output channel for server log messages. */
   outputChannel: vscode.OutputChannel;
   /**
@@ -188,6 +183,11 @@ export interface NotebookLspClientConfig {
   onConfigurationRequest?: (
     params: lsp.ConfigurationParams,
   ) => Effect.Effect<unknown[]>;
+}
+
+/** Internal config with resolved workspace folders. */
+interface InternalLspClientConfig extends NotebookLspClientConfig {
+  workspaceFolders: ReadonlyArray<{ uri: string; name: string }>;
 }
 
 export interface ServerInfo {
@@ -561,7 +561,7 @@ function clientCapabilities(): lsp.ClientCapabilities {
  * when the scope closes, the server is shut down and the process killed.
  */
 export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
-  function* (config: NotebookLspClientConfig) {
+  function* (config: InternalLspClientConfig) {
     const out = config.outputChannel;
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
 
@@ -608,12 +608,11 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
       conn.sendRequest<lsp.InitializeResult>("initialize", {
         processId: NodeProcess.pid,
         capabilities: clientCapabilities(),
-        rootUri: config.workspaceFolders?.[0]?.uri ?? null,
+        rootUri: config.workspaceFolders[0]?.uri ?? null,
         workspaceFolders:
-          config.workspaceFolders?.map((f) => ({
-            uri: f.uri,
-            name: f.name,
-          })) ?? null,
+          config.workspaceFolders.length > 0
+            ? config.workspaceFolders.map((f) => ({ uri: f.uri, name: f.name }))
+            : null,
         initializationOptions: config.initializationOptions ?? {},
       } satisfies lsp.InitializeParams),
     );

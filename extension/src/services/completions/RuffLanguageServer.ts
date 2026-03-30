@@ -110,13 +110,6 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
               args: ["server"],
               outputChannel,
               initializationOptions: { settings, globalSettings },
-              workspaceFolders: Option.getOrElse(
-                workspaceFolders,
-                () => [],
-              ).map((f) => ({
-                uri: f.uri.toString(),
-                name: f.name,
-              })),
             }),
           );
 
@@ -236,6 +229,9 @@ const resolveRuffBinary = Effect.fn(function* () {
 /**
  * Read ruff.* settings from a WorkspaceConfiguration and return them in the format
  * expected by the Ruff language server's initializationOptions.
+ *
+ * Based on ruff-vscode's getWorkspaceSettings:
+ * https://github.com/astral-sh/ruff-vscode/blob/main/src/common/settings.ts
  */
 function getRuffSettings(
   config: vscode.WorkspaceConfiguration,
@@ -271,6 +267,9 @@ function getRuffSettings(
 
 /**
  * Read global ruff.* settings (not workspace-specific).
+ *
+ * Based on ruff-vscode's getGlobalSettings:
+ * https://github.com/astral-sh/ruff-vscode/blob/main/src/common/settings.ts
  */
 function getGlobalRuffSettings(
   config: vscode.WorkspaceConfiguration,

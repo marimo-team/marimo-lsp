@@ -103,8 +103,6 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
             );
 
             const resolved = yield* resolveTyBinary();
-            const workspaceFolders =
-              yield* code.workspace.getWorkspaceFolders();
 
             const client = yield* connectMarimoNotebookLspClient({
               name: TY_SERVER.name,
@@ -112,13 +110,6 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
               args: ["server"],
               outputChannel,
               initializationOptions: {},
-              workspaceFolders: Option.getOrElse(
-                workspaceFolders,
-                () => [],
-              ).map((f) => ({
-                uri: f.uri.toString(),
-                name: f.name,
-              })),
               onConfigurationRequest: (params) =>
                 Effect.forEach(params.items, (item) =>
                   Effect.gen(function* () {

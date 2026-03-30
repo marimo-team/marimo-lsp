@@ -34,9 +34,18 @@ export const connectMarimoNotebookLspClient = Effect.fn(
   "connectMarimoNotebookLspClient",
 )(function* (config: NotebookLspClientConfig) {
   const code = yield* VsCode;
+
+  // -- Resolve workspace folders -------------------------------------------
+
+  const folders = yield* code.workspace.getWorkspaceFolders();
+  const workspaceFolders = Option.getOrElse(folders, () => []).map((f) => ({
+    uri: f.uri.toString(),
+    name: f.name,
+  }));
+
   // -- Create the LSP client -----------------------------------------------
 
-  const client = yield* makeNotebookLspClient(config);
+  const client = yield* makeNotebookLspClient({ ...config, workspaceFolders });
 
   // -- Diagnostics ---------------------------------------------------------
 

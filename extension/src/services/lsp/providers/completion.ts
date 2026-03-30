@@ -16,7 +16,9 @@ import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
 import {
   catchLspError,
+  toCompletionItemKind,
   toDocumentation,
+  toLspCompletionItemKind,
   toLspCompletionTriggerKind,
   toVsCodeRange,
 } from "./converters.ts";
@@ -30,23 +32,6 @@ const lspData = new WeakMap<vscode.CompletionItem, unknown>();
 // ---------------------------------------------------------------------------
 // LSP → VS Code converters
 // ---------------------------------------------------------------------------
-
-/**
- * CompletionItemKind: LSP is 1-based, VS Code is 0-based.
- *
- * Reference: protocolConverter.ts asCompletionItemKind
- */
-function toCompletionItemKind(
-  value: lsp.CompletionItemKind,
-): vscode.CompletionItemKind {
-  if (
-    lsp.CompletionItemKind.Text <= value &&
-    value <= lsp.CompletionItemKind.TypeParameter
-  ) {
-    return (value - 1) as vscode.CompletionItemKind;
-  }
-  return 0 satisfies typeof vscode.CompletionItemKind.Text;
-}
 
 export function toCompletionItem(
   code: VsCode,
@@ -64,7 +49,7 @@ export function toCompletionItem(
   const result = new code.CompletionItem(label);
 
   if (item.kind !== undefined) {
-    result.kind = toCompletionItemKind(item.kind);
+    result.kind = toCompletionItemKind(code, item.kind);
   }
   if (item.detail) result.detail = item.detail;
   if (item.documentation) {
@@ -130,13 +115,15 @@ export function toCompletionItem(
 // VS Code → LSP converter (for resolve)
 // ---------------------------------------------------------------------------
 
-function toLspCompletionItem(item: vscode.CompletionItem): lsp.CompletionItem {
+function toLspCompletionItem(
+  code: VsCode,
+  item: vscode.CompletionItem,
+): lsp.CompletionItem {
   const label = typeof item.label === "string" ? item.label : item.label.label;
   const result: lsp.CompletionItem = { label };
 
   if (item.kind !== undefined) {
-    // VS Code 0-based → LSP 1-based
-    result.kind = (item.kind + 1) as lsp.CompletionItemKind;
+    result.kind = toLspCompletionItemKind(code, item.kind);
   }
   if (item.detail) result.detail = item.detail;
   if (item.documentation) {
@@ -197,7 +184,7 @@ export const registerCompletionProvider = Effect.fn(function* (
             const resolved = yield* client
               .sendRequest(
                 lsp.CompletionResolveRequest.method,
-                toLspCompletionItem(item),
+                toLspCompletionItem(code, item),
               )
               .pipe(catchLspError(null));
             return resolved ? toCompletionItem(code, resolved) : item;

@@ -1120,6 +1120,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       CodeActionKind: vscode.CodeActionKind,
       CompletionTriggerKind: vscode.CompletionTriggerKind,
       CompletionItem: vscode.CompletionItem,
+      CompletionItemKind: vscode.CompletionItemKind,
       CompletionList: vscode.CompletionList,
       MarkdownString: vscode.MarkdownString,
       SignatureInformation: vscode.SignatureInformation,
