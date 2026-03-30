@@ -10,11 +10,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import {
-  catchLspError,
-  toDocumentPositionParams,
-  toVsCodeRange,
-} from "./converters.ts";
+import { toDocumentPositionParams, toVsCodeRange } from "./converters.ts";
 
 /**
  * Convert LSP hover contents to VS Code MarkdownString(s).
@@ -56,12 +52,10 @@ export const registerHoverProvider = Effect.fn(function* (
 
   yield* code.languages.registerHoverProvider(sel, {
     provideHover: Effect.fn(function* (doc, pos) {
-      const result = yield* client
-        .sendRequest(
-          lsp.HoverRequest.method,
-          toDocumentPositionParams(doc, pos),
-        )
-        .pipe(catchLspError(null));
+      const result = yield* client.sendRequest(
+        lsp.HoverRequest.method,
+        toDocumentPositionParams(doc, pos),
+      );
       if (!result) return undefined;
       return new code.Hover(
         toHoverContent(code, result.contents),

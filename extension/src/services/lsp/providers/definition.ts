@@ -16,11 +16,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import {
-  catchLspError,
-  toDocumentPositionParams,
-  toLocationResult,
-} from "./converters.ts";
+import { toDocumentPositionParams, toLocationResult } from "./converters.ts";
 
 export const registerDefinitionProvider = Effect.fn(function* (
   sel: vscode.DocumentSelector,
@@ -31,12 +27,10 @@ export const registerDefinitionProvider = Effect.fn(function* (
 
   yield* code.languages.registerDefinitionProvider(sel, {
     provideDefinition: Effect.fn(function* (doc, pos) {
-      const result = yield* client
-        .sendRequest(
-          lsp.DefinitionRequest.method,
-          toDocumentPositionParams(doc, pos),
-        )
-        .pipe(catchLspError(null));
+      const result = yield* client.sendRequest(
+        lsp.DefinitionRequest.method,
+        toDocumentPositionParams(doc, pos),
+      );
       return toLocationResult(code, result);
     }),
   });
@@ -51,12 +45,10 @@ export const registerDeclarationProvider = Effect.fn(function* (
 
   yield* code.languages.registerDeclarationProvider(sel, {
     provideDeclaration: Effect.fn(function* (doc, pos) {
-      const result = yield* client
-        .sendRequest(
-          lsp.DeclarationRequest.method,
-          toDocumentPositionParams(doc, pos),
-        )
-        .pipe(catchLspError(null));
+      const result = yield* client.sendRequest(
+        lsp.DeclarationRequest.method,
+        toDocumentPositionParams(doc, pos),
+      );
       return toLocationResult(code, result);
     }),
   });
@@ -71,12 +63,10 @@ export const registerTypeDefinitionProvider = Effect.fn(function* (
 
   yield* code.languages.registerTypeDefinitionProvider(sel, {
     provideTypeDefinition: Effect.fn(function* (doc, pos) {
-      const result = yield* client
-        .sendRequest(
-          lsp.TypeDefinitionRequest.method,
-          toDocumentPositionParams(doc, pos),
-        )
-        .pipe(catchLspError(null));
+      const result = yield* client.sendRequest(
+        lsp.TypeDefinitionRequest.method,
+        toDocumentPositionParams(doc, pos),
+      );
       return toLocationResult(code, result);
     }),
   });

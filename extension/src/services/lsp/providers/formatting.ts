@@ -13,7 +13,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { catchLspError, toLspRange, toVsCodeRange } from "./converters.ts";
+import { toLspRange, toVsCodeRange } from "./converters.ts";
 
 /**
  * Read file-level formatting options from workspace config.
@@ -43,16 +43,17 @@ export const registerDocumentFormattingProvider = Effect.fn(function* (
   yield* code.languages.registerDocumentFormattingEditProvider(sel, {
     provideDocumentFormattingEdits: Effect.fn(function* (doc, opts) {
       const fileOpts = yield* getFileFormattingOptions(code, doc);
-      const result = yield* client
-        .sendRequest(lsp.DocumentFormattingRequest.method, {
+      const result = yield* client.sendRequest(
+        lsp.DocumentFormattingRequest.method,
+        {
           textDocument: { uri: doc.uri.toString() },
           options: {
             tabSize: opts.tabSize,
             insertSpaces: opts.insertSpaces,
             ...fileOpts,
           },
-        } satisfies lsp.DocumentFormattingParams)
-        .pipe(catchLspError(null));
+        } satisfies lsp.DocumentFormattingParams,
+      );
       return result?.map((e) => toTextEdit(code, e)) ?? [];
     }),
   });
@@ -69,8 +70,9 @@ export const registerDocumentRangeFormattingProvider = Effect.fn(function* (
     provideDocumentRangeFormattingEdits: Effect.fn(
       function* (doc, range, opts) {
         const fileOpts = yield* getFileFormattingOptions(code, doc);
-        const result = yield* client
-          .sendRequest(lsp.DocumentRangeFormattingRequest.method, {
+        const result = yield* client.sendRequest(
+          lsp.DocumentRangeFormattingRequest.method,
+          {
             textDocument: { uri: doc.uri.toString() },
             range: toLspRange(range),
             options: {
@@ -78,8 +80,8 @@ export const registerDocumentRangeFormattingProvider = Effect.fn(function* (
               insertSpaces: opts.insertSpaces,
               ...fileOpts,
             },
-          } satisfies lsp.DocumentRangeFormattingParams)
-          .pipe(catchLspError(null));
+          } satisfies lsp.DocumentRangeFormattingParams,
+        );
         return result?.map((e) => toTextEdit(code, e)) ?? [];
       },
     ),

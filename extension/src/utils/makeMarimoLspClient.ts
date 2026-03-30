@@ -848,13 +848,14 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
       // ---- Typed requests -----------------------------------------------
 
       /**
-       * Send a typed LSP request. The method string determines
-       * the param/result types via {@link LspRequestMap}.
+       * Send a typed LSP request. Logs and returns `null` on failure
+       * (server error, connection lost, etc.) so providers can treat
+       * errors the same as "no results".
        */
       sendRequest<M extends keyof LspRequestMap>(
         method: M,
         params: LspRequestMap[M][0],
-      ): Effect.Effect<LspRequestMap[M][1], LspRequestError> {
+      ): Effect.Effect<LspRequestMap[M][1]> {
         return Effect.tryPromise({
           try: () => conn.sendRequest(method, params),
           catch: (cause) =>
@@ -863,7 +864,14 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
               code: getErrorCode(cause),
               message: cause instanceof Error ? cause.message : String(cause),
             }),
-        });
+        }).pipe(
+          Effect.catchTag("LspRequestError", (err) =>
+            Effect.logDebug("LSP request failed").pipe(
+              Effect.annotateLogs({ method: err.method, code: err.code }),
+              Effect.as(null as LspRequestMap[M][1]),
+            ),
+          ),
+        );
       },
 
       /** Send a raw notification to the server. */

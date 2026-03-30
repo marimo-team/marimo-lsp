@@ -15,7 +15,6 @@ import * as lsp from "vscode-languageserver-protocol";
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
 import {
-  catchLspError,
   toCompletionItemKind,
   toDocumentation,
   toLspCompletionItemKind,
@@ -166,27 +165,23 @@ export const registerCompletionProvider = Effect.fn(function* (
     sel,
     {
       provideCompletionItems: Effect.fn(function* (doc, pos, ctx) {
-        const result = yield* client
-          .sendRequest(lsp.CompletionRequest.method, {
-            textDocument: { uri: doc.uri.toString() },
-            position: { line: pos.line, character: pos.character },
-            context: {
-              triggerKind: toLspCompletionTriggerKind(code, ctx.triggerKind),
-              triggerCharacter: ctx.triggerCharacter,
-            },
-          } satisfies lsp.CompletionParams)
-          .pipe(catchLspError(null));
+        const result = yield* client.sendRequest(lsp.CompletionRequest.method, {
+          textDocument: { uri: doc.uri.toString() },
+          position: { line: pos.line, character: pos.character },
+          context: {
+            triggerKind: toLspCompletionTriggerKind(code, ctx.triggerKind),
+            triggerCharacter: ctx.triggerCharacter,
+          },
+        } satisfies lsp.CompletionParams);
         if (!result) return [];
         return result.items.map((item) => toCompletionItem(code, item));
       }),
       resolveCompletionItem: resolveProvider
         ? Effect.fn(function* (item) {
-            const resolved = yield* client
-              .sendRequest(
-                lsp.CompletionResolveRequest.method,
-                toLspCompletionItem(code, item),
-              )
-              .pipe(catchLspError(null));
+            const resolved = yield* client.sendRequest(
+              lsp.CompletionResolveRequest.method,
+              toLspCompletionItem(code, item),
+            );
             return resolved ? toCompletionItem(code, resolved) : item;
           })
         : undefined,

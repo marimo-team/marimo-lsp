@@ -2,30 +2,10 @@
  * Shared LSP → VS Code type converters used across providers.
  */
 
-import { Effect } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import { LspRequestError } from "../../../utils/makeMarimoLspClient.ts";
 import type { VsCode } from "../../VsCode.ts";
-
-/**
- * Catch an {@link LspRequestError} and return a fallback value.
- *
- * Used in provider callbacks so that a server error (e.g. MethodNotFound,
- * connection lost) returns empty results instead of crashing the fiber.
- */
-export function catchLspError<T>(fallback: T) {
-  return <A>(self: Effect.Effect<A, LspRequestError>) =>
-    self.pipe(
-      Effect.catchTag("LspRequestError", (err) =>
-        Effect.logDebug("LSP request failed").pipe(
-          Effect.annotateLogs({ method: err.method, code: err.code }),
-          Effect.as(fallback),
-        ),
-      ),
-    );
-}
 
 export function toVsCodeRange(code: VsCode, range: lsp.Range): vscode.Range {
   return new code.Range(

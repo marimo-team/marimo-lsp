@@ -12,7 +12,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { catchLspError, toDocumentation } from "./converters.ts";
+import { toDocumentation } from "./converters.ts";
 
 export function toSignatureHelp(
   code: VsCode,
@@ -57,12 +57,13 @@ export const registerSignatureHelpProvider = Effect.fn(function* (
     sel,
     {
       provideSignatureHelp: Effect.fn(function* (doc, pos) {
-        const result = yield* client
-          .sendRequest(lsp.SignatureHelpRequest.method, {
+        const result = yield* client.sendRequest(
+          lsp.SignatureHelpRequest.method,
+          {
             textDocument: { uri: doc.uri.toString() },
             position: { line: pos.line, character: pos.character },
-          })
-          .pipe(catchLspError(null));
+          },
+        );
         if (!result) return undefined;
         return toSignatureHelp(code, result);
       }),

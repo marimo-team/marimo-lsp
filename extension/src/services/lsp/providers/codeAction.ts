@@ -19,7 +19,6 @@ import * as lsp from "vscode-languageserver-protocol";
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
 import {
-  catchLspError,
   toLspDiagnostic,
   toLspRange,
   toVsCodeDiagnosticSeverity,
@@ -184,13 +183,11 @@ export const registerCodeActionProvider = Effect.fn(function* (
     sel,
     {
       provideCodeActions: Effect.fn(function* (doc, range, ctx) {
-        const result = yield* client
-          .sendRequest(lsp.CodeActionRequest.method, {
-            textDocument: { uri: doc.uri.toString() },
-            range: toLspRange(range),
-            context: toLspCodeActionContext(code, ctx),
-          } satisfies lsp.CodeActionParams)
-          .pipe(catchLspError(null));
+        const result = yield* client.sendRequest(lsp.CodeActionRequest.method, {
+          textDocument: { uri: doc.uri.toString() },
+          range: toLspRange(range),
+          context: toLspCodeActionContext(code, ctx),
+        } satisfies lsp.CodeActionParams);
         if (!result) return [];
         return result
           .filter((a): a is lsp.CodeAction => !lsp.Command.is(a))
@@ -198,12 +195,10 @@ export const registerCodeActionProvider = Effect.fn(function* (
       }),
       resolveCodeAction: resolveProvider
         ? Effect.fn(function* (item) {
-            const resolved = yield* client
-              .sendRequest(
-                lsp.CodeActionResolveRequest.method,
-                toLspCodeAction(code, item),
-              )
-              .pipe(catchLspError(null));
+            const resolved = yield* client.sendRequest(
+              lsp.CodeActionResolveRequest.method,
+              toLspCodeAction(code, item),
+            );
             if (!resolved) return item;
             if (resolved.edit) item.edit = toWorkspaceEdit(code, resolved.edit);
             if (resolved.command) {

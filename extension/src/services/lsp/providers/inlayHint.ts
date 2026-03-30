@@ -14,7 +14,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { catchLspError, toLspRange, toVsCodeRange } from "./converters.ts";
+import { toLspRange, toVsCodeRange } from "./converters.ts";
 
 // ---------------------------------------------------------------------------
 // Data stashing for resolve round-trip
@@ -129,22 +129,18 @@ export const registerInlayHintProvider = Effect.fn(function* (
 
   yield* code.languages.registerInlayHintsProvider(sel, {
     provideInlayHints: Effect.fn(function* (doc, range) {
-      const result = yield* client
-        .sendRequest(lsp.InlayHintRequest.method, {
-          textDocument: { uri: doc.uri.toString() },
-          range: toLspRange(range),
-        } satisfies lsp.InlayHintParams)
-        .pipe(catchLspError(null));
+      const result = yield* client.sendRequest(lsp.InlayHintRequest.method, {
+        textDocument: { uri: doc.uri.toString() },
+        range: toLspRange(range),
+      } satisfies lsp.InlayHintParams);
       return result?.map((h) => toInlayHint(code, h)) ?? [];
     }),
     resolveInlayHint: resolveProvider
       ? Effect.fn(function* (hint) {
-          const resolved = yield* client
-            .sendRequest(
-              lsp.InlayHintResolveRequest.method,
-              toLspInlayHint(hint),
-            )
-            .pipe(catchLspError(null));
+          const resolved = yield* client.sendRequest(
+            lsp.InlayHintResolveRequest.method,
+            toLspInlayHint(hint),
+          );
           return resolved ? toInlayHint(code, resolved) : hint;
         })
       : undefined,

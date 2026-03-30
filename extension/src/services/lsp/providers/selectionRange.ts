@@ -10,7 +10,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { catchLspError, toVsCodeRange } from "./converters.ts";
+import { toVsCodeRange } from "./converters.ts";
 
 export function toSelectionRange(
   code: VsCode,
@@ -31,15 +31,16 @@ export const registerSelectionRangeProvider = Effect.fn(function* (
 
   yield* code.languages.registerSelectionRangeProvider(sel, {
     provideSelectionRanges: Effect.fn(function* (doc, positions) {
-      const result = yield* client
-        .sendRequest(lsp.SelectionRangeRequest.method, {
+      const result = yield* client.sendRequest(
+        lsp.SelectionRangeRequest.method,
+        {
           textDocument: { uri: doc.uri.toString() },
           positions: positions.map((p) => ({
             line: p.line,
             character: p.character,
           })),
-        })
-        .pipe(catchLspError(null));
+        },
+      );
       return result?.map((s) => toSelectionRange(code, s)) ?? [];
     }),
   });
