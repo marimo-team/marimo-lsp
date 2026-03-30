@@ -12,35 +12,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toDocumentation } from "./converters.ts";
-
-export function toSignatureHelp(
-  code: VsCode,
-  item: lsp.SignatureHelp,
-): vscode.SignatureHelp {
-  const result = new code.SignatureHelp();
-  result.activeSignature = item.activeSignature ?? 0;
-  result.activeParameter =
-    item.activeParameter === null ? -1 : (item.activeParameter ?? 0);
-  result.signatures = (item.signatures ?? []).map((sig) => {
-    const info = new code.SignatureInformation(
-      sig.label,
-      toDocumentation(code, sig.documentation),
-    );
-    info.parameters = (sig.parameters ?? []).map(
-      (p) =>
-        new code.ParameterInformation(
-          p.label,
-          toDocumentation(code, p.documentation),
-        ),
-    );
-    if (sig.activeParameter !== undefined) {
-      info.activeParameter = sig.activeParameter ?? -1;
-    }
-    return info;
-  });
-  return result;
-}
+import { toSignatureHelp } from "./converters.ts";
 
 export const registerSignatureHelpProvider = Effect.fn(function* (
   sel: vscode.DocumentSelector,

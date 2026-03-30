@@ -10,17 +10,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toVsCodeRange } from "./converters.ts";
-
-export function toSelectionRange(
-  code: VsCode,
-  sr: lsp.SelectionRange,
-): vscode.SelectionRange {
-  return new code.SelectionRange(
-    toVsCodeRange(code, sr.range),
-    sr.parent ? toSelectionRange(code, sr.parent) : undefined,
-  );
-}
+import { toSelectionRange } from "./converters.ts";
 
 export const registerSelectionRangeProvider = Effect.fn(function* (
   sel: vscode.DocumentSelector,

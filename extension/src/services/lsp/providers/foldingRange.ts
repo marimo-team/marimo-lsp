@@ -10,23 +10,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toLspFoldingRangeKind } from "./converters.ts";
-
-/**
- * Reference: protocolConverter.ts asFoldingRangeKind
- *
- * LSP and VS Code use the same string values for folding range kinds.
- */
-export function toFoldingRange(
-  code: VsCode,
-  r: lsp.FoldingRange,
-): vscode.FoldingRange {
-  return new code.FoldingRange(
-    r.startLine,
-    r.endLine,
-    r.kind ? toLspFoldingRangeKind(r.kind) : undefined,
-  );
-}
+import { toFoldingRange } from "./converters.ts";
 
 export const registerFoldingRangeProvider = Effect.fn(function* (
   sel: vscode.DocumentSelector,

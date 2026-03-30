@@ -13,7 +13,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { NotebookLspClient } from "../../../utils/makeMarimoLspClient.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toLspRange, toVsCodeRange } from "./converters.ts";
+import { toLspRange, toTextEdit } from "./converters.ts";
 
 /**
  * Read file-level formatting options from workspace config.
@@ -27,10 +27,6 @@ function getFileFormattingOptions(code: VsCode, doc: vscode.TextDocument) {
     trimFinalNewlines: cfg.get<boolean>("trimFinalNewlines") || undefined,
     insertFinalNewline: cfg.get<boolean>("insertFinalNewline") || undefined,
   }));
-}
-
-export function toTextEdit(code: VsCode, edit: lsp.TextEdit): vscode.TextEdit {
-  return new code.TextEdit(toVsCodeRange(code, edit.range), edit.newText);
 }
 
 export const registerDocumentFormattingProvider = Effect.fn(function* (

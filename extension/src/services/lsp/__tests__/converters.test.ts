@@ -4,17 +4,21 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import { TestVsCode } from "../../../__mocks__/TestVsCode.ts";
 import { VsCode } from "../../VsCode.ts";
-import { toCodeAction, toCodeActionKind } from "../providers/codeAction.ts";
-import { toCompletionItem } from "../providers/completion.ts";
-import { toLocationResult, toVsCodeRange } from "../providers/converters.ts";
-import { toDocumentHighlight } from "../providers/documentHighlight.ts";
-import { toDocumentSymbol } from "../providers/documentSymbol.ts";
-import { toFoldingRange } from "../providers/foldingRange.ts";
-import { toTextEdit } from "../providers/formatting.ts";
-import { toHoverContent } from "../providers/hover.ts";
-import { toInlayHint } from "../providers/inlayHint.ts";
-import { toSelectionRange } from "../providers/selectionRange.ts";
-import { toSignatureHelp } from "../providers/signatureHelp.ts";
+import {
+  toCodeAction,
+  toCodeActionKind,
+  toCompletionItem,
+  toDocumentHighlight,
+  toDocumentSymbol,
+  toFoldingRange,
+  toHoverContent,
+  toInlayHint,
+  toLocationResult,
+  toSelectionRange,
+  toSignatureHelp,
+  toTextEdit,
+  toVsCodeRange,
+} from "../providers/converters.ts";
 
 const withVsCode = Effect.gen(function* () {
   const test = yield* TestVsCode.make();
