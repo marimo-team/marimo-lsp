@@ -39,7 +39,6 @@ class EnvironmentRequirementError extends Data.TaggedError(
  * Checks for:
  *
  *   - marimo (with version requirement)
- *   - pyzmq
  *
  * using `env.executable`.
  */
@@ -79,12 +78,6 @@ try:
     packages.append({"name":"marimo","version":marimo.__version__})
 except Exception:
     packages.append({"name":"marimo","version":None})
-
-try:
-    import zmq
-    packages.append({"name":"pyzmq","version":zmq.__version__})
-except Exception:
-    packages.append({"name":"pyzmq","version":None})
 
 # Restore stdout and emit the result
 sys.stdout = _real_stdout

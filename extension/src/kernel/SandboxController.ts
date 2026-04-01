@@ -227,7 +227,6 @@ const findRequirements = (uv: Uv, notebook: MarimoNotebookDocument) =>
     });
 
     let marimoOk = false;
-    let pyzmqOk = false;
 
     for (const pkg of packages.split("\n")) {
       if (pkg.startsWith("marimo ")) {
@@ -242,17 +241,11 @@ const findRequirements = (uv: Uv, notebook: MarimoNotebookDocument) =>
           marimoOk = true;
         }
       }
-      if (pkg.startsWith("pyzmq ")) {
-        pyzmqOk = true;
-      }
     }
 
     const requirements = [];
     if (!marimoOk) {
       requirements.push(`marimo>=${semver.format(MINIMUM_MARIMO_VERSION)}`);
-    }
-    if (!pyzmqOk) {
-      requirements.push("pyzmq");
     }
 
     return requirements satisfies ReadonlyArray<string>;
@@ -261,7 +254,7 @@ const findRequirements = (uv: Uv, notebook: MarimoNotebookDocument) =>
       "UvMissingPep723MetadataError",
       Effect.fn(function* () {
         yield* Effect.logDebug("No PEP 723 metadata.");
-        return ["marimo", "pyzmq"];
+        return ["marimo"];
       }),
     ),
   );

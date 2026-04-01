@@ -625,6 +625,17 @@ x\
             {
                 "notebookUri": "file:///exec_test.py",
                 "operation": {
+                    "op": "notebook-document-transaction",
+                    "transaction": {
+                        "changes": [{"type": "reorder-cells", "cellIds": ["cell1"]}],
+                        "source": "kernel",
+                        "version": None,
+                    },
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -875,6 +886,19 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                             "used_by": ["cell2"],
                         }
                     ],
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "notebook-document-transaction",
+                    "transaction": {
+                        "changes": [
+                            {"type": "reorder-cells", "cellIds": ["cell1", "cell2"]}
+                        ],
+                        "source": "kernel",
+                        "version": None,
+                    },
                 },
             },
             {

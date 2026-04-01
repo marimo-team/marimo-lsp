@@ -80,47 +80,9 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
             "kind": "missing",
             "package": "marimo",
           },
-          {
-            "kind": "missing",
-            "package": "pyzmq",
-          },
         ]
       `);
     }),
-  );
-
-  it.effect(
-    "should fail with missing pyzmq",
-    Effect.fn(function* () {
-      const uv = yield* Uv;
-      const validator = yield* EnvironmentValidator;
-      const tmpdir = yield* TempDir;
-
-      const venv = NodePath.join(tmpdir.path, ".venv");
-      yield* uv.venv(venv, { python, clear: true });
-      yield* uv.pipInstall(["marimo"], { venv });
-
-      const result = yield* Effect.either(
-        validator.validate(
-          TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
-        ),
-      );
-
-      assert(Either.isLeft(result), "Expected validation to fail");
-      assert(
-        result.left._tag === "EnvironmentRequirementError",
-        `Expected EnvironmentRequirementError, got ${result.left._tag}`,
-      );
-      expect(result.left.diagnostics).toMatchInlineSnapshot(`
-        [
-          {
-            "kind": "missing",
-            "package": "pyzmq",
-          },
-        ]
-      `);
-    }),
-    { timeout: 30_000 },
   );
 
   it.effect(
@@ -132,7 +94,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       const venv = NodePath.join(tmpdir.path, ".venv");
       yield* uv.venv(venv, { python, clear: true });
-      yield* uv.pipInstall(["marimo<0.16.0", "pyzmq"], { venv });
+      yield* uv.pipInstall(["marimo<0.16.0"], { venv });
 
       const result = yield* Effect.either(
         validator.validate(
@@ -157,8 +119,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
             "package": "marimo",
             "requiredVersion": {
               "major": 0,
-              "minor": 20,
-              "patch": 2,
+              "minor": 22,
+              "patch": 0,
             },
           },
         ]
@@ -168,7 +130,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   );
 
   it.effect(
-    "should succeed with marimo and pyzmq installed",
+    "should succeed with marimo installed",
     Effect.fn(function* () {
       const uv = yield* Uv;
       const validator = yield* EnvironmentValidator;
@@ -176,7 +138,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       const venv = NodePath.join(tmpdir.path, ".venv");
       yield* uv.venv(venv, { python, clear: true });
-      yield* uv.pipInstall(["marimo", "pyzmq"], { venv });
+      yield* uv.pipInstall(["marimo"], { venv });
 
       const result = yield* Effect.either(
         validator.validate(
@@ -323,10 +285,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
         const tmpdir = yield* TempDir;
-        const json = JSON.stringify([
-          { name: "marimo", version: "1.0.0" },
-          { name: "pyzmq", version: "26.0.0" },
-        ]);
+        const json = JSON.stringify([{ name: "marimo", version: "1.0.0" }]);
         const script = makeFakeExecutable(tmpdir.path, "extra-whitespace", {
           stdout: `\n  ${json}  \n`,
           exitCode: 0,
@@ -346,10 +305,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
         const tmpdir = yield* TempDir;
-        const json = JSON.stringify([
-          { name: "marimo", version: null },
-          { name: "pyzmq", version: null },
-        ]);
+        const json = JSON.stringify([{ name: "marimo", version: null }]);
         const script = makeFakeExecutable(tmpdir.path, "null-versions", {
           stdout: json,
           exitCode: 0,
@@ -366,7 +322,6 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         );
         expect(result.left.diagnostics).toEqual([
           { kind: "missing", package: "marimo" },
-          { kind: "missing", package: "pyzmq" },
         ]);
       }),
     );
