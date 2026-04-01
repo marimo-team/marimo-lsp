@@ -13,6 +13,7 @@ from marimo._messaging.notification import (
     VariablesNotification,
 )
 from marimo._runtime.dataflow import DirectedGraph
+from marimo._types.ids import VariableName
 
 from marimo_lsp import _rules
 from marimo_lsp.loggers import get_logger
@@ -210,7 +211,7 @@ def extract_variables(graph: DirectedGraph) -> VariablesNotification:
     return VariablesNotification(
         variables=[
             VariableDeclarationNotification(
-                name=variable,
+                name=VariableName(variable),
                 declared_by=list(declared_by),
                 used_by=list(graph.get_referring_cells(variable, language="python")),
             )
