@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { type MarimoError, prettyErrorMessage } from "../errors.ts";
+import { cellId } from "./branded.ts";
 
 describe("prettyErrorMessage", () => {
   it("handles setup-refs error", () => {
@@ -37,7 +38,7 @@ describe("prettyErrorMessage", () => {
     const error: MarimoError = {
       type: "multiple-defs",
       name: "my_variable",
-      cells: ["cell_1", "cell_2", "cell_3"],
+      cells: [cellId("cell_1"), cellId("cell_2"), cellId("cell_3")],
     };
     expect(prettyErrorMessage(error)).toMatchInlineSnapshot(`
       "This cell redefines variables from other cells.
@@ -53,7 +54,7 @@ describe("prettyErrorMessage", () => {
     const error: MarimoError = {
       type: "multiple-defs",
       name: "x",
-      cells: ["cell_1"],
+      cells: [cellId("cell_1")],
     };
     expect(prettyErrorMessage(error)).toMatchInlineSnapshot(`
       "This cell redefines variables from other cells.
@@ -67,7 +68,7 @@ describe("prettyErrorMessage", () => {
     const error: MarimoError = {
       type: "multiple-defs",
       name: "slider",
-      cells: ["cell_id_abc", "cell_id_def"],
+      cells: [cellId("cell_id_abc"), cellId("cell_id_def")],
     };
     const cellIdMapper = (cellId: string) => {
       const map: Record<string, string> = {
@@ -89,7 +90,7 @@ describe("prettyErrorMessage", () => {
     const error: MarimoError = {
       type: "multiple-defs",
       name: "slider",
-      cells: ["cell_id_abc", "cell_id_def"],
+      cells: [cellId("cell_id_abc"), cellId("cell_id_def")],
     };
     const cellIdMapper = (cellId: string) => {
       const map: Record<string, string> = {
@@ -123,7 +124,7 @@ describe("prettyErrorMessage", () => {
     const error: MarimoError = {
       type: "ancestor-stopped",
       msg: "Cell was not run because an ancestor was stopped",
-      raising_cell: "cell_upstream",
+      raising_cell: cellId("cell_upstream"),
     };
     expect(prettyErrorMessage(error)).toMatchInlineSnapshot(
       `"Execution stopped because cell cell_upstream was stopped. Cell was not run because an ancestor was stopped"`,
@@ -134,8 +135,8 @@ describe("prettyErrorMessage", () => {
     const error: MarimoError = {
       type: "ancestor-prevented",
       msg: "Cell execution was prevented",
-      raising_cell: "cell_parent",
-      blamed_cell: "cell_child",
+      raising_cell: cellId("cell_parent"),
+      blamed_cell: cellId("cell_child"),
     };
     expect(prettyErrorMessage(error)).toMatchInlineSnapshot(
       `"Execution prevented: Cell execution was prevented (cell: cell_child)"`,
@@ -146,7 +147,7 @@ describe("prettyErrorMessage", () => {
     const error: MarimoError = {
       type: "ancestor-prevented",
       msg: "Cell execution was prevented",
-      raising_cell: "cell_parent",
+      raising_cell: cellId("cell_parent"),
       blamed_cell: null,
     };
     expect(prettyErrorMessage(error)).toMatchInlineSnapshot(
@@ -159,7 +160,7 @@ describe("prettyErrorMessage", () => {
       type: "exception",
       msg: "division by zero",
       exception_type: "ZeroDivisionError",
-      raising_cell: "cell_5",
+      raising_cell: cellId("cell_5"),
     };
     expect(prettyErrorMessage(error)).toMatchInlineSnapshot(
       `"ZeroDivisionError: division by zero (raised in cell: cell_5)"`,
@@ -183,7 +184,7 @@ describe("prettyErrorMessage", () => {
       type: "strict-exception",
       msg: "Variable accessed before definition",
       ref: "my_var",
-      blamed_cell: "cell_10",
+      blamed_cell: cellId("cell_10"),
     };
     expect(prettyErrorMessage(error)).toMatchInlineSnapshot(
       `"Strict execution error: Variable accessed before definition (ref: my_var, cell: cell_10)"`,

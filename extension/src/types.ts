@@ -10,6 +10,8 @@ import type { SerializedNotebook } from "./schemas/SerializedNotebook.ts";
 export type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 
 type Schemas = Api["schemas"];
+export type CellId = Schemas["CellId"];
+export type VariableName = Schemas["VariableName"];
 
 export type Notification = Schemas["KnownUnions"]["notification"];
 export type NotificationOf<T extends Notification["op"]> = Extract<

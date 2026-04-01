@@ -5,10 +5,7 @@
  *
  * See marimo-frontend-untyped.js for details on why this split exists.
  */
-import type {
-  CellId,
-  UIElementId,
-} from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
+import type { CellId } from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
 import { FUNCTIONS_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/functions/FunctionRegistry.ts";
 import { initialModeAtom } from "@marimo-team/frontend/unstable_internal/core/mode.ts";
 import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts";
@@ -31,7 +28,6 @@ import {
 } from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts";
 import { safeExtractSetUIElementMessageBuffers } from "@marimo-team/frontend/unstable_internal/utils/json/base64.ts";
 
-import type { RequestId } from "../../../../marimo/frontend/src/core/network/DeferredRequestRegistry.ts";
 import type { NotificationOf, CellRuntimeState } from "../types.ts";
 
 import "@marimo-team/frontend/unstable_internal/css/common.css";
@@ -68,7 +64,7 @@ export function initialize(client: RequestClient) {
 export function handleSendUiElementMessage(
   msg: NotificationOf<"send-ui-element-message">,
 ) {
-  const uiElement = msg.ui_element as UIElementId;
+  const uiElement = msg.ui_element;
   const message = msg.message;
   const buffers = safeExtractSetUIElementMessageBuffers(msg);
 
@@ -84,7 +80,7 @@ export function handleModelLifecycle(msg: NotificationOf<"model-lifecycle">) {
 export function handleFunctionCallResult(
   msg: NotificationOf<"function-call-result">,
 ) {
-  FUNCTIONS_REGISTRY.resolve(msg.function_call_id as RequestId, msg);
+  FUNCTIONS_REGISTRY.resolve(msg.function_call_id, msg);
   return;
 }
 
@@ -94,7 +90,7 @@ export function handleRemoveUIElements(
   // This removes the element from the registry to (1) clean-up
   // memory and (2) make sure that the old value doesn't get re-used
   // if the same cell-id is later reused for another element.
-  const cellId = msg.cell_id as CellId;
+  const cellId = msg.cell_id;
   untyped.UI_ELEMENT_REGISTRY.removeElementsByCell(cellId);
 }
 

@@ -7,13 +7,22 @@ import { VariablesService } from "../../panel/variables/VariablesService.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { VariablesNotification } from "../../types.ts";
 import { getTopologicalCells } from "../getTopologicalCells.ts";
+import { cellId, variableName } from "./branded.ts";
 
 function createMockVariablesOp(
-  variables: VariablesNotification["variables"],
+  vars: Array<{
+    declared_by: Array<string>;
+    name: string;
+    used_by: Array<string>;
+  }>,
 ): VariablesNotification {
   return {
     op: "variables",
-    variables: variables,
+    variables: vars.map((v) => ({
+      declared_by: v.declared_by.map(cellId),
+      name: variableName(v.name),
+      used_by: v.used_by.map(cellId),
+    })),
   };
 }
 

@@ -293,6 +293,7 @@ function processOperation(
       case "installing-package-alert":
       case "kernel-ready":
       case "kernel-startup-error":
+      case "notebook-document-transaction":
       case "query-params-append":
       case "query-params-clear":
       case "query-params-delete":
@@ -300,10 +301,11 @@ function processOperation(
       case "reconnected":
       case "reload":
       case "secret-keys-result":
+      case "sql-schema-list-preview":
       case "startup-logs":
+      case "storage-download-ready":
+      case "storage-entries":
       case "storage-namespaces":
-      case "update-cell-codes":
-      case "update-cell-ids":
       case "validate-sql-result": {
         break;
       }

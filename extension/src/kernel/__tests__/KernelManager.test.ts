@@ -18,6 +18,7 @@ import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
 import { KernelManager } from "../../kernel/KernelManager.ts";
 import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
+import { cellId } from "../../lib/__tests__/branded.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
@@ -119,14 +120,14 @@ const withTestCtx = Effect.fn(function* () {
 
 function makeIdleCellOperation(
   notebookUri: NotebookId,
-  cellId: string,
+  cid: string,
   overrides: Partial<CellOperationNotification> = {},
 ): MarimoLspNotificationOf<"marimo/operation"> {
   return {
     notebookUri,
     operation: {
       op: "cell-op" as const,
-      cell_id: cellId,
+      cell_id: cellId(cid),
       status: "idle",
       ...overrides,
     },

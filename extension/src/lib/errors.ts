@@ -69,7 +69,7 @@ function formatMultipleDefinitionError(
   cellIdMapper?: CellIdMapper,
 ): string {
   const cellNames = error.cells.map((cellId) => {
-    const mapped = cellIdMapper?.(cellId as NotebookCellId);
+    const mapped = cellIdMapper?.(cellId);
     return mapped ?? cellId;
   });
 

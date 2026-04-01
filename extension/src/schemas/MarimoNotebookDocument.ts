@@ -5,18 +5,19 @@ import { NOTEBOOK_TYPE } from "../constants.ts";
 import type {
   CellOperationNotification,
   VariablesNotification,
+  CellId,
+  VariableName,
 } from "../types.ts";
 import type { CellMetadata } from "./CellMetadata.ts";
 import { decodeCellMetadata, encodeCellMetadata } from "./CellMetadata.ts";
 import { SerializedNotebook } from "./SerializedNotebook.ts";
 
 export type NotebookId = Brand.Branded<string, "NotebookId">;
-export type NotebookCellId = Brand.Branded<string, "NotebookCellId">;
-export type VariableName = Brand.Branded<string, "VariableName">;
+export type NotebookCellId = CellId;
 
 const NotebookId = Brand.nominal<NotebookId>();
-const NotebookCellId = Brand.nominal<NotebookCellId>();
-const VariableName = Brand.nominal<VariableName>();
+const NotebookCellId = (id: string) => id as CellId;
+const VariableName = (name: string) => name as VariableName;
 
 /**
  * Schema that decodes a string into a branded {@link NotebookId}.
