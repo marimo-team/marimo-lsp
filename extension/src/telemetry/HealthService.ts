@@ -222,7 +222,7 @@ export class HealthService extends Effect.Service<HealthService>()(
             lines.push("Common Issues:");
             lines.push("\t1. If notebooks won't open:");
             lines.push("\t\t- Check Python interpreter is selected");
-            lines.push("\t\t- Ensure marimo and pyzmq are installed");
+            lines.push("\t\t- Ensure marimo is installed");
             lines.push("\t\t- Check 'marimo-lsp' output channel for errors");
             lines.push("\t2. If features are missing:");
             lines.push(
