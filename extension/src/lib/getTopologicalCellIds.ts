@@ -1,5 +1,5 @@
-import type { VariableName } from "../panel/variables/VariablesService.ts";
 import type { NotebookCellId } from "../schemas/MarimoNotebookDocument.ts";
+import { VariableName } from "../types.ts";
 
 /**
  * Get topologically sorted cell IDs based on variable dependencies.

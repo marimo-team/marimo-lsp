@@ -14,9 +14,8 @@ import {
 import type {
   VariablesNotification,
   VariableValuesNotification,
+  VariableName,
 } from "../../types.ts";
-
-export type { VariableName } from "../../schemas/MarimoNotebookDocument.ts";
 
 /**
  * Manages variable state across all notebooks.
@@ -88,7 +87,11 @@ export class VariablesService extends Effect.Service<VariablesService>()(
                 operation.variables.map((v) => v.name),
               );
               const filteredValues = existingValues.value.variables.filter(
-                (v) => declaredVarNames.has(v.name),
+                (v) => {
+                  // @ts-expect-error - should be able to remove in once branded types are fully fixed in marimo main
+                  const varName: VariableName = v.name;
+                  return declaredVarNames.has(varName);
+                },
               );
 
               yield* SubscriptionRef.update(variableValuesRef, (map) =>
