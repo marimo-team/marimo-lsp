@@ -4,21 +4,6 @@ A VS Code extension for [marimo](https://github.com/marimo-team/marimo), a
 reactive Python notebook that's reproducible, git-friendly, and deployable as
 scripts or apps.
 
-> [!IMPORTANT]
-> **This extension requires [uv](https://docs.astral.sh/uv/) to be installed.**
->
-> Install uv before using this extension:
->
-> ```bash
-> # macOS/Linux
-> curl -LsSf https://astral.sh/uv/install.sh | sh
->
-> # Windows
-> powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-> ```
->
-> After installation, you may need to restart VS Code or reload the window.
-
 ![](https://github.com/user-attachments/assets/1221b757-4c82-471d-897c-030d61132e90)
 
 ## Features
@@ -30,12 +15,11 @@ scripts or apps.
 
 ## Getting Started
 
-1. Ensure [uv](https://docs.astral.sh/uv/) is installed (see above)
-2. Install this extension from the VS Code Marketplace
-3. Open a marimo notebook (`.py` file), or create a new one:
+1. Install this extension from the VS Code Marketplace
+2. Open a marimo notebook (`.py` file), or create a new one:
    - Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
    - Run **"Create: Marimo notebook"**
-4. VS Code will prompt you to open the file as a marimo notebook
+3. VS Code will prompt you to open the file as a marimo notebook
 
 If you have an existing Python file that's a marimo notebook, you'll see an
 icon in the editor title bar to open it as a notebook (see image above).
