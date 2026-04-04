@@ -29,7 +29,7 @@ def process_exists(pid: int) -> bool:
 @pytest.fixture
 def long_running_process() -> typing.Generator[subprocess.Popen[bytes]]:
     """Create a long-running subprocess for testing."""
-    process = subprocess.Popen(  # noqa: S603
+    process = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(300)"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -92,7 +92,7 @@ def test_popen_terminate_graceful(
 
 def test_popen_terminate_already_dead() -> None:
     """Test that terminate() handles already-dead processes gracefully."""
-    process = subprocess.Popen(  # noqa: S603
+    process = subprocess.Popen(
         [sys.executable, "-c", "pass"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
