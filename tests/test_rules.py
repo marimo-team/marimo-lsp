@@ -9,7 +9,7 @@ from marimo._ast.compiler import compile_cell
 from marimo._runtime.dataflow import DirectedGraph
 from marimo._types.ids import CellId_t
 
-from marimo_lsp._rules import cycles, multiple_definitions
+from marimo_lsp._rules import DiagnosticRule, cycles, multiple_definitions
 
 if TYPE_CHECKING:
     import lsprotocol.types as lsp
@@ -94,13 +94,13 @@ def _build_graph(
 
 def _run_rule(
     cell_sources: list[str],
-    rule: object,
+    rule: DiagnosticRule,
 ) -> tuple[dict[str, str], dict[str, list[lsp.Diagnostic]]]:
     """Build a graph and run a rule. Returns (cells_by_uri, diagnostics)."""
     graph, cell_id_to_uri, cell_names, cell_index, cells_by_uri = _build_graph(
         cell_sources
     )
-    diags = rule(graph, cell_id_to_uri, cell_names, cell_index)  # type: ignore[operator]
+    diags = rule(graph, cell_id_to_uri, cell_names, cell_index)
     return cells_by_uri, diags
 
 

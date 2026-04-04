@@ -21,8 +21,8 @@ dev = [
   "inline-snapshot>=0.27.2",
   "pytest-lsp==1.0.0b2",
   "pytest>=8.4.1",
-  "ruff>=0.15.0",
-  "ty>=0.0.15",
+  "ruff>=0.15.9",
+  "ty>=0.0.28",
 ]
 
 [build-system]
