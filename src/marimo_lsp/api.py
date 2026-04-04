@@ -45,7 +45,7 @@ from marimo_lsp.models import (
 from marimo_lsp.package_manager import LspPackageManager
 
 if TYPE_CHECKING:
-    from marimo._config.config import DisplayConfig, PartialMarimoConfig
+    from marimo._config.config import DisplayConfig, MarimoConfig, PartialMarimoConfig
     from pygls.lsp.server import LanguageServer
 
     from marimo_lsp.session_manager import LspSessionManager
@@ -54,6 +54,14 @@ if TYPE_CHECKING:
 __all__ = ["handle_api_command"]
 
 logger = get_logger()
+
+
+def _get_display_config(config: MarimoConfig) -> DisplayConfig:
+    """Extract the display config from a MarimoConfig.
+
+    Workaround for ty not resolving the 'display' key on MarimoConfig.
+    """
+    return cast("DisplayConfig", config.get("display", {}))
 
 
 async def run(
@@ -294,9 +302,12 @@ async def set_display_theme(
     """Set the display theme in all kernels without persisting to disk."""
     for session in manager.sessions():
         config = session.config_manager.get_config(hide_secrets=False)
-        updated = {**config, "display": {**config["display"], "theme": args.theme}}  # type: ignore[index]
+        display = _get_display_config(config)
+        updated = cast(
+            "MarimoConfig", {**config, "display": {**display, "theme": args.theme}}
+        )
         session.put_control_request(
-            UpdateUserConfigCommand(config=updated),  # type: ignore[arg-type]
+            UpdateUserConfigCommand(config=updated),
             from_consumer_id=None,
         )
     return {"success": True}
@@ -316,9 +327,7 @@ async def export_as_html(
         app=session.app_file_manager.app,
         filename=session.app_file_manager.filename,
         session_view=session.session_view,
-        display_config=cast(
-            "DisplayConfig", session.config_manager.get_config()["display"]
-        ),
+        display_config=_get_display_config(session.config_manager.get_config()),
         request=args.inner,
     )
 
