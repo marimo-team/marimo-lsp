@@ -120,7 +120,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
             "requiredVersion": {
               "major": 0,
               "minor": 22,
-              "patch": 0,
+              "patch": 4,
             },
           },
         ]
