@@ -27,11 +27,6 @@ const withTestCtx = Effect.gen(function* () {
 
 const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
 
-const noopToken: vscode.CancellationToken = {
-  isCancellationRequested: false,
-  onCancellationRequested: () => ({ dispose: () => {} }),
-};
-
 // Mock cell factory
 function createMockCell(
   uri: vscode.Uri,
@@ -103,21 +98,14 @@ it.scoped(
       const pythonCell = createMockCell(notebookUri, "python", {});
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
-      const provider = providers[0]?.provider;
 
-      if (provider) {
-        const sqlItems = provider.provideCellStatusBarItems(sqlCell, noopToken);
-        const sqlArray = Array.isArray(sqlItems) ? sqlItems : [];
-        expect(sqlArray.length).toBe(1);
-        expect(sqlArray[0]?.text).toContain("$(database) df");
+      const sqlItems = yield* providers[0].provideCellStatusBarItems(sqlCell);
+      expect(sqlItems.length).toBe(1);
+      expect(sqlItems[0]?.text).toContain("$(database) df");
 
-        const pythonItems = provider.provideCellStatusBarItems(
-          pythonCell,
-          noopToken,
-        );
-        const pythonArray = Array.isArray(pythonItems) ? pythonItems : [];
-        expect(pythonArray.length).toBe(0);
-      }
+      const pythonItems =
+        yield* providers[0].provideCellStatusBarItems(pythonCell);
+      expect(pythonItems.length).toBe(0);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
@@ -157,13 +145,8 @@ it.effect("should display value from cell metadata", () =>
 
         const providers =
           yield* ctx.vscode.getRegisteredStatusBarItemProviders();
-        const items = providers[0]?.provider.provideCellStatusBarItems(
-          cell,
-          noopToken,
-        );
-
-        const itemArray = Array.isArray(items) ? items : [];
-        expect(itemArray[0]?.text).toContain("$(database) my_results");
+        const items = yield* providers[0].provideCellStatusBarItems(cell);
+        expect(items[0]?.text).toContain("$(database) my_results");
       }).pipe(Effect.provide(ctx.layer));
     }),
   ),

@@ -107,32 +107,16 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
       const code = yield* VsCode;
       const bindings = new Map<string, MetadataBinding>();
 
-      // Track metadata change events to trigger re-rendering
-      const onDidChangeCellStatusBarItems = new code.EventEmitter<void>();
-
-      // Listen to notebook document changes and emit events
-      yield* Effect.forkScoped(
-        code.workspace.notebookDocumentChanges().pipe(
-          Stream.runForEach((event) =>
-            Effect.sync(() => {
-              const notebook = MarimoNotebookDocument.tryFrom(event.notebook);
-
-              // Only process marimo notebooks
-              if (Option.isNone(notebook)) {
-                return;
-              }
-
-              // Only process metadata changes
-              const hasMetadataChanges = event.cellChanges.some(
-                (change) => change.metadata !== undefined,
-              );
-
-              if (hasMetadataChanges) {
-                onDidChangeCellStatusBarItems.fire();
-              }
-            }),
-          ),
-        ),
+      // Stream that fires when metadata changes on any marimo notebook cell
+      const metadataChanges = code.workspace.notebookDocumentChanges().pipe(
+        Stream.filter((event) => {
+          if (Option.isNone(MarimoNotebookDocument.tryFrom(event.notebook))) {
+            return false;
+          }
+          return event.cellChanges.some(
+            (change) => change.metadata !== undefined,
+          );
+        }),
       );
 
       /**
@@ -149,38 +133,32 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
             createBindingCommandFor(binding),
           );
 
-          // Create provider for status bar item
-          const provider: vscode.NotebookCellStatusBarItemProvider = {
-            onDidChangeCellStatusBarItems: onDidChangeCellStatusBarItems.event,
-            provideCellStatusBarItems(
-              rawCell: vscode.NotebookCell,
-              _token: vscode.CancellationToken,
-            ): vscode.ProviderResult<vscode.NotebookCellStatusBarItem[]> {
-              const cell = MarimoNotebookCell.from(rawCell);
-
-              if (!binding.shouldShow(cell)) {
-                return [];
-              }
-
-              const value = Option.isSome(cell.metadata)
-                ? binding.getValue(cell.metadata.value)
-                : undefined;
-
-              const item = new code.NotebookCellStatusBarItem(
-                binding.getLabel(value),
-                binding.alignment,
-              );
-              item.tooltip = binding.getTooltip(value);
-              item.command = commandId;
-
-              return [item];
-            },
-          };
-
           // Register the provider
           yield* code.notebooks.registerNotebookCellStatusBarItemProvider(
             NOTEBOOK_TYPE,
-            provider,
+            {
+              provideCellStatusBarItems(rawCell) {
+                const cell = MarimoNotebookCell.from(rawCell);
+
+                if (!binding.shouldShow(cell)) {
+                  return Effect.succeed([]);
+                }
+
+                const value = Option.isSome(cell.metadata)
+                  ? binding.getValue(cell.metadata.value)
+                  : undefined;
+
+                const item = new code.NotebookCellStatusBarItem(
+                  binding.getLabel(value),
+                  binding.alignment,
+                );
+                item.tooltip = binding.getTooltip(value);
+                item.command = commandId;
+
+                return Effect.succeed([item]);
+              },
+              changes: metadataChanges,
+            },
           );
         });
 
@@ -283,12 +261,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
           const currentMetadata = Option.isSome(activeCell.metadata)
             ? activeCell.metadata.value
             : {};
-          let updatedMetadata = binding.setValue(currentMetadata, newValue);
-          // Mark stale
-          updatedMetadata = {
-            ...updatedMetadata,
-            state: "stale",
-          };
+          const updatedMetadata = binding.setValue(currentMetadata, newValue);
 
           const edit = new code.WorkspaceEdit();
           const cellData = new code.NotebookCellData(

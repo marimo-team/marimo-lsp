@@ -31,11 +31,6 @@ const withTestCtx = Effect.gen(function* () {
 
 const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
 
-const noopToken: vscode.CancellationToken = {
-  isCancellationRequested: false,
-  onCancellationRequested: () => ({ dispose: () => {} }),
-};
-
 // Mock cell factory
 function createMockCell(
   uri: vscode.Uri,
@@ -77,23 +72,13 @@ it.effect("should only show SQL dataframeName binding for SQL cells", () =>
 
         const providers =
           yield* ctx.vscode.getRegisteredStatusBarItemProviders();
-        const provider = providers[0]?.provider;
 
-        if (provider) {
-          const sqlItems = provider.provideCellStatusBarItems(
-            sqlCell,
-            noopToken,
-          );
-          const sqlArray = Array.isArray(sqlItems) ? sqlItems : [];
-          expect(sqlArray.length).toBeGreaterThan(0);
+        const sqlItems = yield* providers[0].provideCellStatusBarItems(sqlCell);
+        expect(sqlItems.length).toBeGreaterThan(0);
 
-          const pythonItems = provider.provideCellStatusBarItems(
-            pythonCell,
-            noopToken,
-          );
-          const pythonArray = Array.isArray(pythonItems) ? pythonItems : [];
-          expect(pythonArray.length).toBe(0);
-        }
+        const pythonItems =
+          yield* providers[0].provideCellStatusBarItems(pythonCell);
+        expect(pythonItems.length).toBe(0);
       }).pipe(Effect.provide(ctx.layer));
     }),
   ),
@@ -118,16 +103,11 @@ it.effect("should display dataframeName from SQL metadata", () =>
 
         const providers =
           yield* ctx.vscode.getRegisteredStatusBarItemProviders();
-        const provider = providers[0]?.provider;
+        const items = yield* providers[0].provideCellStatusBarItems(cell);
 
-        if (provider) {
-          const items = provider.provideCellStatusBarItems(cell, noopToken);
-          const itemArray = Array.isArray(items) ? items : [];
-
-          expect(itemArray.length).toBe(1);
-          expect(itemArray[0]?.text).toContain("$(table)");
-          expect(itemArray[0]?.text).toContain("my_results");
-        }
+        expect(items.length).toBe(1);
+        expect(items[0]?.text).toContain("$(table)");
+        expect(items[0]?.text).toContain("my_results");
       }).pipe(Effect.provide(ctx.layer));
     }),
   ),
@@ -142,16 +122,11 @@ it.effect("should show 'unnamed' for SQL cells without dataframeName", () =>
 
         const providers =
           yield* ctx.vscode.getRegisteredStatusBarItemProviders();
-        const provider = providers[0]?.provider;
+        const items = yield* providers[0].provideCellStatusBarItems(cell);
 
-        if (provider) {
-          const items = provider.provideCellStatusBarItems(cell, noopToken);
-          const itemArray = Array.isArray(items) ? items : [];
-
-          expect(itemArray.length).toBe(1);
-          expect(itemArray[0]?.text).toContain("$(table)");
-          expect(itemArray[0]?.text).toContain("unnamed");
-        }
+        expect(items.length).toBe(1);
+        expect(items[0]?.text).toContain("$(table)");
+        expect(items[0]?.text).toContain("unnamed");
       }).pipe(Effect.provide(ctx.layer));
     }),
   ),

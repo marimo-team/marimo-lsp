@@ -1,12 +1,14 @@
 import { Effect, flow, Option } from "effect";
 
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
+import { CellStateManager } from "../notebook/CellStateManager.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const runStale = Effect.fn("command.runStale")(
   function* () {
     const code = yield* VsCode;
+    const cellStateManager = yield* CellStateManager;
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
       (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
@@ -19,13 +21,23 @@ export const runStale = Effect.fn("command.runStale")(
       return;
     }
 
-    const staleCells = notebook.value.getCells().filter((cell) => cell.isStale);
+    const staleCellIds = new Set(
+      yield* cellStateManager.getStaleCells(notebook.value.id),
+    );
 
-    if (staleCells.length === 0) {
+    if (staleCellIds.size === 0) {
       yield* Effect.logInfo("No stale cells found");
       yield* code.window.showInformationMessage("No stale cells to run");
       return;
     }
+
+    // Map stale cell IDs to their notebook indices
+    const staleCells = notebook.value.getCells().filter((cell) =>
+      Option.match(cell.id, {
+        onSome: (id) => staleCellIds.has(id),
+        onNone: () => false,
+      }),
+    );
 
     yield* Effect.logInfo("Running stale cells").pipe(
       Effect.annotateLogs({

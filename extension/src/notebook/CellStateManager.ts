@@ -17,9 +17,8 @@ import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
  * Manages cell stale state across all notebooks.
  *
  * Tracks which cells have been edited (stale) and updates:
- * 1. Cell metadata with state: "stale"
- * 2. VSCode context key "marimo.notebook.hasStaleCells" for UI enablement
- * 3. Backend about cell deletions
+ * 1. VSCode context key "marimo.notebook.hasStaleCells" for UI enablement
+ * 2. Backend about cell deletions
  *
  * Uses SubscriptionRef for reactive state management.
  */
@@ -222,10 +221,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
                   if (shouldMarkStale) {
                     yield* markCellStale(event.notebook.id, cellId.value, {
-                      code,
                       staleStateRef,
-                      notebook: event.notebook,
-                      cell,
                     });
                   } else {
                     // Content matches last executed - clear stale state
@@ -233,10 +229,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                       event.notebook.id,
                       cellId.value,
                       {
-                        code,
                         staleStateRef,
-                        notebook: event.notebook,
-                        cell,
                       },
                     );
                   }
@@ -267,36 +260,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
          * Mark a cell as stale and update its metadata
          */
         markCellStale(notebookUri: NotebookId, cellId: NotebookCellId) {
-          return Effect.gen(function* () {
-            const notebook = Option.filterMap(
-              yield* editorRegistry.getLastNotebookEditor(notebookUri),
-              ({ notebook }) => MarimoNotebookDocument.tryFrom(notebook),
-            );
-
-            if (Option.isNone(notebook)) {
-              yield* Effect.logWarning("Notebook not found").pipe(
-                Effect.annotateLogs({ notebookUri }),
-              );
-              return;
-            }
-
-            const cell = notebook.value
-              .getCells()
-              .find((c) => Option.contains(c.id, cellId));
-            if (!cell) {
-              yield* Effect.logWarning("Cell not found").pipe(
-                Effect.annotateLogs({ notebookUri, cellId }),
-              );
-              return;
-            }
-
-            yield* markCellStale(notebookUri, cellId, {
-              code,
-              staleStateRef,
-              notebook: notebook.value,
-              cell,
-            });
-          });
+          return markCellStale(notebookUri, cellId, { staleStateRef });
         },
 
         /**
@@ -332,21 +296,25 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
               lastExecutedContentRef,
             });
 
-            // Update cell metadata to remove stale state
-            const edit = new code.WorkspaceEdit();
-            const newMetadata = cell.buildEncodedMetadata({
-              overrides: { state: undefined },
-            });
-            edit.set(notebook.value.uri, [
-              code.NotebookEdit.updateCellMetadata(cell.index, newMetadata),
-            ]);
-            yield* code.workspace.applyEdit(edit);
-
-            // Update tracking
+            // Update tracking (no metadata write — see markCellStale comment)
             yield* clearCellStaleTracking(notebookUri, cellId, {
               staleStateRef,
             });
           });
+        },
+
+        /**
+         * Check if a specific cell is stale
+         */
+        isCellStale(notebookUri: NotebookId, cellId: NotebookCellId) {
+          return SubscriptionRef.get(staleStateRef).pipe(
+            Effect.map((staleMap) =>
+              HashMap.get(staleMap, notebookUri).pipe(
+                Option.flatMap(HashMap.get(cellId)),
+                Option.getOrElse(() => false),
+              ),
+            ),
+          );
         },
 
         /**
@@ -376,42 +344,29 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 ) {}
 
 /**
- * Mark a cell as stale in tracking and metadata
+ * Mark a cell as stale in tracking.
+ *
+ * We intentionally do NOT write `state: "stale"` to cell metadata here
+ * because `NotebookEdit.updateCellMetadata` always marks the notebook
+ * dirty, even for transient fields. Stale state is tracked purely via
+ * {@link staleStateRef} and communicated to the UI through its reactive
+ * `changes` stream.
  */
 function markCellStale(
   notebookUri: NotebookId,
   cellId: NotebookCellId,
   deps: {
-    code: VsCode;
     staleStateRef: SubscriptionRef.SubscriptionRef<
       HashMap.HashMap<NotebookId, HashMap.HashMap<NotebookCellId, boolean>>
     >;
-    notebook: MarimoNotebookDocument;
-    cell: MarimoNotebookCell;
   },
 ) {
-  return Effect.gen(function* () {
-    const { code, staleStateRef, notebook, cell } = deps;
-    const cellIndex = cell.index;
-
-    // Update tracking
-    yield* SubscriptionRef.update(staleStateRef, (map) => {
-      const notebookMap = Option.getOrElse(HashMap.get(map, notebookUri), () =>
-        HashMap.empty<NotebookCellId, boolean>(),
-      );
-      const updatedNotebookMap = HashMap.set(notebookMap, cellId, true);
-      return HashMap.set(map, notebookUri, updatedNotebookMap);
-    });
-
-    // Update cell metadata
-    const edit = new code.WorkspaceEdit();
-    edit.set(notebook.uri, [
-      code.NotebookEdit.updateCellMetadata(
-        cellIndex,
-        cell.buildEncodedMetadata({ overrides: { state: "stale" } }),
-      ),
-    ]);
-    yield* code.workspace.applyEdit(edit);
+  return SubscriptionRef.update(deps.staleStateRef, (map) => {
+    const notebookMap = Option.getOrElse(HashMap.get(map, notebookUri), () =>
+      HashMap.empty<NotebookCellId, boolean>(),
+    );
+    const updatedNotebookMap = HashMap.set(notebookMap, cellId, true);
+    return HashMap.set(map, notebookUri, updatedNotebookMap);
   });
 }
 
@@ -448,36 +403,18 @@ function clearCellStaleTracking(
 }
 
 /**
- * Clear stale state from a cell including metadata update (used when undo restores content)
+ * Clear stale state from a cell (used when undo restores content)
  */
 function clearCellStaleWithMetadata(
   notebookUri: NotebookId,
   cellId: NotebookCellId,
   deps: {
-    code: VsCode;
     staleStateRef: SubscriptionRef.SubscriptionRef<
       HashMap.HashMap<NotebookId, HashMap.HashMap<NotebookCellId, boolean>>
     >;
-    notebook: MarimoNotebookDocument;
-    cell: MarimoNotebookCell;
   },
 ) {
-  return Effect.gen(function* () {
-    const { code, staleStateRef, notebook, cell } = deps;
-
-    // Update cell metadata to remove stale state
-    const edit = new code.WorkspaceEdit();
-    const newMetadata = cell.buildEncodedMetadata({
-      overrides: { state: undefined },
-    });
-    edit.set(notebook.uri, [
-      code.NotebookEdit.updateCellMetadata(cell.index, newMetadata),
-    ]);
-    yield* code.workspace.applyEdit(edit);
-
-    // Update tracking
-    yield* clearCellStaleTracking(notebookUri, cellId, { staleStateRef });
-  });
+  return clearCellStaleTracking(notebookUri, cellId, deps);
 }
 
 /**
