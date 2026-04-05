@@ -14,6 +14,7 @@ import { Uv } from "../../python/Uv.ts";
 
 const python = "3.13";
 const timeout = 30_000;
+const isWindows = NodeProcess.platform === "win32";
 
 class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
   scoped: Effect.gen(function* () {
@@ -289,6 +290,68 @@ print("hello")
             { targetPath, policy: singleStrategy("offline") },
           );
 
+          assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
+        }),
+        { timeout },
+      );
+
+      // Simulate a broken .venv in the parent directory (the scenario
+      // from VSCODE-MARIMO-2KT where a wrong-arch python.exe causes
+      // uv to fail with OS error 193 on Windows).
+      it.scoped.skipIf(isWindows)(
+        "installs even when a broken .venv exists in a parent directory (unix)",
+        Effect.fn(function* () {
+          const uv = yield* Uv;
+          const tmpdir = yield* TmpDir;
+
+          const brokenVenv = NodePath.join(tmpdir.path, ".venv");
+          NodeFs.mkdirSync(NodePath.join(brokenVenv, "bin"), {
+            recursive: true,
+          });
+          NodeFs.writeFileSync(
+            NodePath.join(brokenVenv, "bin", "python3"),
+            "not a real python",
+            { mode: 0o755 },
+          );
+          NodeFs.writeFileSync(
+            NodePath.join(brokenVenv, "pyvenv.cfg"),
+            "home = /nonexistent\n",
+          );
+
+          const targetPath = NodePath.join(tmpdir.path, "libs");
+          const binPath = yield* uv.ensureLanguageServerBinaryInstalled(
+            server,
+            { targetPath, policy: singleStrategy("default") },
+          );
+          assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
+        }),
+        { timeout },
+      );
+
+      it.scoped.skipIf(!isWindows)(
+        "installs even when a broken .venv exists in a parent directory (windows)",
+        Effect.fn(function* () {
+          const uv = yield* Uv;
+          const tmpdir = yield* TmpDir;
+
+          const brokenVenv = NodePath.join(tmpdir.path, ".venv");
+          NodeFs.mkdirSync(NodePath.join(brokenVenv, "Scripts"), {
+            recursive: true,
+          });
+          NodeFs.writeFileSync(
+            NodePath.join(brokenVenv, "Scripts", "python.exe"),
+            "not a real python",
+          );
+          NodeFs.writeFileSync(
+            NodePath.join(brokenVenv, "pyvenv.cfg"),
+            "home = /nonexistent\n",
+          );
+
+          const targetPath = NodePath.join(tmpdir.path, "libs");
+          const binPath = yield* uv.ensureLanguageServerBinaryInstalled(
+            server,
+            { targetPath, policy: singleStrategy("default") },
+          );
           assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
         }),
         { timeout },
