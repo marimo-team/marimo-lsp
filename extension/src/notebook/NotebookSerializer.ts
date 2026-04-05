@@ -205,12 +205,19 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
             },
           },
           {
-            transientOutputs: false,
+            // Outputs are not persisted to the .py file — they're ephemeral
+            // and restored from the NotebookDataCache during deserialization.
+            // Marking as transient prevents cell execution from dirtying the
+            // notebook, which would block auto-reload of external file changes.
+            transientOutputs: true,
             transientCellMetadata: {
               state: true,
               name: false,
               languageMetadata: false,
-              // Stable ID is ephemeral - not persisted to .py file, regenerated on open
+              // Stable ID is ephemeral - not persisted to .py file, regenerated
+              // on open. Must be non-transient so VS Code includes it in the
+              // metadata passed to serializeNotebook, which we need for cache
+              // matching (matchRecentNotebookFromData reads stableId).
               stableId: false,
               options: false,
             } satisfies BooleanMap<CellMetadata>,
@@ -219,8 +226,10 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               header: false,
               version: false,
               cells: true,
-              violations: false,
-              valid: false,
+              // Violations and valid are computed during deserialization
+              // and don't affect the serialized .py output.
+              violations: true,
+              valid: true,
             } satisfies BooleanMap<SerializedNotebook>,
           },
         );

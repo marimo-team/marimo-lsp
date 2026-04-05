@@ -46,6 +46,7 @@ export class DebugSessionStartError extends Data.TaggedError(
 export class Window extends Effect.Service<Window>()("Window", {
   effect: Effect.gen(function* () {
     const api = vscode.window;
+    const runSync = Runtime.runSync(yield* Effect.runtime());
 
     const resolve = (kind: vscode.ColorThemeKind): "light" | "dark" =>
       kind === vscode.ColorThemeKind.Dark ||
@@ -57,7 +58,7 @@ export class Window extends Effect.Service<Window>()("Window", {
       resolve(api.activeColorTheme.kind),
     );
     api.onDidChangeActiveColorTheme((theme) => {
-      Effect.runSync(SubscriptionRef.set(colorThemeRef, resolve(theme.kind)));
+      runSync(SubscriptionRef.set(colorThemeRef, resolve(theme.kind)));
     });
 
     return {
@@ -574,8 +575,9 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
 }) {}
 
 export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
-  effect: Effect.sync(() => {
+  effect: Effect.gen(function* () {
     const api = vscode.notebooks;
+    const runPromise = Runtime.runPromise(yield* Effect.runtime());
     return {
       createRendererMessaging(rendererId: string) {
         return Effect.succeed(api.createRendererMessaging(rendererId));
@@ -595,11 +597,32 @@ export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
       },
       registerNotebookCellStatusBarItemProvider(
         notebookType: string,
-        provider: vscode.NotebookCellStatusBarItemProvider,
+        impl: {
+          provideCellStatusBarItems(
+            cell: vscode.NotebookCell,
+          ): Effect.Effect<vscode.NotebookCellStatusBarItem[]>;
+          changes: Stream.Stream<void>;
+        },
       ) {
-        return acquireDisposable(() =>
-          api.registerNotebookCellStatusBarItemProvider(notebookType, provider),
-        );
+        return Effect.gen(function* () {
+          const emitter = yield* acquireDisposable(
+            () => new vscode.EventEmitter<void>(),
+          );
+          yield* Effect.forkScoped(
+            impl.changes.pipe(
+              Stream.runForEach(() => Effect.succeed(emitter.fire())),
+            ),
+          );
+          yield* acquireDisposable(() =>
+            api.registerNotebookCellStatusBarItemProvider(notebookType, {
+              onDidChangeCellStatusBarItems: emitter.event,
+              provideCellStatusBarItems: (cell, token) =>
+                runPromise(impl.provideCellStatusBarItems(cell), {
+                  signal: signalFromToken(token),
+                }),
+            }),
+          );
+        });
       },
     };
   }),

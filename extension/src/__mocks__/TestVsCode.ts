@@ -1469,7 +1469,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly statusBarProviders: Ref.Ref<
     Array<{
       notebookType: string;
-      provider: vscode.NotebookCellStatusBarItemProvider;
+      provideCellStatusBarItems(
+        cell: vscode.NotebookCell,
+      ): Effect.Effect<vscode.NotebookCellStatusBarItem[]>;
     }>
   >;
   readonly documentChangesPubSub: PubSub.PubSub<vscode.NotebookDocumentChangeEvent>;
@@ -1598,7 +1600,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const statusBarProviders = yield* Ref.make<
       Array<{
         notebookType: string;
-        provider: vscode.NotebookCellStatusBarItemProvider;
+        provideCellStatusBarItems(
+          cell: vscode.NotebookCell,
+        ): Effect.Effect<vscode.NotebookCellStatusBarItem[]>;
       }>
     >([]);
     const views = yield* Ref.make(HashSet.empty<string>());
@@ -2027,27 +2031,29 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           },
           registerNotebookCellStatusBarItemProvider(
             notebookType: string,
-            provider: vscode.NotebookCellStatusBarItemProvider,
+            impl: {
+              provideCellStatusBarItems(
+                cell: vscode.NotebookCell,
+              ): Effect.Effect<vscode.NotebookCellStatusBarItem[]>;
+              changes: Stream.Stream<void>;
+            },
           ) {
-            return Effect.acquireRelease(
-              Effect.gen(function* () {
-                const registration = { notebookType, provider };
-                yield* Ref.update(statusBarProviders, (providers) => [
-                  ...providers,
-                  registration,
-                ]);
-                return {
-                  dispose() {
-                    Effect.runSync(
-                      Ref.update(statusBarProviders, (providers) =>
-                        providers.filter((p) => p !== registration),
-                      ),
-                    );
-                  },
-                };
-              }),
-              (disposable) => Effect.sync(() => disposable.dispose()),
-            );
+            return Effect.gen(function* () {
+              const registration = {
+                notebookType,
+                provideCellStatusBarItems: (cell: vscode.NotebookCell) =>
+                  impl.provideCellStatusBarItems(cell),
+              };
+              yield* Ref.update(statusBarProviders, (providers) => [
+                ...providers,
+                registration,
+              ]);
+              yield* Effect.addFinalizer(() =>
+                Ref.update(statusBarProviders, (providers) =>
+                  providers.filter((p) => p !== registration),
+                ),
+              );
+            });
           },
         }),
         auth: Auth.make({
