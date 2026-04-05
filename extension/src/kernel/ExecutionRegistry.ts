@@ -112,15 +112,15 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
             const notebook = MarimoNotebookDocument.from(editor.notebook);
             const notebookCell = yield* findNotebookCell(notebook, cell.id);
 
-            // If cell has stale inputs, mark it as stale
+            // If cell has stale inputs, invalidate its execution record
             if (cell.state.staleInputs) {
-              yield* cellStateManager.markCellStale(notebook.id, cellId);
+              yield* cellStateManager.invalidateCell(notebookCell);
             }
 
             switch (msg.status) {
               case "queued": {
-                // Clear stale state when cell is queued for execution
-                yield* cellStateManager.clearCellStale(notebook.id, cellId);
+                // Record execution — clears stale state
+                yield* cellStateManager.recordExecution(notebookCell);
 
                 // End any in-progress execution before creating a new one
                 yield* Ref.update(ref, (map) => {

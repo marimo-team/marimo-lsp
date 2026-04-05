@@ -21,23 +21,15 @@ export const runStale = Effect.fn("command.runStale")(
       return;
     }
 
-    const staleCellIds = new Set(
-      yield* cellStateManager.getStaleCells(notebook.value.id),
+    const staleCells = yield* Effect.filter(notebook.value.getCells(), (cell) =>
+      cellStateManager.isCellStale(cell),
     );
 
-    if (staleCellIds.size === 0) {
+    if (staleCells.length === 0) {
       yield* Effect.logInfo("No stale cells found");
       yield* code.window.showInformationMessage("No stale cells to run");
       return;
     }
-
-    // Map stale cell IDs to their notebook indices
-    const staleCells = notebook.value.getCells().filter((cell) =>
-      Option.match(cell.id, {
-        onSome: (id) => staleCellIds.has(id),
-        onNone: () => false,
-      }),
-    );
 
     yield* Effect.logInfo("Running stale cells").pipe(
       Effect.annotateLogs({
@@ -46,7 +38,6 @@ export const runStale = Effect.fn("command.runStale")(
       }),
     );
 
-    // Execute stale cells using VS Code's notebook execution command
     yield* code.commands.executeCommand("notebook.cell.execute", {
       ranges: staleCells.map((cell) => ({
         start: cell.index,

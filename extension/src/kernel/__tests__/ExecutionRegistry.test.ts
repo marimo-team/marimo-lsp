@@ -18,7 +18,10 @@ import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { CellStateManager } from "../../notebook/CellStateManager.ts";
 import { VsCode } from "../../platform/VsCode.ts";
-import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
+import {
+  MarimoNotebookCell,
+  MarimoNotebookDocument,
+} from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotebookCellId } from "../../schemas/MarimoNotebookDocument.ts";
 import type {
   CellOperationNotification,
@@ -937,18 +940,24 @@ it.scoped(
         controller: new PythonController(controller, "test-controller"),
       });
 
-      const cellId = Option.getOrThrow(cell.id);
-
       // Check that CellStateManager tracked the cell as stale
-      const staleCells = yield* cellStateManager.getStaleCells(notebook.id);
-      expect(staleCells).toContain(cellId);
+      expect(
+        yield* cellStateManager.isCellStale(
+          MarimoNotebookCell.from(cell.rawNotebookCell),
+        ),
+      ).toBe(true);
 
-      // Clear stale state
-      yield* cellStateManager.clearCellStale(notebook.id, cellId);
+      // Record execution to clear stale
+      yield* cellStateManager.recordExecution(
+        MarimoNotebookCell.from(cell.rawNotebookCell),
+      );
 
       // Check that the cell is no longer stale
-      const staleCells2 = yield* cellStateManager.getStaleCells(notebook.id);
-      expect(staleCells2).not.toContain(cellId);
+      expect(
+        yield* cellStateManager.isCellStale(
+          MarimoNotebookCell.from(cell.rawNotebookCell),
+        ),
+      ).toBe(false);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
@@ -989,12 +998,17 @@ it.scoped(
       // Wait for NotebookEditorRegistry to process the change
       yield* TestClock.adjust("10 millis");
 
-      // First, mark the cell as stale in CellStateManager
-      yield* cellStateManager.markCellStale(notebook.id, cellId);
+      // First, invalidate the cell in CellStateManager
+      yield* cellStateManager.invalidateCell(
+        MarimoNotebookCell.from(cell.rawNotebookCell),
+      );
 
       // Verify cell is tracked as stale
-      let staleCells = yield* cellStateManager.getStaleCells(notebook.id);
-      expect(staleCells).toContain(cellId);
+      expect(
+        yield* cellStateManager.isCellStale(
+          MarimoNotebookCell.from(cell.rawNotebookCell),
+        ),
+      ).toBe(true);
 
       // Create a mock controller
       const controller = yield* code.notebooks.createNotebookController(
@@ -1017,8 +1031,11 @@ it.scoped(
       });
 
       // Check that the cell's stale state was cleared
-      staleCells = yield* cellStateManager.getStaleCells(notebook.id);
-      expect(staleCells).not.toContain(cellId);
+      expect(
+        yield* cellStateManager.isCellStale(
+          MarimoNotebookCell.from(cell.rawNotebookCell),
+        ),
+      ).toBe(false);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );

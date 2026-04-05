@@ -32,30 +32,24 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
       }),
     );
 
-    // Staleness provider — reads from CellStateManager, not cell metadata
+    // Staleness provider — derived from CellStateManager execution records
     yield* code.notebooks.registerNotebookCellStatusBarItemProvider(
       NOTEBOOK_TYPE,
       {
         provideCellStatusBarItems(raw) {
           const cell = MarimoNotebookCell.from(raw);
-          const cellId = cell.id;
-          if (Option.isNone(cellId)) {
-            return Effect.succeed([]);
-          }
-          return cellStateManager
-            .isCellStale(cell.notebook.id, cellId.value)
-            .pipe(
-              Effect.map((stale) => {
-                if (!stale) return [];
-                const item = new code.NotebookCellStatusBarItem(
-                  "$(warning) Stale",
-                  code.NotebookCellStatusBarAlignment.Right,
-                );
-                item.tooltip = "Cell has been edited but not re-executed";
-                item.command = "marimo.runStale";
-                return [item];
-              }),
-            );
+          return cellStateManager.isCellStale(cell).pipe(
+            Effect.map((stale) => {
+              if (!stale) return [];
+              const item = new code.NotebookCellStatusBarItem(
+                "$(warning) Stale",
+                code.NotebookCellStatusBarAlignment.Right,
+              );
+              item.tooltip = "Cell has been edited but not re-executed";
+              item.command = "marimo.runStale";
+              return [item];
+            }),
+          );
         },
         changes: Stream.merge(cellStateManager.changes, metadataChanges),
       },
