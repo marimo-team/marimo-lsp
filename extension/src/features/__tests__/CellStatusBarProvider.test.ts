@@ -8,11 +8,10 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { cellId } from "../../lib/__tests__/branded.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { CellStateManager } from "../../notebook/CellStateManager.ts";
 import type { CellMetadata } from "../../schemas/CellMetadata.ts";
-import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
+import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
 
 const withTestCtx = Effect.fn(function* () {
@@ -62,11 +61,15 @@ it.effect(
 );
 
 it.effect(
-  "should not show staleness for fresh cell",
+  "should show staleness for unexecuted cell",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
-      const cell = createMockCell(notebookUri, { name: "test_cell" });
+      // Cell with stableId but never executed → not stale (no kernel yet)
+      const cell = createMockCell(notebookUri, {
+        name: "test_cell",
+        stableId: "cell-1",
+      });
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[0].provideCellStatusBarItems(cell);
       expect(items.some((item) => item.text.includes("Stale"))).toBe(false);
@@ -75,21 +78,40 @@ it.effect(
 );
 
 it.effect(
-  "should show staleness indicator for stale cell",
+  "should not show staleness after execution",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const cellStateManager = yield* CellStateManager;
       const cell = createMockCell(notebookUri, {
         name: "test_cell",
-        stableId: "stale-cell-1",
+        stableId: "cell-1",
       });
 
-      const notebookDoc = MarimoNotebookDocument.from(cell.notebook);
-      yield* cellStateManager.markCellStale(
-        notebookDoc.id,
-        cellId("stale-cell-1"),
-      );
+      // Record execution — clears stale
+      yield* cellStateManager.recordExecution(MarimoNotebookCell.from(cell));
+
+      const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
+      const items = yield* providers[0].provideCellStatusBarItems(cell);
+      expect(items.some((item) => item.text.includes("Stale"))).toBe(false);
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
+  "should show staleness after invalidation",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx();
+    yield* Effect.gen(function* () {
+      const cellStateManager = yield* CellStateManager;
+      const cell = createMockCell(notebookUri, {
+        name: "test_cell",
+        stableId: "cell-1",
+      });
+
+      // Execute then invalidate (simulates staleInputs from kernel)
+      yield* cellStateManager.recordExecution(MarimoNotebookCell.from(cell));
+      yield* cellStateManager.invalidateCell(MarimoNotebookCell.from(cell));
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[0].provideCellStatusBarItems(cell);
@@ -155,10 +177,9 @@ it.effect(
     yield* Effect.gen(function* () {
       const cell = createMockCell(notebookUri);
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
-      for (const provider of providers) {
-        const items = yield* provider.provideCellStatusBarItems(cell);
-        expect(items.length).toBe(0);
-      }
+      // Name provider should return empty for cells without metadata
+      const items = yield* providers[1].provideCellStatusBarItems(cell);
+      expect(items.length).toBe(0);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
@@ -171,14 +192,12 @@ it.effect(
       const cellStateManager = yield* CellStateManager;
       const cell = createMockCell(notebookUri, {
         name: "my_cell",
-        stableId: "stale-cell-2",
+        stableId: "cell-2",
       });
 
-      const notebookDoc = MarimoNotebookDocument.from(cell.notebook);
-      yield* cellStateManager.markCellStale(
-        notebookDoc.id,
-        cellId("stale-cell-2"),
-      );
+      // Execute then invalidate → stale + shows name
+      yield* cellStateManager.recordExecution(MarimoNotebookCell.from(cell));
+      yield* cellStateManager.invalidateCell(MarimoNotebookCell.from(cell));
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
 

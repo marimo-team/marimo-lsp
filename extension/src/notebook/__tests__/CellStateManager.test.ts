@@ -228,12 +228,13 @@ describe("CellStateManager", () => {
   );
 
   it.effect(
-    "updates marimo.notebook.hasStaleCells context when cells become stale",
+    "updates marimo.notebook.hasStaleCells context when cell is invalidated",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
+        const cellStateManager = yield* CellStateManager;
 
         const cellData0 = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -242,41 +243,26 @@ describe("CellStateManager", () => {
         );
         cellData0.metadata = { stableId: "cell-0" };
 
-        const cellData1 = new code.NotebookCellData(
-          code.NotebookCellKind.Code,
-          "y = 2",
-          "python",
-        );
-        cellData1.metadata = { stableId: "cell-1" };
-
         const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
-          data: new code.NotebookData([cellData0, cellData1]),
+          data: new code.NotebookData([cellData0]),
         });
 
         yield* ctx.vscode.addNotebookDocument(editor.notebook);
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
         yield* TestClock.adjust("10 millis");
 
-        // Clear all previous executions
+        const notebook = MarimoNotebookDocument.from(editor.notebook);
+        const cell = notebook.cellAt(0);
+
+        // Execute the cell, then invalidate (simulates staleInputs)
+        yield* cellStateManager.recordExecution(cell);
+        yield* TestClock.adjust("10 millis");
+
+        // Clear previous context updates
         yield* Ref.update(ctx.vscode.executions, () => []);
 
-        // Trigger a cell content change to mark it as stale
-        const cell0 = editor.notebook.cellAt(0);
-        yield* ctx.vscode.notebookChange({
-          notebook: editor.notebook,
-          metadata: undefined,
-          cellChanges: [
-            {
-              cell: cell0,
-              document: cell0.document,
-              metadata: undefined,
-              outputs: [],
-              executionSummary: undefined,
-            },
-          ],
-          contentChanges: [],
-        });
-
+        // Invalidate → cell becomes stale → hasStaleCells should be true
+        yield* cellStateManager.invalidateCell(cell);
         yield* TestClock.adjust("10 millis");
       }).pipe(Effect.provide(ctx.layer));
 
@@ -315,10 +301,9 @@ describe("CellStateManager", () => {
 
         const notebook = MarimoNotebookDocument.from(editor.notebook);
         const cell0 = notebook.cellAt(0);
-        const cellId = Option.getOrThrow(cell0.id);
 
-        // Simulate execution: clearCellStale stores content as "last executed"
-        yield* cellStateManager.clearCellStale(notebook.id, cellId);
+        // Simulate execution: recordExecution stores content as "last executed"
+        yield* cellStateManager.recordExecution(cell0);
         yield* TestClock.adjust("10 millis");
 
         // Clear previous executions to check fresh state
@@ -343,9 +328,8 @@ describe("CellStateManager", () => {
 
         yield* TestClock.adjust("10 millis");
 
-        // Should have NO stale cells since content matches last executed
-        const staleCells = yield* cellStateManager.getStaleCells(notebook.id);
-        expect(staleCells).not.toContain(cellId);
+        // Should NOT be stale since content matches last executed
+        expect(yield* cellStateManager.isCellStale(cell0)).toBe(false);
 
         // The hasStaleCells context should NOT have been set to true
         const executions = yield* Ref.get(ctx.vscode.executions);
