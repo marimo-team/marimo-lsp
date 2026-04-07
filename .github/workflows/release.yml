@@ -182,7 +182,7 @@ jobs:
           fi
 
       # Install system uv for building sdist (bundled uv may be cross-compiled and not executable on the runner)
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
 
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
@@ -251,7 +251,7 @@ jobs:
           ref: ${{ steps.marimo-version.outputs.ref }}
           path: marimo
 
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
 
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
@@ -339,7 +339,7 @@ jobs:
             ovsx publish --pat ${{ secrets.OPEN_VSX_TOKEN }} --packagePath ./dist/*.vsix --skip-duplicate
           fi
 
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
 
       - name: Get previous tag
         working-directory: marimo-lsp
