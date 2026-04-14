@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "lib": ["esnext"],
     "noEmit": true,
+    "checkJs": true,
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,

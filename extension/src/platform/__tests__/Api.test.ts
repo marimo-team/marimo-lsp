@@ -1,4 +1,4 @@
-import { expect, it } from "@effect/vitest";
+import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
 import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";

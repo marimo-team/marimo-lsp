@@ -27,23 +27,20 @@ export function enrichNotebookFromCached(
 
     if (Option.isSome(cachedIdx)) {
       const cachedCell = cached.cells[cachedIdx.value];
-      return {
-        ...incomingCell,
-        metadata: {
-          ...incomingCell.metadata,
-          stale: cachedCell.metadata?.stale ?? incomingCell.metadata?.stale,
-          stableId:
-            cachedCell.metadata?.stableId ?? incomingCell.metadata?.stableId,
-        },
-        outputs: cachedCell.outputs ?? incomingCell.outputs,
+      incomingCell.metadata = {
+        ...incomingCell.metadata,
+        stale: cachedCell.metadata?.stale ?? incomingCell.metadata?.stale,
+        stableId:
+          cachedCell.metadata?.stableId ?? incomingCell.metadata?.stableId,
       };
+      incomingCell.outputs = cachedCell.outputs ?? incomingCell.outputs;
     }
 
-    // No match found, keep the incoming cell as-is
     return incomingCell;
   });
 
-  return { ...incoming, cells: enrichedCells };
+  incoming.cells = enrichedCells;
+  return incoming;
 }
 
 /**

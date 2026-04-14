@@ -1,4 +1,4 @@
-import { expect, it } from "@effect/vitest";
+import { describe, expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import { Effect, Layer, Option, Stream, TestClock } from "effect";
 import type * as vscode from "vscode";
@@ -67,25 +67,15 @@ function normalizeOutputsForSnapshot(
     return outputs;
   }
 
-  return outputs.map((output) => {
-    if (!output.items) {
-      return output;
-    }
-
-    return {
-      ...output,
-      items: output.items.map((item) => {
-        if (item.data instanceof Uint8Array) {
-          const decoder = new TextDecoder();
-          return {
-            ...item,
-            data: decoder.decode(item.data),
-          };
-        }
-        return item;
-      }),
-    };
-  });
+  const decoder = new TextDecoder();
+  return outputs.map((output) => ({
+    items: output.items.map((item) => ({
+      mime: item.mime,
+      data:
+        item.data instanceof Uint8Array ? decoder.decode(item.data) : item.data,
+    })),
+    metadata: output.metadata,
+  }));
 }
 
 describe("buildCellOutputs", () => {
