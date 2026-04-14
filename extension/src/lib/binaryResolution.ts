@@ -87,7 +87,7 @@ export function validateBinary(
       return Option.none<string>();
     }
 
-    yield* Effect.logInfo(
+    yield* Effect.logDebug(
       `Validated binary at ${binaryPath} (version ${semver.format(versionOption.value)})`,
     );
     return Option.some(binaryPath);
@@ -149,7 +149,7 @@ export function resolveBinary<E, R>(
       const result = yield* source.resolve;
 
       if (Option.isSome(result)) {
-        yield* Effect.logInfo("Resolved binary").pipe(
+        yield* Effect.logDebug("Resolved binary").pipe(
           Effect.annotateLogs({
             server: serverName,
             source: result.value._tag,

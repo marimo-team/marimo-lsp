@@ -95,18 +95,31 @@ export class NotebookDataCache extends Effect.Service<NotebookDataCache>()(
           const notebook = matchRecentNotebookFromData(data, recentlyEdited);
 
           if (Option.isNone(notebook)) {
-            yield* Effect.logDebug("Could not match notebook for caching");
+            yield* Effect.logTrace("Could not match notebook for caching");
             return;
           }
 
+          // Restore transient outputs from the live document into the cached
+          // data. VS Code strips transient outputs before passing data to
+          // serializeNotebook, but we need them in the cache so that
+          // enrichNotebookFromCached can restore outputs during
+          // deserialization (e.g., after an external edit).
+          const liveCells = notebook.value.getCells();
+          for (let i = 0; i < data.cells.length && i < liveCells.length; i++) {
+            const cell = data.cells[i];
+            if (!cell.outputs || cell.outputs.length === 0) {
+              cell.outputs = [...liveCells[i].outputs];
+            }
+          }
+
           lastNotebookData.set(notebook.value.id, data);
-          yield* Effect.logDebug("Cached notebook data").pipe(
+          yield* Effect.logTrace("Cached notebook data").pipe(
             Effect.annotateLogs({ notebookId: notebook.value.id }),
           );
         }),
         get: Effect.fn(function* (bytes: Uint8Array) {
           if (Option.isNone(code)) {
-            yield* Effect.logDebug(
+            yield* Effect.logTrace(
               "Cache lookup requires VsCode service, skipping",
             );
             return Option.none<vscode.NotebookData>();
@@ -118,13 +131,13 @@ export class NotebookDataCache extends Effect.Service<NotebookDataCache>()(
           });
 
           if (Option.isNone(notebookId)) {
-            yield* Effect.logDebug("Could not match notebook from bytes");
+            yield* Effect.logTrace("Could not match notebook from bytes");
             return Option.none<vscode.NotebookData>();
           }
 
           const cachedData = lastNotebookData.get(notebookId.value);
           if (!cachedData) {
-            yield* Effect.logDebug("No cached data found for notebook").pipe(
+            yield* Effect.logTrace("No cached data found for notebook").pipe(
               Effect.annotateLogs({ notebookId: notebookId.value }),
             );
             return Option.none<vscode.NotebookData>();

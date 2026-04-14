@@ -132,7 +132,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
       priority: 100,
     });
 
-    yield* Effect.logInfo("marimo status bar initialized");
+    yield* Effect.logDebug("marimo status bar initialized");
   }),
 );
 

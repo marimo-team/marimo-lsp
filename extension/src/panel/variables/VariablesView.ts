@@ -166,6 +166,6 @@ export const VariablesViewLive = Layer.scopedDiscard(
       ),
     );
 
-    yield* Effect.logInfo("Variables view initialized");
+    yield* Effect.logDebug("Variables view initialized");
   }),
 );

@@ -66,7 +66,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       PythonEnvInvalidation.Default,
     ],
     scoped: Effect.gen(function* () {
-      yield* Effect.logInfo("Setting up kernel manager");
+      yield* Effect.logDebug("Setting up kernel manager");
       const code = yield* VsCode;
       const client = yield* LanguageClient;
       const renderer = yield* NotebookRenderer;

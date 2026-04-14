@@ -189,6 +189,6 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
       }
     });
 
-    yield* Effect.logInfo("Recent notebooks view initialized");
+    yield* Effect.logDebug("Recent notebooks view initialized");
   }),
 );
