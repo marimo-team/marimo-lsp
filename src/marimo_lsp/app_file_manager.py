@@ -138,11 +138,14 @@ def sync_app_with_workspace(
     notebook = _find_notebook_document(workspace, notebook_uri)
 
     # lsp.LSPObject at runtime is just a dict...
-    app_config = cast("dict", notebook.metadata or {})
+    # Notebook metadata has the shape { app: { options: { width: ... } }, header: ..., version: ... }.
+    # App() expects the flat options dict (e.g., { width: "medium" }), not the full metadata.
+    metadata = cast("dict", notebook.metadata or {})
+    app_options = cast("dict", metadata.get("app", {}).get("options", {}))
     if app is None:
-        app = InternalApp(App(**app_config))
+        app = InternalApp(App(**app_options))
 
-    app.update_config(app_config)
+    app.update_config(app_options)
 
     cell_ids: list[CellId_t] = []
     codes: list[str] = []

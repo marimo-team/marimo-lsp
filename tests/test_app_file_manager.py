@@ -1,13 +1,19 @@
-"""Tests for app_file_manager URI normalization."""
+"""Tests for app_file_manager."""
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import MagicMock
 
 import lsprotocol.types as lsp
 import pytest
 
-from marimo_lsp.app_file_manager import _find_notebook_document
+from marimo_lsp.app_file_manager import _find_notebook_document, sync_app_with_workspace
+
+
+def _lsp_object(d: dict[str, object] | None) -> lsp.LSPObject | None:
+    """Cast a plain dict to LSPObject (which is a dict at runtime)."""
+    return cast("lsp.LSPObject | None", d)
 
 
 def _make_workspace(uris: list[str]) -> MagicMock:
@@ -58,3 +64,54 @@ class TestFindNotebookDocument:
         ws = _make_workspace([uri])
         doc = _find_notebook_document(ws, uri)
         assert doc.uri == uri
+
+
+def _make_workspace_with_metadata(
+    uri: str,
+    metadata: dict[str, object] | None,
+    cells: list[lsp.NotebookCell] | None = None,
+) -> MagicMock:
+    """Create a mock workspace with a single notebook document."""
+    workspace = MagicMock()
+    workspace.notebook_documents = {
+        uri: lsp.NotebookDocument(
+            uri=uri,
+            notebook_type="marimo-notebook",
+            version=0,
+            cells=cells or [],
+            metadata=_lsp_object(metadata),
+        )
+    }
+    workspace.text_documents = {}
+    return workspace
+
+
+class TestSyncAppWithWorkspace:
+    def test_extracts_app_options_from_metadata(self) -> None:
+        """App config should come from metadata.app.options, not the top-level metadata."""
+        uri = "file:///test/notebook.py"
+        ws = _make_workspace_with_metadata(
+            uri,
+            metadata={
+                "app": {"options": {"width": "medium", "sql_output": "polars"}},
+                "header": {"value": ""},
+                "version": "0.19.0",
+            },
+        )
+        app = sync_app_with_workspace(workspace=ws, notebook_uri=uri, app=None)
+        assert app.config.width == "medium"
+        assert app.config.sql_output == "polars"
+
+    def test_defaults_when_no_app_options(self) -> None:
+        """Missing metadata should produce default config."""
+        uri = "file:///test/notebook.py"
+        ws = _make_workspace_with_metadata(uri, metadata={})
+        app = sync_app_with_workspace(workspace=ws, notebook_uri=uri, app=None)
+        assert app.config.width == "compact"
+
+    def test_empty_metadata(self) -> None:
+        """None metadata should not crash."""
+        uri = "file:///test/notebook.py"
+        ws = _make_workspace_with_metadata(uri, metadata=None)
+        app = sync_app_with_workspace(workspace=ws, notebook_uri=uri, app=None)
+        assert app.config.width == "compact"
