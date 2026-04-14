@@ -231,7 +231,7 @@ suite("marimo Extension Hello World Tests", () => {
 
 suite("marimo Extension Experimental Kernels API", () => {
   /**
-   * @returns {Promise<import("../src/services/Api.ts").MarimoApi>}
+   * @returns {Promise<import("../src/platform/Api.ts").MarimoApi>}
    */
   async function getApi() {
     const extension = getExtension();

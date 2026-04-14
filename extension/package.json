@@ -55,7 +55,7 @@
     "tar": "^7.5.2",
     "tinyspy": "^4.0.4",
     "turbo": "^2.5.8",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.2",
     "vite": "npm:@voidzero-dev/vite-plus-core@latest",
     "vite-plus": "latest",
     "vitest": "npm:@voidzero-dev/vite-plus-test@latest",
