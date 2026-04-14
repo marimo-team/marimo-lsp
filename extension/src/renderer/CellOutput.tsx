@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { ImageToolbar } from "./ImageToolbar.tsx";
 import {
   type CellId,
   type CellRuntimeState,
@@ -8,6 +9,7 @@ import {
   TooltipProvider,
   useTheme,
 } from "./marimo-frontend.ts";
+import { useEventListener } from "./useEventListener.ts";
 
 interface CellOutputProps {
   cellId: CellId;
@@ -20,6 +22,7 @@ interface CellOutputProps {
 export function CellOutput({ cellId, state }: CellOutputProps) {
   const { theme } = useTheme();
   const container = React.useRef<HTMLDivElement>(null);
+  const { target: hoveredImage, clear: clearHover } = useImageHover(container);
 
   useStopInputKeyboardPropagation(container);
 
@@ -44,8 +47,39 @@ export function CellOutput({ cellId, state }: CellOutputProps) {
           />
         )}
       </TooltipProvider>
+      {hoveredImage && (
+        <ImageToolbar target={hoveredImage} onMouseLeave={clearHover} />
+      )}
     </div>
   );
+}
+
+/**
+ * Detect when the user hovers over an <img> inside the container.
+ * Uses native DOM events via useEventListener so we can call stopPropagation.
+ */
+function useImageHover(ref: React.RefObject<HTMLDivElement | null>) {
+  const [target, setTarget] = React.useState<HTMLImageElement | null>(null);
+  const clear = React.useCallback(() => setTarget(null), []);
+
+  useEventListener(ref, "mouseover", (e) => {
+    const img = (e.target as HTMLElement).closest?.("img");
+    if (img instanceof HTMLImageElement) {
+      e.stopPropagation();
+      setTarget(img);
+    }
+  });
+
+  useEventListener(ref, "mouseout", (e) => {
+    const related = e.relatedTarget as HTMLElement | null;
+    if (related?.closest?.(".image-toolbar")) return;
+    if ((e.target as HTMLElement).closest?.("img")) {
+      e.stopPropagation();
+      setTarget(null);
+    }
+  });
+
+  return { target, clear };
 }
 
 /**
@@ -56,29 +90,16 @@ export function CellOutput({ cellId, state }: CellOutputProps) {
  * then stops propagation to VS Code.
  */
 function useStopInputKeyboardPropagation(
-  containerRef: React.RefObject<HTMLDivElement | null>,
+  ref: React.RefObject<HTMLDivElement | null>,
 ) {
-  React.useEffect(() => {
-    if (!containerRef.current) {
-      return;
+  const handler = React.useCallback((e: KeyboardEvent) => {
+    if (isFromInput(e)) {
+      e.stopPropagation();
     }
+  }, []);
 
-    const controller = new AbortController();
-    const handler = (e: KeyboardEvent) => {
-      if (isFromInput(e)) {
-        e.stopPropagation();
-      }
-    };
-
-    containerRef.current.addEventListener("keydown", handler, {
-      signal: controller.signal,
-    });
-    containerRef.current.addEventListener("keyup", handler, {
-      signal: controller.signal,
-    });
-
-    return () => controller.abort();
-  }, [containerRef]);
+  useEventListener(ref, "keydown", handler);
+  useEventListener(ref, "keyup", handler);
 }
 
 /**

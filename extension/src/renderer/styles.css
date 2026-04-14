@@ -1,3 +1,5 @@
+@import "./css/image-toolbar.css";
+
 /**
  * VSCode theme variable mappings to marimo's CSS variables
  * Maps VSCode's theme colors to the CSS variables used by marimo
@@ -49,6 +51,13 @@
   /* Links */
   --link: var(--vscode-textLink-foreground);
   --link-visited: var(--vscode-textLink-activeForeground);
+}
+
+/**
+ * Ensure the output container is a positioning context for the image toolbar
+ */
+.marimo-cell-output {
+  position: relative;
 }
 
 /**
