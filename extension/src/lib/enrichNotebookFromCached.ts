@@ -176,6 +176,17 @@ function matchCells(
     }
   }
 
+  // Pass 3: Positional fallback — pair remaining unmatched cells by order.
+  // This handles the common case of external edits (e.g., AI tools) modifying
+  // cell content in place without adding or removing cells.
+  const pairCount = Math.min(
+    unmatchedCachedIndices.length,
+    unmatchedIncomingIndices.length,
+  );
+  for (let i = 0; i < pairCount; i++) {
+    middleMatches.set(unmatchedCachedIndices[i], unmatchedIncomingIndices[i]);
+  }
+
   return { stablePrefix, stableSuffix, middleMatches };
 }
 

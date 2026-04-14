@@ -148,7 +148,7 @@ describe("enrichNotebookFromCached", () => {
   });
 
   describe("cell content edited", () => {
-    it("edited cell gets fresh id, unchanged cells preserve ids", () => {
+    it("edited cell preserves id via positional fallback", () => {
       const cached = notebook([
         cell("x = 1", { stableId: "id-1" }),
         cell("y = 2", { stableId: "id-2" }),
@@ -162,8 +162,9 @@ describe("enrichNotebookFromCached", () => {
 
       const result = enrichNotebookFromCached(incoming, cached);
 
-      // First and last match, middle was edited so keeps fresh id
-      expect(getStableIds(result)).toEqual(["id-1", "fresh-2", "id-3"]);
+      // First and last match via prefix/suffix, edited middle cell
+      // preserves identity via positional fallback
+      expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
   });
 
@@ -177,8 +178,9 @@ describe("enrichNotebookFromCached", () => {
       expect(getStableIds(result)).toEqual(["id-1"]);
     });
 
-    it("does NOT match cells with different internal content", () => {
-      // Normalization only trims, doesn't change internal whitespace
+    it("matches cells with different internal content via positional fallback", () => {
+      // Normalization only trims; internal whitespace changes are caught
+      // by positional fallback (Pass 3) instead
       const cached = notebook([
         cell("x = 1", { stableId: "id-1" }),
         cell("y=2", { stableId: "id-2" }),
@@ -192,7 +194,8 @@ describe("enrichNotebookFromCached", () => {
 
       const result = enrichNotebookFromCached(incoming, cached);
 
-      expect(getStableIds(result)).toEqual(["id-1", "fresh-2", "id-3"]);
+      // Positional fallback preserves identity for content-changed cells
+      expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
   });
 
@@ -233,7 +236,10 @@ describe("enrichNotebookFromCached", () => {
 
       const result = enrichNotebookFromCached(incoming, cached);
 
-      expect(getStableIds(result)).toEqual(["id-a", "id-d", "fresh-3", "id-c"]);
+      // b was deleted and "new" is genuinely new, but positional fallback
+      // pairs the one remaining unmatched cached cell (b) with the one
+      // remaining unmatched incoming cell (new), preserving b's identity.
+      expect(getStableIds(result)).toEqual(["id-a", "id-d", "id-b", "id-c"]);
     });
 
     it("empty incoming notebook returns empty", () => {
@@ -306,6 +312,84 @@ describe("enrichNotebookFromCached", () => {
 
       // Same content matches despite different kind
       expect(getStableIds(result)).toEqual(["id-1"]);
+    });
+  });
+
+  describe("positional fallback (external edits)", () => {
+    it("preserves identity when AI edits multiple cells in place", () => {
+      const cached = notebook([
+        cell("import pandas as pd", { stableId: "id-1" }),
+        cell("df = pd.read_csv('data.csv')", { stableId: "id-2" }),
+        cell("df.head()", { stableId: "id-3" }),
+        cell("df.describe()", { stableId: "id-4" }),
+      ]);
+      const incoming = notebook([
+        cell("import pandas as pd", { stableId: "fresh-1" }),
+        cell("df = pd.read_csv('data.csv', encoding='utf-8')", {
+          stableId: "fresh-2",
+        }), // edited
+        cell("df.head(10)", { stableId: "fresh-3" }), // edited
+        cell("df.describe()", { stableId: "fresh-4" }),
+      ]);
+
+      const result = enrichNotebookFromCached(incoming, cached);
+
+      // All cells preserve identity — unchanged via prefix/suffix,
+      // edited via positional fallback
+      expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3", "id-4"]);
+    });
+
+    it("preserves identity when all cells are edited", () => {
+      const cached = notebook([
+        cell("x = 1", { stableId: "id-1" }),
+        cell("y = 2", { stableId: "id-2" }),
+        cell("z = 3", { stableId: "id-3" }),
+      ]);
+      const incoming = notebook([
+        cell("x = 10", { stableId: "fresh-1" }),
+        cell("y = 20", { stableId: "fresh-2" }),
+        cell("z = 30", { stableId: "fresh-3" }),
+      ]);
+
+      const result = enrichNotebookFromCached(incoming, cached);
+
+      // No prefix or suffix matches, but positional fallback pairs all
+      expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
+    });
+
+    it("handles edit + add: existing cells keep identity, new cell gets fresh id", () => {
+      const cached = notebook([
+        cell("x = 1", { stableId: "id-1" }),
+        cell("y = 2", { stableId: "id-2" }),
+      ]);
+      const incoming = notebook([
+        cell("x = 10", { stableId: "fresh-1" }), // edited
+        cell("y = 20", { stableId: "fresh-2" }), // edited
+        cell("z = 30", { stableId: "fresh-3" }), // new
+      ]);
+
+      const result = enrichNotebookFromCached(incoming, cached);
+
+      // Positional fallback pairs first two, third is genuinely new
+      expect(getStableIds(result)).toEqual(["id-1", "id-2", "fresh-3"]);
+    });
+
+    it("handles edit + delete: remaining cells keep identity", () => {
+      const cached = notebook([
+        cell("x = 1", { stableId: "id-1" }),
+        cell("y = 2", { stableId: "id-2" }),
+        cell("z = 3", { stableId: "id-3" }),
+      ]);
+      const incoming = notebook([
+        cell("x = 10", { stableId: "fresh-1" }), // edited
+        cell("y = 20", { stableId: "fresh-2" }), // edited
+        // z was deleted
+      ]);
+
+      const result = enrichNotebookFromCached(incoming, cached);
+
+      // Positional fallback pairs first two, third was deleted
+      expect(getStableIds(result)).toEqual(["id-1", "id-2"]);
     });
   });
 
