@@ -22,24 +22,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          path: marimo-lsp
+
+      - name: Read marimo version
+        id: marimo-version
+        run: echo "ref=$(cat marimo-lsp/.marimo-version)" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: marimo-team/marimo
+          ref: ${{ steps.marimo-version.outputs.ref }}
+          path: marimo
 
       - uses: pnpm/action-setup@08c4be7e2e672a47d11bd04269e27e5f3e8529cb # v6.0.0
         with:
-          package_json_file: extension/package.json
+          package_json_file: marimo-lsp/extension/package.json
 
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version: 24
           cache: "pnpm"
-          cache-dependency-path: extension/pnpm-lock.yaml
+          cache-dependency-path: |
+            marimo/pnpm-lock.yaml
+            marimo-lsp/extension/pnpm-lock.yaml
 
-      - name: Install dependencies
-        run: pnpm install
-        working-directory: extension
+      - name: Build marimo packages
+        run: |
+          cd marimo
+          pnpm turbo run build --filter="./packages/*"
 
       - name: Check (lint + format)
-        run: pnpm check
-        working-directory: extension
+        run: |
+          cd marimo-lsp/extension
+          pnpm install
+          pnpm check
 
   typescript-typecheck:
     name: TypeScript / Typecheck

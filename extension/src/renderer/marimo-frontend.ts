@@ -38,6 +38,7 @@ import "@marimo-team/frontend/unstable_internal/css/md.css";
 import "@marimo-team/frontend/unstable_internal/css/admonition.css";
 import "@marimo-team/frontend/unstable_internal/css/md-tooltip.css";
 import "@marimo-team/frontend/unstable_internal/css/table.css";
+// @ts-expect-error - untyped JS bridge to avoid type-checking marimo internals (see marimo-frontend-untyped.js)
 import * as untyped from "./marimo-frontend-untyped.js";
 
 export { useTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";

@@ -3,7 +3,7 @@ import * as process from "node:process";
 import tailwindcss from "@tailwindcss/vite";
 import * as vite from "vite-plus";
 
-import stylesheet from "./scripts/vite-plugin-virtual-stylesheet.mjs";
+import stylesheet from "./scripts/vite-plugin-virtual-stylesheet.mts";
 
 export default vite.defineConfig({
   build: {

@@ -1,11 +1,10 @@
-// @ts-check
+import type { Plugin } from "vite";
+
 /**
  * Inlines the compiled stylesheet as a string via virtual module.
  * Import with: `import styles from 'virtual:stylesheet'`
- *
- * @returns {import("vite").Plugin}
  */
-export default function () {
+export default function (): Plugin {
   const needle = "__INLINE_STYLES_PLACEHOLDER__";
   return {
     name: "virtual-stylesheet",
@@ -18,7 +17,6 @@ export default function () {
     },
     load(id) {
       if (id === "\0virtual:stylesheet") {
-        // This will be replaced at build time
         return `export default ${needle};`;
       }
     },
@@ -30,7 +28,6 @@ export default function () {
       const asset = stylesheets[0];
       assert(typeof asset.source === "string", "Expected string stylesheet.");
 
-      // replace placeholder with compiled styles
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== "chunk" || !chunk.code.includes(needle)) {
           continue;
@@ -38,20 +35,11 @@ export default function () {
         chunk.code = chunk.code.replace(needle, JSON.stringify(asset.source));
       }
 
-      // delete stylesheet from being emitted
       delete bundle[asset.fileName];
     },
   };
 }
 
-/**
- * Make an assertion.
- *
- * @param {unknown} expression - The expression to test.
- * @param {string=} msg - The optional message to display if the assertion fails.
- * @returns {asserts expression}
- * @throws an {@link Error} if `expression` is not truthy.
- */
-function assert(expression, msg = "") {
+function assert(expression: unknown, msg = ""): asserts expression {
   if (!expression) throw new Error(msg);
 }
