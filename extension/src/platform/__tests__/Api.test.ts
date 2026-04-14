@@ -14,7 +14,7 @@ import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { Api } from "../Api.ts";
 import { VsCode } from "../VsCode.ts";
 
-const withTestCtx = Effect.fn(function*(
+const withTestCtx = Effect.fn(function* (
   options: Parameters<(typeof TestVsCode)["make"]>[0] = {},
 ) {
   const testVsCode = yield* TestVsCode.make(options);
@@ -27,7 +27,7 @@ const withTestCtx = Effect.fn(function*(
         Layer.succeed(
           LanguageClient,
           LanguageClient.make({
-            channel: { name: "marimo-lsp-test", show() { } },
+            channel: { name: "marimo-lsp-test", show() {} },
             restart: () => Effect.void,
             executeCommand() {
               return Effect.die("not implemented");
@@ -50,7 +50,7 @@ const withTestCtx = Effect.fn(function*(
 describe("Api", () => {
   it.scoped(
     "has experimental.kernels namespace",
-    Effect.fn(function*() {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       const api = yield* Api.pipe(Effect.provide(ctx.layer));
@@ -64,10 +64,10 @@ describe("Api", () => {
 
   it.scoped(
     "getKernel returns undefined for non-existent notebook",
-    Effect.fn(function*() {
+    Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
-      const kernel = yield* Effect.gen(function*() {
+      const kernel = yield* Effect.gen(function* () {
         const api = yield* Api;
         const code = yield* VsCode;
         const fakeUri = yield* code.utils.parseUri(
@@ -85,7 +85,7 @@ describe("Api", () => {
 
   it.scoped(
     "getKernel returns undefined when notebook exists but no controller",
-    Effect.fn(function*() {
+    Effect.fn(function* () {
       const notebookDoc = createTestNotebookDocument(
         "file:///test/notebook_mo.py",
         {
@@ -104,7 +104,7 @@ describe("Api", () => {
 
       const ctx = yield* withTestCtx({ initialDocuments: [notebookDoc] });
 
-      const kernel = yield* Effect.gen(function*() {
+      const kernel = yield* Effect.gen(function* () {
         const api = yield* Api;
         const code = yield* VsCode;
         const uri = yield* code.utils.parseUri("file:///test/notebook_mo.py");

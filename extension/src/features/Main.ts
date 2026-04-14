@@ -147,7 +147,7 @@ export function makeActivate(
         );
         const api = Context.get(ctx, Api);
         return {
-          ...api,
+          experimental: api.experimental,
           dispose: () => Effect.runPromise(Scope.close(scope, Exit.void)),
         };
       }),

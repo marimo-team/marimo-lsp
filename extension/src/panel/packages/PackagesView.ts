@@ -46,16 +46,14 @@ export const PackagesViewLive = Layer.scopedDiscard(
 
           // Return dependencies of this package
           const notebookUri = element.notebookUri;
-          return [
-            ...element.dependencies.map((dep) => ({
-              type: "package" as const,
-              notebookUri,
-              name: dep.name,
-              version: dep.version,
-              tags: dep.tags,
-              dependencies: dep.dependencies,
-            })),
-          ];
+          return element.dependencies.map((dep) => ({
+            type: "package" as const,
+            notebookUri,
+            name: dep.name,
+            version: dep.version,
+            tags: dep.tags,
+            dependencies: dep.dependencies,
+          }));
         }),
       getTreeItem: (element: PackageTreeItem) =>
         Effect.succeed({

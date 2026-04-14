@@ -1,8 +1,13 @@
+// @ts-nocheck
 /**
  * Oxlint plugin: marimo custom lint rules
+ *
+ * We don't have these types
+ *
+ * @typedef {Parameters<import("oxlint/plugins-dev").RuleTester["run"]>[1]} Rule
  */
 
-/** Enforce type-only imports for vscode module */
+/** @satisfies {Rule} - Enforce type-only imports for vscode module */
 const vscodeTypeOnly = {
   meta: {
     type: "problem",
@@ -107,7 +112,7 @@ const vscodeTypeOnly = {
   },
 };
 
-/** Disallow @/* imports */
+/** @satisfies {Rule} - Disallow @/* imports */
 const noAtImports = {
   meta: {
     type: "problem",
@@ -125,7 +130,7 @@ const noAtImports = {
         const source = node.source.value;
 
         // Check if the import path starts with @/ (but not @marimo-team/ or other scoped packages)
-        if (typeof source === "string" && /^@\//.test(source)) {
+        if (typeof source === "string" && source.startsWith("@/")) {
           context.report({
             node: node.source,
             messageId: "noAtImports",

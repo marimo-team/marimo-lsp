@@ -38,7 +38,6 @@ import "@marimo-team/frontend/unstable_internal/css/md.css";
 import "@marimo-team/frontend/unstable_internal/css/admonition.css";
 import "@marimo-team/frontend/unstable_internal/css/md-tooltip.css";
 import "@marimo-team/frontend/unstable_internal/css/table.css";
-// @ts-expect-error - Untyped imports that would fail type-checking. See marimo-frontend-untyped.js.
 import * as untyped from "./marimo-frontend-untyped.js";
 
 export { useTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";
@@ -112,4 +111,6 @@ export const ConsoleOutput: React.FC<{
 
 export const TooltipProvider: React.FC<
   React.PropsWithChildren<{ container: HTMLElement | null }>
-> = untyped.TooltipProvider;
+> = untyped.TooltipProvider as React.FC<
+  React.PropsWithChildren<{ container: HTMLElement | null }>
+>;

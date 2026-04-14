@@ -330,15 +330,24 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
       lastRunId: Option.none(),
     });
   }
-  static transition(cell: CellEntry, message: CellOperationNotification) {
+  private with(
+    overrides: Partial<
+      Pick<CellEntry, "state" | "pendingExecution" | "lastRunId">
+    >,
+  ) {
     return new CellEntry({
-      ...cell,
-      state: transitionCell(cell.state, message),
+      id: this.id,
+      editor: this.editor,
+      state: overrides.state ?? this.state,
+      pendingExecution: overrides.pendingExecution ?? this.pendingExecution,
+      lastRunId: overrides.lastRunId ?? this.lastRunId,
     });
   }
+  static transition(cell: CellEntry, message: CellOperationNotification) {
+    return cell.with({ state: transitionCell(cell.state, message) });
+  }
   static withExecution(cell: CellEntry, execution: ExecutionHandle) {
-    return new CellEntry({
-      ...cell,
+    return cell.with({
       lastRunId: Option.some(execution.runId),
       pendingExecution: Option.some(execution),
     });
@@ -350,10 +359,7 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
     ) {
       cell.pendingExecution.value.end(false);
     }
-    return new CellEntry({
-      ...cell,
-      pendingExecution: Option.none(),
-    });
+    return cell.with({ pendingExecution: Option.none() });
   }
   static start(cell: CellEntry, timestamp: number) {
     let pendingExecution = cell.pendingExecution;
@@ -365,7 +371,7 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
         cell.pendingExecution.value.start(timestamp * 1000),
       );
     }
-    return new CellEntry({ ...cell, pendingExecution });
+    return cell.with({ pendingExecution });
   }
   static end(cell: CellEntry, success: boolean, timestamp?: number) {
     if (
@@ -377,10 +383,7 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
         timestamp ? timestamp * 1000 : undefined,
       );
     }
-    return new CellEntry({
-      ...cell,
-      pendingExecution: Option.none(),
-    });
+    return cell.with({ pendingExecution: Option.none() });
   }
   static maybeUpdateCellOutput = Effect.fn(function* (
     cell: CellEntry,
