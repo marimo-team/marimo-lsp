@@ -6,7 +6,7 @@ import * as NodeProcess from "node:process";
 import { Command, CommandExecutor } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import type { PlatformError } from "@effect/platform/Error";
-import { Data, Effect, Option, Schema, Stream, String } from "effect";
+import { Data, Effect, Function, Option, Schema, Stream, String } from "effect";
 import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
@@ -374,6 +374,10 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
               UV_DEFAULT_INDEX: "https://pypi.org/simple/",
               ...strategyToEnv[strategy],
             },
+            // Set cwd to the OS temp directory so uv doesn't walk up parent
+            // directories and discover a broken .venv (e.g., wrong-arch
+            // python.exe on Windows → OS error 193).
+            cwd: NodeOs.tmpdir(),
           });
 
         const loop = (
@@ -441,9 +445,11 @@ function createUv(
   return Effect.fn("uv")(function* (options: {
     readonly args: ReadonlyArray<string>;
     readonly env?: Record<string, string>;
+    readonly cwd?: string;
   }) {
     const command = Command.make(bin.executable, ...options.args).pipe(
       Command.env({ NO_COLOR: "1", ...options.env }),
+      options.cwd ? Command.workingDirectory(options.cwd) : Function.identity,
     );
     yield* Effect.annotateCurrentSpan("args", options.args);
     const [exitCode, stdout, stderr] = yield* command.pipe(
