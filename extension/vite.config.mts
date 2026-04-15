@@ -38,6 +38,9 @@ export default vite.defineConfig({
     exclude: ["tests/extension/**/*.test.ts"],
     setupFiles: ["./src/__tests__/setup.ts"],
   },
+  fmt: {
+    printWidth: 80,
+  },
   lint: {
     options: {
       typeAware: true,
