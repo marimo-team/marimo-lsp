@@ -673,7 +673,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
       capabilities: initResult.capabilities,
     };
 
-    yield* Effect.logInfo("Server initialized").pipe(
+    yield* Effect.logDebug("Server initialized").pipe(
       Effect.annotateLogs({
         server: serverInfo.name,
         version: serverInfo.version,

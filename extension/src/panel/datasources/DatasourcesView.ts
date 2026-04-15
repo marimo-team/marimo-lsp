@@ -399,6 +399,6 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
       ),
     );
 
-    yield* Effect.logInfo("Datasources view initialized");
+    yield* Effect.logDebug("Datasources view initialized");
   }),
 );

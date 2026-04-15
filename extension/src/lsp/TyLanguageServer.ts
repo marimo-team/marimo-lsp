@@ -95,7 +95,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
           // resources are cleaned up before the next cycle begins.
           const serverCycle = Effect.gen(function* () {
             yield* Ref.set(statusRef, TyLanguageServerStatus.Starting());
-            yield* Effect.logInfo("Starting language server").pipe(
+            yield* Effect.logDebug("Starting language server").pipe(
               Effect.annotateLogs({
                 server: TY_SERVER.name,
                 version: TY_SERVER.version,

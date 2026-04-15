@@ -193,6 +193,6 @@ export const PackagesViewLive = Layer.scopedDiscard(
       }),
     );
 
-    yield* Effect.logInfo("Packages view initialized");
+    yield* Effect.logDebug("Packages view initialized");
   }),
 );

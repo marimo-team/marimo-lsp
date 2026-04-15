@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as semver from "@std/semver";
-import { Effect, Logger, Option } from "effect";
+import { Effect, Logger, LogLevel, Option } from "effect";
 
 import {
   BinarySource,
@@ -212,6 +212,7 @@ describe("resolveBinary", () => {
         [emptySource("tier-1"), userSource("/bin/ty")],
         uvSource("/fallback"),
       ).pipe(
+        Logger.withMinimumLogLevel(LogLevel.Debug),
         Effect.provide(
           Logger.replace(
             Logger.defaultLogger,

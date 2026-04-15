@@ -32,7 +32,7 @@ export class ConfigContextManager extends Effect.Service<ConfigContextManager>()
       yield* Effect.forkScoped(
         onCellChangeModeStream.pipe(
           Stream.tap((mode) =>
-            Effect.logDebug("Updated onCellChangeMode context").pipe(
+            Effect.logTrace("Updated onCellChangeMode context").pipe(
               Effect.annotateLogs({ mode }),
             ),
           ),
@@ -50,7 +50,7 @@ export class ConfigContextManager extends Effect.Service<ConfigContextManager>()
       yield* Effect.forkScoped(
         autoReloadModeStream.pipe(
           Stream.tap((mode) =>
-            Effect.logDebug("Updated autoReloadMode context").pipe(
+            Effect.logTrace("Updated autoReloadMode context").pipe(
               Effect.annotateLogs({ mode }),
             ),
           ),

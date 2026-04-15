@@ -27,7 +27,7 @@ export const openAsMarimoNotebook = Effect.fn("command.openAsMarimoNotebook")(
     // stale when VS Code reorganizes tabs.
     yield* code.window.closeTextEditorTab(uri);
 
-    yield* Effect.logInfo("Opened Python file as marimo notebook").pipe(
+    yield* Effect.logDebug("Opened Python file as marimo notebook").pipe(
       Effect.annotateLogs({ uri: uri.toString() }),
     );
   },

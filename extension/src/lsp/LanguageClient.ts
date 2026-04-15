@@ -50,7 +50,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
         onNone: () => findLspExecutable(uv.bin.executable),
       });
 
-      yield* Effect.logInfo("Got marimo-lsp executable").pipe(
+      yield* Effect.logDebug("Got marimo-lsp executable").pipe(
         Effect.annotateLogs({
           command: exec.command,
           args: (exec.args ?? []).join(" "),
@@ -88,7 +88,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
           Effect.timeout("5 seconds"),
           Effect.ignore,
         );
-        yield* Effect.logInfo("marimo-lsp client stopped");
+        yield* Effect.logDebug("marimo-lsp client stopped");
       });
 
       /**
@@ -100,7 +100,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
           // If the client is in a "stopping" state, wait for it to finish
           // before attempting to start again.
           if (!client.isRunning() && client.needsStop()) {
-            yield* Effect.logInfo(
+            yield* Effect.logDebug(
               "Client is still stopping, waiting before start",
             );
             yield* stopClient();
@@ -201,7 +201,7 @@ export const findLspExecutable = Effect.fn("findLspExecutable")(function* (
 
   if (sdistDir) {
     const sdist = NodePath.join(__dirname, sdistDir);
-    yield* Effect.logInfo("Using bundled marimo-lsp").pipe(
+    yield* Effect.logDebug("Using bundled marimo-lsp").pipe(
       Effect.annotateLogs({ sdist }),
     );
     return {

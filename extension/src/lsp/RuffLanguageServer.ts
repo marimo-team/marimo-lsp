@@ -83,7 +83,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
             return;
           }
 
-          yield* Effect.logInfo("Starting language server").pipe(
+          yield* Effect.logDebug("Starting language server").pipe(
             Effect.annotateLogs({
               server: RUFF_SERVER.name,
               version: RUFF_SERVER.version,

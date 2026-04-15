@@ -91,7 +91,7 @@ export const PythonEnvironmentStatusBarLive = Layer.scopedDiscard(
     yield* updateDisplay(item, Option.some(initialEnv.path));
     yield* updateVisibility(item);
 
-    yield* Effect.logInfo("Python environment status bar initialized");
+    yield* Effect.logDebug("Python environment status bar initialized");
   }),
 );
 
@@ -129,7 +129,7 @@ const updateDisplay = Effect.fn(function* (
     return;
   }
 
-  yield* Effect.logInfo(`Python interpreter path: ${env.value.path}`);
+  yield* Effect.logDebug(`Python interpreter path: ${env.value.path}`);
   yield* item.setText(formatPythonStatusBarLabel(code, env.value));
   yield* item.setTooltip(env.value.path);
   yield* item.setColor("");

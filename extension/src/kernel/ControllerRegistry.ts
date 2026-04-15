@@ -261,7 +261,7 @@ const trackControllerSelections = (
         }
         const notebook = MarimoNotebookDocument.from(e.notebook);
         yield* Ref.update(selectionsRef, HashMap.set(notebook.id, controller));
-        yield* Effect.logDebug("Updated controller for notebook").pipe(
+        yield* Effect.logTrace("Updated controller for notebook").pipe(
           Effect.annotateLogs({
             controllerId: controller.id,
             notebookUri: notebook.id,
@@ -336,7 +336,7 @@ const pruneStaleControllers = Effect.fn("pruneStaleControllers")(
     selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, AnyController>>;
   }) {
     const { envs, handlesRef, selectionsRef } = options;
-    yield* Effect.logDebug("Checking for stale controllers");
+    yield* Effect.logTrace("Checking for stale controllers");
     const desiredControllerIds = new Set(
       envs.map((env) => PythonController.getId(env)),
     );
@@ -382,7 +382,7 @@ const pruneStaleControllers = Effect.fn("pruneStaleControllers")(
 
         // Remove all disposed controllers in one update
         yield* Effect.annotateLogs(
-          Effect.logDebug("Completed stale controller removal"),
+          Effect.logTrace("Completed stale controller removal"),
           { removedCount: toRemove.length },
         );
 

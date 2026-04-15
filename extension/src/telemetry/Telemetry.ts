@@ -105,7 +105,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
           app_host: code.env.appHost,
         },
       });
-      yield* Effect.logInfo("Anonymous telemetry enabled");
+      yield* Effect.logDebug("Anonymous telemetry enabled");
     });
 
     // Initialize on startup if enabled
