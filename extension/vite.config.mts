@@ -49,6 +49,9 @@ export default vite.defineConfig({
         "src/__tests__/**",
         "src/__mocks__/**",
         "src/renderer/**",
+        // Boundary wrapper around the `vscode` module; unit tests use the
+        // TestVsCode stand-in (src/__tests__/TestVsCode.ts) instead.
+        "src/platform/VsCode.ts",
       ],
     },
   },
