@@ -56,25 +56,20 @@ jobs:
         uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore: bump marimo to ${{ steps.get_version.outputs.version }}"
-          title: "chore: bump marimo to ${{ steps.get_version.outputs.version }}"
+          commit-message: "Bump marimo to ${{ steps.get_version.outputs.version }}"
+          title: "Bump marimo to ${{ steps.get_version.outputs.version }}"
+          labels: enhancement
           body: |
-            Automated PR to bump the pinned `marimo` version from
-            `${{ steps.current_version.outputs.version }}` to
-            `${{ steps.get_version.outputs.version }}`.
+            Automated PR to bump the pinned `marimo` version from `${{ steps.current_version.outputs.version }}` to `${{ steps.get_version.outputs.version }}`.
 
             Updates:
             - `pyproject.toml` — exact pin of the `marimo` dependency
             - `.marimo-version` — sibling-checkout ref used by CI and local dev
             - `uv.lock` — refreshed via `uv lock --upgrade-package marimo`
 
-            Note: `[tool.marimo-lsp] minimum-kernel-version` is **not** changed
-            by this workflow. Bump it manually when intentionally dropping
-            support for an older marimo release.
+            Note: `[tool.marimo-lsp] minimum-kernel-version` is **not** changed by this workflow. Bump it manually when intentionally dropping support for an older marimo release.
 
-            Created by the
-            [`update-marimo-version`](./.github/workflows/update-marimo-version.yml)
-            workflow.
+            Created by the [`update-marimo-version`](./.github/workflows/update-marimo-version.yml) workflow.
           branch: "chore/update-marimo-version"
           base: "main"
           delete-branch: true
