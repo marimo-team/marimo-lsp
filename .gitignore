@@ -11,3 +11,12 @@ extension/.vscode-test/
 .vscode-test/
 .claude/
 CLAUDE.md
+
+# Coverage
+coverage/
+coverage.xml
+coverage.json
+.coverage
+.coverage.*
+htmlcov/
+lcov.info

@@ -41,6 +41,7 @@
     "@types/vscode": "^1.86.0",
     "@types/vscode-notebook-renderer": "^1.72.4",
     "@typescript/native-preview": "7.0.0-dev.20251015.1",
+    "@vitest/coverage-v8": "^4.0.0",
     "@vscode/debugprotocol": "^1.68.0",
     "@vscode/python-extension": "^1.0.6",
     "@vscode/test-cli": "^0.0.12",

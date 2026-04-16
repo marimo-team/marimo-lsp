@@ -19,6 +19,7 @@ marimo-lsp = "marimo_lsp:main"
 dev = [
   "dirty-equals>=0.9.0",
   "inline-snapshot>=0.27.2",
+  "pytest-cov>=5.0.0",
   "pytest-lsp==1.0.0b2",
   "pytest>=8.4.1",
   "ruff>=0.15.9",
@@ -66,3 +67,17 @@ somes = "somes"
 
 [tool.inline-snapshot]
 format-command="ruff format --stdin-filename {filename}"
+
+[tool.coverage.run]
+source = ["src/marimo_lsp"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_also = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "\\.\\.\\.",
+]

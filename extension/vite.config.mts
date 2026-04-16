@@ -37,6 +37,19 @@ export default vite.defineConfig({
     // Extension tests live in tests/extension/
     exclude: ["tests/extension/**/*.test.ts"],
     setupFiles: ["./src/__tests__/setup.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "text-summary", "html", "json-summary", "lcov"],
+      reportsDirectory: "./coverage",
+      reportOnFailure: true,
+      include: ["src/**/*.{ts,tsx,mts}"],
+      exclude: [
+        "src/**/*.test.ts",
+        "src/**/*.d.ts",
+        "src/__tests__/**",
+        "src/renderer/**",
+      ],
+    },
   },
   fmt: {
     printWidth: 80,
