@@ -2,7 +2,10 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 import * as lsp from "vscode-languageserver-protocol";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import {
+  createTestTextDocument,
+  TestVsCode,
+} from "../../__mocks__/TestVsCode.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import {
   toCodeAction,
@@ -11,22 +14,35 @@ import {
   toCompletionItemKind,
   toDocumentHighlight,
   toDocumentHighlightKind,
+  toDocumentPositionParams,
   toDocumentSymbol,
+  toDocumentation,
   toFoldingRange,
   toHoverContent,
   toInlayHint,
+  toLocation,
+  toLocationLink,
   toLocationResult,
+  toLspCodeAction,
+  toLspCodeActionContext,
   toLspCodeActionTriggerKind,
+  toLspCompletionItem,
   toLspCompletionItemKind,
   toLspCompletionTriggerKind,
+  toLspDiagnostic,
   toLspDiagnosticSeverity,
   toLspFoldingRangeKind,
+  toLspInlayHint,
+  toLspPosition,
+  toLspRange,
   toSelectionRange,
   toSignatureHelp,
   toSymbolKind,
   toTextEdit,
+  toTooltip,
   toVsCodeDiagnosticSeverity,
   toVsCodeRange,
+  toWorkspaceEdit,
 } from "../converters.ts";
 
 const numericEntries = (e: Record<string, unknown>): Array<[string, number]> =>
@@ -1301,6 +1317,1001 @@ describe("toCodeAction", () => {
         data: { uri: "file:///test.py" },
       });
       expect(result.title).toBe("Fix all");
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Trivial LSP-side converters
+// ---------------------------------------------------------------------------
+
+describe("toLspPosition", () => {
+  it.scoped(
+    "extracts line and character",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      expect(toLspPosition(new code.Position(3, 7))).toMatchInlineSnapshot(`
+      	{
+      	  "character": 7,
+      	  "line": 3,
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toLspRange", () => {
+  it.scoped(
+    "extracts start and end",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      expect(toLspRange(new code.Range(1, 2, 3, 4))).toMatchInlineSnapshot(`
+      	{
+      	  "end": {
+      	    "character": 4,
+      	    "line": 3,
+      	  },
+      	  "start": {
+      	    "character": 2,
+      	    "line": 1,
+      	  },
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toLocation", () => {
+  it.scoped(
+    "parses uri and converts range",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toLocation(code, {
+        uri: "file:///a.py",
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 5 },
+        },
+      });
+      expect(result).toMatchInlineSnapshot(`
+      	Location {
+      	  "range": Range {
+      	    "end": Position {
+      	      "character": 5,
+      	      "line": 0,
+      	    },
+      	    "start": Position {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "uri": {
+      	    "authority": "",
+      	    "fragment": "",
+      	    "path": "/a.py",
+      	    "query": "",
+      	    "scheme": "file",
+      	  },
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toLocationLink", () => {
+  it.scoped(
+    "converts with originSelectionRange",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toLocationLink(code, {
+        targetUri: "file:///t.py",
+        targetRange: {
+          start: { line: 1, character: 0 },
+          end: { line: 2, character: 0 },
+        },
+        targetSelectionRange: {
+          start: { line: 1, character: 4 },
+          end: { line: 1, character: 10 },
+        },
+        originSelectionRange: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 3 },
+        },
+      });
+      expect(result).toMatchInlineSnapshot(`
+      	{
+      	  "originSelectionRange": Range {
+      	    "end": Position {
+      	      "character": 3,
+      	      "line": 0,
+      	    },
+      	    "start": Position {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "targetRange": Range {
+      	    "end": Position {
+      	      "character": 0,
+      	      "line": 2,
+      	    },
+      	    "start": Position {
+      	      "character": 0,
+      	      "line": 1,
+      	    },
+      	  },
+      	  "targetSelectionRange": Range {
+      	    "end": Position {
+      	      "character": 10,
+      	      "line": 1,
+      	    },
+      	    "start": Position {
+      	      "character": 4,
+      	      "line": 1,
+      	    },
+      	  },
+      	  "targetUri": {
+      	    "authority": "",
+      	    "fragment": "",
+      	    "path": "/t.py",
+      	    "query": "",
+      	    "scheme": "file",
+      	  },
+      	}
+      `);
+    }),
+  );
+
+  it.scoped(
+    "omits originSelectionRange when absent",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toLocationLink(code, {
+        targetUri: "file:///t.py",
+        targetRange: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 1 },
+        },
+        targetSelectionRange: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 1 },
+        },
+      });
+      expect(result).toMatchInlineSnapshot(`
+      	{
+      	  "originSelectionRange": undefined,
+      	  "targetRange": Range {
+      	    "end": Position {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": Position {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "targetSelectionRange": Range {
+      	    "end": Position {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": Position {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "targetUri": {
+      	    "authority": "",
+      	    "fragment": "",
+      	    "path": "/t.py",
+      	    "query": "",
+      	    "scheme": "file",
+      	  },
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toDocumentPositionParams", () => {
+  it.scoped(
+    "serializes uri and position",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const doc = createTestTextDocument("/x.py", "python", "");
+      const result = toDocumentPositionParams(doc, new code.Position(5, 2));
+      expect(result).toMatchInlineSnapshot(`
+      	{
+      	  "position": {
+      	    "character": 2,
+      	    "line": 5,
+      	  },
+      	  "textDocument": {
+      	    "uri": "file:///x.py",
+      	  },
+      	}
+      `);
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Structural converters with branching logic
+// ---------------------------------------------------------------------------
+
+describe("toDocumentation", () => {
+  it.scoped(
+    "returns undefined for undefined",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      expect(toDocumentation(code, undefined)).toBeUndefined();
+    }),
+  );
+
+  it.scoped(
+    "passes through strings unchanged",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      expect(toDocumentation(code, "plain")).toBe("plain");
+    }),
+  );
+
+  it.scoped(
+    "wraps MarkupContent in MarkdownString",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toDocumentation(code, {
+        kind: lsp.MarkupKind.Markdown,
+        value: "# Heading",
+      });
+      expect(result).toMatchInlineSnapshot(`
+      	MarkdownString {
+      	  "baseUri": undefined,
+      	  "isTrusted": undefined,
+      	  "supportHtml": undefined,
+      	  "supportThemeIcons": undefined,
+      	  "value": "# Heading",
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toTooltip", () => {
+  it.scoped(
+    "passes through strings",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      expect(toTooltip(code, "hi")).toBe("hi");
+    }),
+  );
+
+  it.scoped(
+    "wraps MarkupContent",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toTooltip(code, {
+        kind: lsp.MarkupKind.Markdown,
+        value: "**bold**",
+      });
+      expect(result).toMatchInlineSnapshot(`
+      	MarkdownString {
+      	  "baseUri": undefined,
+      	  "isTrusted": undefined,
+      	  "supportHtml": undefined,
+      	  "supportThemeIcons": undefined,
+      	  "value": "**bold**",
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toWorkspaceEdit", () => {
+  it.scoped(
+    "converts changes map",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toWorkspaceEdit(code, {
+        changes: {
+          "file:///a.py": [
+            {
+              range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 3 },
+              },
+              newText: "foo",
+            },
+          ],
+        },
+      });
+      expect(result).toMatchInlineSnapshot(`WorkspaceEdit {}`);
+    }),
+  );
+
+  it.scoped(
+    "converts documentChanges with textDocument",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toWorkspaceEdit(code, {
+        documentChanges: [
+          {
+            textDocument: { uri: "file:///b.py", version: 1 },
+            edits: [
+              {
+                range: {
+                  start: { line: 0, character: 0 },
+                  end: { line: 0, character: 1 },
+                },
+                newText: "x",
+              },
+            ],
+          },
+        ],
+      });
+      expect(result).toMatchInlineSnapshot(`WorkspaceEdit {}`);
+    }),
+  );
+});
+
+describe("toLspDiagnostic", () => {
+  it.scoped(
+    "maps scalar string code, severity, source",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const d = new code.Diagnostic(
+        new code.Range(0, 0, 0, 1),
+        "msg",
+        code.DiagnosticSeverity.Warning,
+      );
+      d.code = "E501";
+      d.source = "ruff";
+      expect(toLspDiagnostic(code, d)).toMatchInlineSnapshot(`
+      	{
+      	  "code": "E501",
+      	  "message": "msg",
+      	  "range": {
+      	    "end": {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "severity": 2,
+      	  "source": "ruff",
+      	}
+      `);
+    }),
+  );
+
+  it.scoped(
+    "maps numeric code",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const d = new code.Diagnostic(
+        new code.Range(0, 0, 0, 1),
+        "msg",
+        code.DiagnosticSeverity.Error,
+      );
+      d.code = 42;
+      expect(toLspDiagnostic(code, d)).toMatchInlineSnapshot(`
+      	{
+      	  "code": 42,
+      	  "message": "msg",
+      	  "range": {
+      	    "end": {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "severity": 1,
+      	  "source": undefined,
+      	}
+      `);
+    }),
+  );
+
+  it.scoped(
+    "unwraps object code via .value",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const d = new code.Diagnostic(
+        new code.Range(0, 0, 0, 1),
+        "msg",
+        code.DiagnosticSeverity.Information,
+      );
+      d.code = { value: "F401", target: code.Uri.parse("https://x") };
+      expect(toLspDiagnostic(code, d)).toMatchInlineSnapshot(`
+      	{
+      	  "code": "F401",
+      	  "message": "msg",
+      	  "range": {
+      	    "end": {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "severity": 3,
+      	  "source": undefined,
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toLspCodeActionContext", () => {
+  it.scoped(
+    "maps trigger kind, diagnostics, and single `only` kind",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toLspCodeActionContext(code, {
+        diagnostics: [
+          new code.Diagnostic(
+            new code.Range(0, 0, 0, 5),
+            "unused",
+            code.DiagnosticSeverity.Warning,
+          ),
+        ],
+        only: code.CodeActionKind.Empty.append("quickfix"),
+        triggerKind: code.CodeActionTriggerKind.Automatic,
+      });
+      expect(result).toMatchInlineSnapshot(`
+      	{
+      	  "diagnostics": [
+      	    {
+      	      "code": undefined,
+      	      "message": "unused",
+      	      "range": {
+      	        "end": {
+      	          "character": 5,
+      	          "line": 0,
+      	        },
+      	        "start": {
+      	          "character": 0,
+      	          "line": 0,
+      	        },
+      	      },
+      	      "severity": 2,
+      	      "source": undefined,
+      	    },
+      	  ],
+      	  "only": [
+      	    "quickfix",
+      	  ],
+      	  "triggerKind": 2,
+      	}
+      `);
+    }),
+  );
+
+  it.scoped(
+    "omits `only` when absent",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toLspCodeActionContext(code, {
+        only: undefined,
+        diagnostics: [],
+        triggerKind: code.CodeActionTriggerKind.Invoke,
+      });
+      expect(result).toMatchInlineSnapshot(`
+      	{
+      	  "diagnostics": [],
+      	  "triggerKind": 1,
+      	}
+      `);
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Branches missing from previously-tested converters
+// ---------------------------------------------------------------------------
+
+describe("toFoldingRange without kind", () => {
+  it.scoped(
+    "leaves kind undefined",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toFoldingRange(code, { startLine: 0, endLine: 3 });
+      expect(result).toMatchInlineSnapshot(`
+      	FoldingRange {
+      	  "end": 3,
+      	  "kind": undefined,
+      	  "start": 0,
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toSelectionRange leaf", () => {
+  it.scoped(
+    "converts range without parent",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toSelectionRange(code, {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 1 },
+        },
+      });
+      expect(result).toMatchInlineSnapshot(`
+      	SelectionRange {
+      	  "parent": undefined,
+      	  "range": Range {
+      	    "end": Position {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": Position {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toCompletionItem additional branches", () => {
+  it.scoped(
+    "converts InsertReplaceEdit textEdit into insert/replace range",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCompletionItem(code, {
+        label: "print",
+        textEdit: {
+          newText: "print",
+          insert: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 3 },
+          },
+          replace: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 5 },
+          },
+        },
+      });
+      expect(result).toMatchInlineSnapshot(`
+      	CompletionItem {
+      	  "additionalTextEdits": undefined,
+      	  "command": undefined,
+      	  "commitCharacters": undefined,
+      	  "detail": undefined,
+      	  "documentation": undefined,
+      	  "filterText": undefined,
+      	  "insertText": "print",
+      	  "keepWhitespace": undefined,
+      	  "kind": undefined,
+      	  "label": "print",
+      	  "preselect": undefined,
+      	  "range": {
+      	    "inserting": Range {
+      	      "end": Position {
+      	        "character": 3,
+      	        "line": 0,
+      	      },
+      	      "start": Position {
+      	        "character": 0,
+      	        "line": 0,
+      	      },
+      	    },
+      	    "replacing": Range {
+      	      "end": Position {
+      	        "character": 5,
+      	        "line": 0,
+      	      },
+      	      "start": Position {
+      	        "character": 0,
+      	        "line": 0,
+      	      },
+      	    },
+      	  },
+      	  "sortText": undefined,
+      	  "tags": undefined,
+      	  "textEdit": undefined,
+      	}
+      `);
+    }),
+  );
+
+  it.scoped(
+    "maps additionalTextEdits, commitCharacters, filterText, sortText, preselect, command",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCompletionItem(code, {
+        label: "x",
+        filterText: "xx",
+        sortText: "000",
+        preselect: true,
+        commitCharacters: [".", "("],
+        additionalTextEdits: [
+          {
+            range: {
+              start: { line: 0, character: 0 },
+              end: { line: 0, character: 0 },
+            },
+            newText: "import os\n",
+          },
+        ],
+        command: { title: "Log", command: "log", arguments: [1] },
+      });
+      expect(result).toMatchInlineSnapshot(`
+      	CompletionItem {
+      	  "additionalTextEdits": [
+      	    TextEdit {
+      	      "newEol": undefined,
+      	      "newText": "import os
+      	",
+      	      "range": Range {
+      	        "end": Position {
+      	          "character": 0,
+      	          "line": 0,
+      	        },
+      	        "start": Position {
+      	          "character": 0,
+      	          "line": 0,
+      	        },
+      	      },
+      	    },
+      	  ],
+      	  "command": {
+      	    "arguments": [
+      	      1,
+      	    ],
+      	    "command": "log",
+      	    "title": "Log",
+      	  },
+      	  "commitCharacters": [
+      	    ".",
+      	    "(",
+      	  ],
+      	  "detail": undefined,
+      	  "documentation": undefined,
+      	  "filterText": "xx",
+      	  "insertText": undefined,
+      	  "keepWhitespace": undefined,
+      	  "kind": undefined,
+      	  "label": "x",
+      	  "preselect": true,
+      	  "range": undefined,
+      	  "sortText": "000",
+      	  "tags": undefined,
+      	  "textEdit": undefined,
+      	}
+      `);
+    }),
+  );
+
+  it.scoped(
+    "maps legacy deprecated boolean to Deprecated tag",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCompletionItem(code, {
+        label: "old",
+        deprecated: true,
+      });
+      expect(result.tags).toMatchInlineSnapshot(`
+      	[
+      	  1,
+      	]
+      `);
+    }),
+  );
+});
+
+describe("toInlayHint additional branches", () => {
+  it.scoped(
+    "maps tooltip, paddingRight, label part command",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toInlayHint(code, {
+        position: { line: 0, character: 0 },
+        label: [
+          {
+            value: "foo",
+            command: { title: "Go", command: "go", arguments: ["a"] },
+            tooltip: { kind: lsp.MarkupKind.Markdown, value: "**f**" },
+          },
+        ],
+        tooltip: "plain tip",
+        paddingRight: true,
+      });
+      expect(result).toMatchInlineSnapshot(`
+      	InlayHint {
+      	  "kind": undefined,
+      	  "label": [
+      	    InlayHintLabelPart {
+      	      "command": {
+      	        "arguments": [
+      	          "a",
+      	        ],
+      	        "command": "go",
+      	        "title": "Go",
+      	      },
+      	      "location": undefined,
+      	      "tooltip": MarkdownString {
+      	        "baseUri": undefined,
+      	        "isTrusted": undefined,
+      	        "supportHtml": undefined,
+      	        "supportThemeIcons": undefined,
+      	        "value": "**f**",
+      	      },
+      	      "value": "foo",
+      	    },
+      	  ],
+      	  "paddingLeft": undefined,
+      	  "paddingRight": true,
+      	  "position": Position {
+      	    "character": 0,
+      	    "line": 0,
+      	  },
+      	  "textEdits": undefined,
+      	  "tooltip": "plain tip",
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toCodeAction additional branches", () => {
+  it.scoped(
+    "maps command and passes through scalar diagnostic code",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCodeAction(code, {
+        title: "Run",
+        command: { title: "Do it", command: "do", arguments: [42] },
+        diagnostics: [
+          {
+            range: {
+              start: { line: 0, character: 0 },
+              end: { line: 0, character: 1 },
+            },
+            message: "m",
+            code: "E501",
+          },
+        ],
+      });
+      expect(result).toMatchInlineSnapshot(`
+      	CodeAction {
+      	  "command": {
+      	    "arguments": [
+      	      42,
+      	    ],
+      	    "command": "do",
+      	    "title": "Do it",
+      	  },
+      	  "diagnostics": [
+      	    Diagnostic {
+      	      "code": "E501",
+      	      "message": "m",
+      	      "range": Range {
+      	        "end": Position {
+      	          "character": 1,
+      	          "line": 0,
+      	        },
+      	        "start": Position {
+      	          "character": 0,
+      	          "line": 0,
+      	        },
+      	      },
+      	      "relatedInformation": undefined,
+      	      "severity": 0,
+      	      "source": undefined,
+      	      "tags": undefined,
+      	    },
+      	  ],
+      	  "disabled": undefined,
+      	  "edit": undefined,
+      	  "isPreferred": undefined,
+      	  "kind": undefined,
+      	  "title": "Run",
+      	}
+      `);
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Round-trip tests: LSP → VS Code → LSP. The opaque `data` payload survives
+// via a WeakMap keyed on the VS Code object, so resolve requests can send it
+// back to the server.
+// ---------------------------------------------------------------------------
+
+describe("inlay hint round-trip", () => {
+  it.scoped(
+    "preserves data and core fields",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const data = { id: 99, server: "ty" };
+      const back = toLspInlayHint(
+        toInlayHint(code, {
+          position: { line: 2, character: 4 },
+          label: ": int",
+          kind: lsp.InlayHintKind.Type,
+          paddingLeft: true,
+          data,
+        }),
+      );
+      expect(back.data).toBe(data);
+      expect(back).toMatchInlineSnapshot(`
+      	{
+      	  "data": {
+      	    "id": 99,
+      	    "server": "ty",
+      	  },
+      	  "kind": 1,
+      	  "label": ": int",
+      	  "paddingLeft": true,
+      	  "position": {
+      	    "character": 4,
+      	    "line": 2,
+      	  },
+      	}
+      `);
+    }),
+  );
+
+  it.scoped(
+    "round-trips label parts with command",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const back = toLspInlayHint(
+        toInlayHint(code, {
+          position: { line: 0, character: 0 },
+          label: [
+            {
+              value: "x",
+              command: { title: "t", command: "c", arguments: [1] },
+            },
+          ],
+        }),
+      );
+      expect(back).toMatchInlineSnapshot(`
+      	{
+      	  "label": [
+      	    {
+      	      "command": {
+      	        "arguments": [
+      	          1,
+      	        ],
+      	        "command": "c",
+      	        "title": "t",
+      	      },
+      	      "value": "x",
+      	    },
+      	  ],
+      	  "position": {
+      	    "character": 0,
+      	    "line": 0,
+      	  },
+      	}
+      `);
+    }),
+  );
+});
+
+describe("completion item round-trip", () => {
+  it.scoped(
+    "preserves data and flattens labelDetails/markdown docs",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const data = { resolveId: "abc" };
+      const back = toLspCompletionItem(
+        code,
+        toCompletionItem(code, {
+          label: "foo",
+          labelDetails: { detail: "(x)", description: "mod.foo" },
+          kind: lsp.CompletionItemKind.Function,
+          detail: "desc",
+          documentation: { kind: lsp.MarkupKind.Markdown, value: "**doc**" },
+          filterText: "for",
+          sortText: "0",
+          preselect: true,
+          insertText: "foo()",
+          data,
+        }),
+      );
+      expect(back.data).toBe(data);
+      expect(back).toMatchInlineSnapshot(`
+      	{
+      	  "data": {
+      	    "resolveId": "abc",
+      	  },
+      	  "detail": "desc",
+      	  "documentation": "**doc**",
+      	  "filterText": "for",
+      	  "insertText": "foo()",
+      	  "kind": 3,
+      	  "label": "foo",
+      	  "preselect": true,
+      	  "sortText": "0",
+      	}
+      `);
+    }),
+  );
+});
+
+describe("code action round-trip", () => {
+  it.scoped(
+    "preserves data, kind, command, diagnostics, isPreferred, disabled",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const data = { token: "xyz" };
+      const back = toLspCodeAction(
+        code,
+        toCodeAction(code, {
+          title: "Fix",
+          kind: "quickfix",
+          isPreferred: true,
+          disabled: { reason: "nope" },
+          command: { title: "Log", command: "log" },
+          diagnostics: [
+            {
+              range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 1 },
+              },
+              message: "m",
+              severity: lsp.DiagnosticSeverity.Error,
+              source: "ruff",
+              code: "E501",
+            },
+          ],
+          data,
+        }),
+      );
+      expect(back.data).toBe(data);
+      expect(back).toMatchInlineSnapshot(`
+      	{
+      	  "command": {
+      	    "arguments": undefined,
+      	    "command": "log",
+      	    "title": "Log",
+      	  },
+      	  "data": {
+      	    "token": "xyz",
+      	  },
+      	  "diagnostics": [
+      	    {
+      	      "code": "E501",
+      	      "message": "m",
+      	      "range": {
+      	        "end": {
+      	          "character": 1,
+      	          "line": 0,
+      	        },
+      	        "start": {
+      	          "character": 0,
+      	          "line": 0,
+      	        },
+      	      },
+      	      "severity": 1,
+      	      "source": "ruff",
+      	    },
+      	  ],
+      	  "disabled": {
+      	    "reason": "nope",
+      	  },
+      	  "edit": undefined,
+      	  "isPreferred": true,
+      	  "kind": "quickfix",
+      	  "title": "Fix",
+      	}
+      `);
     }),
   );
 });
