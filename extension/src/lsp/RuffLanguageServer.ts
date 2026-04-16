@@ -338,7 +338,7 @@ const getRuffDisabledReason = Effect.fn(function* () {
   }
 
   const ruffConfig = yield* code.workspace.getConfiguration("ruff");
-  const ruffEnabled = ruffConfig.get<boolean>("enable", true);
+  const ruffEnabled = ruffConfig.get("enable", true);
 
   if (!ruffEnabled) {
     yield* Effect.logInfo(

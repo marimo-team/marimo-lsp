@@ -47,7 +47,7 @@ export class Config extends Effect.Service<Config>()("Config", {
         get enabled() {
           return Effect.andThen(
             code.value.workspace.getConfiguration("marimo"),
-            (config) => !config.get<boolean>("disableUvIntegration", false),
+            (config) => !config.get("disableUvIntegration", false),
           );
         },
       },
@@ -91,8 +91,7 @@ export class Config extends Effect.Service<Config>()("Config", {
       getManagedLanguageFeaturesEnabled() {
         return Effect.andThen(
           code.value.workspace.getConfiguration("marimo"),
-          (config) =>
-            !config.get<boolean>("disableManagedLanguageFeatures", false),
+          (config) => !config.get("disableManagedLanguageFeatures", false),
         );
       },
     };

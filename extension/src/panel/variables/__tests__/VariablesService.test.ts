@@ -242,7 +242,7 @@ it.effect(
       const service = yield* VariablesService;
       const notebookUri = NOTEBOOK_URI;
 
-      const collected = yield* Ref.make<number>(0);
+      const collected = yield* Ref.make(0);
 
       // Subscribe to stream and count changes
       yield* Effect.fork(
@@ -299,7 +299,7 @@ it.effect(
       const service = yield* VariablesService;
       const notebookUri = NOTEBOOK_URI;
 
-      const collected = yield* Ref.make<number>(0);
+      const collected = yield* Ref.make(0);
 
       // Subscribe to stream and count changes
       yield* Effect.fork(

@@ -51,8 +51,7 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
           }),
         ),
       );
-    const recentNotebooks =
-      yield* Ref.make<readonly RecentNotebook[]>(initialNotebooks);
+    const recentNotebooks = yield* Ref.make(initialNotebooks);
 
     // Create the tree data provider
     const provider = yield* treeView.createTreeDataProvider({
