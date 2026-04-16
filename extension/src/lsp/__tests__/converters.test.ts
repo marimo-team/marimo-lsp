@@ -8,17 +8,36 @@ import {
   toCodeAction,
   toCodeActionKind,
   toCompletionItem,
+  toCompletionItemKind,
   toDocumentHighlight,
+  toDocumentHighlightKind,
   toDocumentSymbol,
   toFoldingRange,
   toHoverContent,
   toInlayHint,
   toLocationResult,
+  toLspCodeActionTriggerKind,
+  toLspCompletionItemKind,
+  toLspCompletionTriggerKind,
+  toLspDiagnosticSeverity,
+  toLspFoldingRangeKind,
   toSelectionRange,
   toSignatureHelp,
+  toSymbolKind,
   toTextEdit,
+  toVsCodeDiagnosticSeverity,
   toVsCodeRange,
 } from "../converters.ts";
+
+const numericEntries = (e: Record<string, unknown>): Array<[string, number]> =>
+  Object.entries(e).filter(
+    (entry): entry is [string, number] => typeof entry[1] === "number",
+  );
+
+const stringEntries = (e: Record<string, unknown>): Array<[string, string]> =>
+  Object.entries(e).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string",
+  );
 
 const withVsCode = Effect.gen(function* () {
   const test = yield* TestVsCode.make();
@@ -349,6 +368,279 @@ describe("toDocumentHighlight", () => {
             },
           },
         }
+      `);
+    }),
+  );
+});
+
+// Data-driven snapshots over LSP/VS Code enum tables. Iterating the source
+// enum means adding a new enum value anywhere upstream surfaces here as a
+// snapshot diff (or an exhaustiveness throw), with no manual list to keep
+// in sync.
+
+describe("toSymbolKind", () => {
+  it.scoped("maps every lsp.SymbolKind", () =>
+    Effect.sync(() => {
+      const mapping = Object.fromEntries(
+        numericEntries(lsp.SymbolKind).map(([name, value]) => [
+          name,
+          toSymbolKind(value as lsp.SymbolKind),
+        ]),
+      );
+      expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Array": 17,
+      	  "Boolean": 16,
+      	  "Class": 4,
+      	  "Constant": 13,
+      	  "Constructor": 8,
+      	  "Enum": 9,
+      	  "EnumMember": 21,
+      	  "Event": 23,
+      	  "Field": 7,
+      	  "File": 0,
+      	  "Function": 11,
+      	  "Interface": 10,
+      	  "Key": 19,
+      	  "Method": 5,
+      	  "Module": 1,
+      	  "Namespace": 2,
+      	  "Null": 20,
+      	  "Number": 15,
+      	  "Object": 18,
+      	  "Operator": 24,
+      	  "Package": 3,
+      	  "Property": 6,
+      	  "String": 14,
+      	  "Struct": 22,
+      	  "TypeParameter": 25,
+      	  "Variable": 12,
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toCompletionItemKind", () => {
+  it.scoped(
+    "maps every lsp.CompletionItemKind",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const mapping = Object.fromEntries(
+        numericEntries(lsp.CompletionItemKind).map(([name, value]) => [
+          name,
+          toCompletionItemKind(code, value as lsp.CompletionItemKind),
+        ]),
+      );
+      expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Class": 6,
+      	  "Color": 15,
+      	  "Constant": 20,
+      	  "Constructor": 3,
+      	  "Enum": 12,
+      	  "EnumMember": 19,
+      	  "Event": 22,
+      	  "Field": 4,
+      	  "File": 16,
+      	  "Folder": 18,
+      	  "Function": 2,
+      	  "Interface": 7,
+      	  "Keyword": 13,
+      	  "Method": 1,
+      	  "Module": 8,
+      	  "Operator": 23,
+      	  "Property": 9,
+      	  "Reference": 17,
+      	  "Snippet": 14,
+      	  "Struct": 21,
+      	  "Text": 0,
+      	  "TypeParameter": 24,
+      	  "Unit": 10,
+      	  "Value": 11,
+      	  "Variable": 5,
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toLspCompletionItemKind", () => {
+  // Iterate the VS Code side so User/Issue (no LSP equivalent) show up as
+  // explicit rows collapsed to Text.
+  it.scoped(
+    "maps every vscode.CompletionItemKind (User/Issue → Text)",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const mapping = Object.fromEntries(
+        numericEntries(code.CompletionItemKind).map(([name, value]) => [
+          name,
+          toLspCompletionItemKind(code, value),
+        ]),
+      );
+      expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Class": 7,
+      	  "Color": 16,
+      	  "Constant": 21,
+      	  "Constructor": 4,
+      	  "Enum": 13,
+      	  "EnumMember": 20,
+      	  "Event": 23,
+      	  "Field": 5,
+      	  "File": 17,
+      	  "Folder": 19,
+      	  "Function": 3,
+      	  "Interface": 8,
+      	  "Issue": 1,
+      	  "Keyword": 14,
+      	  "Method": 2,
+      	  "Module": 9,
+      	  "Operator": 24,
+      	  "Property": 10,
+      	  "Reference": 18,
+      	  "Snippet": 15,
+      	  "Struct": 22,
+      	  "Text": 1,
+      	  "TypeParameter": 25,
+      	  "Unit": 11,
+      	  "User": 1,
+      	  "Value": 12,
+      	  "Variable": 6,
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toVsCodeDiagnosticSeverity", () => {
+  it.scoped(
+    "maps every lsp.DiagnosticSeverity",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const mapping = Object.fromEntries(
+        numericEntries(lsp.DiagnosticSeverity).map(([name, value]) => [
+          name,
+          toVsCodeDiagnosticSeverity(code, value as lsp.DiagnosticSeverity),
+        ]),
+      );
+      expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Error": 0,
+      	  "Hint": 3,
+      	  "Information": 2,
+      	  "Warning": 1,
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toLspDiagnosticSeverity", () => {
+  it.scoped(
+    "maps every vscode.DiagnosticSeverity",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const mapping = Object.fromEntries(
+        numericEntries(code.DiagnosticSeverity).map(([name, value]) => [
+          name,
+          toLspDiagnosticSeverity(code, value),
+        ]),
+      );
+      expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Error": 1,
+      	  "Hint": 4,
+      	  "Information": 3,
+      	  "Warning": 2,
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toDocumentHighlightKind", () => {
+  it.scoped("maps every lsp.DocumentHighlightKind", () =>
+    Effect.sync(() => {
+      const mapping = Object.fromEntries(
+        numericEntries(lsp.DocumentHighlightKind).map(([name, value]) => [
+          name,
+          toDocumentHighlightKind(value as lsp.DocumentHighlightKind),
+        ]),
+      );
+      expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Read": 1,
+      	  "Text": 0,
+      	  "Write": 2,
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toLspFoldingRangeKind", () => {
+  // LSP FoldingRangeKind is a string namespace, extensible by servers.
+  // Iterate the known values plus one unknown to lock in the undefined fallback.
+  it.scoped("maps every lsp.FoldingRangeKind plus an unknown fallback", () =>
+    Effect.sync(() => {
+      const mapping: Record<string, unknown> = {};
+      for (const [name, value] of stringEntries(lsp.FoldingRangeKind)) {
+        mapping[name] = toLspFoldingRangeKind(value as lsp.FoldingRangeKind);
+      }
+      mapping.__unknown__ = toLspFoldingRangeKind(
+        "unknown-server-kind" as lsp.FoldingRangeKind,
+      );
+      expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Comment": 1,
+      	  "Imports": 2,
+      	  "Region": 3,
+      	  "__unknown__": undefined,
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toLspCompletionTriggerKind", () => {
+  it.scoped(
+    "maps every vscode.CompletionTriggerKind",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const mapping = Object.fromEntries(
+        numericEntries(code.CompletionTriggerKind).map(([name, value]) => [
+          name,
+          toLspCompletionTriggerKind(code, value),
+        ]),
+      );
+      expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Invoke": 1,
+      	  "TriggerCharacter": 2,
+      	  "TriggerForIncompleteCompletions": 3,
+      	}
+      `);
+    }),
+  );
+});
+
+describe("toLspCodeActionTriggerKind", () => {
+  it.scoped(
+    "maps every vscode.CodeActionTriggerKind",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const mapping = Object.fromEntries(
+        numericEntries(code.CodeActionTriggerKind).map(([name, value]) => [
+          name,
+          toLspCodeActionTriggerKind(code, value),
+        ]),
+      );
+      expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Automatic": 2,
+      	  "Invoke": 1,
+      	}
       `);
     }),
   );
