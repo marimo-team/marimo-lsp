@@ -28,7 +28,7 @@ importers:
         version: 0.98.3(@effect/cluster@0.50.4(@effect/platform@0.92.1(effect@3.19.19))(@effect/rpc@0.71.0(@effect/platform@0.92.1(effect@3.19.19))(effect@3.19.19))(@effect/sql@0.46.0(@effect/experimental@0.56.0(@effect/platform@0.92.1(effect@3.19.19))(effect@3.19.19))(@effect/platform@0.92.1(effect@3.19.19))(effect@3.19.19))(@effect/workflow@0.11.3(@effect/platform@0.92.1(effect@3.19.19))(@effect/rpc@0.71.0(@effect/platform@0.92.1(effect@3.19.19))(effect@3.19.19))(effect@3.19.19))(effect@3.19.19))(@effect/platform@0.92.1(effect@3.19.19))(@effect/rpc@0.71.0(@effect/platform@0.92.1(effect@3.19.19))(effect@3.19.19))(@effect/sql@0.46.0(@effect/experimental@0.56.0(@effect/platform@0.92.1(effect@3.19.19))(effect@3.19.19))(@effect/platform@0.92.1(effect@3.19.19))(effect@3.19.19))(effect@3.19.19)
       '@effect/vitest':
         specifier: ^0.27.0
-        version: 0.27.0(@voidzero-dev/vite-plus-test@0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(effect@3.19.19)
+        version: 0.27.0(@voidzero-dev/vite-plus-test@0.1.18)(effect@3.19.19)
       '@marimo-team/frontend':
         specifier: link:../../marimo/frontend
         version: link:../../marimo/frontend
@@ -68,6 +68,9 @@ importers:
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20251015.1
         version: 7.0.0-dev.20251015.1
+      '@vitest/coverage-v8':
+        specifier: ^4.0.0
+        version: 4.1.4(@voidzero-dev/vite-plus-test@0.1.18)
       '@vscode/debugprotocol':
         specifier: ^1.68.0
         version: 1.68.0
@@ -114,14 +117,14 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
       vite:
-        specifier: npm:@voidzero-dev/vite-plus-core@^0.1.18
+        specifier: npm:@voidzero-dev/vite-plus-core@latest
         version: '@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)'
       vite-plus:
         specifier: latest
-        version: 0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)
+        version: 0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@vitest/coverage-v8@4.1.4)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)
       vitest:
-        specifier: npm:@voidzero-dev/vite-plus-test@^0.1.18
-        version: '@voidzero-dev/vite-plus-test@0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)'
+        specifier: npm:@voidzero-dev/vite-plus-test@latest
+        version: '@voidzero-dev/vite-plus-test@0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@vitest/coverage-v8@4.1.4)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)'
       vscode-jsonrpc:
         specifier: ^8.2.1
         version: 8.2.1
@@ -133,6 +136,23 @@ importers:
         version: 3.17.5
 
 packages:
+
+  '@babel/helper-string-parser@7.27.1':
+    resolution: {integrity: sha512-qMlSxKbpRlAridDExk92nSobyDdpPijUq2DW6oDnUqd0iOGxmQjyqhMIihI9+zv4LPyZdRje2cavWPbCbWm3eA==}
+    engines: {node: '>=6.9.0'}
+
+  '@babel/helper-validator-identifier@7.28.5':
+    resolution: {integrity: sha512-qSs4ifwzKJSV39ucNjsvc6WVHs6b7S03sOh2OcHF9UHfVPqWWALUsNUVzhSBiItjRZoLHx7nIarVjqKVusUZ1Q==}
+    engines: {node: '>=6.9.0'}
+
+  '@babel/parser@7.29.2':
+    resolution: {integrity: sha512-4GgRzy/+fsBa72/RZVJmGKPmZu9Byn8o4MoLpmNe1m8ZfYnz5emHLQz3U4gLud6Zwl0RZIcgiLD7Uq7ySFuDLA==}
+    engines: {node: '>=6.0.0'}
+    hasBin: true
+
+  '@babel/types@7.29.0':
+    resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
+    engines: {node: '>=6.9.0'}
 
   '@bcoe/v8-coverage@1.0.2':
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
@@ -1123,6 +1143,9 @@ packages:
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
 
+  '@types/estree@1.0.8':
+    resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
+
   '@types/istanbul-lib-coverage@2.0.6':
     resolution: {integrity: sha512-2QF/t/auWm0lsy8XtKVPG19v3sSOQlJe/YHZgfjb/KBBHOGSV+J2q/S671rcq9uTBrLAXmZpqJiaQbMT+zNU1w==}
 
@@ -1199,6 +1222,21 @@ packages:
   '@typescript/native-preview@7.0.0-dev.20251015.1':
     resolution: {integrity: sha512-QNNVpnjvJJ5yVZf2v4vHT/fK2mAzE5VC5m4mYI+aboT0Dlt4ZgPkYs/CodG+NIsGce8fkEs7hZNk8W4RFf7biw==}
     hasBin: true
+
+  '@vitest/coverage-v8@4.1.4':
+    resolution: {integrity: sha512-x7FptB5oDruxNPDNY2+S8tCh0pcq7ymCe1gTHcsp733jYjrJl8V1gMUlVysuCD9Kz46Xz9t1akkv08dPcYDs1w==}
+    peerDependencies:
+      '@vitest/browser': 4.1.4
+      vitest: 4.1.4
+    peerDependenciesMeta:
+      '@vitest/browser':
+        optional: true
+
+  '@vitest/pretty-format@4.1.4':
+    resolution: {integrity: sha512-ddmDHU0gjEUyEVLxtZa7xamrpIefdEETu3nZjWtHeZX4QxqJ7tRxSteHVXJOcr8jhiLoGAhkK4WJ3WqBpjx42A==}
+
+  '@vitest/utils@4.1.4':
+    resolution: {integrity: sha512-13QMT+eysM5uVGa1rG4kegGYNp6cnQcsTc67ELFbhNLQO+vgsygtYJx2khvdt4gVQqSSpC/KT5FZZxUpP3Oatw==}
 
   '@voidzero-dev/vite-plus-core@0.1.18':
     resolution: {integrity: sha512-3PmXOL26yHzlw8ET9SwXCmglGzUYq2fOTYf2t0mxvVIs7ua3bnf6tOnmR+6YX5k1Ez26B0ooYzx+znc8k+CAMw==}
@@ -1396,6 +1434,9 @@ packages:
     resolution: {integrity: sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==}
     engines: {node: '>=12'}
 
+  ast-v8-to-istanbul@1.0.0:
+    resolution: {integrity: sha512-1fSfIwuDICFA4LKkCzRPO7F0hzFf0B7+Xqrl27ynQaa+Rh0e1Es0v6kWHPott3lU10AyAr7oKHa65OppjLn3Rg==}
+
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
 
@@ -1542,6 +1583,9 @@ packages:
   escape-string-regexp@4.0.0:
     resolution: {integrity: sha512-TtpcNJ3XAzx3Gq8sWRzJaVajRs0uVxA2YAkdb1jm2YkPz4G6egUFAyA3n5vtEIZefPk5Wa4UXbKuS5fKkJWdgA==}
     engines: {node: '>=10'}
+
+  estree-walker@3.0.3:
+    resolution: {integrity: sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==}
 
   fast-check@3.23.2:
     resolution: {integrity: sha512-h5+1OzzfCC3Ef7VbtKdcv7zsstUQwUDlYpUTvjeUsJAssPgLn7QzbboPtL5ro04Mq0rPOsMzl7q5hIbRs2wD1A==}
@@ -1716,6 +1760,9 @@ packages:
     resolution: {integrity: sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ==}
     hasBin: true
 
+  js-tokens@10.0.0:
+    resolution: {integrity: sha512-lM/UBzQmfJRo9ABXbPWemivdCW8V2G8FHaHdypQaIy523snUjog0W71ayWXTjiR+ixeMyVHN2XcpnTd/liPg/Q==}
+
   js-yaml@4.1.0:
     resolution: {integrity: sha512-wpxZs9NoxZaJESJGIZTyDEaYpl0FKSA+FB9aJiyemKhMwkxQg63h4T1KJgUGHpTqPDNRcmmYLugrRjJlBtWvRA==}
     hasBin: true
@@ -1877,6 +1924,9 @@ packages:
 
   magic-string@0.30.19:
     resolution: {integrity: sha512-2N21sPY9Ws53PZvsEpVtNuSW+ScYbQdp4b9qUaL+9QkHUrGFKo56Lg9Emg5s9V/qrtNBmiR01sYhUOwu3H+VOw==}
+
+  magicast@0.5.2:
+    resolution: {integrity: sha512-E3ZJh4J3S9KfwdjZhe2afj6R9lGIN5Pher1pF39UGrXRqq/VDaGVIGN13BjHd2u8B61hArAGOnso7nBOouW3TQ==}
 
   make-dir@4.0.0:
     resolution: {integrity: sha512-hXdUTZYIVOt1Ex//jAQi+wTZZpUpwBj/0QsOzqegb3rGMMeJiSEu5xLHnYfBrRV4RH2+OCSOO95Is/7x1WJ4bw==}
@@ -2237,6 +2287,10 @@ packages:
     resolution: {integrity: sha512-Pugqs6M0m7Lv1I7FtxN4aoyToKg1C4tu+/381vH35y8oENM/Ai7f7C4StcoK4/+BSw9ebcS8jRiVrORFKCALLw==}
     engines: {node: ^20.0.0 || >=22.0.0}
 
+  tinyrainbow@3.1.0:
+    resolution: {integrity: sha512-Bf+ILmBgretUrdJxzXM0SgXLZ3XfiaUuOj/IKQHuTXip+05Xn+uyEYdVg0kYDipTBcLrCVyUzAPz7QmArb0mmw==}
+    engines: {node: '>=14.0.0'}
+
   tinyspy@4.0.4:
     resolution: {integrity: sha512-azl+t0z7pw/z958Gy9svOTuzqIk6xq+NSheJzn5MMWtWTFywIacg2wUlzKFGtt3cthx0r2SxMK0yzJOR0IES7Q==}
     engines: {node: '>=14.0.0'}
@@ -2412,6 +2466,19 @@ packages:
 
 snapshots:
 
+  '@babel/helper-string-parser@7.27.1': {}
+
+  '@babel/helper-validator-identifier@7.28.5': {}
+
+  '@babel/parser@7.29.2':
+    dependencies:
+      '@babel/types': 7.29.0
+
+  '@babel/types@7.29.0':
+    dependencies:
+      '@babel/helper-string-parser': 7.27.1
+      '@babel/helper-validator-identifier': 7.28.5
+
   '@bcoe/v8-coverage@1.0.2': {}
 
   '@effect/cluster@0.50.4(@effect/platform@0.92.1(effect@3.19.19))(@effect/rpc@0.71.0(@effect/platform@0.92.1(effect@3.19.19))(effect@3.19.19))(@effect/sql@0.46.0(@effect/experimental@0.56.0(@effect/platform@0.92.1(effect@3.19.19))(effect@3.19.19))(@effect/platform@0.92.1(effect@3.19.19))(effect@3.19.19))(@effect/workflow@0.11.3(@effect/platform@0.92.1(effect@3.19.19))(@effect/rpc@0.71.0(@effect/platform@0.92.1(effect@3.19.19))(effect@3.19.19))(effect@3.19.19))(effect@3.19.19)':
@@ -2479,10 +2546,10 @@ snapshots:
       effect: 3.19.19
       uuid: 11.1.0
 
-  '@effect/vitest@0.27.0(@voidzero-dev/vite-plus-test@0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(effect@3.19.19)':
+  '@effect/vitest@0.27.0(@voidzero-dev/vite-plus-test@0.1.18)(effect@3.19.19)':
     dependencies:
       effect: 3.19.19
-      vitest: '@voidzero-dev/vite-plus-test@0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)'
+      vitest: '@voidzero-dev/vite-plus-test@0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@vitest/coverage-v8@4.1.4)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)'
 
   '@effect/workflow@0.11.3(@effect/platform@0.92.1(effect@3.19.19))(@effect/rpc@0.71.0(@effect/platform@0.92.1(effect@3.19.19))(effect@3.19.19))(effect@3.19.19)':
     dependencies:
@@ -3230,6 +3297,8 @@ snapshots:
 
   '@types/deep-eql@4.0.2': {}
 
+  '@types/estree@1.0.8': {}
+
   '@types/istanbul-lib-coverage@2.0.6': {}
 
   '@types/mocha@10.0.10': {}
@@ -3301,6 +3370,30 @@ snapshots:
       '@typescript/native-preview-win32-arm64': 7.0.0-dev.20251015.1
       '@typescript/native-preview-win32-x64': 7.0.0-dev.20251015.1
 
+  '@vitest/coverage-v8@4.1.4(@voidzero-dev/vite-plus-test@0.1.18)':
+    dependencies:
+      '@bcoe/v8-coverage': 1.0.2
+      '@vitest/utils': 4.1.4
+      ast-v8-to-istanbul: 1.0.0
+      istanbul-lib-coverage: 3.2.2
+      istanbul-lib-report: 3.0.1
+      istanbul-reports: 3.2.0
+      magicast: 0.5.2
+      obug: 2.1.1
+      std-env: 4.1.0
+      tinyrainbow: 3.1.0
+      vitest: '@voidzero-dev/vite-plus-test@0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@vitest/coverage-v8@4.1.4)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)'
+
+  '@vitest/pretty-format@4.1.4':
+    dependencies:
+      tinyrainbow: 3.1.0
+
+  '@vitest/utils@4.1.4':
+    dependencies:
+      '@vitest/pretty-format': 4.1.4
+      convert-source-map: 2.0.0
+      tinyrainbow: 3.1.0
+
   '@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)':
     dependencies:
       '@oxc-project/runtime': 0.124.0
@@ -3332,7 +3425,7 @@ snapshots:
   '@voidzero-dev/vite-plus-linux-x64-musl@0.1.18':
     optional: true
 
-  '@voidzero-dev/vite-plus-test@0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)':
+  '@voidzero-dev/vite-plus-test@0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@vitest/coverage-v8@4.1.4)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)':
     dependencies:
       '@standard-schema/spec': 1.1.0
       '@types/chai': 5.2.3
@@ -3351,6 +3444,7 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
       '@types/node': 24.7.2
+      '@vitest/coverage-v8': 4.1.4(@voidzero-dev/vite-plus-test@0.1.18)
     transitivePeerDependencies:
       - '@arethetypeswrong/core'
       - '@tsdown/css'
@@ -3432,6 +3526,12 @@ snapshots:
   argparse@2.0.1: {}
 
   assertion-error@2.0.1: {}
+
+  ast-v8-to-istanbul@1.0.0:
+    dependencies:
+      '@jridgewell/trace-mapping': 0.3.31
+      estree-walker: 3.0.3
+      js-tokens: 10.0.0
 
   balanced-match@1.0.2: {}
 
@@ -3587,6 +3687,10 @@ snapshots:
 
   escape-string-regexp@4.0.0: {}
 
+  estree-walker@3.0.3:
+    dependencies:
+      '@types/estree': 1.0.8
+
   fast-check@3.23.2:
     dependencies:
       pure-rand: 6.1.0
@@ -3734,6 +3838,8 @@ snapshots:
 
   jiti@2.6.1: {}
 
+  js-tokens@10.0.0: {}
+
   js-yaml@4.1.0:
     dependencies:
       argparse: 2.0.1
@@ -3862,6 +3968,12 @@ snapshots:
   magic-string@0.30.19:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  magicast@0.5.2:
+    dependencies:
+      '@babel/parser': 7.29.2
+      '@babel/types': 7.29.0
+      source-map-js: 1.2.1
 
   make-dir@4.0.0:
     dependencies:
@@ -4255,6 +4367,8 @@ snapshots:
 
   tinypool@2.1.0: {}
 
+  tinyrainbow@3.1.0: {}
+
   tinyspy@4.0.4: {}
 
   to-regex-range@5.0.1:
@@ -4306,11 +4420,11 @@ snapshots:
       '@types/istanbul-lib-coverage': 2.0.6
       convert-source-map: 2.0.0
 
-  vite-plus@0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2):
+  vite-plus@0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@vitest/coverage-v8@4.1.4)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2):
     dependencies:
       '@oxc-project/types': 0.124.0
       '@voidzero-dev/vite-plus-core': 0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)
-      '@voidzero-dev/vite-plus-test': 0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)
+      '@voidzero-dev/vite-plus-test': 0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@vitest/coverage-v8@4.1.4)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)
       oxfmt: 0.45.0
       oxlint: 1.60.0(oxlint-tsgolint@0.20.0)
       oxlint-tsgolint: 0.20.0
