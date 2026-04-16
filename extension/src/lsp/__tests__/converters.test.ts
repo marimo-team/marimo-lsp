@@ -602,7 +602,7 @@ describe("toLspFoldingRangeKind", () => {
     Effect.sync(() => {
       const mapping: Record<string, unknown> = {};
       for (const [name, value] of stringEntries(lsp.FoldingRangeKind)) {
-        mapping[name] = toLspFoldingRangeKind(value as lsp.FoldingRangeKind);
+        mapping[name] = toLspFoldingRangeKind(value);
       }
       mapping.__unknown__ = toLspFoldingRangeKind(
         "unknown-server-kind" as lsp.FoldingRangeKind,

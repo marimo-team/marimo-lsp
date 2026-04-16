@@ -56,9 +56,43 @@ export default vite.defineConfig({
     },
   },
   fmt: {
+    ignorePatterns: ["**/coverage/**"],
     printWidth: 80,
+    experimentalSortImports: {},
   },
   lint: {
+    ignorePatterns: ["**/coverage/**"],
+    categories: {
+      correctness: "error",
+      suspicious: "error",
+      pedantic: "off",
+      perf: "warn",
+      style: "off",
+      restriction: "off",
+    },
+    jsPlugins: ["./lint/marimo-plugin.mjs"],
+    plugins: ["typescript", "react", "import"],
+    rules: {
+      "react/react-in-jsx-scope": "off",
+      "import/extensions": ["error", "always", { ignorePackages: true }],
+      "import/no-unassigned-import": [
+        "error",
+        { allow: ["**/*.css", "**/*.scss"] },
+      ],
+      "typescript/non-nullable-type-assertion-style": "error",
+      "marimo/vscode-type-only": "error",
+      "marimo/no-at-imports": "error",
+      "typescript/no-unsafe-type-assertion": "off",
+      "typescript/no-misused-spread": "off",
+      "typescript/no-shadow": "off",
+      // TODO: re-enable these. They started firing after inlining the oxlint
+      // config into vite.config.mts (previously lived in root .oxlintrc.json).
+      // Most violations are legit (missing returns in Effect.fn generators,
+      // redundant Boolean/String casts) but fixing them is a separate pass.
+      "typescript/consistent-return": "off",
+      "typescript/no-unnecessary-type-conversion": "off",
+      "typescript/no-unnecessary-type-parameters": "off",
+    },
     options: {
       typeAware: true,
       typeCheck: true,

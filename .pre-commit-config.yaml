@@ -1,8 +1,5 @@
 fail_fast: false
 
-ci:
-  skip: [oxfmt, oxlint]
-
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -36,16 +33,3 @@ repos:
         args: [--fix]
       # Run the formatter
       - id: ruff-format
-
-  - repo: https://github.com/oxc-project/mirrors-oxlint
-    rev: v1.60.0
-    hooks:
-      - id: oxlint
-        args: [--fix]
-
-  - repo: https://github.com/oxc-project/mirrors-oxfmt
-    rev: v0.45.0
-    hooks:
-      - id: oxfmt
-        args: [--write]
-        'types_or': [javascript, jsx, ts, tsx]

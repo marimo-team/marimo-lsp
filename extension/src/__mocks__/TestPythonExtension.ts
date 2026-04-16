@@ -53,7 +53,7 @@ export class TestPythonExtension extends Data.TaggedClass(
     const pubsub = yield* PubSub.unbounded<py.EnvironmentsChangeEvent>();
     const activePathPubsub =
       yield* PubSub.unbounded<py.ActiveEnvironmentPathChangeEvent>();
-    const activeEnv = yield* Ref.make<py.EnvironmentPath>({
+    const activeEnv = yield* Ref.make({
       id: envs[0]?.id || "",
       path: envs[0]?.path || "",
     });
