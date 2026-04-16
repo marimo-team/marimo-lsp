@@ -38,8 +38,8 @@ const pyproject = NodeFs.readFileSync(
   NodeUrl.fileURLToPath(new URL("../../pyproject.toml", import.meta.url)),
   "utf-8",
 );
-const minimumMarimoVersion = semver.parse(
-  pyproject.match(/marimo>=([\d.]+)/)?.[1] ?? "",
+const minimumKernelVersion = semver.parse(
+  pyproject.match(/minimum-kernel-version\s*=\s*"([\d.]+)"/)?.[1] ?? "",
 );
 
 const views = Object.keys(contributes.views);
@@ -97,10 +97,10 @@ export const LanguageId = {
   Markdown: "markdown",
 } as const;
 
-export const MINIMUM_MARIMO_VERSION = {
-  major: ${minimumMarimoVersion.major},
-  minor: ${minimumMarimoVersion.minor},
-  patch: ${minimumMarimoVersion.patch},
+export const MINIMUM_MARIMO_KERNEL_VERSION = {
+  major: ${minimumKernelVersion.major},
+  minor: ${minimumKernelVersion.minor},
+  patch: ${minimumKernelVersion.patch},
 } as const;
 
 export type MarimoContextKey = ${union(contextKeys)};

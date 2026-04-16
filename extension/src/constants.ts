@@ -52,7 +52,7 @@ export const LanguageId = {
   Markdown: "markdown",
 } as const;
 
-export const MINIMUM_MARIMO_VERSION = {
+export const MINIMUM_MARIMO_KERNEL_VERSION = {
   major: 0,
   minor: 22,
   patch: 4,
