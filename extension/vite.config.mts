@@ -47,6 +47,7 @@ export default vite.defineConfig({
         "src/**/*.test.ts",
         "src/**/*.d.ts",
         "src/__tests__/**",
+        "src/__mocks__/**",
         "src/renderer/**",
       ],
     },
