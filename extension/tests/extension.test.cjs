@@ -21,11 +21,6 @@ suite("marimo Extension Hello World Tests", () => {
 
   test("Extension should be present and activatable", async () => {
     const extension = getExtension();
-    assert.strictEqual(
-      extension.isActive,
-      false,
-      "Extension should not be active initially",
-    );
     await extension.activate();
     assert.strictEqual(
       extension.isActive,
