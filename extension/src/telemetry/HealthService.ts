@@ -4,7 +4,7 @@ import * as semver from "@std/semver";
 import { Effect, Option } from "effect";
 
 import { Config } from "../config/Config.ts";
-import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
+import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
 import { BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import {
@@ -226,7 +226,7 @@ export class HealthService extends Effect.Service<HealthService>()(
             lines.push("\t\t- Check 'marimo-lsp' output channel for errors");
             lines.push("\t2. If features are missing:");
             lines.push(
-              `\t\t - Ensure marimo version is >= ${semver.format(MINIMUM_MARIMO_VERSION)}`,
+              `\t\t - Ensure marimo version is >= ${semver.format(MINIMUM_MARIMO_KERNEL_VERSION)}`,
             );
             lines.push("\t\t- Try reloading the window");
           }

@@ -2,7 +2,7 @@ import * as semver from "@std/semver";
 import { Effect, Option, Runtime, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
+import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../lib/extractExecuteCodeRequest.ts";
@@ -236,7 +236,7 @@ const findRequirements = (uv: Uv, notebook: MarimoNotebookDocument) =>
 
         if (
           Option.isSome(version) &&
-          semver.greaterOrEqual(version.value, MINIMUM_MARIMO_VERSION)
+          semver.greaterOrEqual(version.value, MINIMUM_MARIMO_KERNEL_VERSION)
         ) {
           marimoOk = true;
         }
@@ -245,7 +245,9 @@ const findRequirements = (uv: Uv, notebook: MarimoNotebookDocument) =>
 
     const requirements = [];
     if (!marimoOk) {
-      requirements.push(`marimo>=${semver.format(MINIMUM_MARIMO_VERSION)}`);
+      requirements.push(
+        `marimo>=${semver.format(MINIMUM_MARIMO_KERNEL_VERSION)}`,
+      );
     }
 
     return requirements satisfies ReadonlyArray<string>;

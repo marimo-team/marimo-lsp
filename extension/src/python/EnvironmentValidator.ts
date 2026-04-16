@@ -5,7 +5,7 @@ import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
 import { Data, Effect, type ParseResult, Schema, Stream, String } from "effect";
 
-import { MINIMUM_MARIMO_VERSION } from "../constants.ts";
+import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
 
 class InvalidExecutableError extends Data.TaggedError(
@@ -148,13 +148,13 @@ print(json.dumps(packages), flush=True)`,
               diagnostics.push({ kind: "missing", package: pkg.name });
             } else if (
               pkg.name === "marimo" &&
-              !semver.greaterOrEqual(pkg.version, MINIMUM_MARIMO_VERSION)
+              !semver.greaterOrEqual(pkg.version, MINIMUM_MARIMO_KERNEL_VERSION)
             ) {
               diagnostics.push({
                 kind: "outdated",
                 package: "marimo",
                 currentVersion: pkg.version,
-                requiredVersion: MINIMUM_MARIMO_VERSION,
+                requiredVersion: MINIMUM_MARIMO_KERNEL_VERSION,
               });
             }
           }

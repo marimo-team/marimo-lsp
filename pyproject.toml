@@ -8,7 +8,7 @@ authors = [{ name = "Trevor Manz", email = "trevor.j.manz@gmail.com" }]
 dependencies = [
   "jupytext>=1.17.2",
   "lsprotocol>=2025.0.0",
-  "marimo>=0.22.4",
+  "marimo==0.22.4",
   "pygls>=2.0.0",
 ]
 
@@ -29,6 +29,15 @@ dev = [
 [build-system]
 requires = ["uv_build>=0.8.7,<0.9.0"]
 build-backend = "uv_build"
+
+[tool.marimo-lsp]
+# Minimum marimo version allowed in the *user's* kernel environment.
+# Tracked separately from the `marimo` dependency pin above: that pin is the
+# exact version the LSP server and bundled frontend ship with (auto-bumped by
+# the update-marimo-version cron), while the value below is the compatibility
+# floor we claim to support for user kernels and is bumped manually when we
+# intentionally drop support for an older release.
+minimum-kernel-version = "0.22.4"
 
 [tool.ty.src]
 exclude = ["extension/**"]
