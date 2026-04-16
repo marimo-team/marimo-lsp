@@ -81,7 +81,7 @@ def get_commits_since_tag(since_tag: str) -> list[Commit]:
             continue
 
         parts = line.split(" ", 1)
-        if len(parts) != 2:  # noqa: PLR2004
+        if len(parts) != 2:
             continue
 
         sha, message = parts
@@ -267,13 +267,13 @@ def generate_release_notes(since_tag: str, current_tag: str) -> str:  # noqa: C9
     return "\n".join(notes)
 
 
-def main() -> None:  # noqa: D103
-    if len(sys.argv) < 3:  # noqa: PLR2004
-        print("Usage: generate_release_notes.py <since-tag> <current-tag>")  # noqa: T201
-        print("Example: generate_release_notes.py 0.14.7 0.14.8")  # noqa: T201
+def main() -> None:
+    if len(sys.argv) < 3:
+        print("Usage: generate_release_notes.py <since-tag> <current-tag>")
+        print("Example: generate_release_notes.py 0.14.7 0.14.8")
         sys.exit(1)
 
-    print(generate_release_notes(sys.argv[1], sys.argv[2]))  # noqa: T201
+    print(generate_release_notes(sys.argv[1], sys.argv[2]))
 
 
 if __name__ == "__main__":

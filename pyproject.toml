@@ -61,6 +61,12 @@ ignore = [
   "PLR",
   "FIX",
 ]
+"scripts/*.py" = [
+  "D", # No docstrings required in scripts
+  "T201", # print is expected in CLI scripts
+  "INP001", # scripts/ is not a package
+  "PLR2004", # Magic values acceptable in small CLI scripts
+]
 
 [tool.typos.default.extend-words]
 somes = "somes"
