@@ -108,22 +108,22 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         `Expected EnvironmentRequirementError, got ${result.left._tag}`,
       );
       expect(result.left.diagnostics).toMatchInlineSnapshot(`
-        [
-          {
-            "currentVersion": {
-              "major": 0,
-              "minor": 15,
-              "patch": 5,
-            },
-            "kind": "outdated",
-            "package": "marimo",
-            "requiredVersion": {
-              "major": 0,
-              "minor": 22,
-              "patch": 4,
-            },
-          },
-        ]
+      	[
+      	  {
+      	    "currentVersion": {
+      	      "major": 0,
+      	      "minor": 15,
+      	      "patch": 5,
+      	    },
+      	    "kind": "outdated",
+      	    "package": "marimo",
+      	    "requiredVersion": {
+      	      "major": 0,
+      	      "minor": 23,
+      	      "patch": 1,
+      	    },
+      	  },
+      	]
       `);
     }),
     { timeout: 30_000 },
