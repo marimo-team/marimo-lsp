@@ -1,0 +1,17 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "local>marimo-team/.github:renovate-config",
+    "config:recommended",
+    "schedule:monthly",
+  ],
+  "packageRules": [
+    // Pin @types/vscode — bumping it raises the minimum VS Code engine
+    // version, which would make this extension incompatible with older
+    // VS Code releases.
+    {
+      "matchPackageNames": ["@types/vscode"],
+      "enabled": false,
+    },
+  ],
+}
