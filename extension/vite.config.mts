@@ -85,11 +85,6 @@ export default vite.defineConfig({
       "typescript/no-unsafe-type-assertion": "off",
       "typescript/no-misused-spread": "off",
       "typescript/no-shadow": "off",
-      // TODO: re-enable these. They started firing after inlining the oxlint
-      // config into vite.config.mts (previously lived in root .oxlintrc.json).
-      // Most violations are legit (missing returns in Effect.fn generators,
-      // redundant Boolean/String casts) but fixing them is a separate pass.
-      "typescript/no-unnecessary-type-parameters": "off",
     },
     options: {
       typeAware: true,
