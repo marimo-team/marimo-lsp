@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import type * as vscode from "vscode";
 
-import { enrichNotebookFromCached } from "../enrichNotebookFromCached.ts";
+import { enrichNotebookFromLive } from "../enrichNotebookFromLive.ts";
 
 // Helper to create a cell with minimal required fields
 function cell(
@@ -39,7 +39,7 @@ function snapshotView(nb: vscode.NotebookData): string {
     .join("\n");
 }
 
-describe("enrichNotebookFromCached", () => {
+describe("enrichNotebookFromLive", () => {
   describe("identical notebooks", () => {
     it("preserves all stableIds when cells are identical", () => {
       const cached = notebook([
@@ -53,7 +53,7 @@ describe("enrichNotebookFromCached", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
@@ -67,7 +67,7 @@ describe("enrichNotebookFromCached", () => {
       ]);
       const incoming = notebook([cell("x = 1", { stableId: "fresh-1" })]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       expect(result.cells[0].outputs).toEqual([mockOutput]);
     });
@@ -85,7 +85,7 @@ describe("enrichNotebookFromCached", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       expect(getStableIds(result)).toEqual(["id-1", "id-2", "fresh-3"]);
     });
@@ -103,7 +103,7 @@ describe("enrichNotebookFromCached", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       // First cell is new, last two match suffix
       expect(getStableIds(result)).toEqual(["fresh-1", "id-2", "id-3"]);
@@ -122,7 +122,7 @@ describe("enrichNotebookFromCached", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       // First cell matches prefix, last matches suffix, middle is new
       expect(getStableIds(result)).toEqual(["id-1", "fresh-2", "id-3"]);
@@ -141,7 +141,7 @@ describe("enrichNotebookFromCached", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       expect(getStableIds(result)).toEqual(["id-1", "id-3"]);
     });
@@ -160,7 +160,7 @@ describe("enrichNotebookFromCached", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       // First and last match via prefix/suffix, edited middle cell
       // preserves identity via positional fallback
@@ -173,7 +173,7 @@ describe("enrichNotebookFromCached", () => {
       const cached = notebook([cell("  x = 1  ", { stableId: "id-1" })]);
       const incoming = notebook([cell("x = 1", { stableId: "fresh-1" })]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       expect(getStableIds(result)).toEqual(["id-1"]);
     });
@@ -192,7 +192,7 @@ describe("enrichNotebookFromCached", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       // Positional fallback preserves identity for content-changed cells
       expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
@@ -212,7 +212,7 @@ describe("enrichNotebookFromCached", () => {
         cell("b = 2", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       expect(getStableIds(result)).toEqual(["id-c", "id-a", "id-b"]);
     });
@@ -234,7 +234,7 @@ describe("enrichNotebookFromCached", () => {
         // b was deleted
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       // b was deleted and "new" is genuinely new, but positional fallback
       // pairs the one remaining unmatched cached cell (b) with the one
@@ -246,7 +246,7 @@ describe("enrichNotebookFromCached", () => {
       const cached = notebook([cell("x = 1", { stableId: "id-1" })]);
       const incoming = notebook([]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       expect(result.cells).toEqual([]);
     });
@@ -258,7 +258,7 @@ describe("enrichNotebookFromCached", () => {
         cell("y = 2", { stableId: "fresh-2" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       expect(getStableIds(result)).toEqual(["fresh-1", "fresh-2"]);
     });
@@ -278,7 +278,7 @@ describe("enrichNotebookFromCached", () => {
         cell("b = 2", { stableId: "fresh-3", languageId: "python" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       // First cell has different language, breaks exact prefix match
       // But content matching in middle still finds it
@@ -294,7 +294,7 @@ describe("enrichNotebookFromCached", () => {
         cell("x = 1", { stableId: "fresh-1", languageId: "sql" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       // Same content matches despite different language
       expect(getStableIds(result)).toEqual(["id-1"]);
@@ -308,7 +308,7 @@ describe("enrichNotebookFromCached", () => {
         cell("# Hello", { stableId: "fresh-1", kind: 2 }), // Code
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       // Same content matches despite different kind
       expect(getStableIds(result)).toEqual(["id-1"]);
@@ -332,7 +332,7 @@ describe("enrichNotebookFromCached", () => {
         cell("df.describe()", { stableId: "fresh-4" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       // All cells preserve identity — unchanged via prefix/suffix,
       // edited via positional fallback
@@ -351,7 +351,7 @@ describe("enrichNotebookFromCached", () => {
         cell("z = 30", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       // No prefix or suffix matches, but positional fallback pairs all
       expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
@@ -368,7 +368,7 @@ describe("enrichNotebookFromCached", () => {
         cell("z = 30", { stableId: "fresh-3" }), // new
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       // Positional fallback pairs first two, third is genuinely new
       expect(getStableIds(result)).toEqual(["id-1", "id-2", "fresh-3"]);
@@ -386,7 +386,7 @@ describe("enrichNotebookFromCached", () => {
         // z was deleted
       ]);
 
-      const result = enrichNotebookFromCached(incoming, cached);
+      const result = enrichNotebookFromLive(incoming, cached);
 
       // Positional fallback pairs first two, third was deleted
       expect(getStableIds(result)).toEqual(["id-1", "id-2"]);
@@ -413,7 +413,7 @@ describe("enrichNotebookFromCached", () => {
         cell("# End", { stableId: "fresh-5" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, baseCached);
+      const result = enrichNotebookFromLive(incoming, baseCached);
       expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[fresh-0]: # New first
         [cached-1]: # Setup
@@ -432,7 +432,7 @@ describe("enrichNotebookFromCached", () => {
         cell("# End", { stableId: "fresh-4" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, baseCached);
+      const result = enrichNotebookFromLive(incoming, baseCached);
       expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-2]: x = 1
         [cached-3]: y = 2
@@ -451,7 +451,7 @@ describe("enrichNotebookFromCached", () => {
         cell("# End", { stableId: "fresh-5" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, baseCached);
+      const result = enrichNotebookFromLive(incoming, baseCached);
       expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-1]: # Setup
         [cached-2]: x = 1
@@ -470,7 +470,7 @@ describe("enrichNotebookFromCached", () => {
         cell("# End", { stableId: "fresh-5" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, baseCached);
+      const result = enrichNotebookFromLive(incoming, baseCached);
       expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-1]: # Setup
         [cached-2]: x = 1
@@ -489,7 +489,7 @@ describe("enrichNotebookFromCached", () => {
         cell("# New last", { stableId: "fresh-6" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, baseCached);
+      const result = enrichNotebookFromLive(incoming, baseCached);
       expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-1]: # Setup
         [cached-2]: x = 1
@@ -508,7 +508,7 @@ describe("enrichNotebookFromCached", () => {
         cell("z = 3", { stableId: "fresh-4" }),
       ]);
 
-      const result = enrichNotebookFromCached(incoming, baseCached);
+      const result = enrichNotebookFromLive(incoming, baseCached);
       expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-1]: # Setup
         [cached-2]: x = 1
