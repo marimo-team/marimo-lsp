@@ -5,11 +5,12 @@ module.exports = defineConfig([
     label: "extension",
     files: "tests/*.test.cjs",
     version: "insiders",
-    workspaceFolder: "./sampleWorkspace",
+    workspaceFolder: "./tests/sampleWorkspace",
     installExtensions: ["ms-python.python"],
     mocha: {
       ui: "tdd",
-      timeout: 60000,
+      timeout: 30_000,
+      require: ["./tests/setup.cjs"],
     },
   },
 ]);
