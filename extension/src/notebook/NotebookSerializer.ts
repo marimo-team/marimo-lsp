@@ -214,10 +214,13 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               state: true,
               name: false,
               languageMetadata: false,
-              // Stable ID is ephemeral - regenerated on every deserialize.
-              // Non-transient so VS Code preserves it across in-memory edits;
-              // external-edit reloads restore it from the live doc.
-              stableId: false,
+              // Stable ID is ephemeral — regenerated on every deserialize
+              // and never written to the .py file. Transient so VS Code
+              // strips it from the serialize payload (we don't use it
+              // there anyway) and changes don't dirty the doc. External
+              // reloads restore it from the live doc via
+              // enrichNotebookFromLive.
+              stableId: true,
               options: false,
             } satisfies BooleanMap<CellMetadata>,
             transientDocumentMetadata: {

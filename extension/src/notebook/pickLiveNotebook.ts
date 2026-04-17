@@ -1,8 +1,8 @@
 import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 
-import { NOTEBOOK_TYPE } from "../constants.ts";
 import type { VsCode } from "../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 /**
  * Find the live `NotebookDocument` that `bytes` was deserialized from by
@@ -26,23 +26,27 @@ export const pickLiveNotebook = Effect.fn("pickLiveNotebook")(function* (
   code: VsCode,
 ) {
   const active = yield* code.window.getActiveNotebookEditor();
-  const activeDoc = Option.map(active, (editor) => editor.notebook);
+  const activeMarimo = active.pipe(
+    Option.flatMap((editor) => MarimoNotebookDocument.tryFrom(editor.notebook)),
+  );
 
-  if (Option.isSome(activeDoc) && isMarimoNotebook(activeDoc.value)) {
-    const matched = yield* matchesOnDisk(bytes, activeDoc.value, code);
-    if (matched) {
-      return Option.some(activeDoc.value);
-    }
+  if (Option.isSome(activeMarimo)) {
+    const doc = activeMarimo.value.rawNotebookDocument;
+    const matched = yield* matchesOnDisk(bytes, doc, code);
+    if (matched) return Option.some(doc);
   }
 
   const all = yield* code.workspace.getNotebookDocuments();
   for (const doc of all) {
-    if (!isMarimoNotebook(doc)) continue;
-    if (Option.isSome(activeDoc) && doc === activeDoc.value) continue;
-    const matched = yield* matchesOnDisk(bytes, doc, code);
-    if (matched) {
-      return Option.some(doc);
+    if (Option.isNone(MarimoNotebookDocument.tryFrom(doc))) continue;
+    if (
+      Option.isSome(activeMarimo) &&
+      doc === activeMarimo.value.rawNotebookDocument
+    ) {
+      continue;
     }
+    const matched = yield* matchesOnDisk(bytes, doc, code);
+    if (matched) return Option.some(doc);
   }
 
   yield* Effect.logTrace(
@@ -50,9 +54,6 @@ export const pickLiveNotebook = Effect.fn("pickLiveNotebook")(function* (
   );
   return Option.none<vscode.NotebookDocument>();
 });
-
-const isMarimoNotebook = (doc: vscode.NotebookDocument): boolean =>
-  doc.notebookType === NOTEBOOK_TYPE;
 
 const matchesOnDisk = Effect.fn(function* (
   bytes: Uint8Array,
