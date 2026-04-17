@@ -721,6 +721,7 @@ class EventEmitter<T> implements vscode.EventEmitter<T> {
   #emitter: NodeEvents.EventEmitter = new NodeEvents.EventEmitter();
   #disposed: boolean = false;
 
+  // oxlint-disable-next-line typescript-eslint/no-unnecessary-type-parameters
   event = <T>(
     listener: (e: T) => unknown,
     thisArgs?: unknown,
@@ -1717,6 +1718,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             options.window?.colorThemeChanges ??
             (() => Stream.make("light" as const)),
           closeTextEditorTab: () => Effect.void,
+          // oxlint-disable-next-line typescript-eslint/no-unnecessary-type-parameters
           createTreeView<T>(viewId: string) {
             return Effect.acquireRelease(
               Effect.gen(function* () {

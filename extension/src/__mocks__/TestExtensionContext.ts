@@ -8,6 +8,7 @@ export class Memento {
   keys() {
     return Array.from(this.#map.keys());
   }
+  // oxlint-disable-next-line typescript-eslint/no-unnecessary-type-parameters
   get<T>(key: string): T | undefined;
   get<T>(key: string, defaultValue: T): T;
   get<T>(key: string, defaultValue?: T): T | undefined {
