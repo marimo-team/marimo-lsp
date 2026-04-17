@@ -44,23 +44,32 @@ icon in the editor title bar to open it as a notebook (see image above).
 
 ## Configuration
 
-| Setting                                 | Type      | Default | Description                                                                                                                                                                                         |
-| --------------------------------------- | --------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `marimo.lsp.path`                       | `array`   | `[]`    | Path to a custom `marimo-lsp` executable, e.g., `["/path/to/marimo-lsp"]`. Leave empty to use the bundled version via `uvx`.                                                                        |
-| `marimo.uv.path`                        | `string`  |         | Path to the `uv` binary, e.g., `/Users/me/.local/bin/uv`. Leave empty to use `uv` from the system PATH.                                                                                             |
-| `marimo.ruff.path`                      | `string`  |         | Path to a custom `ruff` binary, e.g., `/usr/local/bin/ruff`. Useful for offline environments. Leave empty to auto-discover or install via uv.                                                       |
-| `marimo.ty.path`                        | `string`  |         | Path to a custom `ty` binary, e.g., `/usr/local/bin/ty`. Useful for offline environments. Leave empty to auto-discover or install via uv.                                                           |
-| `marimo.disableUvIntegration`           | `boolean` | `false` | Disable uv integration features such as automatic package installation prompts.                                                                                                                     |
-| `marimo.disableManagedLanguageFeatures` | `boolean` | `false` | Disable marimo's managed Python language features (completions, diagnostics, formatting). When enabled, notebook cells use the standard `python` language ID and rely on external language servers. |
-| `marimo.telemetry`                      | `boolean` | `true`  | Anonymous usage data. This helps us prioritize features for the marimo VSCode extension.                                                                                                            |
+| Setting                                 | Type      | Default  | Description                                                                                                                                                                                         |
+| --------------------------------------- | --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `marimo.lsp.path`                       | `array`   | `[]`     | Path to a custom `marimo-lsp` executable, e.g., `["/path/to/marimo-lsp"]`. Leave empty to use the bundled version via `uvx`.                                                                        |
+| `marimo.uv.path`                        | `string`  |          | Path to the `uv` binary, e.g., `/Users/me/.local/bin/uv`. Leave empty to use `uv` from the system PATH.                                                                                             |
+| `marimo.ruff.path`                      | `string`  |          | Path to a custom `ruff` binary, e.g., `/usr/local/bin/ruff`. Useful for offline environments. Leave empty to auto-discover or install via uv.                                                       |
+| `marimo.ty.path`                        | `string`  |          | Path to a custom `ty` binary, e.g., `/usr/local/bin/ty`. Useful for offline environments. Leave empty to auto-discover or install via uv.                                                           |
+| `marimo.disableUvIntegration`           | `boolean` | `false`  | Disable uv integration features such as automatic package installation prompts.                                                                                                                     |
+| `marimo.languageFeatures`               | `string`  | `"none"` | Controls how Python language features are provided for notebook cells. See [Language Features](#language-features) below.                                                                           |
+| `marimo.disableManagedLanguageFeatures` | `boolean` | `false`  | Disable marimo's managed Python language features (completions, diagnostics, formatting). When enabled, notebook cells use the standard `python` language ID and rely on external language servers. |
+| `marimo.telemetry`                      | `boolean` | `true`   | Anonymous usage data. This helps us prioritize features for the marimo VSCode extension.                                                                                                            |
 
 ### Language Features
 
-By default, marimo provides managed Python language features (completions, diagnostics, formatting) for notebook cells using a dedicated language server. This prevents conflicts with external Python language servers and ensures a consistent editing experience.
+The `marimo.languageFeatures` setting controls how Python language features are provided for notebook cells. There are three modes:
 
-**Why managed mode?** Notebook cells use a custom language ID (`mo-python`) to isolate them from external language servers like Pylance or Jedi. This prevents duplicate completions, conflicting diagnostics, and other interference while editing marimo notebooks.
+| Mode               | Language ID | ty + Ruff started | External servers attach |
+| ------------------ | ----------- | ----------------- | ----------------------- |
+| `"managed"`        | `mo-python` | Yes               | No                      |
+| `"external"`       | `python`    | No                | Yes                     |
+| `"none"` (default) | `mo-python` | No                | No                      |
 
-**When to disable managed mode:** If you prefer to use your own Python language server configuration (e.g., Pylance, pyright, or another LSP), enable `marimo.notebook.disableManagedLanguageFeatures`. This switches cells to use the standard `python` language ID, allowing external language servers to provide completions and diagnostics. Note that this may result in some language features not working as expected in the notebook context.
+- **`"managed"`** — marimo manages Python language features using dedicated ty and Ruff language servers. Cells use the `mo-python` language ID to prevent conflicts with external servers like Pylance.
+- **`"external"`** — Cells use the standard `python` language ID so external language servers (Pylance, pyright, etc.) can attach. marimo's managed servers are not started.
+- **`"none"`** — No language features at all. Cells use `mo-python` to prevent external servers from attaching, and marimo's managed servers are not started.
+
+> **Migration:** The deprecated `marimo.disableManagedLanguageFeatures` boolean still works during the transition period. If you had it set to `true`, it maps to `"external"`. If set to `false`, it maps to `"managed"`. Setting the new `marimo.languageFeatures` enum takes priority over the old boolean.
 
 ## Support
 

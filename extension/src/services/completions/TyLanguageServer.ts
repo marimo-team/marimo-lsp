@@ -1,0 +1,574 @@
+import * as NodePath from "node:path";
+
+import { NodeContext } from "@effect/platform-node";
+import {
+  type Cause,
+  Data,
+  Duration,
+  Effect,
+  Exit,
+  Option,
+  Ref,
+  Runtime,
+  Stream,
+} from "effect";
+import * as lsp from "vscode-languageclient/node";
+import { ResponseError } from "vscode-languageclient/node";
+
+import {
+  BinarySource,
+  companionExtensionBundledBinary,
+  companionExtensionConfiguredPath,
+  resolveBinary,
+  userConfiguredPath,
+} from "../../utils/binaryResolution.ts";
+import {
+  createManagedLanguageClient,
+  type ManagedLanguageClient,
+} from "../../utils/createManagedLanguageClient.ts";
+import { showErrorAndPromptLogs } from "../../utils/showErrorAndPromptLogs.ts";
+import { signalFromToken } from "../../utils/signalFromToken.ts";
+import { Config } from "../Config.ts";
+import { Constants } from "../Constants.ts";
+import { OutputChannel } from "../OutputChannel.ts";
+import { PythonExtension } from "../PythonExtension.ts";
+import { Sentry } from "../Sentry.ts";
+import { ExtensionContext } from "../Storage.ts";
+import { Telemetry } from "../Telemetry.ts";
+import { Uv } from "../Uv.ts";
+import { VariablesService } from "../variables/VariablesService.ts";
+import { VsCode } from "../VsCode.ts";
+import {
+  type ClientNotebookSync,
+  NotebookSyncService,
+} from "./NotebookSyncService.ts";
+
+// TODO: make TY_VERSION configurable?
+// For now, since we are doing rolling releases, we can bump this as needed.
+const TY_SERVER = { name: "ty", version: "0.0.26" } as const;
+const TY_EXTENSION_ID = "astral-sh.ty";
+
+export const TyLanguageServerStatus = Data.taggedEnum<TyLanguageServerStatus>();
+
+type TyLanguageServerStatus = Data.TaggedEnum<{
+  Starting: {};
+  Disabled: { readonly reason: string };
+  Running: {
+    readonly client: ManagedLanguageClient;
+    readonly serverVersion: string;
+    readonly binarySource: BinarySource;
+    readonly pythonEnvironment: Option.Option<{
+      path: string;
+      version: string | null;
+    }>;
+  };
+  Failed: {
+    readonly message: string;
+    readonly cause?: Cause.Cause<unknown>;
+  };
+}>;
+
+/**
+ * Manages a dedicated ty language server instance (using ty via uvx)
+ * for marimo notebooks. Provides LSP features (completions, hover, definitions,
+ * signature help, semantic tokens) for notebook cells.
+ *
+ * ty has native notebook support. We configure automatic notebook sync
+ * and use middleware to map mo-python -> python language IDs and enrich
+ * configuration with Python environment information.
+ */
+export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
+  "TyLanguageServer",
+  {
+    dependencies: [
+      NodeContext.layer,
+      Uv.Default,
+      Config.Default,
+      Constants.Default,
+      VariablesService.Default,
+      NotebookSyncService.Default,
+      OutputChannel.Default,
+    ],
+    scoped: Effect.gen(function* () {
+      const pyExt = yield* PythonExtension;
+      const sync = yield* NotebookSyncService;
+      const sentry = yield* Effect.serviceOption(Sentry);
+      const telemetry = yield* Effect.serviceOption(Telemetry);
+
+      const statusRef = yield* Ref.make<TyLanguageServerStatus>(
+        TyLanguageServerStatus.Starting(),
+      );
+
+      const disabledReasonOption = yield* getTyDisabledReason();
+      if (Option.isSome(disabledReasonOption)) {
+        yield* Ref.set(
+          statusRef,
+          TyLanguageServerStatus.Disabled({
+            reason: disabledReasonOption.value,
+          }),
+        );
+      }
+
+      yield* Effect.forkScoped(
+        Effect.gen(function* () {
+          if (Option.isSome(disabledReasonOption)) {
+            // skip startup completely if disabled for any reason
+            return;
+          }
+
+          // Phase 1: Resolve the ty binary using 3-tier strategy
+          yield* Effect.logInfo("Starting language server").pipe(
+            Effect.annotateLogs({
+              server: TY_SERVER.name,
+              version: TY_SERVER.version,
+            }),
+          );
+
+          const resolved = yield* resolveTyBinary();
+
+          // Create isolated sync instance with its own cell count tracking
+          const notebookSync = yield* sync.forClient();
+
+          const installExit = yield* Effect.exit(
+            createManagedLanguageClient(TY_SERVER, resolved.path, {
+              notebookSync,
+              clientOptions: {
+                outputChannelName: "marimo (ty)",
+                revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
+                middleware: yield* createTyMiddleware(notebookSync),
+                documentSelector: sync.getDocumentSelector(),
+                transformServerCapabilities: sync.extendNotebookCellLanguages(),
+                initializationOptions: {},
+              },
+            }),
+          );
+
+          if (!Exit.isSuccess(installExit)) {
+            const cause = installExit.cause;
+            const message = "Failed to install language server";
+            yield* Ref.set(
+              statusRef,
+              TyLanguageServerStatus.Failed({ message, cause }),
+            );
+            yield* Effect.logError(message).pipe(
+              Effect.annotateLogs({
+                server: TY_SERVER.name,
+                version: TY_SERVER.version,
+                cause,
+              }),
+            );
+            yield* Effect.forkScoped(showErrorAndPromptLogs(message));
+            return;
+          }
+
+          // Phase 2: Start the server
+          const client = installExit.value;
+          yield* Effect.forkScoped(
+            Effect.gen(function* () {
+              const startExit = yield* Effect.exit(client.start());
+
+              if (!Exit.isSuccess(startExit)) {
+                const cause = startExit.cause;
+                const message = "Failed to start language server";
+                yield* Ref.set(
+                  statusRef,
+                  TyLanguageServerStatus.Failed({ message, cause }),
+                );
+                yield* Effect.logError(message).pipe(
+                  Effect.annotateLogs({
+                    server: TY_SERVER.name,
+                    version: TY_SERVER.version,
+                    cause,
+                  }),
+                );
+                yield* Effect.forkScoped(showErrorAndPromptLogs(message));
+                return;
+              }
+
+              const serverVersion = startExit.value.pipe(
+                Option.map((info) => info.version),
+                Option.getOrElse(() => "unknown"),
+              );
+
+              yield* Effect.logInfo("Language server started").pipe(
+                Effect.annotateLogs({
+                  server: TY_SERVER.name,
+                  version: serverVersion,
+                }),
+              );
+
+              if (Option.isSome(sentry)) {
+                yield* sentry.value.setTag("ty.version", serverVersion);
+              }
+              if (Option.isSome(telemetry)) {
+                yield* telemetry.value.reportBinaryResolved(
+                  "ty",
+                  resolved,
+                  serverVersion,
+                );
+              }
+
+              const updateRunningStatus = Effect.fn(function* () {
+                const activePath = yield* pyExt.getActiveEnvironmentPath();
+                const resolvedEnv = yield* pyExt.resolveEnvironment(activePath);
+                const pythonEnvironment = Option.map(resolvedEnv, (env) => ({
+                  path: env.executable.uri?.fsPath ?? env.path ?? "Unknown",
+                  version: env.version?.sysVersion ?? null,
+                }));
+                yield* Ref.set(
+                  statusRef,
+                  TyLanguageServerStatus.Running({
+                    client,
+                    serverVersion,
+                    binarySource: resolved,
+                    pythonEnvironment,
+                  }),
+                );
+              });
+
+              // Restart the language server when Python environment changes.
+              // ty needs restart to pick up environment changes since it doesn't
+              // support workspace/didChangeConfiguration for environment updates.
+              //
+              // Debounce to avoid restart storms: the Python extension can fire
+              // multiple rapid environment-change events during workspace
+              // activation (e.g. when opening a notebook). We collapse them into
+              // a single restart after 2 seconds of quiet.
+              yield* Effect.forkScoped(
+                pyExt.activeEnvironmentPathChanges().pipe(
+                  Stream.debounce(Duration.seconds(2)),
+                  Stream.runForEach(
+                    Effect.fn(function* (event) {
+                      yield* client
+                        .restart(`Python environment changed to: ${event.path}`)
+                        .pipe(
+                          Effect.catchAllCause((cause) =>
+                            Effect.logError(
+                              "Failed to restart language server",
+                            ).pipe(
+                              Effect.annotateLogs({
+                                server: TY_SERVER.name,
+                                cause,
+                              }),
+                            ),
+                          ),
+                        );
+                      yield* updateRunningStatus();
+                    }),
+                  ),
+                ),
+              );
+
+              yield* updateRunningStatus();
+            }),
+          );
+        }),
+      );
+
+      return {
+        getHealthStatus: () => Ref.get(statusRef),
+        /**
+         * Restart the language server to pick up new packages or environment changes.
+         * This is useful after installing packages, as ty doesn't support
+         * workspace/didChangeConfiguration.
+         */
+        restart: Effect.fn(function* (reason: string) {
+          const status = yield* Ref.get(statusRef);
+          if (!TyLanguageServerStatus.$is("Running")(status)) {
+            yield* Effect.logWarning(
+              "Cannot restart language server: server is not running",
+            ).pipe(Effect.annotateLogs({ server: TY_SERVER.name }));
+            return;
+          }
+          return yield* status.client.restart(reason).pipe(
+            Effect.catchAllCause((cause) =>
+              Effect.logError("Failed to restart language server").pipe(
+                Effect.annotateLogs({
+                  server: TY_SERVER.name,
+                  cause,
+                }),
+              ),
+            ),
+          );
+        }),
+      };
+    }),
+  },
+) {}
+
+/**
+ * Resolves the ty binary path using a 3-tier strategy:
+ * 1. User-configured path (`marimo.ty.path`)
+ * 2. Companion extension discovery — first `ty.path` setting, then bundled binary
+ * 3. Fallback to `uv pip install`
+ */
+const resolveTyBinary = Effect.fn(function* () {
+  const code = yield* VsCode;
+  const config = yield* Config;
+  const uv = yield* Uv;
+  const context = yield* ExtensionContext;
+
+  const tyExtension = code.extensions.getExtension(TY_EXTENSION_ID);
+
+  // ty.path is string[] (first element), unlike ruff.path which is string
+  const tyExtConfiguredPath = Effect.gen(function* () {
+    const tyExtConfig = yield* code.workspace.getConfiguration("ty");
+    return Option.fromNullable(tyExtConfig.get<string[]>("path")).pipe(
+      Option.filter((p) => p.length > 0),
+      Option.map((p) => p[0]),
+    );
+  });
+
+  return yield* resolveBinary(
+    TY_SERVER.name,
+    [
+      userConfiguredPath("ty", TY_SERVER.version, config.ty.path),
+      companionExtensionConfiguredPath(
+        "ty",
+        TY_SERVER.version,
+        TY_EXTENSION_ID,
+        tyExtConfiguredPath,
+      ),
+      companionExtensionBundledBinary(
+        "ty",
+        TY_SERVER.version,
+        TY_EXTENSION_ID,
+        tyExtension,
+      ),
+    ],
+    {
+      label: "uv install",
+      resolve: Effect.gen(function* () {
+        const targetPath = NodePath.resolve(
+          context.globalStorageUri.fsPath,
+          "libs",
+        );
+        const binaryPath = yield* uv.ensureLanguageServerBinaryInstalled(
+          TY_SERVER,
+          {
+            targetPath,
+          },
+        );
+        return Option.some(BinarySource.UvInstalled({ path: binaryPath }));
+      }),
+    },
+  );
+});
+
+interface InitializationOptions {
+  logLevel?: "error" | "warn" | "info" | "debug" | "trace";
+  logFile?: string;
+}
+
+interface ExtensionSettings {
+  cwd: string;
+  path: string[];
+  interpreter: string[];
+  importStrategy: "fromEnvironment" | "useBundled";
+}
+
+// Keys that are handled by the extension and should not be sent to the server
+type ExtensionOnlyKeys =
+  | keyof InitializationOptions
+  | keyof ExtensionSettings
+  | "trace";
+
+/**
+ * Keys that are handled by the extension and should not be sent to the ty server.
+ * These are extension-specific settings that the server doesn't recognize.
+ *
+ * Adapted from https://github.com/astral-sh/ty-vscode/blob/221a8d1a/src/client.ts
+ */
+const EXTENSION_ONLY_KEYS = {
+  // InitializationOptions
+  logLevel: true,
+  logFile: true,
+  // ExtensionSettings
+  cwd: true,
+  path: true,
+  interpreter: true,
+  importStrategy: true,
+  // Client-handled settings
+  trace: true,
+} as const satisfies Record<ExtensionOnlyKeys, true>;
+
+function isExtensionOnlyKey(key: string): key is ExtensionOnlyKeys {
+  return key in EXTENSION_ONLY_KEYS;
+}
+
+/**
+ * Creates LSP middleware that adapts marimo notebook documents for ty.
+ *
+ * Uses the provided notebook middleware for base notebook handling,
+ * and adds ty-specific workspace configuration middleware to enrich
+ * responses with Python environment information.
+ */
+function createTyMiddleware(
+  sync: ClientNotebookSync,
+): Effect.Effect<lsp.Middleware, never, VsCode | PythonExtension> {
+  return Effect.gen(function* () {
+    const runtime = yield* Effect.runtime<VsCode | PythonExtension>();
+    const runPromise = Runtime.runPromise(runtime);
+
+    // Helper to wrap document with language ID mapping (mo-python -> python)
+    const wrapDocument = sync.adapter.document.bind(sync.adapter);
+
+    return {
+      notebooks: sync.notebookMiddleware,
+      // Language ID mapping for request handlers
+      // ty needs "python" language ID, but marimo uses "mo-python" to avoid conflicts
+      didOpen: (doc, next) => next(wrapDocument(doc)),
+      didClose: (doc, next) => next(wrapDocument(doc)),
+      didChange: (change, next) =>
+        next({ ...change, document: wrapDocument(change.document) }),
+      provideHover: (doc, position, token, next) =>
+        next(wrapDocument(doc), position, token),
+      provideDefinition: (doc, position, token, next) =>
+        next(wrapDocument(doc), position, token),
+      provideTypeDefinition: (doc, position, token, next) =>
+        next(wrapDocument(doc), position, token),
+      provideReferences: (doc, position, context, token, next) =>
+        next(wrapDocument(doc), position, context, token),
+      provideRenameEdits: (doc, position, newName, token, next) =>
+        next(wrapDocument(doc), position, newName, token),
+      prepareRename: (doc, position, token, next) =>
+        next(wrapDocument(doc), position, token),
+      provideCompletionItem: (doc, position, context, token, next) =>
+        next(wrapDocument(doc), position, context, token),
+      provideSignatureHelp: (doc, position, context, token, next) =>
+        next(wrapDocument(doc), position, context, token),
+      provideDocumentHighlights: (doc, position, token, next) =>
+        next(wrapDocument(doc), position, token),
+      provideDocumentSymbols: (doc, token, next) =>
+        next(wrapDocument(doc), token),
+      provideInlayHints: (doc, range, token, next) =>
+        next(wrapDocument(doc), range, token),
+
+      // WORKAROUND: ty panics when receiving textDocument/diagnostic for (.py) notebook
+      // cells because it only supports text document diagnostics, not notebook
+      // documents. We suppress these requests client-side until ty adds full
+      // notebook diagnostics support.
+      provideDiagnostics(doc, previousResultId, token, next) {
+        const uri = "scheme" in doc ? doc : doc.uri;
+        if (uri.scheme === "vscode-notebook-cell") {
+          return null;
+        }
+        return next(uri, previousResultId, token);
+      },
+      workspace: {
+        /**
+         * Enriches the configuration response with the active Python environment
+         * as reported by the Python extension (respecting the scope URI).
+         */
+        async configuration(params, token, next) {
+          const response = await next(params, token);
+
+          if (response instanceof ResponseError) {
+            return response;
+          }
+
+          const enrichedResponse = await runPromise(
+            Effect.all(
+              params.items.map(
+                Effect.fn(function* (param, index) {
+                  const code = yield* VsCode;
+                  const pythonExtension = yield* PythonExtension;
+
+                  const result = response[index];
+
+                  // Only enrich ty configuration requests
+                  if (param.section === "ty") {
+                    const scopeUri = param.scopeUri
+                      ? code.Uri.parse(param.scopeUri, true)
+                      : undefined;
+
+                    const path =
+                      yield* pythonExtension.getActiveEnvironmentPath(scopeUri);
+
+                    const resolved =
+                      yield* pythonExtension.resolveEnvironment(path);
+
+                    const env = Option.getOrNull(resolved);
+
+                    yield* Effect.logDebug(
+                      `Enriching ty config with Python env: ${env?.path || "null"} (${env?.version?.sysVersion || "unknown version"})`,
+                    );
+
+                    const activeEnvironment =
+                      env == null
+                        ? null
+                        : {
+                            version:
+                              env.version == null
+                                ? null
+                                : {
+                                    major: env.version.major,
+                                    minor: env.version.minor,
+                                    patch: env.version.micro,
+                                    sysVersion: env.version.sysVersion,
+                                  },
+                            environment:
+                              env.environment == null
+                                ? null
+                                : {
+                                    folderUri:
+                                      env.environment.folderUri.toString(),
+                                    name: env.environment.name,
+                                    type: env.environment.type,
+                                  },
+                            executable: {
+                              uri: env.executable.uri?.toString(),
+                              sysPrefix: env.executable.sysPrefix,
+                            },
+                          };
+
+                    // Filter out extension-only settings that shouldn't be sent to the server
+                    const serverSettings = Object.fromEntries(
+                      Object.entries(result ?? {}).filter(
+                        ([key]) => !isExtensionOnlyKey(key),
+                      ),
+                    );
+
+                    return {
+                      ...serverSettings,
+                      pythonExtension: {
+                        ...result?.pythonExtension,
+                        activeEnvironment,
+                      },
+                    };
+                  }
+
+                  return result;
+                }),
+              ),
+            ),
+            { signal: signalFromToken(token) },
+          );
+
+          return enrichedResponse;
+        },
+      },
+    };
+  });
+}
+
+/**
+ * Checks if the managed ty language server should be enabled.
+ * Returns Some(reason) if disabled, None if enabled.
+ */
+const getTyDisabledReason = Effect.fn(function* () {
+  const config = yield* Config;
+
+  const mode = yield* config.getLanguageFeaturesMode();
+
+  if (mode !== "managed") {
+    const reason =
+      mode === "external"
+        ? 'Language features mode is set to "external". Using external language servers instead of managed ty.'
+        : 'Language features mode is set to "none". All language features are disabled.';
+    yield* Effect.logInfo(`Not starting managed ty language server: ${reason}`);
+    return Option.some(reason);
+  }
+
+  return Option.none();
+});
