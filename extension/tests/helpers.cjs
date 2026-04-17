@@ -2,14 +2,63 @@
 /// <reference types="mocha" />
 
 const NodeAssert = require("node:assert");
+const NodeChildProcess = require("node:child_process");
 const NodeFs = require("node:fs/promises");
 const NodeOs = require("node:os");
 const NodePath = require("node:path");
+const NodeProcess = require("node:process");
+const NodeUtil = require("node:util");
 const vscode = require("vscode");
+
+const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 
 const EXTENSION_ID = "marimo-team.vscode-marimo";
 const NOTEBOOK_TYPE = "marimo-notebook";
-const SANDBOX_CONTROLLER_ID = "marimo-sandbox";
+
+/**
+ * Path to the Python executable inside a venv. Mirrors
+ * `extension/src/python/getVenvPythonPath.ts` — we can't share the TS helper
+ * from a CJS test file.
+ *
+ * @param {string} venv
+ */
+function venvPython(venv) {
+  return NodeProcess.platform === "win32"
+    ? NodePath.join(venv, "Scripts", "python.exe")
+    : NodePath.join(venv, "bin", "python");
+}
+
+const SHARED_VENV_DIR = NodePath.join(__dirname, "sampleWorkspace", ".venv");
+const SHARED_VENV_PYTHON = venvPython(SHARED_VENV_DIR);
+
+/**
+ * Creates (or reuses) a shared Python 3.13 venv with marimo installed under
+ * the test workspace. Memoized per test process so subsequent tests reuse
+ * the same venv — amortizing venv creation + marimo install across the
+ * whole suite.
+ *
+ * Returns the Python executable path.
+ *
+ * @type {Promise<string> | undefined}
+ */
+let sharedVenvReady;
+function ensureSharedVenv() {
+  if (sharedVenvReady) return sharedVenvReady;
+  sharedVenvReady = (async () => {
+    try {
+      await NodeFs.access(SHARED_VENV_PYTHON);
+      return SHARED_VENV_PYTHON;
+    } catch {
+      // venv doesn't exist yet; create it
+    }
+    await execFile("uv", ["venv", SHARED_VENV_DIR, "--python", "3.13"]);
+    await execFile("uv", ["pip", "install", "marimo"], {
+      env: { ...NodeProcess.env, VIRTUAL_ENV: SHARED_VENV_DIR },
+    });
+    return SHARED_VENV_PYTHON;
+  })();
+  return sharedVenvReady;
+}
 
 const DEFAULT_SOURCE = `# /// script
 # requires-python = ">=3.11"
@@ -40,6 +89,10 @@ function getExtension() {
 }
 
 async function activateExtension() {
+  // Provision the shared venv BEFORE activation so VS Code's Python
+  // extension discovers it during startup and marimo creates a Python
+  // controller for it. That controller is what `selectKernel` binds.
+  await ensureSharedVenv();
   const ext = getExtension();
   if (!ext.isActive) {
     await ext.activate();
@@ -150,13 +203,16 @@ function createTestContext() {
 }
 
 /**
- * Binds the sandbox controller (or `id` override) to `notebook`, showing it
- * in an editor so VS Code will pick the kernel.
+ * Binds the shared-venv Python controller to `notebook`, showing it in an
+ * editor so VS Code picks up the kernel. The controller id is derived from
+ * the Python executable path — see `PythonController.getId` in
+ * `src/kernel/NotebookControllerFactory.ts`.
  *
  * @param {vscode.NotebookDocument} notebook
- * @param {string} [id]
  */
-async function selectKernel(notebook, id = SANDBOX_CONTROLLER_ID) {
+async function selectKernel(notebook) {
+  const python = await ensureSharedVenv();
+  const id = `marimo-${python}`;
   const editor = await vscode.window.showNotebookDocument(notebook);
   await vscode.commands.executeCommand("notebook.selectKernel", {
     notebookEditor: editor,

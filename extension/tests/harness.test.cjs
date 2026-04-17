@@ -12,8 +12,7 @@ const {
 } = require("./helpers.cjs");
 
 suite("harness: write → open → run → edit → run", () => {
-  test("round-trips a single cell through the sandbox controller", async function () {
-    this.timeout(8_000);
+  test("round-trips a single cell through the shared-venv python controller", async function () {
     await using ctx = createTestContext();
     const nb = await ctx.writeAndOpenNotebook();
 

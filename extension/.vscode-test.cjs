@@ -9,7 +9,8 @@ module.exports = defineConfig([
     installExtensions: ["ms-python.python"],
     mocha: {
       ui: "tdd",
-      timeout: 60000,
+      timeout: 30_000,
+      require: ["./tests/setup.cjs"],
     },
   },
 ]);
