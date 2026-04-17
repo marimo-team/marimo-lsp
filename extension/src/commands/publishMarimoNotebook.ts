@@ -11,7 +11,7 @@ export const publishMarimoNotebook = Effect.fn(function* () {
     },
   ]);
   if (Option.isNone(choice)) {
-    return choice;
+    return;
   }
   if (choice.value.label === "GitHub Gist") {
     yield* code.commands.executeCommand("marimo.publishMarimoNotebookGist");

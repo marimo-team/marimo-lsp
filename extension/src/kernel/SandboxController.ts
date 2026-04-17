@@ -55,9 +55,10 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             const request = extractExecuteCodeRequest(rawCells, LanguageId);
 
             if (Option.isNone(request)) {
-              return yield* Effect.logWarning("Empty execution request").pipe(
+              yield* Effect.logWarning("Empty execution request").pipe(
                 Effect.annotateLogs({ rawCells }),
               );
+              return;
             }
 
             const notebook = MarimoNotebookDocument.from(rawNotebook);

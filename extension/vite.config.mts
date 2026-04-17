@@ -89,7 +89,6 @@ export default vite.defineConfig({
       // config into vite.config.mts (previously lived in root .oxlintrc.json).
       // Most violations are legit (missing returns in Effect.fn generators,
       // redundant Boolean/String casts) but fixing them is a separate pass.
-      "typescript/consistent-return": "off",
       "typescript/no-unnecessary-type-conversion": "off",
       "typescript/no-unnecessary-type-parameters": "off",
     },

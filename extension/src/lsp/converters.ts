@@ -445,6 +445,10 @@ export function toDocumentHighlightKind(
       return 1 satisfies typeof vscode.DocumentHighlightKind.Read;
     case lsp.DocumentHighlightKind.Write:
       return 2 satisfies typeof vscode.DocumentHighlightKind.Write;
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
   }
 }
 

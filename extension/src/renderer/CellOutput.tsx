@@ -60,7 +60,7 @@ function useStopInputKeyboardPropagation(
 ) {
   React.useEffect(() => {
     if (!containerRef.current) {
-      return;
+      return undefined;
     }
 
     const controller = new AbortController();
