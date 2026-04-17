@@ -47,42 +47,22 @@ async function activateExtension() {
   return ext;
 }
 
-async function getMarimoApi() {
-  const ext = await activateExtension();
-  return /** @type {import("../src/platform/Api.ts").MarimoApi} */ (
-    ext.exports
-  );
-}
-
 /**
- * Creates a test context with a shared AbortSignal and AsyncDisposableStack.
+ * Creates a test context with an AsyncDisposableStack for temp-file cleanup.
  *
  * Only the context itself is `AsyncDisposable`. Notebooks returned by
- * `openNotebook` / `writeAndOpenNotebook` are plain `vscode.NotebookDocument`
- * — the context owns their lifetimes (temp dirs, etc.) via its stack.
+ * `openNotebook` / `writeAndOpenNotebook` are plain `vscode.NotebookDocument`.
  *
  * Use at the top of a test:
  *
- *     await using ctx = createTestContext({ timeoutMs: 170_000 });
+ *     await using ctx = createTestContext();
  *     const nb = await ctx.writeAndOpenNotebook();
  *     await selectKernel(nb);
  *     await runCell(nb.cellAt(0));
- *     await ctx.waitUntil(() => assert.match(cellOutputText(nb.cellAt(0)), /10/));
- *
- * @param {{ timeoutMs?: number, signal?: AbortSignal }} [options]
+ *     assert.match(cellOutputText(nb.cellAt(0)), /10/);
  */
-function createTestContext(options = {}) {
+function createTestContext() {
   const stack = new AsyncDisposableStack();
-  const signals = [];
-  if (options.signal) signals.push(options.signal);
-  if (options.timeoutMs != null)
-    signals.push(AbortSignal.timeout(options.timeoutMs));
-  const signal =
-    signals.length === 0
-      ? new AbortController().signal
-      : signals.length === 1
-        ? signals[0]
-        : AbortSignal.any(signals);
 
   /**
    * Writes a source file to a fresh temp dir. Cleanup is deferred into the
@@ -133,50 +113,32 @@ function createTestContext(options = {}) {
   }
 
   /**
-   * Runs `fn` on each polling interval. If `fn` returns/resolves, `waitUntil`
-   * resolves. If `fn` throws, the error is swallowed and retried. When the
-   * context's signal aborts, the most recent thrown error is re-raised — so
-   * timeouts report the real assertion failure, not a generic "timeout".
+   * Runs `fn` on each polling tick. Resolves when `fn` doesn't throw. Loops
+   * forever — relies on mocha's `this.timeout(...)` to kill hung tests.
+   *
+   * The interval exists to yield to the event loop between polls so VS Code's
+   * I/O callbacks can fire; it's not a delay.
    *
    * Side-effect-free predicates only: the callback is called many times.
    *
    * @param {() => void | Promise<void>} fn
-   * @param {{ intervalMs?: number }} [opts]
+   * @param {number} [interval]
    */
-  async function waitUntil(fn, opts = {}) {
-    const { intervalMs = 50 } = opts;
-    /** @type {unknown} */
-    let lastError;
+  async function waitUntil(fn, interval = 50) {
     while (true) {
-      if (signal.aborted) {
-        throw lastError ?? signal.reason ?? new Error("waitUntil aborted");
-      }
       try {
         // oxlint-disable-next-line eslint/no-await-in-loop: intentional polling
         await fn();
         return;
-      } catch (err) {
-        lastError = err;
+      } catch {
+        // swallow and retry
       }
       // oxlint-disable-next-line eslint/no-await-in-loop: intentional polling
-      await new Promise((resolve) => {
-        const timer = setTimeout(resolve, intervalMs);
-        const onAbort = () => {
-          clearTimeout(timer);
-          resolve(undefined);
-        };
-        if (signal.aborted) {
-          onAbort();
-          return;
-        }
-        signal.addEventListener("abort", onAbort, { once: true });
-      });
+      await new Promise((resolve) => setTimeout(resolve, interval));
     }
   }
 
   return {
-    signal,
-    stack,
     writeTempFile,
     openNotebook,
     writeAndOpenNotebook,
@@ -205,17 +167,45 @@ async function selectKernel(notebook, id = SANDBOX_CONTROLLER_ID) {
 }
 
 /**
- * Triggers execution of a cell. Does not wait for completion — callers should
- * follow up with `ctx.waitUntil(() => assert.match(cellOutputText(cell), ...))`.
+ * Triggers execution of `cell` and resolves once this cell's execution has
+ * been finalized (`executionSummary.success !== undefined`). The subscription
+ * is established before the command dispatches so we can't miss the event.
+ *
+ * Note: marimo's reactive model may trigger additional downstream cells when
+ * this cell runs. Today we only wait for THIS cell to finalize; a future
+ * improvement could wait for all triggered executions in the cascade to
+ * settle (requires an extension-exposed "kernel idle" signal).
  *
  * @param {vscode.NotebookCell} cell
  */
 async function runCell(cell) {
   const { notebook, index } = cell;
+  const priorEndTime = cell.executionSummary?.timing?.endTime;
+
+  /** @type {Promise<void>} */
+  const finalized = new Promise((resolve) => {
+    const sub = vscode.workspace.onDidChangeNotebookDocument((event) => {
+      if (event.notebook.uri.toString() !== notebook.uri.toString()) return;
+      for (const change of event.cellChanges) {
+        if (change.cell.index !== index) continue;
+        const summary = change.executionSummary;
+        if (
+          summary?.success !== undefined &&
+          summary.timing?.endTime !== priorEndTime
+        ) {
+          sub.dispose();
+          resolve();
+          return;
+        }
+      }
+    });
+  });
+
   await vscode.commands.executeCommand("notebook.cell.execute", {
     ranges: [{ start: index, end: index + 1 }],
     document: notebook.uri,
   });
+  await finalized;
 }
 
 /**
@@ -252,13 +242,6 @@ function cellOutputText(cell) {
 }
 
 module.exports = {
-  EXTENSION_ID,
-  NOTEBOOK_TYPE,
-  SANDBOX_CONTROLLER_ID,
-  DEFAULT_SOURCE,
-  getExtension,
-  activateExtension,
-  getMarimoApi,
   createTestContext,
   selectKernel,
   runCell,
