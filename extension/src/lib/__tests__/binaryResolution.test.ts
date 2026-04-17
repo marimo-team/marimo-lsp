@@ -229,7 +229,7 @@ describe("resolveBinary", () => {
       const serverAnnotated = logs.filter((l) => l.annotations.server === "ty");
       expect(serverAnnotated.length).toBeGreaterThan(0);
 
-      const resolved = logs.find((l) => String(l.message).includes("Resolved"));
+      const resolved = logs.find((l) => l.message.includes("Resolved"));
       expect(resolved).toBeDefined();
       expect(resolved!.annotations.source).toBe("UserConfigured");
       expect(resolved!.annotations.path).toBe("/bin/ty");
