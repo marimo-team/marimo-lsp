@@ -665,7 +665,8 @@ function buildOutputItem(
     const text =
       typeof output.data === "object"
         ? JSON.stringify(output.data)
-        : String(output.data);
+        : // oxlint-disable-next-line typescript-eslint/no-unnecessary-type-conversion
+          String(output.data);
     if (!text) {
       return null;
     }
@@ -685,7 +686,8 @@ function buildOutputItem(
     const text =
       typeof output.data === "object"
         ? JSON.stringify(output.data)
-        : String(output.data);
+        : // oxlint-disable-next-line typescript-eslint/no-unnecessary-type-conversion
+          String(output.data);
     if (!text) {
       return null;
     }

@@ -17,6 +17,13 @@ import { VsCode } from "../platform/VsCode.ts";
 const SENTRY_DSN =
   "https://717e07e6f9831ef39f872ab4a7a63dc2@o4505919839862784.ingest.us.sentry.io/4510382050770944";
 
+const getTelemetryEnabled = Effect.fn(function* () {
+  const code = yield* VsCode;
+  const config = yield* code.workspace.getConfiguration("marimo");
+  const value: unknown = config.get("telemetry", true);
+  return !!value;
+});
+
 /**
  * Sentry service for error tracking and monitoring.
  */
@@ -29,14 +36,11 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
       () => "unknown",
     );
 
-    const config = yield* code.workspace.getConfiguration("marimo");
-    const telemetryEnabled = config.get<boolean>("telemetry") ?? true;
-
     SentrySDK.init({
       dsn: SENTRY_DSN,
       release: `vscode-marimo@${extensionVersion}`,
       environment: process.env.NODE_ENV ?? "production",
-      enabled: Boolean(telemetryEnabled),
+      enabled: yield* getTelemetryEnabled(),
       // Disable automatic capture of unhandled errors
       integrations: (integrations) => {
         return integrations.filter((integration) => {
