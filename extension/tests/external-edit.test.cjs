@@ -323,4 +323,77 @@ suite("external edit output preservation (issue #497)", function () {
     );
     NodeAssert.strictEqual(nb.isDirty, true, "doc should still be dirty");
   });
+
+  test("save before external edit: output still preserved on single-cell edit-in-place", async function () {
+    // Reported scenario: user edits a cell to print(10), runs it, saves the
+    // notebook, then an external tool rewrites the cell to print(20). They
+    // expect the positional-fallback behavior (print(20) text with the stale
+    // "10" output) but see no output at all. The only variable vs. the other
+    // edit-in-place test is that a save happens between run and external write.
+    await using ctx = createTestContext();
+    const nb = await ctx.writeAndOpenNotebook(makeSource(["pass"]));
+    await selectKernel(nb);
+
+    // Dirty the doc with an in-memory edit to print(10).
+    await editCell(nb.cellAt(0), "print(10)\n");
+    await runCell(nb.cellAt(0));
+    NodeAssert.match(cellOutputText(nb.cellAt(0)), /10/);
+
+    // Save — writes print(10) to disk, clears dirty.
+    const saved = await nb.save();
+    NodeAssert.strictEqual(saved, true, "save should succeed");
+    NodeAssert.strictEqual(nb.isDirty, false, "save should clear dirty");
+
+    // External rewrite to print(20).
+    await NodeFs.writeFile(nb.uri.fsPath, makeSource(["print(20)"]), "utf8");
+    await ctx.waitUntil(() =>
+      NodeAssert.match(nb.cellAt(0).document.getText(), /print\(20\)/),
+    );
+
+    NodeAssert.match(
+      cellOutputText(nb.cellAt(0)),
+      /10/,
+      "output should survive save + external edit via positional fallback",
+    );
+
+    // Second external rewrite on top of the already-reloaded doc.
+    await NodeFs.writeFile(nb.uri.fsPath, makeSource(["print(30)"]), "utf8");
+    await ctx.waitUntil(() =>
+      NodeAssert.match(nb.cellAt(0).document.getText(), /print\(30\)/),
+    );
+
+    NodeAssert.match(
+      cellOutputText(nb.cellAt(0)),
+      /10/,
+      "output should survive a second external edit via positional fallback",
+    );
+  });
+
+  test("internal edit (no external write): output survives in-memory cell change", async function () {
+    // Exactly the user-reported flow: edit cell to print(10), run, then edit
+    // in VS Code (workspace applyEdit) to print(20). NO external write, NO
+    // save. Positional fallback lives in the external-edit path, so this
+    // test isolates whether the internal-edit path (kernel cell-ops, LSP
+    // notifications, stale detection) is the one clearing outputs.
+    await using ctx = createTestContext();
+    const nb = await ctx.writeAndOpenNotebook(makeSource(["pass"]));
+    await selectKernel(nb);
+
+    await editCell(nb.cellAt(0), "print(10)\n");
+    await runCell(nb.cellAt(0));
+    NodeAssert.match(cellOutputText(nb.cellAt(0)), /10/);
+
+    // Internal edit — user types new content in VS Code. Don't run, don't save.
+    await editCell(nb.cellAt(0), "print(20)\n");
+
+    // Give any async LSP/kernel reactions a chance to fire.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    NodeAssert.match(nb.cellAt(0).document.getText(), /print\(20\)/);
+    NodeAssert.match(
+      cellOutputText(nb.cellAt(0)),
+      /10/,
+      "output should persist across an internal cell edit (nothing reran it)",
+    );
+  });
 });

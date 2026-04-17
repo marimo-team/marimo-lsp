@@ -144,7 +144,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
 
           return enrichNotebookFromLive(
             notebook,
-            snapshotLiveNotebook(liveDoc.value),
+            snapshotLiveNotebook(liveDoc.value, code.value),
           );
         },
       );
@@ -337,11 +337,19 @@ ${code}
 
 /**
  * Snapshot a live `NotebookDocument`'s cells into the `NotebookData` shape
- * that `enrichNotebookFromLive` expects. Copies outputs and metadata by
- * reference — the snapshot is read-only and short-lived.
+ * that `enrichNotebookFromLive` expects.
+ *
+ * Outputs are reconstructed as *fresh* `NotebookCellOutput` /
+ * `NotebookCellOutputItem` instances, not spread references to the live
+ * cell's outputs. VS Code's notebook model treats same-identity output
+ * objects as "unchanged" and skips rendering them when they flow back
+ * through `deserializeNotebook`; constructing new instances forces the
+ * renderer to re-pick up the data. Matches what the built-in ipynb
+ * serializer does in vscode/extensions/ipynb/src/deserializers.ts.
  */
 function snapshotLiveNotebook(
   doc: vscode.NotebookDocument,
+  code: VsCode,
 ): vscode.NotebookData {
   return {
     metadata: doc.metadata,
@@ -349,7 +357,15 @@ function snapshotLiveNotebook(
       kind: cell.kind,
       value: cell.document.getText(),
       languageId: cell.document.languageId,
-      outputs: [...cell.outputs],
+      outputs: cell.outputs.map(
+        (out) =>
+          new code.NotebookCellOutput(
+            out.items.map(
+              (item) => new code.NotebookCellOutputItem(item.data, item.mime),
+            ),
+            out.metadata,
+          ),
+      ),
       metadata: cell.metadata,
     })),
   };
