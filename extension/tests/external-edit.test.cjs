@@ -501,3 +501,114 @@ suite("external edit cell dependencies (issue #323)", function () {
     );
   });
 });
+
+// Issue #472: external tools (formatters, AI agents, scripts) that rewrite
+// a cell's value should end up reflected in the notebook. The user's report
+// was that these edits went undetected; our reload path picks them up and
+// the marimo runtime re-runs the dependency chain in autorun mode.
+const ISSUE_472_INITIAL = `# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "marimo",
+# ]
+# ///
+
+import marimo
+
+app = marimo.App()
+
+
+@app.cell
+def _():
+    x = 5
+    return (x,)
+
+
+@app.cell
+def _(x):
+    print(x)
+    return
+
+
+if __name__ == "__main__":
+    app.run()
+`;
+
+// External agent swapped the value a dependency cell produces.
+const ISSUE_472_VALUE_CHANGED = `# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "marimo",
+# ]
+# ///
+
+import marimo
+
+app = marimo.App()
+
+
+@app.cell
+def _():
+    x = 42
+    return (x,)
+
+
+@app.cell
+def _(x):
+    print(x)
+    return
+
+
+if __name__ == "__main__":
+    app.run()
+`;
+
+suite("external edit detection (issue #472)", function () {
+  this.timeout(20_000);
+
+  test("external value change is detected: cell 0 text updates, cell 1 output updates or is preserved — never lost or errored", async function () {
+    await using ctx = createTestContext();
+    const nb = await ctx.writeAndOpenNotebook(ISSUE_472_INITIAL);
+    await selectKernel(nb);
+    await runAllCells(nb);
+
+    NodeAssert.match(
+      cellOutputText(nb.cellAt(1)),
+      /^5/,
+      "baseline: dependent prints 5 before external edit",
+    );
+
+    await NodeFs.writeFile(nb.uri.fsPath, ISSUE_472_VALUE_CHANGED, "utf8");
+
+    // Core of #472: VS Code must pick up the external write and the new
+    // source must land in the notebook document.
+    await ctx.waitUntil(() =>
+      NodeAssert.match(nb.cellAt(0).document.getText(), /x = 42/),
+    );
+    NodeAssert.match(
+      nb.cellAt(1).document.getText(),
+      /print\(x\)/,
+      "cell 1 source preserved across the reload",
+    );
+
+    // Output must survive the reload in a usable state — either the
+    // preserved "5" (lazy mode: user will re-run) or a freshly recomputed
+    // "42" (autorun). What must NOT happen: blank output, or a traceback
+    // from a failed synthetic run. The pre-fix failure mode was blank.
+    const depOutput = cellOutputText(nb.cellAt(1));
+    NodeAssert.ok(
+      depOutput.length > 0,
+      `dependent cell should still have an output after external edit. Got empty`,
+    );
+    NodeAssert.doesNotMatch(
+      depOutput,
+      /NameError|Traceback/,
+      `dependent cell should not error. Got: ${depOutput}`,
+    );
+    NodeAssert.match(
+      depOutput,
+      /^(5|42)/,
+      `dependent output should be either the preserved 5 or the recomputed 42. Got: ${depOutput}`,
+    );
+  });
+});
