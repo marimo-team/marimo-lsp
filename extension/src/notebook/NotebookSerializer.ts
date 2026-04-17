@@ -10,7 +10,7 @@ import {
 import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { enrichNotebookFromCached } from "../lib/enrichNotebookFromCached.ts";
+import { enrichNotebookFromLive } from "../lib/enrichNotebookFromLive.ts";
 import { LanguageClient } from "../lsp/LanguageClient.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -19,7 +19,7 @@ import {
   decodeCellMetadata,
 } from "../schemas/CellMetadata.ts";
 import { SerializedNotebook } from "../schemas/SerializedNotebook.ts";
-import { NotebookDataCache } from "./NotebookDataCache.ts";
+import { pickLiveNotebook } from "./pickLiveNotebook.ts";
 
 type BooleanMap<T> = {
   [key in keyof T]: boolean;
@@ -37,17 +37,15 @@ const NotebookCellKind = {
 export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   "NotebookSerializer",
   {
-    dependencies: [Constants.Default, NotebookDataCache.Default],
+    dependencies: [Constants.Default],
     scoped: Effect.gen(function* () {
       const client = yield* LanguageClient;
       const constants = yield* Constants;
       const code = yield* Effect.serviceOption(VsCode);
-      const notebookDataCache = yield* NotebookDataCache;
 
       const serializeEffect = Effect.fn("NotebookSerializer.serialize")(
         function* (notebook: vscode.NotebookData) {
           yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
-          yield* notebookDataCache.set(notebook);
 
           const resp = yield* client.executeCommand({
             command: "marimo.api",
@@ -139,14 +137,15 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
 
           yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
 
-          const cached = yield* notebookDataCache.get(bytes);
+          if (Option.isNone(code)) return notebook;
 
-          if (Option.isNone(cached)) {
-            yield* Effect.logWarning("Could not find cached data for notebook");
-            return notebook;
-          }
+          const liveDoc = yield* pickLiveNotebook(bytes, code.value);
+          if (Option.isNone(liveDoc)) return notebook;
 
-          return enrichNotebookFromCached(notebook, cached.value);
+          return enrichNotebookFromLive(
+            notebook,
+            snapshotLiveNotebook(liveDoc.value, code.value),
+          );
         },
       );
 
@@ -206,7 +205,8 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
           },
           {
             // Outputs are not persisted to the .py file — they're ephemeral
-            // and restored from the NotebookDataCache during deserialization.
+            // and restored at deserialize time from the matched live
+            // NotebookDocument (see pickLiveNotebook + enrichNotebookFromLive).
             // Marking as transient prevents cell execution from dirtying the
             // notebook, which would block auto-reload of external file changes.
             transientOutputs: true,
@@ -214,11 +214,13 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               state: true,
               name: false,
               languageMetadata: false,
-              // Stable ID is ephemeral - not persisted to .py file, regenerated
-              // on open. Must be non-transient so VS Code includes it in the
-              // metadata passed to serializeNotebook, which we need for cache
-              // matching (matchRecentNotebookFromData reads stableId).
-              stableId: false,
+              // Stable ID is ephemeral — regenerated on every deserialize
+              // and never written to the .py file. Transient so VS Code
+              // strips it from the serialize payload (we don't use it
+              // there anyway) and changes don't dirty the doc. External
+              // reloads restore it from the live doc via
+              // enrichNotebookFromLive.
+              stableId: true,
               options: false,
             } satisfies BooleanMap<CellMetadata>,
             transientDocumentMetadata: {
@@ -331,4 +333,40 @@ export function wrapInMarkdown(code: string): string {
 mo.md(r"""
 ${code}
 """)`;
+}
+
+/**
+ * Snapshot a live `NotebookDocument`'s cells into the `NotebookData` shape
+ * that `enrichNotebookFromLive` expects.
+ *
+ * Outputs are reconstructed as *fresh* `NotebookCellOutput` /
+ * `NotebookCellOutputItem` instances, not spread references to the live
+ * cell's outputs. VS Code's notebook model treats same-identity output
+ * objects as "unchanged" and skips rendering them when they flow back
+ * through `deserializeNotebook`; constructing new instances forces the
+ * renderer to re-pick up the data. Matches what the built-in ipynb
+ * serializer does in vscode/extensions/ipynb/src/deserializers.ts.
+ */
+function snapshotLiveNotebook(
+  doc: vscode.NotebookDocument,
+  code: VsCode,
+): vscode.NotebookData {
+  return {
+    metadata: doc.metadata,
+    cells: doc.getCells().map((cell) => ({
+      kind: cell.kind,
+      value: cell.document.getText(),
+      languageId: cell.document.languageId,
+      outputs: cell.outputs.map(
+        (out) =>
+          new code.NotebookCellOutput(
+            out.items.map(
+              (item) => new code.NotebookCellOutputItem(item.data, item.mime),
+            ),
+            out.metadata,
+          ),
+      ),
+      metadata: cell.metadata,
+    })),
+  };
 }
