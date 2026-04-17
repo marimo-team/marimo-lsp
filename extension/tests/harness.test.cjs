@@ -1,7 +1,7 @@
 // @ts-check
 /// <reference types="mocha" />
 
-const assert = require("node:assert");
+const NodeAssert = require("node:assert");
 
 const {
   cellOutputText,
@@ -18,8 +18,8 @@ suite("harness: write → open → run → edit → run", () => {
     await using ctx = createTestContext({ timeoutMs: 170_000 });
     const nb = await ctx.writeAndOpenNotebook();
 
-    assert.strictEqual(nb.cellCount, 1, "should have 1 cell");
-    assert.match(
+    NodeAssert.strictEqual(nb.cellCount, 1, "should have 1 cell");
+    NodeAssert.match(
       nb.cellAt(0).document.getText(),
       /print\(10\)/,
       "initial cell should contain print(10)",
@@ -29,11 +29,11 @@ suite("harness: write → open → run → edit → run", () => {
 
     await runCell(nb.cellAt(0));
     await ctx.waitUntil(() => {
-      assert.match(cellOutputText(nb.cellAt(0)), /10/);
+      NodeAssert.match(cellOutputText(nb.cellAt(0)), /10/);
     });
 
     await editCell(nb.cellAt(0), "print(20)\n");
-    assert.match(
+    NodeAssert.match(
       nb.cellAt(0).document.getText(),
       /print\(20\)/,
       "cell text should be updated to print(20)",
@@ -41,7 +41,7 @@ suite("harness: write → open → run → edit → run", () => {
 
     await runCell(nb.cellAt(0));
     await ctx.waitUntil(() => {
-      assert.match(cellOutputText(nb.cellAt(0)), /20/);
+      NodeAssert.match(cellOutputText(nb.cellAt(0)), /20/);
     });
   });
 });
