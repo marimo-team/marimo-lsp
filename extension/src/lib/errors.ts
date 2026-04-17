@@ -40,9 +40,8 @@ export function prettyErrorMessage(
       return formatSQLError(error);
     case "unknown":
       return `${error.error_type ? `${error.error_type}: ` : ""}${error.msg}`;
-    default: {
-      unreachable(error);
-    }
+    default:
+      return unreachable(error);
   }
 }
 

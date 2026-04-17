@@ -73,7 +73,8 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
               Effect.gen(function* () {
                 const request = extractExecuteCodeRequest(rawCells, LanguageId);
                 if (Option.isNone(request)) {
-                  return yield* Effect.logWarning("Empty execution request");
+                  yield* Effect.logWarning("Empty execution request");
+                  return;
                 }
 
                 const notebook = MarimoNotebookDocument.from(rawNotebook);

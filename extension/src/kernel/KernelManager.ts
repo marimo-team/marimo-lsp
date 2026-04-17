@@ -168,9 +168,10 @@ export class KernelManager extends Effect.Service<KernelManager>()(
                   const editor = yield* code.window.getActiveNotebookEditor();
 
                   if (Option.isNone(editor)) {
-                    return yield* Effect.logWarning(
+                    yield* Effect.logWarning(
                       "No active notebook editor to navigate to cell",
                     );
+                    return;
                   }
 
                   const cellIndex = MarimoNotebookDocument.from(

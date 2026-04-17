@@ -14,11 +14,13 @@ export default function (): Plugin {
       if (id === "virtual:stylesheet") {
         return "\0virtual:stylesheet";
       }
+      return undefined;
     },
     load(id) {
       if (id === "\0virtual:stylesheet") {
         return `export default ${needle};`;
       }
+      return undefined;
     },
     async generateBundle(_, bundle) {
       const assets = Object.values(bundle).filter((e) => e.type === "asset");

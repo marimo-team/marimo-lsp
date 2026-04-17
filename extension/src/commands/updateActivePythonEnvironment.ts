@@ -51,10 +51,11 @@ export const updateActivePythonEnvironment = Effect.fn(
     const venvResult = yield* uv.syncScript({ script }).pipe(Effect.either);
 
     if (Either.isLeft(venvResult)) {
-      return yield* showErrorAndPromptLogs(
+      yield* showErrorAndPromptLogs(
         "Failed to synchronize virtual environment for the current notebook.",
         { channel: uv.channel },
       );
+      return;
     }
 
     executable = getVenvPythonPath(venvResult.right);
