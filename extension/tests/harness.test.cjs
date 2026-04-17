@@ -13,6 +13,11 @@ const {
 
 suite("harness: write → open → run → edit → run", () => {
   test("round-trips a single cell through the shared-venv python controller", async function () {
+    // Bumped above the 30s mocha default because this is the first test to
+    // bind a kernel on a fresh runner, and the cold-start cost on Linux CI
+    // (post-venv bootstrap kernel spin-up) sometimes exceeds 30s even
+    // though subsequent tests reuse the warm kernel in seconds.
+    this.timeout(60_000);
     await using ctx = createTestContext();
     const nb = await ctx.writeAndOpenNotebook();
 
