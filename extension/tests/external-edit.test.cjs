@@ -397,3 +397,107 @@ suite("external edit output preservation (issue #497)", function () {
     );
   });
 });
+
+// Issue #323: when an external tool (e.g. Ruff) reformats a cell, dependent
+// cells used to re-run before the definition cell had re-run, producing a
+// NameError. Before our fix, stableIds churned on every deserialize so the
+// kernel's dependency graph lost track of cells — dependents got scheduled
+// against the wrong upstream identity.
+const ISSUE_323_INITIAL = `# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "marimo",
+# ]
+# ///
+
+import marimo
+
+app = marimo.App()
+
+
+@app.cell
+def _():
+    x = 5
+    return (x,)
+
+
+@app.cell
+def _(x):
+    print(x)
+    return
+
+
+if __name__ == "__main__":
+    app.run()
+`;
+
+// Semantically equivalent — just a formatter-style trailing comment on the
+// definition cell. Content hash changes, behavior does not.
+const ISSUE_323_REFORMATTED = `# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "marimo",
+# ]
+# ///
+
+import marimo
+
+app = marimo.App()
+
+
+@app.cell
+def _():
+    x = 5  # reformatted by tooling
+    return (x,)
+
+
+@app.cell
+def _(x):
+    print(x)
+    return
+
+
+if __name__ == "__main__":
+    app.run()
+`;
+
+suite("external edit cell dependencies (issue #323)", function () {
+  this.timeout(20_000);
+
+  test("reformatting a definition cell externally does not break dependents with NameError", async function () {
+    await using ctx = createTestContext();
+    const nb = await ctx.writeAndOpenNotebook(ISSUE_323_INITIAL);
+    await selectKernel(nb);
+    await runAllCells(nb);
+
+    NodeAssert.match(
+      cellOutputText(nb.cellAt(1)),
+      /5/,
+      "baseline: dependent cell prints 5",
+    );
+
+    // External reformat — changes cell 0's bytes but not its semantics.
+    await NodeFs.writeFile(nb.uri.fsPath, ISSUE_323_REFORMATTED, "utf8");
+    await ctx.waitUntil(() =>
+      NodeAssert.match(
+        nb.cellAt(0).document.getText(),
+        /reformatted by tooling/,
+      ),
+    );
+
+    // Let marimo's autorun settle if it fires on the reload.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    const depOutput = cellOutputText(nb.cellAt(1));
+    NodeAssert.doesNotMatch(
+      depOutput,
+      /NameError/,
+      `dependent cell must not raise NameError. Got: ${depOutput}`,
+    );
+    NodeAssert.match(
+      depOutput,
+      /5/,
+      `dependent cell should still show "5". Got: ${depOutput}`,
+    );
+  });
+});
