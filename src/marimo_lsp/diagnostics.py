@@ -17,7 +17,7 @@ from marimo._types.ids import VariableName
 
 from marimo_lsp import _rules
 from marimo_lsp.loggers import get_logger
-from marimo_lsp.utils import decode_marimo_cell_metadata
+from marimo_lsp.utils import decode_marimo_cell_metadata, find_text_document
 
 logger = get_logger()
 
@@ -135,7 +135,7 @@ class NotebookGraphUpdater:
             cell_names[cell_id] = name
             cell_index[cell_id] = idx
 
-            doc = self._server.workspace.text_documents.get(cell.document)
+            doc = find_text_document(self._server.workspace, cell.document)
             source = doc.source if doc else ""
 
             # Skip unchanged cells

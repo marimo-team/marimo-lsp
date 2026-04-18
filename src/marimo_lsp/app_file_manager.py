@@ -9,7 +9,7 @@ from urllib.parse import unquote
 from marimo._ast.app import App, InternalApp
 from pygls.uris import to_fs_path
 
-from marimo_lsp.utils import decode_marimo_cell_metadata
+from marimo_lsp.utils import decode_marimo_cell_metadata, find_text_document
 
 if TYPE_CHECKING:
     import lsprotocol.types as lsp
@@ -157,7 +157,7 @@ def sync_app_with_workspace(
         if cell_id is None:
             continue
         cell_ids.append(cell_id)
-        document = workspace.text_documents.get(cell.document)
+        document = find_text_document(workspace, cell.document)
         if document:
             codes.append(document.source or "")
         else:

@@ -61,7 +61,7 @@
     "vite-plus": "latest",
     "vitest": "npm:@voidzero-dev/vite-plus-test@^0.1.18",
     "vscode-jsonrpc": "^8.2.1",
-    "vscode-languageclient": "10.0.0-next.18",
+    "vscode-languageclient": "10.0.0-next.21",
     "vscode-languageserver-protocol": "^3.17.5"
   },
   "contributes": {
@@ -499,9 +499,6 @@
   },
   "packageManager": "pnpm@10.9.0",
   "pnpm": {
-    "patchedDependencies": {
-      "vscode-languageclient@10.0.0-next.18": "patches/vscode-languageclient@10.0.0-next.18.patch"
-    },
     "overrides": {
       "vite": "npm:@voidzero-dev/vite-plus-core@latest",
       "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
