@@ -580,13 +580,19 @@ export function buildCellOutputs(
     }
   }
 
-  // Create NotebookCellOutputs for each channel with items
+  // Create NotebookCellOutputs for each channel with items.
+  // Order matches marimo's web frontend: rich output above console streams so
+  // reactive UI elements stay anchored when a cell also prints (#516).
   if (errorItems.length > 0) {
     outputs.push(
       new code.NotebookCellOutput(errorItems, {
         channel: "marimo-error",
       }),
     );
+  }
+
+  if (outputItems.length > 0) {
+    outputs.push(new code.NotebookCellOutput(outputItems));
   }
 
   if (stdoutItems.length > 0) {
@@ -611,10 +617,6 @@ export function buildCellOutputs(
         channel: "stdin",
       }),
     );
-  }
-
-  if (outputItems.length > 0) {
-    outputs.push(new code.NotebookCellOutput(outputItems));
   }
 
   return outputs;

@@ -159,6 +159,15 @@ exports[`buildCellOutputs > handles mixed output and console streams 1`] = `
   {
     "items": [
       {
+        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"text/html","channel":"output","data":"<div>Result: 42</div>","timestamp":2},"consoleOutputs":[],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
+        "mime": "application/vnd.marimo.ui+json",
+      },
+    ],
+    "metadata": undefined,
+  },
+  {
+    "items": [
+      {
         "data": "Processing...
 ",
         "mime": "application/vnd.code.notebook.stdout",
@@ -179,15 +188,6 @@ exports[`buildCellOutputs > handles mixed output and console streams 1`] = `
     "metadata": {
       "channel": "stderr",
     },
-  },
-  {
-    "items": [
-      {
-        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"text/html","channel":"output","data":"<div>Result: 42</div>","timestamp":2},"consoleOutputs":[],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
-        "mime": "application/vnd.marimo.ui+json",
-      },
-    ],
-    "metadata": undefined,
   },
 ]
 `;
@@ -322,6 +322,15 @@ exports[`buildCellOutputs > handles stdout + stderr + output together 1`] = `
   {
     "items": [
       {
+        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"application/json","channel":"output","data":{"result":"success","value":100},"timestamp":3},"consoleOutputs":[],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
+        "mime": "application/vnd.marimo.ui+json",
+      },
+    ],
+    "metadata": undefined,
+  },
+  {
+    "items": [
+      {
         "data": "Starting computation...
 ",
         "mime": "application/vnd.code.notebook.stdout",
@@ -347,15 +356,6 @@ exports[`buildCellOutputs > handles stdout + stderr + output together 1`] = `
     "metadata": {
       "channel": "stderr",
     },
-  },
-  {
-    "items": [
-      {
-        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"application/json","channel":"output","data":{"result":"success","value":100},"timestamp":3},"consoleOutputs":[],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
-        "mime": "application/vnd.marimo.ui+json",
-      },
-    ],
-    "metadata": undefined,
   },
 ]
 `;
@@ -413,6 +413,15 @@ exports[`buildCellOutputs > separates console outputs from main output correctly
   {
     "items": [
       {
+        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"text/html","channel":"output","data":"<div>Main output</div>","timestamp":1},"consoleOutputs":[],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
+        "mime": "application/vnd.marimo.ui+json",
+      },
+    ],
+    "metadata": undefined,
+  },
+  {
+    "items": [
+      {
         "data": "Console output",
         "mime": "application/vnd.code.notebook.stdout",
       },
@@ -420,15 +429,6 @@ exports[`buildCellOutputs > separates console outputs from main output correctly
     "metadata": {
       "channel": "stdout",
     },
-  },
-  {
-    "items": [
-      {
-        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":{"mimetype":"text/html","channel":"output","data":"<div>Main output</div>","timestamp":1},"consoleOutputs":[],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
-        "mime": "application/vnd.marimo.ui+json",
-      },
-    ],
-    "metadata": undefined,
   },
 ]
 `;
