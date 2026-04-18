@@ -1,5 +1,3 @@
-import * as process from "node:process";
-
 import { Data } from "effect";
 
 export class AssertionError extends Data.TaggedError("AssertionError")<{
@@ -34,11 +32,6 @@ export function assert(
   message?: string,
 ): asserts expression {
   if (!expression) {
-    if (process.env.NODE_ENV === "development") {
-      // oxlint-disable-next-line no-debugger: Triggers a breakpoint in development; stripped out in production builds.
-      debugger;
-    }
-
     throw new AssertionError({ message });
   }
 }
