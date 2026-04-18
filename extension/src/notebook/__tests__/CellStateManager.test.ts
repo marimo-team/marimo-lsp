@@ -276,6 +276,336 @@ describe("CellStateManager", () => {
   );
 
   it.effect(
+    "clears stale when queued cell is edited and re-run (regression: #352)",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const cellStateManager = yield* CellStateManager;
+
+        // Cell B, depends on a slow cell A elsewhere. Starts with original code.
+        const cellDataB = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "y = x + 1",
+          "python",
+        );
+        cellDataB.metadata = { stableId: "cell-b" };
+
+        const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+          data: new code.NotebookData([cellDataB]),
+        });
+
+        yield* ctx.vscode.addNotebookDocument(editor.notebook);
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
+        yield* TestClock.adjust("10 millis");
+
+        const notebook = MarimoNotebookDocument.from(editor.notebook);
+        const cellB = notebook.cellAt(0);
+
+        // 1. B is queued as a reactive descendant of slow cell A — the kernel
+        //    acks "queued" for B with the original code.
+        yield* cellStateManager.recordExecution(cellB);
+        yield* TestClock.adjust("10 millis");
+        expect(yield* cellStateManager.isCellStale(cellB)).toBe(false);
+
+        // 2. User edits B while it is still queued waiting for A to finish.
+        //    The document text changes; fire a notebookChange so derivations run.
+        cellDataB.value = "y = x + 2";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
+        yield* TestClock.adjust("10 millis");
+
+        // Editor code now differs from what the kernel last ran → stale.
+        expect(yield* cellStateManager.isCellStale(cellB)).toBe(true);
+
+        // 3. User presses Ctrl+Enter on B. Extension sends a new run request
+        //    with the new code; kernel acks "queued" → recordExecution fires.
+        yield* cellStateManager.recordExecution(cellB);
+        yield* TestClock.adjust("10 millis");
+
+        // 4. Stale should clear immediately — regardless of whether the kernel
+        //    happens to run B once more with the old code under the hood.
+        expect(yield* cellStateManager.isCellStale(cellB)).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "never-executed cell is not stale",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const cellStateManager = yield* CellStateManager;
+
+        const cellData = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "x = 1",
+          "python",
+        );
+        cellData.metadata = { stableId: "cell-0" };
+
+        const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+          data: new code.NotebookData([cellData]),
+        });
+        yield* ctx.vscode.addNotebookDocument(editor.notebook);
+        yield* TestClock.adjust("10 millis");
+
+        const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
+        expect(yield* cellStateManager.isCellStale(cell)).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "re-executing after invalidateCell clears stale",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const cellStateManager = yield* CellStateManager;
+
+        const cellData = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "x = 1",
+          "python",
+        );
+        cellData.metadata = { stableId: "cell-0" };
+
+        const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+          data: new code.NotebookData([cellData]),
+        });
+        yield* ctx.vscode.addNotebookDocument(editor.notebook);
+        yield* TestClock.adjust("10 millis");
+
+        const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
+
+        yield* cellStateManager.recordExecution(cell);
+        yield* cellStateManager.invalidateCell(cell);
+        yield* TestClock.adjust("10 millis");
+        expect(yield* cellStateManager.isCellStale(cell)).toBe(true);
+
+        yield* cellStateManager.recordExecution(cell);
+        yield* TestClock.adjust("10 millis");
+        expect(yield* cellStateManager.isCellStale(cell)).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "reverting cell text to last-executed code clears stale (regression: #309, #323)",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const cellStateManager = yield* CellStateManager;
+
+        const cellData = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "x = 1",
+          "python",
+        );
+        cellData.metadata = { stableId: "cell-0" };
+
+        const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+          data: new code.NotebookData([cellData]),
+        });
+        yield* ctx.vscode.addNotebookDocument(editor.notebook);
+        yield* TestClock.adjust("10 millis");
+
+        const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
+
+        yield* cellStateManager.recordExecution(cell);
+        yield* TestClock.adjust("10 millis");
+
+        // Edit away — cell becomes stale.
+        cellData.value = "x = 2";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
+        yield* TestClock.adjust("10 millis");
+        expect(yield* cellStateManager.isCellStale(cell)).toBe(true);
+
+        // Undo back to the executed text — stale clears without re-running.
+        cellData.value = "x = 1";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
+        yield* TestClock.adjust("10 millis");
+        expect(yield* cellStateManager.isCellStale(cell)).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "editing one cell does not affect another cell's stale state",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const cellStateManager = yield* CellStateManager;
+
+        const cellDataA = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "a = 1",
+          "python",
+        );
+        cellDataA.metadata = { stableId: "cell-a" };
+        const cellDataB = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "b = 2",
+          "python",
+        );
+        cellDataB.metadata = { stableId: "cell-b" };
+
+        const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+          data: new code.NotebookData([cellDataA, cellDataB]),
+        });
+        yield* ctx.vscode.addNotebookDocument(editor.notebook);
+        yield* TestClock.adjust("10 millis");
+
+        const notebook = MarimoNotebookDocument.from(editor.notebook);
+        const cellA = notebook.cellAt(0);
+        const cellB = notebook.cellAt(1);
+
+        yield* cellStateManager.recordExecution(cellA);
+        yield* cellStateManager.recordExecution(cellB);
+        yield* TestClock.adjust("10 millis");
+
+        // Edit A only; B must remain not-stale.
+        cellDataA.value = "a = 99";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
+        yield* TestClock.adjust("10 millis");
+
+        expect(yield* cellStateManager.isCellStale(cellA)).toBe(true);
+        expect(yield* cellStateManager.isCellStale(cellB)).toBe(false);
+
+        // Invalidating A must also not touch B.
+        yield* cellStateManager.invalidateCell(cellA);
+        yield* TestClock.adjust("10 millis");
+        expect(yield* cellStateManager.isCellStale(cellB)).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "hasStaleCells context flips true on invalidate and back to false on re-execute",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      const hasStaleCellsContextValues = (
+        executions: ReadonlyArray<{
+          command: string;
+          args: ReadonlyArray<unknown>;
+        }>,
+      ): ReadonlyArray<boolean> =>
+        executions.flatMap((e) =>
+          e.command === "setContext" &&
+          e.args[0] === "marimo.notebook.hasStaleCells" &&
+          typeof e.args[1] === "boolean"
+            ? [e.args[1]]
+            : [],
+        );
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const cellStateManager = yield* CellStateManager;
+
+        const cellData = new code.NotebookCellData(
+          code.NotebookCellKind.Code,
+          "x = 1",
+          "python",
+        );
+        cellData.metadata = { stableId: "cell-0" };
+
+        const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+          data: new code.NotebookData([cellData]),
+        });
+        yield* ctx.vscode.addNotebookDocument(editor.notebook);
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
+        yield* TestClock.adjust("10 millis");
+
+        const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
+
+        // Start from a clean slate, then record the initial execution.
+        yield* cellStateManager.recordExecution(cell);
+        yield* TestClock.adjust("10 millis");
+        yield* Ref.update(ctx.vscode.executions, () => []);
+
+        // Invalidate → stale → context must flip to true.
+        yield* cellStateManager.invalidateCell(cell);
+        yield* TestClock.adjust("10 millis");
+        expect(
+          hasStaleCellsContextValues(yield* Ref.get(ctx.vscode.executions)).at(
+            -1,
+          ),
+        ).toBe(true);
+
+        // Re-execute → stale clears → context must flip back to false.
+        yield* cellStateManager.recordExecution(cell);
+        yield* TestClock.adjust("10 millis");
+        expect(
+          hasStaleCellsContextValues(yield* Ref.get(ctx.vscode.executions)).at(
+            -1,
+          ),
+        ).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
     "does not mark cell stale when content matches last executed (undo case)",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
