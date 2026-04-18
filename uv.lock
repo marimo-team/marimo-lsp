@@ -627,10 +627,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "jupytext", specifier = ">=1.17.2" },
-    { name = "lsprotocol", specifier = ">=2025.0.0" },
+    { name = "jupytext", specifier = "==1.19.1" },
+    { name = "lsprotocol", specifier = "==2025.0.0" },
     { name = "marimo", specifier = "==0.23.1" },
-    { name = "pygls", specifier = ">=2.0.0" },
+    { name = "pygls", specifier = "==2.1.1" },
 ]
 
 [package.metadata.requires-dev]
