@@ -16,14 +16,18 @@ import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
 /**
  * Tracks cell execution state to derive staleness.
  *
- * A cell is stale when its current code differs from what the kernel
- * last executed, or when it has never been executed. Staleness is
- * derived from a single piece of state per cell: the code that was
- * last sent to the kernel (`Option<string>`).
+ * Staleness is always *relative to the kernel*: a cell is stale only if
+ * the kernel has seen it and its output no longer reflects the current
+ * code. A cell the kernel has never seen is not stale — there's nothing
+ * to be stale against. This keeps a freshly opened notebook with no
+ * kernel from lighting up every cell with a stale indicator.
+ *
+ * Derived from a single piece of state per cell: the code that was last
+ * sent to the kernel (`Option<string>`).
  *
  * - No entry → kernel hasn't seen this cell → not stale
- * - `None` → kernel invalidated (upstream dependency changed) → stale
- * - `Some(code)` → output reflects `code` → stale iff `code !== currentCode`
+ * - `Some(None)` → kernel invalidated (upstream dependency changed) → stale
+ * - `Some(Some(code))` → output reflects `code` → stale iff `code !== currentCode`
  *
  * Also handles cell deletion notifications to the backend and
  * stableId assignment for cells added from the UI.
@@ -259,10 +263,12 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
         /**
          * Check if a cell is stale.
          *
-         * A cell is stale when:
-         * - It has never been executed (`None`)
-         * - Its code changed since last execution (`Some(old) !== current`)
-         * - The kernel invalidated it via staleInputs (`None`)
+         * A cell is stale when the kernel has seen it and its output no
+         * longer reflects the current code:
+         * - Kernel invalidated it via staleInputs (`Some(None)`)
+         * - Its code changed since last execution (`Some(Some(old)) !== current`)
+         *
+         * A cell the kernel has never seen is *not* stale.
          */
         isCellStale(cell: MarimoNotebookCell) {
           return isCellStale(cell, { lastExecutedCodeRef });
