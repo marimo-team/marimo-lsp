@@ -245,6 +245,17 @@ export class KernelManager extends Effect.Service<KernelManager>()(
   },
 ) {}
 
+function isValueUpdateEcho(
+  operation: NotificationOf<"send-ui-element-message">,
+): boolean {
+  const message = operation.message;
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    message.type === "marimo-ui-value-update"
+  );
+}
+
 function processOperation(
   { notebookUri, operation }: MarimoOperation,
   scratchOps: PubSub.PubSub<CellOperationNotification>,
@@ -414,8 +425,25 @@ function processSessionOperation(
       // Forward to renderer (front end) (non-blocking)
       case "remove-ui-elements":
       case "function-call-result":
-      case "send-ui-element-message":
       case "model-lifecycle": {
+        void runPromise(renderer.postMessage(operation, editor));
+        break;
+      }
+      case "send-ui-element-message": {
+        // Drop `marimo-ui-value-update` echoes. The kernel broadcasts
+        // them for every UI value change, but over the LSP transport
+        // they arrive ~one round-trip stale and clobber the user's
+        // in-progress state (visible slider snap). Marimo-lsp doesn't
+        // yet surface code_mode, which is the only path that
+        // genuinely needs these echoes, so dropping them entirely is
+        // safe. Upstream (marimo-team/marimo) is gating this broadcast
+        // behind a `notify_frontend` flag; once released, this guard
+        // can be removed. Non-value-update widget messages
+        // (anywidget comms, custom plugin messages) still forward.
+        // See issue #515.
+        if (isValueUpdateEcho(operation)) {
+          break;
+        }
         void runPromise(renderer.postMessage(operation, editor));
         break;
       }
