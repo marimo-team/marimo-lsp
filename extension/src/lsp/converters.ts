@@ -49,9 +49,13 @@ export function toLocationResult(
   if (!item) return undefined;
   if (Array.isArray(item)) {
     if (item.length === 0) return [];
+    // SAFETY: LSP spec guarantees a definition response array is homogeneous,
+    // so `item[0]`'s discriminator applies to every element.
     if (lsp.LocationLink.is(item[0])) {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       return (item as lsp.LocationLink[]).map((l) => toLocationLink(code, l));
     }
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     return (item as lsp.Location[]).map((l) => toLocation(code, l));
   }
   return toLocation(code, item);

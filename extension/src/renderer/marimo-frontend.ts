@@ -120,8 +120,12 @@ export const ConsoleOutput: React.FC<{
   onSubmitDebugger: (text: string, index: number) => void;
 }> = untyped.ConsoleOutput;
 
+// SAFETY: `untyped` is an intentional escape hatch for marimo's frontend
+// exports (see module docstring + marimo-frontend-untyped.js). Each re-export
+// asserts the expected shape at this single boundary.
 export const TooltipProvider: React.FC<
   React.PropsWithChildren<{ container: HTMLElement | null }>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
 > = untyped.TooltipProvider as React.FC<
   React.PropsWithChildren<{ container: HTMLElement | null }>
 >;

@@ -273,10 +273,17 @@ function activateDebugpy(
           ? consoleOutput
           : [consoleOutput];
         for (const output of outputs) {
-          const out = output as Record<string, unknown>;
-          if (out.channel === "stdout" && typeof out.data === "string") {
+          if (
+            typeof output !== "object" ||
+            output === null ||
+            !("channel" in output) ||
+            !("data" in output)
+          ) {
+            continue;
+          }
+          if (output.channel === "stdout" && typeof output.data === "string") {
             try {
-              const json: unknown = JSON.parse(out.data.trim());
+              const json: unknown = JSON.parse(output.data.trim());
               const decoded = Schema.decodeUnknownOption(DebugpyState)(json);
               if (Option.isSome(decoded)) {
                 result = decoded.value;

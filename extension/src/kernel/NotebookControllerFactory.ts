@@ -277,6 +277,10 @@ export class PythonController {
     return NotebookControllerId(`marimo-${env.path}`);
   }
   get id(): NotebookControllerId {
+    // SAFETY: `this.#inner` is constructed with an id produced by the static
+    // getId() helper below, which runs the string through the
+    // NotebookControllerId brand constructor.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     return this.#inner.id as NotebookControllerId;
   }
   mutateDescription(description: string) {

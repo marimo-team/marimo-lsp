@@ -10,6 +10,10 @@ import {
 } from "effect";
 
 import { partialService } from "../../__tests__/__utils__/partial.ts";
+import {
+  marimoConfigFixture,
+  notebookId,
+} from "../../lib/__tests__/branded.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import type { VsCode } from "../../platform/VsCode.ts";
@@ -19,35 +23,25 @@ import type { MarimoConfig } from "../../types.ts";
 import { ConfigContextManager } from "../ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";
 
-const NOTEBOOK_URI = "file:///test/notebook.py" as NotebookId;
-const NOTEBOOK_URI_1 = "file:///test/notebook1.py" as NotebookId;
-const NOTEBOOK_URI_2 = "file:///test/notebook2.py" as NotebookId;
+const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
+const NOTEBOOK_URI_1 = notebookId("file:///test/notebook1.py");
+const NOTEBOOK_URI_2 = notebookId("file:///test/notebook2.py");
 
-const AUTORUN_CONFIG = {
-  runtime: {
-    on_cell_change: "autorun",
-  },
-} as MarimoConfig;
+const AUTORUN_CONFIG = marimoConfigFixture({
+  runtime: { on_cell_change: "autorun" },
+});
 
-const LAZY_CONFIG = {
-  runtime: {
-    on_cell_change: "lazy",
-  },
-} as MarimoConfig;
+const LAZY_CONFIG = marimoConfigFixture({
+  runtime: { on_cell_change: "lazy" },
+});
 
-const AUTO_RELOAD_LAZY_CONFIG = {
-  runtime: {
-    on_cell_change: "autorun",
-    auto_reload: "lazy",
-  },
-} as MarimoConfig;
+const AUTO_RELOAD_LAZY_CONFIG = marimoConfigFixture({
+  runtime: { on_cell_change: "autorun", auto_reload: "lazy" },
+});
 
-const AUTO_RELOAD_AUTORUN_CONFIG = {
-  runtime: {
-    on_cell_change: "autorun",
-    auto_reload: "autorun",
-  },
-} as MarimoConfig;
+const AUTO_RELOAD_AUTORUN_CONFIG = marimoConfigFixture({
+  runtime: { on_cell_change: "autorun", auto_reload: "autorun" },
+});
 
 // Test context that tracks VSCode context calls
 class TestContext extends Effect.Service<TestContext>()("TestContext", {

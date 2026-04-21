@@ -16,7 +16,12 @@ export type NotebookId = Brand.Branded<string, "NotebookId">;
 export type NotebookCellId = CellId;
 
 const NotebookId = Brand.nominal<NotebookId>();
+// SAFETY: brand smart constructors for TypedString<"CellId"> / TypedString<"VariableName">
+// (openapi codegen types, not Effect Brand). No runtime check — callers pass
+// strings originating from the LSP's typed responses.
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion
 const NotebookCellId = (id: string) => id as CellId;
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion
 const VariableName = (name: string) => name as VariableName;
 
 /**

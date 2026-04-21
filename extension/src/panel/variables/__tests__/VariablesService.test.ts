@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, Stream, TestClock } from "effect";
 
-import type { NotebookId } from "../../../schemas/MarimoNotebookDocument.ts";
+import { notebookId } from "../../../lib/__tests__/branded.ts";
 import type {
   VariablesNotification,
   VariableValuesNotification,
@@ -16,18 +16,17 @@ const withTestCtx = () =>
     return { layer };
   });
 
-// Helper to create NotebookUri
-function makeNotebookUri(path: string): NotebookId {
-  return path as NotebookId;
-}
-const NOTEBOOK_URI = makeNotebookUri("file:///test/notebook.py");
+const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 
-// Mock data factories
+// Mock data factories. SAFETY: the inputs are plain-string variants of the
+// branded variables shape; tests don't need to construct real CellId/VariableName
+// brands, and re-shaping here is an authorized test escape hatch.
 function createMockVariablesOp(
   variables: Array<{ name: string; declared_by: string[]; used_by: string[] }>,
 ): VariablesNotification {
   return {
     op: "variables",
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     variables: variables as VariablesNotification["variables"],
   };
 }
@@ -41,6 +40,7 @@ function createMockVariableValuesOp(
 ): VariableValuesNotification {
   return {
     op: "variable-values",
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     variables: variables as VariableValuesNotification["variables"],
   };
 }
@@ -159,8 +159,8 @@ it.effect(
 
     const result = yield* Effect.gen(function* () {
       const service = yield* VariablesService;
-      const notebook1 = makeNotebookUri("file:///test/notebook1.py");
-      const notebook2 = makeNotebookUri("file:///test/notebook2.py");
+      const notebook1 = notebookId("file:///test/notebook1.py");
+      const notebook2 = notebookId("file:///test/notebook2.py");
 
       const mockOp1 = createMockVariablesOp([
         { name: "a", declared_by: ["cell1"], used_by: [] },

@@ -61,6 +61,8 @@ const makeVsCodeLogger = (channel: OutputChannel) => {
     ERROR: channel.error.bind(channel),
     FATAL: channel.error.bind(channel),
   } as const;
+  const isLevel = (label: string): label is Level =>
+    Object.hasOwn(mapping, label);
 
   return Logger.make((opts) => {
     const messages = ReadonlyArray.ensure(opts.message);
@@ -119,8 +121,9 @@ const makeVsCodeLogger = (channel: OutputChannel) => {
       }
     }
 
-    const level = opts.logLevel.label as Level;
-    const log = mapping[level] ?? channel.info.bind(channel);
+    const log = isLevel(opts.logLevel.label)
+      ? mapping[opts.logLevel.label]
+      : channel.info.bind(channel);
     log(lines.join("\n"));
   });
 };

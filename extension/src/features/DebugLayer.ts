@@ -8,6 +8,11 @@ import { CellStateManager } from "../notebook/CellStateManager.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { VariablesService } from "../panel/variables/VariablesService.ts";
 
+declare global {
+  // oxlint-disable-next-line eslint/no-var
+  var __marimoDebug: Record<string, unknown> | undefined;
+}
+
 /**
  * Debug layer that exposes extension internals on `globalThis` when
  * `MARIMO_DEBUG=1`. This enables runtime inspection via the Node inspector
@@ -20,7 +25,7 @@ export const DebugLayerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     if (process.env.MARIMO_DEBUG !== "1") return;
 
-    (globalThis as any).__marimoDebug = {
+    globalThis.__marimoDebug = {
       controllerRegistry: yield* ControllerRegistry,
       cellStateManager: yield* CellStateManager,
       executionRegistry: yield* ExecutionRegistry,

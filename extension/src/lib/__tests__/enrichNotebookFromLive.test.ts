@@ -59,6 +59,11 @@ describe("enrichNotebookFromLive", () => {
     });
 
     it("preserves outputs when cells are identical", () => {
+      // SAFETY: test fixture — the enrich logic under test only reads `.items`,
+      // so a minimal object is sufficient and avoids constructing a full
+      // vscode.NotebookCellOutput (which requires NotebookCellOutputItems with
+      // Uint8Array buffers).
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       const mockOutput = {
         items: [{ data: "output data" }],
       } as unknown as vscode.NotebookCellOutput;

@@ -78,10 +78,12 @@ export const createConfigToggle = <T extends string>({
 
     // Build nested config object from path (e.g., "runtime.on_cell_change" -> { runtime: { on_cell_change: value }})
     const pathParts = configPath.split(".");
-    const partialConfig = pathParts.reduceRight(
-      (acc, part) => ({ [part]: acc }),
-      newValue as unknown as Record<string, unknown>,
-    );
+    let partialConfig: Record<string, unknown> = {
+      [pathParts[pathParts.length - 1]]: newValue,
+    };
+    for (let i = pathParts.length - 2; i >= 0; i--) {
+      partialConfig = { [pathParts[i]]: partialConfig };
+    }
 
     yield* configService.updateConfig(notebook.value.id, partialConfig);
 

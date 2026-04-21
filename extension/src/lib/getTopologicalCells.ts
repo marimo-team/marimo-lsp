@@ -58,7 +58,13 @@ export function getTopologicalCells(
       variables.value,
     );
 
-    const sortedCells = sortedIds.map((id) => cellMap.get(id)!);
+    // `getTopologicalCellIds` does not strictly guarantee a permutation of
+    // its input (cyclic graphs can drop cells; stale variables can introduce
+    // unknown IDs), so filter out any lookups that miss the map instead of
+    // assuming presence.
+    const sortedCells = sortedIds
+      .map((id) => cellMap.get(id))
+      .filter((cell): cell is vscode.NotebookCell => cell !== undefined);
 
     return [...sortedCells, ...cellsWithoutIds];
   });
