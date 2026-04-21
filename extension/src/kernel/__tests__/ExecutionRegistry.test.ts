@@ -15,6 +15,10 @@ import {
   ExecutionRegistry,
 } from "../../kernel/ExecutionRegistry.ts";
 import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
+import {
+  cellId,
+  UNSAFE_castForNegativeTest,
+} from "../../lib/__tests__/branded.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { CellStateManager } from "../../notebook/CellStateManager.ts";
 import { VsCode } from "../../platform/VsCode.ts";
@@ -22,7 +26,6 @@ import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../../schemas/MarimoNotebookDocument.ts";
-import type { NotebookCellId } from "../../schemas/MarimoNotebookDocument.ts";
 import type {
   CellOperationNotification,
   CellRuntimeState,
@@ -57,7 +60,7 @@ const withTestCtx = Effect.fn(function* (
   return { vscode, layer };
 });
 
-const CELL_ID = "test-cell-id" as NotebookCellId;
+const CELL_ID = cellId("test-cell-id");
 
 // Convert Uint8Array data to strings for readable snapshots
 function normalizeOutputsForSnapshot(
@@ -547,7 +550,7 @@ describe("buildCellOutputs", () => {
         output: {
           mimetype: "text/plain",
           channel: "output",
-          data: null as unknown as string,
+          data: UNSAFE_castForNegativeTest<string>(null),
         },
       };
 
@@ -570,7 +573,7 @@ describe("buildCellOutputs", () => {
         output: {
           mimetype: "text/html",
           channel: "output",
-          data: undefined as unknown as string,
+          data: UNSAFE_castForNegativeTest<string>(undefined),
         },
       };
 
@@ -702,7 +705,7 @@ describe("buildCellOutputs", () => {
         output: {
           mimetype: "application/json",
           channel: "output",
-          data: 0 as unknown as string,
+          data: UNSAFE_castForNegativeTest<string>(0),
           timestamp: 0,
         },
       };
@@ -725,7 +728,7 @@ describe("buildCellOutputs", () => {
         output: {
           mimetype: "application/json",
           channel: "output",
-          data: false as unknown as string,
+          data: UNSAFE_castForNegativeTest<string>(false),
           timestamp: 0,
         },
       };

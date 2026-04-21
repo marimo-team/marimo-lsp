@@ -6,6 +6,7 @@ import {
   createTestTextDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { UNSAFE_castForNegativeTest } from "../../lib/__tests__/branded.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import {
   toCodeAction,
@@ -45,9 +46,12 @@ import {
   toWorkspaceEdit,
 } from "../converters.ts";
 
-const numericEntries = (e: Record<string, unknown>): Array<[string, number]> =>
+const numericEntries = <E extends Record<string, unknown>>(
+  e: E,
+): Array<[string, Extract<E[keyof E], number>]> =>
   Object.entries(e).filter(
-    (entry): entry is [string, number] => typeof entry[1] === "number",
+    (entry): entry is [string, Extract<E[keyof E], number>] =>
+      typeof entry[1] === "number",
   );
 
 const stringEntries = (e: Record<string, unknown>): Array<[string, string]> =>
@@ -400,7 +404,7 @@ describe("toSymbolKind", () => {
       const mapping = Object.fromEntries(
         numericEntries(lsp.SymbolKind).map(([name, value]) => [
           name,
-          toSymbolKind(value as lsp.SymbolKind),
+          toSymbolKind(value),
         ]),
       );
       expect(mapping).toMatchInlineSnapshot(`
@@ -445,7 +449,7 @@ describe("toCompletionItemKind", () => {
       const mapping = Object.fromEntries(
         numericEntries(lsp.CompletionItemKind).map(([name, value]) => [
           name,
-          toCompletionItemKind(code, value as lsp.CompletionItemKind),
+          toCompletionItemKind(code, value),
         ]),
       );
       expect(mapping).toMatchInlineSnapshot(`
@@ -537,7 +541,7 @@ describe("toVsCodeDiagnosticSeverity", () => {
       const mapping = Object.fromEntries(
         numericEntries(lsp.DiagnosticSeverity).map(([name, value]) => [
           name,
-          toVsCodeDiagnosticSeverity(code, value as lsp.DiagnosticSeverity),
+          toVsCodeDiagnosticSeverity(code, value),
         ]),
       );
       expect(mapping).toMatchInlineSnapshot(`
@@ -581,7 +585,7 @@ describe("toDocumentHighlightKind", () => {
       const mapping = Object.fromEntries(
         numericEntries(lsp.DocumentHighlightKind).map(([name, value]) => [
           name,
-          toDocumentHighlightKind(value as lsp.DocumentHighlightKind),
+          toDocumentHighlightKind(value),
         ]),
       );
       expect(mapping).toMatchInlineSnapshot(`
@@ -945,7 +949,7 @@ describe("toSignatureHelp", () => {
       const result = toSignatureHelp(code, {
         signatures: [{ label: "fn()" }],
         activeSignature: 0,
-        activeParameter: null as any,
+        activeParameter: UNSAFE_castForNegativeTest<number>(null),
       });
       expect(result.activeParameter).toBe(-1);
     }),

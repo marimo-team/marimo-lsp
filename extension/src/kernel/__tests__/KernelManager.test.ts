@@ -95,6 +95,11 @@ const withTestCtx = Effect.fn(function* () {
             return Ref.update(executions, (arr) => [...arr, cmd]);
           },
           streamOf() {
+            // SAFETY: test stub — `streamOf` has a complex generic return
+            // type, but this test only drives the kernel via a single
+            // pubsub-backed stream. `as never` satisfies whichever stream
+            // type the caller consumes.
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion
             return Stream.fromPubSub(operationsPubSub) as never;
           },
         }),
@@ -174,12 +179,13 @@ describe("KernelManager stdin", () => {
         const stdinCmd = cmds.find(
           (c) => c.command === "marimo.api" && c.params.method === "send-stdin",
         );
-        expect(stdinCmd).toBeDefined();
-        expect(stdinCmd!.params).toMatchObject({
-          method: "send-stdin",
+        expect(stdinCmd).toMatchObject({
           params: {
-            notebookUri: ctx.notebookUri,
-            inner: { text: "foo" },
+            method: "send-stdin",
+            params: {
+              notebookUri: ctx.notebookUri,
+              inner: { text: "foo" },
+            },
           },
         });
       }).pipe(Effect.provide(ctx.layer));
@@ -229,12 +235,13 @@ describe("KernelManager stdin", () => {
         const interruptCmd = cmds.find(
           (c) => c.command === "marimo.api" && c.params.method === "interrupt",
         );
-        expect(interruptCmd).toBeDefined();
-        expect(interruptCmd!.params).toMatchObject({
-          method: "interrupt",
+        expect(interruptCmd).toMatchObject({
           params: {
-            notebookUri: ctx.notebookUri,
-            inner: {},
+            method: "interrupt",
+            params: {
+              notebookUri: ctx.notebookUri,
+              inner: {},
+            },
           },
         });
       }).pipe(Effect.provide(ctx.layer));

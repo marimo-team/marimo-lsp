@@ -120,13 +120,14 @@ function isModifierKey(key: string): boolean {
  * shadow DOM boundaries (marimo UI elements are web components).
  */
 function isFromInput(e: KeyboardEvent): boolean {
-  const target = e.target as HTMLElement;
+  const target = e.target;
 
   if (
-    target.tagName === "INPUT" ||
-    target.tagName === "TEXTAREA" ||
-    target.tagName.startsWith("MARIMO") ||
-    target.closest(".cm-editor") !== null
+    target instanceof HTMLElement &&
+    (target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName.startsWith("MARIMO") ||
+      target.closest(".cm-editor") !== null)
   ) {
     return true;
   }

@@ -230,9 +230,9 @@ describe("resolveBinary", () => {
       expect(serverAnnotated.length).toBeGreaterThan(0);
 
       const resolved = logs.find((l) => l.message.includes("Resolved"));
-      expect(resolved).toBeDefined();
-      expect(resolved!.annotations.source).toBe("UserConfigured");
-      expect(resolved!.annotations.path).toBe("/bin/ty");
+      expect(resolved).toMatchObject({
+        annotations: { source: "UserConfigured", path: "/bin/ty" },
+      });
     }),
   );
 });

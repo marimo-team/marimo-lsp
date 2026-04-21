@@ -7,6 +7,10 @@ import {
   createTestNotebookEditor,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import {
+  marimoConfigFixture,
+  notebookId,
+} from "../../lib/__tests__/branded.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../../platform/VsCode.ts";
@@ -14,21 +18,17 @@ import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { MarimoConfig } from "../../types.ts";
 import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";
 
-const NOTEBOOK_URI = "file:///test/notebook.py" as NotebookId;
-const NOTEBOOK_URI_1 = "file:///test/notebook1.py" as NotebookId;
-const NOTEBOOK_URI_2 = "file:///test/notebook2.py" as NotebookId;
+const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
+const NOTEBOOK_URI_1 = notebookId("file:///test/notebook1.py");
+const NOTEBOOK_URI_2 = notebookId("file:///test/notebook2.py");
 
-const AUTORUN_CONFIG = {
-  runtime: {
-    on_cell_change: "autorun",
-  },
-} as MarimoConfig;
+const AUTORUN_CONFIG = marimoConfigFixture({
+  runtime: { on_cell_change: "autorun" },
+});
 
-const LAZY_CONFIG = {
-  runtime: {
-    on_cell_change: "lazy",
-  },
-} as MarimoConfig;
+const LAZY_CONFIG = marimoConfigFixture({
+  runtime: { on_cell_change: "lazy" },
+});
 
 const withTestCtx = Effect.fn(function* (
   options: { configStore?: Map<NotebookId, MarimoConfig> } = {},
@@ -153,7 +153,7 @@ describe("MarimoConfigurationService", () => {
         expect(Option.getOrThrow(cached)).toEqual(mockConfig);
 
         // Clear the server-side config to verify cache is used
-        yield* ctx.setConfig(notebookUri, {} as MarimoConfig);
+        yield* ctx.setConfig(notebookUri, marimoConfigFixture({}));
 
         // Second fetch should return cached value
         const config2 = yield* service.getConfig(notebookUri);
@@ -564,11 +564,9 @@ describe("MarimoConfigurationService", () => {
     "should stream auto_reload configuration changes and dedupe",
     Effect.fn(function* () {
       const notebookUri = NOTEBOOK_URI;
-      const initialConfig = {
-        runtime: {
-          auto_reload: "off",
-        },
-      } as MarimoConfig;
+      const initialConfig = marimoConfigFixture({
+        runtime: { auto_reload: "off" },
+      });
 
       const ctx = yield* withTestCtx({
         configStore: new Map([[notebookUri, initialConfig]]),

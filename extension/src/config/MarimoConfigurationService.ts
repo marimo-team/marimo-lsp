@@ -69,6 +69,12 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
               yield* Effect.logWarning(
                 "get-configuration returned a non-object response, using empty config",
               ).pipe(Effect.annotateLogs({ notebookUri, result }));
+              // SAFETY: degraded fallback when the LSP returns a non-object
+              // (server restart, cancellation, disposed connection). `{}` is
+              // not actually MarimoConfig-shaped; callers risk reading
+              // `undefined` for every known field. TODO: change the return
+              // type to `MarimoConfig | undefined` (or Option) at the boundary.
+              // oxlint-disable-next-line typescript/no-unsafe-type-assertion
               return {} as MarimoConfig;
             }
 
@@ -119,6 +125,10 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
               yield* Effect.logWarning(
                 "update-configuration returned a non-object response",
               ).pipe(Effect.annotateLogs({ notebookUri, result }));
+              // SAFETY: same degraded-fallback as getConfig above — the
+              // partial the caller supplied is returned as if it were a full
+              // MarimoConfig. TODO: change return type to nullable.
+              // oxlint-disable-next-line typescript/no-unsafe-type-assertion
               return (partialConfig ?? {}) as MarimoConfig;
             }
 

@@ -55,6 +55,9 @@ export function createRequestClient(
     },
   } satisfies Partial<RequestClient>;
 
+  // SAFETY: `client` satisfies `Partial<RequestClient>`; the Proxy's `get` trap
+  // below fills in any missing method by throwing a `Not implemented` error.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   return new Proxy(client as RequestClient, {
     get(target: RequestClient, p: string, receiver: unknown) {
       const method = Reflect.get(target, p, receiver);

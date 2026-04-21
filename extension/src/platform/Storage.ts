@@ -41,6 +41,10 @@ export const createStorageKey = <A, I = A>(
   key: string,
   schema: Schema.Schema<A, I>,
 ): StorageKey<A, I> => ({
+  // SAFETY: StorageKeyId carries phantom `_A`/`_I` types that exist only at
+  // the type level; the brand constructor expects the full branded shape but
+  // the phantoms have no runtime representation.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   key: Brand.nominal<StorageKeyId<A, I>>()(key as StorageKeyId<A, I>),
   schema,
 });

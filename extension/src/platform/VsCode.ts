@@ -12,6 +12,11 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
+
+declare global {
+  // oxlint-disable-next-line eslint/no-var
+  var __marimoVsCode: typeof import("vscode") | undefined;
+}
 // VsCode.ts centralizes and restricts access to the VS Code API.
 //
 // All other modules should use type-only imports and access the API through this service.
@@ -943,10 +948,12 @@ export class Languages extends Effect.Service<Languages>()("Languages", {
               });
             },
             resolveInlayHint: impl.resolveInlayHint
-              ? (hint, tok) =>
-                  runPromise(impl.resolveInlayHint!(hint), {
-                    signal: signalFromToken(tok),
-                  })
+              ? (
+                  (resolve) => (hint, tok) =>
+                    runPromise(resolve(hint), {
+                      signal: signalFromToken(tok),
+                    })
+                )(impl.resolveInlayHint)
               : undefined,
           }),
         ).pipe(Effect.asVoid);
@@ -975,10 +982,12 @@ export class Languages extends Effect.Service<Languages>()("Languages", {
                 });
               },
               resolveCompletionItem: impl.resolveCompletionItem
-                ? (item, tok) =>
-                    runPromise(impl.resolveCompletionItem!(item), {
-                      signal: signalFromToken(tok),
-                    })
+                ? (
+                    (resolve) => (item, tok) =>
+                      runPromise(resolve(item), {
+                        signal: signalFromToken(tok),
+                      })
+                  )(impl.resolveCompletionItem)
                 : undefined,
             },
             ...triggerCharacters,
@@ -1009,10 +1018,12 @@ export class Languages extends Effect.Service<Languages>()("Languages", {
                 });
               },
               resolveCodeAction: impl.resolveCodeAction
-                ? (item, tok) =>
-                    runPromise(impl.resolveCodeAction!(item), {
-                      signal: signalFromToken(tok),
-                    })
+                ? (
+                    (resolve) => (item, tok) =>
+                      runPromise(resolve(item), {
+                        signal: signalFromToken(tok),
+                      })
+                  )(impl.resolveCodeAction)
                 : undefined,
             },
             metadata,
@@ -1045,10 +1056,12 @@ export class Languages extends Effect.Service<Languages>()("Languages", {
               });
             },
             prepareRename: impl.prepareRename
-              ? (doc, pos, tok) =>
-                  runPromise(impl.prepareRename!(doc, pos), {
-                    signal: signalFromToken(tok),
-                  })
+              ? (
+                  (prepare) => (doc, pos, tok) =>
+                    runPromise(prepare(doc, pos), {
+                      signal: signalFromToken(tok),
+                    })
+                )(impl.prepareRename)
               : undefined,
           }),
         ).pipe(Effect.asVoid);
@@ -1117,7 +1130,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
     // Expose the raw vscode module for runtime inspection via --inspect-extensions.
     // Only active when MARIMO_DEBUG=1 (set by launch-dev.sh).
     if (process.env.MARIMO_DEBUG === "1") {
-      (globalThis as any).__marimoVsCode = vscode;
+      globalThis.__marimoVsCode = vscode;
     }
 
     return {

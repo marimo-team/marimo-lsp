@@ -280,7 +280,7 @@ export function companionExtensionConfiguredPath<R>(
  * Looks for the binary at `<extensionPath>/bundled/libs/bin/<binary>`.
  */
 export function companionExtensionBundledBinary(
-  binaryName: string,
+  binaryName: "ruff" | "ty",
   minimumVersion: string,
   extensionId: string,
   extension: Option.Option<vscode.Extension<unknown>>,
@@ -299,7 +299,7 @@ export function companionExtensionBundledBinary(
         "bundled",
         "libs",
         "bin",
-        resolvePlatformBinaryName(binaryName as "ruff" | "ty"),
+        resolvePlatformBinaryName(binaryName),
       );
       const validated = yield* validateBinary(bundledPath, minimumVersion);
       if (Option.isNone(validated)) {

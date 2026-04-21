@@ -454,11 +454,19 @@ class Range implements vscode.Range {
     endLine?: number,
     endCharacter?: number,
   ) {
+    // SAFETY: overload signatures guarantee that when `startOrLine` is a
+    // number, the remaining params are all numbers; and when it's a Position,
+    // `endOrCharacter` is a Position. The implementation signature has to
+    // accept the merged type. Non-null asserts are similarly backed by the
+    // overloads.
     if (typeof startOrLine === "number") {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       this.start = new Position(startOrLine, endOrCharacter as number);
+      // oxlint-disable-next-line typescript/no-non-null-assertion
       this.end = new Position(endLine!, endCharacter!);
     } else {
       this.start = startOrLine;
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       this.end = endOrCharacter as Position;
     }
 
@@ -581,11 +589,16 @@ class Selection extends Range implements vscode.Selection {
     let anchor: Position;
     let active: Position;
 
+    // SAFETY: see Range constructor above — overload signatures guarantee
+    // the other param shapes when `anchorOrLine` is narrowed.
     if (typeof anchorOrLine === "number") {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       anchor = new Position(anchorOrLine, activeOrCharacter as number);
+      // oxlint-disable-next-line typescript/no-non-null-assertion
       active = new Position(activeLine!, activeCharacter!);
     } else {
       anchor = anchorOrLine;
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       active = activeOrCharacter as Position;
     }
 
@@ -1020,7 +1033,7 @@ class NotebookCell implements vscode.NotebookCell {
       getWordRangeAtPosition: () => undefined,
       validateRange: (range: vscode.Range) => range,
       validatePosition: (position: vscode.Position) => position,
-      positionAt: () => ({ line: 0, character: 0 }) as vscode.Position,
+      positionAt: () => new Position(0, 0),
       offsetAt: () => 0,
       lineAt: () => {
         throw new Error("lineAt not implemented");

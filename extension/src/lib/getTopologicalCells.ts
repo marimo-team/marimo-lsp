@@ -58,6 +58,9 @@ export function getTopologicalCells(
       variables.value,
     );
 
+    // SAFETY: getTopologicalCellIds returns a permutation of its input keys,
+    // so every `id` here is guaranteed to be a key of cellMap.
+    // oxlint-disable-next-line typescript/no-non-null-assertion
     const sortedCells = sortedIds.map((id) => cellMap.get(id)!);
 
     return [...sortedCells, ...cellsWithoutIds];
