@@ -53,7 +53,6 @@ const formatValue = (value: unknown): string => {
 
 const makeVsCodeLogger = (channel: OutputChannel) => {
   type Level = Exclude<LogLevel.LogLevel["label"], "OFF" | "ALL">;
-  const isLevel = (label: string): label is Level => label in mapping;
   const mapping = {
     INFO: channel.info.bind(channel),
     TRACE: channel.trace.bind(channel),
@@ -62,6 +61,8 @@ const makeVsCodeLogger = (channel: OutputChannel) => {
     ERROR: channel.error.bind(channel),
     FATAL: channel.error.bind(channel),
   } as const;
+  const isLevel = (label: string): label is Level =>
+    Object.hasOwn(mapping, label);
 
   return Logger.make((opts) => {
     const messages = ReadonlyArray.ensure(opts.message);
