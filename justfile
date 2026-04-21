@@ -1,23 +1,64 @@
 # marimo-lsp justfile
 # Run `just` to see available recipes
 
-# Default recipe - show available commands
 default:
     @just --list
 
-# Lint and typecheck code
-check:
+# lint ---------------------------------------------------------------
+
+[group('lint')]
+lint: lint-py lint-ts
+
+[group('lint')]
+lint-py:
     uv run ruff check
     uv run ty check
+
+[group('lint')]
+lint-ts:
     pnpm -C extension check
 
-# Fix linting issues and format code
-fix:
+# fix ----------------------------------------------------------------
+
+[group('fix')]
+fix: fix-py fix-ts
+
+[group('fix')]
+fix-py:
     uv run ruff format
     uv run ruff check --fix
+
+[group('fix')]
+fix-ts:
     pnpm -C extension fix
 
-# Download tutorial files from marimo repository
+# test ---------------------------------------------------------------
+
+[group('test')]
+test: test-py test-ts
+
+[group('test')]
+test-py *args:
+    uv run pytest {{args}}
+
+[group('test')]
+test-ts *args:
+    pnpm -C extension test {{args}}
+
+[group('test')]
+test-vscode *args:
+    pnpm -C extension test:extension {{args}}
+
+# build --------------------------------------------------------------
+
+[group('build')]
+build:
+    pnpm -C extension build
+    pnpm -C extension embed-sdist
+
+# setup --------------------------------------------------------------
+
+[group('setup')]
 download-tutorials:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -29,18 +70,3 @@ download-tutorials:
         curl -fsSL "$BASE_URL/$tutorial" -o "extension/tutorials/$tutorial"
     done
     echo "All tutorials downloaded successfully!"
-
-# Run Python tests
-pytest *args:
-    uv run pytest {{args}}
-
-# Run TypeScript tests
-vitest *args:
-    pnpm -C extension test {{args}}
-
-# Run VS Code extension integration tests
-vscode-test *args:
-    pnpm -C extension test:extension {{args}}
-
-# Run all tests
-test: pytest vitest

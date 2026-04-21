@@ -9,8 +9,9 @@ tests/out/
 extension/.vscode-test/
 *.vsix
 .vscode-test/
-.claude/
-CLAUDE.md
+.claude/*
+!.claude/skills/
+.claude/settings.local.json
 
 # Coverage
 coverage/
