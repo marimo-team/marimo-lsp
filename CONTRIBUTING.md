@@ -51,23 +51,24 @@ This will run linting and formatting checks automatically before each commit.
 
 ### Common Commands
 
-This project uses [just](https://just.systems/) for common development tasks:
+This project uses [just](https://just.systems/) for common development tasks.
+Run `just --list` to see all recipes, grouped into `lint`, `fix`, `test`,
+`build`, and `setup`. Highlights:
 
-| Command            | Action                                  |
-| ------------------ | --------------------------------------- |
-| `just check`       | Lint and typecheck all code             |
-| `just fix`         | Fix linting issues and format all code  |
-| `just test`        | Run all tests (pytest + vitest)         |
-| `just pytest`      | Run Python tests only                   |
-| `just vitest`      | Run TypeScript tests only               |
-| `just vscode-test` | Run VS Code extension integration tests |
+| Command              | Action                                       |
+| -------------------- | -------------------------------------------- |
+| `just lint`          | Lint + typecheck everything (py + ts)        |
+| `just fix`           | Autofix + format everything (py + ts)        |
+| `just test`          | Run all tests (`test-py` + `test-ts`)        |
+| `just test-vscode`   | VS Code extension integration tests (slow)   |
+| `just build`         | Embed the Python sdist and bundle the extension |
 
-You can pass additional arguments to test commands:
+Recipes that wrap pytest or vitest forward trailing args:
 
 ```sh
-just pytest -v                    # Run pytest with verbose output
-just pytest tests/test_foo.py     # Run specific test file
-just vitest --watch               # Run vitest in watch mode
+just test-py -v                    # pytest with verbose output
+just test-py tests/test_foo.py     # specific test file
+just test-ts --watch               # vitest in watch mode
 ```
 
 ## Architecture
