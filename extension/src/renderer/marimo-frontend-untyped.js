@@ -37,6 +37,17 @@
  * a clear boundary between typed and untyped code.
  */
 
+// TODO(marimo-team/marimo#TODO): move `hasRunAnyCellAtom` and the anywidget
+// model re-exports back into `marimo-frontend.ts` once marimo extracts the
+// atom into a leaf module. They're forced through this bridge because
+// `plugins/core/trusted-url.ts` (reached via `anywidget/widget-binding.ts`)
+// imports from `useRunCells.ts`, whose transitive closure blows up tsc.
+export { hasRunAnyCellAtom } from "@marimo-team/frontend/unstable_internal/components/editor/cell/useRunCells.ts";
+export {
+  handleWidgetMessage,
+  MODEL_MANAGER,
+} from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts";
+
 export { OutputRenderer } from "@marimo-team/frontend/unstable_internal/components/editor/Output.tsx";
 export { ConsoleOutput } from "@marimo-team/frontend/unstable_internal/components/editor/output/console/ConsoleOutput.tsx";
 export { TooltipProvider } from "@marimo-team/frontend/unstable_internal/components/ui/tooltip.tsx";

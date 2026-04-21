@@ -114,7 +114,7 @@ class LspKernelManager(KernelManagerImpl):
                 app_config=app_file_manager.app.config,
             ),
             redirect_console_to_browser=True,
-            virtual_files_supported=False,
+            virtual_file_storage=None,
         )
         self.executable = executable
         self.connection_info = connection_info

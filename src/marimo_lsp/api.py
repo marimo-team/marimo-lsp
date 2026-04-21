@@ -355,6 +355,7 @@ async def export_as_ipynb(
     session_data = serialize_session_view(
         session.session_view,
         cell_ids=session.app_file_manager.app.cell_manager.cell_ids(),
+        drop_virtual_file_outputs=True,
     )
     ipynb.setdefault("metadata", {}).setdefault("marimo", {})["session"] = session_data
     return json.dumps(ipynb)

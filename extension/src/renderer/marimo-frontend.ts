@@ -22,10 +22,6 @@ import type {
   RunRequests,
 } from "@marimo-team/frontend/unstable_internal/core/network/types.ts";
 import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.ts";
-import {
-  handleWidgetMessage,
-  MODEL_MANAGER,
-} from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts";
 import { safeExtractSetUIElementMessageBuffers } from "@marimo-team/frontend/unstable_internal/utils/json/base64.ts";
 
 import type { NotificationOf, CellRuntimeState } from "../types.ts";
@@ -53,6 +49,16 @@ export type { CellRuntimeState, CellId };
 export function initialize(client: RequestClient) {
   store.set(initialModeAtom, "edit");
   store.set(requestClientAtom, client);
+  // Trust data: URIs from plugins without waiting for a run through marimo's
+  // React UI — VS Code gates notebook open on workspace trust, and cell runs
+  // flow through the extension's NotebookController (bypassing useRunCells),
+  // so the atom would otherwise stay false forever.
+  //
+  // TODO: route through the untyped bridge because marimo 0.23.2 defines this
+  // atom in `components/editor/cell/useRunCells.ts`, whose transitive closure
+  // (CodeMirror, cells state, data-table UI, etc.) blows up tsc. Once the atom
+  // moves to a leaf file upstream (marimo-team/marimo#TODO), import directly.
+  store.set(untyped.hasRunAnyCellAtom, true);
 
   untyped.initializePlugins();
   // Start the RuntimeState to listen for UI element value changes
@@ -74,7 +80,11 @@ export function handleSendUiElementMessage(
 }
 
 export function handleModelLifecycle(msg: NotificationOf<"model-lifecycle">) {
-  void handleWidgetMessage(MODEL_MANAGER, msg);
+  // TODO: route through the untyped bridge because
+  // `plugins/impl/anywidget/model.ts` transitively imports `trusted-url.ts`,
+  // which in marimo 0.23.2 pulls in `useRunCells.ts` and its heavy closure.
+  // Drop once the upstream atom move lands (marimo-team/marimo#TODO).
+  void untyped.handleWidgetMessage(untyped.MODEL_MANAGER, msg);
 }
 
 export function handleFunctionCallResult(
