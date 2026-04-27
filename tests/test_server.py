@@ -744,24 +744,6 @@ x\
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
-                    "console": None,
-                    "status": "idle",
-                    "stale_inputs": None,
-                    "run_id": None,
-                    "serialization": None,
-                    "timestamp": IsFloat(),
-                },
-            },
-            {
-                "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "completed-run"},
-            },
-            {
-                "notebookUri": "file:///exec_test.py",
-                "operation": {
-                    "op": "cell-op",
-                    "cell_id": "cell1",
-                    "output": None,
                     "console": {
                         "channel": "stdout",
                         "mimetype": "text/plain",
@@ -793,6 +775,24 @@ x\
                     "serialization": None,
                     "timestamp": IsFloat(),
                 },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "cell1",
+                    "output": None,
+                    "console": None,
+                    "status": "idle",
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {"op": "completed-run"},
             },
         ]
     )
@@ -1103,24 +1103,6 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                     "op": "cell-op",
                     "cell_id": "cell2",
                     "output": None,
-                    "console": None,
-                    "status": "idle",
-                    "stale_inputs": None,
-                    "run_id": None,
-                    "serialization": None,
-                    "timestamp": IsFloat(),
-                },
-            },
-            {
-                "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "completed-run"},
-            },
-            {
-                "notebookUri": "file:///exec_test.py",
-                "operation": {
-                    "op": "cell-op",
-                    "cell_id": "cell2",
-                    "output": None,
                     "console": {
                         "channel": "stdout",
                         "mimetype": "text/plain",
@@ -1133,6 +1115,24 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                     "serialization": None,
                     "timestamp": IsFloat(),
                 },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {
+                    "op": "cell-op",
+                    "cell_id": "cell2",
+                    "output": None,
+                    "console": None,
+                    "status": "idle",
+                    "stale_inputs": None,
+                    "run_id": None,
+                    "serialization": None,
+                    "timestamp": IsFloat(),
+                },
+            },
+            {
+                "notebookUri": "file:///exec_test.py",
+                "operation": {"op": "completed-run"},
             },
         ]
     )
@@ -1515,8 +1515,13 @@ y\
                     "op": "cell-op",
                     "cell_id": "__scratch__",
                     "output": None,
-                    "console": None,
-                    "status": "idle",
+                    "console": {
+                        "channel": "stdout",
+                        "mimetype": "text/plain",
+                        "data": "scratchpad output\n",
+                        "timestamp": IsFloat(),
+                    },
+                    "status": None,
                     "stale_inputs": None,
                     "run_id": None,
                     "serialization": None,
@@ -1529,13 +1534,8 @@ y\
                     "op": "cell-op",
                     "cell_id": "__scratch__",
                     "output": None,
-                    "console": {
-                        "channel": "stdout",
-                        "mimetype": "text/plain",
-                        "data": "scratchpad output\n",
-                        "timestamp": IsFloat(),
-                    },
-                    "status": None,
+                    "console": None,
+                    "status": "idle",
                     "stale_inputs": None,
                     "run_id": None,
                     "serialization": None,

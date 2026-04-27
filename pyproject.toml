@@ -8,7 +8,7 @@ authors = [{ name = "Trevor Manz", email = "trevor.j.manz@gmail.com" }]
 dependencies = [
   "jupytext==1.19.1",
   "lsprotocol==2025.0.0",
-  "marimo==0.23.2",
+  "marimo==0.23.3",
   "pygls==2.1.1",
 ]
 
@@ -37,7 +37,7 @@ build-backend = "uv_build"
 # the update-marimo-version cron), while the value below is the compatibility
 # floor we claim to support for user kernels and is bumped manually when we
 # intentionally drop support for an older release.
-minimum-kernel-version = "0.23.2"
+minimum-kernel-version = "0.23.3"
 
 [tool.ty.src]
 exclude = ["extension/**"]
