@@ -300,12 +300,24 @@ jobs:
   publish:
     needs: [version-bump, build, build-universal]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write # required for Doppler OIDC
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           path: marimo-lsp
           fetch-depth: 0
+
+      - name: 🔐 Fetch Doppler secrets
+        uses: dopplerhq/secrets-fetch-action@cd2efbf9a404504316435873eff298b82f7e0562 # v1.3.0
+        id: secrets
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_IDENTITY_ID }}
+          doppler-project: marimo-lsp
+          doppler-config: prod
 
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
@@ -324,19 +336,23 @@ jobs:
         run: npm install -g @vscode/vsce ovsx
 
       - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ steps.secrets.outputs.VSCE_PAT }}
         run: |
           if [ "${{ inputs.pre-release }}" = "true" ]; then
-            vsce publish --pat ${{ secrets.VSCE_PAT }} --packagePath ./dist/*.vsix --pre-release --skip-duplicate
+            vsce publish --pat "$VSCE_PAT" --packagePath ./dist/*.vsix --pre-release --skip-duplicate
           else
-            vsce publish --pat ${{ secrets.VSCE_PAT }} --packagePath ./dist/*.vsix --skip-duplicate
+            vsce publish --pat "$VSCE_PAT" --packagePath ./dist/*.vsix --skip-duplicate
           fi
 
       - name: Publish to Open VSX Registry
+        env:
+          OPEN_VSX_TOKEN: ${{ steps.secrets.outputs.OPEN_VSX_TOKEN }}
         run: |
           if [ "${{ inputs.pre-release }}" = "true" ]; then
-            ovsx publish --pat ${{ secrets.OPEN_VSX_TOKEN }} --packagePath ./dist/*.vsix --pre-release --skip-duplicate
+            ovsx publish --pat "$OPEN_VSX_TOKEN" --packagePath ./dist/*.vsix --pre-release --skip-duplicate
           else
-            ovsx publish --pat ${{ secrets.OPEN_VSX_TOKEN }} --packagePath ./dist/*.vsix --skip-duplicate
+            ovsx publish --pat "$OPEN_VSX_TOKEN" --packagePath ./dist/*.vsix --skip-duplicate
           fi
 
       - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
@@ -382,7 +398,7 @@ jobs:
         if: success() && github.event.pull_request.head.repo.fork == false
         uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
         with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL_RELEASES }}
+          webhook: ${{ steps.secrets.outputs.SLACK_WEBHOOK_URL_RELEASES }}
           webhook-type: incoming-webhook
           payload: |
             {
@@ -402,7 +418,7 @@ jobs:
         if: failure() && github.event.pull_request.head.repo.fork == false
         uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
         with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL_RELEASES }}
+          webhook: ${{ steps.secrets.outputs.SLACK_WEBHOOK_URL_RELEASES }}
           webhook-type: incoming-webhook
           payload: |
             {
