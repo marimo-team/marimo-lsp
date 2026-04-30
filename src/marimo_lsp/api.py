@@ -39,6 +39,7 @@ from marimo_lsp.models import (
     SessionCommand,
     SetDisplayThemeRequest,
     StdinRequest,
+    UpdateCellOutputsRequest,
     UpdateConfigurationRequest,
     UpdateUIElementRequest,
 )
@@ -295,6 +296,21 @@ async def update_configuration(
         return {"success": False, "error": str(e)}
 
 
+async def update_cell_outputs(
+    manager: LspSessionManager,
+    args: NotebookCommand[UpdateCellOutputsRequest],
+):
+    """Sync rendered cell outputs into the session view before export."""
+    logger.info(f"update_cell_outputs for {args.notebook_uri}")
+    session = manager.get_session(args.notebook_uri)
+    if not session:
+        logger.warning(f"No session found for {args.notebook_uri}")
+        return {"success": False, "error": "No session found"}
+
+    session.session_view.update_cell_outputs(args.inner.cell_ids_to_output)
+    return {"success": True}
+
+
 async def set_display_theme(
     manager: LspSessionManager,
     args: SetDisplayThemeRequest,
@@ -439,6 +455,12 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
         return await update_configuration(
             manager,
             msgspec.convert(params, type=NotebookCommand[UpdateConfigurationRequest]),
+        )
+
+    if method == "update-cell-outputs":
+        return await update_cell_outputs(
+            manager,
+            msgspec.convert(params, type=NotebookCommand[UpdateCellOutputsRequest]),
         )
 
     if method == "set-display-theme":
