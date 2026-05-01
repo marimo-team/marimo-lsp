@@ -47,6 +47,9 @@ type ModelRequest = Schemas["ModelRequest"];
 type InvokeFunctionRequest = Schemas["InvokeFunctionRequest"];
 type DeleteCellRequest = Schemas["DeleteCellRequest"];
 type ExportAsHtmlRequest = Schemas["ExportAsHTMLRequest"];
+type UpdateCellOutputsRequest = {
+  cellIdsToOutput: Record<CellId, [string, unknown]>;
+};
 interface DeserializeRequest {
   source: string;
 }
@@ -89,6 +92,7 @@ type MarimoApiMethodMap = {
   "close-session": NotebookScoped<CloseSessionRequest>;
   "execute-scratchpad": NotebookScoped<ExecuteScratchRequest>;
   "export-as-html": NotebookScoped<ExportAsHtmlRequest>;
+  "update-cell-outputs": NotebookScoped<UpdateCellOutputsRequest>;
   "export-as-ipynb": NotebookScoped<ExportAsIpynbRequest>;
   interrupt: NotebookScoped<InterruptRequest>;
   "send-stdin": NotebookScoped<SendStdinRequest>;
