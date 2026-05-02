@@ -10,6 +10,8 @@ export type MarimoCommand =
   | "marimo.config.toggleOnCellChangeLazy"
   | "marimo.createSetupCell"
   | "marimo.debugCell"
+  | "marimo.executeAgentCode"
+  | "marimo.executeAgentCodeDemo"
   | "marimo.exportStaticHTML"
   | "marimo.newMarimoNotebook"
   | "marimo.openAsMarimoNotebook"

@@ -315,14 +315,14 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
           api.executeCommand("setContext", key, value),
         );
       },
-      registerCommand<A, E, R>(
+      registerCommand<Args extends ReadonlyArray<unknown>, A, E, R>(
         command: MarimoCommand | DynamicCommand,
-        fn: () => Effect.Effect<A, E, R>,
+        fn: (...args: Args) => Effect.Effect<A, E, R>,
       ) {
         return Effect.gen(function* () {
           const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
-          const callback = () =>
-            fn().pipe(
+          const callback = (...args: Args) =>
+            fn(...args).pipe(
               Effect.tap(() =>
                 PubSub.publish(commandPubSub, Either.right(command)),
               ),

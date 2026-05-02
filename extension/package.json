@@ -1,6 +1,6 @@
 {
-  "name": "vscode-marimo",
-  "displayName": "marimo",
+  "name": "vscode-marimo-agent",
+  "displayName": "marimo (agent fork)",
   "version": "0.13.0",
   "description": "A marimo notebook extension for VS Code.",
   "categories": [
@@ -8,7 +8,7 @@
     "Notebooks"
   ],
   "repository": "https://github.com/marimo-team/marimo-lsp",
-  "publisher": "marimo-team",
+  "publisher": "hugolytics",
   "main": "./dist/extension.js",
   "scripts": {
     "prepare": "turbo patch-tsc",
@@ -369,6 +369,17 @@
         "title": "Set Python interpreter to match notebook kernel",
         "category": "marimo",
         "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
+        "command": "marimo.executeAgentCode",
+        "title": "Execute Agent Code (scratchpad)",
+        "category": "marimo (agent)",
+        "enablement": "false"
+      },
+      {
+        "command": "marimo.executeAgentCodeDemo",
+        "title": "Execute Agent Code (demo: prompt for code)",
+        "category": "marimo (agent)"
       }
     ],
     "viewsContainers": {
@@ -421,6 +432,10 @@
         {
           "command": "marimo.config.toggleAutoReloadAutorun",
           "when": "never"
+        },
+        {
+          "command": "marimo.executeAgentCode",
+          "when": "false"
         }
       ],
       "file/newFile": [

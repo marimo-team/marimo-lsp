@@ -2,6 +2,8 @@ import { Effect, Either, Layer, Stream } from "effect";
 
 import { createSetupCell } from "../commands/createSetupCell.ts";
 import { debugCell } from "../commands/debugCell.ts";
+import { executeAgentCode } from "../commands/executeAgentCode.ts";
+import { executeAgentCodeDemo } from "../commands/executeAgentCodeDemo.ts";
 import { exportNotebookAsHtml } from "../commands/exportNotebookAsHtml.ts";
 import { newMarimoNotebook } from "../commands/newMarimoNotebook.ts";
 import { openAsMarimoNotebook } from "../commands/openAsMarimoNotebook.ts";
@@ -54,6 +56,14 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
 
     yield* code.commands.registerCommand("marimo.runStale", runStale);
     yield* code.commands.registerCommand("marimo.debugCell", debugCell);
+    yield* code.commands.registerCommand(
+      "marimo.executeAgentCode",
+      executeAgentCode,
+    );
+    yield* code.commands.registerCommand(
+      "marimo.executeAgentCodeDemo",
+      executeAgentCodeDemo,
+    );
 
     for (const command of [
       "marimo.config.toggleOnCellChangeAutoRun",
