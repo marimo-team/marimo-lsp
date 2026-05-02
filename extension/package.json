@@ -375,11 +375,6 @@
         "title": "Execute Agent Code (scratchpad)",
         "category": "marimo (agent)",
         "enablement": "false"
-      },
-      {
-        "command": "marimo.executeAgentCodeDemo",
-        "title": "Execute Agent Code (demo: prompt for code)",
-        "category": "marimo (agent)"
       }
     ],
     "viewsContainers": {
