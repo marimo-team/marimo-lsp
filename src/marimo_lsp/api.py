@@ -181,8 +181,16 @@ async def execute_scratch(
         logger.warning(f"No session found for {args.notebook_uri}")
         return
 
+    # Snapshot the document so handle_execute_scratchpad can populate the
+    # ContextVar that marimo._code_mode.get_context() reads. Without this,
+    # any cm.get_context() call from scratchpad code raises RuntimeError.
     session.put_control_request(
-        ExecuteScratchpadCommand(code=args.inner.code),
+        ExecuteScratchpadCommand(
+            code=args.inner.code,
+            notebook_cells=tuple(
+                session.app_file_manager.app.cell_manager.document.cells
+            ),
+        ),
         from_consumer_id=None,
     )
     logger.info(f"Scratchpad execution request sent for {args.notebook_uri}")
