@@ -6,6 +6,8 @@ import typing
 
 import marimo._server.models.models as core
 import msgspec
+from marimo._messaging.mimetypes import MimeBundleTuple
+from marimo._types.ids import CellId_t
 
 T = typing.TypeVar("T", bound=msgspec.Struct)
 
@@ -97,6 +99,13 @@ class UpdateConfigurationRequest(msgspec.Struct, rename="camel"):
 
     config: dict[str, typing.Any]
     """The partial configuration to merge with the current config."""
+
+
+class UpdateCellOutputsRequest(msgspec.Struct, rename="camel"):
+    """A request to sync rendered cell outputs before export."""
+
+    cell_ids_to_output: dict[CellId_t, MimeBundleTuple]
+    """Rendered MIME bundle outputs keyed by cell id."""
 
 
 class SetDisplayThemeRequest(msgspec.Struct, rename="camel"):
