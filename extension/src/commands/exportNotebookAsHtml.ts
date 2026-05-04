@@ -167,23 +167,39 @@ function collectRenderedCellOutputs(notebook: MarimoNotebookDocument) {
   return cellIdsToOutput;
 }
 
-function parseRenderedOutput(value: string): [string, unknown] | null {
+export function parseRenderedOutput(value: string): [string, unknown] | null {
   const payload = parseJsonRecord(value);
   if (!payload) {
     return null;
   }
 
   const state = asRecord(payload.state);
-  const output = asRecord(state?.output);
-  if (!output) {
-    return null;
-  }
+  const output =
+    asRecord(state?.output) ?? findFirstRenderableConsoleOutput(state);
 
-  if (typeof output.mimetype !== "string" || output.data == null) {
+  if (!output || typeof output.mimetype !== "string" || output.data == null) {
     return null;
   }
 
   return [output.mimetype, output.data];
+}
+
+function findFirstRenderableConsoleOutput(
+  state: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  const consoleOutputs = state?.consoleOutputs;
+  if (!Array.isArray(consoleOutputs)) {
+    return null;
+  }
+
+  for (const entry of consoleOutputs) {
+    const output = asRecord(entry);
+    if (output?.data != null && typeof output.mimetype === "string") {
+      return output;
+    }
+  }
+
+  return null;
 }
 
 function parseJsonRecord(value: string): Record<string, unknown> | null {
