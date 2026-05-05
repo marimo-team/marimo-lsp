@@ -1,6 +1,3 @@
-import * as NodeFs from "node:fs";
-import * as NodePath from "node:path";
-
 import {
   Array as ReadonlyArray,
   Cause,
@@ -15,20 +12,6 @@ import {
 
 import { OutputChannel } from "../platform/OutputChannel.ts";
 import { Sentry } from "../telemetry/Sentry.ts";
-
-const makeFileLogger = (logFilePath: string) =>
-  Effect.gen(function* () {
-    yield* Effect.sync(() =>
-      NodeFs.mkdirSync(NodePath.dirname(logFilePath), { recursive: true }),
-    );
-    const logFile = yield* Effect.acquireRelease(
-      Effect.sync(() => NodeFs.openSync(logFilePath, "a", 0o666)),
-      (fd) => Effect.sync(() => NodeFs.closeSync(fd)),
-    );
-    return Logger.map(Logger.logfmtLogger, (str) => {
-      NodeFs.writeSync(logFile, `${str}\n`);
-    });
-  });
 
 const structuredMessage = (u: unknown): unknown => {
   switch (typeof u) {
@@ -129,22 +112,16 @@ const makeVsCodeLogger = (channel: OutputChannel) => {
 };
 
 /**
- * Configures logging for the extension (both within VS Code and to the file system)
+ * Configures logging for the extension's VS Code output channel and Sentry.
  */
-export const LoggerLive = Layer.unwrapScoped(
+export const LoggerLive = Layer.unwrapEffect(
   Effect.gen(function* () {
     const outputChannel = yield* OutputChannel;
-    const fileLogger = yield* makeFileLogger(
-      NodePath.join(__dirname, "../../logs/marimo.log"),
-    );
     const vscodeLogger = makeVsCodeLogger(outputChannel);
     const sentry = yield* Sentry;
     return Logger.replace(
       Logger.defaultLogger,
-      Logger.zip(
-        Logger.zip(fileLogger, vscodeLogger),
-        Logger.withSpanAnnotations(sentry.errorLogger),
-      ),
+      Logger.zip(vscodeLogger, Logger.withSpanAnnotations(sentry.errorLogger)),
     );
   }),
 );
