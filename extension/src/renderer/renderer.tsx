@@ -19,13 +19,19 @@ import {
 } from "./marimo-frontend.ts";
 import { createRequestClient, isTypedRequestContext } from "./utils.ts";
 
+const TABLE_EXPORT_LIMIT_MB = 50;
+const TABLE_EXPORT_LIMIT_BYTES = TABLE_EXPORT_LIMIT_MB * 1024 * 1024;
+
 export const activate: vscode.ActivationFunction = (context) => {
   assert(
     isTypedRequestContext(context),
     `Expected {"requiresMessaging": "always"} for marimo outputs.`,
   );
 
-  initialize(createRequestClient(context));
+  initialize(createRequestClient(context), {
+    limitBytes: TABLE_EXPORT_LIMIT_BYTES,
+    unavailableMessage: `This table is too large to download from a VS Code notebook output (limit: ${TABLE_EXPORT_LIMIT_MB}MB). Open the notebook in a browser to export it, or filter the data first.`,
+  });
 
   /**
    * Bridge for HTML output interactions.

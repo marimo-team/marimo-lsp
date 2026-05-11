@@ -1,3 +1,7 @@
+import {
+  type DownloadSizeLimit,
+  downloadSizeLimitAtom,
+} from "@marimo-team/frontend/unstable_internal/components/data-table/download-policy/atoms.ts";
 /**
  * @module
  *
@@ -40,13 +44,20 @@ import * as untyped from "./marimo-frontend-untyped.js";
 export { useTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";
 
 export type RequestClient = EditRequests & RunRequests;
-export type { CellRuntimeState, CellId };
+export type { CellRuntimeState, CellId, DownloadSizeLimit };
 
 /**
  * Initialize marimo UI components in the VS Code renderer environment.
  * This provides a minimal setup to hydrate web components without the full kernel.
+ *
+ * `downloadSizeLimit`, when provided, gates table exports/clipboard copies that
+ * exceed the host's limit. Applied here so all VS Code–specific store overrides
+ * stay in one place and the raw jotai `store` never escapes this module.
  */
-export function initialize(client: RequestClient) {
+export function initialize(
+  client: RequestClient,
+  downloadSizeLimit?: DownloadSizeLimit,
+) {
   store.set(initialModeAtom, "edit");
   store.set(requestClientAtom, client);
   // Trust data: URIs from plugins without waiting for a run through marimo's
@@ -59,6 +70,10 @@ export function initialize(client: RequestClient) {
   // (CodeMirror, cells state, data-table UI, etc.) blows up tsc. Once the atom
   // moves to a leaf file upstream (marimo-team/marimo#TODO), import directly.
   store.set(untyped.hasRunAnyCellAtom, true);
+
+  if (downloadSizeLimit) {
+    store.set(downloadSizeLimitAtom, downloadSizeLimit);
+  }
 
   untyped.initializePlugins();
   // Start the RuntimeState to listen for UI element value changes
