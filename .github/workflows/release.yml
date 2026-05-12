@@ -205,7 +205,7 @@ jobs:
       - name: Install packages and build extension
         working-directory: marimo-lsp/extension
         run: |
-          pnpm install
+          pnpm install --ignore-scripts
           pnpm build
           pnpm embed-sdist
 
@@ -274,7 +274,7 @@ jobs:
       - name: Install packages and build extension
         working-directory: marimo-lsp/extension
         run: |
-          pnpm install
+          pnpm install --ignore-scripts
           pnpm build
           pnpm embed-sdist
 

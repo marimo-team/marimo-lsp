@@ -71,7 +71,7 @@ jobs:
       - name: Check (lint + format)
         run: |
           cd marimo-lsp/extension
-          pnpm install
+          pnpm install --ignore-scripts
           pnpm check
 
   typescript-typecheck:
@@ -131,7 +131,7 @@ jobs:
           TURBO_TOKEN: ${{ steps.secrets.outputs.TURBO_TOKEN }}
         run: |
           cd marimo-lsp/extension
-          pnpm install
+          pnpm install --ignore-scripts
           # make sure our types are up to date
           node scripts/codegen.mjs
           pnpm turbo typecheck-ci
@@ -204,7 +204,7 @@ jobs:
         env:
           TURBO_TOKEN: ${{ steps.secrets.outputs.TURBO_TOKEN }}
         run: |
-          pnpm install
+          pnpm install --ignore-scripts
           # make sure our types are up to date
           node scripts/codegen.mjs
           pnpm build
