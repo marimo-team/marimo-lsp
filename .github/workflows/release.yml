@@ -213,7 +213,7 @@ jobs:
         working-directory: marimo-lsp/extension
         shell: bash
         run: |
-          npm install -g @vscode/vsce
+          npm install --ignore-scripts -g @vscode/vsce
           if [ "${{ inputs.pre-release }}" = "true" ]; then
             vsce package -o ./dist/marimo-${{ matrix.code-target }}.vsix --target ${{ matrix.code-target }} --pre-release
           else
@@ -283,7 +283,7 @@ jobs:
       - name: Package universal extension
         working-directory: marimo-lsp/extension
         run: |
-          npm install -g @vscode/vsce
+          npm install --ignore-scripts -g @vscode/vsce
           if [ "${{ inputs.pre-release }}" = "true" ]; then
             vsce package -o ./dist/marimo-universal.vsix --pre-release
           else
@@ -333,7 +333,7 @@ jobs:
         run: ls -al ./dist
 
       - name: Install vsce and ovsx
-        run: npm install -g @vscode/vsce ovsx
+        run: npm install --ignore-scripts -g @vscode/vsce ovsx
 
       - name: Publish to VS Code Marketplace
         env:
