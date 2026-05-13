@@ -170,8 +170,12 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
 
         // Build extra context with annotations
         const extra: Record<string, unknown> = {};
+        let errorTag: string | undefined;
         for (const [key, value] of HashMap.toEntries(opts.annotations)) {
           extra[key] = structuredMessage(value);
+          if (key === "error.tag" && typeof value === "string") {
+            errorTag = value;
+          }
           if (Cause.isCause(value) && !Cause.isEmpty(value)) {
             extra[`${key}.pretty`] = Cause.pretty(value, {
               renderErrorCause: true,
@@ -186,22 +190,39 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
           });
         }
 
+        // Splitting the Sentry group by inner failure tag turns coarse
+        // "Notebook deserialize failed" buckets into one group per root
+        // cause (LanguageClientStartError vs ExecuteCommandError vs ...).
+        const tags = {
+          marimo: "true",
+          ...(errorTag ? { "error.tag": errorTag } : {}),
+        };
+        const fingerprint = errorTag ? [messageStr, errorTag] : undefined;
+
         if (opts.logLevel === LogLevel.Error) {
           SentrySDK.captureMessage(messageStr, {
             extra,
             level: "error",
-            tags: { marimo: "true" },
+            tags,
+            fingerprint,
           });
         } else if (opts.logLevel === LogLevel.Fatal) {
           SentrySDK.captureMessage(messageStr, {
             extra,
             level: "fatal",
-            tags: { marimo: "true" },
+            tags,
+            fingerprint,
           });
         } else if (opts.logLevel === LogLevel.Warning) {
           SentrySDK.addBreadcrumb({
             message: messageStr,
             level: "warning",
+            data: extra,
+          });
+        } else if (opts.logLevel === LogLevel.Info) {
+          SentrySDK.addBreadcrumb({
+            message: messageStr,
+            level: "info",
             data: extra,
           });
         }

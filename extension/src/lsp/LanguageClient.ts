@@ -1,3 +1,4 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 
@@ -17,11 +18,23 @@ import type {
   MarimoLspNotificationOf,
 } from "../types.ts";
 
+/** Maximum number of stderr lines retained from the LSP subprocess. */
+const MAX_STDERR_LINES = 200;
+
+export interface LspProcessExit {
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
+}
+
 export class LanguageClientStartError extends Data.TaggedError(
   "LanguageClientStartError",
 )<{
   exec: lsp.Executable;
   cause: unknown;
+  /** Tail of the LSP subprocess stderr captured up to the failure, if any. */
+  stderr?: string;
+  /** Exit code/signal of the LSP subprocess if it exited before/during start. */
+  exit?: LspProcessExit;
 }> {}
 
 export class ExecuteCommandError extends Data.TaggedError(
@@ -60,10 +73,62 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
       const outputChannel =
         yield* code.window.createLogOutputChannel("marimo-lsp");
 
+      interface SpawnState {
+        readonly stderrTail: string[];
+        pending: string;
+        exit?: LspProcessExit;
+      }
+      // `currentSpawn` is the most recent serverOptions() invocation;
+      // `lastExitedSpawn` is the most recent spawn whose child has exited.
+      // vscode-languageclient auto-restarts on crash, so when start() finally
+      // rejects, currentSpawn often points to a fresh child that hasn't yet
+      // produced output — the failure data lives on the previous (exited)
+      // spawn.
+      let currentSpawn: SpawnState | undefined;
+      let lastExitedSpawn: SpawnState | undefined;
+
+      const serverOptions: lsp.ServerOptions = () =>
+        new Promise<NodeChildProcess.ChildProcess>((resolve, reject) => {
+          const spawn: SpawnState = { stderrTail: [], pending: "" };
+          currentSpawn = spawn;
+
+          const child = NodeChildProcess.spawn(exec.command, exec.args ?? []);
+          // Always reject on spawn failure — `pid === undefined` is a
+          // sync-detected failure path, but other failures surface
+          // asynchronously via the "error" event.
+          child.once("error", reject);
+          if (child.pid === undefined) return;
+
+          child.stderr?.setEncoding("utf8");
+          child.stderr?.on("data", (chunk: string) => {
+            spawn.pending += chunk;
+            let nl: number;
+            while ((nl = spawn.pending.indexOf("\n")) !== -1) {
+              let line = spawn.pending.slice(0, nl);
+              spawn.pending = spawn.pending.slice(nl + 1);
+              if (line.endsWith("\r")) line = line.slice(0, -1);
+              if (line.length === 0) continue;
+              spawn.stderrTail.push(line);
+              if (spawn.stderrTail.length > MAX_STDERR_LINES) {
+                spawn.stderrTail.shift();
+              }
+            }
+          });
+          child.once("exit", (code, signal) => {
+            if (spawn.pending.length > 0) {
+              spawn.stderrTail.push(spawn.pending);
+              spawn.pending = "";
+            }
+            spawn.exit = { code, signal };
+            lastExitedSpawn = spawn;
+          });
+          resolve(child);
+        });
+
       const client = new lsp.LanguageClient(
         "marimo-lsp",
         "Marimo Language Server",
-        { run: exec, debug: exec },
+        serverOptions,
         {
           // create a dedicated output channel for marimo-lsp messages
           outputChannel,
@@ -81,7 +146,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
        *
        * Some LSP lifecycle errors occur because `client.stop()` never
        * resolves (e.g. the server process is stuck). A bounded stop
-       * prevents the restart flow from blocking forever (VSCODE-MARIMO-2KA).
+       * prevents the restart flow from blocking forever.
        */
       const stopClient = Effect.fn(function* () {
         yield* Effect.tryPromise(() => client.stop()).pipe(
@@ -93,7 +158,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
 
       /**
        * Start the client. Waits until the client is fully stopped first,
-       * avoiding the "Client is currently stopping" race (VSCODE-MARIMO-2KZ).
+       * avoiding the "Client is currently stopping" race.
        */
       const startClient = () =>
         Effect.gen(function* () {
@@ -107,7 +172,24 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
           }
           yield* Effect.tryPromise({
             try: () => client.start(),
-            catch: (cause) => new LanguageClientStartError({ exec, cause }),
+            catch: (cause) => {
+              // Prefer the spawn whose exit we actually observed — current
+              // may have been replaced by an auto-restart whose child hasn't
+              // produced output yet.
+              const source =
+                currentSpawn?.exit !== undefined
+                  ? currentSpawn
+                  : (lastExitedSpawn ?? currentSpawn);
+              return new LanguageClientStartError({
+                exec,
+                cause,
+                stderr:
+                  source && source.stderrTail.length > 0
+                    ? source.stderrTail.join("\n")
+                    : undefined,
+                exit: source?.exit,
+              });
+            },
           });
           yield* Effect.logInfo("marimo-lsp client started");
         }).pipe(Effect.withSpan("lsp.start"));
