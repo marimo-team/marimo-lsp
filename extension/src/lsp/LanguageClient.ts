@@ -78,10 +78,14 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
         pending: string;
         exit?: LspProcessExit;
       }
-      // Per-spawn state, replaced on every serverOptions() invocation so a
-      // straggler child (e.g. stopClient timed out) cannot bleed its stderr
-      // into the next spawn's LanguageClientStartError.
+      // `currentSpawn` is the most recent serverOptions() invocation;
+      // `lastExitedSpawn` is the most recent spawn whose child has exited.
+      // vscode-languageclient auto-restarts on crash, so when start() finally
+      // rejects, currentSpawn often points to a fresh child that hasn't yet
+      // produced output — the failure data lives on the previous (exited)
+      // spawn.
       let currentSpawn: SpawnState | undefined;
+      let lastExitedSpawn: SpawnState | undefined;
 
       const serverOptions: lsp.ServerOptions = () =>
         new Promise<NodeChildProcess.ChildProcess>((resolve, reject) => {
@@ -116,6 +120,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
               spawn.pending = "";
             }
             spawn.exit = { code, signal };
+            lastExitedSpawn = spawn;
           });
           resolve(child);
         });
@@ -167,16 +172,24 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
           }
           yield* Effect.tryPromise({
             try: () => client.start(),
-            catch: (cause) =>
-              new LanguageClientStartError({
+            catch: (cause) => {
+              // Prefer the spawn whose exit we actually observed — current
+              // may have been replaced by an auto-restart whose child hasn't
+              // produced output yet.
+              const source =
+                currentSpawn?.exit !== undefined
+                  ? currentSpawn
+                  : (lastExitedSpawn ?? currentSpawn);
+              return new LanguageClientStartError({
                 exec,
                 cause,
                 stderr:
-                  currentSpawn && currentSpawn.stderrTail.length > 0
-                    ? currentSpawn.stderrTail.join("\n")
+                  source && source.stderrTail.length > 0
+                    ? source.stderrTail.join("\n")
                     : undefined,
-                exit: currentSpawn?.exit,
-              }),
+                exit: source?.exit,
+              });
+            },
           });
           yield* Effect.logInfo("marimo-lsp client started");
         }).pipe(Effect.withSpan("lsp.start"));
