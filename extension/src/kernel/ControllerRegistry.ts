@@ -122,9 +122,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
 
       yield* refresh();
       yield* Effect.forkScoped(
-        pyExt
-          .environmentChanges()
-          .pipe(Stream.mapEffect(refresh), Stream.runDrain),
+        pyExt.environmentChanges().pipe(Stream.runForEach(refresh)),
       );
 
       // Subscribe to notebook editor changes to update affinity
@@ -252,7 +250,7 @@ const trackControllerSelections = (
   selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, AnyController>>,
 ) =>
   controller.selectedNotebookChanges().pipe(
-    Stream.mapEffect(
+    Stream.runForEach(
       Effect.fn(function* (e) {
         if (!e.selected) {
           // NB: We don't delete from selections when deselected
@@ -269,7 +267,6 @@ const trackControllerSelections = (
         );
       }),
     ),
-    Stream.runDrain,
   );
 
 const createOrUpdateController = Effect.fn("ControllerRegistry.createOrUpdate")(

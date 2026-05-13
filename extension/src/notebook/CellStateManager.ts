@@ -85,17 +85,14 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
 
       // Re-derive context when execution state changes
       yield* Effect.forkScoped(
-        lastExecutedCodeRef.changes.pipe(
-          Stream.mapEffect(updateContext),
-          Stream.runDrain,
-        ),
+        lastExecutedCodeRef.changes.pipe(Stream.runForEach(updateContext)),
       );
 
       // Re-derive context when active notebook changes
       yield* Effect.forkScoped(
         editorRegistry
           .streamActiveNotebookChanges()
-          .pipe(Stream.mapEffect(updateContext), Stream.runDrain),
+          .pipe(Stream.runForEach(updateContext)),
       );
 
       // Re-derive context when cell content changes (staleness may flip)

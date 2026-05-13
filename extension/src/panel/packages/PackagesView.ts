@@ -141,22 +141,20 @@ export const PackagesViewLive = Layer.scopedDiscard(
     // Subscribe to active notebook changes
     yield* Effect.forkScoped(
       editorRegistry.streamActiveNotebookChanges().pipe(
-        Stream.mapEffect(() => {
+        Stream.runForEach(() => {
           return refreshPackages();
         }),
-        Stream.runDrain,
       ),
     );
 
     // Subscribe to dependency tree changes
     yield* Effect.forkScoped(
       packagesService.streamDependencyTreeChanges().pipe(
-        Stream.mapEffect(
+        Stream.runForEach(
           Effect.fn(function* (_treeMap) {
             yield* refreshPackages();
           }),
         ),
-        Stream.runDrain,
       ),
     );
 

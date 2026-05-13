@@ -80,10 +80,9 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       const scratchLock = yield* Effect.makeSemaphore(1);
 
       yield* Effect.forkScoped(
-        client.streamOf("marimo/operation").pipe(
-          Stream.mapEffect((msg) => Queue.offer(queue, msg)),
-          Stream.runDrain,
-        ),
+        client
+          .streamOf("marimo/operation")
+          .pipe(Stream.runForEach((msg) => Queue.offer(queue, msg))),
       );
 
       yield* Effect.forkScoped(
@@ -116,7 +115,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       // renderer (i.e., front end) -> kernel
       yield* Effect.forkScoped(
         renderer.messages().pipe(
-          Stream.mapEffect(
+          Stream.runForEach(
             Effect.fn(function* ({ editor, message }) {
               const notebook = MarimoNotebookDocument.from(editor.notebook);
               switch (message.command) {
@@ -195,7 +194,6 @@ export class KernelManager extends Effect.Service<KernelManager>()(
               }
             }),
           ),
-          Stream.runDrain,
         ),
       );
 

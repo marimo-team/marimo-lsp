@@ -57,7 +57,7 @@ export const MarimoFileDetectorLive = Layer.scopedDiscard(
     yield* Effect.forkScoped(
       code.window
         .activeTextEditorChanges()
-        .pipe(Stream.mapEffect(updateContext), Stream.runDrain),
+        .pipe(Stream.runForEach(updateContext)),
     );
   }),
 );
