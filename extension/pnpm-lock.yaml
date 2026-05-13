@@ -115,7 +115,7 @@ importers:
         specifier: npm:@voidzero-dev/vite-plus-core@latest
         version: '@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)'
       vite-plus:
-        specifier: latest
+        specifier: 0.1.18
         version: 0.1.18(@opentelemetry/api@1.9.0)(@types/node@24.7.2)(@vitest/coverage-v8@4.1.4)(@voidzero-dev/vite-plus-core@0.1.18(@types/node@24.7.2)(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2))(esbuild@0.28.0)(jiti@2.6.1)(typescript@6.0.2)
       vitest:
         specifier: npm:@voidzero-dev/vite-plus-test@latest
