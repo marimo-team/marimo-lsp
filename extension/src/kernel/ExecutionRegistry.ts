@@ -119,6 +119,15 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
 
             switch (msg.status) {
               case "queued": {
+                const runIdOpt = extractRunId(msg);
+                if (Option.isNone(runIdOpt)) {
+                  yield* Effect.logWarning(
+                    "Queued cell-op missing run_id; cannot track execution",
+                  ).pipe(Effect.annotateLogs({ cellId, status: msg.status }));
+                  return;
+                }
+                const runId = runIdOpt.value;
+
                 // Record execution — clears stale state
                 yield* cellStateManager.recordExecution(notebookCell);
 
@@ -150,7 +159,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                     CellEntry.withExecution(
                       cell,
                       new PendingExecutionHandle({
-                        runId: Option.getOrThrow(extractRunId(msg)),
+                        runId,
                         inner: execution,
                       }),
                     ),
