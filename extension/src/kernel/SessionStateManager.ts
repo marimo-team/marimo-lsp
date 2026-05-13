@@ -53,7 +53,7 @@ export class SessionStateManager extends Effect.Service<SessionStateManager>()(
       yield* Effect.forkScoped(
         editorRegistry
           .streamActiveNotebookChanges()
-          .pipe(Stream.mapEffect(updateContext), Stream.runDrain),
+          .pipe(Stream.runForEach(updateContext)),
       );
 
       return {};

@@ -106,25 +106,23 @@ export const VariablesViewLive = Layer.scopedDiscard(
     // Subscribe to active notebook changes
     yield* Effect.forkScoped(
       editorRegistry.streamActiveNotebookChanges().pipe(
-        Stream.mapEffect(() => {
+        Stream.runForEach(() => {
           return refreshVariables();
         }),
-        Stream.runDrain,
       ),
     );
 
     // Subscribe to variable declarations changes
     yield* Effect.forkScoped(
-      variablesService.streamVariablesChanges().pipe(
-        Stream.mapEffect(() => refreshVariables()),
-        Stream.runDrain,
-      ),
+      variablesService
+        .streamVariablesChanges()
+        .pipe(Stream.runForEach(() => refreshVariables())),
     );
 
     // Subscribe to variable values changes
     yield* Effect.forkScoped(
       variablesService.streamVariableValuesChanges().pipe(
-        Stream.mapEffect(
+        Stream.runForEach(
           Effect.fn(function* (valuesMap) {
             const activeNotebookUri =
               yield* editorRegistry.getActiveNotebookUri();
@@ -162,7 +160,6 @@ export const VariablesViewLive = Layer.scopedDiscard(
             yield* provider.refresh();
           }),
         ),
-        Stream.runDrain,
       ),
     );
 

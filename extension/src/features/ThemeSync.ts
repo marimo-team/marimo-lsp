@@ -22,7 +22,7 @@ export const ThemeSyncLive = Layer.scopedDiscard(
         code.window.colorThemeChanges().pipe(Stream.changes),
         editorRegistry.streamActiveNotebookChanges(),
       ).pipe(
-        Stream.mapEffect(
+        Stream.runForEach(
           Effect.fn("ThemeSync.sync")(function* ([theme]) {
             yield* client
               .executeCommand({
@@ -43,7 +43,6 @@ export const ThemeSyncLive = Layer.scopedDiscard(
               );
           }),
         ),
-        Stream.runDrain,
       ),
     );
   }),

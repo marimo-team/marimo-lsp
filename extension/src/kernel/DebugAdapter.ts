@@ -266,7 +266,10 @@ function activateDebugpy(
     yield* Stream.runForEach(ops, (op) =>
       Effect.sync(() => {
         if (result) return;
-        const consoleOutput = (op as Record<string, unknown>).console;
+        // SAFETY: `console` is an optional cell-op field whose shape isn't
+        // surfaced in the openapi-generated type for `CellOperationNotification`;
+        // the guards below validate each entry before use.
+        const consoleOutput = (op as { console?: unknown }).console;
         if (!consoleOutput) return;
 
         const outputs = Array.isArray(consoleOutput)
