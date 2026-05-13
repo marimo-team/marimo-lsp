@@ -18,7 +18,7 @@ export default vite.defineConfig({
   },
   plugins: [tailwindcss(), stylesheet()],
   resolve: {
-    dedupe: ["react", "react-dom"],
+    dedupe: ["react", "react-dom", "jotai"],
     tsconfigPaths: true,
     alias: {
       "@/": "@marimo-team/frontend/unstable_internal/",

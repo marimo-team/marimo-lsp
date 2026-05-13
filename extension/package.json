@@ -49,6 +49,7 @@
     "effect": "^3.19.19",
     "esbuild": "^0.28.0",
     "jest-mock-vscode": "^4.7.0",
+    "jotai": "2.17.0",
     "mocha": "^11.7.4",
     "posthog-node": "^5.10.3",
     "react": "^19.2.0",
@@ -57,9 +58,9 @@
     "tinyspy": "^4.0.4",
     "turbo": "^2.5.8",
     "typescript": "^6.0.2",
-    "vite": "npm:@voidzero-dev/vite-plus-core@^0.1.18",
-    "vite-plus": "latest",
-    "vitest": "npm:@voidzero-dev/vite-plus-test@^0.1.18",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.1.18",
+    "vite-plus": "0.1.18",
+    "vitest": "npm:@voidzero-dev/vite-plus-test@0.1.18",
     "vscode-jsonrpc": "^8.2.1",
     "vscode-languageclient": "10.0.0-next.21",
     "vscode-languageserver-protocol": "^3.17.5"
@@ -497,11 +498,11 @@
   "engines": {
     "vscode": "^1.86.0"
   },
-  "packageManager": "pnpm@10.9.0",
+  "packageManager": "pnpm@10.28.2",
   "pnpm": {
     "overrides": {
-      "vite": "npm:@voidzero-dev/vite-plus-core@latest",
-      "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
+      "vite": "npm:@voidzero-dev/vite-plus-core@0.1.18",
+      "vitest": "npm:@voidzero-dev/vite-plus-test@0.1.18"
     }
   }
 }
