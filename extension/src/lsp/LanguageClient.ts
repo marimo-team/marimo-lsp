@@ -1,3 +1,4 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 
@@ -17,11 +18,23 @@ import type {
   MarimoLspNotificationOf,
 } from "../types.ts";
 
+/** Maximum number of stderr lines retained from the LSP subprocess. */
+const MAX_STDERR_LINES = 200;
+
+export interface LspProcessExit {
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
+}
+
 export class LanguageClientStartError extends Data.TaggedError(
   "LanguageClientStartError",
 )<{
   exec: lsp.Executable;
   cause: unknown;
+  /** Tail of the LSP subprocess stderr captured up to the failure, if any. */
+  stderr?: string;
+  /** Exit code/signal of the LSP subprocess if it exited before/during start. */
+  exit?: LspProcessExit;
 }> {}
 
 export class ExecuteCommandError extends Data.TaggedError(
@@ -60,10 +73,36 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
       const outputChannel =
         yield* code.window.createLogOutputChannel("marimo-lsp");
 
+      const stderrTail: string[] = [];
+      let lastExit: LspProcessExit | undefined;
+
+      const serverOptions: lsp.ServerOptions = () =>
+        new Promise<NodeChildProcess.ChildProcess>((resolve, reject) => {
+          stderrTail.length = 0;
+          lastExit = undefined;
+          const child = NodeChildProcess.spawn(exec.command, exec.args ?? []);
+          if (child.pid === undefined) {
+            child.once("error", reject);
+            return;
+          }
+          child.stderr?.setEncoding("utf8");
+          child.stderr?.on("data", (chunk: string) => {
+            for (const line of chunk.split(/\r?\n/)) {
+              if (line.length === 0) continue;
+              stderrTail.push(line);
+              if (stderrTail.length > MAX_STDERR_LINES) stderrTail.shift();
+            }
+          });
+          child.once("exit", (code, signal) => {
+            lastExit = { code, signal };
+          });
+          resolve(child);
+        });
+
       const client = new lsp.LanguageClient(
         "marimo-lsp",
         "Marimo Language Server",
-        { run: exec, debug: exec },
+        serverOptions,
         {
           // create a dedicated output channel for marimo-lsp messages
           outputChannel,
@@ -81,7 +120,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
        *
        * Some LSP lifecycle errors occur because `client.stop()` never
        * resolves (e.g. the server process is stuck). A bounded stop
-       * prevents the restart flow from blocking forever (VSCODE-MARIMO-2KA).
+       * prevents the restart flow from blocking forever.
        */
       const stopClient = Effect.fn(function* () {
         yield* Effect.tryPromise(() => client.stop()).pipe(
@@ -93,7 +132,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
 
       /**
        * Start the client. Waits until the client is fully stopped first,
-       * avoiding the "Client is currently stopping" race (VSCODE-MARIMO-2KZ).
+       * avoiding the "Client is currently stopping" race.
        */
       const startClient = () =>
         Effect.gen(function* () {
@@ -107,7 +146,14 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
           }
           yield* Effect.tryPromise({
             try: () => client.start(),
-            catch: (cause) => new LanguageClientStartError({ exec, cause }),
+            catch: (cause) =>
+              new LanguageClientStartError({
+                exec,
+                cause,
+                stderr:
+                  stderrTail.length > 0 ? stderrTail.join("\n") : undefined,
+                exit: lastExit,
+              }),
           });
           yield* Effect.logInfo("marimo-lsp client started");
         }).pipe(Effect.withSpan("lsp.start"));

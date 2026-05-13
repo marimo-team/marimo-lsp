@@ -1,5 +1,6 @@
 import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import {
+  Cause,
   Effect,
   Fiber,
   Option,
@@ -167,7 +168,10 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                 }).pipe(
                   Effect.tapErrorCause((cause) =>
                     Effect.logError(`Notebook serialize failed`).pipe(
-                      Effect.annotateLogs({ cause }),
+                      Effect.annotateLogs({
+                        cause,
+                        "error.tag": causeTag(cause),
+                      }),
                     ),
                   ),
                   Effect.mapError(
@@ -190,7 +194,10 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                 }).pipe(
                   Effect.tapErrorCause((cause) =>
                     Effect.logError(`Notebook deserialize failed`).pipe(
-                      Effect.annotateLogs({ cause }),
+                      Effect.annotateLogs({
+                        cause,
+                        "error.tag": causeTag(cause),
+                      }),
                     ),
                   ),
                   Effect.mapError(
@@ -250,6 +257,26 @@ const decodeDeserializeResponse = Schema.decodeUnknown(SerializedNotebook);
 const decodeSerializeResponse = Schema.decodeUnknown(
   Schema.Struct({ source: Schema.String }),
 );
+
+function hasStringTag(value: unknown): value is { _tag: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "_tag" in value &&
+    typeof (value as { _tag: unknown })._tag === "string"
+  );
+}
+
+function causeTag(cause: Cause.Cause<unknown>): string {
+  return Option.match(Cause.failureOption(cause), {
+    onSome: (failure) => (hasStringTag(failure) ? failure._tag : "Unknown"),
+    onNone: () => {
+      if (Cause.isDie(cause)) return "Die";
+      if (Cause.isInterruptedOnly(cause)) return "Interrupt";
+      return "Empty";
+    },
+  });
+}
 
 const DEFAULT_CELL_NAME = "_";
 
