@@ -81,11 +81,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
 
       yield* Effect.forkScoped(
         client.streamOf("marimo/operation").pipe(
-          Stream.mapEffect(
-            Effect.fn(function* (msg) {
-              yield* Queue.offer(queue, msg);
-            }),
-          ),
+          Stream.mapEffect((msg) => Queue.offer(queue, msg)),
           Stream.runDrain,
         ),
       );

@@ -1033,6 +1033,77 @@ it.scoped(
   }),
 );
 
+it.scoped(
+  "logs and skips when queued message has no run_id",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx();
+
+    yield* Effect.gen(function* () {
+      const registry = yield* ExecutionRegistry;
+      const cellStateManager = yield* CellStateManager;
+
+      const cellData = {
+        kind: 1, // Code
+        value: "x = 1",
+        languageId: "python",
+        metadata: {
+          name: "test_cell",
+          state: "stale",
+          stableId: "cell-1",
+        },
+      };
+      const notebook = MarimoNotebookDocument.from(
+        createTestNotebookDocument("file:///test/notebook_mo.py", {
+          data: { cells: [cellData] },
+        }),
+      );
+      const editor = createTestNotebookEditor(notebook.rawNotebookDocument);
+      const cell = notebook.cellAt(0);
+      const cellId = Option.getOrThrow(cell.id);
+      const code = yield* VsCode;
+
+      yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
+      yield* TestClock.adjust("10 millis");
+
+      // Mark the cell stale so we can prove the bail happens before recordExecution
+      yield* cellStateManager.invalidateCell(
+        MarimoNotebookCell.from(cell.rawNotebookCell),
+      );
+      expect(
+        yield* cellStateManager.isCellStale(
+          MarimoNotebookCell.from(cell.rawNotebookCell),
+        ),
+      ).toBe(true);
+
+      const controller = yield* code.notebooks.createNotebookController(
+        "test-controller",
+        NOTEBOOK_TYPE,
+        "test-controller",
+      );
+
+      // Pre-fix this would die via Option.getOrThrow on a None.
+      const message: CellOperationNotification = {
+        op: "cell-op",
+        cell_id: cellId,
+        status: "queued",
+        run_id: null,
+      };
+
+      yield* registry.handleCellOperation(message, {
+        editor,
+        controller: new PythonController(controller, "test-controller"),
+      });
+
+      // Stale state preserved because we bail before recordExecution
+      expect(
+        yield* cellStateManager.isCellStale(
+          MarimoNotebookCell.from(cell.rawNotebookCell),
+        ),
+      ).toBe(true);
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
 /**
  * Creates a PythonController whose `createNotebookCellExecution` throws,
  * simulating VS Code's "invalid cell" error when a cell is deleted.
