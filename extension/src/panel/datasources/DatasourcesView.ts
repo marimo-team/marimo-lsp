@@ -368,34 +368,31 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
     // Subscribe to active notebook changes
     yield* Effect.forkScoped(
       editorRegistry.streamActiveNotebookChanges().pipe(
-        Stream.mapEffect(() => {
+        Stream.runForEach(() => {
           return refreshDatasources();
         }),
-        Stream.runDrain,
       ),
     );
 
     // Subscribe to datasource connection changes
     yield* Effect.forkScoped(
       datasourcesService.streamConnectionsChanges().pipe(
-        Stream.mapEffect(
+        Stream.runForEach(
           Effect.fn(function* (_connectionsMap) {
             yield* refreshDatasources();
           }),
         ),
-        Stream.runDrain,
       ),
     );
 
     // Subscribe to dataset changes
     yield* Effect.forkScoped(
       datasourcesService.streamDatasetsChanges().pipe(
-        Stream.mapEffect(
+        Stream.runForEach(
           Effect.fn(function* (_datasetsMap) {
             yield* refreshDatasources();
           }),
         ),
-        Stream.runDrain,
       ),
     );
 
