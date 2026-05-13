@@ -73,28 +73,49 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
       const outputChannel =
         yield* code.window.createLogOutputChannel("marimo-lsp");
 
-      const stderrTail: string[] = [];
-      let lastExit: LspProcessExit | undefined;
+      interface SpawnState {
+        readonly stderrTail: string[];
+        pending: string;
+        exit?: LspProcessExit;
+      }
+      // Per-spawn state, replaced on every serverOptions() invocation so a
+      // straggler child (e.g. stopClient timed out) cannot bleed its stderr
+      // into the next spawn's LanguageClientStartError.
+      let currentSpawn: SpawnState | undefined;
 
       const serverOptions: lsp.ServerOptions = () =>
         new Promise<NodeChildProcess.ChildProcess>((resolve, reject) => {
-          stderrTail.length = 0;
-          lastExit = undefined;
+          const spawn: SpawnState = { stderrTail: [], pending: "" };
+          currentSpawn = spawn;
+
           const child = NodeChildProcess.spawn(exec.command, exec.args ?? []);
-          if (child.pid === undefined) {
-            child.once("error", reject);
-            return;
-          }
+          // Always reject on spawn failure — `pid === undefined` is a
+          // sync-detected failure path, but other failures surface
+          // asynchronously via the "error" event.
+          child.once("error", reject);
+          if (child.pid === undefined) return;
+
           child.stderr?.setEncoding("utf8");
           child.stderr?.on("data", (chunk: string) => {
-            for (const line of chunk.split(/\r?\n/)) {
+            spawn.pending += chunk;
+            let nl: number;
+            while ((nl = spawn.pending.indexOf("\n")) !== -1) {
+              let line = spawn.pending.slice(0, nl);
+              spawn.pending = spawn.pending.slice(nl + 1);
+              if (line.endsWith("\r")) line = line.slice(0, -1);
               if (line.length === 0) continue;
-              stderrTail.push(line);
-              if (stderrTail.length > MAX_STDERR_LINES) stderrTail.shift();
+              spawn.stderrTail.push(line);
+              if (spawn.stderrTail.length > MAX_STDERR_LINES) {
+                spawn.stderrTail.shift();
+              }
             }
           });
           child.once("exit", (code, signal) => {
-            lastExit = { code, signal };
+            if (spawn.pending.length > 0) {
+              spawn.stderrTail.push(spawn.pending);
+              spawn.pending = "";
+            }
+            spawn.exit = { code, signal };
           });
           resolve(child);
         });
@@ -151,8 +172,10 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
                 exec,
                 cause,
                 stderr:
-                  stderrTail.length > 0 ? stderrTail.join("\n") : undefined,
-                exit: lastExit,
+                  currentSpawn && currentSpawn.stderrTail.length > 0
+                    ? currentSpawn.stderrTail.join("\n")
+                    : undefined,
+                exit: currentSpawn?.exit,
               }),
           });
           yield* Effect.logInfo("marimo-lsp client started");

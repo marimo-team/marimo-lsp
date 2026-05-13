@@ -263,7 +263,7 @@ function hasStringTag(value: unknown): value is { _tag: string } {
     typeof value === "object" &&
     value !== null &&
     "_tag" in value &&
-    typeof (value as { _tag: unknown })._tag === "string"
+    typeof value._tag === "string"
   );
 }
 
