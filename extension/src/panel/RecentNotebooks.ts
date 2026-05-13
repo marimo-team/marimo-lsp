@@ -139,7 +139,7 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
     // Listen for notebook open events
     yield* Effect.forkScoped(
       code.window.activeNotebookEditorChanges().pipe(
-        Stream.mapEffect(
+        Stream.runForEach(
           Effect.fn(function* (maybeEditor) {
             const notebook = maybeEditor.pipe(
               Option.flatMap((editor) =>
@@ -154,7 +154,6 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
             }
           }),
         ),
-        Stream.runDrain,
       ),
     );
 
