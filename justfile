@@ -70,3 +70,33 @@ download-tutorials:
         curl -fsSL "$BASE_URL/$tutorial" -o "extension/tutorials/$tutorial"
     done
     echo "All tutorials downloaded successfully!"
+
+[group('setup')]
+vendor-effect:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PKG="extension/node_modules/effect/package.json"
+    if [ ! -f "$PKG" ]; then
+        echo "error: $PKG missing — run \`pnpm -C extension install\` first" >&2
+        exit 1
+    fi
+    VERSION=$(node -p "require('./extension/node_modules/effect/package.json').version")
+    TAG="effect@${VERSION}"
+    DIR="repos/effect"
+    if [ -d "$DIR/.git" ]; then
+        CURRENT=$(git -C "$DIR" describe --tags --exact-match 2>/dev/null || echo "")
+        if [ "$CURRENT" = "$TAG" ]; then
+            echo "repos/effect already at $TAG"
+            exit 0
+        fi
+        echo "Updating repos/effect: ${CURRENT:-<unknown>} -> $TAG"
+        git -C "$DIR" fetch --depth 1 origin "refs/tags/$TAG:refs/tags/$TAG"
+        git -C "$DIR" checkout "$TAG"
+    elif [ -d "$DIR" ]; then
+        echo "error: $DIR exists but isn't a git checkout; remove it and re-run" >&2
+        exit 1
+    else
+        echo "Cloning Effect-TS/effect@$TAG into $DIR"
+        mkdir -p repos
+        git clone --depth 1 --branch "$TAG" https://github.com/Effect-TS/effect.git "$DIR"
+    fi

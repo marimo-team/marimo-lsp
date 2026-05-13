@@ -65,7 +65,7 @@ Tests, types, and lints are pedantic on purpose: they're load-bearing tools, not
 
 Invoke the project-local `/effect-ts` skill ([`.claude/skills/effect-ts/SKILL.md`](.claude/skills/effect-ts/SKILL.md)) — start there; it indexes deeper references under `references/` for each primitive.
 
-When the reference doesn't cover something, reading the Effect source directly is usually the fastest way to resolve a question — the public API lives in `packages/effect/src/ModuleName.ts` and the implementation in `packages/effect/src/internal/`. One option is to clone `github.com/Effect-TS/effect` somewhere on your machine so you can grep it, but any approach that lets you read the source works.
+When the reference doesn't cover something, reading the Effect source directly is usually the fastest way to resolve a question. Run `just vendor-effect` to clone `Effect-TS/effect` into `repos/effect/` (gitignored, pinned to the version this repo resolves). Then grep `repos/effect/packages/effect/src/` for the public API and `repos/effect/packages/effect/src/internal/` for implementations; `@effect/platform`, `@effect/vitest`, etc. live under `repos/effect/packages/`.
 
 ### Local Effect conventions (from `CONTRIBUTING.md`)
 

@@ -13,6 +13,9 @@ extension/.vscode-test/
 !.claude/skills/
 .claude/settings.local.json
 
+# Vendored reference source (populated by `just vendor-effect`)
+repos/
+
 # Coverage
 coverage/
 coverage.xml
