@@ -5,17 +5,7 @@ import type {
   CellOutput,
   OutputMessage,
 } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
-import {
-  Brand,
-  Cause,
-  Data,
-  Effect,
-  String as EffectString,
-  HashMap,
-  Option,
-  Ref,
-  Runtime,
-} from "effect";
+import { Brand, Cause, Data, Effect, HashMap, Option, Ref } from "effect";
 import type * as vscode from "vscode";
 
 import { logUnreachable } from "../assert.ts";
@@ -72,9 +62,6 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
           return HashMap.empty();
         }),
       );
-
-      const runtime = yield* Effect.runtime();
-      const runFork = Runtime.runFork(runtime);
 
       return {
         handleInterrupted(editor: vscode.NotebookEditor) {
@@ -190,43 +177,17 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                 }
                 // MUST modify cell output before `ExecutionHandle.end`
                 yield* CellEntry.maybeUpdateCellOutput(cell, code, options);
-
-                {
-                  // FIXME: stdin/stdout are flushed every 10ms, so wait 50ms
-                  // to ensure all related events arrive before finalizing.
-                  //
-                  // marimo doesn't set a run_id for idle messages, so we can't compare
-                  // against the incoming message to detect if a new execution has started.
-                  //
-                  // Ref: https://github.com/marimo-team/marimo/blob/3644b6f/marimo/_messaging/ops.py#L148-L151
-                  //
-                  // Instead, we capture the `lastRunId` before the timeout and compare it
-                  // when finalizing. If a new execution starts before the timeout fires,
-                  // the `lastRunId` will have changed and we skip finalization.
-                  const lastRunId = cell.lastRunId;
-                  const finalize = Ref.update(ref, (map) => {
-                    const fresh = HashMap.get(map, cellId);
-
-                    if (Option.isNone(fresh)) {
-                      return map;
-                    }
-
-                    const isDifferentRun = !Option.getEquivalence(
-                      EffectString.Equivalence,
-                    )(fresh.value.lastRunId, lastRunId);
-
-                    if (isDifferentRun) {
-                      return map;
-                    }
-
-                    return HashMap.set(
-                      map,
-                      cellId,
-                      CellEntry.end(fresh.value, true, msg.timestamp),
-                    );
-                  });
-                  setTimeout(() => runFork(finalize), 50);
-                }
+                yield* Ref.update(ref, (map) =>
+                  Option.match(HashMap.get(map, cellId), {
+                    onSome: (entry) =>
+                      HashMap.set(
+                        map,
+                        cellId,
+                        CellEntry.end(entry, true, msg.timestamp),
+                      ),
+                    onNone: () => map,
+                  }),
+                );
                 return;
               }
 
@@ -328,7 +289,6 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
   readonly state: CellRuntimeState;
   readonly editor: vscode.NotebookEditor;
   readonly pendingExecution: Option.Option<ExecutionHandle>;
-  readonly lastRunId: Option.Option<RunId>;
 }> {
   static make(id: NotebookCellId, editor: vscode.NotebookEditor) {
     return new CellEntry({
@@ -336,20 +296,16 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
       editor,
       state: createCellRuntimeState(),
       pendingExecution: Option.none(),
-      lastRunId: Option.none(),
     });
   }
   private with(
-    overrides: Partial<
-      Pick<CellEntry, "state" | "pendingExecution" | "lastRunId">
-    >,
+    overrides: Partial<Pick<CellEntry, "state" | "pendingExecution">>,
   ) {
     return new CellEntry({
       id: this.id,
       editor: this.editor,
       state: overrides.state ?? this.state,
       pendingExecution: overrides.pendingExecution ?? this.pendingExecution,
-      lastRunId: overrides.lastRunId ?? this.lastRunId,
     });
   }
   static transition(cell: CellEntry, message: CellOperationNotification) {
@@ -357,7 +313,6 @@ class CellEntry extends Data.TaggedClass("CellEntry")<{
   }
   static withExecution(cell: CellEntry, execution: ExecutionHandle) {
     return cell.with({
-      lastRunId: Option.some(execution.runId),
       pendingExecution: Option.some(execution),
     });
   }

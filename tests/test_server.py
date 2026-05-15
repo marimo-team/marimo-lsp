@@ -576,8 +576,9 @@ x\
         # we just convert to a regular dict here for snapshotting
         messages.append(asdict(params))
         if params.operation.op == "completed-run":
-            # FIXME: stdin/stdout are flushed every 10ms, so wait 100ms to ensure
-            # all related events. The frontend uses the same workaround.
+            # `completed-run` fires before the kernel finishes emitting
+            # trailing notifications (variables, remove-ui-elements, etc).
+            # Wait a beat so the snapshot captures the full sequence.
             await asyncio.sleep(0.1)
             completion_event.set()
 
@@ -847,8 +848,9 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
         # we just convert to a regular dict here for snapshotting
         messages.append(asdict(params))
         if params.operation.op == "completed-run":
-            # FIXME: stdin/stdout are flushed every 10ms, so wait 100ms to ensure
-            # all related events. The frontend uses the same workaround.
+            # `completed-run` fires before the kernel finishes emitting
+            # trailing notifications (variables, remove-ui-elements, etc).
+            # Wait a beat so the snapshot captures the full sequence.
             await asyncio.sleep(0.1)
             completion_event.set()
 
@@ -1397,6 +1399,7 @@ async def test_scratchpad_execution(client: LanguageClient) -> None:
 
         # Handle cell completion (kernel startup)
         if op.get("op") == "completed-run" and not waiting_for_scratch:
+            # `completed-run` fires before trailing notifications drain.
             await asyncio.sleep(0.1)
             cell_completion_event.set()
             return

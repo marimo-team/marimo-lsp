@@ -1,5 +1,4 @@
 import {
-  Deferred,
   Effect,
   Option,
   PubSub,
@@ -200,7 +199,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       return {
         /**
          * Execute code in the scratchpad (isolated from dependency graph).
-         * Returns a stream of cell operations that completes 50ms after idle.
+         * Returns a stream of cell operations that completes when idle is seen.
          */
         executeCodeUnsafe(notebookUri: NotebookId, code: string) {
           return Effect.gen(function* () {
@@ -216,21 +215,11 @@ export class KernelManager extends Effect.Service<KernelManager>()(
               },
             });
 
-            // 3. Stream cell-ops until idle, then wait 50ms for trailing output
-            // marimo flushes stdio every 10ms, so we need to collect trailing messages
-            const sawIdle = yield* Deferred.make<void>();
+            // 3. Stream cell-ops until idle.
+            // marimo flushes stdout/stderr before emitting idle, so all
+            // console cell-ops have already arrived on the same stream.
             return Stream.fromQueue(sub).pipe(
-              Stream.tap((op) =>
-                op.status === "idle"
-                  ? Deferred.succeed(sawIdle, void 0)
-                  : Effect.void,
-              ),
-              // Complete 50ms after idle
-              Stream.interruptWhen(
-                Deferred.await(sawIdle).pipe(
-                  Effect.zipRight(Effect.sleep("50 millis")),
-                ),
-              ),
+              Stream.takeUntil((op) => op.status === "idle"),
             );
           }).pipe(scratchLock.withPermits(1), Stream.unwrapScoped);
         },
