@@ -181,8 +181,18 @@ async def execute_scratch(
         logger.warning(f"No session found for {args.notebook_uri}")
         return
 
+    # Snapshot the document so handle_execute_scratchpad in marimo's runtime
+    # can populate the notebook_document_context ContextVar that
+    # marimo._code_mode.get_context() reads. Without this, code_mode raises
+    # RuntimeError("NotebookDocument not available"). Mirrors marimo's
+    # standalone server (marimo/_server/api/endpoints/execution.py).
     session.put_control_request(
-        ExecuteScratchpadCommand(code=args.inner.code),
+        ExecuteScratchpadCommand(
+            code=args.inner.code,
+            notebook_cells=tuple(
+                session.app_file_manager.app.cell_manager.document.cells
+            ),
+        ),
         from_consumer_id=None,
     )
     logger.info(f"Scratchpad execution request sent for {args.notebook_uri}")

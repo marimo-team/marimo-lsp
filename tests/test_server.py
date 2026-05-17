@@ -1547,3 +1547,135 @@ y\
             },
         ]
     )
+
+
+@pytest.mark.asyncio
+async def test_scratchpad_code_mode_get_context(client: LanguageClient) -> None:
+    """code_mode.get_context() should resolve the notebook document when
+    invoked from scratchpad code.
+
+    handle_execute_scratchpad in marimo._runtime.runtime populates the
+    notebook_document_context ContextVar from request.notebook_cells.
+    execute_scratch in marimo_lsp.api currently sends
+    ExecuteScratchpadCommand(code=...) with no notebook_cells, so the
+    ContextVar stays None and cm.get_context() raises RuntimeError.
+
+    The fix is to snapshot the session document on send — mirroring marimo's
+    standalone /api/execute endpoint
+    (marimo/_server/api/endpoints/execution.py).
+    """
+    notebook_code = "x = 10"
+    client.notebook_document_did_open(
+        lsp.DidOpenNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocument(
+                uri="file:///scratch_codemode.py",
+                notebook_type="marimo-notebook",
+                version=1,
+                cells=[
+                    NotebookCell(
+                        kind=lsp.NotebookCellKind.Code,
+                        document="file:///scratch_codemode.py#cell1",
+                    )
+                ],
+            ),
+            cell_text_documents=[
+                lsp.TextDocumentItem(
+                    uri="file:///scratch_codemode.py#cell1",
+                    language_id="python",
+                    version=1,
+                    text=notebook_code,
+                )
+            ],
+        ),
+    )
+
+    cell_completion_event = asyncio.Event()
+    scratch_messages: list[dict] = []
+    scratch_completion_event = asyncio.Event()
+    waiting_for_scratch = False
+
+    @client.feature("marimo/operation")
+    async def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
+        nonlocal waiting_for_scratch
+        msg = asdict(params)
+        op = msg.get("operation", {})
+
+        if op.get("op") == "completed-run" and not waiting_for_scratch:
+            await asyncio.sleep(0.1)
+            cell_completion_event.set()
+            return
+
+        if op.get("op") == "cell-op" and op.get("cell_id") == "__scratch__":
+            scratch_messages.append(msg)
+            if op.get("status") == "idle":
+                await asyncio.sleep(0.1)
+                scratch_completion_event.set()
+
+    # Boot the kernel by running cell1.
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "execute-cells",
+                    "params": {
+                        "notebookUri": "file:///scratch_codemode.py",
+                        "executable": sys.executable,
+                        "inner": {
+                            "cellIds": ["cell1"],
+                            "codes": [notebook_code],
+                        },
+                    },
+                }
+            ],
+        )
+    )
+    await asyncio.wait_for(cell_completion_event.wait(), timeout=10.0)
+    waiting_for_scratch = True
+
+    # Scratchpad code that exercises cm.get_context() and prints cell count.
+    scratchpad_code = (
+        "import marimo._code_mode as cm\n"
+        "async with cm.get_context() as ctx:\n"
+        "    print(f'cells={len(ctx.cells)}')\n"
+    )
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "execute-scratchpad",
+                    "params": {
+                        "notebookUri": "file:///scratch_codemode.py",
+                        "executable": sys.executable,
+                        "inner": {"code": scratchpad_code},
+                    },
+                }
+            ],
+        )
+    )
+    await asyncio.wait_for(scratch_completion_event.wait(), timeout=5.0)
+
+    # No marimo-error must have arrived. (Without the fix, the scratchpad
+    # emits a marimo-error containing the RuntimeError from cm.get_context.)
+    error_msgs = [
+        m
+        for m in scratch_messages
+        if (m.get("operation", {}).get("output") or {}).get("channel")
+        == "marimo-error"
+    ]
+    assert error_msgs == [], (
+        "cm.get_context() raised — notebook_document_context ContextVar "
+        f"was not populated. errors: {error_msgs}"
+    )
+
+    # stdout from the scratchpad should report the cell count (1).
+    stdout_data = "".join(
+        (m["operation"].get("console") or {}).get("data") or ""
+        for m in scratch_messages
+        if isinstance(m["operation"].get("console"), dict)
+        and m["operation"]["console"].get("channel") == "stdout"
+    )
+    assert "cells=1" in stdout_data, (
+        f"expected 'cells=1' in scratchpad stdout, got: {stdout_data!r}"
+    )
