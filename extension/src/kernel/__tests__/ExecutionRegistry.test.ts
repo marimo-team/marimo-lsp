@@ -202,6 +202,52 @@ describe("buildCellOutputs", () => {
   );
 
   it.effect(
+    "marimo-error exception emits NotebookCellOutputItem.error (mime: application/vnd.code.notebook.error)",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          output: {
+            mimetype: "application/vnd.marimo+error",
+            channel: "marimo-error",
+            data: [
+              {
+                type: "exception",
+                msg: "division by zero",
+                exception_type: "ZeroDivisionError",
+              },
+            ],
+            timestamp: 0,
+          },
+        };
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      // The error item must use the canonical error mime so consumers of
+      // experimental.kernels.executeCode (e.g. agent-bridge or any
+      // vscode-jupyter-style consumer) can distinguish errors from stderr.
+      // Today this emits application/vnd.code.notebook.stderr, which makes
+      // failed scratchpad runs look indistinguishable from a successful run
+      // that printed to stderr.
+      expect(outputs).toHaveLength(1);
+      expect(outputs[0].items).toHaveLength(1);
+      expect(outputs[0].items[0].mime).toBe(
+        "application/vnd.code.notebook.error",
+      );
+      const decoded = new TextDecoder().decode(outputs[0].items[0].data);
+      const parsed = JSON.parse(decoded) as {
+        name: string;
+        message: string;
+      };
+      expect(parsed.name).toBe("ZeroDivisionError");
+      expect(parsed.message).toContain("division by zero");
+    }),
+  );
+
+  it.effect(
     "handles HTML output",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();

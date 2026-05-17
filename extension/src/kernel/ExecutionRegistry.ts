@@ -672,7 +672,17 @@ function buildOutputItem(
       if (errorMessage.includes("<a href=")) {
         return code.NotebookCellOutputItem.text(errorMessage, "text/html");
       }
-      return code.NotebookCellOutputItem.stderr(errorMessage);
+      // Use the canonical error mime (application/vnd.code.notebook.error) so
+      // consumers of experimental.kernels.executeCode (e.g. agent-bridge or
+      // vscode-jupyter-style consumers) can distinguish errors from stderr.
+      // The Python traceback arrives separately as a console output, so we
+      // don't synthesize a JS stack (avoids leaking absolute paths to
+      // consumers and keeps tests reproducible).
+      return code.NotebookCellOutputItem.error({
+        name:
+          error.type === "exception" ? error.exception_type : error.type,
+        message: errorMessage,
+      } as Error);
     });
     return errors[0] || null;
   }
