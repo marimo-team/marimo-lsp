@@ -11,6 +11,7 @@ import type * as vscode from "vscode";
 import { logUnreachable } from "../assert.ts";
 import { SCRATCH_CELL_ID } from "../constants.ts";
 import { prettyErrorMessage } from "../lib/errors.ts";
+import { parseTraceback } from "../lib/tracebacks.ts";
 import { CellStateManager } from "../notebook/CellStateManager.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -545,9 +546,10 @@ export function buildCellOutputs(
   }
 
   // Create NotebookCellOutputs for each channel with items.
-  // Order matches marimo's web frontend: rich output above console streams so
-  // reactive UI elements stay anchored when a cell also prints (#516).
-  if (errorItems.length > 0) {
+  //
+  // marimo-error and a traceback are present, the traceback already renders
+  // `<Type>: <message>` as its header, so the marimo-error item is dropped.
+  if (errorItems.length > 0 && !shouldSuppressMarimoError(state)) {
     outputs.push(
       new code.NotebookCellOutput(errorItems, {
         channel: "marimo-error",
@@ -586,6 +588,32 @@ export function buildCellOutputs(
   return outputs;
 }
 
+const TRACEBACK_MIME = "application/vnd.marimo+traceback";
+
+function hasTraceback(state: CellRuntimeState): boolean {
+  if (state.output?.mimetype === TRACEBACK_MIME) return true;
+  return (state.consoleOutputs ?? []).some(
+    (o) => o?.mimetype === TRACEBACK_MIME,
+  );
+}
+
+// Only suppress when every item is a plain `exception` without `raising_cell`:
+// `strict-exception` carries `ref` and `blamed_cell`, and `exception` with
+// `raising_cell` carries the "raised in cell" pointer — neither appears in the
+// Python traceback, so the marimo-error block stays in those cases.
+function shouldSuppressMarimoError(state: CellRuntimeState): boolean {
+  const out = state.output;
+  if (!out || out.channel !== "marimo-error" || !Array.isArray(out.data)) {
+    return false;
+  }
+  const everyRedundant = out.data.every((e) => {
+    if (e == null || typeof e !== "object") return false;
+    if (!("type" in e) || e.type !== "exception") return false;
+    return !("raising_cell" in e) || !e.raising_cell;
+  });
+  return everyRedundant && hasTraceback(state);
+}
+
 /**
  * Creates a mapper function that converts cell URIs to clickable HTML links.
  *
@@ -613,6 +641,20 @@ function createCellIdMapper(
       return undefined;
     }
     return createCellNavigationLink(cellId, cellIndex + 1);
+  };
+}
+
+function createCellIdToIndex(
+  notebook: MarimoNotebookDocument,
+): (cellId: string) => number | undefined {
+  return (cellId: string) => {
+    const cellIndex = notebook.getCells().findIndex((cell) =>
+      Option.match(cell.id, {
+        onSome: (id) => id === cellId,
+        onNone: () => false,
+      }),
+    );
+    return cellIndex === -1 ? undefined : cellIndex;
   };
 }
 
@@ -647,7 +689,11 @@ function buildOutputItem(
     }
   }
 
-  // Handle traceback
+  // Handle traceback — emit as a structured error so VS Code's built-in
+  // notebook error renderer applies its red-bordered styling. We rewrite
+  // each frame: cell-temp paths become `Cell cell-<N>, line <M>`, and real
+  // file paths get an inline `<a href>` anchor so VS Code's webview
+  // opener turns them into clickable links.
   if (output.mimetype === "application/vnd.marimo+traceback") {
     const text =
       typeof output.data === "object"
@@ -657,7 +703,12 @@ function buildOutputItem(
     if (!text) {
       return null;
     }
-    return code.NotebookCellOutputItem.text(text, "text/html");
+    const cellIdToIndex = notebook
+      ? createCellIdToIndex(MarimoNotebookDocument.from(notebook))
+      : undefined;
+    return code.NotebookCellOutputItem.error(
+      parseTraceback(text, cellIdToIndex),
+    );
   }
 
   // Handle marimo errors
