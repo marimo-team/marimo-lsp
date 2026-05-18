@@ -201,6 +201,17 @@ async def get_package_list(
         logger.warning(f"Package manager not installed for {args.notebook_uri}")
         return {"packages": []}
 
+    if isinstance(args.source, ScriptSource):
+        # No bound venv to `uv pip list` against; flatten `uv tree --script`
+        # instead. Falling through to the venv path here would list packages
+        # from whatever Python uv defaulted to (the LSP's own env), not the
+        # script's.
+        filename = _script_filename(args.notebook_uri)
+        if filename is None:
+            return {"packages": []}
+        tree = package_manager.dependency_tree(filename)
+        return msgspec.to_builtins({"packages": _flatten_tree(tree)})
+
     packages = package_manager.list_packages()
     return msgspec.to_builtins({"packages": packages})
 
@@ -214,12 +225,55 @@ async def get_dependency_tree(
     if isinstance(args.source, ScriptSource):
         # PEP 723 sandbox script: derive the filename from the notebook URI
         # and let `uv tree --script <file>` resolve the env.
-        filename = to_fs_path(args.notebook_uri)
+        filename = _script_filename(args.notebook_uri)
+        if filename is None:
+            return {"tree": None}
         tree = package_manager.dependency_tree(filename)
     else:
         tree = package_manager.dependency_tree()
 
     return msgspec.to_builtins({"tree": tree})
+
+
+def _script_filename(notebook_uri: str) -> str | None:
+    """Resolve a `file://` URI to a filesystem path; warn on anything else.
+
+    Non-file URIs (e.g. `untitled:`, `vscode-notebook-cell:`) can't drive
+    `uv tree --script`. Surfacing them as `None` keeps the script branch
+    fail-closed instead of silently degrading to the project-aware
+    `uv tree` (which is the wrong env entirely).
+    """
+    filename = to_fs_path(notebook_uri)
+    if filename is None:
+        logger.warning(
+            "Cannot resolve script filename from non-file URI",
+            extra={"notebook_uri": notebook_uri},
+        )
+    return filename
+
+
+def _flatten_tree(tree: object) -> list[dict[str, str]]:
+    """Walk a `uv tree` result and return a deduplicated list of packages.
+
+    Mirrors marimo's own `UvPackageManager.list_packages` flattening so that
+    the script-mode `get-package-list` response shape matches the venv-mode
+    `uv pip list` response.
+    """
+    if tree is None:
+        return []
+    seen: set[str] = set()
+    packages: list[dict[str, str]] = []
+    stack: list[object] = list(getattr(tree, "dependencies", []))
+    while stack:
+        node = stack.pop()
+        name = getattr(node, "name", None)
+        if not isinstance(name, str) or name in seen:
+            continue
+        seen.add(name)
+        version = getattr(node, "version", None) or ""
+        packages.append({"name": name, "version": version})
+        stack.extend(getattr(node, "dependencies", []))
+    return sorted(packages, key=lambda p: p["name"])
 
 
 def _package_manager_for(source: VenvSource | ScriptSource) -> LspPackageManager:

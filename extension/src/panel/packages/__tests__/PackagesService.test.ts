@@ -2,14 +2,20 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Stream } from "effect";
 
 import {
-  createTestNotebookEditor,
   createTestNotebookDocument,
+  createTestNotebookEditor,
+  TestVsCode,
 } from "../../../__mocks__/TestVsCode.ts";
-import { ControllerRegistry } from "../../../kernel/ControllerRegistry.ts";
+import { NOTEBOOK_TYPE } from "../../../constants.ts";
+import {
+  type AnyController,
+  ControllerRegistry,
+} from "../../../kernel/ControllerRegistry.ts";
+import { PythonController } from "../../../kernel/NotebookControllerFactory.ts";
 import { notebookId } from "../../../lib/__tests__/branded.ts";
 import { LanguageClient } from "../../../lsp/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../../notebook/NotebookEditorRegistry.ts";
-import type { PackageSource } from "../../../types.ts";
+import { VsCode } from "../../../platform/VsCode.ts";
 import { PackagesService } from "../PackagesService.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/sandbox.py");
@@ -20,7 +26,7 @@ interface ExecutedCommand {
 }
 
 function makeContext(options: {
-  controllerTarget: PackageSource | null;
+  controller: Option.Option<AnyController>;
   treeResponse?: unknown;
 }) {
   const recorded: ExecutedCommand[] = [];
@@ -34,8 +40,8 @@ function makeContext(options: {
         recorded.push({ command: cmd.command, params: cmd.params });
         return Effect.succeed(
           options.treeResponse ?? { tree: null },
-          // SAFETY: the LanguageClient interface returns `unknown`; we shape
-          // it as the response the fetch path expects in this test.
+          // SAFETY: LanguageClient.executeCommand is `Effect<unknown>` in the
+          // production signature; the test fixture pre-shapes the response.
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion
         ) as Effect.Effect<unknown>;
       },
@@ -69,22 +75,7 @@ function makeContext(options: {
   const controllerMock = Layer.succeed(
     ControllerRegistry,
     ControllerRegistry.make({
-      getActiveController: () =>
-        Effect.succeed(
-          options.controllerTarget === null
-            ? Option.none()
-            : Option.some(
-                // The packages flow only reads `target`; provide just that
-                // shape to keep the test honest about the seam being exercised.
-                // SAFETY: we never invoke any other method on the controller
-                // during fetchDependencyTree.
-                // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-                {
-                  id: "marimo-test-controller",
-                  target: options.controllerTarget,
-                } as never,
-              ),
-        ),
+      getActiveController: () => Effect.succeed(options.controller),
       streamSelectionChanges: () => Stream.empty,
       snapshot: () => Effect.succeed({ controllers: [], selections: [] }),
     }),
@@ -100,12 +91,32 @@ function makeContext(options: {
   return { layer, recorded };
 }
 
+const makePythonController = Effect.fn(function* (executable: string) {
+  const code = yield* VsCode;
+  const controller = yield* code.notebooks.createNotebookController(
+    "test-python-controller",
+    NOTEBOOK_TYPE,
+    "Test Python",
+  );
+  return new PythonController(controller, executable);
+});
+
+// SAFETY: building a real `SandboxController` would require its full
+// dependency graph (Uv, OutputChannel, Constants, PythonExtension, VsCode,
+// LanguageClient) — heavier than the test it serves. The packages flow's
+// only contract with the controller here is `instanceof PythonController`,
+// so any non-PythonController value exercises the script branch.
+function makeNonPythonController(): AnyController {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return { id: "test-sandbox-controller" } as unknown as AnyController;
+}
+
 describe("PackagesService", () => {
   it.effect(
     "fetchDependencyTree sends `source: script` when the active controller is sandbox",
     Effect.fn(function* () {
       const { layer, recorded } = makeContext({
-        controllerTarget: { kind: "script" },
+        controller: Option.some(makeNonPythonController()),
         treeResponse: {
           tree: { name: "<root>", version: null, tags: [], dependencies: [] },
         },
@@ -139,11 +150,13 @@ describe("PackagesService", () => {
   it.effect(
     "fetchDependencyTree sends `source: venv` with the executable for a python controller",
     Effect.fn(function* () {
+      const vscode = yield* TestVsCode.make();
+      const controller = yield* makePythonController(
+        "/home/user/.venv/bin/python",
+      ).pipe(Effect.scoped, Effect.provide(vscode.layer));
+
       const { layer, recorded } = makeContext({
-        controllerTarget: {
-          kind: "venv",
-          executable: "/home/user/.venv/bin/python",
-        },
+        controller: Option.some(controller),
         treeResponse: {
           tree: { name: "<root>", version: null, tags: [], dependencies: [] },
         },
@@ -176,7 +189,9 @@ describe("PackagesService", () => {
   it.effect(
     "fetchDependencyTree returns null and skips the LSP call when no controller is active",
     Effect.fn(function* () {
-      const { layer, recorded } = makeContext({ controllerTarget: null });
+      const { layer, recorded } = makeContext({
+        controller: Option.none(),
+      });
 
       const tree = yield* Effect.gen(function* () {
         const svc = yield* PackagesService;
@@ -192,7 +207,7 @@ describe("PackagesService", () => {
     "clearNotebook drops the cached tree so the next fetch re-issues the request",
     Effect.fn(function* () {
       const { layer, recorded } = makeContext({
-        controllerTarget: { kind: "script" },
+        controller: Option.some(makeNonPythonController()),
         treeResponse: {
           tree: { name: "<root>", version: null, tags: [], dependencies: [] },
         },
@@ -209,7 +224,7 @@ describe("PackagesService", () => {
         yield* svc.fetchDependencyTree(NOTEBOOK_URI);
         expect(recorded).toHaveLength(1);
 
-        // After clearNotebook, the cache is empty and the next fetch re-issues.
+        // After clearNotebook the cache is empty, so the next fetch re-issues.
         // This is the seam PackagesView relies on for controller-switch
         // invalidation (see ControllerRegistry.streamSelectionChanges).
         yield* svc.clearNotebook(NOTEBOOK_URI);

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+import shutil
+import subprocess
 import sys
 from typing import TYPE_CHECKING, Any, cast
 
@@ -353,9 +355,11 @@ async def test_marimo_get_package_list_venv_no_session(
     )
 
     # Endpoint is session-free; uv lists packages from the executable directly.
+    # `marimo` is a runtime dep of marimo-lsp, so it must appear when listing
+    # against `sys.executable`. Asserting on it catches a regression to `[]`.
     assert result is not None
-    assert "packages" in result
-    assert isinstance(result["packages"], list)
+    names = {p["name"] for p in result["packages"]}
+    assert "marimo" in names, f"expected marimo in package list, got {names}"
 
 
 @pytest.mark.asyncio
@@ -544,6 +548,41 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
     assert len(tree["dependencies"]) > 2  # Has more than just marimo
 
 
+def _build_local_script_fixture(tmp_path: pathlib.Path) -> pathlib.Path:
+    """Build a self-contained PEP 723 script that depends on a local package.
+
+    Using a local `foo` package instead of a real PyPI dep keeps the test
+    deterministic and offline-friendly. `uv init --lib` produces a minimal
+    hatchling-backed package; `uv add --script` writes the path dep into the
+    script's inline metadata.
+    """
+    uv = shutil.which("uv")
+    assert uv is not None, "uv must be on PATH for this test"
+
+    pkg_dir = tmp_path / "foo"
+    py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    subprocess.run(  # noqa: S603
+        [uv, "init", "--lib", "--python", py_version, str(pkg_dir)],
+        check=True,
+        capture_output=True,
+    )
+
+    script = tmp_path / "sandbox_script.py"
+    script.write_text(
+        "# /// script\n"
+        f'# requires-python = ">={py_version}"\n'
+        "# dependencies = []\n"
+        "# ///\n"
+        "import foo  # noqa: F401\n",
+    )
+    subprocess.run(  # noqa: S603
+        [uv, "add", "--script", str(script), str(pkg_dir)],
+        check=True,
+        capture_output=True,
+    )
+    return script
+
+
 @pytest.mark.asyncio
 async def test_marimo_get_dependency_tree_script_source(
     client: LanguageClient, tmp_path: pathlib.Path
@@ -554,14 +593,7 @@ async def test_marimo_get_dependency_tree_script_source(
     PEP 723 header gets its tree resolved via `uv tree --script <file>`
     without requiring a kernel session.
     """
-    script = tmp_path / "sandbox_script.py"
-    script.write_text(
-        "# /// script\n"
-        '# requires-python = ">=3.11"\n'
-        '# dependencies = ["polars"]\n'
-        "# ///\n"
-        "import polars as pl\n",
-    )
+    script = _build_local_script_fixture(tmp_path)
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
             command="marimo.api",
@@ -582,8 +614,8 @@ async def test_marimo_get_dependency_tree_script_source(
     tree = result["tree"]
     assert tree is not None, "Expected uv tree --script to return a real tree"
     top_level_names = {dep["name"] for dep in tree["dependencies"]}
-    assert "polars" in top_level_names, (
-        f"Expected polars in top-level deps, got {top_level_names}"
+    assert "foo" in top_level_names, (
+        f"Expected local 'foo' package in top-level deps, got {top_level_names}"
     )
 
 
@@ -617,6 +649,37 @@ async def test_marimo_get_dependency_tree_script_no_pep723(
     )
 
     assert result == {"tree": None}
+
+
+@pytest.mark.asyncio
+async def test_marimo_get_package_list_script_source(
+    client: LanguageClient, tmp_path: pathlib.Path
+) -> None:
+    """Package list with a script source flattens the script's tree.
+
+    Without this, a ScriptSource request would silently `uv pip list` against
+    the LSP's own Python — listing the wrong env entirely.
+    """
+    script = _build_local_script_fixture(tmp_path)
+    result = await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "get-package-list",
+                    "params": {
+                        "notebookUri": script.as_uri(),
+                        "source": {"kind": "script"},
+                        "inner": {},
+                    },
+                }
+            ],
+        )
+    )
+
+    assert result is not None
+    names = {p["name"] for p in result["packages"]}
+    assert "foo" in names, f"expected local 'foo' in flattened script list, got {names}"
 
 
 @pytest.mark.asyncio

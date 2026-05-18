@@ -1,16 +1,33 @@
 import { Effect, HashMap, Option, Schema, SubscriptionRef } from "effect";
 
-import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
+import {
+  type AnyController,
+  ControllerRegistry,
+} from "../../kernel/ControllerRegistry.ts";
+import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
+import type { PackageSource } from "../../types.ts";
 import {
   type DependencyTreeNode,
   DependencyTreeResponse,
   ListPackagesResponse,
   type PackageDescription,
 } from "./schemas.ts";
+
+/**
+ * Derive how to ask the server about a notebook's python environment from
+ * the controller that's currently selected. A `PythonController` knows its
+ * executable up front (`venv` mode); the sandbox controller doesn't and the
+ * server resolves the env via `uv tree --script <file>` (`script` mode).
+ */
+function controllerSource(controller: AnyController): PackageSource {
+  return controller instanceof PythonController
+    ? { kind: "venv", executable: controller.executable }
+    : { kind: "script" };
+}
 
 // Re-export schema types for convenience
 export type { DependencyTreeNode };
@@ -247,7 +264,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               return null;
             }
 
-            const source = activeController.value.target;
+            const source = controllerSource(activeController.value);
 
             // Set loading state
             yield* SubscriptionRef.update(dependencyTreesRef, (map) =>

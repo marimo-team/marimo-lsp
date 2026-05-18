@@ -117,9 +117,12 @@ export const PackagesViewLive = Layer.scopedDiscard(
         return;
       }
 
-      // Skip the synthetic root node (`<root>` from `uv tree --script`,
-      // `installed-packages` from our venv fallback, or the project itself
-      // in a uv project) — its children are the packages the user cares about.
+      // Surface the user's direct dependencies and hide the tree's top-level
+      // wrapper. Across all paths the root is uninformative:
+      //   - `<root>` for PEP 723 script mode
+      //   - the uv project name when the notebook lives in a uv project
+      //   - `installed-packages` from our venv pip-list fallback synthesizer
+      // The deps below it are what the user actually wants to see.
       const items: PackageTreeItem[] = tree.dependencies.map((dep) => ({
         type: "package",
         notebookUri,

@@ -22,7 +22,6 @@ import {
   type MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
-import type { PackageSource } from "../types.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
 export type NotebookControllerId = Brand.Branded<string, "ControllerId">;
@@ -267,14 +266,12 @@ export class PythonController {
   readonly _tag = "PythonController";
   #inner: Omit<vscode.NotebookController, "dispose">;
   executable: string;
-  readonly target: PackageSource;
   constructor(
     inner: Omit<vscode.NotebookController, "dispose">,
     executable: string,
   ) {
     this.#inner = inner;
     this.executable = executable;
-    this.target = { kind: "venv", executable };
   }
   static getId(env: py.Environment) {
     return NotebookControllerId(`marimo-${env.path}`);
