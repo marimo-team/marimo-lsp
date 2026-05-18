@@ -454,7 +454,7 @@ describe("buildCellOutputs", () => {
           output: {
             mimetype: "application/vnd.marimo+traceback",
             channel: "output",
-            data: '<b>Traceback (most recent call last):</b>\n  File "<stdin>", line 1, in <module>\nTypeError: invalid value',
+            data: '<div class="highlight"><pre>Traceback (most recent call last):\n  File <span class="s">&quot;/tmp/foo.py&quot;</span>, line 1, in &lt;module&gt;\nTypeError: invalid value</pre></div>',
           },
         };
 
@@ -510,6 +510,80 @@ describe("buildCellOutputs", () => {
 
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode;
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "suppresses redundant exception marimo-error when a traceback is also present",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          output: {
+            mimetype: "application/vnd.marimo+error",
+            channel: "marimo-error",
+            data: [
+              {
+                type: "exception",
+                msg: "division by zero",
+                exception_type: "ZeroDivisionError",
+              },
+            ],
+            timestamp: 0,
+          },
+          consoleOutputs: [
+            {
+              mimetype: "application/vnd.marimo+traceback",
+              channel: "stderr",
+              data: "Traceback (most recent call last):\n  File &quot;/tmp/cell.py&quot;, line 1, in &lt;module&gt;\nZeroDivisionError: division by zero",
+              timestamp: 0,
+            },
+          ],
+        };
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+    }),
+  );
+
+  it.effect(
+    "keeps marimo-error rule violations even when a traceback is present",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          output: {
+            mimetype: "application/vnd.marimo+error",
+            channel: "marimo-error",
+            data: [
+              {
+                type: "multiple-defs",
+                name: "x",
+                cells: [cellId("other-cell-id")],
+              },
+            ],
+            timestamp: 0,
+          },
+          consoleOutputs: [
+            {
+              mimetype: "application/vnd.marimo+traceback",
+              channel: "stderr",
+              data: "Traceback (most recent call last):\n  File &quot;/tmp/cell.py&quot;, line 1\nNameError: unused",
+              timestamp: 0,
+            },
+          ],
+        };
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 

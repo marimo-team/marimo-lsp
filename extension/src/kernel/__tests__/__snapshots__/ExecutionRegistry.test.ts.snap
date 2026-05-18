@@ -43,10 +43,8 @@ exports[`buildCellOutputs > handles application/vnd.marimo+traceback output 1`] 
   {
     "items": [
       {
-        "data": "<b>Traceback (most recent call last):</b>
-  File "<stdin>", line 1, in <module>
-TypeError: invalid value",
-        "mime": "text/html",
+        "data": "{"name":"TypeError","message":"invalid value","stack":"Traceback (most recent call last):\\n  File <a href=\\"/tmp/foo.py:1\\">/tmp/foo.py:1</a>\\u001b[2m, in <module>\\u001b[0m\\n\\u001b[1;31mTypeError\\u001b[0m: invalid value"}",
+        "mime": "application/vnd.code.notebook.error",
       },
     ],
     "metadata": undefined,
@@ -392,6 +390,36 @@ exports[`buildCellOutputs > ignores output/marimo-error/pdb channels in console 
 ]
 `;
 
+exports[`buildCellOutputs > keeps marimo-error rule violations even when a traceback is present 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "This cell redefines variables from other cells.
+
+'x' was also defined by:
+  • other-cell-id",
+        "mime": "application/vnd.code.notebook.stderr",
+      },
+    ],
+    "metadata": {
+      "channel": "marimo-error",
+    },
+  },
+  {
+    "items": [
+      {
+        "data": "{"name":"NameError","message":"unused","stack":"Traceback (most recent call last):\\n  File <a href=\\"/tmp/cell.py:1\\">/tmp/cell.py:1</a>\\u001b[2m\\u001b[0m\\n\\u001b[1;31mNameError\\u001b[0m: unused"}",
+        "mime": "application/vnd.code.notebook.error",
+      },
+    ],
+    "metadata": {
+      "channel": "stderr",
+    },
+  },
+]
+`;
+
 exports[`buildCellOutputs > preserves whitespace-only output 1`] = `
 [
   {
@@ -428,6 +456,22 @@ exports[`buildCellOutputs > separates console outputs from main output correctly
     ],
     "metadata": {
       "channel": "stdout",
+    },
+  },
+]
+`;
+
+exports[`buildCellOutputs > suppresses redundant exception marimo-error when a traceback is also present 1`] = `
+[
+  {
+    "items": [
+      {
+        "data": "{"name":"ZeroDivisionError","message":"division by zero","stack":"Traceback (most recent call last):\\n  File <a href=\\"/tmp/cell.py:1\\">/tmp/cell.py:1</a>\\u001b[2m, in <module>\\u001b[0m\\n\\u001b[1;31mZeroDivisionError\\u001b[0m: division by zero"}",
+        "mime": "application/vnd.code.notebook.error",
+      },
+    ],
+    "metadata": {
+      "channel": "stderr",
     },
   },
 ]
