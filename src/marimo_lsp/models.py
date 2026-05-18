@@ -32,6 +32,37 @@ class SessionCommand(NotebookCommand[T]):
     """The target environment Python executable."""
 
 
+class VenvSource(msgspec.Struct, tag="venv", tag_field="kind", rename="camel"):
+    """The notebook's environment is a concrete venv with a known python executable."""
+
+    executable: str
+    """Path to the python binary inside the venv."""
+
+
+class ScriptSource(msgspec.Struct, tag="script", tag_field="kind", rename="camel"):
+    """The notebook's environment is a PEP 723 sandbox script.
+
+    The server resolves the script filename from the notebook URI; `uv`
+    derives the venv from the script's inline metadata.
+    """
+
+
+PackageSource = VenvSource | ScriptSource
+"""Discriminated union of environment sources for package endpoints."""
+
+
+class PackageCommand(NotebookCommand[T]):
+    """A notebook command that describes its python environment via a `PackageSource`.
+
+    Distinct from `SessionCommand`: package endpoints don't talk to a live
+    marimo kernel — they shell out to `uv` — and sandbox notebooks have no
+    pre-resolved python executable for the client to send.
+    """
+
+    source: PackageSource
+    """How to resolve the notebook's python environment."""
+
+
 class SerializeRequest(msgspec.Struct, rename="camel"):
     """
     A request to serialize a notebook to Python source.

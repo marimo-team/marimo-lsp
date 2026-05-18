@@ -20,6 +20,7 @@ from marimo._server.models.export import ExportAsHTMLRequest
 from marimo._server.models.models import InstantiateNotebookRequest
 from marimo._session.state.serialize import serialize_session_view
 from marimo._utils.parse_dataclass import parse_raw
+from pygls.uris import to_fs_path
 
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
@@ -35,12 +36,15 @@ from marimo_lsp.models import (
     ListPackagesRequest,
     ModelRequest,
     NotebookCommand,
+    PackageCommand,
+    ScriptSource,
     SerializeRequest,
     SessionCommand,
     SetDisplayThemeRequest,
     StdinRequest,
     UpdateConfigurationRequest,
     UpdateUIElementRequest,
+    VenvSource,
 )
 from marimo_lsp.package_manager import LspPackageManager
 
@@ -189,50 +193,102 @@ async def execute_scratch(
 
 
 async def get_package_list(
-    manager: LspSessionManager,
-    args: SessionCommand[ListPackagesRequest],
+    args: PackageCommand[ListPackagesRequest],
 ):
     logger.info(f"get_package_list for {args.notebook_uri}")
-    session = manager.get_session(args.notebook_uri)
-    if not session:
-        logger.warning(f"No session found for {args.notebook_uri}")
-        return {"packages": []}
-
-    package_manager = LspPackageManager(
-        delegate=create_package_manager("uv"),
-        venv_location=args.executable,
-    )
+    package_manager = _package_manager_for(args.source)
     if not package_manager.is_manager_installed():
         logger.warning(f"Package manager not installed for {args.notebook_uri}")
         return {"packages": []}
+
+    if isinstance(args.source, ScriptSource):
+        # No bound venv to `uv pip list` against; flatten `uv tree --script`
+        # instead. Falling through to the venv path here would list packages
+        # from whatever Python uv defaulted to (the LSP's own env), not the
+        # script's.
+        filename = _script_filename(args.notebook_uri)
+        if filename is None:
+            return {"packages": []}
+        tree = package_manager.dependency_tree(filename)
+        return msgspec.to_builtins({"packages": _flatten_tree(tree)})
 
     packages = package_manager.list_packages()
     return msgspec.to_builtins({"packages": packages})
 
 
 async def get_dependency_tree(
-    manager: LspSessionManager,
-    args: SessionCommand[DependencyTreeRequest],
+    args: PackageCommand[DependencyTreeRequest],
 ):
     logger.info(f"get_dependency_tree for {args.notebook_uri}")
-    session = manager.get_session(args.notebook_uri)
-    if not session:
-        logger.warning(f"No session found for {args.notebook_uri}")
-        return {"tree": None}
+    package_manager = _package_manager_for(args.source)
 
-    package_manager = LspPackageManager(
-        delegate=create_package_manager("uv"),
-        venv_location=args.executable,
-    )
-
-    is_sandbox = False
-    if is_sandbox:
-        filename = session.app_file_manager.filename
+    if isinstance(args.source, ScriptSource):
+        # PEP 723 sandbox script: derive the filename from the notebook URI
+        # and let `uv tree --script <file>` resolve the env.
+        filename = _script_filename(args.notebook_uri)
+        if filename is None:
+            return {"tree": None}
         tree = package_manager.dependency_tree(filename)
     else:
         tree = package_manager.dependency_tree()
 
     return msgspec.to_builtins({"tree": tree})
+
+
+def _script_filename(notebook_uri: str) -> str | None:
+    """Resolve a `file://` URI to a filesystem path; warn on anything else.
+
+    Non-file URIs (e.g. `untitled:`, `vscode-notebook-cell:`) can't drive
+    `uv tree --script`. Surfacing them as `None` keeps the script branch
+    fail-closed instead of silently degrading to the project-aware
+    `uv tree` (which is the wrong env entirely).
+    """
+    filename = to_fs_path(notebook_uri)
+    if filename is None:
+        logger.warning(
+            "Cannot resolve script filename from non-file URI",
+            extra={"notebook_uri": notebook_uri},
+        )
+    return filename
+
+
+def _flatten_tree(tree: object) -> list[dict[str, str]]:
+    """Walk a `uv tree` result and return a deduplicated list of packages.
+
+    Mirrors marimo's own `UvPackageManager.list_packages` flattening so that
+    the script-mode `get-package-list` response shape matches the venv-mode
+    `uv pip list` response.
+    """
+    if tree is None:
+        return []
+    seen: set[str] = set()
+    packages: list[dict[str, str]] = []
+    stack: list[object] = list(getattr(tree, "dependencies", []))
+    while stack:
+        node = stack.pop()
+        name = getattr(node, "name", None)
+        if not isinstance(name, str) or name in seen:
+            continue
+        seen.add(name)
+        version = getattr(node, "version", None) or ""
+        packages.append({"name": name, "version": version})
+        stack.extend(getattr(node, "dependencies", []))
+    return sorted(packages, key=lambda p: p["name"])
+
+
+def _package_manager_for(source: VenvSource | ScriptSource) -> LspPackageManager:
+    """Build a package manager for the given environment source.
+
+    We pin the underlying tool to `uv` for both variants today: `uv pip list`
+    works against any python env, and `uv tree --script` is the only way to
+    introspect a PEP 723 script's deps. A future server-side change can pick
+    the user's preferred manager for venv mode without a wire-protocol change.
+    """
+    venv_location = source.executable if isinstance(source, VenvSource) else None
+    return LspPackageManager(
+        delegate=create_package_manager("uv"),
+        venv_location=venv_location,
+    )
 
 
 async def serialize(args: SerializeRequest):
@@ -419,14 +475,12 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
 
     if method == "get-package-list":
         return await get_package_list(
-            manager,
-            msgspec.convert(params, type=SessionCommand[ListPackagesRequest]),
+            msgspec.convert(params, type=PackageCommand[ListPackagesRequest]),
         )
 
     if method == "get-dependency-tree":
         return await get_dependency_tree(
-            manager,
-            msgspec.convert(params, type=SessionCommand[DependencyTreeRequest]),
+            msgspec.convert(params, type=PackageCommand[DependencyTreeRequest]),
         )
 
     if method == "get-configuration":

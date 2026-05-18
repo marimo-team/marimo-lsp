@@ -41,6 +41,18 @@ interface SessionScoped<T> extends NotebookScoped<T> {
   executable: string;
 }
 
+/**
+ * Discriminated union describing how the server should resolve a notebook's
+ * python environment for package introspection. See `docs/adr/0001-package-endpoints-env-source.md`.
+ */
+export type PackageSource =
+  | { kind: "venv"; executable: string }
+  | { kind: "script" };
+
+interface PackageScoped<T> extends NotebookScoped<T> {
+  source: PackageSource;
+}
+
 type ExecuteCellsRequest = Schemas["ExecuteCellsRequest"];
 type UpdateUIElementRequest = Schemas["UpdateUIElementRequest"];
 type ModelRequest = Schemas["ModelRequest"];
@@ -82,8 +94,8 @@ type MarimoApiMethodMap = {
   "set-model-value": NotebookScoped<ModelRequest>;
   "invoke-function": NotebookScoped<InvokeFunctionRequest>;
   "delete-cell": NotebookScoped<DeleteCellRequest>;
-  "get-package-list": SessionScoped<ListPackagesRequest>;
-  "get-dependency-tree": SessionScoped<DependencyTreeRequest>;
+  "get-package-list": PackageScoped<ListPackagesRequest>;
+  "get-dependency-tree": PackageScoped<DependencyTreeRequest>;
   "get-configuration": NotebookScoped<GetConfigurationRequest>;
   "update-configuration": NotebookScoped<UpdateConfigurationRequest>;
   "close-session": NotebookScoped<CloseSessionRequest>;

@@ -7,6 +7,7 @@ import {
   Exit,
   HashMap,
   Option,
+  PubSub,
   Ref,
   Scope,
   Stream,
@@ -72,6 +73,16 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       const selectionsRef = yield* Ref.make(
         HashMap.empty<NotebookId, AnyController>(),
       );
+      // Per-notebook controller-selection events. Subscribers (e.g. the
+      // packages panel) need to react when the user switches kernels on a
+      // notebook, since the cached env data is now stale.
+      const selectionEvents = yield* Effect.acquireRelease(
+        PubSub.unbounded<{
+          notebookUri: NotebookId;
+          controller: AnyController;
+        }>(),
+        (hub) => PubSub.shutdown(hub),
+      );
 
       yield* Effect.addFinalizer(() =>
         SynchronizedRef.updateEffect(
@@ -107,6 +118,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
               env,
               handlesRef,
               selectionsRef,
+              selectionEvents,
             }).pipe(
               Effect.provideService(VsCode, code),
               Effect.provideService(NotebookControllerFactory, factory),
@@ -145,12 +157,19 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
 
       // Track sandbox controller selections
       yield* Effect.forkScoped(
-        trackControllerSelections(sandboxController, selectionsRef),
+        trackControllerSelections(
+          sandboxController,
+          selectionsRef,
+          selectionEvents,
+        ),
       );
 
       return {
         getActiveController(notebook: MarimoNotebookDocument) {
           return Effect.map(Ref.get(selectionsRef), HashMap.get(notebook.id));
+        },
+        streamSelectionChanges() {
+          return Stream.fromPubSub(selectionEvents);
         },
         // for testing only
         snapshot() {
@@ -248,6 +267,10 @@ const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(
 const trackControllerSelections = (
   controller: AnyController,
   selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, AnyController>>,
+  selectionEvents: PubSub.PubSub<{
+    notebookUri: NotebookId;
+    controller: AnyController;
+  }>,
 ) =>
   controller.selectedNotebookChanges().pipe(
     Stream.runForEach(
@@ -259,6 +282,10 @@ const trackControllerSelections = (
         }
         const notebook = MarimoNotebookDocument.from(e.notebook);
         yield* Ref.update(selectionsRef, HashMap.set(notebook.id, controller));
+        yield* PubSub.publish(selectionEvents, {
+          notebookUri: notebook.id,
+          controller,
+        });
         yield* Effect.logTrace("Updated controller for notebook").pipe(
           Effect.annotateLogs({
             controllerId: controller.id,
@@ -276,8 +303,12 @@ const createOrUpdateController = Effect.fn("ControllerRegistry.createOrUpdate")(
       HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
     >;
     selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, AnyController>>;
+    selectionEvents: PubSub.PubSub<{
+      notebookUri: NotebookId;
+      controller: AnyController;
+    }>;
   }) {
-    const { env, selectionsRef, handlesRef } = options;
+    const { env, selectionsRef, selectionEvents, handlesRef } = options;
     const code = yield* VsCode;
     const factory = yield* NotebookControllerFactory;
     const controllerId = PythonController.getId(env);
@@ -308,7 +339,11 @@ const createOrUpdateController = Effect.fn("ControllerRegistry.createOrUpdate")(
             });
 
             yield* Effect.forkScoped(
-              trackControllerSelections(controller, selectionsRef),
+              trackControllerSelections(
+                controller,
+                selectionsRef,
+                selectionEvents,
+              ),
             );
 
             return controller;

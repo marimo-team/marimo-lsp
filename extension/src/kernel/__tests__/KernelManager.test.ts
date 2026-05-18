@@ -81,6 +81,7 @@ const withTestCtx = Effect.fn(function* () {
         ControllerRegistry.make({
           getActiveController: () =>
             Effect.succeed(Option.some(mockController)),
+          streamSelectionChanges: () => Stream.empty,
           snapshot: () => Effect.succeed({ controllers: [], selections: [] }),
         }),
       ),
