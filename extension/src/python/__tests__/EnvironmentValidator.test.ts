@@ -85,7 +85,10 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
     }),
   );
 
-  it.effect(
+  // Skipped on Windows: pygls intermittently hits OSError [Errno 22] on
+  // stdout flush while shutting down the server subprocess, which causes
+  // the test to hang past the 30s timeout. The non-Windows runs cover this.
+  it.effect.skipIf(isWindows)(
     "Should fail with outdated marimo",
     Effect.fn(function* () {
       const uv = yield* Uv;
