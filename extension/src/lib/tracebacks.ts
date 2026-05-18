@@ -61,9 +61,8 @@ function rewriteFrame(line: string, cellIdToIndex?: CellIdToIndex): string {
     // Keep ANSI strictly OUTSIDE the anchor — ANSI codes inside the anchor
     // text get split into separate segments by the ANSI parser before the
     // HTML-link regex runs, breaking link detection.
-    const href = `${escapeHtml(path)}:${lineNo}`;
-    const label = `${path}:${lineNo}`;
-    return `${indent}File <a href="${href}">${label}</a>${ANSI.dim}${tail}${ANSI.reset}`;
+    const escaped = escapeHtml(`${path}:${lineNo}`);
+    return `${indent}File <a href="${escaped}">${escaped}</a>${ANSI.dim}${tail}${ANSI.reset}`;
   });
 }
 

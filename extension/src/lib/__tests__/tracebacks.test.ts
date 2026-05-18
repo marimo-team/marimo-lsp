@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseTraceback } from "../tracebacks.ts";
 
+// oxlint-disable-next-line no-control-regex
 const stripAnsi = (s: string) => s.replace(/\u001b\[[\d;]*m/g, "");
 
 describe("parseTraceback", () => {
@@ -104,6 +105,25 @@ my.pkg.CustomError: oops`;
     const out = parseTraceback(html);
     expect(out.name).toBe("my.pkg.CustomError");
     expect(out.message).toBe("oops");
+  });
+
+  it("escapes HTML-special characters in the anchor label and href", () => {
+    // Pygments encodes special chars in paths as HTML entities, so the input
+    // arrives with `&amp;`/`&lt;`/`&gt;` and `decodeEntities` resurrects them
+    // before the frame is rewritten. The anchor must re-escape them so the
+    // VS Code error renderer treats them as text, not markup.
+    const html = `Traceback (most recent call last):
+  File &quot;/tmp/a&amp;b&lt;c&gt;.py&quot;, line 1, in &lt;module&gt;
+ValueError: oops`;
+    expect(parseTraceback(html)).toMatchInlineSnapshot(`
+    	{
+    	  "message": "oops",
+    	  "name": "ValueError",
+    	  "stack": "Traceback (most recent call last):
+    	  File <a href="/tmp/a&amp;b&lt;c&gt;.py:1">/tmp/a&amp;b&lt;c&gt;.py:1</a>[2m, in <module>[0m
+    	[1;31mValueError[0m: oops",
+    	}
+    `);
   });
 
   it("returns empty name/message when the input is not a traceback", () => {

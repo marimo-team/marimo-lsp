@@ -588,6 +588,32 @@ export function buildCellOutputs(
   return outputs;
 }
 
+const TRACEBACK_MIME = "application/vnd.marimo+traceback";
+
+function hasTraceback(state: CellRuntimeState): boolean {
+  if (state.output?.mimetype === TRACEBACK_MIME) return true;
+  return (state.consoleOutputs ?? []).some(
+    (o) => o?.mimetype === TRACEBACK_MIME,
+  );
+}
+
+// Only suppress when every item is a plain `exception` without `raising_cell`:
+// `strict-exception` carries `ref` and `blamed_cell`, and `exception` with
+// `raising_cell` carries the "raised in cell" pointer — neither appears in the
+// Python traceback, so the marimo-error block stays in those cases.
+function shouldSuppressMarimoError(state: CellRuntimeState): boolean {
+  const out = state.output;
+  if (!out || out.channel !== "marimo-error" || !Array.isArray(out.data)) {
+    return false;
+  }
+  const everyRedundant = out.data.every((e) => {
+    if (e == null || typeof e !== "object") return false;
+    if (!("type" in e) || e.type !== "exception") return false;
+    return !("raising_cell" in e) || !e.raising_cell;
+  });
+  return everyRedundant && hasTraceback(state);
+}
+
 /**
  * Creates a mapper function that converts cell URIs to clickable HTML links.
  *
@@ -600,44 +626,6 @@ export function buildCellOutputs(
  * @param notebook - The notebook document containing the cells
  * @returns A function that maps cell URIs to HTML link strings
  */
-const TRACEBACK_MIME = "application/vnd.marimo+traceback";
-
-function hasTraceback(state: CellRuntimeState): boolean {
-  if (state.output?.mimetype === TRACEBACK_MIME) return true;
-  return (state.consoleOutputs ?? []).some(
-    (o) => o?.mimetype === TRACEBACK_MIME,
-  );
-}
-
-function shouldSuppressMarimoError(state: CellRuntimeState): boolean {
-  const out = state.output;
-  if (!out || out.channel !== "marimo-error" || !Array.isArray(out.data)) {
-    return false;
-  }
-  const onlyExceptionLike = out.data.every(
-    (e) =>
-      e != null &&
-      typeof e === "object" &&
-      "type" in e &&
-      (e.type === "exception" || e.type === "strict-exception"),
-  );
-  return onlyExceptionLike && hasTraceback(state);
-}
-
-function createCellIdToIndex(
-  notebook: MarimoNotebookDocument,
-): (cellId: string) => number | undefined {
-  return (cellId: string) => {
-    const cellIndex = notebook.getCells().findIndex((cell) =>
-      Option.match(cell.id, {
-        onSome: (id) => id === cellId,
-        onNone: () => false,
-      }),
-    );
-    return cellIndex === -1 ? undefined : cellIndex;
-  };
-}
-
 function createCellIdMapper(
   notebook: MarimoNotebookDocument,
 ): (cellId: NotebookCellId) => string | undefined {
@@ -653,6 +641,20 @@ function createCellIdMapper(
       return undefined;
     }
     return createCellNavigationLink(cellId, cellIndex + 1);
+  };
+}
+
+function createCellIdToIndex(
+  notebook: MarimoNotebookDocument,
+): (cellId: string) => number | undefined {
+  return (cellId: string) => {
+    const cellIndex = notebook.getCells().findIndex((cell) =>
+      Option.match(cell.id, {
+        onSome: (id) => id === cellId,
+        onNone: () => false,
+      }),
+    );
+    return cellIndex === -1 ? undefined : cellIndex;
   };
 }
 
@@ -704,7 +706,9 @@ function buildOutputItem(
     const cellIdToIndex = notebook
       ? createCellIdToIndex(MarimoNotebookDocument.from(notebook))
       : undefined;
-    return code.NotebookCellOutputItem.error(parseTraceback(text, cellIdToIndex));
+    return code.NotebookCellOutputItem.error(
+      parseTraceback(text, cellIdToIndex),
+    );
   }
 
   // Handle marimo errors
