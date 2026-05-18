@@ -1661,8 +1661,7 @@ async def test_scratchpad_code_mode_get_context(client: LanguageClient) -> None:
     error_msgs = [
         m
         for m in scratch_messages
-        if (m.get("operation", {}).get("output") or {}).get("channel")
-        == "marimo-error"
+        if (m.get("operation", {}).get("output") or {}).get("channel") == "marimo-error"
     ]
     assert error_msgs == [], (
         "cm.get_context() raised — notebook_document_context ContextVar "
