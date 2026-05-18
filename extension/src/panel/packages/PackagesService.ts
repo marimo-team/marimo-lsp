@@ -1,7 +1,6 @@
 import { Effect, HashMap, Option, Schema, SubscriptionRef } from "effect";
 
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
-import { SandboxController } from "../../kernel/SandboxController.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
@@ -47,7 +46,6 @@ export class PackagesService extends Effect.Service<PackagesService>()(
       const client = yield* LanguageClient;
       const controllers = yield* ControllerRegistry;
       const editors = yield* NotebookEditorRegistry;
-      const sandboxController = yield* SandboxController;
 
       // Track package lists: NotebookUri -> PackageListState
       const packageListsRef = yield* SubscriptionRef.make(
@@ -221,7 +219,8 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               return existing.value.tree;
             }
 
-            // Get the executable from the active controller
+            // Get the active controller; its `target` describes how to ask
+            // the server about the env (`venv` with an executable, or `script`).
             const activeNotebook = Option.flatMap(
               yield* editors.getActiveNotebookEditor(),
               (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
@@ -231,21 +230,24 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               return null;
             }
 
-            const controller = Option.getOrElse(
-              yield* controllers.getActiveController(activeNotebook.value),
-              // fallback to sandbox
-              () => sandboxController,
+            const activeController = yield* controllers.getActiveController(
+              activeNotebook.value,
             );
-
-            let executable: string;
-            if ("executable" in controller) {
-              executable = controller.executable;
-            } else {
-              yield* Effect.logWarning(
-                "No active controller for fetching dependency tree",
+            if (Option.isNone(activeController)) {
+              yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
+                HashMap.set(map, notebookUri, {
+                  tree: null,
+                  loading: false,
+                  error: "No kernel selected",
+                }),
               );
+              yield* Effect.logDebug(
+                "No active controller; skipping dependency tree fetch",
+              ).pipe(Effect.annotateLogs({ notebookUri }));
               return null;
             }
+
+            const source = activeController.value.target;
 
             // Set loading state
             yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
@@ -267,7 +269,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                   method: "get-dependency-tree",
                   params: {
                     notebookUri,
-                    executable,
+                    source,
                     inner: {},
                   },
                 },
@@ -284,13 +286,34 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                 Effect.catchAll((error) =>
                   Effect.gen(function* () {
                     const errorMsg = String(error);
+
+                    // Script mode has no useful fallback — `uv tree --script`
+                    // is the only path that resolves PEP 723 metadata.
+                    if (source.kind === "script") {
+                      yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
+                        HashMap.set(map, notebookUri, {
+                          tree: null,
+                          loading: false,
+                          error: errorMsg,
+                        }),
+                      );
+                      yield* Effect.logError(
+                        "Dependency tree failed for script mode",
+                      ).pipe(
+                        Effect.annotateLogs({ notebookUri, error: errorMsg }),
+                      );
+                      return { tree: null };
+                    }
+
                     yield* Effect.logWarning(
                       "Dependency tree failed, falling back to package list",
                     ).pipe(
                       Effect.annotateLogs({ notebookUri, error: errorMsg }),
                     );
 
-                    // Fallback: fetch package list and convert to flat tree
+                    // Venv fallback: fetch the flat package list (which the
+                    // server backs with `uv pip list -p <exe>`) and synthesize
+                    // a single-level tree from it.
                     const packageListRaw = yield* client
                       .executeCommand({
                         command: "marimo.api",
@@ -298,7 +321,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                           method: "get-package-list",
                           params: {
                             notebookUri,
-                            executable,
+                            source,
                             inner: {},
                           },
                         },
@@ -334,7 +357,6 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                         packageListRaw,
                       );
 
-                    // Convert flat package list to flat tree
                     const flatTree: DependencyTreeNode = {
                       name: "installed-packages",
                       version: null,

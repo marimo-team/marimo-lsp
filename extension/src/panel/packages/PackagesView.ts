@@ -1,5 +1,6 @@
 import { Effect, Layer, Option, Ref, Stream } from "effect";
 
+import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -28,6 +29,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
     const treeView = yield* TreeView;
     const packagesService = yield* PackagesService;
     const editorRegistry = yield* NotebookEditorRegistry;
+    const controllers = yield* ControllerRegistry;
     const code = yield* VsCode;
 
     // Track the current package tree items for the active notebook
@@ -115,23 +117,21 @@ export const PackagesViewLive = Layer.scopedDiscard(
         return;
       }
 
-      // Convert tree to flat list of root packages
-      const items: PackageTreeItem[] = [
-        {
-          type: "package",
-          notebookUri,
-          name: tree.name,
-          version: tree.version,
-          tags: tree.tags,
-          dependencies: tree.dependencies,
-        },
-      ];
+      // Skip the synthetic root node (`<root>` from `uv tree --script`,
+      // `installed-packages` from our venv fallback, or the project itself
+      // in a uv project) — its children are the packages the user cares about.
+      const items: PackageTreeItem[] = tree.dependencies.map((dep) => ({
+        type: "package",
+        notebookUri,
+        name: dep.name,
+        version: dep.version,
+        tags: dep.tags,
+        dependencies: dep.dependencies,
+      }));
 
       yield* Effect.logDebug("Refreshed packages").pipe(
         Effect.annotateLogs({
-          rootPackage: tree.name,
-          version: tree.version,
-          totalDependencies: tree.dependencies.length,
+          topLevelCount: items.length,
         }),
       );
       yield* Ref.set(packageItems, items);
@@ -153,6 +153,20 @@ export const PackagesViewLive = Layer.scopedDiscard(
         Stream.runForEach(
           Effect.fn(function* (_treeMap) {
             yield* refreshPackages();
+          }),
+        ),
+      ),
+    );
+
+    // Invalidate cache when the user switches kernels on a notebook —
+    // the cached tree was computed against the old env. Clearing fires
+    // streamDependencyTreeChanges, which triggers refreshPackages to
+    // re-fetch with the new controller's `target`.
+    yield* Effect.forkScoped(
+      controllers.streamSelectionChanges().pipe(
+        Stream.runForEach(
+          Effect.fn(function* ({ notebookUri }) {
+            yield* packagesService.clearNotebook(notebookUri);
           }),
         ),
       ),

@@ -6,6 +6,7 @@ import sys
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
+    import pathlib
     from collections.abc import Callable
 
 import lsprotocol.types as lsp
@@ -331,8 +332,10 @@ if __name__ == "__main__":
 
 
 @pytest.mark.asyncio
-async def test_marimo_get_package_list_no_session(client: LanguageClient) -> None:
-    """Test the marimo.get_package_list command when no session exists."""
+async def test_marimo_get_package_list_venv_no_session(
+    client: LanguageClient,
+) -> None:
+    """Package list with a venv source works without a live session."""
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
             command="marimo.api",
@@ -341,7 +344,7 @@ async def test_marimo_get_package_list_no_session(client: LanguageClient) -> Non
                     "method": "get-package-list",
                     "params": {
                         "notebookUri": "file:///nonexistent.py",
-                        "executable": sys.executable,
+                        "source": {"kind": "venv", "executable": sys.executable},
                         "inner": {},
                     },
                 }
@@ -349,7 +352,10 @@ async def test_marimo_get_package_list_no_session(client: LanguageClient) -> Non
         )
     )
 
-    assert result == {"packages": []}
+    # Endpoint is session-free; uv lists packages from the executable directly.
+    assert result is not None
+    assert "packages" in result
+    assert isinstance(result["packages"], list)
 
 
 @pytest.mark.asyncio
@@ -412,7 +418,7 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
                     "method": "get-package-list",
                     "params": {
                         "notebookUri": "file:///package_test.py",
-                        "executable": sys.executable,
+                        "source": {"kind": "venv", "executable": sys.executable},
                         "inner": {},
                     },
                 }
@@ -430,8 +436,14 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
 
 
 @pytest.mark.asyncio
-async def test_marimo_get_dependency_tree_no_session(client: LanguageClient) -> None:
-    """Test the marimo.get_dependency_tree command when no session exists."""
+async def test_marimo_get_dependency_tree_venv_no_session(
+    client: LanguageClient,
+) -> None:
+    """Dependency tree with a venv source works without a live session.
+
+    `uv tree` requires a uv-managed project; against an arbitrary venv it returns
+    None. The endpoint should answer regardless of session state.
+    """
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
             command="marimo.api",
@@ -440,7 +452,7 @@ async def test_marimo_get_dependency_tree_no_session(client: LanguageClient) -> 
                     "method": "get-dependency-tree",
                     "params": {
                         "notebookUri": "file:///nonexistent.py",
-                        "executable": sys.executable,
+                        "source": {"kind": "venv", "executable": sys.executable},
                         "inner": {},
                     },
                 }
@@ -448,7 +460,8 @@ async def test_marimo_get_dependency_tree_no_session(client: LanguageClient) -> 
         )
     )
 
-    assert result == {"tree": None}
+    assert result is not None
+    assert "tree" in result
 
 
 @pytest.mark.asyncio
@@ -511,7 +524,7 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
                     "method": "get-dependency-tree",
                     "params": {
                         "notebookUri": "file:///dep_tree_test.py",
-                        "executable": sys.executable,
+                        "source": {"kind": "venv", "executable": sys.executable},
                         "inner": {},
                     },
                 }
@@ -529,6 +542,81 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
     assert "tags" in tree
     assert "dependencies" in tree
     assert len(tree["dependencies"]) > 2  # Has more than just marimo
+
+
+@pytest.mark.asyncio
+async def test_marimo_get_dependency_tree_script_source(
+    client: LanguageClient, tmp_path: pathlib.Path
+) -> None:
+    """Dependency tree with a script source uses PEP 723 metadata.
+
+    Covers the original sandbox-panel-empty bug (#567): a notebook with a
+    PEP 723 header gets its tree resolved via `uv tree --script <file>`
+    without requiring a kernel session.
+    """
+    script = tmp_path / "sandbox_script.py"
+    script.write_text(
+        "# /// script\n"
+        '# requires-python = ">=3.11"\n'
+        '# dependencies = ["polars"]\n'
+        "# ///\n"
+        "import polars as pl\n",
+    )
+    result = await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "get-dependency-tree",
+                    "params": {
+                        "notebookUri": script.as_uri(),
+                        "source": {"kind": "script"},
+                        "inner": {},
+                    },
+                }
+            ],
+        )
+    )
+
+    assert result is not None
+    tree = result["tree"]
+    assert tree is not None, "Expected uv tree --script to return a real tree"
+    top_level_names = {dep["name"] for dep in tree["dependencies"]}
+    assert "polars" in top_level_names, (
+        f"Expected polars in top-level deps, got {top_level_names}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_marimo_get_dependency_tree_script_no_pep723(
+    client: LanguageClient, tmp_path: pathlib.Path
+) -> None:
+    """A script without PEP 723 metadata returns `tree=None`, not an error.
+
+    Pinning down the contract so the TS-side error path (the `script` variant
+    has no fallback) stays meaningful — if uv can't resolve a tree, we want a
+    structured `None` rather than a thrown exception.
+    """
+    script = tmp_path / "plain_script.py"
+    script.write_text("print('no metadata')\n")
+
+    result = await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "get-dependency-tree",
+                    "params": {
+                        "notebookUri": script.as_uri(),
+                        "source": {"kind": "script"},
+                        "inner": {},
+                    },
+                }
+            ],
+        )
+    )
+
+    assert result == {"tree": None}
 
 
 @pytest.mark.asyncio

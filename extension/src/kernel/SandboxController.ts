@@ -22,6 +22,7 @@ import {
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
+import type { PackageSource } from "../types.ts";
 
 export class SandboxController extends Effect.Service<SandboxController>()(
   "SandboxController",
@@ -193,8 +194,11 @@ export class SandboxController extends Effect.Service<SandboxController>()(
           ),
         );
 
+      const target: PackageSource = { kind: "script" };
+
       return {
         id: controller.id,
+        target,
         createNotebookCellExecution(cell: MarimoNotebookCell) {
           return controller.createNotebookCellExecution(cell.rawNotebookCell);
         },
