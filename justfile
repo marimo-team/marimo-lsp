@@ -86,7 +86,16 @@ vendor-effect:
     if [ -d "$DIR/.git" ]; then
         CURRENT=$(git -C "$DIR" describe --tags --exact-match 2>/dev/null || echo "")
         if [ "$CURRENT" = "$TAG" ]; then
-            echo "repos/effect already at $TAG"
+            # Right tag, but the working tree may be incomplete (e.g. an
+            # interrupted clone leaves tracked files unmaterialized). repos/ is
+            # read-only reference, so restoring to HEAD is always safe.
+            if [ -n "$(git -C "$DIR" status --porcelain)" ]; then
+                echo "repos/effect at $TAG but working tree incomplete; restoring"
+                git -C "$DIR" reset --hard HEAD
+                git -C "$DIR" clean -fdx
+            else
+                echo "repos/effect already at $TAG"
+            fi
             exit 0
         fi
         echo "Updating repos/effect: ${CURRENT:-<unknown>} -> $TAG"
