@@ -80,6 +80,8 @@ type ExportAsIpynbRequest = {};
 
 interface ExecuteScratchRequest {
   code: string;
+  /** Correlation id echoed on the terminating `completed-run` notification. */
+  runId?: string;
 }
 
 type SendStdinRequest = Schemas["StdinRequest"];
