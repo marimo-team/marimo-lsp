@@ -17,6 +17,7 @@
 
 import { Schema } from "effect";
 
+import { LanguageId } from "../constants.ts";
 import type { CellConfig, DocumentChange } from "../types.ts";
 
 /** NotebookCellKind.Code — kept as a literal so this module stays vscode-free. */
@@ -95,9 +96,9 @@ export function computeDesiredCells(
         const cell: PlanCell = {
           stableId: change.cellId,
           code: change.code,
-          // TODO: derive languageId/kind for markdown/sql cells created via
-          // code mode; today every committed cell is treated as Python.
-          languageId: "python",
+          // TODO: classify markdown/sql cells (smart-cells) — code mode can
+          // create them too; today every committed cell is treated as Python.
+          languageId: LanguageId.Python,
           kind: CODE_KIND,
           name: change.name,
           config: normalizeConfig(change.config),
