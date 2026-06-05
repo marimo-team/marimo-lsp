@@ -13,6 +13,7 @@ import { Config } from "../config/Config.ts";
 import { SCRATCH_CELL_ID } from "../constants.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { applyDocumentTransaction } from "../notebook/applyDocumentTransaction.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
 import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
@@ -319,7 +320,6 @@ function processOperation(
       case "installing-package-alert":
       case "kernel-ready":
       case "kernel-startup-error":
-      case "notebook-document-transaction":
       case "query-params-append":
       case "query-params-clear":
       case "query-params-delete":
@@ -333,6 +333,11 @@ function processOperation(
       case "storage-entries":
       case "storage-namespaces":
       case "validate-sql-result": {
+        break;
+      }
+      // Replay kernel-originated document edits onto the VS Code notebook.
+      case "notebook-document-transaction": {
+        yield* applyTransactionToEditor(notebookUri, operation);
         break;
       }
       // These operations require an active editor and controller
@@ -359,6 +364,30 @@ function processOperation(
 /**
  * Handle operations that require an active notebook editor and controller.
  */
+/**
+ * Resolve the notebook editor for a kernel-originated document transaction and
+ * replay it. Needs an editor (to address the document) but not a controller.
+ */
+function applyTransactionToEditor(
+  notebookUri: NotebookId,
+  operation: NotificationOf<"notebook-document-transaction">,
+) {
+  return Effect.gen(function* () {
+    const editors = yield* NotebookEditorRegistry;
+    const maybeEditor = yield* editors.getLastNotebookEditor(notebookUri);
+
+    if (Option.isNone(maybeEditor)) {
+      yield* Effect.logWarning(
+        "No active notebook editor; dropping document transaction",
+      );
+      return;
+    }
+
+    const notebook = MarimoNotebookDocument.from(maybeEditor.value.notebook);
+    yield* applyDocumentTransaction(notebook, operation.transaction);
+  });
+}
+
 function processSessionOperation(
   notebookUri: NotebookId,
   operation:
