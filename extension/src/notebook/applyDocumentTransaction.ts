@@ -51,7 +51,7 @@ function toPlanCell(cell: MarimoNotebookCell): Option.Option<PlanCell> {
 
 export const applyDocumentTransaction = Effect.fn(
   "notebook.applyDocumentTransaction",
-)(function*(
+)(function* (
   notebook: MarimoNotebookDocument,
   transaction: DocumentTransactionNotification["transaction"],
 ) {
@@ -84,14 +84,14 @@ export const applyDocumentTransaction = Effect.fn(
     // snapshotLiveNotebook), so we reconstruct them.
     data.outputs = existing
       ? existing.outputs.map(
-        (out) =>
-          new code.NotebookCellOutput(
-            out.items.map(
-              (item) => new code.NotebookCellOutputItem(item.data, item.mime),
+          (out) =>
+            new code.NotebookCellOutput(
+              out.items.map(
+                (item) => new code.NotebookCellOutputItem(item.data, item.mime),
+              ),
+              out.metadata,
             ),
-            out.metadata,
-          ),
-      )
+        )
       : [];
 
     // Preserve a surviving cell's other metadata (state, languageMetadata);
