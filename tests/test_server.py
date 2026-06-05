@@ -440,6 +440,120 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
 
 
 @pytest.mark.asyncio
+async def test_execute_scratchpad_binds_code_mode_and_emits_transaction(
+    client: LanguageClient,
+) -> None:
+    """code_mode binds inside the kernel via execute-scratchpad.
+
+    The linchpin: `marimo._code_mode.get_context()` resolves the document
+    snapshot we attach to the scratchpad command (ADR 0002), and committing a
+    cell emits a `notebook-document-transaction` operation back to the client.
+    """
+    uri = "file:///code_mode_test.py"
+    created_cell: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+
+    def _find_created_cell(params: Any) -> Any | None:  # noqa: ANN401
+        """Return the create-cell change from a code-mode transaction, if any."""
+        operation = getattr(params, "operation", None)
+        if getattr(operation, "op", None) != "notebook-document-transaction":
+            return None
+        transaction = getattr(operation, "transaction", None)
+        for change in getattr(transaction, "changes", None) or []:
+            if getattr(change, "type", None) == "create-cell":
+                return change
+        return None
+
+    @client.feature("marimo/operation")
+    def _(params: Any) -> None:  # noqa: ANN401
+        change = _find_created_cell(params)
+        if change is not None and not created_cell.done():
+            created_cell.set_result(change)
+
+    client.notebook_document_did_open(
+        lsp.DidOpenNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocument(
+                uri=uri,
+                notebook_type="marimo-notebook",
+                version=1,
+                cells=[
+                    NotebookCell(
+                        kind=lsp.NotebookCellKind.Code,
+                        document=f"{uri}#cell1",
+                    )
+                ],
+            ),
+            cell_text_documents=[
+                lsp.TextDocumentItem(
+                    uri=f"{uri}#cell1",
+                    language_id="python",
+                    version=1,
+                    text="x = 1",
+                )
+            ],
+        ),
+    )
+
+    # Create + instantiate the session so we have a live kernel.
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "execute-cells",
+                    "params": {
+                        "notebookUri": uri,
+                        "executable": sys.executable,
+                        "inner": {"cellIds": ["cell1"], "codes": ["x = 1"]},
+                    },
+                }
+            ],
+        )
+    )
+
+    # Use code mode from inside the scratchpad to commit a new cell.
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "execute-scratchpad",
+                    "params": {
+                        "notebookUri": uri,
+                        "inner": {
+                            "code": (
+                                "import marimo._code_mode as cm\n"
+                                "async with cm.get_context() as ctx:\n"
+                                "    ctx.create_cell('z = 1')\n"
+                            )
+                        },
+                    },
+                }
+            ],
+        )
+    )
+
+    # The code-mode commit arrives asynchronously as a notebook-document
+    # transaction; wait for that specific operation rather than polling.
+    change = await asyncio.wait_for(created_cell, timeout=30)
+
+    created = asdict(change)
+    # Code mode mints a fresh 4-letter CellId (mint-and-adopt — not "cell1").
+    assert re.fullmatch(r"[A-Za-z]{4}", created["cellId"])
+    created["cellId"] = "<minted>"
+    assert created == snapshot(
+        {
+            "type": "create-cell",
+            "cellId": "<minted>",
+            "code": "z = 1",
+            "name": "",
+            "config": {"column": None, "disabled": False, "hide_code": True},
+            "before": None,
+            "after": None,
+        }
+    )
+
+
+@pytest.mark.asyncio
 async def test_marimo_get_dependency_tree_venv_no_session(
     client: LanguageClient,
 ) -> None:

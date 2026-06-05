@@ -122,6 +122,13 @@ class ExecuteScratchRequest(msgspec.Struct, rename="camel"):
     code: str
     """The Python code to execute."""
 
+    run_id: str | None = None
+    """Optional correlation id, echoed on the terminal CompletedRun notification.
+
+    Lets a caller wait for *its* completion (including any code-mode cascade)
+    rather than the scratch cell's idle. See ADR 0001 / the streaming model.
+    """
+
 
 class UpdateConfigurationRequest(msgspec.Struct, rename="camel"):
     """A request to update the user configuration."""
