@@ -7,13 +7,14 @@ from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import unquote
 
 from marimo._ast.app import App, InternalApp
+from marimo._ast.cell import CellConfig
+from marimo._messaging.notebook.document import NotebookCell
 from pygls.uris import to_fs_path
 
 from marimo_lsp.utils import decode_marimo_cell_metadata, find_text_document
 
 if TYPE_CHECKING:
     import lsprotocol.types as lsp
-    from marimo._ast.cell import CellConfig
     from marimo._types.ids import CellId_t
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace
@@ -172,3 +173,32 @@ def sync_app_with_workspace(
         configs=cast("list[CellConfig]", configs),
         names=names,
     )
+
+
+def snapshot_notebook_cells(
+    workspace: Workspace, notebook_uri: str
+) -> tuple[NotebookCell, ...]:
+    """Snapshot the LSP notebook document's cells for code mode.
+
+    Built from the LSP notebook document (VS Code's source of truth) rather
+    than the marimo session document, so the cell ids are VS Code ``stableId``s
+    and the code-mode transaction round-trips id-aligned with VS Code. This is
+    the marimo-lsp analogue of marimo's ``snapshot_for_scratchpad`` — see
+    ``docs/adr/0002-snapshot-code-mode-context-from-lsp-document.md``.
+    """
+    notebook = _find_notebook_document(workspace, notebook_uri)
+    cells: list[NotebookCell] = []
+    for cell in notebook.cells:
+        cell_id, config, name = decode_marimo_cell_metadata(cell)
+        if cell_id is None:
+            continue
+        document = find_text_document(workspace, cell.document)
+        cells.append(
+            NotebookCell(
+                id=cell_id,
+                code=(document.source or "") if document else "",
+                name=name,
+                config=CellConfig.from_dict(config),
+            )
+        )
+    return tuple(cells)
