@@ -58,8 +58,8 @@ importers:
         specifier: ^19.2.2
         version: 19.2.2(@types/react@19.2.2)
       '@types/vscode':
-        specifier: ^1.86.0
-        version: 1.105.0
+        specifier: ^1.108.0
+        version: 1.120.0
       '@types/vscode-notebook-renderer':
         specifier: ^1.72.4
         version: 1.72.4
@@ -89,7 +89,7 @@ importers:
         version: 0.28.0
       jest-mock-vscode:
         specifier: ^4.7.0
-        version: 4.7.0(@types/vscode@1.105.0)
+        version: 4.7.0(@types/vscode@1.120.0)
       jotai:
         specifier: 2.17.0
         version: 2.17.0(@types/react@19.2.2)(react@19.2.0)
@@ -1204,8 +1204,8 @@ packages:
   '@types/vscode-notebook-renderer@1.72.4':
     resolution: {integrity: sha512-bdKO41c6Dc24pH/O/eM/jqfCwGH4zc76o/g/6Gt1y/eg/bvvqP2/VpbV+Sa5Te2sZekFRcbYnSSFTKo3wcVGUg==}
 
-  '@types/vscode@1.105.0':
-    resolution: {integrity: sha512-Lotk3CTFlGZN8ray4VxJE7axIyLZZETQJVWi/lYoUVQuqfRxlQhVOfoejsD2V3dVXPSbS15ov5ZyowMAzgUqcw==}
+  '@types/vscode@1.120.0':
+    resolution: {integrity: sha512-feaT4Rst+FkTch5zz/ZbNCxoIvo55YU80Be2kiL7OJcod4+CUYf2lUBPdIJzozNnSEMq1VRTGrWEcCGFB3fBmA==}
 
   '@typescript/native-preview-darwin-arm64@7.0.0-dev.20251015.1':
     resolution: {integrity: sha512-nX3IvW3zVZItG6BWkSmQlyNiq23obmSU+S+Yp0bN6elR+S+yLWssutb1f8mmjOVx8zZVIB0PHuzeiTb3a89aEA==}
@@ -3394,7 +3394,7 @@ snapshots:
 
   '@types/vscode-notebook-renderer@1.72.4': {}
 
-  '@types/vscode@1.105.0': {}
+  '@types/vscode@1.120.0': {}
 
   '@typescript/native-preview-darwin-arm64@7.0.0-dev.20251015.1':
     optional: true
@@ -3894,9 +3894,9 @@ snapshots:
     optionalDependencies:
       '@pkgjs/parseargs': 0.11.0
 
-  jest-mock-vscode@4.7.0(@types/vscode@1.105.0):
+  jest-mock-vscode@4.7.0(@types/vscode@1.120.0):
     dependencies:
-      '@types/vscode': 1.105.0
+      '@types/vscode': 1.120.0
       vscode-uri: 3.1.0
 
   jiti@2.6.1: {}
