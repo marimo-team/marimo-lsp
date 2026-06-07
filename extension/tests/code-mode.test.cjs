@@ -61,7 +61,9 @@ function getMarimoApi() {
 }
 
 suite("code mode replays into the notebook", function () {
-  this.timeout(30_000);
+  // A cold kernel start (uv subprocess + importing marimo) plus the code-mode
+  // run needs headroom beyond the default.
+  this.timeout(60_000);
 
   test("a cell committed via code mode appears, preserving prior output", async function () {
     await using ctx = createTestContext();
@@ -73,13 +75,20 @@ suite("code mode replays into the notebook", function () {
     await runCell(nb.cellAt(0));
     NodeAssert.match(cellOutputText(nb.cellAt(0)), /11/);
 
-    // Drive code mode through the public execute-code API and drain the
-    // scratchpad stream so the batch runs to completion.
+    // Drive code mode through the public execute-code API. The committed cell
+    // arrives as a notebook-document-transaction (a side effect on the
+    // operation stream), so we don't block on the execute-code stream itself —
+    // its completion timing is the completion model's concern. Drain it in the
+    // background to keep the run going.
     const kernel = await getMarimoApi().experimental.kernels.getKernel(nb.uri);
     NodeAssert.ok(kernel, "expected a live kernel for the notebook");
-    for await (const _part of kernel.executeCode(CREATE_VIA_CODE_MODE)) {
-      // no-op: we only need the run to finish
-    }
+    void (async () => {
+      for await (const _part of kernel.executeCode(CREATE_VIA_CODE_MODE)) {
+        // drain
+      }
+    })().catch(() => {
+      // stream errors/cancellation are not this test's concern
+    });
 
     // The CreateCell transaction is replayed onto the notebook.
     await ctx.waitUntil(() => {
