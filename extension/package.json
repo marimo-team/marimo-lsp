@@ -20,6 +20,7 @@
     "check": "vp check && node ./scripts/check-css-variables.mjs",
     "fix": "vp fmt && vp check --fix",
     "test": "vp test",
+    "pretest:extension": "pnpm run build:extension",
     "test:extension": "vscode-test",
     "embed-sdist": "node scripts/embed-sdist.mjs"
   },
