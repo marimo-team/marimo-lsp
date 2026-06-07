@@ -145,6 +145,21 @@ export class NotebookRange implements vscode.NotebookRange {
   }
 }
 
+class LanguageModelTextPart implements vscode.LanguageModelTextPart {
+  value: string;
+  constructor(value: string) {
+    this.value = value;
+  }
+}
+
+class LanguageModelToolResult implements vscode.LanguageModelToolResult {
+  // The real `content` union includes `unknown`, which collapses to `unknown[]`.
+  content: unknown[];
+  constructor(content: unknown[]) {
+    this.content = content;
+  }
+}
+
 class NotebookEdit implements vscode.NotebookEdit {
   static replaceCells(
     range: NotebookRange,
@@ -2184,6 +2199,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         extensions: {
           getExtension: () => Option.none(),
         },
+        lm: {
+          registerTool: () => Effect.succeed({ dispose: () => {} }),
+        },
+        LanguageModelToolResult,
+        LanguageModelTextPart,
         languages: Languages.make({
           registerCodeLensProvider: () => Effect.void,
           createDiagnosticCollection: (name: string) =>
