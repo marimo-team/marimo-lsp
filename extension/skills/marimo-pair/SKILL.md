@@ -60,10 +60,14 @@ help(cm)
 
 ## Guard rails
 
-- **Edit cells through `code_mode`, never by editing the `.py` file.** File
-  edits bypass the kernel and are lost. Use `ctx.edit_cell(target, code=...)`
-  with the full new cell body — even for a one-character change. To read a
-  cell, prefer `ctx.cells[target].code` over the file (disk may lag the kernel).
+- **Edit the notebook through VS Code's notebook editor (cells) or `code_mode`
+  — NEVER edit the `.py` file on disk.** Both the notebook editor and
+  `code_mode` go through the open notebook and the live kernel. A raw file
+  write to the `.py` (`Write`/`Edit`/any text edit) bypasses them: it conflicts
+  with the notebook's in-memory state and is clobbered on the next save, so the
+  change never reaches the user or the kernel. For programmatic edits use
+  `ctx.edit_cell(target, code=...)` with the full new cell body — even for a
+  one-character change. To read a cell, prefer `ctx.cells[target].code`.
 - **Install packages via `ctx.packages.add()`**, not `uv add` / `pip` — it
   handles kernel restarts and resolution. Confirm when it isn't obvious.
 - **Custom widget = anywidget** (HTML/CSS/JS). Composed `mo.ui` is fine for
