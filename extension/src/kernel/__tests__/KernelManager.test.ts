@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  Chunk,
   Effect,
+  Fiber,
   Layer,
   Option,
   PubSub,
@@ -245,6 +247,82 @@ describe("KernelManager stdin", () => {
             },
           },
         });
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+});
+
+describe("KernelManager scratch stream", () => {
+  it.scoped(
+    "includes non-scratch cell-ops for the same run_id and filters others",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const manager = yield* KernelManager;
+
+        // Route cell-op notifications through processSessionOperation.
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* TestClock.adjust("1 millis");
+
+        const streamFiber = yield* Effect.fork(
+          manager
+            .executeCodeUnsafe(ctx.notebookUri, "x = 1")
+            .pipe(Stream.runCollect),
+        );
+
+        // Let executeCodeUnsafe enqueue marimo.api with generated runId.
+        yield* TestClock.adjust("1 millis");
+
+        const executeCmd = (yield* Ref.get(ctx.executions)).find(
+          (c) =>
+            c.command === "marimo.api" &&
+            c.params.method === "execute-scratchpad",
+        );
+        expect(executeCmd).toBeDefined();
+        const runId = executeCmd?.params.params.inner.runId;
+        expect(runId).toBeDefined();
+
+        const cell = ctx.notebook.cellAt(0);
+        const realCellId = Option.getOrThrow(cell.id);
+
+        // Different run_id should not be emitted from executeCodeUnsafe.
+        yield* PubSub.publish(
+          ctx.operationsPubSub,
+          makeIdleCellOperation(ctx.notebookUri, realCellId, {
+            run_id: "other-run",
+          }),
+        );
+
+        // Same run_id for a non-scratch cell should be included.
+        yield* PubSub.publish(
+          ctx.operationsPubSub,
+          makeIdleCellOperation(ctx.notebookUri, realCellId, {
+            run_id: runId,
+            console: [
+              {
+                channel: "stdout",
+                data: "from downstream cell",
+                mimetype: "text/plain",
+                timestamp: 0,
+              },
+            ],
+          }),
+        );
+
+        // Matching completed-run ends the stream.
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          operation: {
+            op: "completed-run",
+            run_id: runId,
+          },
+        });
+
+        const ops = Chunk.toReadonlyArray(yield* Fiber.join(streamFiber));
+        expect(ops).toHaveLength(1);
+        expect(ops[0]?.run_id).toBe(runId);
+        expect(ops[0]?.cell_id).toBe(realCellId);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

@@ -43,6 +43,30 @@ interface MarimoOperation {
   operation: Notification;
 }
 
+type ScratchEvent =
+  | CellOperationNotification
+  | NotificationOf<"completed-run">;
+
+function hasRunId<T extends { run_id?: string | null }>(
+  event: T,
+): event is T & { run_id: string } {
+  return typeof event.run_id === "string" && event.run_id.length > 0;
+}
+
+function isCompletedRunFor(runId: string) {
+  return (
+    event: ScratchEvent,
+  ): event is NotificationOf<"completed-run"> & { run_id: string } =>
+    event.op === "completed-run" && hasRunId(event) && event.run_id === runId;
+}
+
+function isCellOpFor(runId: string) {
+  return (
+    event: ScratchEvent,
+  ): event is CellOperationNotification & { run_id: string } =>
+    event.op === "cell-op" && hasRunId(event) && event.run_id === runId;
+}
+
 /**
  * Orchestrates kernel operations for marimo notebooks by composing
  * MarimoLanguageClient, MarimoNotebookRenderer, and MarimoNotebookControllers.
@@ -79,7 +103,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       // consumer waits for *its* completion — including any code-mode cascade —
       // rather than the scratch cell merely going idle.
       const scratchOps = yield* PubSub.unbounded<
-        CellOperationNotification | NotificationOf<"completed-run">
+        ScratchEvent
       >();
 
       // Semaphore to serialize concurrent scratchpad executions
@@ -258,14 +282,8 @@ export class KernelManager extends Effect.Service<KernelManager>()(
             // 3. Stream cell-ops until *our* completed-run. takeUntil is
             //    inclusive, so filter the sentinel back out of the output.
             return Stream.fromQueue(sub).pipe(
-              Stream.takeUntil(
-                (event) =>
-                  event.op === "completed-run" && event.run_id === runId,
-              ),
-              Stream.filter(
-                (event): event is CellOperationNotification =>
-                  event.op === "cell-op",
-              ),
+              Stream.takeUntil(isCompletedRunFor(runId)),
+              Stream.filter(isCellOpFor(runId)),
             );
           }).pipe(scratchLock.withPermits(1), Stream.unwrapScoped);
         },
@@ -287,9 +305,7 @@ function isValueUpdateEcho(
 
 function processOperation(
   { notebookUri, operation }: MarimoOperation,
-  scratchOps: PubSub.PubSub<
-    CellOperationNotification | NotificationOf<"completed-run">
-  >,
+  scratchOps: PubSub.PubSub<ScratchEvent>,
 ) {
   return Effect.gen(function* () {
     const variables = yield* VariablesService;
@@ -420,9 +436,7 @@ function processSessionOperation(
     | NotificationOf<"function-call-result">
     | NotificationOf<"send-ui-element-message">
     | NotificationOf<"model-lifecycle">,
-  scratchOps: PubSub.PubSub<
-    CellOperationNotification | NotificationOf<"completed-run">
-  >,
+  scratchOps: PubSub.PubSub<ScratchEvent>,
 ) {
   return Effect.gen(function* () {
     const uv = yield* Uv;
@@ -455,11 +469,16 @@ function processSessionOperation(
 
     switch (operation.op) {
       case "cell-op": {
+        // Feed run-scoped cell-ops into the scratch stream so executeCode can
+        // surface downstream stdout/stderr/errors from code-mode cascades.
+        if (hasRunId(operation)) {
+          yield* PubSub.publish(scratchOps, operation);
+        }
+
         const cellId = extractCellIdFromCellMessage(operation);
 
         // Route __scratch__ to PubSub, not ExecutionRegistry
         if (cellId === SCRATCH_CELL_ID) {
-          yield* PubSub.publish(scratchOps, operation);
           break;
         }
 
