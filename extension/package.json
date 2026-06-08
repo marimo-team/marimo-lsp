@@ -145,6 +145,11 @@
         }
       }
     ],
+    "chatSkills": [
+      {
+        "path": "./skills/marimo-pair/SKILL.md"
+      }
+    ],
     "languages": [
       {
         "id": "mo-python",
