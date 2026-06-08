@@ -122,8 +122,8 @@
       {
         "name": "marimo_executeCode",
         "displayName": "Run Python in the marimo kernel",
-        "modelDescription": "Run Python in the active marimo notebook's live kernel. Each call runs in a scratchpad: the notebook's variables are in scope, but anything newly bound stays in the scratchpad. Use it to inspect state (e.g. print(df.head())) and to build the notebook. To durably create, edit, or run notebook cells, write Python that uses marimo's code mode: `import marimo._code_mode as cm` then `async with cm.get_context() as ctx: ...`. Call `help(cm)` for the current API.",
-        "userDescription": "Run Python in the active marimo notebook's kernel.",
+        "modelDescription": "Run Python in a marimo notebook's live kernel. Pass the target notebook's URI as `notebookUri` (the notebook the user is working in). Each call runs in a scratchpad: the notebook's variables are in scope, but anything newly bound stays in the scratchpad. Use it to inspect state (e.g. print(df.head())) and to build the notebook. To durably create, edit, or run notebook cells, write Python that uses marimo's code mode: `import marimo._code_mode as cm` then `async with cm.get_context() as ctx: ...`. Call `help(cm)` for the current API.",
+        "userDescription": "Run Python in a marimo notebook's kernel.",
         "toolReferenceName": "executeCode",
         "canBeReferencedInPrompt": true,
         "icon": "$(run)",
@@ -136,10 +136,11 @@
             },
             "notebookUri": {
               "type": "string",
-              "description": "Target notebook URI. Defaults to the active marimo notebook."
+              "description": "URI of the marimo notebook to run in (the notebook the user is working in)."
             }
           },
           "required": [
+            "notebookUri",
             "code"
           ]
         }
