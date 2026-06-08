@@ -21,10 +21,10 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 const EXECUTE_CODE_TOOL = "marimo_executeCode";
 
 interface ExecuteCodeInput {
-  /** Python to run in the notebook's live kernel (scratchpad). */
+  /** URI of the marimo notebook whose kernel to run in (explicit, no default). */
+  readonly notebookUri: string;
+  /** Python to run in that notebook's live kernel (scratchpad). */
   readonly code: string;
-  /** Target notebook URI; defaults to the active marimo notebook. */
-  readonly notebookUri?: string;
 }
 
 /**
@@ -41,23 +41,16 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
     const decoder = new TextDecoder();
 
+    // Resolve the explicit URI against open notebooks (validates it's a live
+    // marimo notebook and yields the canonical id the kernel is keyed by).
     const resolveNotebookId = Effect.fn(function* (input: ExecuteCodeInput) {
-      if (input.notebookUri != null) {
-        const notebooks = yield* code.workspace.getNotebookDocuments();
-        return ReadonlyArray.findFirst(
-          ReadonlyArray.getSomes(
-            notebooks.map((raw) => MarimoNotebookDocument.tryFrom(raw)),
-          ),
-          (notebook) => notebook.id === input.notebookUri,
-        ).pipe(Option.map((notebook) => notebook.id));
-      }
-      const editor = yield* code.window.getActiveNotebookEditor();
-      return editor.pipe(
-        Option.flatMap((value) =>
-          MarimoNotebookDocument.tryFrom(value.notebook),
+      const notebooks = yield* code.workspace.getNotebookDocuments();
+      return ReadonlyArray.findFirst(
+        ReadonlyArray.getSomes(
+          notebooks.map((raw) => MarimoNotebookDocument.tryFrom(raw)),
         ),
-        Option.map((notebook) => notebook.id),
-      );
+        (notebook) => notebook.id === input.notebookUri,
+      ).pipe(Option.map((notebook) => notebook.id));
     });
 
     const result = (text: string) =>
@@ -69,7 +62,7 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
       const notebookId = yield* resolveNotebookId(input);
       if (Option.isNone(notebookId)) {
         return result(
-          "No active marimo notebook. Open one (or pass `notebookUri`) and retry.",
+          `No open marimo notebook matches \`${input.notebookUri}\`.`,
         );
       }
 
