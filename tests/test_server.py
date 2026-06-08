@@ -801,7 +801,7 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "completed-run"},
+                "operation": {"op": "completed-run", "run_id": None},
             },
             {
                 "notebookUri": "file:///exec_test.py",
@@ -944,7 +944,7 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "completed-run"},
+                "operation": {"op": "completed-run", "run_id": None},
             },
         ]
     )
@@ -1084,7 +1084,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "completed-run"},
+                "operation": {"op": "completed-run", "run_id": None},
             },
             {
                 "notebookUri": "file:///exec_test.py",
@@ -1285,7 +1285,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "completed-run"},
+                "operation": {"op": "completed-run", "run_id": None},
             },
         ]
     )
