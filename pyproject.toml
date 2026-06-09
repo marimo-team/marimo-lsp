@@ -6,10 +6,10 @@ readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Trevor Manz", email = "trevor.j.manz@gmail.com" }]
 dependencies = [
-  "jupytext==1.19.1",
-  "lsprotocol==2025.0.0",
-  "marimo==0.23.9",
-  "pygls==2.1.1",
+  "jupytext>=1.19.1",
+  "lsprotocol>=2025.0.0",
+  "marimo>=0.23.9",
+  "pygls>=2.1.1",
 ]
 
 [project.scripts]
@@ -19,9 +19,9 @@ marimo-lsp = "marimo_lsp:main"
 dev = [
   "dirty-equals>=0.9.0",
   "inline-snapshot>=0.27.2",
+  "pytest>=8.4.1",
   "pytest-cov>=5.0.0",
   "pytest-lsp==1.0.0b2",
-  "pytest>=8.4.1",
   "ruff>=0.15.9",
   "ty>=0.0.28",
 ]
@@ -29,59 +29,6 @@ dev = [
 [build-system]
 requires = ["uv_build>=0.8.7,<0.9.0"]
 build-backend = "uv_build"
-
-[tool.marimo-lsp]
-# Minimum marimo version allowed in the *user's* kernel environment.
-# Tracked separately from the `marimo` dependency pin above: that pin is the
-# exact version the LSP server and bundled frontend ship with (auto-bumped by
-# the update-marimo-version cron), while the value below is the compatibility
-# floor we claim to support for user kernels and is bumped manually when we
-# intentionally drop support for an older release.
-minimum-kernel-version = "0.23.3"
-
-[tool.ty.src]
-exclude = ["extension/**"]
-
-[tool.ruff]
-extend-exclude = ["vscode/*", "extension/tutorials/*"]
-
-[tool.ruff.lint]
-pydocstyle = { convention = "numpy" }
-select = ["ALL"]
-ignore = [
-  "COM812", # Missing trailing comma (conflicts with ruff format)
-  "ISC001", # Import sorting (conflicts with ruff format)
-  "FIX002", # Fixable issue
-  "G004", # Uses of f-strings in logging
-  "PLC2701", # Private imports
-  "TD", # TODOS
-  "S101", # Use of assert
-  "E501", # Line too long (we will still format these)
-  "ANN202", # Return types
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*.py" = [
-  "D", # No docstrings in tests
-  "S101", # Use of assert
-  "B018", # "useless expression", for accessing the Foo._repr_mimbundle_ descriptor
-  "SLF001",
-  "PLC",
-  "PLR",
-  "FIX",
-]
-"scripts/*.py" = [
-  "D", # No docstrings required in scripts
-  "T201", # print is expected in CLI scripts
-  "INP001", # scripts/ is not a package
-  "PLR2004", # Magic values acceptable in small CLI scripts
-]
-
-[tool.typos.default.extend-words]
-somes = "somes"
-
-[tool.inline-snapshot]
-format-command="ruff format --stdin-filename {filename}"
 
 [tool.coverage.run]
 source = ["src/marimo_lsp"]
@@ -96,3 +43,59 @@ exclude_also = [
   "raise NotImplementedError",
   "\\.\\.\\.",
 ]
+
+[tool.inline-snapshot]
+format-command = "ruff format --stdin-filename {filename}"
+
+[tool.marimo-lsp]
+# Minimum marimo version allowed in the *user's* kernel environment.
+# Tracked separately from the `marimo` dependency pin above: that pin is the
+# exact version the LSP server and bundled frontend ship with (auto-bumped by
+# the update-marimo-version cron), while the value below is the compatibility
+# floor we claim to support for user kernels and is bumped manually when we
+# intentionally drop support for an older release.
+minimum-kernel-version = "0.23.3"
+
+[tool.ruff]
+extend-exclude = ["vscode/*", "extension/tutorials/*"]
+
+[tool.ruff.lint]
+pydocstyle = { convention = "numpy" }
+select = ["ALL"]
+ignore = [
+  "COM812",  # Missing trailing comma (conflicts with ruff format)
+  "ISC001",  # Import sorting (conflicts with ruff format)
+  "FIX002",  # Fixable issue
+  "G004",  # Uses of f-strings in logging
+  "PLC2701",  # Private imports
+  "TD",  # TODOS
+  "S101",  # Use of assert
+  "E501",  # Line too long (we will still format these)
+  "ANN202",  # Return types
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = [
+  "D",  # No docstrings in tests
+  "S101",  # Use of assert
+  "B018",  # "useless expression", for accessing the Foo._repr_mimbundle_ descriptor
+  "SLF001",
+  "PLC",
+  "PLR",
+  "FIX",
+]
+"scripts/*.py" = [
+  "D",  # No docstrings required in scripts
+  "T201",  # print is expected in CLI scripts
+  "INP001",  # scripts/ is not a package
+  "PLR2004",  # Magic values acceptable in small CLI scripts
+]
+
+[tool.ty.src]
+exclude = ["extension/**"]
+
+[tool.typos.default.extend-words]
+somes = "somes"
+
+[tool.uv]
+exclude-newer = "3 days"
