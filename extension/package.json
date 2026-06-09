@@ -148,7 +148,7 @@
     ],
     "chatSkills": [
       {
-        "path": "./skills/marimo-pair/SKILL.md"
+        "path": "./skills/marimo-pair-vscode/SKILL.md"
       }
     ],
     "languages": [
