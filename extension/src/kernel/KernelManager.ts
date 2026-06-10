@@ -301,6 +301,7 @@ function processOperation(
       case "cache-cleared":
       case "cache-info":
       case "completion-result":
+      case "consumer-capabilities":
       case "focus-cell":
       case "installing-package-alert":
       case "kernel-ready":
