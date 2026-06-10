@@ -5,6 +5,8 @@ import { LanguageClient } from "../lsp/LanguageClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
+const MARIMO_OUTPUT_MIME = "application/vnd.marimo.ui+json";
+
 export const exportNotebookAsHtml = Effect.fn("command.exportNotebookAsHtml")(
   function* () {
     const code = yield* VsCode;
@@ -53,6 +55,30 @@ export const exportNotebookAsHtml = Effect.fn("command.exportNotebookAsHtml")(
         cancellable: false,
       },
       Effect.fn(function* () {
+        const cellIdsToOutput = collectRenderedCellOutputs(notebook.value);
+        if (Object.keys(cellIdsToOutput).length > 0) {
+          const syncResult = yield* client
+            .executeCommand({
+              command: "marimo.api",
+              params: {
+                method: "update-cell-outputs",
+                params: {
+                  notebookUri: notebook.value.id,
+                  inner: {
+                    cellIdsToOutput,
+                  },
+                },
+              },
+            })
+            .pipe(Effect.either);
+
+          if (Either.isLeft(syncResult)) {
+            yield* Effect.logWarning(
+              "Could not sync rendered outputs before HTML export",
+            );
+          }
+        }
+
         // Call the LSP API to export the notebook
         const result = yield* client
           .executeCommand({
@@ -107,3 +133,70 @@ export const exportNotebookAsHtml = Effect.fn("command.exportNotebookAsHtml")(
     );
   },
 );
+
+function collectRenderedCellOutputs(notebook: MarimoNotebookDocument) {
+  const decoder = new TextDecoder();
+  const cellIdsToOutput: Record<string, [string, unknown]> = {};
+
+  for (const cell of notebook.getCells()) {
+    const cellId = Option.getOrUndefined(cell.id);
+    if (!cellId) {
+      continue;
+    }
+
+    for (const output of cell.outputs) {
+      const marimoItem = output.items.find(
+        (item) => item.mime === MARIMO_OUTPUT_MIME,
+      );
+      if (!marimoItem) {
+        continue;
+      }
+
+      const renderedOutput = parseRenderedOutput(
+        decoder.decode(marimoItem.data),
+      );
+      if (!renderedOutput) {
+        continue;
+      }
+
+      cellIdsToOutput[cellId] = renderedOutput;
+      break;
+    }
+  }
+
+  return cellIdsToOutput;
+}
+
+function parseRenderedOutput(value: string): [string, unknown] | null {
+  const payload = parseJsonRecord(value);
+  if (!payload) {
+    return null;
+  }
+
+  const state = asRecord(payload.state);
+  const output = asRecord(state?.output);
+  if (!output) {
+    return null;
+  }
+
+  if (typeof output.mimetype !== "string" || output.data == null) {
+    return null;
+  }
+
+  return [output.mimetype, output.data];
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  try {
+    return asRecord(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
