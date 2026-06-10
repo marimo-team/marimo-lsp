@@ -49,6 +49,7 @@
     "@vscode/test-electron": "^2.5.2",
     "effect": "^3.19.19",
     "esbuild": "^0.28.0",
+    "happy-dom": "^20.8.9",
     "jest-mock-vscode": "^4.7.0",
     "jotai": "2.17.0",
     "mocha": "^11.7.4",

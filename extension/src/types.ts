@@ -154,6 +154,12 @@ type RendererCommandMap = {
   "invoke-function": MarimoApiMethodMap["invoke-function"]["inner"];
   // Custom
   "navigate-to-cell": { cellId: NotebookCellId };
+  // Image toolbar: the sandboxed renderer can't read cross-origin image bytes,
+  // so it asks the host to fetch them. `save-image` writes to disk; `copy-image`
+  // returns the bytes (as a data URI, keyed by `requestId`) for the renderer to
+  // place on the clipboard.
+  "save-image": { src: string; suggestedName: string };
+  "copy-image": { src: string; requestId: string };
 };
 type RendererCommandMessageOf<K extends keyof RendererCommandMap> = {
   [C in keyof RendererCommandMap]: {
@@ -169,12 +175,23 @@ export type RendererCommand = RendererCommandMessageOf<
   keyof RendererCommandMap
 >;
 
+/**
+ * Reply to a renderer `copy-image` request. `dataUri` is null when the host
+ * could not fetch/decode the image, so the renderer can fall back gracefully.
+ */
+export type ImageDataResult = {
+  op: "image-data-result";
+  requestId: string;
+  dataUri: string | null;
+};
+
 // extension -> renderer
 export type RendererReceiveMessage =
   | NotificationOf<"remove-ui-elements">
   | NotificationOf<"send-ui-element-message">
   | NotificationOf<"function-call-result">
-  | NotificationOf<"model-lifecycle">;
+  | NotificationOf<"model-lifecycle">
+  | ImageDataResult;
 
 // Language server -> client
 type MarimoLspNotificationMap = {
