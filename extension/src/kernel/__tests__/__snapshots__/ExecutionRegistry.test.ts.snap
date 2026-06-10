@@ -75,8 +75,8 @@ exports[`buildCellOutputs > handles marimo error output 1`] = `
   {
     "items": [
       {
-        "data": "Syntax error: Invalid syntax",
-        "mime": "application/vnd.code.notebook.stderr",
+        "data": "{"name":"syntax","message":"Syntax error: Invalid syntax"}",
+        "mime": "application/vnd.code.notebook.error",
       },
     ],
     "metadata": {
@@ -229,8 +229,8 @@ exports[`buildCellOutputs > handles multiple errors in marimo error output 1`] =
   {
     "items": [
       {
-        "data": "ValueError: ValueError: invalid value",
-        "mime": "application/vnd.code.notebook.stderr",
+        "data": "{"name":"ValueError","message":"ValueError: ValueError: invalid value"}",
+        "mime": "application/vnd.code.notebook.error",
       },
     ],
     "metadata": {
