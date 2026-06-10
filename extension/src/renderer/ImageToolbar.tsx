@@ -34,7 +34,15 @@ export function ImageToolbar({ target, onMouseLeave }: ImageToolbarProps) {
     <div
       className="image-toolbar"
       style={{ top, right }}
-      onMouseLeave={onMouseLeave}
+      onMouseLeave={(e) => {
+        // Moving back onto the image it decorates isn't "leaving"; closing here
+        // would make the toolbar flicker as the image's mouseover re-opens it.
+        const next = e.relatedTarget;
+        if (next instanceof Node && target.contains(next)) {
+          return;
+        }
+        onMouseLeave();
+      }}
     >
       <button
         type="button"

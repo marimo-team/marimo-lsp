@@ -20,10 +20,16 @@ export function decodeDataUri(src: string): ImageBytes | null {
     return null;
   }
   const [, mime, base64, data] = match;
-  const bytes = base64
-    ? new Uint8Array(Buffer.from(data, "base64"))
-    : new TextEncoder().encode(decodeURIComponent(data));
-  return { bytes, mime };
+  try {
+    const bytes = base64
+      ? new Uint8Array(Buffer.from(data, "base64"))
+      : new TextEncoder().encode(decodeURIComponent(data));
+    return { bytes, mime };
+  } catch {
+    // decodeURIComponent throws on malformed percent-encoding; treat such a
+    // data URI as unreadable rather than letting it break copy/save.
+    return null;
+  }
 }
 
 /**
@@ -38,17 +44,39 @@ export const resolveImageBytes = Effect.fn("resolveImageBytes")(function* (
   if (decoded) {
     return decoded;
   }
+  const url = yield* Effect.try({
+    try: () => new URL(src),
+    catch: (cause) => new ImageFetchError({ cause }),
+  });
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return yield* Effect.fail(
+      new ImageFetchError({ cause: `unsupported URL scheme: ${url.protocol}` }),
+    );
+  }
   const response = yield* Effect.tryPromise({
     try: (signal) => fetch(src, { signal }),
     catch: (cause) => new ImageFetchError({ cause }),
   });
+  if (!response.ok) {
+    return yield* Effect.fail(
+      new ImageFetchError({
+        cause: `fetch returned ${response.status} ${response.statusText}`,
+      }),
+    );
+  }
+  const contentType = response.headers.get("content-type");
+  if (contentType && !contentType.startsWith("image/")) {
+    return yield* Effect.fail(
+      new ImageFetchError({ cause: `non-image content-type: ${contentType}` }),
+    );
+  }
   const buffer = yield* Effect.tryPromise({
     try: () => response.arrayBuffer(),
     catch: (cause) => new ImageFetchError({ cause }),
   });
   return {
     bytes: new Uint8Array(buffer),
-    mime: response.headers.get("content-type") ?? "application/octet-stream",
+    mime: contentType ?? "application/octet-stream",
   } satisfies ImageBytes;
 });
 
