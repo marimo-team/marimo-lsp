@@ -34,6 +34,7 @@ import type {
 } from "../types.ts";
 import { ControllerRegistry } from "./ControllerRegistry.ts";
 import { ExecutionRegistry } from "./ExecutionRegistry.ts";
+import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import { handleMissingPackageAlert } from "./operations.ts";
 
 interface MarimoOperation {
@@ -185,6 +186,35 @@ export class KernelManager extends Effect.Service<KernelManager>()(
                       code.NotebookEditorRevealType.InCenter,
                     );
                   }
+                  return;
+                }
+                case "save-image": {
+                  yield* saveImageToDisk(
+                    message.params.src,
+                    message.params.suggestedName,
+                    editor.notebook.uri,
+                  ).pipe(
+                    Effect.catchAll((cause) =>
+                      Effect.logError("Failed to save image").pipe(
+                        Effect.annotateLogs({ cause }),
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                case "copy-image": {
+                  const { src, requestId } = message.params;
+                  const dataUri = yield* resolveImageDataUri(src).pipe(
+                    Effect.option,
+                  );
+                  yield* renderer.postMessage(
+                    {
+                      op: "image-data-result",
+                      requestId,
+                      dataUri: Option.getOrNull(dataUri),
+                    },
+                    editor,
+                  );
                   return;
                 }
                 default: {

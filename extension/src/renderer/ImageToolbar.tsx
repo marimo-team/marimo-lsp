@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import { requestImageDataUri, requestImageSave } from "./imageTransport.ts";
+
 interface ImageToolbarProps {
   /** The <img> element currently being hovered */
   target: HTMLImageElement;
@@ -37,10 +39,18 @@ export function ImageToolbar({ target, onMouseLeave }: ImageToolbarProps) {
       <button
         type="button"
         title="Copy image to clipboard"
-        onClick={async () => {
-          await copyImageToClipboard(target);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
+        onClick={() => {
+          // Call clipboard.write synchronously so the click's user activation
+          // is still live; the blob is resolved (possibly via a host round-trip)
+          // inside the ClipboardItem promise.
+          copyImageToClipboard(target.src)
+            .then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            })
+            .catch(() => {
+              void navigator.clipboard.writeText(target.src).catch(() => {});
+            });
         }}
       >
         {copied ? checkIcon : copyIcon}
@@ -48,7 +58,9 @@ export function ImageToolbar({ target, onMouseLeave }: ImageToolbarProps) {
       <button
         type="button"
         title="Save image"
-        onClick={() => saveImage(target)}
+        onClick={() =>
+          requestImageSave(target.src, suggestedFilename(target.src))
+        }
       >
         {downloadIcon}
       </button>
@@ -56,47 +68,37 @@ export function ImageToolbar({ target, onMouseLeave }: ImageToolbarProps) {
   );
 }
 
-async function copyImageToClipboard(img: HTMLImageElement): Promise<void> {
-  const src = img.src;
-
-  // Try the modern Clipboard API with blob
-  try {
-    const blob = await imgSrcToBlob(src, "image/png");
-    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-    return;
-  } catch {
-    // Fall back: copy the data URI as text
-    await navigator.clipboard.writeText(src);
-  }
+function copyImageToClipboard(src: string): Promise<void> {
+  return navigator.clipboard.write([
+    new ClipboardItem({ "image/png": imageToPngBlob(src) }),
+  ]);
 }
 
-async function saveImage(img: HTMLImageElement): Promise<void> {
-  const src = img.src;
-
-  // Download the original bytes so the format is preserved exactly. Going
-  // through a canvas (as the clipboard path does) would rasterize vector
-  // outputs, saving an SVG as PNG under a misleading `.svg` name.
-  try {
-    const blob = await fetch(src).then((r) => r.blob());
-    const ext = extensionForMime(blob.type) ?? guessExtension(src);
-    triggerDownload(blob, `image.${ext}`);
-  } catch {
-    const a = document.createElement("a");
-    a.href = src;
-    a.download = `image.${guessExtension(src)}`;
-    a.click();
-  }
+/**
+ * Rasterize an image to a PNG blob for the clipboard. Reads the pixels locally
+ * when possible; for cross-origin images (whose canvas would taint) it asks the
+ * host for the bytes as a same-origin data URI, then rasterizes that.
+ */
+function imageToPngBlob(src: string): Promise<Blob> {
+  return imgSrcToBlob(src, "image/png").catch(() =>
+    requestImageDataUri(src).then((dataUri) =>
+      imgSrcToBlob(dataUri, "image/png"),
+    ),
+  );
 }
 
-function triggerDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+function suggestedFilename(src: string): string {
+  if (!src.startsWith("data:")) {
+    try {
+      const base = new URL(src).pathname.split("/").pop();
+      if (base && /\.[^.]+$/.test(base)) {
+        return decodeURIComponent(base);
+      }
+    } catch {
+      // Not a parseable URL; fall through to a mime-derived name.
+    }
+  }
+  return `image.${guessExtension(src)}`;
 }
 
 /**

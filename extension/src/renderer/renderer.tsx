@@ -9,6 +9,10 @@ import { assert, unreachable } from "../assert.ts";
 import type { MarimoHtmlPublishMessage } from "../types.ts";
 import { CellOutput } from "./CellOutput.tsx";
 import {
+  initImageTransport,
+  resolveImageDataResult,
+} from "./imageTransport.ts";
+import {
   type CellId,
   type CellRuntimeState,
   handleFunctionCallResult,
@@ -32,6 +36,7 @@ export const activate: vscode.ActivationFunction = (context) => {
     limitBytes: TABLE_EXPORT_LIMIT_BYTES,
     unavailableMessage: `This table is too large to download from a VS Code notebook output (limit: ${TABLE_EXPORT_LIMIT_MB}MB). Open the notebook in a browser to export it, or filter the data first.`,
   });
+  initImageTransport((message) => context.postMessage(message));
 
   /**
    * Bridge for HTML output interactions.
@@ -80,6 +85,10 @@ export const activate: vscode.ActivationFunction = (context) => {
       }
       case "model-lifecycle": {
         handleModelLifecycle(msg);
+        return;
+      }
+      case "image-data-result": {
+        resolveImageDataResult(msg.requestId, msg.dataUri);
         return;
       }
       default: {
