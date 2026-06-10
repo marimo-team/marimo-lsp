@@ -9,14 +9,14 @@ description: >-
 # marimo pair programming (VS Code)
 
 You can work inside an open marimo notebook's live kernel through the
-`execute_code` tool. marimo notebooks are a dataflow graph: cells are the unit
+`marimo_executeCode` tool. marimo notebooks are a dataflow graph: cells are the unit
 of computation, connected by the variables they define and reference. When a
 cell runs, marimo automatically re-runs its dependents. The user sees results
 live in the VS Code notebook as you work.
 
-## The one tool: `execute_code`
+## The one tool: `marimo_executeCode`
 
-`execute_code(notebookUri, code)` runs Python in the notebook's kernel. Pass
+`marimo_executeCode(notebookUri, code)` runs Python in the notebook's kernel. Pass
 the URI of the marimo notebook the user is working in.
 
 Each call runs in a **scratchpad**: the notebook's variables are in scope, but
