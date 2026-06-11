@@ -486,6 +486,10 @@ export function buildCellOutputs(
   const stdinItems: vscode.NotebookCellOutputItem[] = [];
   const errorItems: vscode.NotebookCellOutputItem[] = [];
   const outputItems: vscode.NotebookCellOutputItem[] = [];
+  // Tracebacks share the stderr channel with plain log text but must stay in
+  // their own NotebookCellOutput: VS Code reads the items of one output as
+  // alternative MIME representations of a single value and renders only one.
+  const tracebackItems: vscode.NotebookCellOutputItem[] = [];
 
   // Process console outputs (stdout, stderr, stdin)
   if (state.consoleOutputs) {
@@ -500,6 +504,11 @@ export function buildCellOutputs(
         notebook,
       );
       if (!item) continue;
+
+      if (output.mimetype === TRACEBACK_MIME) {
+        tracebackItems.push(item);
+        continue;
+      }
 
       switch (output.channel) {
         case "stdout":
@@ -572,6 +581,14 @@ export function buildCellOutputs(
   if (stderrItems.length > 0) {
     outputs.push(
       new code.NotebookCellOutput(stderrItems, {
+        channel: "stderr",
+      }),
+    );
+  }
+
+  for (const tracebackItem of tracebackItems) {
+    outputs.push(
+      new code.NotebookCellOutput([tracebackItem], {
         channel: "stderr",
       }),
     );

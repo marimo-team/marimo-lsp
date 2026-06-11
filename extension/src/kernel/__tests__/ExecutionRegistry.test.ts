@@ -668,6 +668,72 @@ describe("buildCellOutputs", () => {
   );
 
   it.effect(
+    // A stderr log (e.g. from the stdlib logging module) and the traceback are
+    // both stderr console outputs; they must not collapse into one output.
+    "keeps the traceback in its own output when a stderr log precedes it",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      const outputs = yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const state: CellRuntimeState = {
+          ...createCellRuntimeState(),
+          output: {
+            mimetype: "application/vnd.marimo+error",
+            channel: "marimo-error",
+            data: [
+              {
+                type: "exception",
+                msg: "boom",
+                exception_type: "ValueError",
+              },
+            ],
+            timestamp: 0,
+          },
+          consoleOutputs: [
+            {
+              mimetype: "text/plain",
+              channel: "stderr",
+              data: "10:09:20 [INFO] some message\n",
+              timestamp: 0,
+            },
+            {
+              mimetype: "application/vnd.marimo+traceback",
+              channel: "stderr",
+              data: 'Traceback (most recent call last):\n  File "cell1", line 2, in <module>\nValueError: boom',
+              timestamp: 1,
+            },
+          ],
+        };
+        return buildCellOutputs(CELL_ID, state, code);
+      }).pipe(Effect.provide(ctx.layer));
+
+      const normalized = normalizeOutputsForSnapshot(outputs);
+
+      const hasLog = normalized.some((o) =>
+        o.items.some(
+          (i) => typeof i.data === "string" && i.data.includes("some message"),
+        ),
+      );
+      expect(hasLog, "stderr log should be rendered").toBe(true);
+
+      const errorOutput = normalized.find((o) =>
+        o.items.some((i) => i.mime === "application/vnd.code.notebook.error"),
+      );
+      expect(
+        errorOutput,
+        "traceback should render as a structured error output",
+      ).toBeDefined();
+      expect(
+        errorOutput?.items.every(
+          (i) => i.mime === "application/vnd.code.notebook.error",
+        ),
+        "error output must not also carry the plain-text log item",
+      ).toBe(true);
+    }),
+  );
+
+  it.effect(
     "filters out empty traceback output",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
