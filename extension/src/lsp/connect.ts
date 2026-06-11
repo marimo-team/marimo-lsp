@@ -10,7 +10,7 @@
 
 import { Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
-import type * as lsp from "vscode-languageserver-protocol";
+import * as lsp from "vscode-languageserver-protocol";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
@@ -150,10 +150,24 @@ export const connectMarimoNotebookLspClient = Effect.fn(
         }
 
         for (const watcher of watchers) {
-          if (typeof watcher.globPattern !== "string") continue;
+          const globPattern = toVsCodeGlobPattern(code, watcher.globPattern);
+          if (Option.isNone(globPattern)) continue;
+
+          // `kind` is a WatchKind bitmask; absent means watch all three
+          // (the LSP default).
+          const kind =
+            typeof watcher.kind === "number"
+              ? watcher.kind
+              : lsp.WatchKind.Create |
+                lsp.WatchKind.Change |
+                lsp.WatchKind.Delete;
 
           yield* Effect.forkScoped(
-            code.workspace.createFileSystemWatcher(watcher.globPattern).pipe(
+            code.workspace.createFileSystemWatcher(globPattern.value).pipe(
+              // Drop events the server didn't ask to watch.
+              Stream.filter(
+                ({ type }) => (kind & WATCH_KIND_FOR_CHANGE[type]) !== 0,
+              ),
               Stream.runForEach(({ uri, type }) =>
                 client
                   .sendNotification("workspace/didChangeWatchedFiles", {
@@ -188,7 +202,7 @@ export type MarimoNotebookLspClient = Effect.Effect.Success<
  */
 function getFileWatchers(
   options: unknown,
-): Array<{ globPattern: unknown }> | undefined {
+): Array<{ globPattern: unknown; kind?: unknown }> | undefined {
   if (
     typeof options === "object" &&
     options !== null &&
@@ -198,6 +212,69 @@ function getFileWatchers(
     return options.watchers;
   }
   return undefined;
+}
+
+/**
+ * The `WatchKind` bit that enables each `FileChangeType`, so a change
+ * event can be tested against a watcher's `kind` bitmask. Typing it as a
+ * `Record` over `FileChangeType` forces every change type to be mapped.
+ */
+const WATCH_KIND_FOR_CHANGE: Record<lsp.FileChangeType, lsp.WatchKind> = {
+  [lsp.FileChangeType.Created]: lsp.WatchKind.Create,
+  [lsp.FileChangeType.Changed]: lsp.WatchKind.Change,
+  [lsp.FileChangeType.Deleted]: lsp.WatchKind.Delete,
+};
+
+/**
+ * The wire shape of an LSP `RelativePattern` with a string `baseUri` —
+ * the form ty emits. (The spec also allows a workspace-folder `baseUri`,
+ * which ty never sends and we can't resolve here.)
+ */
+function isRelativePattern(
+  value: unknown,
+): value is { baseUri: string; pattern: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "baseUri" in value &&
+    "pattern" in value &&
+    typeof value.baseUri === "string" &&
+    typeof value.pattern === "string"
+  );
+}
+
+/**
+ * Convert an LSP `GlobPattern` to a VS Code glob pattern.
+ *
+ * The server may send either a plain string glob or a `RelativePattern`
+ * object (`{ baseUri, pattern }`) when the client advertises
+ * `relativePatternSupport`. ty uses the latter to watch module search
+ * paths *outside* the workspace root, so we must handle both — mirroring
+ * vscode-languageclient's `protocolConverter.asGlobPattern`.
+ *
+ * Returns `None` for shapes we can't interpret — a workspace-folder
+ * baseUri (which ty never emits) or a `baseUri` that `Uri.parse` rejects.
+ * A malformed pattern is skipped rather than aborting watcher setup.
+ *
+ * @internal exported for testing.
+ */
+export function toVsCodeGlobPattern(
+  code: VsCode,
+  globPattern: unknown,
+): Option.Option<vscode.GlobPattern> {
+  if (typeof globPattern === "string") {
+    return Option.some(globPattern);
+  }
+  if (isRelativePattern(globPattern)) {
+    // Uri.parse throws on a malformed baseUri; treat that as a shape we
+    // can't interpret instead of letting it abort watcher registration.
+    const parseRelativePattern = Option.liftThrowable(
+      (uri: string) =>
+        new code.RelativePattern(code.Uri.parse(uri), globPattern.pattern),
+    );
+    return parseRelativePattern(globPattern.baseUri);
+  }
+  return Option.none();
 }
 
 /**

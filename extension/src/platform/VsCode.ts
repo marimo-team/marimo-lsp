@@ -454,7 +454,7 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
       }) {
         return Effect.promise(() => api.openTextDocument(options));
       },
-      createFileSystemWatcher(globPattern: string) {
+      createFileSystemWatcher(globPattern: vscode.GlobPattern) {
         return Stream.asyncPush<{ uri: vscode.Uri; type: 1 | 2 | 3 }>((emit) =>
           acquireDisposable(() => {
             const watcher = api.createFileSystemWatcher(globPattern);
@@ -1193,6 +1193,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       Location: vscode.Location,
       Uri: vscode.Uri,
       Range: vscode.Range,
+      RelativePattern: vscode.RelativePattern,
       version: vscode.version,
       extensions: {
         getExtension<T = unknown>(extensionId: string) {
