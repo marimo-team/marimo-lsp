@@ -537,6 +537,27 @@ class Range implements vscode.Range {
   }
 }
 
+class RelativePattern implements vscode.RelativePattern {
+  baseUri: vscode.Uri;
+  base: string;
+  pattern: string;
+
+  constructor(
+    base: vscode.WorkspaceFolder | vscode.Uri | string,
+    pattern: string,
+  ) {
+    if (typeof base === "string") {
+      this.baseUri = Uri.file(base);
+    } else if ("uri" in base) {
+      this.baseUri = base.uri;
+    } else {
+      this.baseUri = base;
+    }
+    this.base = this.baseUri.fsPath;
+    this.pattern = pattern;
+  }
+}
+
 class CodeLens implements vscode.CodeLens {
   readonly range: Range;
   command?: vscode.Command;
@@ -2123,6 +2144,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           Right: 2,
         },
         Uri,
+        RelativePattern,
         MarkdownString,
         CompletionItem,
         CompletionList,
