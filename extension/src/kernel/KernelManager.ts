@@ -51,6 +51,13 @@ function hasRunId<T extends { run_id?: string | null }>(
   return typeof event.run_id === "string" && event.run_id.length > 0;
 }
 
+/** Whether a cell-op carries console output (stdout/stderr/stdin). */
+function hasConsoleOutput(operation: CellOperationNotification): boolean {
+  const { console } = operation;
+  if (console == null) return false;
+  return Array.isArray(console) ? console.length > 0 : true;
+}
+
 function isCompletedRunFor(runId: string) {
   return (
     event: ScratchEvent,
@@ -467,13 +474,19 @@ function processSessionOperation(
       case "cell-op": {
         const cellId = extractCellIdFromCellMessage(operation);
 
-        // The scratch cell's ops carry the execute-code output (its stdout /
-        // result). Route them to the scratch PubSub instead of the
-        // ExecutionRegistry. marimo doesn't stamp our runId onto these (only
-        // onto the terminating completed-run), so we key on the cell id.
+        // Mirror marimo's ScratchCellListener: while a scratchpad runs it
+        // streams the scratch cell's own ops plus console output from cells a
+        // code-mode cascade runs. Feed those to the scratch PubSub (a no-op
+        // when no executeCode call is subscribed). marimo doesn't stamp our
+        // runId onto cell-ops — only onto the terminating completed-run — so
+        // we route the scratch cell by id and cascade cells by having console.
         if (cellId === SCRATCH_CELL_ID) {
+          // The scratch cell isn't a real notebook cell: stream it, don't render.
           yield* PubSub.publish(scratchOps, operation);
           break;
+        }
+        if (hasConsoleOutput(operation)) {
+          yield* PubSub.publish(scratchOps, operation);
         }
 
         yield* executions.handleCellOperation(operation, {

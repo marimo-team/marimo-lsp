@@ -254,7 +254,7 @@ describe("KernelManager stdin", () => {
 
 describe("KernelManager scratch stream", () => {
   it.scoped(
-    "surfaces the scratch cell's ops and ends on the matching completed-run",
+    "streams scratch + cascade console ops until the matching completed-run",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
@@ -290,22 +290,6 @@ describe("KernelManager scratch stream", () => {
         const cell = ctx.notebook.cellAt(0);
         const realCellId = Option.getOrThrow(cell.id);
 
-        // An unrelated notebook cell-op must NOT be surfaced as scratch output.
-        yield* PubSub.publish(
-          ctx.operationsPubSub,
-          makeIdleCellOperation(ctx.notebookUri, realCellId, {
-            status: "running",
-            console: [
-              {
-                channel: "stdout",
-                data: "unrelated",
-                mimetype: "text/plain",
-                timestamp: 0,
-              },
-            ],
-          }),
-        );
-
         // The scratch cell's op carries the run's output. marimo leaves its
         // run_id null (only the completed-run echoes ours), so we key on the
         // SCRATCH_CELL_ID, not the run_id.
@@ -324,6 +308,30 @@ describe("KernelManager scratch stream", () => {
           }),
         );
 
+        // Console from a cascade cell (one code mode ran) also streams.
+        yield* PubSub.publish(
+          ctx.operationsPubSub,
+          makeIdleCellOperation(ctx.notebookUri, realCellId, {
+            status: "running",
+            console: [
+              {
+                channel: "stdout",
+                data: "from cascade",
+                mimetype: "text/plain",
+                timestamp: 0,
+              },
+            ],
+          }),
+        );
+
+        // A status-only cascade op (no console) is not streamed.
+        yield* PubSub.publish(
+          ctx.operationsPubSub,
+          makeIdleCellOperation(ctx.notebookUri, realCellId, {
+            status: "idle",
+          }),
+        );
+
         // Our completed-run ends the stream (inclusive; filtered back out).
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,
@@ -334,8 +342,10 @@ describe("KernelManager scratch stream", () => {
         });
 
         const ops = Chunk.toReadonlyArray(yield* Fiber.join(streamFiber));
-        expect(ops).toHaveLength(1);
-        expect(ops[0]?.cell_id).toBe(SCRATCH_CELL_ID);
+        const cellIds = ops.map((op) => op.cell_id);
+        expect(ops).toHaveLength(2);
+        expect(cellIds).toContain(SCRATCH_CELL_ID);
+        expect(cellIds).toContain(realCellId);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

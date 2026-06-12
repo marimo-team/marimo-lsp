@@ -9,10 +9,14 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
+import { SCRATCH_CELL_ID } from "../constants.ts";
 import { scratchCellNotificationsToVsCodeOutput } from "../kernel/ExecutionRegistry.ts";
 import { KernelManager } from "../kernel/KernelManager.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import {
+  extractCellIdFromCellMessage,
+  MarimoNotebookDocument,
+} from "../schemas/MarimoNotebookDocument.ts";
 
 /**
  * The agent-facing tool name. Mirrors the `contributes.languageModelTools`
@@ -70,10 +74,13 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
         .executeCodeUnsafe(notebookId.value, input.code)
         .pipe(Stream.runCollect);
 
-      const output = scratchCellNotificationsToVsCodeOutput(
-        Chunk.toReadonlyArray(ops),
-        code,
+      // The stream also carries console from cascade cells (cells code mode
+      // ran). The tool result is the scratch cell's own output — those cascade
+      // cells render in the notebook — so reduce just the scratch cell's ops.
+      const scratchOps = Chunk.toReadonlyArray(ops).filter(
+        (op) => extractCellIdFromCellMessage(op) === SCRATCH_CELL_ID,
       );
+      const output = scratchCellNotificationsToVsCodeOutput(scratchOps, code);
       const text = output.pipe(
         Option.map((cellOutput) =>
           cellOutput.items.map((item) => decoder.decode(item.data)).join(""),
