@@ -20,6 +20,7 @@
     "check": "vp check && node ./scripts/check-css-variables.mjs",
     "fix": "vp fmt && vp check --fix",
     "test": "vp test",
+    "pretest:extension": "pnpm run build:extension",
     "test:extension": "vscode-test",
     "embed-sdist": "node scripts/embed-sdist.mjs"
   },
@@ -39,7 +40,7 @@
     "@types/node": "^24.7.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
-    "@types/vscode": "^1.86.0",
+    "@types/vscode": "^1.108.0",
     "@types/vscode-notebook-renderer": "^1.72.4",
     "@typescript/native-preview": "7.0.0-dev.20251015.1",
     "@vitest/coverage-v8": "^4.0.0",
@@ -117,6 +118,39 @@
         }
       }
     },
+    "languageModelTools": [
+      {
+        "name": "marimo_executeCode",
+        "displayName": "Run Python in the marimo kernel",
+        "modelDescription": "Run Python in a marimo notebook's live kernel. Pass the target notebook's URI as `notebookUri` (the notebook the user is working in). Each call runs in a scratchpad: the notebook's variables are in scope, but anything newly bound stays in the scratchpad. Use it to inspect state (e.g. print(df.head())) and to build the notebook. To durably create, edit, or run notebook cells, write Python that uses marimo's code mode: `import marimo._code_mode as cm` then `async with cm.get_context() as ctx: ...`. Call `help(cm)` for the current API.",
+        "userDescription": "Run Python in a marimo notebook's kernel.",
+        "toolReferenceName": "executeCode",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(run)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Python to run in the notebook's kernel."
+            },
+            "notebookUri": {
+              "type": "string",
+              "description": "URI of the marimo notebook to run in (the notebook the user is working in)."
+            }
+          },
+          "required": [
+            "notebookUri",
+            "code"
+          ]
+        }
+      }
+    ],
+    "chatSkills": [
+      {
+        "path": "./skills/marimo-pair-vscode/SKILL.md"
+      }
+    ],
     "languages": [
       {
         "id": "mo-python",
@@ -498,7 +532,7 @@
   ],
   "icon": "images/icon.png",
   "engines": {
-    "vscode": "^1.86.0"
+    "vscode": "^1.108.0"
   },
   "packageManager": "pnpm@10.28.2",
   "pnpm": {

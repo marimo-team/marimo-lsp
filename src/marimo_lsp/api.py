@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 
 import msgspec
 from marimo._convert.converters import MarimoConvert
+from marimo._messaging.notebook.outputs import CellOutputs
 from marimo._runtime.commands import (
     ExecuteScratchpadCommand,
     InvokeFunctionCommand,
@@ -22,6 +23,7 @@ from marimo._session.state.serialize import serialize_session_view
 from marimo._utils.parse_dataclass import parse_raw
 from pygls.uris import to_fs_path
 
+from marimo_lsp.app_file_manager import snapshot_notebook_cells
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     CloseSessionRequest,
@@ -175,18 +177,47 @@ async def close_session(
 
 
 async def execute_scratch(
+    ls: LanguageServer,
     manager: LspSessionManager,
     args: NotebookCommand[ExecuteScratchRequest],
 ):
-    """Execute code in the scratchpad (isolated from dependency graph)."""
+    """Execute code in the scratchpad (isolated from dependency graph).
+
+    Populates the document + output snapshot on the command so that
+    ``marimo._code_mode.get_context()`` can bind inside the kernel. Cells come
+    from the LSP notebook document (id-aligned with VS Code, see ADR 0002);
+    outputs come from the session view.
+    """
     logger.info(f"execute_scratch for {args.notebook_uri}")
     session = manager.get_session(args.notebook_uri)
     if not session:
         logger.warning(f"No session found for {args.notebook_uri}")
         return
 
+    # Register cells into the graph without running them so that code mode's
+    # run_cell can resolve dependencies. No-ops if already instantiated.
+    if not manager.is_instantiated(args.notebook_uri):
+        logger.info(f"Instantiating session {args.notebook_uri}")
+        session.instantiate(
+            InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
+            http_request=None,
+        )
+        manager.set_instantiated(args.notebook_uri, instantiated=True)
+
+    notebook_cells = snapshot_notebook_cells(ls.workspace, args.notebook_uri)
+    cell_ids = [cell.id for cell in notebook_cells]
+    cell_outputs = CellOutputs(
+        output=session.session_view.get_cell_outputs(cell_ids),
+        console_outputs=session.session_view.get_cell_console_outputs(cell_ids),
+    )
+
     session.put_control_request(
-        ExecuteScratchpadCommand(code=args.inner.code),
+        ExecuteScratchpadCommand(
+            code=args.inner.code,
+            notebook_cells=notebook_cells,
+            cell_outputs=cell_outputs,
+            run_id=args.inner.run_id,
+        ),
         from_consumer_id=None,
     )
     logger.info(f"Scratchpad execution request sent for {args.notebook_uri}")
@@ -515,6 +546,7 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
 
     if method == "execute-scratchpad":
         return await execute_scratch(
+            ls,
             manager,
             msgspec.convert(params, type=NotebookCommand[ExecuteScratchRequest]),
         )
