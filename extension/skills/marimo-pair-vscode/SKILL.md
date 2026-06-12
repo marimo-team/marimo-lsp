@@ -1,11 +1,10 @@
 ---
-name: marimo-pair
+name: marimo-pair-vscode
 description: >-
   Drive a live marimo notebook as a workspace: run Python in the same kernel
   the user does, inspect live notebook state, and commit durable notebook
   changes. Use when the user wants to start a marimo notebook or pair on an
   active marimo session.
-allowed-tools: Bash(bash **/scripts/discover-servers.sh *), Bash(bash **/scripts/execute-code.sh *), Read
 ---
 
 marimo is a reactive Python runtime for building reproducible Python programs
@@ -18,61 +17,26 @@ session is running.
 A user interacts with the same runtime via a notebook UI with cells, outputs,
 and widgets.
 
-**WARNING. The active runtime is the source of truth.** During a session, you
-SHOULD NOT modify the associated `.py` file directly. File edits WILL NOT reach
-the active kernel or user, and the kernel may overwrite them on save. Use
-`marimo._code_mode` (`cm`) for notebook changes. Reading disk is fine, but
-prefer `ctx.cells[...].code` for current cell code.
+**WARNING. The active runtime is the source of truth.** While the user is
+pairing on an open notebook, you SHOULD NOT modify the associated `.py` file
+directly, and you SHOULD NOT use VS Code's `NotebookEdit` to change cells.
+File edits WILL NOT reach the active kernel or user, and the kernel may
+overwrite them on save; `NotebookEdit` bypasses the kernel's dataflow graph.
+Use `marimo._code_mode` (`cm`) for all notebook changes. Reading disk is fine,
+but prefer `ctx.cells[...].code` for current cell code.
 
 ## Connect to a Notebook
 
-Use the bundled script (`bash scripts/execute-code.sh`) or MCP
-(`execute_code(...)`) to run Python in a live marimo kernel.
-
-If the user provides a notebook URL, target it directly:
-
-```bash
-bash scripts/execute-code.sh --url http://localhost:2718 -c "print('connected')"
-```
-
-Use `-c` only for short one-liners. For multiline code or code containing
-quotes, backticks, `$`, or braces, use a single-quoted heredoc:
-
-```bash
-bash scripts/execute-code.sh --url http://localhost:2718 <<'PY'
-import marimo._code_mode as cm
-
-async with cm.get_context() as ctx:
-    cid = ctx.create_cell("x = df.head()")
-    ctx.run_cell(cid)
-PY
-```
-
-When code already lives in a file, pass the file path:
-
-```bash
-bash scripts/execute-code.sh --url http://localhost:2718 /tmp/code.py
-```
-
-If no target is provided, find or start a session. First look for a running
-session with `bash scripts/discover-servers.sh`, MCP `list_sessions()`, or
-local process context. When multiple sessions are possible, target with
-`--url`, `--port`, or `--session`.
-
-If no server is running and the user wants a notebook, start marimo with
-`--no-token` (and without `--headless`) so it auto-registers for discovery. The
-notebook UI must be open before there is an active session for `execute-code`
-to target. The right way to invoke marimo depends on context (project tooling,
-global install, sandbox mode). If the notebook file contains a PEP 723 `#
-/// script` header, it MUST be opened with `--sandbox` — otherwise marimo
-ignores the inline dependencies. See
-[finding-marimo.md](reference/finding-marimo.md) for the full decision tree and
-[execution-context.md](reference/execution-context.md) for scripts, MCP, and
-shell quoting.
+The notebook is already open in VS Code, and the extension manages its kernel.
+Run Python in that kernel with the `marimo_executeCode` tool, passing the
+`notebookUri` of the notebook the user is working in (VS Code provides the
+active notebook as context; if several are open or you are unsure which one,
+ask rather than guessing). The tool runs your `code` in the scratchpad — see
+below.
 
 ## Scratchpad Scope
 
-`execute-code` evaluates Python in marimo's scratchpad: a temporary namespace
+`marimo_executeCode` evaluates Python in marimo's scratchpad: a temporary namespace
 with a shallow copy of the kernel globals. Notebook variables are available by
 name, but new top-level bindings and rebindings are discarded after each call.
 In-place mutations to notebook-owned objects can persist because those names
@@ -288,8 +252,6 @@ For designing custom visual or interactive output, see
 
 ## References
 
-- [execution-context.md](reference/execution-context.md) — scripts, MCP, auth, startup, and shell quoting
-- [finding-marimo.md](reference/finding-marimo.md) — choosing the right marimo invocation
 - [gotchas.md](reference/gotchas.md) — name redefinition, cached module proxies, and notebook traps
 - [rich-representations.md](reference/rich-representations.md) — custom widgets and visualizations
 - [notebook-improvements.md](reference/notebook-improvements.md) — improving existing notebooks
