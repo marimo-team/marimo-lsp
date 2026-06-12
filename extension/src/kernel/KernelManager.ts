@@ -43,9 +43,7 @@ interface MarimoOperation {
   operation: Notification;
 }
 
-type ScratchEvent =
-  | CellOperationNotification
-  | NotificationOf<"completed-run">;
+type ScratchEvent = CellOperationNotification | NotificationOf<"completed-run">;
 
 function hasRunId<T extends { run_id?: string | null }>(
   event: T,
@@ -58,13 +56,6 @@ function isCompletedRunFor(runId: string) {
     event: ScratchEvent,
   ): event is NotificationOf<"completed-run"> & { run_id: string } =>
     event.op === "completed-run" && hasRunId(event) && event.run_id === runId;
-}
-
-function isCellOpFor(runId: string) {
-  return (
-    event: ScratchEvent,
-  ): event is CellOperationNotification & { run_id: string } =>
-    event.op === "cell-op" && hasRunId(event) && event.run_id === runId;
 }
 
 /**
@@ -102,9 +93,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       // A scratchpad's `completed-run` echoes the command's `runId`, so a
       // consumer waits for *its* completion — including any code-mode cascade —
       // rather than the scratch cell merely going idle.
-      const scratchOps = yield* PubSub.unbounded<
-        ScratchEvent
-      >();
+      const scratchOps = yield* PubSub.unbounded<ScratchEvent>();
 
       // Semaphore to serialize concurrent scratchpad executions
       const scratchLock = yield* Effect.makeSemaphore(1);
@@ -279,11 +268,18 @@ export class KernelManager extends Effect.Service<KernelManager>()(
               },
             });
 
-            // 3. Stream cell-ops until *our* completed-run. takeUntil is
-            //    inclusive, so filter the sentinel back out of the output.
+            // 3. Stream the scratch cell's ops until *our* completed-run.
+            //    Only SCRATCH_CELL_ID ops are published to scratchOps (marimo
+            //    stamps our runId on the terminating completed-run, not on the
+            //    cell-ops). The code-mode cascade settles inside run_scratchpad
+            //    — before completed-run — so this window already covers it.
+            //    takeUntil is inclusive, so drop the completed-run sentinel.
             return Stream.fromQueue(sub).pipe(
               Stream.takeUntil(isCompletedRunFor(runId)),
-              Stream.filter(isCellOpFor(runId)),
+              Stream.filter(
+                (event): event is CellOperationNotification =>
+                  event.op === "cell-op",
+              ),
             );
           }).pipe(scratchLock.withPermits(1), Stream.unwrapScoped);
         },
@@ -469,16 +465,14 @@ function processSessionOperation(
 
     switch (operation.op) {
       case "cell-op": {
-        // Feed run-scoped cell-ops into the scratch stream so executeCode can
-        // surface downstream stdout/stderr/errors from code-mode cascades.
-        if (hasRunId(operation)) {
-          yield* PubSub.publish(scratchOps, operation);
-        }
-
         const cellId = extractCellIdFromCellMessage(operation);
 
-        // Route __scratch__ to PubSub, not ExecutionRegistry
+        // The scratch cell's ops carry the execute-code output (its stdout /
+        // result). Route them to the scratch PubSub instead of the
+        // ExecutionRegistry. marimo doesn't stamp our runId onto these (only
+        // onto the terminating completed-run), so we key on the cell id.
         if (cellId === SCRATCH_CELL_ID) {
+          yield* PubSub.publish(scratchOps, operation);
           break;
         }
 

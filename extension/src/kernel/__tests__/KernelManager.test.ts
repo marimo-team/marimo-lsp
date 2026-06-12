@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import {
   Chunk,
   Effect,
@@ -16,7 +16,7 @@ import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { NOTEBOOK_TYPE } from "../../constants.ts";
+import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
 import { KernelManager } from "../../kernel/KernelManager.ts";
 import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
@@ -254,7 +254,7 @@ describe("KernelManager stdin", () => {
 
 describe("KernelManager scratch stream", () => {
   it.scoped(
-    "includes non-scratch cell-ops for the same run_id and filters others",
+    "surfaces the scratch cell's ops and ends on the matching completed-run",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
@@ -267,7 +267,7 @@ describe("KernelManager scratch stream", () => {
 
         const streamFiber = yield* Effect.fork(
           manager
-            .executeCodeUnsafe(ctx.notebookUri, "x = 1")
+            .executeCodeUnsafe(ctx.notebookUri, "print('hi')")
             .pipe(Stream.runCollect),
         );
 
@@ -279,30 +279,26 @@ describe("KernelManager scratch stream", () => {
             c.command === "marimo.api" &&
             c.params.method === "execute-scratchpad",
         );
-        expect(executeCmd).toBeDefined();
-        const runId = executeCmd?.params.params.inner.runId;
+        assert(
+          executeCmd !== undefined &&
+            executeCmd.command === "marimo.api" &&
+            executeCmd.params.method === "execute-scratchpad",
+        );
+        const runId = executeCmd.params.params.inner.runId;
         expect(runId).toBeDefined();
 
         const cell = ctx.notebook.cellAt(0);
         const realCellId = Option.getOrThrow(cell.id);
 
-        // Different run_id should not be emitted from executeCodeUnsafe.
+        // An unrelated notebook cell-op must NOT be surfaced as scratch output.
         yield* PubSub.publish(
           ctx.operationsPubSub,
           makeIdleCellOperation(ctx.notebookUri, realCellId, {
-            run_id: "other-run",
-          }),
-        );
-
-        // Same run_id for a non-scratch cell should be included.
-        yield* PubSub.publish(
-          ctx.operationsPubSub,
-          makeIdleCellOperation(ctx.notebookUri, realCellId, {
-            run_id: runId,
+            status: "running",
             console: [
               {
                 channel: "stdout",
-                data: "from downstream cell",
+                data: "unrelated",
                 mimetype: "text/plain",
                 timestamp: 0,
               },
@@ -310,7 +306,25 @@ describe("KernelManager scratch stream", () => {
           }),
         );
 
-        // Matching completed-run ends the stream.
+        // The scratch cell's op carries the run's output. marimo leaves its
+        // run_id null (only the completed-run echoes ours), so we key on the
+        // SCRATCH_CELL_ID, not the run_id.
+        yield* PubSub.publish(
+          ctx.operationsPubSub,
+          makeIdleCellOperation(ctx.notebookUri, SCRATCH_CELL_ID, {
+            status: "running",
+            console: [
+              {
+                channel: "stdout",
+                data: "hi",
+                mimetype: "text/plain",
+                timestamp: 0,
+              },
+            ],
+          }),
+        );
+
+        // Our completed-run ends the stream (inclusive; filtered back out).
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,
           operation: {
@@ -321,8 +335,7 @@ describe("KernelManager scratch stream", () => {
 
         const ops = Chunk.toReadonlyArray(yield* Fiber.join(streamFiber));
         expect(ops).toHaveLength(1);
-        expect(ops[0]?.run_id).toBe(runId);
-        expect(ops[0]?.cell_id).toBe(realCellId);
+        expect(ops[0]?.cell_id).toBe(SCRATCH_CELL_ID);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
