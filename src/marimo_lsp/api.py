@@ -204,7 +204,14 @@ async def execute_scratch(
         )
         manager.set_instantiated(args.notebook_uri, instantiated=True)
 
-    notebook_cells = snapshot_notebook_cells(ls.workspace, args.notebook_uri)
+    try:
+        notebook_cells = snapshot_notebook_cells(ls.workspace, args.notebook_uri)
+    except KeyError:
+        logger.warning(
+            f"No notebook document found for {args.notebook_uri}; "
+            "skipping scratchpad execution"
+        )
+        return
     cell_ids = [cell.id for cell in notebook_cells]
     cell_outputs = CellOutputs(
         output=session.session_view.get_cell_outputs(cell_ids),
