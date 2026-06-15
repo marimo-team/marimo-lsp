@@ -1,5 +1,6 @@
 import {
   Effect,
+  Exit,
   Option,
   PubSub,
   Queue,
@@ -275,6 +276,27 @@ export class KernelManager extends Effect.Service<KernelManager>()(
               },
             });
 
+            // If the consumer abandons this stream before completed-run, interrupt.
+            yield* Effect.addFinalizer((exit) =>
+              Exit.isInterrupted(exit)
+                ? client
+                    .executeCommand({
+                      command: "marimo.api",
+                      params: {
+                        method: "interrupt",
+                        params: { notebookUri, inner: {} },
+                      },
+                    })
+                    .pipe(
+                      Effect.catchAllCause((cause) =>
+                        Effect.logWarning(
+                          "Failed to interrupt kernel after scratchpad stream was abandoned",
+                        ).pipe(Effect.annotateLogs({ cause })),
+                      ),
+                    )
+                : Effect.void,
+            );
+
             // 3. Stream the scratch cell's ops until *our* completed-run.
             //    Only SCRATCH_CELL_ID ops are published to scratchOps (marimo
             //    stamps our runId on the terminating completed-run, not on the
@@ -283,10 +305,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
             //    takeUntil is inclusive, so drop the completed-run sentinel.
             return Stream.fromQueue(sub).pipe(
               Stream.takeUntil(isCompletedRunFor(runId)),
-              Stream.filter(
-                (event): event is CellOperationNotification =>
-                  event.op === "cell-op",
-              ),
+              Stream.filter((event) => event.op === "cell-op"),
             );
           }).pipe(scratchLock.withPermits(1), Stream.unwrapScoped);
         },
