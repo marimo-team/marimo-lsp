@@ -7,7 +7,7 @@ Custom visual encodings for data that go beyond standard charts and tables.
 **Visualization matters.** Helping users build custom visual representations
 is one of the highest-impact things the agent can do. A bespoke encoding
 tailored to the task — labeling, batch review, comparing variants — lets
-users *see* their data in ways that tables and numbers never will. marimo
+users _see_ their data in ways that tables and numbers never will. marimo
 is an environment where users create their own views, not just consume
 library charts. Help them imagine what's possible, then build it.
 
@@ -26,11 +26,11 @@ and views. Don't over-engineer.
 
 ## Decision tree
 
-| Need | Approach |
-|------|----------|
-| Custom output or interaction | **anywidget** — flexible enough to grow from display-only to interactive |
-| Tiny static HTML representation | `_display_()` or `mo.Html` |
-| Built-in control used as-is (slider, dropdown) | `mo.ui.*` |
+| Need                                           | Approach                                                                 |
+| ---------------------------------------------- | ------------------------------------------------------------------------ |
+| Custom output or interaction                   | **anywidget** — flexible enough to grow from display-only to interactive |
+| Tiny static HTML representation                | `_display_()` or `mo.Html`                                               |
+| Built-in control used as-is (slider, dropdown) | `mo.ui.*`                                                                |
 
 For custom representations, prefer anywidget unless the output is clearly a
 small static one-off.
@@ -46,7 +46,7 @@ Python sees it. `_css` is optional global CSS.
 ipyvolume, etc. often have a top-level object whose default representation is a
 Jupyter widget (`application/vnd.jupyter.widget-view+json`). marimo cannot
 display these — you need to find the underlying **anywidget** instance, which
-marimo *does* support.
+marimo _does_ support.
 
 Common pattern: look for a `.widget` attribute on the library object:
 
@@ -69,7 +69,9 @@ print(isinstance(obj, anywidget.AnyWidget))  # True = marimo can render it
 **Render only** (most widgets):
 
 ```js
-function render({ model, el }) { /* ... */ }
+function render({ model, el }) {
+  /* ... */
+}
 export default { render };
 ```
 
@@ -80,12 +82,16 @@ export default () => {
   return {
     initialize({ model }) {
       // Once per widget instance — timers, connections, shared handlers
-      return () => { /* cleanup */ };
+      return () => {
+        /* cleanup */
+      };
     },
     render({ model, el }) {
       // Once per view — display in 3 cells = 3 renders
-      return () => { /* cleanup DOM listeners */ };
-    }
+      return () => {
+        /* cleanup DOM listeners */
+      };
+    },
   };
 };
 ```
@@ -253,10 +259,10 @@ Do **not** use `change["new"]` or `allow_self_loops=True`.
 
 Two strategies for reactive anywidgets. Choose one per widget — don't mix them.
 
-| Strategy | Reactivity | Best for |
-|----------|-----------|----------|
-| `mo.state` + `.observe()` | Specific traits you pick | Precision — only named traits trigger downstream cells |
-| `mo.ui.anywidget(widget)` | All synced traits as one `.value` dict | Convenience — observe everything at once |
+| Strategy                  | Reactivity                             | Best for                                               |
+| ------------------------- | -------------------------------------- | ------------------------------------------------------ |
+| `mo.state` + `.observe()` | Specific traits you pick               | Precision — only named traits trigger downstream cells |
+| `mo.ui.anywidget(widget)` | All synced traits as one `.value` dict | Convenience — observe everything at once               |
 
 ### Programmatic widget control (scratchpad)
 

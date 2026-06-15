@@ -25,6 +25,16 @@ overwrite them on save; `NotebookEdit` bypasses the kernel's dataflow graph.
 Use `marimo._code_mode` (`cm`) for all notebook changes. Reading disk is fine,
 but prefer `ctx.cells[...].code` for current cell code.
 
+**WARNING. Every notebook edit goes through code mode — no exceptions.** When
+the user asks you to change the notebook (add, edit, delete, or run a cell;
+rename; change a value or a package), you MUST make that change through
+`marimo._code_mode` (`cm`). DO NOT edit the notebook `.py` file with `Edit` or
+`Write`, and DO NOT use VS Code's notebook-editing tools (`NotebookEdit`) — those
+bypass the live kernel, never reach the user's running session, and get
+clobbered when the kernel saves. Running ad-hoc Python with `marimo_executeCode`
+to explore or test is fine; _persisting any change to the notebook_ is only ever
+done via `cm`.
+
 ## Connect to a Notebook
 
 The notebook is already open in VS Code, and the extension manages its kernel.
@@ -114,7 +124,6 @@ structural since queued cell runs can still error. `create_cell` and
 editor in the UI. Pass `hide_code=False` if the user wants created cells to
 be visible without manually expanding them.
 
-
 ## Marimo Rules
 
 marimo imposes a small contract on notebook code so it can keep the notebook as
@@ -187,7 +196,7 @@ ctx.graph.descendants(cid)   # cells that re-run when this one changes
 ctx.graph.ancestors(cid)     # cells this one depends on
 ```
 
-In marimo, deletes are *destructive* so it can be useful to query the
+In marimo, deletes are _destructive_ so it can be useful to query the
 descendants prior to deleting to understand it's impact.
 
 ## Writing Notebook Changes
