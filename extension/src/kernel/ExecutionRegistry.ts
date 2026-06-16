@@ -13,7 +13,7 @@ import {
   HashMap,
   Option,
   Ref,
-  Array as ReadonlyArray,
+  Array as EffectArray,
 } from "effect";
 import type * as vscode from "vscode";
 
@@ -463,7 +463,7 @@ export function scratchCellNotificationsToVsCodeOutput(
     | ReadonlyArray<CellOperationNotification>,
   code: VsCode,
 ) {
-  const arr = ReadonlyArray.ensure(notifications);
+  const arr = EffectArray.ensure(notifications);
   const outputs = buildCellOutputs(
     SCRATCH_CELL_ID,
     arr.reduce(transitionCell, createCellRuntimeState()),

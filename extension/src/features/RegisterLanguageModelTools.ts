@@ -1,5 +1,5 @@
 import {
-  Array as ReadonlyArray,
+  Array as EffectArray,
   Chunk,
   Effect,
   Layer,
@@ -38,7 +38,7 @@ export function consoleText(op: CellOperationNotification): string {
   if (op.console == null) {
     return "";
   }
-  return ReadonlyArray.ensure(op.console)
+  return EffectArray.ensure(op.console)
     .filter(
       (output) =>
         output != null &&
@@ -58,7 +58,6 @@ export const ExecuteCodeInput = Schema.Struct({
   /** Python to run in that notebook's live kernel (scratchpad). */
   code: Schema.String,
 });
-
 /**
  * Registers the `execute_code` Language Model Tool: the single channel an agent
  * uses to run Python in a marimo notebook's kernel. Exploration stays in the
@@ -73,18 +72,22 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
     const decoder = new TextDecoder();
 
-    // Resolve the explicit URI against open notebooks (validates it's a live
-    // marimo notebook and yields the canonical id the kernel is keyed by).
+    /**
+     * Resolve the explicit URI against open notebooks
+     */
     const resolveNotebookId = Effect.fn(function* (
       input: typeof ExecuteCodeInput.Type,
     ) {
       const notebooks = yield* code.workspace.getNotebookDocuments();
-      return ReadonlyArray.findFirst(
-        ReadonlyArray.getSomes(
+
+      const first = EffectArray.findFirst(
+        EffectArray.getSomes(
           notebooks.map((raw) => MarimoNotebookDocument.tryFrom(raw)),
         ),
         (notebook) => notebook.id === input.notebookUri,
-      ).pipe(Option.map((notebook) => notebook.id));
+      );
+
+      return Option.map(first, (nb) => nb.id);
     });
 
     const result = (text: string) =>
@@ -108,9 +111,8 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
 
       // Mirror marimo's SSE `/execute` endpoint (`ScratchCellListener.stream`):
       // surface the scratch cell's own output PLUS console (stdout/stderr) from
-      // any cells a code-mode cascade re-ran, so the agent sees downstream
-      // output (e.g. a re-run `print`) without reading the notebook.
-      const [scratchOps, cascadeOps] = ReadonlyArray.partition(
+      // any cells a code-mode cascade re-ran
+      const [scratchOps, cascadeOps] = EffectArray.partition(
         Chunk.toReadonlyArray(ops),
         (op) => extractCellIdFromCellMessage(op) === SCRATCH_CELL_ID,
       );
@@ -126,11 +128,7 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
         Option.getOrElse(() => ""),
       );
 
-      // Console from cascade cells, concatenated in arrival order — exactly
-      // what SSE's `_format_console` does: read each notification's `console`
-      // delta and emit its stdout/stderr `data`. No reduce/grouping; the kernel
-      // streams console incrementally and the cascade cells' rendered output
-      // lives in the notebook, not here.
+      // Console from cascade cells, concatenated in arrival order
       const cascadeText = cascadeOps.map(consoleText).join("");
 
       const text = scratchText + cascadeText;

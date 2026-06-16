@@ -274,11 +274,13 @@ describe("KernelManager scratch stream", () => {
         // Let executeCodeUnsafe enqueue marimo.api with generated runId.
         yield* TestClock.adjust("1 millis");
 
-        const executeCmd = (yield* Ref.get(ctx.executions)).find(
+        const executions = yield* Ref.get(ctx.executions);
+        const executeCmd = executions.find(
           (c) =>
             c.command === "marimo.api" &&
             c.params.method === "execute-scratchpad",
         );
+
         assert(
           executeCmd !== undefined &&
             executeCmd.command === "marimo.api" &&
@@ -375,16 +377,25 @@ describe("KernelManager scratch stream", () => {
         // cancelled tool invocation interrupting the fiber).
         yield* Fiber.interrupt(streamFiber);
 
+        const executions = yield* Ref.get(ctx.executions);
+
         // The finalizer should have sent an interrupt to the kernel.
-        const interruptCmd = (yield* Ref.get(ctx.executions)).find(
+        const interruptCmd = executions.find(
           (c) => c.command === "marimo.api" && c.params.method === "interrupt",
         );
-        expect(interruptCmd).toMatchObject({
-          params: {
-            method: "interrupt",
-            params: { notebookUri: ctx.notebookUri, inner: {} },
-          },
-        });
+
+        expect(interruptCmd).toMatchInlineSnapshot(`
+        	{
+        	  "command": "marimo.api",
+        	  "params": {
+        	    "method": "interrupt",
+        	    "params": {
+        	      "inner": {},
+        	      "notebookUri": "file:///test/notebook_mo.py",
+        	    },
+        	  },
+        	}
+        `);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

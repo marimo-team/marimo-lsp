@@ -153,7 +153,6 @@ class LanguageModelTextPart implements vscode.LanguageModelTextPart {
 }
 
 class LanguageModelToolResult implements vscode.LanguageModelToolResult {
-  // The real `content` union includes `unknown`, which collapses to `unknown[]`.
   content: unknown[];
   constructor(content: unknown[]) {
     this.content = content;
