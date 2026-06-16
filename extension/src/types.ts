@@ -27,8 +27,13 @@ export type DataSourceConnectionsNotification =
   NotificationOf<"data-source-connections">;
 export type DatasetsNotification = NotificationOf<"datasets">;
 export type SqlTablePreviewNotification = NotificationOf<"sql-table-preview">;
-export type SqlTableListPreviewNotification =
-  NotificationOf<"sql-table-list-preview">;
+export type CatalogChildrenPreviewNotification =
+  NotificationOf<"catalog-children-preview">;
+
+export type CatalogNode = NonNullable<Schemas["Database"]["children"]>[number];
+export type SchemaNode = Schemas["Schema"];
+export type NamespaceNode = Schemas["Namespace"];
+export type DataTableNode = Schemas["DataTable"];
 
 export type MarimoConfig = Schemas["MarimoConfig"];
 
