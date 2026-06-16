@@ -1,12 +1,12 @@
 """LSP-specific AppFileManager implementation."""
 
 from __future__ import annotations
-from lsprotocol.types import NotebookDocument
 
 import pathlib
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import unquote
 
+from lsprotocol.types import NotebookDocument
 from marimo._ast.app import App, InternalApp
 from marimo._ast.cell import CellConfig
 from marimo._messaging.notebook.document import NotebookCell

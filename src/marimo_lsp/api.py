@@ -22,7 +22,7 @@ from marimo._session.state.serialize import serialize_session_view
 from marimo._utils.parse_dataclass import parse_raw
 from pygls.uris import to_fs_path
 
-from marimo_lsp.app_file_manager import snapshot_for_scratchpad, find_notebook_document
+from marimo_lsp.app_file_manager import find_notebook_document, snapshot_for_scratchpad
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     CloseSessionRequest,
