@@ -110,8 +110,8 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
       // surface the scratch cell's own output PLUS console (stdout/stderr) from
       // any cells a code-mode cascade re-ran, so the agent sees downstream
       // output (e.g. a re-run `print`) without reading the notebook.
-      const allOps = Chunk.toReadonlyArray(ops);
-      const scratchOps = allOps.filter(
+      const [scratchOps, cascadeOps] = ReadonlyArray.partition(
+        Chunk.toReadonlyArray(ops),
         (op) => extractCellIdFromCellMessage(op) === SCRATCH_CELL_ID,
       );
 
@@ -131,10 +131,7 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
       // delta and emit its stdout/stderr `data`. No reduce/grouping; the kernel
       // streams console incrementally and the cascade cells' rendered output
       // lives in the notebook, not here.
-      const cascadeText = allOps
-        .filter((op) => extractCellIdFromCellMessage(op) !== SCRATCH_CELL_ID)
-        .map(consoleText)
-        .join("");
+      const cascadeText = cascadeOps.map(consoleText).join("");
 
       const text = scratchText + cascadeText;
 

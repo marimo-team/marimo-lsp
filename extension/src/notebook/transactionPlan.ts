@@ -5,7 +5,7 @@
  * replay it onto the VS Code notebook we (1) fold the changes into the desired
  * cell order/content and (2) diff that against the current cells to find the
  * minimal contiguous range to replace. The replay is keyed by `stableId`, which
- * equals marimo's `CellId` (see ADR 0002), so no content matching is needed —
+ * equals marimo's `CellId`, so no content matching is needed —
  * the applier carries each surviving cell's outputs forward by `stableId`.
  *
  * This module is free of `vscode` so the logic is trivially unit-testable; the

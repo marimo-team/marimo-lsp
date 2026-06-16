@@ -5,7 +5,7 @@
  * the document. When the kernel emits a transaction we reflect it here by
  * diffing the desired cell list against the current one and applying the
  * minimal `replaceCells`, carrying each surviving cell's outputs forward by
- * `stableId` (== marimo's `CellId`, see ADR 0002) so a reorder or edit doesn't
+ * `stableId` (== marimo's `CellId`) so a reorder or edit doesn't
  * drop rendered output. See {@link computeDesiredCells} / {@link diffToReplaceRange}.
  */
 

@@ -49,7 +49,7 @@ interface SessionScoped<T> extends NotebookScoped<T> {
 
 /**
  * Discriminated union describing how the server should resolve a notebook's
- * python environment for package introspection. See `docs/adr/0001-package-endpoints-env-source.md`.
+ * python environment for package introspection.
  */
 export type PackageSource =
   | { kind: "venv"; executable: string }

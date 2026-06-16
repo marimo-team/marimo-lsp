@@ -177,7 +177,7 @@ async def execute_scratch(
 
     Populates the document + output snapshot on the command so that
     ``marimo._code_mode.get_context()`` can bind inside the kernel. Cells come
-    from the LSP notebook document (id-aligned with VS Code, see ADR 0002);
+    from the LSP notebook document (id-aligned with VS Code);
     outputs come from the session view.
     """
     logger.info(f"execute_scratch for {args.notebook_uri}")

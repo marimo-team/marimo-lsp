@@ -16,6 +16,8 @@ from pygls.uris import to_fs_path
 from marimo_lsp.utils import decode_marimo_cell_metadata, find_text_document
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     import lsprotocol.types as lsp
     from lsprotocol.types import NotebookDocument
     from marimo._types.ids import CellId_t
@@ -137,6 +139,20 @@ def find_notebook_document(
     raise KeyError(notebook_uri)
 
 
+def _iter_notebook_cells(
+    workspace: Workspace,
+    notebook: NotebookDocument,
+) -> Generator[tuple[CellId_t, str, str, dict[str, Any]]]:
+    """Yield (cell_id, code, name, config) for each valid cell in a notebook."""
+    for cell in notebook.cells:
+        cell_id, config, name = decode_marimo_cell_metadata(cell)
+        if cell_id is None:
+            continue
+        document = find_text_document(workspace, cell.document)
+        code = (document.source or "") if document else ""
+        yield cell_id, code, name, config
+
+
 def sync_app_with_workspace(
     workspace: Workspace, notebook_uri: str, app: InternalApp | None
 ) -> InternalApp:
@@ -158,16 +174,9 @@ def sync_app_with_workspace(
     configs: list[dict[str, Any]] = []
     names: list[str] = []
 
-    for cell in notebook.cells:
-        cell_id, config, name = decode_marimo_cell_metadata(cell)
-        if cell_id is None:
-            continue
+    for cell_id, code, name, config in _iter_notebook_cells(workspace, notebook):
         cell_ids.append(cell_id)
-        document = find_text_document(workspace, cell.document)
-        if document:
-            codes.append(document.source or "")
-        else:
-            codes.append("")
+        codes.append(code)
         configs.append(config)
         names.append(name)
 
@@ -185,21 +194,15 @@ def _snapshot_notebook_cells(
     notebook: NotebookDocument,
 ) -> tuple[NotebookCell, ...]:
     """Snapshot the LSP notebook for code mode."""
-    cells: list[NotebookCell] = []
-    for cell in notebook.cells:
-        cell_id, config, name = decode_marimo_cell_metadata(cell)
-        if cell_id is None:
-            continue
-        document = find_text_document(workspace, cell.document)
-        cells.append(
-            NotebookCell(
-                id=cell_id,
-                code=(document.source or "") if document else "",
-                name=name,
-                config=CellConfig.from_dict(config),
-            )
+    return tuple(
+        NotebookCell(
+            id=cell_id,
+            code=code,
+            name=name,
+            config=CellConfig.from_dict(config),
         )
-    return tuple(cells)
+        for cell_id, code, name, config in _iter_notebook_cells(workspace, notebook)
+    )
 
 
 def snapshot_for_scratchpad(

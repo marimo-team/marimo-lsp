@@ -127,7 +127,7 @@ class ExecuteScratchRequest(msgspec.Struct, rename="camel"):
     ``marimo/operation`` notification (consumed client-side in KernelManager).
 
     Lets a caller wait for *its* completion (including any code-mode cascade)
-    rather than the scratch cell's idle. See ADR 0001 / the streaming model.
+    rather than the scratch cell's idle.
     """
 
 
