@@ -279,9 +279,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
             Effect.gen(function* () {
               // Hold the lock for the full stream lifetime. withPermitsScoped
               // registers the release on the Scope that Stream.unwrapScoped
-              // keeps open until Stream.runCollect (or any runner) finishes —
-              // unlike withPermits(1) which would release as soon as this
-              // Effect.gen returns the Stream value (i.e. after setup only).
+              // keeps open until any runner finishes.
               yield* TSemaphore.withPermitsScoped(scratchLock, 1);
 
               // 1. Subscribe BEFORE sending command (avoid race)

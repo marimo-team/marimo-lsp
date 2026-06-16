@@ -465,7 +465,6 @@ export function scratchCellNotificationsToVsCodeOutput(
 ) {
   const arr = ReadonlyArray.ensure(notifications);
   const outputs = buildCellOutputs(
-    // @ts-expect-error - special cell id for scratch pad
     SCRATCH_CELL_ID,
     arr.reduce(transitionCell, createCellRuntimeState()),
     code,
