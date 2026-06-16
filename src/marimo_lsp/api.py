@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, cast
 
 import msgspec
 from marimo._convert.converters import MarimoConvert
-from marimo._messaging.notebook.outputs import CellOutputs
 from marimo._runtime.commands import (
     ExecuteScratchpadCommand,
     InvokeFunctionCommand,
@@ -23,7 +22,7 @@ from marimo._session.state.serialize import serialize_session_view
 from marimo._utils.parse_dataclass import parse_raw
 from pygls.uris import to_fs_path
 
-from marimo_lsp.app_file_manager import snapshot_notebook_cells
+from marimo_lsp.app_file_manager import snapshot_for_scratchpad, find_notebook_document
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     CloseSessionRequest,
@@ -85,17 +84,10 @@ async def run(
         )
         logger.info(f"Created and synced session {args.notebook_uri}")
 
-    # We lazily instantiate the session until the first run command is sent
-    # so we don't force connecting to a kernel unnecessarily
-    is_instantiated = manager.is_instantiated(args.notebook_uri)
-    if not is_instantiated:
-        logger.info(f"Instantiating session {args.notebook_uri}")
-        session.instantiate(
-            InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
-            http_request=None,
-        )
-        manager.set_instantiated(args.notebook_uri, instantiated=True)
-
+    session.instantiate(
+        InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
+        http_request=None,
+    )
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
     logger.info(f"Execution request sent for {args.notebook_uri}")
 
@@ -194,36 +186,32 @@ async def execute_scratch(
         logger.warning(f"No session found for {args.notebook_uri}")
         return
 
-    # Register cells into the graph without running them so that code mode's
-    # run_cell can resolve dependencies. No-ops if already instantiated.
-    if not manager.is_instantiated(args.notebook_uri):
-        logger.info(f"Instantiating session {args.notebook_uri}")
-        session.instantiate(
-            InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
-            http_request=None,
-        )
-        manager.set_instantiated(args.notebook_uri, instantiated=True)
-
     try:
-        notebook_cells = snapshot_notebook_cells(ls.workspace, args.notebook_uri)
+        notebook = find_notebook_document(ls.workspace, args.notebook_uri)
     except KeyError:
         logger.warning(
             f"No notebook document found for {args.notebook_uri}; "
             "skipping scratchpad execution"
         )
         return
-    cell_ids = [cell.id for cell in notebook_cells]
-    cell_outputs = CellOutputs(
-        output=session.session_view.get_cell_outputs(cell_ids),
-        console_outputs=session.session_view.get_cell_console_outputs(cell_ids),
+
+    session.instantiate(
+        InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
+        http_request=None,
+    )
+
+    notebook_cells, cell_outputs = snapshot_for_scratchpad(
+        workspace=ls.workspace,
+        session=session,
+        notebook=notebook,
     )
 
     session.put_control_request(
         ExecuteScratchpadCommand(
             code=args.inner.code,
+            run_id=args.inner.run_id,
             notebook_cells=notebook_cells,
             cell_outputs=cell_outputs,
-            run_id=args.inner.run_id,
         ),
         from_consumer_id=None,
     )
