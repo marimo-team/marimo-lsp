@@ -6,8 +6,9 @@ import {
   Option,
   Runtime,
   Stream,
+  Inspectable,
+  Schema,
 } from "effect";
-import type * as vscode from "vscode";
 
 import { SCRATCH_CELL_ID } from "../constants.ts";
 import { scratchCellNotificationsToVsCodeOutput } from "../kernel/ExecutionRegistry.ts";
@@ -34,12 +35,10 @@ const EXECUTE_CODE_TOOL = "marimo_executeCode";
  * marimo's /api/kernel/execute SSE endpoint.
  */
 export function consoleText(op: CellOperationNotification): string {
-  const { console } = op;
-  if (console == null) {
+  if (op.console == null) {
     return "";
   }
-  const outputs = Array.isArray(console) ? console : [console];
-  return outputs
+  return ReadonlyArray.ensure(op.console)
     .filter(
       (output) =>
         output != null &&
@@ -48,17 +47,17 @@ export function consoleText(op: CellOperationNotification): string {
     .map((output) =>
       typeof output.data === "string"
         ? output.data
-        : JSON.stringify(output.data),
+        : Inspectable.format(output.data),
     )
     .join("");
 }
 
-interface ExecuteCodeInput {
+export const ExecuteCodeInput = Schema.Struct({
   /** URI of the marimo notebook whose kernel to run in (explicit, no default). */
-  readonly notebookUri: string;
+  notebookUri: Schema.String,
   /** Python to run in that notebook's live kernel (scratchpad). */
-  readonly code: string;
-}
+  code: Schema.String,
+});
 
 /**
  * Registers the `execute_code` Language Model Tool: the single channel an agent
@@ -76,7 +75,9 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
 
     // Resolve the explicit URI against open notebooks (validates it's a live
     // marimo notebook and yields the canonical id the kernel is keyed by).
-    const resolveNotebookId = Effect.fn(function* (input: ExecuteCodeInput) {
+    const resolveNotebookId = Effect.fn(function* (
+      input: typeof ExecuteCodeInput.Type,
+    ) {
       const notebooks = yield* code.workspace.getNotebookDocuments();
       return ReadonlyArray.findFirst(
         ReadonlyArray.getSomes(
@@ -90,8 +91,10 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
       new code.LanguageModelToolResult([new code.LanguageModelTextPart(text)]);
 
     const executeCode = Effect.fn("lm.executeCode")(function* (
-      input: ExecuteCodeInput,
+      unknownInput: unknown,
     ) {
+      const input = yield* Schema.decodeUnknown(ExecuteCodeInput)(unknownInput);
+
       const notebookId = yield* resolveNotebookId(input);
       if (Option.isNone(notebookId)) {
         return result(
@@ -138,15 +141,16 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
       return result(text.trim() === "" ? "(no output)" : text);
     });
 
-    const tool: vscode.LanguageModelTool<ExecuteCodeInput> = {
+    yield* code.lm.registerTool<unknown>(EXECUTE_CODE_TOOL, {
       prepareInvocation(options) {
+        const input = Schema.decodeUnknownSync(ExecuteCodeInput)(options.input);
         return {
           invocationMessage: "Running code in the marimo kernel…",
           // Side-effecting (arbitrary code in the user's kernel) — confirm.
           confirmationMessages: {
             title: "Run code in the marimo kernel?",
             message: new code.MarkdownString(
-              `\`\`\`python\n${options.input.code}\n\`\`\``,
+              `\`\`\`python\n${input.code}\n\`\`\``,
             ),
           },
         };
@@ -156,8 +160,6 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
           signal: signalFromToken(token),
         });
       },
-    };
-
-    yield* code.lm.registerTool(EXECUTE_CODE_TOOL, tool);
+    });
   }),
 );

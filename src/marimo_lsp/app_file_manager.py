@@ -17,6 +17,7 @@ from marimo_lsp.utils import decode_marimo_cell_metadata, find_text_document
 
 if TYPE_CHECKING:
     import lsprotocol.types as lsp
+    from lsprotocol.types import NotebookDocument
     from marimo._types.ids import CellId_t
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace

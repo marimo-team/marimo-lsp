@@ -1212,7 +1212,9 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
          * the caller (which owns the runtime to run any Effects).
          */
         registerTool<T>(name: string, tool: vscode.LanguageModelTool<T>) {
-          return acquireDisposable(() => vscode.lm.registerTool(name, tool));
+          return Effect.asVoid(
+            acquireDisposable(() => vscode.lm.registerTool(name, tool)),
+          );
         },
       },
       // helper
