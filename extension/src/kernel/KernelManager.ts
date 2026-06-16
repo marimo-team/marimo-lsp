@@ -299,8 +299,8 @@ function processOperation(
         yield* datasources.updateTablePreview(notebookUri, operation);
         break;
       }
-      case "sql-table-list-preview": {
-        yield* datasources.updateTableListPreview(notebookUri, operation);
+      case "catalog-children-preview": {
+        yield* datasources.updateCatalogChildrenPreview(notebookUri, operation);
         break;
       }
       case "data-column-preview": {
@@ -327,7 +327,6 @@ function processOperation(
       case "reconnected":
       case "reload":
       case "secret-keys-result":
-      case "sql-schema-list-preview":
       case "startup-logs":
       case "storage-download-ready":
       case "storage-entries":

@@ -3,13 +3,12 @@ import { Effect, Layer, Option, Ref, Stream } from "effect";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import { TreeView } from "../TreeView.ts";
-import { DatasourcesService } from "./DatasourcesService.ts";
+import {
+  type CatalogTreeNode,
+  DatasourcesService,
+} from "./DatasourcesService.ts";
 
-type DatasourceTreeItem =
-  | ConnectionItem
-  | DatabaseItem
-  | SchemaItem
-  | TableItem;
+type DatasourceTreeItem = ConnectionItem | DatabaseItem | CatalogNodeItem;
 
 interface ConnectionItem {
   type: "connection";
@@ -27,31 +26,43 @@ interface DatabaseItem {
   dialect: string;
 }
 
-interface SchemaItem {
-  type: "schema";
+/**
+ * A node in a database's recursive catalog tree: a `schema`/`namespace`
+ * container or a `data_table` leaf. `path` is the list of node names from the
+ * database root down to (and including) this node, which uniquely identifies it
+ * and lets us recover its parent/children by prefix.
+ */
+interface CatalogNodeItem {
+  type: "catalog-node";
   notebookUri: NotebookId;
   connectionName: string;
   databaseName: string;
-  schemaName: string;
-}
-
-interface TableItem {
-  type: "table";
-  notebookUri: NotebookId;
-  connectionName: string;
-  databaseName: string;
-  schemaName: string;
-  tableName: string;
-  tableType: "table" | "view";
+  path: string[];
+  kind: "schema" | "namespace" | "data_table";
+  name: string;
+  tableType: "table" | "view" | null;
   numRows: number | null;
   numColumns: number | null;
+}
+
+/** True when `child` sits directly beneath `parent` in the same db/connection. */
+function isDirectChild(
+  parent: CatalogNodeItem,
+  child: CatalogNodeItem,
+): boolean {
+  return (
+    child.connectionName === parent.connectionName &&
+    child.databaseName === parent.databaseName &&
+    child.path.length === parent.path.length + 1 &&
+    parent.path.every((segment, i) => child.path[i] === segment)
+  );
 }
 
 /**
  * Manages the datasources tree view for the active notebook.
  *
  * Displays a hierarchical view of data sources:
- * Connection → Database → Schema → Table
+ * Connection → Database → (Schema | Namespace)* → Table
  *
  * Subscribes to datasource changes and updates the tree view in real-time.
  */
@@ -69,43 +80,14 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
       viewId: "marimo-explorer-datasources",
       getChildren: (element?: DatasourceTreeItem) =>
         Effect.gen(function* () {
+          const items = yield* Ref.get(datasourceItems);
+
+          // Root level: return connections
           if (!element) {
-            // Root level: return connections
-            const items = yield* Ref.get(datasourceItems);
             return items.filter((item) => item.type === "connection");
           }
 
-          const activeNotebookUri =
-            yield* editorRegistry.getActiveNotebookUri();
-          if (Option.isNone(activeNotebookUri)) {
-            return [];
-          }
-
-          const notebookUri = activeNotebookUri.value;
-          const items = yield* Ref.get(datasourceItems);
-
           if (element.type === "connection") {
-            // Get databases for this connection
-            // For in-memory connection, just filter from items (no need to query datasourcesService)
-            if (element.connectionName === "__in_memory") {
-              return items.filter(
-                (item) =>
-                  item.type === "database" &&
-                  item.connectionName === element.connectionName,
-              );
-            }
-
-            // For regular connections, filter from items
-            const connections =
-              yield* datasourcesService.getConnections(notebookUri);
-            if (Option.isNone(connections)) {
-              return [];
-            }
-
-            const connectionsMap = connections.value;
-            const conn = connectionsMap.connections.get(element.connectionName);
-            if (!conn) return [];
-
             return items.filter(
               (item) =>
                 item.type === "database" &&
@@ -114,79 +96,25 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
           }
 
           if (element.type === "database") {
-            // Get schemas for this database
-            // For in-memory connection, just filter from items
-            if (element.connectionName === "__in_memory") {
-              return items.filter(
-                (item) =>
-                  item.type === "schema" &&
-                  item.connectionName === element.connectionName &&
-                  item.databaseName === element.databaseName,
-              );
-            }
-
-            // For regular connections, check if database exists
-            const connections =
-              yield* datasourcesService.getConnections(notebookUri);
-            if (Option.isNone(connections)) {
-              return [];
-            }
-
-            const connectionsMap = connections.value;
-            const conn = connectionsMap.connections.get(element.connectionName);
-            if (!conn) return [];
-
-            const db = conn.databases.get(element.databaseName);
-            if (!db) return [];
-
+            // Top-level catalog nodes for this database (path length 1).
             return items.filter(
               (item) =>
-                item.type === "schema" &&
-                item.connectionName === element.connectionName &&
-                item.databaseName === element.databaseName,
-            );
-          }
-
-          if (element.type === "schema") {
-            // Get tables for this schema
-            // For in-memory connection, just filter from items
-            if (element.connectionName === "__in_memory") {
-              return items.filter(
-                (item) =>
-                  item.type === "table" &&
-                  item.connectionName === element.connectionName &&
-                  item.databaseName === element.databaseName &&
-                  item.schemaName === element.schemaName,
-              );
-            }
-
-            // For regular connections, check if schema exists
-            const connections =
-              yield* datasourcesService.getConnections(notebookUri);
-            if (Option.isNone(connections)) {
-              return [];
-            }
-
-            const connectionsMap = connections.value;
-            const conn = connectionsMap.connections.get(element.connectionName);
-            if (!conn) return [];
-
-            const db = conn.databases.get(element.databaseName);
-            if (!db) return [];
-
-            const schema = db.schemas.get(element.schemaName);
-            if (!schema) return [];
-
-            return items.filter(
-              (item) =>
-                item.type === "table" &&
+                item.type === "catalog-node" &&
                 item.connectionName === element.connectionName &&
                 item.databaseName === element.databaseName &&
-                item.schemaName === element.schemaName,
+                item.path.length === 1,
             );
           }
 
-          return [];
+          // catalog-node: leaves have no children; containers expose their
+          // direct descendants.
+          if (element.kind === "data_table") {
+            return [];
+          }
+          return items.filter(
+            (item) =>
+              item.type === "catalog-node" && isDirectChild(element, item),
+          );
         }),
       getTreeItem: (element: DatasourceTreeItem) =>
         Effect.succeed({
@@ -195,44 +123,81 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
               ? element.displayName
               : element.type === "database"
                 ? element.databaseName
-                : element.type === "schema"
-                  ? element.schemaName
-                  : element.tableName,
+                : element.name,
           description:
             element.type === "connection"
               ? element.dialect
               : element.type === "database"
                 ? element.dialect
-                : element.type === "table"
-                  ? element.numRows !== null
-                    ? `${element.numRows} rows`
-                    : undefined
+                : element.type === "catalog-node" &&
+                    element.kind === "data_table" &&
+                    element.numRows !== null
+                  ? `${element.numRows} rows`
                   : undefined,
           tooltip:
             element.type === "connection"
               ? `${element.displayName} (${element.dialect})`
               : element.type === "database"
                 ? `${element.databaseName} (${element.dialect})`
-                : element.type === "schema"
-                  ? element.schemaName
-                  : element.type === "table"
-                    ? `${element.tableName} (${element.tableType})${element.numRows !== null ? `\n${element.numRows} rows` : ""}${element.numColumns !== null ? `, ${element.numColumns} columns` : ""}`
-                    : undefined,
+                : element.kind === "data_table"
+                  ? `${element.name} (${element.tableType ?? "table"})${element.numRows !== null ? `\n${element.numRows} rows` : ""}${element.numColumns !== null ? `, ${element.numColumns} columns` : ""}`
+                  : element.name,
           iconPath: undefined,
           contextValue:
             element.type === "connection"
               ? "marimoConnection"
               : element.type === "database"
                 ? "marimoDatabase"
-                : element.type === "schema"
-                  ? "marimoSchema"
-                  : "marimoTable",
+                : element.kind === "data_table"
+                  ? "marimoTable"
+                  : element.kind === "namespace"
+                    ? "marimoNamespace"
+                    : "marimoSchema",
           collapsibleState:
-            element.type === "table"
+            element.type === "catalog-node" && element.kind === "data_table"
               ? ("None" as const)
               : ("Collapsed" as const),
         }),
     });
+
+    // Walk a database's catalog tree into flat `CatalogNodeItem`s, accumulating
+    // each node's path from the database root.
+    const collectCatalogNodes = (params: {
+      notebookUri: NotebookId;
+      connectionName: string;
+      databaseName: string;
+      nodes: readonly CatalogTreeNode[];
+      parentPath: readonly string[];
+    }): CatalogNodeItem[] => {
+      const { notebookUri, connectionName, databaseName, nodes, parentPath } =
+        params;
+      const out: CatalogNodeItem[] = [];
+      for (const node of nodes) {
+        const path = [...parentPath, node.name];
+        out.push({
+          type: "catalog-node",
+          notebookUri,
+          connectionName,
+          databaseName,
+          path,
+          kind: node.kind,
+          name: node.name,
+          tableType: node.table?.type ?? null,
+          numRows: node.table?.num_rows ?? null,
+          numColumns: node.table?.num_columns ?? null,
+        });
+        out.push(
+          ...collectCatalogNodes({
+            notebookUri,
+            connectionName,
+            databaseName,
+            nodes: node.children,
+            parentPath: path,
+          }),
+        );
+      }
+      return out;
+    };
 
     // Helper to rebuild the datasources list from current state
     const refreshDatasources = Effect.fn(function* () {
@@ -283,29 +248,15 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
             dialect: db.dialect,
           });
 
-          for (const [schemaName, schema] of db.schemas) {
-            items.push({
-              type: "schema",
+          items.push(
+            ...collectCatalogNodes({
               notebookUri,
               connectionName: connName,
               databaseName: dbName,
-              schemaName: schemaName,
-            });
-
-            for (const [tableName, table] of schema.tables) {
-              items.push({
-                type: "table",
-                notebookUri,
-                connectionName: connName,
-                databaseName: dbName,
-                schemaName: schemaName,
-                tableName: tableName,
-                tableType: table.type,
-                numRows: table.num_rows,
-                numColumns: table.num_columns,
-              });
-            }
-          }
+              nodes: db.children,
+              parentPath: [],
+            }),
+          );
         }
       }
 
@@ -332,21 +283,27 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
         });
 
         items.push({
-          type: "schema",
+          type: "catalog-node",
           notebookUri,
           connectionName: inMemoryConnName,
           databaseName: inMemoryDbName,
-          schemaName: inMemorySchemaName,
+          path: [inMemorySchemaName],
+          kind: "schema",
+          name: inMemorySchemaName,
+          tableType: null,
+          numRows: null,
+          numColumns: null,
         });
 
         for (const [tableName, table] of datasetsMap.tables) {
           items.push({
-            type: "table",
+            type: "catalog-node",
             notebookUri,
             connectionName: inMemoryConnName,
             databaseName: inMemoryDbName,
-            schemaName: inMemorySchemaName,
-            tableName: tableName,
+            path: [inMemorySchemaName, tableName],
+            kind: "data_table",
+            name: tableName,
             tableType: table.type,
             numRows: table.num_rows,
             numColumns: table.num_columns,
