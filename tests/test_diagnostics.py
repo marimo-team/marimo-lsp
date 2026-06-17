@@ -378,7 +378,7 @@ class TestCellMetadataHelpers:
                 "lsp.LSPObject",
                 {
                     "stableId": "abc-123",
-                    "config": {"disabled": True},
+                    "options": {"disabled": True},
                     "name": "my_cell",
                     "languageMetadata": {"markdown": {"quotePrefix": "rf"}},
                 },
@@ -407,14 +407,28 @@ class TestCellMetadataHelpers:
         assert meta.name == "_"
         assert meta.language_metadata is None
 
-    def test_decode_cell_metadata_ignores_unknown_fields(self) -> None:
-        """VS Code's own cell metadata (state, options) is ignored, not fatal."""
+    def test_decode_cell_metadata_maps_options_to_config(self) -> None:
+        """The wire sends per-cell config as ``options``; we expose ``config``."""
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
             metadata=cast(
                 "lsp.LSPObject",
-                {"stableId": "abc-123", "state": "idle", "options": {}},
+                {"stableId": "abc-123", "options": {"hide_code": True}},
+            ),
+        )
+
+        meta = decode_cell_metadata(cell)
+        assert meta.config == {"hide_code": True}
+
+    def test_decode_cell_metadata_ignores_unknown_fields(self) -> None:
+        """VS Code's own cell metadata (e.g. ``state``) is ignored, not fatal."""
+        cell = lsp.NotebookCell(
+            kind=lsp.NotebookCellKind.Code,
+            document="file:///test.py#cell1",
+            metadata=cast(
+                "lsp.LSPObject",
+                {"stableId": "abc-123", "state": "idle"},
             ),
         )
 

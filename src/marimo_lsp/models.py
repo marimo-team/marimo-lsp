@@ -111,8 +111,13 @@ class CellMetadata(msgspec.Struct, rename="camel"):
     name: str = "_"
     """The marimo cell name."""
 
-    config: dict[str, typing.Any] = msgspec.field(default_factory=dict)
-    """The marimo `CellConfig` as a plain dict."""
+    config: dict[str, typing.Any] = msgspec.field(default_factory=dict, name="options")
+    """The marimo `CellConfig` as a plain dict.
+
+    Synced on the wire as ``options`` (VS Code's notebook cell config key); we
+    expose it as ``config`` to match marimo's downstream vocabulary
+    (``CellConfig``, ``with_data(configs=...)``).
+    """
 
     language_metadata: CellLanguageMetadata | None = None
     """Smart-cell metadata for markdown/SQL cells; absent for Python cells."""
