@@ -117,6 +117,20 @@ export class MarimoNotebookCell {
   }
 
   /**
+   * Whether the cell is disabled via `@app.cell(disabled=True)`.
+   *
+   * marimo stores the decorator's `disabled` flag in the cell's config; the
+   * LSP deserialize path surfaces it as `metadata.options.disabled`. Disabled
+   * cells must not be sent for execution (issue #154).
+   */
+  get isDisabled() {
+    return this.metadata.pipe(
+      Option.map((meta) => meta.options?.disabled === true),
+      Option.getOrElse(() => false),
+    );
+  }
+
+  /**
    * The cell's language metadata, if present.
    */
   get languageMetadata() {
