@@ -101,7 +101,10 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
       const notebookId = yield* resolveNotebookId(input);
       if (Option.isNone(notebookId)) {
         return result(
-          `No open marimo notebook matches \`${input.notebookUri}\`.`,
+          `No open marimo notebook matches \`${input.notebookUri}\`. ` +
+            `Pass the URI of a marimo notebook open in VS Code's notebook editor. ` +
+            `Do not fall back to editing the \`.py\` file with Edit/Write/NotebookEdit — ` +
+            `that bypasses the live kernel.`,
         );
       }
 
@@ -151,9 +154,31 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
         };
       },
       invoke(options, token) {
-        return runPromise(executeCode(options.input), {
-          signal: signalFromToken(token),
-        });
+        return runPromise(
+          executeCode(options.input).pipe(
+            Effect.catchTags({
+              // No live kernel — the notebook is open but nothing can run. Tell
+              // the agent to have the user start one rather than file-edit.
+              NoActiveKernelError: () =>
+                Effect.succeed(
+                  result(
+                    `This marimo notebook is open but has no active kernel, so code can't run. ` +
+                      `Ask the user to select a kernel and run a cell to start it, then try again. ` +
+                      `Do not edit the \`.py\` file directly as a fallback — that bypasses the live kernel.`,
+                  ),
+                ),
+              // Sandbox kernel needs a script file on disk to resolve its venv.
+              UnsavedNotebookError: () =>
+                Effect.succeed(
+                  result(
+                    `This notebook uses a sandbox kernel, which requires the notebook to be saved to a file before it can run. ` +
+                      `Ask the user to save it, then try again.`,
+                  ),
+                ),
+            }),
+          ),
+          { signal: signalFromToken(token) },
+        );
       },
     });
   }),

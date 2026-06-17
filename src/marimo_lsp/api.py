@@ -171,7 +171,7 @@ async def close_session(
 async def execute_scratch(
     ls: LanguageServer,
     manager: LspSessionManager,
-    args: NotebookCommand[ExecuteScratchRequest],
+    args: SessionCommand[ExecuteScratchRequest],
 ):
     """Execute code in the scratchpad (isolated from dependency graph).
 
@@ -179,13 +179,10 @@ async def execute_scratch(
     ``marimo._code_mode.get_context()`` can bind inside the kernel. Cells come
     from the LSP notebook document (id-aligned with VS Code);
     outputs come from the session view.
+
+    Creates the session on demand when none exists, like :func:`run`.
     """
     logger.info(f"execute_scratch for {args.notebook_uri}")
-    session = manager.get_session(args.notebook_uri)
-    if not session:
-        logger.warning(f"No session found for {args.notebook_uri}")
-        return
-
     try:
         notebook = find_notebook_document(ls.workspace, args.notebook_uri)
     except KeyError:
@@ -194,6 +191,15 @@ async def execute_scratch(
             "skipping scratchpad execution"
         )
         return
+
+    session = manager.get_session(args.notebook_uri)
+    if session is None or session.kernel_manager.executable != args.executable:
+        session = manager.create_session(
+            server=ls,
+            executable=args.executable,
+            notebook_uri=args.notebook_uri,
+        )
+        logger.info(f"Created and synced session {args.notebook_uri}")
 
     session.instantiate(
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
@@ -543,7 +549,7 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
         return await execute_scratch(
             ls,
             manager,
-            msgspec.convert(params, type=NotebookCommand[ExecuteScratchRequest]),
+            msgspec.convert(params, type=SessionCommand[ExecuteScratchRequest]),
         )
 
     logger.warning(f"Unknown API method: {method}")

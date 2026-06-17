@@ -32,6 +32,20 @@ import { SandboxController } from "./SandboxController.ts";
 
 export type AnyController = PythonController | SandboxController;
 
+/**
+ * The python executable for running `notebook` on `controller`. A Python
+ * controller's executable is fixed; the sandbox controller resolves (and syncs)
+ * a per-notebook venv, so it needs the notebook.
+ */
+export function resolveControllerExecutable(
+  controller: AnyController,
+  notebook: MarimoNotebookDocument,
+) {
+  return controller._tag === "PythonController"
+    ? Effect.succeed(controller.executable)
+    : controller.resolveExecutable(notebook);
+}
+
 interface NotebookControllerHandle {
   readonly controller: PythonController;
   readonly scope: Scope.CloseableScope;

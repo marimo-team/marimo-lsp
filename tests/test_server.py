@@ -519,6 +519,7 @@ async def test_execute_scratchpad_binds_code_mode_and_emits_transaction(
                     "method": "execute-scratchpad",
                     "params": {
                         "notebookUri": uri,
+                        "executable": sys.executable,
                         "inner": {
                             "code": (
                                 "import marimo._code_mode as cm\n"
@@ -1786,3 +1787,82 @@ y\
             },
         ]
     )
+
+
+@pytest.mark.asyncio
+async def test_scratchpad_creates_session_when_missing(
+    client: LanguageClient,
+) -> None:
+    """execute-scratchpad creates the session on demand when none exists.
+
+    The notebook is opened but never run, so no session exists yet. Running
+    scratchpad code with an ``executable`` should behave like the user running
+    a cell: create the session, start the kernel, and run the code — emitting
+    the scratch cell's output — rather than hanging waiting for a completed-run
+    that a missing session could never send.
+    """
+    uri = "file:///create_on_scratch.py"
+    client.notebook_document_did_open(
+        lsp.DidOpenNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocument(
+                uri=uri,
+                notebook_type="marimo-notebook",
+                version=1,
+                cells=[
+                    NotebookCell(
+                        kind=lsp.NotebookCellKind.Code,
+                        document=f"{uri}#cell1",
+                    )
+                ],
+            ),
+            cell_text_documents=[
+                lsp.TextDocumentItem(
+                    uri=f"{uri}#cell1",
+                    language_id="python",
+                    version=1,
+                    text="x = 10",
+                )
+            ],
+        ),
+    )
+
+    scratch_messages: list[dict] = []
+    scratch_done = asyncio.Event()
+
+    @client.feature("marimo/operation")
+    async def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
+        msg = asdict(params)
+        op = msg.get("operation", {})
+        if op.get("op") == "cell-op" and op.get("cell_id") == "__scratch__":
+            scratch_messages.append(msg)
+            if op.get("status") == "idle":
+                await asyncio.sleep(0.1)
+                scratch_done.set()
+
+    # No cell was ever executed, so there is no session for this notebook yet.
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "execute-scratchpad",
+                    "params": {
+                        "notebookUri": uri,
+                        "executable": sys.executable,
+                        "inner": {"code": "print('from new session')"},
+                    },
+                }
+            ],
+        )
+    )
+
+    # Must not hang: the session is created and the code runs.
+    await asyncio.wait_for(scratch_done.wait(), timeout=10.0)
+
+    stdout = "".join(
+        op["operation"]["console"]["data"]
+        for op in scratch_messages
+        if isinstance(op["operation"].get("console"), dict)
+        and op["operation"]["console"].get("channel") == "stdout"
+    )
+    assert stdout == snapshot("from new session\n")

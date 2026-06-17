@@ -265,6 +265,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
 export class PythonController {
   readonly _tag = "PythonController";
   #inner: Omit<vscode.NotebookController, "dispose">;
+  /** The python interpreter this controller's environment runs on. */
   executable: string;
   constructor(
     inner: Omit<vscode.NotebookController, "dispose">,
