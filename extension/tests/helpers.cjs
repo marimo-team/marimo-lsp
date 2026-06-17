@@ -47,12 +47,13 @@ function ensureSharedVenv() {
   sharedVenvReady = (async () => {
     try {
       await NodeFs.access(SHARED_VENV_PYTHON);
-      return SHARED_VENV_PYTHON;
     } catch {
-      // venv doesn't exist yet; create it
+      await execFile("uv", ["venv", SHARED_VENV_DIR, "--python", "3.13"]);
     }
-    await execFile("uv", ["venv", SHARED_VENV_DIR, "--python", "3.13"]);
-    await execFile("uv", ["pip", "install", "marimo"], {
+    // Always upgrade marimo: a long-lived cached venv can otherwise drift
+    // below `minimum-kernel-version` and the kernel silently refuses to start.
+    // Runs once per test process (memoized), so the cost is amortized.
+    await execFile("uv", ["pip", "install", "-U", "marimo"], {
       env: { ...NodeProcess.env, VIRTUAL_ENV: SHARED_VENV_DIR },
     });
     return SHARED_VENV_PYTHON;

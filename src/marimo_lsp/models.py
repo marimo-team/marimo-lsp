@@ -122,6 +122,14 @@ class ExecuteScratchRequest(msgspec.Struct, rename="camel"):
     code: str
     """The Python code to execute."""
 
+    run_id: str | None = None
+    """Optional correlation id, echoed back on the kernel's ``completed-run``
+    ``marimo/operation`` notification (consumed client-side in KernelManager).
+
+    Lets a caller wait for *its* completion (including any code-mode cascade)
+    rather than the scratch cell's idle.
+    """
+
 
 class UpdateConfigurationRequest(msgspec.Struct, rename="camel"):
     """A request to update the user configuration."""

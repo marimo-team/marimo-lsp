@@ -56,6 +56,7 @@ import { DebugLayerLive } from "./DebugLayer.ts";
 import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
+import { RegisterLanguageModelToolsLive } from "./RegisterLanguageModelTools.ts";
 import { ReloadOnConfigChangeLive } from "./ReloadOnConfigChange.ts";
 import { ThemeSyncLive } from "./ThemeSync.ts";
 
@@ -66,6 +67,7 @@ import { ThemeSyncLive } from "./ThemeSync.ts";
 const MainLive = Layer.empty
   .pipe(
     Layer.merge(RegisterCommandsLive),
+    Layer.merge(RegisterLanguageModelToolsLive),
     Layer.merge(MarimoStatusBarLive),
     Layer.merge(PythonEnvironmentStatusBarLive),
     Layer.merge(MarimoFileDetectorLive),

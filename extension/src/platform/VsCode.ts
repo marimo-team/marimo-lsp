@@ -1168,6 +1168,8 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       SelectionRange: vscode.SelectionRange,
       SemanticTokensLegend: vscode.SemanticTokensLegend,
       SemanticTokens: vscode.SemanticTokens,
+      LanguageModelToolResult: vscode.LanguageModelToolResult,
+      LanguageModelTextPart: vscode.LanguageModelTextPart,
       // data types
       NotebookData: vscode.NotebookData,
       NotebookCellData: vscode.NotebookCellData,
@@ -1199,6 +1201,19 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
         getExtension<T = unknown>(extensionId: string) {
           return Option.fromNullable(
             vscode.extensions.getExtension<T>(extensionId),
+          );
+        },
+      },
+      // Language Model (agent tools). Inline like `extensions` — one method.
+      lm: {
+        /**
+         * Register a language-model tool; unregistered when the surrounding
+         * scope closes. The tool's `invoke`/`prepareInvocation` are built by
+         * the caller (which owns the runtime to run any Effects).
+         */
+        registerTool<T>(name: string, tool: vscode.LanguageModelTool<T>) {
+          return Effect.asVoid(
+            acquireDisposable(() => vscode.lm.registerTool(name, tool)),
           );
         },
       },

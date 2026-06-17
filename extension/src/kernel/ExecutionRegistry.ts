@@ -5,7 +5,16 @@ import type {
   CellOutput,
   OutputMessage,
 } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
-import { Brand, Cause, Data, Effect, HashMap, Option, Ref } from "effect";
+import {
+  Brand,
+  Cause,
+  Data,
+  Effect,
+  HashMap,
+  Option,
+  Ref,
+  Array as EffectArray,
+} from "effect";
 import type * as vscode from "vscode";
 
 import { logUnreachable } from "../assert.ts";
@@ -451,12 +460,11 @@ function transitionCell(
 export function scratchCellNotificationsToVsCodeOutput(
   notifications:
     | CellOperationNotification
-    | readonly CellOperationNotification[],
+    | ReadonlyArray<CellOperationNotification>,
   code: VsCode,
 ) {
-  const arr = Array.isArray(notifications) ? notifications : [notifications];
+  const arr = EffectArray.ensure(notifications);
   const outputs = buildCellOutputs(
-    // @ts-expect-error - special cell id for scratch pad
     SCRATCH_CELL_ID,
     arr.reduce(transitionCell, createCellRuntimeState()),
     code,

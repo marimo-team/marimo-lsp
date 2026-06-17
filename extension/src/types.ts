@@ -11,6 +11,7 @@ export type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/c
 
 type Schemas = Api["schemas"];
 export type CellId = Schemas["CellId"];
+export type CellConfig = Schemas["CellConfig"];
 export type VariableName = Schemas["VariableName"];
 
 export type Notification = Schemas["KnownUnions"]["notification"];
@@ -29,6 +30,11 @@ export type DatasetsNotification = NotificationOf<"datasets">;
 export type SqlTablePreviewNotification = NotificationOf<"sql-table-preview">;
 export type SqlTableListPreviewNotification =
   NotificationOf<"sql-table-list-preview">;
+export type DocumentTransactionNotification =
+  NotificationOf<"notebook-document-transaction">;
+/** A single change within a document transaction (create/edit/move/... a cell). */
+export type DocumentChange =
+  DocumentTransactionNotification["transaction"]["changes"][number];
 
 export type MarimoConfig = Schemas["MarimoConfig"];
 
@@ -43,7 +49,7 @@ interface SessionScoped<T> extends NotebookScoped<T> {
 
 /**
  * Discriminated union describing how the server should resolve a notebook's
- * python environment for package introspection. See `docs/adr/0001-package-endpoints-env-source.md`.
+ * python environment for package introspection.
  */
 export type PackageSource =
   | { kind: "venv"; executable: string }
@@ -74,6 +80,8 @@ type ExportAsIpynbRequest = {};
 
 interface ExecuteScratchRequest {
   code: string;
+  /** Correlation id echoed on the terminating `completed-run` notification. */
+  runId?: string;
 }
 
 type SendStdinRequest = Schemas["StdinRequest"];

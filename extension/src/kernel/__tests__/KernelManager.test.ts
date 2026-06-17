@@ -1,6 +1,8 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import {
+  Chunk,
   Effect,
+  Fiber,
   Layer,
   Option,
   PubSub,
@@ -14,7 +16,7 @@ import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { NOTEBOOK_TYPE } from "../../constants.ts";
+import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
 import { KernelManager } from "../../kernel/KernelManager.ts";
 import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
@@ -245,6 +247,202 @@ describe("KernelManager stdin", () => {
             },
           },
         });
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+});
+
+describe("KernelManager scratch stream", () => {
+  it.scoped(
+    "streams scratch + cascade console ops until the matching completed-run",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const manager = yield* KernelManager;
+
+        // Route cell-op notifications through processSessionOperation.
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* TestClock.adjust("1 millis");
+
+        const streamFiber = yield* Effect.fork(
+          manager
+            .executeCodeUnsafe(ctx.notebookUri, "print('hi')")
+            .pipe(Stream.runCollect),
+        );
+
+        // Let executeCodeUnsafe enqueue marimo.api with generated runId.
+        yield* TestClock.adjust("1 millis");
+
+        const executions = yield* Ref.get(ctx.executions);
+        const executeCmd = executions.find(
+          (c) =>
+            c.command === "marimo.api" &&
+            c.params.method === "execute-scratchpad",
+        );
+
+        assert(
+          executeCmd !== undefined &&
+            executeCmd.command === "marimo.api" &&
+            executeCmd.params.method === "execute-scratchpad",
+        );
+        const runId = executeCmd.params.params.inner.runId;
+        expect(runId).toBeDefined();
+
+        const cell = ctx.notebook.cellAt(0);
+        const realCellId = Option.getOrThrow(cell.id);
+
+        // The scratch cell's op carries the run's output. marimo leaves its
+        // run_id null (only the completed-run echoes ours), so we key on the
+        // SCRATCH_CELL_ID, not the run_id.
+        yield* PubSub.publish(
+          ctx.operationsPubSub,
+          makeIdleCellOperation(ctx.notebookUri, SCRATCH_CELL_ID, {
+            status: "running",
+            console: [
+              {
+                channel: "stdout",
+                data: "hi",
+                mimetype: "text/plain",
+                timestamp: 0,
+              },
+            ],
+          }),
+        );
+
+        // Console from a cascade cell (one code mode ran) also streams.
+        yield* PubSub.publish(
+          ctx.operationsPubSub,
+          makeIdleCellOperation(ctx.notebookUri, realCellId, {
+            status: "running",
+            console: [
+              {
+                channel: "stdout",
+                data: "from cascade",
+                mimetype: "text/plain",
+                timestamp: 0,
+              },
+            ],
+          }),
+        );
+
+        // A status-only cascade op (no console) is not streamed.
+        yield* PubSub.publish(
+          ctx.operationsPubSub,
+          makeIdleCellOperation(ctx.notebookUri, realCellId, {
+            status: "idle",
+          }),
+        );
+
+        // Our completed-run ends the stream (inclusive; filtered back out).
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          operation: {
+            op: "completed-run",
+            run_id: runId,
+          },
+        });
+
+        const ops = Chunk.toReadonlyArray(yield* Fiber.join(streamFiber));
+        const cellIds = ops.map((op) => op.cell_id);
+        expect(ops).toHaveLength(2);
+        expect(cellIds).toContain(SCRATCH_CELL_ID);
+        expect(cellIds).toContain(realCellId);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.scoped(
+    "interrupts the kernel when the stream is abandoned before completed-run",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const manager = yield* KernelManager;
+
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* TestClock.adjust("1 millis");
+
+        const streamFiber = yield* Effect.fork(
+          manager
+            .executeCodeUnsafe(ctx.notebookUri, "print('hi')")
+            .pipe(Stream.runCollect),
+        );
+
+        // Let executeCodeUnsafe send the scratchpad command and arm the
+        // interrupt-on-abandon finalizer.
+        yield* TestClock.adjust("1 millis");
+
+        // Abandon the stream before any completed-run arrives (mirrors a
+        // cancelled tool invocation interrupting the fiber).
+        yield* Fiber.interrupt(streamFiber);
+
+        const executions = yield* Ref.get(ctx.executions);
+
+        // The finalizer should have sent an interrupt to the kernel.
+        const interruptCmd = executions.find(
+          (c) => c.command === "marimo.api" && c.params.method === "interrupt",
+        );
+
+        expect(interruptCmd).toMatchInlineSnapshot(`
+        	{
+        	  "command": "marimo.api",
+        	  "params": {
+        	    "method": "interrupt",
+        	    "params": {
+        	      "inner": {},
+        	      "notebookUri": "file:///test/notebook_mo.py",
+        	    },
+        	  },
+        	}
+        `);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.scoped(
+    "does not interrupt the kernel after a normal completed-run",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const manager = yield* KernelManager;
+
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* TestClock.adjust("1 millis");
+
+        const streamFiber = yield* Effect.fork(
+          manager
+            .executeCodeUnsafe(ctx.notebookUri, "print('hi')")
+            .pipe(Stream.runCollect),
+        );
+
+        yield* TestClock.adjust("1 millis");
+
+        const executeCmd = (yield* Ref.get(ctx.executions)).find(
+          (c) =>
+            c.command === "marimo.api" &&
+            c.params.method === "execute-scratchpad",
+        );
+        assert(
+          executeCmd !== undefined &&
+            executeCmd.command === "marimo.api" &&
+            executeCmd.params.method === "execute-scratchpad",
+        );
+        const runId = executeCmd.params.params.inner.runId;
+
+        // Our completed-run ends the stream normally.
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          operation: { op: "completed-run", run_id: runId },
+        });
+
+        yield* Fiber.join(streamFiber);
+
+        const interruptCmd = (yield* Ref.get(ctx.executions)).find(
+          (c) => c.command === "marimo.api" && c.params.method === "interrupt",
+        );
+        expect(interruptCmd).toBeUndefined();
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

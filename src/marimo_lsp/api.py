@@ -22,6 +22,7 @@ from marimo._session.state.serialize import serialize_session_view
 from marimo._utils.parse_dataclass import parse_raw
 from pygls.uris import to_fs_path
 
+from marimo_lsp.app_file_manager import find_notebook_document, snapshot_for_scratchpad
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     CloseSessionRequest,
@@ -83,17 +84,10 @@ async def run(
         )
         logger.info(f"Created and synced session {args.notebook_uri}")
 
-    # We lazily instantiate the session until the first run command is sent
-    # so we don't force connecting to a kernel unnecessarily
-    is_instantiated = manager.is_instantiated(args.notebook_uri)
-    if not is_instantiated:
-        logger.info(f"Instantiating session {args.notebook_uri}")
-        session.instantiate(
-            InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
-            http_request=None,
-        )
-        manager.set_instantiated(args.notebook_uri, instantiated=True)
-
+    session.instantiate(
+        InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
+        http_request=None,
+    )
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
     logger.info(f"Execution request sent for {args.notebook_uri}")
 
@@ -175,18 +169,50 @@ async def close_session(
 
 
 async def execute_scratch(
+    ls: LanguageServer,
     manager: LspSessionManager,
     args: NotebookCommand[ExecuteScratchRequest],
 ):
-    """Execute code in the scratchpad (isolated from dependency graph)."""
+    """Execute code in the scratchpad (isolated from dependency graph).
+
+    Populates the document + output snapshot on the command so that
+    ``marimo._code_mode.get_context()`` can bind inside the kernel. Cells come
+    from the LSP notebook document (id-aligned with VS Code);
+    outputs come from the session view.
+    """
     logger.info(f"execute_scratch for {args.notebook_uri}")
     session = manager.get_session(args.notebook_uri)
     if not session:
         logger.warning(f"No session found for {args.notebook_uri}")
         return
 
+    try:
+        notebook = find_notebook_document(ls.workspace, args.notebook_uri)
+    except KeyError:
+        logger.warning(
+            f"No notebook document found for {args.notebook_uri}; "
+            "skipping scratchpad execution"
+        )
+        return
+
+    session.instantiate(
+        InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
+        http_request=None,
+    )
+
+    notebook_cells, cell_outputs = snapshot_for_scratchpad(
+        workspace=ls.workspace,
+        session=session,
+        notebook=notebook,
+    )
+
     session.put_control_request(
-        ExecuteScratchpadCommand(code=args.inner.code),
+        ExecuteScratchpadCommand(
+            code=args.inner.code,
+            run_id=args.inner.run_id,
+            notebook_cells=notebook_cells,
+            cell_outputs=cell_outputs,
+        ),
         from_consumer_id=None,
     )
     logger.info(f"Scratchpad execution request sent for {args.notebook_uri}")
@@ -515,6 +541,7 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
 
     if method == "execute-scratchpad":
         return await execute_scratch(
+            ls,
             manager,
             msgspec.convert(params, type=NotebookCommand[ExecuteScratchRequest]),
         )

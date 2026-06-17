@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import lsprotocol.types as lsp
 import pytest
 
-from marimo_lsp.app_file_manager import _find_notebook_document, sync_app_with_workspace
+from marimo_lsp.app_file_manager import find_notebook_document, sync_app_with_workspace
 
 
 def _lsp_object(d: dict[str, object] | None) -> lsp.LSPObject | None:
@@ -35,7 +35,7 @@ class TestFindNotebookDocument:
     def test_direct_lookup(self) -> None:
         uri = "file:///home/user/notebook.py"
         ws = _make_workspace([uri])
-        doc = _find_notebook_document(ws, uri)
+        doc = find_notebook_document(ws, uri)
         assert doc.uri == uri
 
     def test_encoded_lookup_finds_decoded_key(self) -> None:
@@ -43,7 +43,7 @@ class TestFindNotebookDocument:
         stored = "file:///c:/Users/test/notebook.py"
         lookup = "file:///c%3A/Users/test/notebook.py"
         ws = _make_workspace([stored])
-        doc = _find_notebook_document(ws, lookup)
+        doc = find_notebook_document(ws, lookup)
         assert doc.uri == stored
 
     def test_decoded_lookup_finds_encoded_key(self) -> None:
@@ -51,18 +51,18 @@ class TestFindNotebookDocument:
         stored = "file:///c%3A/Users/test/notebook.py"
         lookup = "file:///c:/Users/test/notebook.py"
         ws = _make_workspace([stored])
-        doc = _find_notebook_document(ws, lookup)
+        doc = find_notebook_document(ws, lookup)
         assert doc.uri == stored
 
     def test_keyerror_when_no_match(self) -> None:
         ws = _make_workspace(["file:///other/notebook.py"])
         with pytest.raises(KeyError):
-            _find_notebook_document(ws, "file:///missing/notebook.py")
+            find_notebook_document(ws, "file:///missing/notebook.py")
 
     def test_untitled_uri_unaffected(self) -> None:
         uri = "untitled:Untitled-1"
         ws = _make_workspace([uri])
-        doc = _find_notebook_document(ws, uri)
+        doc = find_notebook_document(ws, uri)
         assert doc.uri == uri
 
 

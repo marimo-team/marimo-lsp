@@ -1,10 +1,13 @@
 import {
   Effect,
+  Exit,
   Option,
   PubSub,
   Queue,
   Runtime,
+  STM,
   Stream,
+  TSemaphore,
   Array as EffectArray,
 } from "effect";
 
@@ -13,6 +16,7 @@ import { Config } from "../config/Config.ts";
 import { SCRATCH_CELL_ID } from "../constants.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { applyDocumentTransaction } from "../notebook/applyDocumentTransaction.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
 import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
@@ -40,6 +44,40 @@ import { handleMissingPackageAlert } from "./operations.ts";
 interface MarimoOperation {
   notebookUri: NotebookId;
   operation: Notification;
+}
+
+interface ScratchEvent {
+  readonly notebookUri: NotebookId;
+  readonly event: CellOperationNotification | NotificationOf<"completed-run">;
+}
+
+function hasRunId<T extends { run_id?: string | null }>(
+  event: T,
+): event is T & { run_id: string } {
+  return typeof event.run_id === "string" && event.run_id.length > 0;
+}
+
+/** Whether a cell-op carries stdout/stderr console output. */
+function hasConsoleOutput(op: CellOperationNotification): boolean {
+  if (op.console == null) {
+    return false;
+  }
+  return EffectArray.ensure(op.console).some(
+    (o) => o.channel === "stdout" || o.channel === "stderr",
+  );
+}
+
+function isCompletedRunFor(notebookUri: NotebookId, runId: string) {
+  return (
+    tagged: ScratchEvent,
+  ): tagged is {
+    notebookUri: NotebookId;
+    event: NotificationOf<"completed-run"> & { run_id: string };
+  } =>
+    tagged.notebookUri === notebookUri &&
+    tagged.event.op === "completed-run" &&
+    hasRunId(tagged.event) &&
+    tagged.event.run_id === runId;
 }
 
 /**
@@ -73,11 +111,14 @@ export class KernelManager extends Effect.Service<KernelManager>()(
 
       const queue = yield* Queue.unbounded<MarimoOperation>();
 
-      // PubSub for scratch cell operations
-      const scratchOps = yield* PubSub.unbounded<CellOperationNotification>();
+      // PubSub for scratch cell operations + the completed-run that ends them.
+      // A scratchpad's `completed-run` echoes the command's `runId`, so a
+      // consumer waits for *its* completion — including any code-mode cascade —
+      // rather than the scratch cell merely going idle.
+      const scratchOps = yield* PubSub.unbounded<ScratchEvent>();
 
       // Semaphore to serialize concurrent scratchpad executions
-      const scratchLock = yield* Effect.makeSemaphore(1);
+      const scratchLock = yield* STM.commit(TSemaphore.make(1));
 
       yield* Effect.forkScoped(
         client
@@ -229,29 +270,67 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       return {
         /**
          * Execute code in the scratchpad (isolated from dependency graph).
-         * Returns a stream of cell operations that completes when idle is seen.
+         * Returns a stream of cell operations that completes once the
+         * scratchpad's `completed-run` arrives — i.e. after any code-mode
+         * cascade has settled, not merely when the scratch cell goes idle.
          */
         executeCodeUnsafe(notebookUri: NotebookId, code: string) {
-          return Effect.gen(function* () {
-            // 1. Subscribe BEFORE sending command (avoid race)
-            const sub = yield* PubSub.subscribe(scratchOps);
+          return Stream.unwrapScoped(
+            Effect.gen(function* () {
+              // Hold the lock for the full stream lifetime. withPermitsScoped
+              // registers the release on the Scope that Stream.unwrapScoped
+              // keeps open until any runner finishes.
+              yield* TSemaphore.withPermitsScoped(scratchLock, 1);
 
-            // 2. Send command to kernel
-            yield* client.executeCommand({
-              command: "marimo.api",
-              params: {
-                method: "execute-scratchpad",
-                params: { notebookUri, inner: { code } },
-              },
-            });
+              // 1. Subscribe BEFORE sending command (avoid race)
+              const sub = yield* PubSub.subscribe(scratchOps);
 
-            // 3. Stream cell-ops until idle.
-            // marimo flushes stdout/stderr before emitting idle, so all
-            // console cell-ops have already arrived on the same stream.
-            return Stream.fromQueue(sub).pipe(
-              Stream.takeUntil((op) => op.status === "idle"),
-            );
-          }).pipe(scratchLock.withPermits(1), Stream.unwrapScoped);
+              // 2. Send command to kernel, tagged with a runId the kernel echoes
+              //    back on the terminating completed-run.
+              const runId = crypto.randomUUID();
+              yield* client.executeCommand({
+                command: "marimo.api",
+                params: {
+                  method: "execute-scratchpad",
+                  params: { notebookUri, inner: { code, runId } },
+                },
+              });
+
+              // If the consumer abandons this stream before completed-run, interrupt.
+              yield* Effect.addFinalizer((exit) =>
+                Exit.isInterrupted(exit)
+                  ? client
+                      .executeCommand({
+                        command: "marimo.api",
+                        params: {
+                          method: "interrupt",
+                          params: { notebookUri, inner: {} },
+                        },
+                      })
+                      .pipe(
+                        Effect.catchAllCause((cause) =>
+                          Effect.logWarning(
+                            "Failed to interrupt kernel after scratchpad stream was abandoned",
+                          ).pipe(Effect.annotateLogs({ cause })),
+                        ),
+                      )
+                  : Effect.void,
+              );
+
+              // 3. Stream ops for this notebook until *our* completed-run.
+              //    Filter by notebookUri first so a concurrent execution on a
+              //    different notebook doesn't leak cell-ops into this stream.
+              //    takeUntil is inclusive; filterMap drops the sentinel and
+              //    non-cell-op events (e.g. completed-run) in one pass.
+              return Stream.fromQueue(sub).pipe(
+                Stream.filter((tagged) => tagged.notebookUri === notebookUri),
+                Stream.takeUntil(isCompletedRunFor(notebookUri, runId)),
+                Stream.filterMap(({ event }) =>
+                  event.op === "cell-op" ? Option.some(event) : Option.none(),
+                ),
+              );
+            }),
+          );
         },
       };
     }),
@@ -271,7 +350,7 @@ function isValueUpdateEcho(
 
 function processOperation(
   { notebookUri, operation }: MarimoOperation,
-  scratchOps: PubSub.PubSub<CellOperationNotification>,
+  scratchOps: PubSub.PubSub<ScratchEvent>,
 ) {
   return Effect.gen(function* () {
     const variables = yield* VariablesService;
@@ -312,14 +391,12 @@ function processOperation(
       case "banner":
       case "cache-cleared":
       case "cache-info":
-      case "completed-run":
       case "completion-result":
       case "consumer-capabilities":
       case "focus-cell":
       case "installing-package-alert":
       case "kernel-ready":
       case "kernel-startup-error":
-      case "notebook-document-transaction":
       case "query-params-append":
       case "query-params-clear":
       case "query-params-delete":
@@ -333,6 +410,17 @@ function processOperation(
       case "storage-entries":
       case "storage-namespaces":
       case "validate-sql-result": {
+        break;
+      }
+      // Ends a scratchpad stream (matched by notebookUri + runId). Published
+      // unconditionally; dropped when no scratchpad execution is subscribed.
+      case "completed-run": {
+        yield* PubSub.publish(scratchOps, { notebookUri, event: operation });
+        break;
+      }
+      // Replay kernel-originated document edits onto the VS Code notebook.
+      case "notebook-document-transaction": {
+        yield* applyTransactionToEditor(notebookUri, operation);
         break;
       }
       // These operations require an active editor and controller
@@ -359,6 +447,30 @@ function processOperation(
 /**
  * Handle operations that require an active notebook editor and controller.
  */
+/**
+ * Resolve the notebook editor for a kernel-originated document transaction and
+ * replay it. Needs an editor (to address the document) but not a controller.
+ */
+function applyTransactionToEditor(
+  notebookUri: NotebookId,
+  operation: NotificationOf<"notebook-document-transaction">,
+) {
+  return Effect.gen(function* () {
+    const editors = yield* NotebookEditorRegistry;
+    const maybeEditor = yield* editors.getLastNotebookEditor(notebookUri);
+
+    if (Option.isNone(maybeEditor)) {
+      yield* Effect.logWarning(
+        "No active notebook editor; dropping document transaction",
+      );
+      return;
+    }
+
+    const notebook = MarimoNotebookDocument.from(maybeEditor.value.notebook);
+    yield* applyDocumentTransaction(notebook, operation.transaction);
+  });
+}
+
 function processSessionOperation(
   notebookUri: NotebookId,
   operation:
@@ -369,7 +481,7 @@ function processSessionOperation(
     | NotificationOf<"function-call-result">
     | NotificationOf<"send-ui-element-message">
     | NotificationOf<"model-lifecycle">,
-  scratchOps: PubSub.PubSub<CellOperationNotification>,
+  scratchOps: PubSub.PubSub<ScratchEvent>,
 ) {
   return Effect.gen(function* () {
     const uv = yield* Uv;
@@ -404,10 +516,19 @@ function processSessionOperation(
       case "cell-op": {
         const cellId = extractCellIdFromCellMessage(operation);
 
-        // Route __scratch__ to PubSub, not ExecutionRegistry
+        // Mirror marimo's ScratchCellListener: while a scratchpad runs it
+        // streams the scratch cell's own ops plus console output from cells a
+        // code-mode cascade runs. Feed those to the scratch PubSub (a no-op
+        // when no executeCode call is subscribed). marimo doesn't stamp our
+        // runId onto cell-ops — only onto the terminating completed-run — so
+        // we route the scratch cell by id and cascade cells by having console.
         if (cellId === SCRATCH_CELL_ID) {
-          yield* PubSub.publish(scratchOps, operation);
+          // The scratch cell isn't a real notebook cell: stream it, don't render.
+          yield* PubSub.publish(scratchOps, { notebookUri, event: operation });
           break;
+        }
+        if (hasConsoleOutput(operation)) {
+          yield* PubSub.publish(scratchOps, { notebookUri, event: operation });
         }
 
         yield* executions.handleCellOperation(operation, {

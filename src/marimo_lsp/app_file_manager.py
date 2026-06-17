@@ -6,17 +6,25 @@ import pathlib
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import unquote
 
+from lsprotocol.types import NotebookDocument
 from marimo._ast.app import App, InternalApp
+from marimo._ast.cell import CellConfig
+from marimo._messaging.notebook.document import NotebookCell
+from marimo._messaging.notebook.outputs import CellOutputs
 from pygls.uris import to_fs_path
 
 from marimo_lsp.utils import decode_marimo_cell_metadata, find_text_document
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     import lsprotocol.types as lsp
-    from marimo._ast.cell import CellConfig
+    from lsprotocol.types import NotebookDocument
     from marimo._types.ids import CellId_t
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace
+
+    from marimo_lsp.session import LspSession
 
 
 class LspAppFileManager:
@@ -109,7 +117,7 @@ class LspAppFileManager:
         return None
 
 
-def _find_notebook_document(
+def find_notebook_document(
     workspace: Workspace, notebook_uri: str
 ) -> lsp.NotebookDocument:
     """Find a notebook document, handling percent-encoded URIs.
@@ -131,11 +139,25 @@ def _find_notebook_document(
     raise KeyError(notebook_uri)
 
 
+def _iter_notebook_cells(
+    workspace: Workspace,
+    notebook: NotebookDocument,
+) -> Generator[tuple[CellId_t, str, str, dict[str, Any]]]:
+    """Yield (cell_id, code, name, config) for each valid cell in a notebook."""
+    for cell in notebook.cells:
+        cell_id, config, name = decode_marimo_cell_metadata(cell)
+        if cell_id is None:
+            continue
+        document = find_text_document(workspace, cell.document)
+        code = (document.source or "") if document else ""
+        yield cell_id, code, name, config
+
+
 def sync_app_with_workspace(
     workspace: Workspace, notebook_uri: str, app: InternalApp | None
 ) -> InternalApp:
     """Sync workspace with InternalApp."""
-    notebook = _find_notebook_document(workspace, notebook_uri)
+    notebook = find_notebook_document(workspace, notebook_uri)
 
     # lsp.LSPObject at runtime is just a dict...
     # Notebook metadata has the shape { app: { options: { width: ... } }, header: ..., version: ... }.
@@ -152,16 +174,9 @@ def sync_app_with_workspace(
     configs: list[dict[str, Any]] = []
     names: list[str] = []
 
-    for cell in notebook.cells:
-        cell_id, config, name = decode_marimo_cell_metadata(cell)
-        if cell_id is None:
-            continue
+    for cell_id, code, name, config in _iter_notebook_cells(workspace, notebook):
         cell_ids.append(cell_id)
-        document = find_text_document(workspace, cell.document)
-        if document:
-            codes.append(document.source or "")
-        else:
-            codes.append("")
+        codes.append(code)
         configs.append(config)
         names.append(name)
 
@@ -172,3 +187,34 @@ def sync_app_with_workspace(
         configs=cast("list[CellConfig]", configs),
         names=names,
     )
+
+
+def _snapshot_notebook_cells(
+    workspace: Workspace,
+    notebook: NotebookDocument,
+) -> tuple[NotebookCell, ...]:
+    """Snapshot the LSP notebook for code mode."""
+    return tuple(
+        NotebookCell(
+            id=cell_id,
+            code=code,
+            name=name,
+            config=CellConfig.from_dict(config),
+        )
+        for cell_id, code, name, config in _iter_notebook_cells(workspace, notebook)
+    )
+
+
+def snapshot_for_scratchpad(
+    workspace: Workspace,
+    session: LspSession,
+    notebook: NotebookDocument,
+) -> tuple[tuple[NotebookCell, ...], CellOutputs]:
+    """Snapshot the LSP notebook document's cells for code mode."""
+    cells = _snapshot_notebook_cells(workspace, notebook)
+    ids = [cell.id for cell in cells]
+    cell_outputs = CellOutputs(
+        output=session.session_view.get_cell_outputs(ids),
+        console_outputs=session.session_view.get_cell_console_outputs(ids),
+    )
+    return cells, cell_outputs
