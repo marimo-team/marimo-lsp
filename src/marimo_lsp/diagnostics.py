@@ -13,16 +13,19 @@ from marimo._messaging.notification import (
     VariablesNotification,
 )
 from marimo._runtime.dataflow import DirectedGraph
-from marimo._types.ids import VariableName
+from marimo._types.ids import CellId_t, VariableName
 
 from marimo_lsp import _rules
 from marimo_lsp.loggers import get_logger
-from marimo_lsp.utils import decode_marimo_cell_metadata, find_text_document
+from marimo_lsp.utils import (
+    decode_cell_metadata,
+    find_text_document,
+    normalize_cell_code,
+)
 
 logger = get_logger()
 
 if TYPE_CHECKING:
-    from marimo._types.ids import CellId_t
     from pygls.lsp.server import LanguageServer
 
 # Lightweight snapshot of the variable dependency structure.
@@ -127,16 +130,20 @@ class NotebookGraphUpdater:
 
         current_ids: set[CellId_t] = set()
         for idx, cell in enumerate(notebook.cells):
-            cell_id, _config, name = decode_marimo_cell_metadata(cell)
-            if not cell_id:
+            meta = decode_cell_metadata(cell)
+            if meta.stable_id is None:
                 continue
+            cell_id = CellId_t(meta.stable_id)
             current_ids.add(cell_id)
             cell_id_to_uri[cell_id] = cell.document
-            cell_names[cell_id] = name
+            cell_names[cell_id] = meta.name
             cell_index[cell_id] = idx
 
             doc = find_text_document(self._server.workspace, cell.document)
-            source = doc.source if doc else ""
+            language_id = (doc.language_id if doc else None) or "python"
+            source = normalize_cell_code(
+                language_id, doc.source if doc else "", meta.language_metadata
+            )
 
             # Skip unchanged cells
             if self._cell_sources.get(cell_id) == source:

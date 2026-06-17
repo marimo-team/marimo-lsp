@@ -8,6 +8,8 @@ import { CellState } from "./CellState.ts";
 export const CellLanguage = Schema.Literal("python", "sql", "markdown");
 export type CellLanguage = typeof CellLanguage.Type;
 
+// TODO: hand-mirrored by `src/marimo_lsp/models.py` (CellMetadata); nothing keeps
+// them in sync. Drive both from one source of truth (codegen / shared schema).
 const SQLMetadata = Schema.Struct({
   dataframeName: Schema.String,
   quotePrefix: Schema.Literal("", "f", "r", "fr", "rf"),

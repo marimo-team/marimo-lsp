@@ -36,6 +36,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
                         lsp.NotebookCellLanguage(language="sql"),
                         lsp.NotebookCellLanguage(language="python"),
                         lsp.NotebookCellLanguage(language="mo-python"),
+                        lsp.NotebookCellLanguage(language="markdown"),
                     ],
                 ),
             ],

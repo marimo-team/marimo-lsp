@@ -137,6 +137,7 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
             { notebook: NOTEBOOK_TYPE, language: "sql" },
             { notebook: NOTEBOOK_TYPE, language: "python" },
             { notebook: NOTEBOOK_TYPE, language: "mo-python" },
+            { notebook: NOTEBOOK_TYPE, language: "markdown" },
           ],
         },
       );
