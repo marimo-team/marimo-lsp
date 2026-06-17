@@ -20,6 +20,7 @@ import {
   decodeCellMetadata,
 } from "../schemas/CellMetadata.ts";
 import { SerializedNotebook } from "../schemas/SerializedNotebook.ts";
+import { classifyCellCode } from "./classifyCellCode.ts";
 import { pickLiveNotebook } from "./pickLiveNotebook.ts";
 
 type BooleanMap<T> = {
@@ -76,60 +77,26 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
             },
           });
           const { cells, ...metadata } = yield* decodeDeserializeResponse(resp);
-          const sqlParser = new SQLParser();
-          const markdownParser = new MarkdownParser();
 
           const notebook = {
             metadata: metadata,
             cells: cells.map((cell) => {
-              const isNonEmpty = Boolean(cell.code.trim());
-
-              // Check if this is a markdown cell (mo.md() without f-strings)
-              if (isNonEmpty && markdownParser.isSupported(cell.code)) {
-                const result = markdownParser.transformIn(cell.code);
-                if (!result.metadata.quotePrefix.includes("f")) {
-                  return {
-                    kind: NotebookCellKind.Markup,
-                    value: result.code,
-                    languageId: constants.LanguageId.Markdown,
-                    metadata: {
-                      name: cell.name,
-                      options: cell.options,
-                      languageMetadata: {
-                        markdown: result.metadata,
-                      },
-                      stableId: crypto.randomUUID(),
-                    } satisfies CellMetadata,
-                  };
-                }
-              }
-
-              // Check if this is a SQL cell
-              if (isNonEmpty && sqlParser.isSupported(cell.code)) {
-                const result = sqlParser.transformIn(cell.code);
-                return {
-                  kind: NotebookCellKind.Code,
-                  value: result.code,
-                  languageId: constants.LanguageId.Sql,
-                  metadata: {
-                    name: cell.name,
-                    options: cell.options,
-                    languageMetadata: {
-                      sql: result.metadata,
-                    },
-                    stableId: crypto.randomUUID(),
-                  } satisfies CellMetadata,
-                };
-              }
-
-              // Default Python cell
+              // Same classification the live transaction path uses, so a file
+              // open and a code-mode commit agree on markdown/sql vs python.
+              const classified = classifyCellCode(
+                cell.code,
+                constants.LanguageId,
+              );
               return {
-                kind: NotebookCellKind.Code,
-                value: cell.code,
-                languageId: constants.LanguageId.Python,
+                kind: classified.kind,
+                value: classified.code,
+                languageId: classified.languageId,
                 metadata: {
                   name: cell.name,
                   options: cell.options,
+                  ...(classified.languageMetadata
+                    ? { languageMetadata: classified.languageMetadata }
+                    : {}),
                   stableId: crypto.randomUUID(),
                 } satisfies CellMetadata,
               };

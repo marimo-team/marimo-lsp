@@ -17,11 +17,9 @@
 
 import { Schema } from "effect";
 
-import { LanguageId } from "../constants.ts";
+import { LanguageMetadata } from "../schemas/CellMetadata.ts";
 import type { CellConfig, DocumentChange } from "../types.ts";
-
-/** NotebookCellKind.Code — kept as a literal so this module stays vscode-free. */
-const CODE_KIND = 2;
+import { classifyCellCode, type LanguageIds } from "./classifyCellCode.ts";
 
 /** Cell config in one normalized shape (CellConfig's documented defaults applied). */
 const PlanCellConfig = Schema.Struct({
@@ -39,6 +37,13 @@ const PlanCell = Schema.Struct({
   kind: Schema.Number,
   name: Schema.String,
   config: PlanCellConfig,
+  /**
+   * Smart-cell metadata (markdown/sql) needed to wrap the display `code` back to
+   * Python. Part of the schema so {@link cellEquivalence} re-renders a cell when
+   * a promote/demote (`set-code`) changes only its language, and so the applier
+   * carries it onto the VS Code cell.
+   */
+  languageMetadata: Schema.optional(LanguageMetadata),
 });
 export type PlanCell = typeof PlanCell.Type;
 
@@ -87,21 +92,24 @@ function insertionIndex(
 export function computeDesiredCells(
   current: readonly PlanCell[],
   changes: readonly DocumentChange[],
+  languageIds: LanguageIds,
 ): PlanCell[] {
   let cells: PlanCell[] = [...current];
 
   for (const change of changes) {
     switch (change.type) {
       case "create-cell": {
+        // Code mode can commit markdown/sql cells; classify so they land as the
+        // right VS Code cell kind instead of raw `mo.md(...)` Python.
+        const classified = classifyCellCode(change.code, languageIds);
         const cell: PlanCell = {
           stableId: change.cellId,
-          code: change.code,
-          // TODO: classify markdown/sql cells (smart-cells) — code mode can
-          // create them too; today every committed cell is treated as Python.
-          languageId: LanguageId.Python,
-          kind: CODE_KIND,
+          code: classified.code,
+          languageId: classified.languageId,
+          kind: classified.kind,
           name: change.name,
           config: normalizeConfig(change.config),
+          languageMetadata: classified.languageMetadata,
         };
         cells.splice(
           insertionIndex(cells, change.before, change.after),
@@ -117,7 +125,18 @@ export function computeDesiredCells(
       }
       case "set-code": {
         const idx = indexOfId(cells, change.cellId);
-        if (idx !== -1) cells[idx] = { ...cells[idx], code: change.code };
+        if (idx !== -1) {
+          // Re-classify on edit so a cell promotes (python → mo.md/mo.sql) or
+          // demotes (back to python) in place, mirroring the live editor.
+          const classified = classifyCellCode(change.code, languageIds);
+          cells[idx] = {
+            ...cells[idx],
+            code: classified.code,
+            languageId: classified.languageId,
+            kind: classified.kind,
+            languageMetadata: classified.languageMetadata,
+          };
+        }
         break;
       }
       case "set-name": {
