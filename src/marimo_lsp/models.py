@@ -6,8 +6,14 @@ import typing
 
 import marimo._server.models.models as core
 import msgspec
+from marimo._convert.common.format import DEFAULT_MARKDOWN_PREFIX
 
 T = typing.TypeVar("T", bound=msgspec.Struct)
+
+# Sentinel the frontend `@marimo-team/smart-cells` SQL parser writes into
+# `languageMetadata.sql.engine` for the implicit default engine. We must not
+# emit `engine=__marimo_duckdb` when round-tripping these cells.
+DEFAULT_SQL_ENGINE = "__marimo_duckdb"
 
 
 class NotebookCommand(msgspec.Struct, typing.Generic[T], rename="camel"):
@@ -61,6 +67,55 @@ class PackageCommand(NotebookCommand[T]):
 
     source: PackageSource
     """How to resolve the notebook's python environment."""
+
+
+# TODO: hand-mirrored from `extension/src/schemas/CellMetadata.ts`; nothing keeps
+# them in sync. Drive both from one source of truth (codegen / shared schema).
+class MarkdownCellMetadata(msgspec.Struct, rename="camel"):
+    """Smart-cell metadata for a markdown cell (mirrors the frontend shape)."""
+
+    quote_prefix: str = DEFAULT_MARKDOWN_PREFIX
+    """The string-literal prefix used to wrap the markdown (e.g. ``r``)."""
+
+
+class SqlCellMetadata(msgspec.Struct, rename="camel"):
+    """Smart-cell metadata for a SQL cell (mirrors the frontend shape)."""
+
+    dataframe_name: str = "_df"
+    """The variable the query result is bound to (``_df = mo.sql(...)``)."""
+
+    show_output: bool = True
+    """Whether the query result is displayed (``output=False`` when ``False``)."""
+
+    engine: str | None = None
+    """The SQL engine variable, or ``None`` for the implicit default."""
+
+
+class CellLanguageMetadata(msgspec.Struct, rename="camel"):
+    """Language-specific smart-cell metadata needed to re-wrap display source.
+
+    Only one of these is set, matching the cell's language. Absent when the
+    client didn't sync it, in which case the per-language defaults apply.
+    """
+
+    markdown: MarkdownCellMetadata | None = None
+    sql: SqlCellMetadata | None = None
+
+
+class CellMetadata(msgspec.Struct, rename="camel"):
+    """marimo-specific fields synced on a VS Code notebook cell's metadata."""
+
+    stable_id: str | None = None
+    """Ephemeral per-open cell identifier; the marimo `CellId_t`."""
+
+    name: str = "_"
+    """The marimo cell name."""
+
+    config: dict[str, typing.Any] = msgspec.field(default_factory=dict)
+    """The marimo `CellConfig` as a plain dict."""
+
+    language_metadata: CellLanguageMetadata | None = None
+    """Smart-cell metadata for markdown/SQL cells; absent for Python cells."""
 
 
 class SerializeRequest(msgspec.Struct, rename="camel"):

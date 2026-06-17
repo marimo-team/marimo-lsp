@@ -11,16 +11,20 @@ from marimo._ast.app import App, InternalApp
 from marimo._ast.cell import CellConfig
 from marimo._messaging.notebook.document import NotebookCell
 from marimo._messaging.notebook.outputs import CellOutputs
+from marimo._types.ids import CellId_t
 from pygls.uris import to_fs_path
 
-from marimo_lsp.utils import decode_marimo_cell_metadata, find_text_document
+from marimo_lsp.utils import (
+    decode_cell_metadata,
+    find_text_document,
+    normalize_cell_code,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     import lsprotocol.types as lsp
     from lsprotocol.types import NotebookDocument
-    from marimo._types.ids import CellId_t
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace
 
@@ -145,12 +149,14 @@ def _iter_notebook_cells(
 ) -> Generator[tuple[CellId_t, str, str, dict[str, Any]]]:
     """Yield (cell_id, code, name, config) for each valid cell in a notebook."""
     for cell in notebook.cells:
-        cell_id, config, name = decode_marimo_cell_metadata(cell)
-        if cell_id is None:
+        meta = decode_cell_metadata(cell)
+        if meta.stable_id is None:
             continue
         document = find_text_document(workspace, cell.document)
-        code = (document.source or "") if document else ""
-        yield cell_id, code, name, config
+        source = (document.source or "") if document else ""
+        language_id = (document.language_id if document else None) or "python"
+        code = normalize_cell_code(language_id, source, meta.language_metadata)
+        yield CellId_t(meta.stable_id), code, meta.name, meta.config
 
 
 def sync_app_with_workspace(

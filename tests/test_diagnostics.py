@@ -6,6 +6,7 @@ from typing import cast
 from unittest.mock import MagicMock, patch
 
 import lsprotocol.types as lsp
+from inline_snapshot import snapshot
 from marimo._types.ids import CellId_t
 
 from marimo_lsp.diagnostics import (
@@ -13,7 +14,16 @@ from marimo_lsp.diagnostics import (
     NotebookGraphUpdater,
     _snapshot_variables,
 )
-from marimo_lsp.utils import decode_marimo_cell_metadata, get_stable_id
+from marimo_lsp.models import (
+    CellLanguageMetadata,
+    MarkdownCellMetadata,
+    SqlCellMetadata,
+)
+from marimo_lsp.utils import (
+    decode_cell_metadata,
+    get_stable_id,
+    normalize_cell_code,
+)
 
 
 def _make_server(
@@ -359,8 +369,8 @@ class TestCellMetadataHelpers:
         stable_id = get_stable_id(cell)
         assert stable_id is None
 
-    def test_decode_marimo_cell_metadata_complete(self) -> None:
-        """Test decode_marimo_cell_metadata with all metadata."""
+    def test_decode_cell_metadata_complete(self) -> None:
+        """Test decode_cell_metadata with all metadata."""
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
@@ -370,24 +380,79 @@ class TestCellMetadataHelpers:
                     "stableId": "abc-123",
                     "config": {"disabled": True},
                     "name": "my_cell",
+                    "languageMetadata": {"markdown": {"quotePrefix": "rf"}},
                 },
             ),
         )
 
-        cell_id, config, name = decode_marimo_cell_metadata(cell)
-        assert cell_id == CellId_t("abc-123")
-        assert config == {"disabled": True}
-        assert name == "my_cell"
+        meta = decode_cell_metadata(cell)
+        assert meta.stable_id == "abc-123"
+        assert meta.config == {"disabled": True}
+        assert meta.name == "my_cell"
+        assert meta.language_metadata is not None
+        assert meta.language_metadata.markdown is not None
+        assert meta.language_metadata.markdown.quote_prefix == "rf"
 
-    def test_decode_marimo_cell_metadata_defaults(self) -> None:
-        """Test decode_marimo_cell_metadata with missing fields."""
+    def test_decode_cell_metadata_defaults(self) -> None:
+        """Test decode_cell_metadata with missing fields."""
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
             metadata=cast("lsp.LSPObject", {}),
         )
 
-        cell_id, config, name = decode_marimo_cell_metadata(cell)
-        assert cell_id is None
-        assert config == {}
-        assert name == "_"
+        meta = decode_cell_metadata(cell)
+        assert meta.stable_id is None
+        assert meta.config == {}
+        assert meta.name == "_"
+        assert meta.language_metadata is None
+
+    def test_decode_cell_metadata_ignores_unknown_fields(self) -> None:
+        """VS Code's own cell metadata (state, options) is ignored, not fatal."""
+        cell = lsp.NotebookCell(
+            kind=lsp.NotebookCellKind.Code,
+            document="file:///test.py#cell1",
+            metadata=cast(
+                "lsp.LSPObject",
+                {"stableId": "abc-123", "state": "idle", "options": {}},
+            ),
+        )
+
+        meta = decode_cell_metadata(cell)
+        assert meta.stable_id == "abc-123"
+
+
+class TestNormalizeCellCode:
+    """Smart-cell display source → marimo Python source (the snapshot fix)."""
+
+    def test_python_passthrough(self) -> None:
+        for language_id in ("python", "mo-python"):
+            assert normalize_cell_code(language_id, "x = 1", None) == "x = 1"
+
+    def test_markdown_default_prefix(self) -> None:
+        assert normalize_cell_code("markdown", "# Header", None) == snapshot(
+            'mo.md(r"""\n# Header\n""")'
+        )
+
+    def test_markdown_respects_quote_prefix(self) -> None:
+        meta = CellLanguageMetadata(markdown=MarkdownCellMetadata(quote_prefix="rf"))
+        assert normalize_cell_code("markdown", "{x}", meta) == snapshot(
+            'mo.md(rf"""\n{x}\n""")'
+        )
+
+    def test_sql_defaults(self) -> None:
+        # No metadata → default dataframe name, output shown, default engine
+        # (which must NOT be emitted as engine=__marimo_duckdb).
+        assert normalize_cell_code("sql", "SELECT 1", None) == snapshot(
+            '_df = mo.sql(\n    f"""\n    SELECT 1\n    """\n)'
+        )
+
+    def test_sql_respects_metadata(self) -> None:
+        meta = CellLanguageMetadata(
+            sql=SqlCellMetadata(
+                dataframe_name="df2", show_output=False, engine="my_engine"
+            )
+        )
+        assert normalize_cell_code("sql", "SELECT 1", meta) == snapshot(
+            'df2 = mo.sql(\n    f"""\n    SELECT 1\n    """,\n    output=False,\n    engine=my_engine\n)'
+        )
