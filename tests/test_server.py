@@ -554,6 +554,108 @@ async def test_execute_scratchpad_binds_code_mode_and_emits_transaction(
 
 
 @pytest.mark.asyncio
+async def test_code_mode_edit_cell_config_on_existing_cell(
+    client: LanguageClient,
+) -> None:
+    """`cm.edit_cell` changing only config on an existing cell must not crash.
+
+    Regression: the kernel app was built with cell configs as plain dicts, so
+    code mode's ``existing.column`` (reading the cell's current CellConfig)
+    raised ``AttributeError: 'dict' object has no attribute 'column'``. The
+    config must be a real ``CellConfig``. A config-only ``edit_cell`` skips the
+    read-before-write guard, so it lands directly on the config-building path.
+    """
+    uri = "file:///code_mode_config_test.py"
+    set_config: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+
+    @client.feature("marimo/operation")
+    def _(params: Any) -> None:  # noqa: ANN401
+        operation = getattr(params, "operation", None)
+        if getattr(operation, "op", None) != "notebook-document-transaction":
+            return
+        transaction = getattr(operation, "transaction", None)
+        for change in getattr(transaction, "changes", None) or []:
+            if getattr(change, "type", None) == "set-config" and not set_config.done():
+                set_config.set_result(change)
+
+    client.notebook_document_did_open(
+        lsp.DidOpenNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocument(
+                uri=uri,
+                notebook_type="marimo-notebook",
+                version=1,
+                cells=[
+                    NotebookCell(
+                        kind=lsp.NotebookCellKind.Code,
+                        document=f"{uri}#cell1",
+                    )
+                ],
+            ),
+            cell_text_documents=[
+                lsp.TextDocumentItem(
+                    uri=f"{uri}#cell1",
+                    language_id="python",
+                    version=1,
+                    text="x = 1",
+                )
+            ],
+        ),
+    )
+
+    # Create + instantiate the session so we have a live kernel.
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "execute-cells",
+                    "params": {
+                        "notebookUri": uri,
+                        "executable": sys.executable,
+                        "inner": {"cellIds": ["cell1"], "codes": ["x = 1"]},
+                    },
+                }
+            ],
+        )
+    )
+
+    # Edit only the config of the existing cell — this reads its current
+    # CellConfig (`existing.column`), which used to be a dict and crash.
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "execute-scratchpad",
+                    "params": {
+                        "notebookUri": uri,
+                        "executable": sys.executable,
+                        "inner": {
+                            "code": (
+                                "import marimo._code_mode as cm\n"
+                                "async with cm.get_context() as ctx:\n"
+                                "    ctx.edit_cell(ctx.cells[0].id, hide_code=True)\n"
+                            )
+                        },
+                    },
+                }
+            ],
+        )
+    )
+
+    change = await asyncio.wait_for(set_config, timeout=30)
+    assert asdict(change) == snapshot(
+        {
+            "type": "set-config",
+            "cellId": "cell1",
+            "column": None,
+            "disabled": False,
+            "hideCode": True,
+        }
+    )
+
+
+@pytest.mark.asyncio
 async def test_marimo_get_dependency_tree_venv_no_session(
     client: LanguageClient,
 ) -> None:
