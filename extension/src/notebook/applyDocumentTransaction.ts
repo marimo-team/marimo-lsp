@@ -11,6 +11,7 @@
 
 import { Effect, Option } from "effect";
 
+import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import type { CellMetadata } from "../schemas/CellMetadata.ts";
 import { encodeCellMetadata } from "../schemas/CellMetadata.ts";
@@ -35,6 +36,10 @@ function toPlanCell(cell: MarimoNotebookCell): Option.Option<PlanCell> {
     onNone: (): Record<string, unknown> => ({}),
     onSome: (meta) => meta.options ?? {},
   });
+  const languageMetadata = Option.match(cell.metadata, {
+    onNone: () => undefined,
+    onSome: (meta) => meta.languageMetadata,
+  });
   return Option.some({
     stableId,
     code: cell.document.getText(),
@@ -46,6 +51,7 @@ function toPlanCell(cell: MarimoNotebookCell): Option.Option<PlanCell> {
       disabled: options.disabled === true,
       hide_code: options.hide_code === true,
     },
+    languageMetadata,
   });
 }
 
@@ -56,6 +62,7 @@ export const applyDocumentTransaction = Effect.fn(
   transaction: DocumentTransactionNotification["transaction"],
 ) {
   const code = yield* VsCode;
+  const { LanguageId } = yield* Constants;
 
   const byId = new Map<string, MarimoNotebookCell>();
   const current: PlanCell[] = [];
@@ -67,7 +74,7 @@ export const applyDocumentTransaction = Effect.fn(
     }
   }
 
-  const desired = computeDesiredCells(current, transaction.changes);
+  const desired = computeDesiredCells(current, transaction.changes, LanguageId);
   const range = diffToReplaceRange(current, desired);
   if (range == null) return;
 
@@ -94,8 +101,9 @@ export const applyDocumentTransaction = Effect.fn(
         )
       : [];
 
-    // Preserve a surviving cell's other metadata (state, languageMetadata);
-    // override the fields the transaction owns.
+    // Preserve a surviving cell's other metadata (e.g. state); override the
+    // fields the transaction owns. `languageMetadata` is owned by the
+    // classification so a promote/demote overwrites (or clears) the prior value.
     const base = existing
       ? Option.getOrElse(existing.metadata, (): CellMetadata => ({}))
       : {};
@@ -104,6 +112,7 @@ export const applyDocumentTransaction = Effect.fn(
       stableId: cell.stableId,
       name: cell.name === "" ? undefined : cell.name,
       options: cell.config,
+      languageMetadata: cell.languageMetadata,
     });
 
     return data;

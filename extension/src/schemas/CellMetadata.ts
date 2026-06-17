@@ -20,6 +20,19 @@ const MarkdownMetadata = Schema.Struct({
   quotePrefix: Schema.Literal("", "f", "r", "fr", "rf"),
 });
 
+/**
+ * Language-specific metadata (e.g. SQL engine/output flag, markdown quoting)
+ * needed to wrap a smart cell's display code back into Python. Shared with the
+ * transaction planner so its cell equivalence accounts for it.
+ */
+export const LanguageMetadata = Schema.partial(
+  Schema.Struct({
+    sql: SQLMetadata,
+    markdown: MarkdownMetadata,
+  }),
+);
+export type LanguageMetadata = typeof LanguageMetadata.Type;
+
 // TODO: passthrough unknown fields
 /**
  * VS Code notebook cell metadata (runtime state)
@@ -39,12 +52,7 @@ export const CellMetadata = Schema.partial(
     }),
 
     // Language-specific metadata (e.g., SQL engine, output flag)
-    languageMetadata: Schema.partial(
-      Schema.Struct({
-        sql: SQLMetadata,
-        markdown: MarkdownMetadata,
-      }),
-    ),
+    languageMetadata: LanguageMetadata,
 
     // Stable ID for tracking cells across re-deserializations
     // This is ephemeral (not persisted to .py file) and regenerated on file open
