@@ -1,10 +1,13 @@
 ---
 name: marimo-pair-vscode
 description: >-
-  Drive a live marimo notebook as a workspace: run Python in the same kernel
-  the user does, inspect live notebook state, and commit durable notebook
-  changes. Use when the user wants to start a marimo notebook or pair on an
-  active marimo session.
+  Drive a live marimo notebook in VS Code as a workspace: run Python in the
+  same kernel the user does, inspect and explore live notebook state and data,
+  prototype and debug code, and commit durable notebook changes (cells, values,
+  packages). Use whenever working with a marimo notebook open in VS Code's
+  notebook editor with an active kernel — running code, inspecting variables,
+  exploring data, debugging, or editing and running cells — not only when
+  explicitly "pairing" or starting a session.
 ---
 
 marimo is a reactive Python runtime for building reproducible Python programs
