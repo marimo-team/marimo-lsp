@@ -58,7 +58,9 @@ export const TestLanguageClientLive = Layer.scoped(
       streamOf(notification) {
         return Stream.asyncPush((emit) =>
           acquireDisposable(() =>
-            conn.onNotification(notification, (msg) => emit.single(msg)),
+            conn.onNotification(notification, (msg) => {
+              emit.single(msg);
+            }),
           ),
         );
       },

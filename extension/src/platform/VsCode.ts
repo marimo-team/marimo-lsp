@@ -14,7 +14,7 @@ import {
 } from "effect";
 
 declare global {
-  // oxlint-disable-next-line eslint/no-var
+  // oxlint-disable-next-line eslint/no-var, eslint/no-underscore-dangle
   var __marimoVsCode: typeof import("vscode") | undefined;
 }
 // VsCode.ts centralizes and restricts access to the VS Code API.
@@ -25,7 +25,7 @@ declare global {
 // easier testing story. The goal is NOT to hide APIs that are hard to mock,
 // but to limit surface area to what's necessary for correctness and clarity.
 //
-// oxlint-disable-next-line marimo/vscode-type-only"
+// oxlint-disable-next-line marimo/vscode-type-only
 import * as vscode from "vscode";
 
 import type { DynamicCommand, VscodeBuiltinCommand } from "../commands.ts";
@@ -1130,6 +1130,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
     // Expose the raw vscode module for runtime inspection via --inspect-extensions.
     // Only active when MARIMO_DEBUG=1 (set by launch-dev.sh).
     if (process.env.MARIMO_DEBUG === "1") {
+      // oxlint-disable-next-line eslint/no-underscore-dangle
       globalThis.__marimoVsCode = vscode;
     }
 
