@@ -293,7 +293,11 @@ function toLspDiagnostic(
     d.severity != null
       ? toVsCodeDiagnosticSeverity(code, d.severity)
       : code.DiagnosticSeverity.Error;
-  const diag = new code.Diagnostic(range, d.message, severity);
+  const diag = new code.Diagnostic(
+    range,
+    typeof d.message === "string" ? d.message : d.message.value,
+    severity,
+  );
   diag.source = source;
   if (d.code != null) {
     diag.code =

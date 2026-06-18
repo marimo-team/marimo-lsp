@@ -858,7 +858,7 @@ export function toCodeAction(
     result.diagnostics = item.diagnostics.map((d) => {
       const diag = new code.Diagnostic(
         toVsCodeRange(code, d.range),
-        d.message,
+        typeof d.message === "string" ? d.message : d.message.value,
         d.severity != null
           ? toVsCodeDiagnosticSeverity(code, d.severity)
           : undefined,
