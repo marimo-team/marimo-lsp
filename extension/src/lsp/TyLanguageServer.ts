@@ -22,7 +22,7 @@ import { Sentry } from "../telemetry/Sentry.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
 
-const TY_SERVER = { name: "ty", version: "0.0.26" } as const;
+const TY_SERVER = { name: "ty", version: "0.0.50" } as const;
 const TY_EXTENSION_ID = "astral-sh.ty";
 
 export const TyLanguageServerStatus = Data.taggedEnum<TyLanguageServerStatus>();
