@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 
 import "./styles.css";
+import { flushSync } from "react-dom";
 import * as ReactDOM from "react-dom/client";
 import styleText from "virtual:stylesheet";
 import type * as vscode from "vscode-notebook-renderer";
@@ -117,7 +118,14 @@ export const activate: vscode.ActivationFunction = (context) => {
       const root = registry.get(element) ?? ReactDOM.createRoot(element);
       const { cellId, state }: { cellId: CellId; state: CellRuntimeState } =
         data.json();
-      root.render(<CellOutput cellId={cellId} state={state} />);
+      // Render synchronously so the output's real height is in the DOM before
+      // VS Code measures `element` to reserve layout space. A plain async
+      // `root.render` paints after `renderOutputItem` returns, so VS Code can
+      // reserve too little height for tall outputs (e.g. tracebacks) and the
+      // next cell overlaps them until a re-layout (#579, #598).
+      flushSync(() => {
+        root.render(<CellOutput cellId={cellId} state={state} />);
+      });
       registry.set(element, root);
       signal.addEventListener("abort", () => {
         root.unmount();
