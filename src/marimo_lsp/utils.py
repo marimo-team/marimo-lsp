@@ -61,8 +61,10 @@ def decode_cell_metadata(cell: lsp.NotebookCell) -> CellMetadata:
 
     ``cell.metadata`` is an untyped ``LSPObject`` (a dict on the wire). We
     parse it into a typed :class:`CellMetadata` so callers earn the type
-    instead of asserting it — unknown fields (VS Code's own state, ``options``)
-    are ignored and missing fields fall back to the struct defaults.
+    instead of asserting it — unknown fields (VS Code's own ``state``, etc.)
+    are ignored and missing fields fall back to the struct defaults. Note the
+    wire sends per-cell config as ``options``; :class:`CellMetadata` maps it to
+    ``config`` (see its field definition).
     """
     return msgspec.convert(cell.metadata or {}, CellMetadata)
 
