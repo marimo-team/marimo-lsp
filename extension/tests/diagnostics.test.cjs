@@ -94,7 +94,7 @@ suite("diagnostics", function () {
 
     // Every `a` occurrence (cells 0 and 2) should resolve to Literal[10].
     for (const idx of [0, 2]) {
-      // oxlint-disable-next-line eslint/no-await-in-loop: poll each cell serially
+      // oxlint-disable-next-line eslint/no-await-in-loop
       await ctx.waitUntil(async () => {
         const text = await hoverText(nb.cellAt(idx));
         NodeAssert.match(

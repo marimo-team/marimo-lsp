@@ -73,6 +73,7 @@ export default vite.defineConfig({
     jsPlugins: ["./lint/marimo-plugin.mjs"],
     plugins: ["typescript", "react", "import"],
     rules: {
+      "eslint/no-underscore-dangle": "off",
       "react/react-in-jsx-scope": "off",
       "import/extensions": ["error", "always", { ignorePackages: true }],
       "import/no-unassigned-import": [

@@ -181,13 +181,13 @@ function createTestContext() {
   async function waitUntil(fn, interval = 50) {
     while (true) {
       try {
-        // oxlint-disable-next-line eslint/no-await-in-loop: intentional polling
+        // oxlint-disable-next-line eslint/no-await-in-loop
         await fn();
         return;
       } catch {
         // swallow and retry
       }
-      // oxlint-disable-next-line eslint/no-await-in-loop: intentional polling
+      // oxlint-disable-next-line eslint/no-await-in-loop
       await new Promise((resolve) => setTimeout(resolve, interval));
     }
   }
