@@ -96,6 +96,35 @@ function parseNameAndMessage(line: string): { name: string; message: string } {
   };
 }
 
+export interface TracebackCellFrame {
+  /** The marimo cell id the frame points into. */
+  cellId: string;
+  /** 1-based line number within the cell's source. */
+  line: number;
+}
+
+/**
+ * Extract the notebook-cell frames (cell id + 1-based line) from a raw marimo
+ * traceback (pygments HTML or plain text). Frames pointing at real files
+ * (libraries) are skipped — only frames inside `__marimo__cell_<id>_.py` temp
+ * files are returned, innermost (deepest) last, mirroring Python's traceback
+ * order. Used to place a runtime-error diagnostic on the offending line.
+ */
+export function extractCellFrames(traceback: string): TracebackCellFrame[] {
+  const raw = decodeEntities(stripTags(traceback));
+  const frames: TracebackCellFrame[] = [];
+  for (const line of raw.split("\n")) {
+    const match = FRAME_RE.exec(line);
+    if (!match) continue;
+    const cellId = extractCellId(match[2]);
+    const lineNo = Number.parseInt(match[3], 10);
+    if (cellId !== undefined && Number.isFinite(lineNo)) {
+      frames.push({ cellId, line: lineNo });
+    }
+  }
+  return frames;
+}
+
 export function parseTraceback(
   pygmentsHtml: string,
   cellIdToIndex?: CellIdToIndex,

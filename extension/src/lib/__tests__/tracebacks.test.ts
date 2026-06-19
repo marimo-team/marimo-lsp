@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseTraceback } from "../tracebacks.ts";
+import { extractCellFrames, parseTraceback } from "../tracebacks.ts";
 
 // oxlint-disable-next-line no-control-regex
 const stripAnsi = (s: string) => s.replace(/\u001b\[[\d;]*m/g, "");
@@ -134,5 +134,37 @@ ValueError: oops`;
     	  "stack": "not a traceback",
     	}
     `);
+  });
+});
+
+describe("extractCellFrames", () => {
+  it("extracts cell id and 1-based line from a cell-temp frame", () => {
+    const html = `Traceback (most recent call last):
+  File &quot;/var/folders/zz/abc/T/__marimo__cell_AbCd_.py&quot;, line 1, in &lt;module&gt;
+    raise ValueError()
+ValueError`;
+    expect(extractCellFrames(html)).toEqual([{ cellId: "AbCd", line: 1 }]);
+  });
+
+  it("skips library frames, keeping only cell frames (innermost last)", () => {
+    const html = `Traceback (most recent call last):
+  File &quot;/var/folders/zz/abc/T/__marimo__cell_Top_.py&quot;, line 2, in &lt;module&gt;
+    helper()
+  File &quot;/usr/lib/python3.11/site-packages/lib.py&quot;, line 99, in helper
+    boom()
+  File &quot;/var/folders/zz/abc/T/__marimo__cell_Deep_.py&quot;, line 5, in boom
+    1 / 0
+ZeroDivisionError: division by zero`;
+    expect(extractCellFrames(html)).toEqual([
+      { cellId: "Top", line: 2 },
+      { cellId: "Deep", line: 5 },
+    ]);
+  });
+
+  it("returns no frames when the traceback has no cell-temp file", () => {
+    const html = `Traceback (most recent call last):
+  File &quot;/usr/lib/python3.11/json/__init__.py&quot;, line 1, in loads
+ValueError: bad`;
+    expect(extractCellFrames(html)).toEqual([]);
   });
 });
