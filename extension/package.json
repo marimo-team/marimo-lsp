@@ -28,7 +28,7 @@
     "@effect/language-service": "^0.45.0",
     "@effect/platform": "^0.92.1",
     "@effect/platform-node": "^0.98.3",
-    "@effect/vitest": "^0.27.0",
+    "@effect/vitest": "^0.29.0",
     "@marimo-team/frontend": "link:../../marimo/frontend",
     "@marimo-team/openapi": "link:../../marimo/packages/openapi",
     "@marimo-team/smart-cells": "link:../../marimo/packages/smart-cells",
@@ -42,7 +42,6 @@
     "@types/react-dom": "^19.2.2",
     "@types/vscode": "^1.108.0",
     "@types/vscode-notebook-renderer": "^1.72.4",
-    "@typescript/native-preview": "7.0.0-dev.20251015.1",
     "@vitest/coverage-v8": "^4.0.0",
     "@vscode/debugprotocol": "^1.68.0",
     "@vscode/python-extension": "^1.0.6",
@@ -60,13 +59,13 @@
     "tar": "^7.5.2",
     "tinyspy": "^4.0.4",
     "turbo": "^2.5.8",
-    "typescript": "^6.0.2",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.1.18",
-    "vite-plus": "0.1.18",
-    "vitest": "npm:@voidzero-dev/vite-plus-test@0.1.18",
-    "vscode-jsonrpc": "^8.2.1",
-    "vscode-languageclient": "10.0.0-next.21",
-    "vscode-languageserver-protocol": "^3.17.5"
+    "typescript": "^6.0.3",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.1.24",
+    "vite-plus": "0.1.24",
+    "vitest": "npm:@voidzero-dev/vite-plus-test@0.1.24",
+    "vscode-jsonrpc": "^9.0.0",
+    "vscode-languageclient": "10.0.0",
+    "vscode-languageserver-protocol": "^3.18.0"
   },
   "contributes": {
     "configuration": {
@@ -537,8 +536,8 @@
   "packageManager": "pnpm@10.28.2",
   "pnpm": {
     "overrides": {
-      "vite": "npm:@voidzero-dev/vite-plus-core@0.1.18",
-      "vitest": "npm:@voidzero-dev/vite-plus-test@0.1.18"
+      "vite": "npm:@voidzero-dev/vite-plus-core@0.1.24",
+      "vitest": "npm:@voidzero-dev/vite-plus-test@0.1.24"
     }
   }
 }

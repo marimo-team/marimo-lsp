@@ -61,7 +61,7 @@ function makeSource(bodies) {
  */
 async function runAllCells(nb) {
   for (let i = 0; i < nb.cellCount; i++) {
-    // oxlint-disable-next-line eslint/no-await-in-loop: cells are reactive, run serially
+    // oxlint-disable-next-line eslint/no-await-in-loop
     await runCell(nb.cellAt(i));
   }
 }

@@ -1295,6 +1295,34 @@ describe("toCodeAction", () => {
   );
 
   it.scoped(
+    // LSP 3.18 widened Diagnostic.message to `string | MarkupContent`; we
+    // normalize to the plain string for VS Code's Diagnostic constructor.
+    "normalizes a MarkupContent diagnostic message to plain text",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const result = toCodeAction(code, {
+        title: "Organize imports",
+        kind: "quickfix",
+        diagnostics: [
+          {
+            range: {
+              start: { line: 1, character: 0 },
+              end: { line: 1, character: 10 },
+            },
+            message: {
+              kind: lsp.MarkupKind.Markdown,
+              value: "Unused import",
+            },
+            severity: lsp.DiagnosticSeverity.Warning,
+            source: "ruff",
+          },
+        ],
+      });
+      expect(result.diagnostics?.[0]?.message).toBe("Unused import");
+    }),
+  );
+
+  it.scoped(
     "converts disabled action",
     Effect.fn(function* () {
       const code = yield* withVsCode;
