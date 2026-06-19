@@ -12,7 +12,7 @@
 const NodeAssert = require("node:assert");
 const vscode = require("vscode");
 
-const { createTestContext, selectKernel } = require("./helpers.cjs");
+const { createTestContext, selectKernel, runCell } = require("./helpers.cjs");
 
 const SCRIPT_HEADER = `# /// script
 # requires-python = ">=3.11"
@@ -145,6 +145,47 @@ suite("diagnostics", function () {
         marimoMultiDef(dB).length > 0,
         `cell 3 (a = 20) should have multi-def, got ${JSON.stringify(dB)}`,
       );
+    });
+  });
+
+  test("runtime exception marks the cell failed and squiggles the raising line", async function () {
+    this.timeout(30_000);
+    await using ctx = createTestContext();
+    const nb = await ctx.writeAndOpenNotebook(
+      makeSource(['raise ValueError("boom")']),
+    );
+    await selectKernel(nb);
+
+    const cell = nb.cellAt(0);
+    await runCell(cell);
+
+    // 1. The cell is marked failed (red error icon), matching Jupyter —
+    //    not VS Code's default green success check.
+    NodeAssert.strictEqual(
+      cell.executionSummary?.success,
+      false,
+      `expected a failed execution, got ${JSON.stringify(cell.executionSummary)}`,
+    );
+
+    // 2. A runtime-error diagnostic (red squiggle) lands on the raising line.
+    await ctx.waitUntil(() => {
+      const all = vscode.languages.getDiagnostics(cell.document.uri);
+      const runtimeErrors = all.filter(
+        (d) =>
+          d.source === "marimo" &&
+          d.severity === vscode.DiagnosticSeverity.Error &&
+          /ValueError/.test(d.message),
+      );
+      NodeAssert.ok(
+        runtimeErrors.length > 0,
+        `expected a marimo runtime-error diagnostic, got ${JSON.stringify(all)}`,
+      );
+      NodeAssert.strictEqual(
+        runtimeErrors[0].range.start.line,
+        0,
+        "diagnostic should sit on the raising line (cell line 0)",
+      );
+      NodeAssert.match(runtimeErrors[0].message, /boom/);
     });
   });
 });

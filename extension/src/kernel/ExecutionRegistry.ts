@@ -19,12 +19,18 @@ import type * as vscode from "vscode";
 
 import { logUnreachable } from "../assert.ts";
 import { SCRATCH_CELL_ID } from "../constants.ts";
+import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { prettyErrorMessage } from "../lib/errors.ts";
-import { parseTraceback } from "../lib/tracebacks.ts";
+import {
+  extractCellFrames,
+  parseTraceback,
+  type TracebackCellFrame,
+} from "../lib/tracebacks.ts";
 import { CellStateManager } from "../notebook/CellStateManager.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   findNotebookCell,
+  type MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
 import {
@@ -72,6 +78,48 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
           return HashMap.empty();
         }),
       );
+
+      // Runtime-error diagnostics: a red squiggle on the cell line that
+      // raised, mirroring Jupyter. Kept in its own collection (separate from
+      // the LSP server's static diagnostics) so the two don't clobber each
+      // other; cleared when the cell re-runs.
+      const errorDiagnostics = yield* acquireDisposable(() =>
+        code.languages.createDiagnosticCollection("marimo-runtime"),
+      );
+
+      const clearErrorDiagnostic = (uri: vscode.Uri) =>
+        Effect.sync(() => errorDiagnostics.delete(uri));
+
+      const applyErrorDiagnostic = (
+        notebookCell: MarimoNotebookCell,
+        cellId: NotebookCellId,
+        state: CellRuntimeState,
+      ) =>
+        Effect.sync(() => {
+          const { document } = notebookCell;
+          const frame =
+            state.output?.channel === "marimo-error"
+              ? cellTracebackFrame(state, cellId)
+              : undefined;
+          if (frame === undefined) {
+            // Not an error (or no in-cell frame to point at, e.g. a syntax
+            // error already covered by the language server) — drop any stale
+            // squiggle.
+            errorDiagnostics.delete(document.uri);
+            return;
+          }
+          const lineIdx = Math.min(
+            Math.max(frame.line - 1, 0),
+            Math.max(document.lineCount - 1, 0),
+          );
+          const diagnostic = new code.Diagnostic(
+            document.lineAt(lineIdx).range,
+            diagnosticMessage(state),
+            code.DiagnosticSeverity.Error,
+          );
+          diagnostic.source = "marimo";
+          errorDiagnostics.set(document.uri, [diagnostic]);
+        });
 
       return {
         handleInterrupted(editor: vscode.NotebookEditor) {
@@ -127,6 +175,9 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
 
                 // Record execution — clears stale state
                 yield* cellStateManager.recordExecution(notebookCell);
+
+                // Clear any prior runtime-error squiggle before this re-run.
+                yield* clearErrorDiagnostic(notebookCell.document.uri);
 
                 // End any in-progress execution before creating a new one
                 yield* Ref.update(ref, (map) => {
@@ -187,6 +238,8 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                 }
                 // MUST modify cell output before `ExecutionHandle.end`
                 yield* CellEntry.maybeUpdateCellOutput(cell, code, options);
+                // Place (or clear) the red squiggle on the raising line.
+                yield* applyErrorDiagnostic(notebookCell, cellId, cell.state);
                 yield* Ref.update(ref, (map) =>
                   Option.match(HashMap.get(map, cellId), {
                     onSome: (entry) =>
@@ -628,6 +681,38 @@ function hasTraceback(state: CellRuntimeState): boolean {
   return (state.consoleOutputs ?? []).some(
     (o) => o?.mimetype === TRACEBACK_MIME,
   );
+}
+
+/**
+ * Innermost traceback frame inside `cellId` — i.e. the line in this cell where
+ * the exception surfaced. Returns undefined when the cell has no traceback
+ * (e.g. a structural marimo error) or the exception was raised entirely in
+ * library/other-cell code, in which case there's no line here to underline.
+ */
+function cellTracebackFrame(
+  state: CellRuntimeState,
+  cellId: NotebookCellId,
+): TracebackCellFrame | undefined {
+  const traceback = (state.consoleOutputs ?? []).find(
+    (o) => o?.mimetype === TRACEBACK_MIME,
+  );
+  if (!traceback) return undefined;
+  const text =
+    typeof traceback.data === "object"
+      ? JSON.stringify(traceback.data)
+      : traceback.data;
+  return extractCellFrames(text)
+    .filter((frame) => frame.cellId === cellId)
+    .at(-1);
+}
+
+/** Human-readable message for the runtime-error diagnostic. */
+function diagnosticMessage(state: CellRuntimeState): string {
+  const data = state.output?.data;
+  if (Array.isArray(data) && data.length > 0) {
+    return prettyErrorMessage(data[0]);
+  }
+  return "Cell execution failed";
 }
 
 // Only suppress when every item is a plain `exception` without `raising_cell`:
