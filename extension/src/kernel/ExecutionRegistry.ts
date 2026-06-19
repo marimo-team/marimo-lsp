@@ -193,7 +193,15 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
                       HashMap.set(
                         map,
                         cellId,
-                        CellEntry.end(entry, true, msg.timestamp),
+                        // Report failure when the cell ended on an error so
+                        // VS Code marks the cell with the red error icon
+                        // (matches Jupyter); a marimo-error output channel is
+                        // the kernel's signal that the run raised.
+                        CellEntry.end(
+                          entry,
+                          entry.state.output?.channel !== "marimo-error",
+                          msg.timestamp,
+                        ),
                       ),
                     onNone: () => map,
                   }),
