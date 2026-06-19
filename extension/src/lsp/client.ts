@@ -684,11 +684,11 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
 
     conn.onRequest(
       lsp.ConfigurationRequest.method,
-      (params: lsp.ConfigurationParams) => {
+      (params: lsp.ConfigurationParams): Promise<unknown[]> => {
         if (config.onConfigurationRequest) {
           return runPromise(config.onConfigurationRequest(params));
         }
-        return params.items.map(() => null);
+        return Promise.resolve(params.items.map(() => null));
       },
     );
 
