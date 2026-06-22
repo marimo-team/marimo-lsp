@@ -1,12 +1,9 @@
-// @ts-expect-error
-import { transitionCell as untypedTransitionCell } from "@marimo-team/frontend/unstable_internal/core/cells/cell.ts?nocheck";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import type {
   CellOutput,
   OutputMessage,
 } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
 import {
-  Brand,
   Cause,
   Data,
   Effect,
@@ -17,7 +14,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { logUnreachable } from "../assert.ts";
+import { assert, logUnreachable } from "../assert.ts";
 import { SCRATCH_CELL_ID } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { prettyErrorMessage } from "../lib/errors.ts";
@@ -42,6 +39,19 @@ import {
   type CellRuntimeState,
   createCellNavigationLink,
 } from "../types.ts";
+import {
+  CellOutputProjection,
+  type KeyedCellOutput,
+} from "./CellOutputProjection.ts";
+import {
+  Action,
+  type CellRunEntry,
+  makeCellRunEntry,
+  Op,
+  parseOp,
+  step,
+  transitionCell,
+} from "./CellRunReducer.ts";
 import type { PythonController } from "./NotebookControllerFactory.ts";
 import type { SandboxController } from "./SandboxController.ts";
 
@@ -55,6 +65,35 @@ export class InvalidCellError extends Data.TaggedError("InvalidCellError")<{
   readonly cause: unknown;
 }> {}
 
+/** A run's live VS Code execution and the projection driving its outputs. */
+interface RunResource {
+  readonly execution: vscode.NotebookCellExecution;
+  readonly projection: CellOutputProjection;
+}
+
+/**
+ * Everything the registry tracks for one cell: the pure {@link CellRunEntry},
+ * the editor it belongs to (for interrupt fan-out), and its live execution
+ * while a run is in flight.
+ */
+interface RunRecord {
+  readonly entry: CellRunEntry;
+  readonly editor: vscode.NotebookEditor;
+  readonly resource: Option.Option<RunResource>;
+}
+
+/**
+ * What the {@link Action} interpreter needs to perform a single op's actions.
+ * `notebookCell` / `controller` are absent for interrupts (which only end
+ * executions); actions that require them assert their presence.
+ */
+interface PerformContext {
+  readonly cellId: NotebookCellId;
+  readonly notebookCell: MarimoNotebookCell | undefined;
+  readonly controller: PythonController | SandboxController | undefined;
+  readonly notebook: vscode.NotebookDocument | undefined;
+}
+
 export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
   "ExecutionRegistry",
   {
@@ -62,17 +101,22 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const cellStateManager = yield* CellStateManager;
-      const ref = yield* Ref.make(HashMap.empty<NotebookCellId, CellEntry>());
+      const records = yield* Ref.make(
+        HashMap.empty<NotebookCellId, RunRecord>(),
+      );
 
       yield* Effect.addFinalizer(() =>
-        Ref.update(ref, (map) => {
-          HashMap.forEach(map, (entry) => {
-            if (
-              Option.isSome(entry.pendingExecution) &&
-              entry.pendingExecution.value.kind !== "completed"
-            ) {
-              // Ensure all pending or running executions are ended
-              entry.pendingExecution.value.end(false);
+        Ref.update(records, (map) => {
+          HashMap.forEach(map, (record) => {
+            if (Option.isSome(record.resource)) {
+              // Ensure all in-flight executions are ended on shutdown. `end`
+              // throws if one was already ended (a benign race); swallow it so
+              // disposal still completes.
+              try {
+                record.resource.value.execution.end(false);
+              } catch {
+                // already ended
+              }
             }
           });
           return HashMap.empty();
@@ -121,19 +165,163 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
           errorDiagnostics.set(document.uri, [diagnostic]);
         });
 
-      return {
-        handleInterrupted(editor: vscode.NotebookEditor) {
-          return Ref.update(ref, (map) =>
-            HashMap.map(map, (cell) =>
-              Option.match(cell.pendingExecution, {
-                onSome: () => cell.editor === editor,
-                onNone: () => false,
-              })
-                ? CellEntry.interrupt(cell)
-                : cell,
+      const setResource = (
+        cellId: NotebookCellId,
+        resource: Option.Option<RunResource>,
+      ) =>
+        Ref.update(records, (map) =>
+          Option.match(HashMap.get(map, cellId), {
+            onSome: (record) =>
+              HashMap.set(map, cellId, { ...record, resource }),
+            onNone: () => map,
+          }),
+        );
+
+      const getResource = (cellId: NotebookCellId) =>
+        Ref.get(records).pipe(
+          Effect.map((map) =>
+            HashMap.get(map, cellId).pipe(
+              Option.flatMap((record) => record.resource),
+            ),
+          ),
+        );
+
+      // Run `f` against the cell's live execution, or log+skip when there is
+      // none (a benign race: the execution was ended concurrently).
+      const withResource = (
+        cellId: NotebookCellId,
+        f: (resource: RunResource) => Effect.Effect<void>,
+      ) =>
+        getResource(cellId).pipe(
+          Effect.flatMap(
+            Option.match({
+              onSome: f,
+              onNone: () =>
+                Effect.logDebug(
+                  "No live execution for cell; skipping action",
+                ).pipe(Effect.annotateLogs({ cellId })),
+            }),
+          ),
+        );
+
+      const emitOutputs = (
+        ctx: PerformContext,
+        state: CellRuntimeState,
+        final: boolean,
+      ) =>
+        withResource(ctx.cellId, ({ projection }) => {
+          const keyed = buildKeyedCellOutputs(
+            ctx.cellId,
+            state,
+            code,
+            ctx.notebook,
+          );
+          return Effect.tryPromise(() =>
+            final ? projection.commit(keyed) : projection.project(keyed),
+          ).pipe(
+            // A concurrent op may have ended the execution; not actionable.
+            Effect.catchAllCause((cause) =>
+              Effect.logWarning("Failed to update cell output").pipe(
+                Effect.annotateLogs({ cause, cellId: ctx.cellId }),
+              ),
             ),
           );
-        },
+        });
+
+      // The operation interpreter: perform one Action against the real world.
+      const perform = (action: Action, ctx: PerformContext) =>
+        Action.$match(action, {
+          CreateExecution: () =>
+            Effect.gen(function* () {
+              assert(
+                ctx.notebookCell !== undefined && ctx.controller !== undefined,
+                "CreateExecution requires a notebook cell and controller",
+              );
+              const notebookCell = ctx.notebookCell;
+              const controller = ctx.controller;
+              const execution = yield* Effect.try({
+                try: () => controller.createNotebookCellExecution(notebookCell),
+                catch: (cause) =>
+                  new InvalidCellError({ cellId: ctx.cellId, cause }),
+              });
+              yield* setResource(
+                ctx.cellId,
+                Option.some({
+                  execution,
+                  projection: new CellOutputProjection(execution),
+                }),
+              );
+            }),
+          StartExecution: ({ startTime }) =>
+            withResource(ctx.cellId, ({ execution }) =>
+              Effect.sync(() => execution.start(startTime)),
+            ),
+          EmitOutputs: ({ state }) => emitOutputs(ctx, state, false),
+          FinalizeOutputs: ({ state }) => emitOutputs(ctx, state, true),
+          EndExecution: ({ success, endTime }) =>
+            withResource(ctx.cellId, ({ execution }) =>
+              Effect.gen(function* () {
+                // `end` throws if already ended (a race); swallow it.
+                yield* Effect.try(() => execution.end(success, endTime)).pipe(
+                  Effect.ignore,
+                );
+                yield* setResource(ctx.cellId, Option.none());
+              }),
+            ),
+          ApplyRuntimeError: ({ state }) => {
+            assert(
+              ctx.notebookCell !== undefined,
+              "ApplyRuntimeError requires a notebook cell",
+            );
+            return applyErrorDiagnostic(ctx.notebookCell, ctx.cellId, state);
+          },
+          ClearRuntimeError: () => {
+            assert(
+              ctx.notebookCell !== undefined,
+              "ClearRuntimeError requires a notebook cell",
+            );
+            return clearErrorDiagnostic(ctx.notebookCell.document.uri);
+          },
+          RecordExecution: () => {
+            assert(
+              ctx.notebookCell !== undefined,
+              "RecordExecution requires a notebook cell",
+            );
+            return cellStateManager.recordExecution(ctx.notebookCell);
+          },
+          InvalidateCell: () => {
+            assert(
+              ctx.notebookCell !== undefined,
+              "InvalidateCell requires a notebook cell",
+            );
+            return cellStateManager.invalidateCell(ctx.notebookCell);
+          },
+        });
+
+      return {
+        handleInterrupted: (editor: vscode.NotebookEditor) =>
+          Effect.gen(function* () {
+            const map = yield* Ref.get(records);
+            const targets = EffectArray.fromIterable(
+              HashMap.entries(map),
+            ).filter(([, record]) => record.editor === editor);
+            for (const [cellId, record] of targets) {
+              const { entry, actions } = step(record.entry, Op.Interrupt());
+              yield* Ref.update(records, (m) =>
+                HashMap.set(m, cellId, { ...record, entry }),
+              );
+              const ctx: PerformContext = {
+                cellId,
+                notebookCell: undefined,
+                controller: undefined,
+                notebook: undefined,
+              };
+              for (const action of actions) {
+                // oxlint-disable-next-line eslint/no-await-in-loop -- ordered
+                yield* perform(action, ctx);
+              }
+            }
+          }),
         handleCellOperation: (
           msg: CellOperationNotification,
           options: {
@@ -145,126 +333,48 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
             const { editor, controller } = options;
             const cellId = extractCellIdFromCellMessage(msg);
 
-            const cell = yield* Ref.modify(ref, (map) => {
-              const prev = Option.match(HashMap.get(map, cellId), {
-                onSome: (cell) => cell,
-                onNone: () => CellEntry.make(cellId, editor),
-              });
-              const update = CellEntry.transition(prev, msg);
-              return [update, HashMap.set(map, cellId, update)];
-            });
+            const map = yield* Ref.get(records);
+            const record = Option.getOrElse(HashMap.get(map, cellId), () => ({
+              entry: makeCellRunEntry(cellId),
+              editor,
+              resource: Option.none<RunResource>(),
+            }));
 
             const notebook = MarimoNotebookDocument.from(editor.notebook);
-            const notebookCell = yield* findNotebookCell(notebook, cell.id);
+            const notebookCell = yield* findNotebookCell(notebook, cellId);
 
-            // If cell has stale inputs, invalidate its execution record
-            if (cell.state.staleInputs) {
-              yield* cellStateManager.invalidateCell(notebookCell);
+            // Fold the cell-op into the run state once, up front, so the folded
+            // state is persisted even for an op we end up dropping.
+            const next = transitionCell(record.entry.state, msg);
+            const op = parseOp(next, msg);
+            if (Option.isNone(op)) {
+              yield* Effect.logWarning(
+                "Queued cell-op missing run_id; cannot track execution",
+              ).pipe(Effect.annotateLogs({ cellId, status: msg.status }));
+              yield* Ref.update(records, (m) =>
+                HashMap.set(m, cellId, {
+                  ...record,
+                  entry: { ...record.entry, state: next },
+                }),
+              );
+              return;
             }
 
-            switch (msg.status) {
-              case "queued": {
-                const runIdOpt = extractRunId(msg);
-                if (Option.isNone(runIdOpt)) {
-                  yield* Effect.logWarning(
-                    "Queued cell-op missing run_id; cannot track execution",
-                  ).pipe(Effect.annotateLogs({ cellId, status: msg.status }));
-                  return;
-                }
-                const runId = runIdOpt.value;
+            const result = step(record.entry, op.value);
+            yield* Ref.update(records, (m) =>
+              HashMap.set(m, cellId, { ...record, entry: result.entry }),
+            );
 
-                // Record execution — clears stale state
-                yield* cellStateManager.recordExecution(notebookCell);
-
-                // Clear any prior runtime-error squiggle before this re-run.
-                yield* clearErrorDiagnostic(notebookCell.document.uri);
-
-                // End any in-progress execution before creating a new one
-                yield* Ref.update(ref, (map) => {
-                  const handle = HashMap.get(map, cellId).pipe(
-                    Option.andThen((v) => v.pendingExecution),
-                  );
-                  if (
-                    Option.isSome(handle) &&
-                    handle.value.kind !== "completed"
-                  ) {
-                    handle.value.end(true);
-                  }
-                  return map;
-                });
-
-                // Create new execution — can fail if the cell was removed
-                const execution = yield* Effect.try({
-                  try: () =>
-                    controller.createNotebookCellExecution(notebookCell),
-                  catch: (cause) => new InvalidCellError({ cellId, cause }),
-                });
-
-                yield* Ref.update(ref, (map) =>
-                  HashMap.set(
-                    map,
-                    cellId,
-                    CellEntry.withExecution(
-                      cell,
-                      new PendingExecutionHandle({
-                        runId,
-                        inner: execution,
-                      }),
-                    ),
-                  ),
-                );
-                return;
-              }
-
-              case "running": {
-                if (Option.isNone(cell.pendingExecution)) {
-                  yield* Effect.logWarning(
-                    "Got running message but no cell execution found",
-                  );
-                }
-                const update = yield* Ref.modify(ref, (map) => {
-                  const update = CellEntry.start(cell, msg.timestamp ?? 0);
-                  return [update, HashMap.set(map, cellId, update)];
-                });
-                yield* CellEntry.maybeUpdateCellOutput(update, code, options);
-                return;
-              }
-
-              case "idle": {
-                if (Option.isNone(cell.pendingExecution)) {
-                  yield* Effect.logWarning(
-                    "Got idle message but no cell execution found",
-                  );
-                }
-                // MUST modify cell output before `ExecutionHandle.end`
-                yield* CellEntry.maybeUpdateCellOutput(cell, code, options);
-                // Place (or clear) the red squiggle on the raising line.
-                yield* applyErrorDiagnostic(notebookCell, cellId, cell.state);
-                yield* Ref.update(ref, (map) =>
-                  Option.match(HashMap.get(map, cellId), {
-                    onSome: (entry) =>
-                      HashMap.set(
-                        map,
-                        cellId,
-                        // Report failure when the cell ended on an error so
-                        // VS Code marks the cell with the red error icon
-                        // (matches Jupyter); a marimo-error output channel is
-                        // the kernel's signal that the run raised.
-                        CellEntry.end(
-                          entry,
-                          entry.state.output?.channel !== "marimo-error",
-                          msg.timestamp,
-                        ),
-                      ),
-                    onNone: () => map,
-                  }),
-                );
-                return;
-              }
-
-              default: {
-                yield* CellEntry.maybeUpdateCellOutput(cell, code, options);
-              }
+            const ctx: PerformContext = {
+              cellId,
+              notebookCell,
+              controller,
+              notebook: editor.notebook,
+            };
+            for (const action of result.actions) {
+              // oxlint-disable-next-line eslint/no-await-in-loop -- actions are
+              // ordered (e.g. FinalizeOutputs must land before EndExecution)
+              yield* perform(action, ctx);
             }
           }).pipe(
             Effect.catchTag("NotebookCellNotFoundError", () =>
@@ -281,237 +391,6 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
     }),
   },
 ) {}
-
-class PendingExecutionHandle extends Data.TaggedClass(
-  "PendingExecutionHandle",
-)<{
-  readonly inner: vscode.NotebookCellExecution;
-  readonly runId: RunId;
-}> {
-  readonly kind = "pending";
-  start(startTime: number) {
-    this.inner.start(startTime);
-    return new RunningExecutionHandle({
-      inner: this.inner,
-      runId: this.runId,
-    });
-  }
-  end(success: boolean, endTime?: number) {
-    this.inner.end(success, endTime);
-    return new CompletedExecutionHandle({
-      inner: this.inner,
-      runId: this.runId,
-    });
-  }
-}
-
-class RunningExecutionHandle extends Data.TaggedClass(
-  "RunningExecutionHandle",
-)<{
-  readonly inner: vscode.NotebookCellExecution;
-  readonly runId: RunId;
-}> {
-  readonly kind = "running";
-  end(success: boolean, endTime?: number) {
-    this.inner.end(success, endTime);
-    return new CompletedExecutionHandle({
-      inner: this.inner,
-      runId: this.runId,
-    });
-  }
-  updateCellOutput(options: {
-    cellId: NotebookCellId;
-    state: CellRuntimeState;
-    code: VsCode;
-  }) {
-    const { cellId, state, code } = options;
-    const notebook = this.inner.cell.notebook;
-    const outputs = buildCellOutputs(cellId, state, code, notebook);
-    return Effect.tryPromise(() => this.inner.replaceOutput(outputs)).pipe(
-      Effect.annotateLogs({ cellId }),
-      Effect.catchAllCause((cause) =>
-        // Race condition: execution may have been ended by a concurrent
-        // operation (e.g., a new queued message ending the old execution).
-        // This is expected and not an actionable error.
-        Effect.logWarning("Failed to update cell output").pipe(
-          Effect.annotateLogs({ cause }),
-        ),
-      ),
-    );
-  }
-}
-
-class CompletedExecutionHandle extends Data.TaggedClass(
-  "CompletedExecutionHandle",
-)<{
-  readonly inner: vscode.NotebookCellExecution;
-  readonly runId: RunId;
-}> {
-  readonly kind = "completed";
-}
-
-type ExecutionHandle =
-  | PendingExecutionHandle
-  | RunningExecutionHandle
-  | CompletedExecutionHandle;
-
-class CellEntry extends Data.TaggedClass("CellEntry")<{
-  readonly id: NotebookCellId;
-  readonly state: CellRuntimeState;
-  readonly editor: vscode.NotebookEditor;
-  readonly pendingExecution: Option.Option<ExecutionHandle>;
-}> {
-  static make(id: NotebookCellId, editor: vscode.NotebookEditor) {
-    return new CellEntry({
-      id,
-      editor,
-      state: createCellRuntimeState(),
-      pendingExecution: Option.none(),
-    });
-  }
-  private with(
-    overrides: Partial<Pick<CellEntry, "state" | "pendingExecution">>,
-  ) {
-    return new CellEntry({
-      id: this.id,
-      editor: this.editor,
-      state: overrides.state ?? this.state,
-      pendingExecution: overrides.pendingExecution ?? this.pendingExecution,
-    });
-  }
-  static transition(cell: CellEntry, message: CellOperationNotification) {
-    return cell.with({ state: transitionCell(cell.state, message) });
-  }
-  static withExecution(cell: CellEntry, execution: ExecutionHandle) {
-    return cell.with({
-      pendingExecution: Option.some(execution),
-    });
-  }
-  static interrupt(cell: CellEntry) {
-    if (
-      Option.isSome(cell.pendingExecution) &&
-      cell.pendingExecution.value.kind !== "completed"
-    ) {
-      cell.pendingExecution.value.end(false);
-    }
-    return cell.with({ pendingExecution: Option.none() });
-  }
-  static start(cell: CellEntry, timestamp: number) {
-    let pendingExecution = cell.pendingExecution;
-    if (
-      Option.isSome(cell.pendingExecution) &&
-      cell.pendingExecution.value.kind === "pending"
-    ) {
-      pendingExecution = Option.some(
-        cell.pendingExecution.value.start(timestamp * 1000),
-      );
-    }
-    return cell.with({ pendingExecution });
-  }
-  static end(cell: CellEntry, success: boolean, timestamp?: number) {
-    if (
-      Option.isSome(cell.pendingExecution) &&
-      cell.pendingExecution.value.kind !== "completed"
-    ) {
-      cell.pendingExecution.value.inner.end(
-        success,
-        timestamp ? timestamp * 1000 : undefined,
-      );
-    }
-    return cell.with({ pendingExecution: Option.none() });
-  }
-  static maybeUpdateCellOutput = Effect.fn(function* (
-    cell: CellEntry,
-    code: VsCode,
-    deps?: {
-      editor: vscode.NotebookEditor;
-      controller: PythonController | SandboxController;
-    },
-  ) {
-    const { pendingExecution, id: cellId, state } = cell;
-
-    if (Option.isNone(pendingExecution)) {
-      // If it is an error, the cell likely never got queued and errored during compilation.
-      // Create an ephemeral execution to display the error.
-      const hasError = state.output?.channel === "marimo-error";
-
-      if (hasError && deps) {
-        yield* Effect.logDebug(
-          "Creating ephemeral execution for marimo error without pending execution",
-        );
-
-        const notebookCell = yield* findNotebookCell(
-          MarimoNotebookDocument.from(deps.editor.notebook),
-          cellId,
-        );
-        const execution = yield* Effect.try({
-          try: () => deps.controller.createNotebookCellExecution(notebookCell),
-          catch: (cause) => new InvalidCellError({ cellId, cause }),
-        });
-
-        execution.start();
-        const outputs = buildCellOutputs(
-          cellId,
-          state,
-          code,
-          deps.editor.notebook,
-        );
-        yield* Effect.tryPromise(() => execution.replaceOutput(outputs)).pipe(
-          Effect.catchAllCause((cause) =>
-            Effect.logWarning(
-              "Failed to update cell output for ephemeral execution",
-              cause,
-            ),
-          ),
-        );
-        execution.end(false);
-
-        return;
-      }
-
-      yield* Effect.logWarning("No pending execution to update");
-      return;
-    }
-
-    if (pendingExecution.value.kind !== "running") {
-      yield* Effect.logDebug(
-        "Pending execution is not running, skipping output update",
-      ).pipe(Effect.annotateLogs({ status: state.status }));
-      return;
-    }
-
-    yield* pendingExecution.value
-      .updateCellOutput({
-        cellId,
-        state,
-        code,
-      })
-      .pipe(
-        Effect.catchAllCause((cause) =>
-          Effect.logWarning("Failed to update cell output").pipe(
-            Effect.annotateLogs({ cause }),
-          ),
-        ),
-        Effect.annotateLogs({ cellId }),
-      );
-  });
-}
-
-type RunId = Brand.Branded<string, "RunId">;
-const RunId = Brand.nominal<RunId>();
-function extractRunId(msg: CellOperationNotification): Option.Option<RunId> {
-  return Option.fromNullable(msg.run_id).pipe(
-    Option.map((idStr) => RunId(idStr)),
-  );
-}
-
-/* Type-safe wrapper around marimo's `transitionCell` we import above */
-function transitionCell(
-  cell: CellRuntimeState,
-  message: CellOperationNotification,
-): CellRuntimeState {
-  return untypedTransitionCell(cell, message);
-}
 
 /**
  * Convert CellOperationNotification(s) to VSCode NotebookCellOutput.
@@ -547,7 +426,29 @@ export function buildCellOutputs(
   code: VsCode,
   notebook?: vscode.NotebookDocument,
 ): vscode.NotebookCellOutput[] {
-  const outputs: vscode.NotebookCellOutput[] = [];
+  return buildKeyedCellOutputs(cellId, state, code, notebook).map(
+    (keyed) => keyed.output,
+  );
+}
+
+/**
+ * Like {@link buildCellOutputs}, but each output carries a stable {@link
+ * KeyedCellOutput.key}.
+ *
+ * Outputs are emitted in **arrival order** — console streams (`stdout`,
+ * `stderr`) first, then the cell's result / error / traceback — mirroring
+ * Jupyter rather than marimo's historical result-first layout. Combined with
+ * the append-based reconcile in {@link CellOutputProjection}, this means each
+ * slot is created once, in the order it first appears, and tall built-in
+ * outputs (a traceback) are measured once instead of on every cell-op.
+ */
+export function buildKeyedCellOutputs(
+  cellId: NotebookCellId,
+  state: CellRuntimeState,
+  code: VsCode,
+  notebook?: vscode.NotebookDocument,
+): KeyedCellOutput[] {
+  const outputs: KeyedCellOutput[] = [];
 
   // Collect items by channel
   const stdoutItems: vscode.NotebookCellOutputItem[] = [];
@@ -623,52 +524,66 @@ export function buildCellOutputs(
     }
   }
 
-  // Create NotebookCellOutputs for each channel with items.
-  //
-  // marimo-error and a traceback are present, the traceback already renders
-  // `<Type>: <message>` as its header, so the marimo-error item is dropped.
-  if (errorItems.length > 0 && !shouldSuppressMarimoError(state)) {
-    outputs.push(
-      new code.NotebookCellOutput(errorItems, {
-        channel: "marimo-error",
-      }),
-    );
-  }
-
-  if (outputItems.length > 0) {
-    outputs.push(new code.NotebookCellOutput(outputItems));
-  }
-
+  // Create keyed NotebookCellOutputs in arrival order: console streams first,
+  // then the cell's result / error / traceback. Each `key` is the logical slot
+  // the output reconciler tracks across cell-ops, so it must be stable for a
+  // given channel within a run.
   if (stdoutItems.length > 0) {
-    outputs.push(
-      new code.NotebookCellOutput(stdoutItems, {
-        channel: "stdout",
-      }),
-    );
+    outputs.push({
+      key: "stdout",
+      output: new code.NotebookCellOutput(stdoutItems, { channel: "stdout" }),
+    });
   }
 
   if (stderrItems.length > 0) {
-    outputs.push(
-      new code.NotebookCellOutput(stderrItems, {
-        channel: "stderr",
-      }),
-    );
+    outputs.push({
+      key: "stderr",
+      output: new code.NotebookCellOutput(stderrItems, { channel: "stderr" }),
+    });
   }
 
-  for (const tracebackItem of tracebackItems) {
-    outputs.push(
-      new code.NotebookCellOutput([tracebackItem], {
+  // Result, error, and (when the error is redundant with a traceback) the
+  // traceback all share one stable `"main"` key, so "error box, then traceback
+  // supersedes it" is an in-place swap rather than a remove+append. The
+  // marimo-error item is dropped when a traceback is present — the traceback
+  // already renders `<Type>: <message>` as its header.
+  const errorShown = errorItems.length > 0 && !shouldSuppressMarimoError(state);
+  let mainSlotTaken = false;
+  if (errorShown) {
+    outputs.push({
+      key: "main",
+      output: new code.NotebookCellOutput(errorItems, {
+        channel: "marimo-error",
+      }),
+    });
+    mainSlotTaken = true;
+  } else if (outputItems.length > 0) {
+    outputs.push({
+      key: "main",
+      output: new code.NotebookCellOutput(outputItems),
+    });
+    mainSlotTaken = true;
+  }
+
+  tracebackItems.forEach((tracebackItem, index) => {
+    // The first traceback claims the `"main"` slot when nothing else does (the
+    // suppressed-error case), so an error box already shown there is swapped to
+    // the traceback in place rather than removed.
+    const key = !mainSlotTaken && index === 0 ? "main" : `traceback:${index}`;
+    if (key === "main") mainSlotTaken = true;
+    outputs.push({
+      key,
+      output: new code.NotebookCellOutput([tracebackItem], {
         channel: "stderr",
       }),
-    );
-  }
+    });
+  });
 
   if (stdinItems.length > 0) {
-    outputs.push(
-      new code.NotebookCellOutput(stdinItems, {
-        channel: "stdin",
-      }),
-    );
+    outputs.push({
+      key: "stdin",
+      output: new code.NotebookCellOutput(stdinItems, { channel: "stdin" }),
+    });
   }
 
   return outputs;
