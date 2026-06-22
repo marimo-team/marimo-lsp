@@ -177,20 +177,21 @@ def sync_app_with_workspace(
 
     cell_ids: list[CellId_t] = []
     codes: list[str] = []
-    configs: list[dict[str, Any]] = []
+    configs: list[CellConfig] = []
     names: list[str] = []
 
     for cell_id, code, name, config in _iter_notebook_cells(workspace, notebook):
         cell_ids.append(cell_id)
         codes.append(code)
-        configs.append(config)
+        # Must be a CellConfig, not a dict: code mode reads attributes like
+        # `config.column` off these (a dict raises AttributeError).
+        configs.append(CellConfig.from_dict(config))
         names.append(name)
 
     return app.with_data(
         cell_ids=cell_ids,
         codes=codes,
-        # FIXME: expected type is `CellConfig` but passing dictionaries has worked fine?  # noqa: FIX001
-        configs=cast("list[CellConfig]", configs),
+        configs=configs,
         names=names,
     )
 
