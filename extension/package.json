@@ -121,7 +121,7 @@
       {
         "name": "marimo_executeCode",
         "displayName": "Run Python in the marimo kernel",
-        "modelDescription": "Run Python in a marimo notebook's live kernel. Pass the target notebook's URI as `notebookUri` (the notebook the user is working in). Each call runs in a scratchpad: the notebook's variables are in scope, but anything newly bound stays in the scratchpad. Use it to inspect state (e.g. print(df.head())) and to build the notebook. To durably create, edit, or run notebook cells, write Python that uses marimo's code mode: `import marimo._code_mode as cm` then `async with cm.get_context() as ctx: ...`. Call `help(cm)` for the current API.",
+        "modelDescription": "Run Python in a marimo notebook's live kernel. Pass the target notebook's URI as `notebookUri` (the notebook the user is working in). Each call runs in a scratchpad: the notebook's variables are in scope, but anything newly bound stays in the scratchpad. Use it to inspect state (e.g. print(df.head())) and to build the notebook. To durably create, edit, or run notebook cells, write Python that uses marimo's code mode: `import marimo._code_mode as cm` then `async with cm.get_context() as ctx: ...`. Call `help(cm)` for the current API. This tool is the execution channel for the `marimo-pair-vscode` skill, which documents how to inspect live state, explore data, prototype and debug code, drive the kernel, and make durable notebook changes safely — load that skill whenever you are working in a marimo notebook here, not only for durable edits.",
         "userDescription": "Run Python in a marimo notebook's kernel.",
         "toolReferenceName": "executeCode",
         "canBeReferencedInPrompt": true,
@@ -143,6 +143,11 @@
             "code"
           ]
         }
+      }
+    ],
+    "chatInstructions": [
+      {
+        "path": "./prompts/marimo.instructions.md"
       }
     ],
     "chatSkills": [
