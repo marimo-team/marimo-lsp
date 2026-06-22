@@ -80,6 +80,9 @@ ignore = [
 [tool.typos.default.extend-words]
 somes = "somes"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.inline-snapshot]
 format-command="ruff format --stdin-filename {filename}"
 
