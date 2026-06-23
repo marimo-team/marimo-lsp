@@ -25,11 +25,9 @@ import {
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
 
 /**
- * Raised when a sandbox kernel is asked to run for an unsaved notebook. The
- * sandbox resolves a per-notebook venv from the script file on disk, so it
- * needs a saved path. Surfaced as a typed error so each caller can present it
- * its own way (the run handler prompts to save interactively; the scratchpad
- * path turns it into an agent-facing message).
+ * An error returned when a sandbox kernel is asked to run for an unsaved
+ * notebook. The sandbox derives a per-notebook virtual environment from the
+ * script file on disk, so the notebook must be saved first.
  */
 export class UnsavedNotebookError extends Data.TaggedError(
   "UnsavedNotebookError",

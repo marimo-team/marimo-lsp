@@ -50,7 +50,7 @@ interface MarimoOperation {
   operation: Notification;
 }
 
-/** Scratchpad code was requested for a notebook with no selected kernel. */
+/** An error returned when code is run for a notebook that has no kernel selected. */
 export class NoActiveKernelError extends Data.TaggedError(
   "NoActiveKernelError",
 )<{ readonly notebookUri: NotebookId }> {}
