@@ -122,6 +122,8 @@ export type VscodeBuiltinCommand =
   | "workbench.action.quickOpen"
   // Toggle Outputs
   | "notebook.cell.toggleOutputs"
+  // Collapse a cell's input (code) editor
+  | "notebook.cell.collapseCellInput"
   // Fold Cell
   | "notebook.fold"
   // Unfold Cell

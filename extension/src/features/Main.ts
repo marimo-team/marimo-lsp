@@ -53,6 +53,7 @@ import type { Telemetry } from "../telemetry/Telemetry.ts";
 import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { DebugLayerLive } from "./DebugLayer.ts";
+import { HideCodeSyncLive } from "./HideCodeSync.ts";
 import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
@@ -80,6 +81,7 @@ const MainLive = Layer.empty
     Layer.merge(CellMetadataBindingsLive),
     Layer.merge(ReloadOnConfigChangeLive),
     Layer.merge(ThemeSyncLive),
+    Layer.merge(HideCodeSyncLive),
     Layer.merge(DebugLayerLive),
   )
   .pipe(
