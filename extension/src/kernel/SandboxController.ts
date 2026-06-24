@@ -1,5 +1,5 @@
 import * as semver from "@std/semver";
-import { Effect, Option, Runtime, Schema, Stream } from "effect";
+import { Data, Effect, Option, Runtime, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
@@ -20,8 +20,18 @@ import { Uv } from "../python/Uv.ts";
 import {
   type MarimoNotebookCell,
   MarimoNotebookDocument,
+  type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
+
+/**
+ * An error returned when a sandbox kernel is asked to run for an unsaved
+ * notebook. The sandbox derives a per-notebook virtual environment from the
+ * script file on disk, so the notebook must be saved first.
+ */
+export class UnsavedNotebookError extends Data.TaggedError(
+  "UnsavedNotebookError",
+)<{ readonly notebookUri: NotebookId }> {}
 
 export class SandboxController extends Effect.Service<SandboxController>()(
   "SandboxController",
@@ -48,6 +58,39 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       controller.supportedLanguages = [LanguageId.Python, LanguageId.Sql];
       controller.description = "marimo sandbox controller";
 
+      // Sync the script's PEP 723 env and return the venv interpreter.
+      const resolveExecutable = Effect.fn(
+        "SandboxController.resolveExecutable",
+      )(function* (notebook: MarimoNotebookDocument) {
+        // The sandbox venv is derived from the script file on disk; an unsaved
+        // notebook has no path to sync. The run handler guards this earlier
+        // (prompts to save); the scratchpad path reaches here directly.
+        if (notebook.isUntitled) {
+          return yield* new UnsavedNotebookError({ notebookUri: notebook.id });
+        }
+
+        const requirements = yield* findRequirements(uv, notebook);
+
+        if (requirements.length > 0) {
+          yield* uvAddScriptSafe(requirements, notebook).pipe(
+            Effect.provideService(VsCode, code),
+            Effect.provideService(Uv, uv),
+          );
+        }
+
+        // always ensure the env is up to date
+        const venv = yield* uv.syncScript({ script: notebook.uri.fsPath }).pipe(
+          // Should be added by findRequirements or uvAddScriptSafe
+          Effect.catchTag("UvMissingPep723MetadataError", () =>
+            Effect.die("Expected PEP 723 metadata to be present"),
+          ),
+        );
+
+        const executable = getVenvPythonPath(venv);
+        yield* python.updateActiveEnvironmentPath(executable);
+        return executable;
+      });
+
       // Set up execution handler
       controller.executeHandler = (rawCells, rawNotebook) =>
         runPromise<void, never>(
@@ -71,45 +114,9 @@ export class SandboxController extends Effect.Service<SandboxController>()(
               return;
             }
 
-            // sandboxing only works with titled (saved) notebooks
-            if (notebook.isUntitled) {
-              const choice = yield* code.window.showInformationMessage(
-                "Sandboxing requires a saved file. Please save your notebook and re-run cells.",
-                {
-                  modal: true,
-                  items: ["Save"],
-                },
-              );
-
-              if (Option.isNone(choice)) {
-                return;
-              }
-
-              yield* notebook.save();
-              return;
-            }
-
-            const requirements = yield* findRequirements(uv, notebook);
-
-            if (requirements.length > 0) {
-              yield* uvAddScriptSafe(requirements, notebook).pipe(
-                Effect.provideService(VsCode, code),
-                Effect.provideService(Uv, uv),
-              );
-            }
-
-            // always ensure the env is up to date
-            const venv = yield* uv
-              .syncScript({ script: notebook.uri.fsPath })
-              .pipe(
-                // Should be added by findRequirements or uvAddScriptSafe
-                Effect.catchTag("UvMissingPep723MetadataError", () =>
-                  Effect.die("Expected PEP 723 metadata to be present"),
-                ),
-              );
-
-            const executable = getVenvPythonPath(venv);
-            yield* python.updateActiveEnvironmentPath(executable);
+            // resolveExecutable rejects unsaved notebooks (UnsavedNotebookError),
+            // handled below with an interactive save prompt.
+            const executable = yield* resolveExecutable(notebook);
 
             yield* client.executeCommand({
               command: "marimo.api",
@@ -123,7 +130,21 @@ export class SandboxController extends Effect.Service<SandboxController>()(
               },
             });
           }).pipe(
-            // Log everything
+            // Handle the expected "unsaved notebook" path before logging, so a
+            // normal save prompt isn't recorded as an error. (sandboxing only
+            // works with titled/saved notebooks)
+            Effect.catchTag("UnsavedNotebookError", () =>
+              Effect.gen(function* () {
+                const choice = yield* code.window.showInformationMessage(
+                  "Sandboxing requires a saved file. Please save your notebook and re-run cells.",
+                  { modal: true, items: ["Save"] },
+                );
+                if (Option.isSome(choice)) {
+                  yield* MarimoNotebookDocument.from(rawNotebook).save();
+                }
+              }),
+            ),
+            // Log everything else
             Effect.tapErrorCause(Effect.logError),
             Effect.catchTag("UvExecutionError", () =>
               showErrorAndPromptLogs(
@@ -194,7 +215,9 @@ export class SandboxController extends Effect.Service<SandboxController>()(
         );
 
       return {
+        _tag: "SandboxController" as const,
         id: controller.id,
+        resolveExecutable,
         createNotebookCellExecution(cell: MarimoNotebookCell) {
           return controller.createNotebookCellExecution(cell.rawNotebookCell);
         },

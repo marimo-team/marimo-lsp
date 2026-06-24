@@ -1,7 +1,7 @@
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 
-import { Effect, HashMap, Option, Ref, Schema, Stream } from "effect";
+import { Data, Effect, HashMap, Option, Ref, Schema, Stream } from "effect";
 
 import { createSourceMapping, makeDapProxy } from "../lib/dap-proxy.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
@@ -47,6 +47,18 @@ const DebugpyState = Schema.Struct({
   port: Schema.Number,
   tmpdir: Schema.String,
 });
+
+/**
+ * An error returned when debugpy fails to start in the notebook's kernel.
+ *
+ * Activation runs a snippet in the kernel that reports the port debugpy is
+ * listening on. This is returned when that port can't be obtained — for
+ * example, the kernel emitted no parseable activation output. The `reason`
+ * field describes the specific failure.
+ */
+class DebugpyActivationError extends Data.TaggedError(
+  "DebugpyActivationError",
+)<{ readonly reason: string }> {}
 
 /** Schema for the debug configuration passed through `startDebugging`. */
 const MarimoDebugConfiguration = Schema.Struct({
@@ -156,92 +168,102 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
       });
 
       return {
-        debugCell: Effect.fn("DebugAdapter.debugCell")(function* (
-          cell: MarimoNotebookCell,
-        ) {
-          if (!debugpyLibsPath) {
-            yield* showErrorAndPromptLogs(
-              "Cannot debug: ms-python.debugpy extension is not installed.",
-            );
-            return;
-          }
-
-          const cellId = cell.id;
-          if (Option.isNone(cellId)) {
-            yield* code.window.showWarningMessage(
-              "No notebook kernel is running. Run a cell first to start the kernel.",
-            );
-            return;
-          }
-
-          const notebook = cell.notebook;
-          const notebookUri = notebook.id;
-
-          // Stop any existing debug session for this notebook
-          const existingSessionId = HashMap.get(
-            yield* Ref.get(activeSessions),
-            notebookUri,
-          );
-          if (Option.isSome(existingSessionId)) {
-            yield* Effect.logInfo("Stopping existing debug session");
-            yield* code.debug.stopDebugging(existingSessionId.value);
-          }
-          const cellIndex = cell.index;
-          const allCells = notebook.getCells();
-
-          // Activate debugpy (idempotent — returns existing port if already running)
-          yield* Effect.logInfo("Activating debugpy in kernel");
-          const state = yield* activateDebugpy(
-            kernelManager,
-            notebookUri,
-            debugpyLibsPath,
-          );
-          yield* Effect.logInfo("debugpy ready").pipe(
-            Effect.annotateLogs({
-              port: state.port,
-              tmpdir: state.tmpdir,
-            }),
-          );
-
-          // Build mappings for ALL cells so stepping across cells works.
-          // Each cell URI maps to its temp file path on disk.
-          const cellMappings: Record<string, string> = {};
-          yield* Effect.try(() => {
-            NodeFs.mkdirSync(state.tmpdir, { recursive: true });
-            for (const c of allCells) {
-              const id = c.id;
-              if (Option.isNone(id)) continue;
-              const filePath = NodePath.join(
-                state.tmpdir,
-                `__marimo__cell_${id.value}_.py`,
+        debugCell: Effect.fn("DebugAdapter.debugCell")(
+          function* (cell: MarimoNotebookCell) {
+            if (!debugpyLibsPath) {
+              yield* showErrorAndPromptLogs(
+                "Cannot debug: ms-python.debugpy extension is not installed.",
               );
-              cellMappings[c.document.uri.toString()] = filePath;
-              NodeFs.writeFileSync(filePath, c.document.getText(), "utf-8");
+              return;
             }
-          }).pipe(
-            Effect.tapError((error) =>
-              Effect.logError("Failed to write cell files to disk").pipe(
-                Effect.annotateLogs({
-                  error: String(error),
-                  tmpdir: state.tmpdir,
-                }),
-              ),
-            ),
-          );
 
-          yield* code.debug.startDebugging(undefined, {
-            type: DEBUG_TYPE,
-            request: "attach",
-            name: "Debug Cell",
-            justMyCode: false,
-            marimo: {
+            const cellId = cell.id;
+            if (Option.isNone(cellId)) {
+              yield* code.window.showWarningMessage(
+                "No notebook kernel is running. Run a cell first to start the kernel.",
+              );
+              return;
+            }
+
+            const notebook = cell.notebook;
+            const notebookUri = notebook.id;
+
+            // Stop any existing debug session for this notebook
+            const existingSessionId = HashMap.get(
+              yield* Ref.get(activeSessions),
               notebookUri,
-              port: state.port,
-              cellIndex,
-              cellMappings,
-            },
-          });
-        }),
+            );
+            if (Option.isSome(existingSessionId)) {
+              yield* Effect.logInfo("Stopping existing debug session");
+              yield* code.debug.stopDebugging(existingSessionId.value);
+            }
+            const cellIndex = cell.index;
+            const allCells = notebook.getCells();
+
+            // Activate debugpy (idempotent — returns existing port if running).
+            yield* Effect.logInfo("Activating debugpy in kernel");
+            const state = yield* activateDebugpy(
+              kernelManager,
+              notebookUri,
+              debugpyLibsPath,
+            );
+            yield* Effect.logInfo("debugpy ready").pipe(
+              Effect.annotateLogs({
+                port: state.port,
+                tmpdir: state.tmpdir,
+              }),
+            );
+
+            // Build mappings for ALL cells so stepping across cells works.
+            // Each cell URI maps to its temp file path on disk.
+            const cellMappings: Record<string, string> = {};
+            yield* Effect.try(() => {
+              NodeFs.mkdirSync(state.tmpdir, { recursive: true });
+              for (const c of allCells) {
+                const id = c.id;
+                if (Option.isNone(id)) continue;
+                const filePath = NodePath.join(
+                  state.tmpdir,
+                  `__marimo__cell_${id.value}_.py`,
+                );
+                cellMappings[c.document.uri.toString()] = filePath;
+                NodeFs.writeFileSync(filePath, c.document.getText(), "utf-8");
+              }
+            }).pipe(
+              Effect.tapError((error) =>
+                Effect.logError("Failed to write cell files to disk").pipe(
+                  Effect.annotateLogs({
+                    error: String(error),
+                    tmpdir: state.tmpdir,
+                  }),
+                ),
+              ),
+            );
+
+            yield* code.debug.startDebugging(undefined, {
+              type: DEBUG_TYPE,
+              request: "attach",
+              name: "Debug Cell",
+              justMyCode: false,
+              marimo: {
+                notebookUri,
+                port: state.port,
+                cellIndex,
+                cellMappings,
+              },
+            });
+          },
+          Effect.catchTags({
+            NoActiveKernelError: () =>
+              code.window.showWarningMessage(
+                "No active kernel for this notebook — run a cell to start one before debugging.",
+              ),
+            UnsavedNotebookError: () =>
+              code.window.showWarningMessage(
+                "Save the notebook before debugging — its sandbox kernel needs a file on disk.",
+              ),
+          }),
+        ),
       };
     }),
   },
@@ -300,20 +322,9 @@ function activateDebugpy(
     );
 
     if (!result) {
-      return yield* Effect.fail(
-        new Error("Failed to activate debugpy: no port received"),
-      );
+      return yield* new DebugpyActivationError({ reason: "no port received" });
     }
 
     return result;
-  }).pipe(
-    Effect.catchAll((error) =>
-      Effect.gen(function* () {
-        yield* Effect.logError("debugpy activation failed").pipe(
-          Effect.annotateLogs({ error: String(error) }),
-        );
-        return yield* Effect.die(error);
-      }),
-    ),
-  );
+  });
 }

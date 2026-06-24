@@ -1,4 +1,5 @@
 import {
+  Data,
   Effect,
   Exit,
   Option,
@@ -36,7 +37,10 @@ import type {
   Notification,
   NotificationOf,
 } from "../types.ts";
-import { ControllerRegistry } from "./ControllerRegistry.ts";
+import {
+  ControllerRegistry,
+  resolveControllerExecutable,
+} from "./ControllerRegistry.ts";
 import { ExecutionRegistry } from "./ExecutionRegistry.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import { handleMissingPackageAlert } from "./operations.ts";
@@ -45,6 +49,11 @@ interface MarimoOperation {
   notebookUri: NotebookId;
   operation: Notification;
 }
+
+/** An error returned when code is run for a notebook that has no kernel selected. */
+export class NoActiveKernelError extends Data.TaggedError(
+  "NoActiveKernelError",
+)<{ readonly notebookUri: NotebookId }> {}
 
 interface ScratchEvent {
   readonly notebookUri: NotebookId;
@@ -108,6 +117,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       const code = yield* VsCode;
       const client = yield* LanguageClient;
       const renderer = yield* NotebookRenderer;
+      const controllers = yield* ControllerRegistry;
 
       const queue = yield* Queue.unbounded<MarimoOperation>();
 
@@ -274,13 +284,36 @@ export class KernelManager extends Effect.Service<KernelManager>()(
          * scratchpad's `completed-run` arrives — i.e. after any code-mode
          * cascade has settled, not merely when the scratch cell goes idle.
          */
-        executeCodeUnsafe(notebookUri: NotebookId, code: string) {
+        executeCodeUnsafe(notebookUri: NotebookId, sourceCode: string) {
           return Stream.unwrapScoped(
             Effect.gen(function* () {
               // Hold the lock for the full stream lifetime. withPermitsScoped
               // registers the release on the Scope that Stream.unwrapScoped
               // keeps open until any runner finishes.
               yield* TSemaphore.withPermitsScoped(scratchLock, 1);
+
+              // No selected kernel means no executable to start a session with,
+              // so fail before sending code that can never run.
+              const notebooks = yield* code.workspace.getNotebookDocuments();
+              const notebook = EffectArray.findFirst(
+                EffectArray.getSomes(
+                  notebooks.map((raw) => MarimoNotebookDocument.tryFrom(raw)),
+                ),
+                (nb) => nb.id === notebookUri,
+              );
+              if (Option.isNone(notebook)) {
+                return yield* new NoActiveKernelError({ notebookUri });
+              }
+              const controller = yield* controllers.getActiveController(
+                notebook.value,
+              );
+              if (Option.isNone(controller)) {
+                return yield* new NoActiveKernelError({ notebookUri });
+              }
+              const executable = yield* resolveControllerExecutable(
+                controller.value,
+                notebook.value,
+              );
 
               // 1. Subscribe BEFORE sending command (avoid race)
               const sub = yield* PubSub.subscribe(scratchOps);
@@ -292,7 +325,11 @@ export class KernelManager extends Effect.Service<KernelManager>()(
                 command: "marimo.api",
                 params: {
                   method: "execute-scratchpad",
-                  params: { notebookUri, inner: { code, runId } },
+                  params: {
+                    notebookUri,
+                    executable,
+                    inner: { code: sourceCode, runId },
+                  },
                 },
               });
 

@@ -107,7 +107,7 @@ type MarimoApiMethodMap = {
   "get-configuration": NotebookScoped<GetConfigurationRequest>;
   "update-configuration": NotebookScoped<UpdateConfigurationRequest>;
   "close-session": NotebookScoped<CloseSessionRequest>;
-  "execute-scratchpad": NotebookScoped<ExecuteScratchRequest>;
+  "execute-scratchpad": SessionScoped<ExecuteScratchRequest>;
   "export-as-html": NotebookScoped<ExportAsHtmlRequest>;
   "export-as-ipynb": NotebookScoped<ExportAsIpynbRequest>;
   interrupt: NotebookScoped<InterruptRequest>;
