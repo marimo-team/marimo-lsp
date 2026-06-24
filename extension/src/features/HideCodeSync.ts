@@ -69,7 +69,6 @@ export const HideCodeSyncLive = Layer.scopedDiscard(
             if (HashSet.has(yield* Ref.get(collapsed), id)) {
               return;
             }
-            yield* Ref.update(collapsed, HashSet.add(id));
 
             const ranges = hiddenInputCellRanges(notebook.value.getCells());
             if (ranges.length === 0) {
@@ -87,6 +86,9 @@ export const HideCodeSyncLive = Layer.scopedDiscard(
                 document: notebook.value.uri,
               })
               .pipe(
+                // Mark only after a successful collapse, so a transient failure
+                // retries on the next activation.
+                Effect.andThen(Ref.update(collapsed, HashSet.add(id))),
                 Effect.catchAll((error) =>
                   Effect.logWarning("Failed to collapse hidden cells").pipe(
                     Effect.annotateLogs({ error }),
