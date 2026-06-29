@@ -59,6 +59,77 @@ export const ExecuteCodeInput = Schema.Struct({
   code: Schema.String,
 });
 /**
+ * The marimo-pair skill always reaches code mode through this shape:
+ *
+ *     import marimo._code_mode as cm
+ *     async with cm.get_context() as ctx:
+ *         ctx.create_cell(...)
+ *
+ * Verb detection is anchored to the variable bound by `as <name>:` so we only
+ * match calls on the actual context object — `ctx.run_cell(...)`, not some
+ * unrelated object that happens to expose `.run_cell(`. Returns the bound names
+ * (usually one), or `null` if the code doesn't engage code mode at all, in
+ * which case the spinner stays on the generic kernel message.
+ */
+const codeModeContextNames = (code: string): ReadonlyArray<string> | null => {
+  if (!/marimo\._code_mode|\.\s*get_context\s*\(/.test(code)) return null;
+  const names = new Set<string>();
+  const re = /\bget_context\s*\([^)]*\)\s+as\s+([A-Za-z_]\w*)/g;
+  for (const match of code.matchAll(re)) names.add(match[1]);
+  return names.size === 0 ? null : [...names];
+};
+
+/**
+ * Short summary of what an `execute_code` call is doing, for the invocation
+ * spinner. Recognized code-mode cell mutations collapse to a single structural
+ * verb (a mix, or any edit, reads as "Editing") and fold in cell runs to read
+ * like a sentence — e.g. "Editing and running cells". Package ops get their
+ * own phrase, and plain scratchpad runs fall back to the kernel message.
+ */
+const summarizeExecution = (code: string): string => {
+  const fallback = "Running code in the marimo kernel";
+
+  const ctxNames = codeModeContextNames(code);
+  if (ctxNames === null) return fallback;
+
+  // `ctx.create_cell(`, allowing whitespace, for any bound context name.
+  const calls = (method: string): RegExp =>
+    new RegExp(
+      `\\b(?:${ctxNames.join("|")})\\s*\\.\\s*${method}\\s*\\(`,
+    );
+
+  const create = calls("create_cell").test(code);
+  const edit = calls("edit_cell").test(code);
+  const del = calls("delete_cell").test(code);
+  const move = calls("move_cell").test(code);
+  const run = calls("run_cell").test(code);
+
+  // Pick one structural verb. A single kind names itself; any mix (or an
+  // explicit edit) reads as the catch-all "Editing".
+  const structural = (() => {
+    const kinds = [create, edit, del, move].filter(Boolean).length;
+    if (kinds === 0) return null;
+    if (kinds > 1 || edit) return "Editing";
+    if (create) return "Creating";
+    if (del) return "Deleting";
+    return "Moving";
+  })();
+
+  if (structural) {
+    return run ? `${structural} and running cells` : `${structural} cells`;
+  }
+  if (run) return "Running cells";
+
+  const pkgAdd = calls("packages\\s*\\.\\s*add").test(code);
+  const pkgRemove = calls("packages\\s*\\.\\s*remove").test(code);
+  if (pkgAdd && pkgRemove) return "Updating packages";
+  if (pkgAdd) return "Installing packages";
+  if (pkgRemove) return "Removing packages";
+
+  return fallback;
+};
+
+/**
  * Registers the `execute_code` Language Model Tool: the single channel an agent
  * uses to run Python in a marimo notebook's kernel. Exploration stays in the
  * scratchpad; durable edits happen when the agent's code uses
@@ -143,7 +214,7 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
       prepareInvocation(options) {
         const input = Schema.decodeUnknownSync(ExecuteCodeInput)(options.input);
         return {
-          invocationMessage: "Running code in the marimo kernel…",
+          invocationMessage: `${summarizeExecution(input.code)}…`,
           // Side-effecting (arbitrary code in the user's kernel) — confirm.
           confirmationMessages: {
             title: "Run code in the marimo kernel?",
