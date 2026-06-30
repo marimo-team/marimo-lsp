@@ -95,6 +95,46 @@ it.effect(
 );
 
 it.effect(
+  "should remove editor when notebook is closed",
+  Effect.fn(function* () {
+    const vscode = yield* TestVsCode.make();
+
+    yield* Effect.provide(
+      Effect.gen(function* () {
+        const code = yield* VsCode;
+        const registry = yield* NotebookEditorRegistry;
+
+        // Create and activate a mock notebook
+        const notebook = createTestNotebookDocument(
+          code.Uri.file("/test/notebook_mo.py"),
+        );
+        const mockEditor = createTestNotebookEditor(notebook);
+
+        yield* vscode.setActiveNotebookEditor(Option.some(mockEditor));
+        yield* TestClock.adjust("10 millis");
+
+        // Verify the editor is tracked
+        const before = yield* registry.getLastNotebookEditor(
+          notebook.uri.toString(),
+        );
+        expect(Option.isSome(before)).toBe(true);
+
+        // Close the notebook
+        yield* vscode.closeNotebook(notebook);
+        yield* TestClock.adjust("10 millis");
+
+        // Verify the editor is removed
+        const after = yield* registry.getLastNotebookEditor(
+          notebook.uri.toString(),
+        );
+        expect(Option.isNone(after)).toBe(true);
+      }),
+      makeRegistryLayer(vscode),
+    );
+  }),
+);
+
+it.effect(
   "should track stream of active notebook editor changes",
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
