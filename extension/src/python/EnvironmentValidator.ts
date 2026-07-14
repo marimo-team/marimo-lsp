@@ -84,7 +84,7 @@ class EnvironmentRequirementError extends Data.TaggedError(
  *
  *   - marimo (with version requirement)
  *
- * using `env.executable`.
+ * by invoking the interpreter at `env.path`.
  *
  * Successful validations are cached per interpreter path — the check spawns
  * a subprocess that imports marimo, which costs seconds per run on slow
@@ -274,6 +274,11 @@ print(json.dumps(packages), flush=True)`,
   },
 ) {}
 
+/**
+ * A validated `py.Environment`. Cached by interpreter path, so only expose
+ * path-derived data — anything else (version, sysPrefix, …) can be stale on a
+ * cache hit.
+ */
 export class ValidPythonEnvironment extends Data.TaggedClass(
   "ValidPythonEnvironment",
 )<{
