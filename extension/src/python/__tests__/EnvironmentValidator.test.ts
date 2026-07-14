@@ -12,6 +12,7 @@ import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { EnvironmentValidator } from "../../python/EnvironmentValidator.ts";
 import { getVenvPythonPath } from "../../python/getVenvPythonPath.ts";
+import { PythonEnvInvalidation } from "../../python/PythonEnvInvalidation.ts";
 import { Uv } from "../../python/Uv.ts";
 import { SemVerFromString } from "../../schemas/SemVerFromString.ts";
 
@@ -37,6 +38,8 @@ const EnvironmentValidatorLive = Layer.empty.pipe(
   Layer.provideMerge(TempDir.Default),
   Layer.provideMerge(Uv.Default),
   Layer.provideMerge(EnvironmentValidator.Default),
+  Layer.provideMerge(PythonEnvInvalidation.Default),
+  Layer.provide(TestPythonExtension.Default),
   Layer.provide(TestSentryLive),
   Layer.provide(TestTelemetryLive),
   Layer.provide(TestVsCode.Default),
@@ -60,7 +63,9 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       const validator = yield* EnvironmentValidator;
       const tmpdir = yield* TempDir;
 
-      const venv = NodePath.join(tmpdir.path, ".venv");
+      // Validation results are cached per interpreter path, so each test
+      // uses its own venv directory.
+      const venv = NodePath.join(tmpdir.path, ".venv-missing");
       yield* uv.venv(venv, { python, clear: true });
 
       const result = yield* Effect.either(
@@ -95,7 +100,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       const validator = yield* EnvironmentValidator;
       const tmpdir = yield* TempDir;
 
-      const venv = NodePath.join(tmpdir.path, ".venv");
+      const venv = NodePath.join(tmpdir.path, ".venv-outdated");
       yield* uv.venv(venv, { python, clear: true });
       yield* uv.pipInstall(["marimo<0.16.0"], { venv });
 
@@ -139,7 +144,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       const validator = yield* EnvironmentValidator;
       const tmpdir = yield* TempDir;
 
-      const venv = NodePath.join(tmpdir.path, ".venv");
+      const venv = NodePath.join(tmpdir.path, ".venv-ok");
       yield* uv.venv(venv, { python, clear: true });
       yield* uv.pipInstall(["marimo"], { venv });
 
@@ -161,7 +166,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       const validator = yield* EnvironmentValidator;
       const tmpdir = yield* TempDir;
 
-      const venv = NodePath.join(tmpdir.path, ".venv");
+      const venv = NodePath.join(tmpdir.path, ".venv-nonexistent");
       NodeFs.rmSync(venv, { recursive: true, force: true });
 
       const result = yield* Effect.either(
@@ -330,6 +335,84 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
     );
 
     it.effect(
+      "should cache successful validation per environment",
+      Effect.fn(function* () {
+        const validator = yield* EnvironmentValidator;
+        const tmpdir = yield* TempDir;
+        const countFile = NodePath.join(tmpdir.path, "cached-success-count");
+        const json = JSON.stringify([{ name: "marimo", version: "1.0.0" }]);
+        const script = makeFakeExecutable(tmpdir.path, "cached-success", {
+          stdout: json,
+          exitCode: 0,
+          countFile,
+        });
+        const env = TestPythonExtension.makeGlobalEnv(script);
+
+        const first = yield* validator.validate(env);
+        const second = yield* validator.validate(env);
+
+        assert.strictEqual(first._tag, "ValidPythonEnvironment");
+        assert.strictEqual(second._tag, "ValidPythonEnvironment");
+        expect(runCount(countFile)).toBe(1);
+      }),
+    );
+
+    it.effect(
+      "should not cache failed validation",
+      Effect.fn(function* () {
+        const validator = yield* EnvironmentValidator;
+        const tmpdir = yield* TempDir;
+        const countFile = NodePath.join(tmpdir.path, "uncached-failure-count");
+        const json = JSON.stringify([{ name: "marimo", version: null }]);
+        const script = makeFakeExecutable(tmpdir.path, "uncached-failure", {
+          stdout: json,
+          exitCode: 0,
+          countFile,
+        });
+        const env = TestPythonExtension.makeGlobalEnv(script);
+
+        const first = yield* Effect.either(validator.validate(env));
+        const second = yield* Effect.either(validator.validate(env));
+
+        assert(Either.isLeft(first), "Expected first validation to fail");
+        assert(Either.isLeft(second), "Expected second validation to fail");
+        expect(runCount(countFile)).toBe(2);
+      }),
+    );
+
+    it.effect(
+      "should re-validate after a PythonEnvInvalidation event",
+      Effect.fn(function* () {
+        const validator = yield* EnvironmentValidator;
+        const invalidation = yield* PythonEnvInvalidation;
+        const tmpdir = yield* TempDir;
+        const countFile = NodePath.join(tmpdir.path, "invalidation-count");
+        const json = JSON.stringify([{ name: "marimo", version: "1.0.0" }]);
+        const script = makeFakeExecutable(tmpdir.path, "invalidation", {
+          stdout: json,
+          exitCode: 0,
+          countFile,
+        });
+        const env = TestPythonExtension.makeGlobalEnv(script);
+
+        yield* validator.validate(env);
+        expect(runCount(countFile)).toBe(1);
+
+        yield* invalidation.invalidate("package-install");
+
+        // The cache clears in a background fiber; yield and re-validate
+        // until the subprocess is spawned again.
+        let count = runCount(countFile);
+        for (let i = 0; i < 100 && count < 2; i++) {
+          yield* Effect.yieldNow();
+          yield* validator.validate(env);
+          count = runCount(countFile);
+        }
+        expect(count).toBe(2);
+      }),
+    );
+
+    it.effect(
       "should fail with EnvironmentInspectionError when stderr has content but exit code 0 and empty stdout",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
@@ -355,10 +438,19 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 function makeFakeExecutable(
   dir: string,
   name: string,
-  opts: { stdout: string; stderr?: string; exitCode: number },
+  opts: {
+    stdout: string;
+    stderr?: string;
+    exitCode: number;
+    /** File the script appends a line to on every invocation. */
+    countFile?: string;
+  },
 ): string {
   const scriptPath = NodePath.join(dir, name);
   const lines = ["#!/bin/bash"];
+  if (opts.countFile) {
+    lines.push(`echo run >> ${shellEscape(opts.countFile)}`);
+  }
   if (opts.stdout) {
     lines.push(`printf '%s' ${shellEscape(opts.stdout)}`);
   }
@@ -368,6 +460,16 @@ function makeFakeExecutable(
   lines.push(`exit ${opts.exitCode}`);
   NodeFs.writeFileSync(scriptPath, lines.join("\n"), { mode: 0o755 });
   return scriptPath;
+}
+
+/** Number of times a `countFile`-instrumented fake executable ran. */
+function runCount(countFile: string): number {
+  try {
+    return NodeFs.readFileSync(countFile, "utf8").split("\n").filter(Boolean)
+      .length;
+  } catch {
+    return 0;
+  }
 }
 
 function shellEscape(s: string): string {
