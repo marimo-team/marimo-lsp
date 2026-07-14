@@ -3,7 +3,8 @@ name: Update marimo version
 on:
   schedule:
     - cron: "0 17 * * *" # 1pm EST (17:00 UTC)
-  workflow_dispatch: # Allow manual triggering
+  workflow_dispatch:
+    # Allow manual triggering
 
 jobs:
   update-version:
@@ -73,3 +74,4 @@ jobs:
           branch: "chore/update-marimo-version"
           base: "main"
           delete-branch: true
+permissions: {}
