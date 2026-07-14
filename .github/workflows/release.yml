@@ -19,8 +19,7 @@ on:
           # Not yet...
           # - major
 
-permissions:
-  contents: write
+permissions: {}
 
 defaults:
   run:
@@ -47,6 +46,8 @@ jobs:
         run: |
           npm version ${{ inputs.version-bump }} --no-git-tag-version
           echo "version=$(cat package.json | jq -r '.version')" >> $GITHUB_OUTPUT
+    permissions:
+      contents: write
 
   # Phase 2: Build platform-specific extensions
   build:
@@ -226,6 +227,8 @@ jobs:
         with:
           name: dist-${{ matrix.target }}
           path: marimo-lsp/extension/dist/
+    permissions:
+      contents: write
 
   # Phase 3: Build universal extension (fallback for unsupported platforms)
   build-universal:
@@ -297,6 +300,8 @@ jobs:
         with:
           name: dist-universal
           path: marimo-lsp/extension/dist/
+    permissions:
+      contents: write
 
   # Phase 4: Publish to marketplaces
   publish:
