@@ -5,22 +5,37 @@ import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { defineCommand } from "./defineCommand.ts";
 
+const UriSchema = Schema.declare<vscode.Uri>(
+  (value): value is vscode.Uri =>
+    typeof value === "object" &&
+    value !== null &&
+    "scheme" in value &&
+    typeof value.scheme === "string" &&
+    "path" in value &&
+    typeof value.path === "string" &&
+    "with" in value &&
+    typeof value.with === "function" &&
+    "toString" in value &&
+    typeof value.toString === "function",
+  { identifier: "vscode.Uri" },
+);
+
 export const openAsMarimoNotebook = defineCommand(
-  Schema.UndefinedOr(Schema.String),
-  Effect.fn("command.openAsMarimoNotebook")(function* (uriString) {
+  Schema.UndefinedOr(Schema.Union(Schema.String, UriSchema)),
+  Effect.fn("command.openAsMarimoNotebook")(function* (resource) {
     const code = yield* VsCode;
 
     let uri: vscode.Uri;
-    if (uriString !== undefined) {
-      const result = code.utils.parseUri(uriString);
+    if (typeof resource === "string") {
+      const result = code.utils.parseUri(resource);
       if (Either.isLeft(result)) {
         yield* code.window.showInformationMessage(
-          `Failed to parse notebook URI: ${JSON.stringify(uriString)}`,
+          `Failed to parse notebook URI: ${JSON.stringify(resource)}`,
         );
         return;
       }
       uri = result.right;
-    } else {
+    } else if (resource === undefined) {
       const editor = yield* code.window.getActiveTextEditor();
       if (Option.isNone(editor)) {
         yield* code.window.showInformationMessage(
@@ -29,6 +44,8 @@ export const openAsMarimoNotebook = defineCommand(
         return;
       }
       uri = editor.value.document.uri;
+    } else {
+      uri = resource;
     }
 
     // We open first before closing to handle multi-window scenarios correctly:
