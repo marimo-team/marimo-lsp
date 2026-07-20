@@ -96,10 +96,10 @@ export function handleSendUiElementMessage(
 
 export function handleModelLifecycle(msg: NotificationOf<"model-lifecycle">) {
   // TODO: route through the untyped bridge because
-  // `plugins/impl/anywidget/model.ts` transitively imports `trusted-url.ts`,
+  // `plugins/impl/anywidget/registry.ts` transitively imports `trusted-url.ts`,
   // which in marimo 0.23.2 pulls in `useRunCells.ts` and its heavy closure.
   // Drop once the upstream atom move lands (marimo-team/marimo#TODO).
-  void untyped.handleWidgetMessage(untyped.MODEL_MANAGER, msg);
+  void untyped.handleWidgetMessage(untyped.WIDGET_REGISTRY, msg);
 }
 
 export function handleFunctionCallResult(

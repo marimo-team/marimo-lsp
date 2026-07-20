@@ -45,8 +45,8 @@
 export { hasRunAnyCellAtom } from "@marimo-team/frontend/unstable_internal/components/editor/cell/useRunCells.ts";
 export {
   handleWidgetMessage,
-  MODEL_MANAGER,
-} from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/model.ts";
+  WIDGET_REGISTRY,
+} from "@marimo-team/frontend/unstable_internal/plugins/impl/anywidget/registry.ts";
 
 export { OutputRenderer } from "@marimo-team/frontend/unstable_internal/components/editor/Output.tsx";
 export { ConsoleOutput } from "@marimo-team/frontend/unstable_internal/components/editor/output/console/ConsoleOutput.tsx";

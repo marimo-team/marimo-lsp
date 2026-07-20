@@ -424,6 +424,7 @@ function processOperation(
         break;
       }
       // Ignored — not relevant in VS Code context
+      case "active-line":
       case "alert":
       case "banner":
       case "cache-cleared":
