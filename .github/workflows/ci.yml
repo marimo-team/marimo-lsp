@@ -304,6 +304,9 @@ jobs:
         run: python3 scripts/coverage_comment.py coverage-artifacts > comment.md
 
       - name: Post sticky PR comment
+        # Fork PRs run with a read-only GITHUB_TOKEN, so posting a comment
+        # fails with 403. Don't fail the check for external contributors.
+        continue-on-error: true
         uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2.9.1
         with:
           header: coverage-report
