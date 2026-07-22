@@ -21,8 +21,8 @@ from marimo_lsp.loggers import get_logger
 
 if TYPE_CHECKING:
     from marimo._config.manager import MarimoConfigManager
-    from marimo._ipc import QueueManager
     from marimo._server.models.models import InstantiateNotebookRequest
+    from marimo._session.types import QueueManager
     from marimo._types.ids import ConsumerId
 
     from marimo_lsp.app_file_manager import LspAppFileManager
@@ -78,6 +78,8 @@ class LspSession:
             while not self._closed:
                 try:
                     msg = stream_queue.get(timeout=0.1)
+                    if msg is None:
+                        return
                     self.session_view.add_raw_notification(msg)
                     self._consumer.notify(msg)
                 except queue.Empty:  # noqa: PERF203
@@ -101,7 +103,7 @@ class LspSession:
     ) -> None:
         """Send a command to the kernel."""
         del from_consumer_id
-        self._queue_manager.control_queue.put(request)
+        self._queue_manager.put_control_request(request)
 
     def instantiate(
         self,
