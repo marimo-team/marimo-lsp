@@ -44,6 +44,7 @@ import {
 import { ExecutionRegistry } from "./ExecutionRegistry.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import { handleMissingPackageAlert } from "./operations.ts";
+import { makeUiElementDispatcher } from "./UiElementDispatcher.ts";
 
 interface MarimoOperation {
   notebookUri: NotebookId;
@@ -130,6 +131,17 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       // Semaphore to serialize concurrent scratchpad executions
       const scratchLock = yield* STM.commit(TSemaphore.make(1));
 
+      const uiElementDispatcher = yield* makeUiElementDispatcher(
+        (notebookId, request) =>
+          client.executeCommand({
+            command: "marimo.api",
+            params: {
+              method: "update-ui-element",
+              params: { notebookUri: notebookId, inner: request },
+            },
+          }),
+      );
+
       yield* Effect.forkScoped(
         client
           .streamOf("marimo/operation")
@@ -171,16 +183,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
               const notebook = MarimoNotebookDocument.from(editor.notebook);
               switch (message.command) {
                 case "update-ui-element": {
-                  yield* client.executeCommand({
-                    command: "marimo.api",
-                    params: {
-                      method: message.command,
-                      params: {
-                        notebookUri: notebook.id,
-                        inner: message.params,
-                      },
-                    },
-                  });
+                  yield* uiElementDispatcher.offer(notebook.id, message.params);
                   return;
                 }
                 case "invoke-function": {

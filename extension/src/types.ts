@@ -60,7 +60,8 @@ interface PackageScoped<T> extends NotebookScoped<T> {
 }
 
 type ExecuteCellsRequest = Schemas["ExecuteCellsRequest"];
-type UpdateUIElementRequest = Schemas["UpdateUIElementRequest"];
+export type UpdateUIElementRequest = Schemas["UpdateUIElementRequest"];
+export type UIElementId = UpdateUIElementRequest["objectIds"][number];
 type ModelRequest = Schemas["ModelRequest"];
 type InvokeFunctionRequest = Schemas["InvokeFunctionRequest"];
 type DeleteCellRequest = Schemas["DeleteCellRequest"];
