@@ -237,10 +237,15 @@ function shouldFilterMessage(message: string) {
     return false;
   }
 
-  // Filter '.vscode/extensions' or '.vscode\extensions'
+  // Filter noise from other extensions:
+  // - '.vscode/extensions' or '.vscode\extensions' paths
+  // - the Augment AI extension (AugmentExtensionSidecar / augmentcode.com),
+  //   which dominates this project's Sentry volume
   return (
     lowerMessage.includes(".vscode/extensions") ||
-    lowerMessage.includes(".vscode\\extensions")
+    lowerMessage.includes(".vscode\\extensions") ||
+    lowerMessage.includes("augmentextensionsidecar") ||
+    lowerMessage.includes("augmentcode")
   );
 }
 
