@@ -276,20 +276,33 @@ export class LanguageClient extends Effect.Service<LanguageClient>()(
 
 export const findLspExecutable = Effect.fn("findLspExecutable")(function* (
   uvBinary: string,
+  searchDirectory = __dirname,
 ) {
   // Look for bundled wheel matching marimo_lsp-* pattern
-  const sdistDir = NodeFs.readdirSync(__dirname).find((f) =>
+  const sdistDir = NodeFs.readdirSync(searchDirectory).find((f) =>
     f.startsWith("marimo_lsp-"),
   );
 
   if (sdistDir) {
-    const sdist = NodePath.join(__dirname, sdistDir);
+    const sdist = NodePath.join(searchDirectory, sdistDir);
     yield* Effect.logDebug("Using bundled marimo-lsp").pipe(
       Effect.annotateLogs({ sdist }),
     );
     return {
       command: uvBinary,
-      args: ["tool", "run", "--python", "3.13", "--from", sdist, "marimo-lsp"],
+      // Python 3.13 was originally pinned because marimo-lsp's dependencies
+      // did not support Python 3.14t. They now support 3.14 and 3.14t, so
+      // accept either minor version while retaining an upper bound to avoid
+      // selecting a future Python before its dependency support is verified.
+      args: [
+        "tool",
+        "run",
+        "--python",
+        ">=3.13,<3.15",
+        "--from",
+        sdist,
+        "marimo-lsp",
+      ],
     };
   }
 
@@ -298,6 +311,6 @@ export const findLspExecutable = Effect.fn("findLspExecutable")(function* (
 
   return {
     command: uvBinary,
-    args: ["run", "--directory", __dirname, "marimo-lsp"],
+    args: ["run", "--directory", searchDirectory, "marimo-lsp"],
   };
 });
