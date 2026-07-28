@@ -175,9 +175,9 @@ and `ctx.graph` is the dataflow view.
 for cell in ctx.cells:
     cell  # .id, .code, .name, .config, .status, .errors
 
-ctx.cells["setup"]         # by name
-ctx.cells[0]               # by position
-list(ctx.cells.keys())     # all IDs, in notebook order
+ctx.cells["setup"]  # by name
+ctx.cells[0]  # by position
+list(ctx.cells.keys())  # all IDs, in notebook order
 ```
 
 Cell IDs are opaque strings which can be queried from the notebook or captured
@@ -185,7 +185,7 @@ from `cm` return values:
 
 ```python
 cid = ctx.create_cell("df = pd.read_csv('data.csv')")
-print(cid)   # e.g. 'Hbol'
+print(cid)  # e.g. 'Hbol'
 ```
 
 Alternatively, cells can be assigned and referenced by `name`. The graph can be
@@ -195,8 +195,8 @@ used to understand its role in the dataflow.
 for cid, impl in ctx.graph.cells.items():
     impl  # .defs, .refs   (sets of public names)
 
-ctx.graph.descendants(cid)   # cells that re-run when this one changes
-ctx.graph.ancestors(cid)     # cells this one depends on
+ctx.graph.descendants(cid)  # cells that re-run when this one changes
+ctx.graph.ancestors(cid)  # cells this one depends on
 ```
 
 In marimo, deletes are _destructive_ so it can be useful to query the
