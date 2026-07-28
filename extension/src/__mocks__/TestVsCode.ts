@@ -908,29 +908,44 @@ class TextDocument implements vscode.TextDocument {
   readonly isUntitled: boolean;
   readonly languageId: string;
   readonly version: number;
-  readonly isDirty: boolean;
   readonly isClosed: boolean;
   readonly eol: vscode.EndOfLine;
   readonly lineCount: number;
   readonly encoding: string;
 
   #text: string;
+  #isDirty: boolean;
+  // Number of times save() has been called. Lets tests assert that a dirty
+  // buffer was persisted before being opened as a notebook (see #531).
+  saveCalls = 0;
 
-  constructor(uri: Uri, languageId: string, version: number, text: string) {
+  constructor(
+    uri: Uri,
+    languageId: string,
+    version: number,
+    text: string,
+    isDirty = false,
+  ) {
     this.uri = uri;
     this.fileName = uri.fsPath;
     this.languageId = languageId;
     this.version = version;
     this.#text = text;
     this.isUntitled = false;
-    this.isDirty = false;
+    this.#isDirty = isDirty;
     this.isClosed = false;
     this.eol = 1; // LF
     this.lineCount = text.split("\n").length;
     this.encoding = "utf-8";
   }
 
+  get isDirty(): boolean {
+    return this.#isDirty;
+  }
+
   save(): Thenable<boolean> {
+    this.saveCalls += 1;
+    this.#isDirty = false;
     return Promise.resolve(true);
   }
 
@@ -1009,11 +1024,12 @@ export function createTestTextDocument(
   uri: Uri | string,
   languageId: string,
   text: string,
-): vscode.TextDocument {
+  options: { isDirty?: boolean } = {},
+): vscode.TextDocument & { readonly saveCalls: number } {
   if (typeof uri === "string") {
     uri = Uri.file(uri);
   }
-  return new TextDocument(uri, languageId, 1, text);
+  return new TextDocument(uri, languageId, 1, text, options.isDirty ?? false);
 }
 
 export function createTestTextEditor(

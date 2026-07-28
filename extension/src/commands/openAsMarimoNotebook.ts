@@ -26,6 +26,7 @@ export const openAsMarimoNotebook = defineCommand(
     const code = yield* VsCode;
 
     let uri: vscode.Uri;
+    let document: Option.Option<vscode.TextDocument> = Option.none();
     if (typeof resource === "string") {
       const result = code.utils.parseUri(resource);
       if (Either.isLeft(result)) {
@@ -44,8 +45,31 @@ export const openAsMarimoNotebook = defineCommand(
         return;
       }
       uri = editor.value.document.uri;
+      document = Option.some(editor.value.document);
     } else {
       uri = resource;
+    }
+
+    // Locate the open text document for this URI when we were not handed one
+    // directly (string or explicit URI invocations).
+    if (Option.isNone(document)) {
+      const editors = yield* code.window.getVisibleTextEditors();
+      document = Option.fromNullable(
+        editors.find(
+          (editor) => editor.document.uri.toString() === uri.toString(),
+        ),
+      ).pipe(Option.map((editor) => editor.document));
+    }
+
+    // Persist unsaved edits before opening the file as a notebook. The notebook
+    // is deserialized from the file on disk, and opening it closes the original
+    // text editor. If the buffer is dirty and we do not save first, VS Code
+    // prompts to save on close; declining discards the unsaved content and the
+    // notebook opens with no cells. Saving first guarantees no data loss. See
+    // https://github.com/marimo-team/marimo-lsp/issues/531.
+    if (Option.isSome(document) && document.value.isDirty) {
+      const doc = document.value;
+      yield* Effect.promise(() => doc.save());
     }
 
     // We open first before closing to handle multi-window scenarios correctly:

@@ -66,3 +66,51 @@ it.effect(
     ]);
   }),
 );
+
+it.effect(
+  "saves an unsaved active buffer before opening it as a notebook (#531)",
+  Effect.fn(function* () {
+    const vscode = yield* TestVsCode.make();
+    const document = createTestTextDocument(
+      "/test/notebook.py",
+      "python",
+      "app = marimo.App()\nx = 1",
+      { isDirty: true },
+    );
+    yield* vscode.setActiveTextEditor(
+      Option.some(createTestTextEditor(document)),
+    );
+
+    yield* openAsMarimoNotebook().pipe(Effect.provide(vscode.layer));
+
+    // The dirty buffer must be persisted so its content is not discarded when
+    // the text editor is closed and the notebook is read from disk.
+    expect(document.saveCalls).toBe(1);
+    expect(document.isDirty).toBe(false);
+    expect(yield* vscode.executions).toEqual([
+      {
+        command: "vscode.openWith",
+        args: [document.uri, NOTEBOOK_TYPE],
+      },
+    ]);
+  }),
+);
+
+it.effect(
+  "does not save a clean active buffer before opening it as a notebook",
+  Effect.fn(function* () {
+    const vscode = yield* TestVsCode.make();
+    const document = createTestTextDocument(
+      "/test/notebook.py",
+      "python",
+      "app = marimo.App()",
+    );
+    yield* vscode.setActiveTextEditor(
+      Option.some(createTestTextEditor(document)),
+    );
+
+    yield* openAsMarimoNotebook().pipe(Effect.provide(vscode.layer));
+
+    expect(document.saveCalls).toBe(0);
+  }),
+);
