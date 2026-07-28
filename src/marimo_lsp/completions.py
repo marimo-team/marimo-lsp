@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Handler for LSP completions."""
 
 from __future__ import annotations

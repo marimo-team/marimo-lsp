@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Kernel manager for marimo-lsp."""
 
 from __future__ import annotations

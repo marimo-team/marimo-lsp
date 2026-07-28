@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Build a markdown coverage summary for a sticky PR comment.
 
 Reads Python (pytest-cov JSON) and TypeScript (vitest json-summary)

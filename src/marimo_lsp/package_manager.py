@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Package manager for marimo LSP integration."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Logging utilities for marimo LSP."""
 
 from __future__ import annotations

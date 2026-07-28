@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """LSP handlers for marimo."""
 
 from __future__ import annotations
