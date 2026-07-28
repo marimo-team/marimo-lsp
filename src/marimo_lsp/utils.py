@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Utility functions for marimo notebooks."""
 
 from __future__ import annotations

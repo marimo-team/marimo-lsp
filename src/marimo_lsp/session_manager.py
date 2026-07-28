@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Minimal session manager for LSP integration."""
 
 from __future__ import annotations

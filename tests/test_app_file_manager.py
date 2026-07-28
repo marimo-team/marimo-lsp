@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Tests for app_file_manager."""
 
 from __future__ import annotations

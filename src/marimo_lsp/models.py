@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Marimo models rewritten in attrs for `pygls` compatibility."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Handlers for marimo.api commands."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Minimal LSP session implementation for marimo."""
 
 from __future__ import annotations

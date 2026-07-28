@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Marimo Language Server Protocol implementation."""
 
 import logging

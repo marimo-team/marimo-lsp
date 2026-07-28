@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Tests for debounced graph compilation and variable publishing."""
 
 from __future__ import annotations

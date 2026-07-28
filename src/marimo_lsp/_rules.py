@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Diagnostic rules for marimo notebooks."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Tests for diagnostic rules."""
 
 from __future__ import annotations

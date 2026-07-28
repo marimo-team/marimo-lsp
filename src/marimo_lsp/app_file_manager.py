@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """LSP-specific AppFileManager implementation."""
 
 from __future__ import annotations

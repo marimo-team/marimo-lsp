@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Tests for process cleanup on shutdown.
 
 Verifies `PopenProcessLike` terminates subprocesses (including force-kill)
