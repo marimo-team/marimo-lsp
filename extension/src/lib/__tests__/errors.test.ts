@@ -167,6 +167,52 @@ describe("prettyErrorMessage", () => {
     );
   });
 
+  it("handles exception error with raising cell and cell ID mapper (plain text)", () => {
+    const error: MarimoError = {
+      type: "exception",
+      msg: "division by zero",
+      exception_type: "ZeroDivisionError",
+      raising_cell: cellId("918d2406-014b-4a20-9c9a-ba8cb7ab2ba2"),
+    };
+    const cellIdMapper = (id: string) =>
+      id === "918d2406-014b-4a20-9c9a-ba8cb7ab2ba2" ? "cell-6" : undefined;
+    const result = prettyErrorMessage(error, cellIdMapper);
+    expect(result).not.toContain("918d2406-014b-4a20-9c9a-ba8cb7ab2ba2");
+    expect(result).toMatchInlineSnapshot(
+      `"ZeroDivisionError: division by zero (raised in cell: cell-6)"`,
+    );
+  });
+
+  it("handles exception error with raising cell and cell ID mapper (HTML link)", () => {
+    const error: MarimoError = {
+      type: "exception",
+      msg: "An ancestor raised an exception (NameError): ",
+      exception_type: "Ancestor raised",
+      raising_cell: cellId("918d2406-014b-4a20-9c9a-ba8cb7ab2ba2"),
+    };
+    const cellIdMapper = (id: string) =>
+      id === "918d2406-014b-4a20-9c9a-ba8cb7ab2ba2"
+        ? '<a href="#" data-message="...">cell-1</a>'
+        : undefined;
+    const result = prettyErrorMessage(error, cellIdMapper);
+    expect(result).not.toContain("918d2406-014b-4a20-9c9a-ba8cb7ab2ba2");
+    expect(result).toContain("<a href=");
+    expect(result).toContain("cell-1</a>");
+  });
+
+  it("handles ancestor-stopped error with cell ID mapper", () => {
+    const error: MarimoError = {
+      type: "ancestor-stopped",
+      msg: "Cell was not run because an ancestor was stopped",
+      raising_cell: cellId("918d2406-014b-4a20-9c9a-ba8cb7ab2ba2"),
+    };
+    const cellIdMapper = (id: string) =>
+      id === "918d2406-014b-4a20-9c9a-ba8cb7ab2ba2" ? "cell-3" : undefined;
+    const result = prettyErrorMessage(error, cellIdMapper);
+    expect(result).not.toContain("918d2406-014b-4a20-9c9a-ba8cb7ab2ba2");
+    expect(result).toContain("cell-3");
+  });
+
   it("handles exception error without raising cell", () => {
     const error: MarimoError = {
       type: "exception",

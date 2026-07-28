@@ -13,6 +13,10 @@ export function prettyErrorMessage(
   error: MarimoError,
   cellIdMapper?: CellIdMapper,
 ): string {
+  // Map a raw cell id to a human-readable cell number (or clickable link) when
+  // a mapper is available, falling back to the raw id otherwise.
+  const cellRef = (cellId: NotebookCellId) => cellIdMapper?.(cellId) ?? cellId;
+
   switch (error.type) {
     case "setup-refs":
       return formatSetupRootError(error);
@@ -23,13 +27,13 @@ export function prettyErrorMessage(
     case "import-star":
       return error.msg;
     case "ancestor-stopped":
-      return `Execution stopped because cell ${error.raising_cell} was stopped. ${error.msg}`;
+      return `Execution stopped because cell ${cellRef(error.raising_cell)} was stopped. ${error.msg}`;
     case "ancestor-prevented":
-      return `Execution prevented: ${error.msg}${error.blamed_cell ? ` (cell: ${error.blamed_cell})` : ""}`;
+      return `Execution prevented: ${error.msg}${error.blamed_cell ? ` (cell: ${cellRef(error.blamed_cell)})` : ""}`;
     case "exception":
-      return `${error.exception_type}: ${error.msg}${error.raising_cell ? ` (raised in cell: ${error.raising_cell})` : ""}`;
+      return `${error.exception_type}: ${error.msg}${error.raising_cell ? ` (raised in cell: ${cellRef(error.raising_cell)})` : ""}`;
     case "strict-exception":
-      return `Strict execution error: ${error.msg} (ref: ${error.ref}${error.blamed_cell ? `, cell: ${error.blamed_cell}` : ""})`;
+      return `Strict execution error: ${error.msg} (ref: ${error.ref}${error.blamed_cell ? `, cell: ${cellRef(error.blamed_cell)}` : ""})`;
     case "interruption":
       return "Execution interrupted";
     case "syntax":
