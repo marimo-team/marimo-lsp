@@ -65,14 +65,14 @@ def launch_kernel(
 
         if exit_code is not None and exit_code != 0:
             msg = f"Kernel failed to start (exit code {exit_code}): {stderr}"
-            logger.exception(msg)
+            logger.error(msg)
             raise RuntimeError(msg)
 
         msg = (
             f"Invalid kernel response. Expected 'KERNEL_READY', got: '{ready_line}'. "
             f"Stderr: {stderr}"
         )
-        logger.exception(msg)
+        logger.error(msg)
         process.terminate()
         raise RuntimeError(msg)
 
