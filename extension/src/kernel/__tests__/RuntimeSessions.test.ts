@@ -3,6 +3,7 @@ import {
   Chunk,
   Deferred,
   Effect,
+  Either,
   Fiber,
   Layer,
   Option,
@@ -14,6 +15,7 @@ import {
 
 import {
   base64String,
+  cellId,
   notebookId,
   requestId,
   uiElementId,
@@ -22,6 +24,7 @@ import {
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { MarimoCommand, Notification } from "../../types.ts";
+import { RuntimeCommandQueueClosedError } from "../RuntimeCommandQueue.ts";
 import { type MarimoOperation, RuntimeSessions } from "../RuntimeSessions.ts";
 
 const NOTEBOOK_A = notebookId("notebook-a");
@@ -91,6 +94,11 @@ const marimoApiCommands = (
   commands.filter(
     (command): command is MarimoApiCommand => command.command === "marimo.api",
   );
+
+const apiMethods = (
+  commands: ReadonlyArray<MarimoCommand>,
+): ReadonlyArray<MarimoApiCommand["params"]["method"]> =>
+  marimoApiCommands(commands).map((command) => command.params.method);
 
 describe("RuntimeSessions", () => {
   it.scoped(
@@ -386,6 +394,162 @@ describe("RuntimeSessions", () => {
             },
           },
         });
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.scoped(
+    "sends ordinary commands in order while interrupt bypasses the queue",
+    Effect.fn(function* () {
+      const executionStarted = yield* Deferred.make<void>();
+      const releaseExecution = yield* Deferred.make<void>();
+      const ctx = yield* withTestContext(
+        Effect.fn(function* (command) {
+          if (
+            command.command === "marimo.api" &&
+            command.params.method === "execute-cells"
+          ) {
+            yield* Deferred.succeed(executionStarted, undefined);
+            yield* Deferred.await(releaseExecution);
+          }
+        }),
+      );
+
+      yield* Effect.gen(function* () {
+        const session = yield* (yield* RuntimeSessions).getOrCreate(NOTEBOOK_A);
+        const execution = yield* session
+          .executeCells(
+            { cellIds: [cellId("cell-1")], codes: ["value = 1"] },
+            "/usr/bin/python",
+          )
+          .pipe(Effect.fork);
+        yield* Deferred.await(executionStarted);
+
+        const deletion = yield* session
+          .deleteCell({ cellId: cellId("cell-2") })
+          .pipe(Effect.fork);
+        yield* TestClock.adjust("1 millis");
+
+        yield* session.interrupt();
+        assert.deepStrictEqual(apiMethods(yield* Ref.get(ctx.sentCommands)), [
+          "execute-cells",
+          "interrupt",
+        ]);
+
+        yield* Deferred.succeed(releaseExecution, undefined);
+        yield* Fiber.join(execution);
+        yield* Fiber.join(deletion);
+        yield* session.sendStdin({ text: "answer" });
+
+        expect(marimoApiCommands(yield* Ref.get(ctx.sentCommands)))
+          .toMatchInlineSnapshot(`
+          [
+            {
+              "command": "marimo.api",
+              "params": {
+                "method": "execute-cells",
+                "params": {
+                  "executable": "/usr/bin/python",
+                  "inner": {
+                    "cellIds": [
+                      "cell-1",
+                    ],
+                    "codes": [
+                      "value = 1",
+                    ],
+                  },
+                  "notebookUri": "notebook-a",
+                },
+              },
+            },
+            {
+              "command": "marimo.api",
+              "params": {
+                "method": "interrupt",
+                "params": {
+                  "inner": {},
+                  "notebookUri": "notebook-a",
+                },
+              },
+            },
+            {
+              "command": "marimo.api",
+              "params": {
+                "method": "delete-cell",
+                "params": {
+                  "inner": {
+                    "cellId": "cell-2",
+                  },
+                  "notebookUri": "notebook-a",
+                },
+              },
+            },
+            {
+              "command": "marimo.api",
+              "params": {
+                "method": "send-stdin",
+                "params": {
+                  "inner": {
+                    "text": "answer",
+                  },
+                  "notebookUri": "notebook-a",
+                },
+              },
+            },
+          ]
+        `);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.scoped(
+    "close invalidates queued work and the old session handle",
+    Effect.fn(function* () {
+      const executionStarted = yield* Deferred.make<void>();
+      const ctx = yield* withTestContext(
+        Effect.fn(function* (command) {
+          if (
+            command.command === "marimo.api" &&
+            command.params.method === "execute-cells"
+          ) {
+            yield* Deferred.succeed(executionStarted, undefined);
+            yield* Effect.never;
+          }
+        }),
+      );
+
+      yield* Effect.gen(function* () {
+        const sessions = yield* RuntimeSessions;
+        const session = yield* sessions.getOrCreate(NOTEBOOK_A);
+        const execution = yield* session
+          .executeCells(
+            { cellIds: [cellId("cell-1")], codes: ["value = 1"] },
+            "/usr/bin/python",
+          )
+          .pipe(Effect.either, Effect.fork);
+        yield* Deferred.await(executionStarted);
+        const deletion = yield* session
+          .deleteCell({ cellId: cellId("cell-2") })
+          .pipe(Effect.either, Effect.fork);
+        yield* TestClock.adjust("1 millis");
+
+        yield* session.close();
+
+        for (const result of [
+          yield* Fiber.join(execution),
+          yield* Fiber.join(deletion),
+          yield* session.interrupt().pipe(Effect.either),
+        ]) {
+          assert(Either.isLeft(result));
+          assert(result.left instanceof RuntimeCommandQueueClosedError);
+        }
+        assert.deepStrictEqual(apiMethods(yield* Ref.get(ctx.sentCommands)), [
+          "execute-cells",
+          "close-session",
+        ]);
+
+        const replacement = yield* sessions.getOrCreate(NOTEBOOK_A);
+        expect(replacement).not.toBe(session);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

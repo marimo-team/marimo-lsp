@@ -23,6 +23,7 @@ import {
   type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
+import { RuntimeSessions } from "./RuntimeSessions.ts";
 
 /**
  * An error returned when a sandbox kernel is asked to run for an unsaved
@@ -36,11 +37,17 @@ export class UnsavedNotebookError extends Data.TaggedError(
 export class SandboxController extends Effect.Service<SandboxController>()(
   "SandboxController",
   {
-    dependencies: [Uv.Default, OutputChannel.Default, Constants.Default],
+    dependencies: [
+      Uv.Default,
+      OutputChannel.Default,
+      Constants.Default,
+      RuntimeSessions.Default,
+    ],
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
       const client = yield* LanguageClient;
+      const runtimeSessions = yield* RuntimeSessions;
       const python = yield* PythonExtension;
       const { LanguageId } = yield* Constants;
 
@@ -118,17 +125,8 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             // handled below with an interactive save prompt.
             const executable = yield* resolveExecutable(notebook);
 
-            yield* client.executeCommand({
-              command: "marimo.api",
-              params: {
-                method: "execute-cells",
-                params: {
-                  notebookUri: notebook.id,
-                  executable,
-                  inner: request.value,
-                },
-              },
-            });
+            const session = yield* runtimeSessions.getOrCreate(notebook.id);
+            yield* session.executeCells(request.value, executable);
           }).pipe(
             // Handle the expected "unsaved notebook" path before logging, so a
             // normal save prompt isn't recorded as an error. (sandboxing only
@@ -178,6 +176,11 @@ export class SandboxController extends Effect.Service<SandboxController>()(
                 "Failed to start marimo language server (marimo-lsp).",
               ),
             ),
+            Effect.catchTag("RuntimeCommandQueueClosedError", () =>
+              showErrorAndPromptLogs(
+                "The marimo runtime session closed before execution could start.",
+              ),
+            ),
             Effect.annotateLogs({ notebook: rawNotebook.uri.fsPath }),
           ),
         );
@@ -186,16 +189,8 @@ export class SandboxController extends Effect.Service<SandboxController>()(
         runPromise(
           Effect.gen(function* () {
             const notebook = MarimoNotebookDocument.from(doc);
-            yield* client.executeCommand({
-              command: "marimo.api",
-              params: {
-                method: "interrupt",
-                params: {
-                  notebookUri: notebook.id,
-                  inner: {},
-                },
-              },
-            });
+            const session = yield* runtimeSessions.getOrCreate(notebook.id);
+            yield* session.interrupt();
           }).pipe(
             Effect.withSpan("SandboxController.interrupt", {
               attributes: {

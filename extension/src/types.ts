@@ -59,11 +59,11 @@ interface PackageScoped<T> extends NotebookScoped<T> {
   source: PackageSource;
 }
 
-type ExecuteCellsRequest = Schemas["ExecuteCellsRequest"];
+export type ExecuteCellsRequest = Schemas["ExecuteCellsRequest"];
 export type UpdateUIElementRequest = Schemas["UpdateUIElementRequest"];
 export type ModelRequest = Schemas["ModelRequest"];
 export type InvokeFunctionRequest = Schemas["InvokeFunctionRequest"];
-type DeleteCellRequest = Schemas["DeleteCellRequest"];
+export type DeleteCellRequest = Schemas["DeleteCellRequest"];
 type ExportAsHtmlRequest = Schemas["ExportAsHTMLRequest"];
 interface DeserializeRequest {
   source: string;
@@ -84,7 +84,7 @@ interface ExecuteScratchRequest {
   runId?: string;
 }
 
-type SendStdinRequest = Schemas["StdinRequest"];
+export type SendStdinRequest = Schemas["StdinRequest"];
 
 interface UpdateConfigurationRequest {
   config: Record<string, unknown>;

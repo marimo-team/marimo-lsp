@@ -1,7 +1,7 @@
 import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
 
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { RuntimeSessions } from "../kernel/RuntimeSessions.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -35,11 +35,11 @@ import { NotebookEditorRegistry } from "./NotebookEditorRegistry.ts";
 export class CellStateManager extends Effect.Service<CellStateManager>()(
   "CellStateManager",
   {
-    dependencies: [NotebookEditorRegistry.Default],
+    dependencies: [NotebookEditorRegistry.Default, RuntimeSessions.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const editorRegistry = yield* NotebookEditorRegistry;
-      const client = yield* LanguageClient;
+      const runtimeSessions = yield* RuntimeSessions;
 
       // The only mutable state: what code the kernel last ran for each cell.
       // None = never executed or invalidated. Some(code) = output reflects code.
@@ -181,30 +181,22 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                 });
 
                 // Notify backend
-                yield* client
-                  .executeCommand({
-                    command: "marimo.api",
-                    params: {
-                      method: "delete-cell",
-                      params: {
+                const session = yield* runtimeSessions.getOrCreate(
+                  event.notebook.id,
+                );
+                yield* session.deleteCell({ cellId }).pipe(
+                  Effect.catchAllCause((cause) =>
+                    Effect.logWarning(
+                      "Failed to notify backend about cell deletion",
+                      cause,
+                    ).pipe(
+                      Effect.annotateLogs({
                         notebookUri: event.notebook.id,
-                        inner: { cellId },
-                      },
-                    },
-                  })
-                  .pipe(
-                    Effect.catchAllCause((cause) =>
-                      Effect.logWarning(
-                        "Failed to notify backend about cell deletion",
-                        cause,
-                      ).pipe(
-                        Effect.annotateLogs({
-                          notebookUri: event.notebook.id,
-                          cellId,
-                        }),
-                      ),
+                        cellId,
+                      }),
                     ),
-                  );
+                  ),
+                );
               }
             }),
           ),

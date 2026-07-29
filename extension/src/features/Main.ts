@@ -105,7 +105,6 @@ const MainLive = Layer.empty
     Layer.provide(CellStateManager.Default),
     Layer.provide(SessionStateManager.Default),
     Layer.provide(ControllerRegistry.Default),
-    Layer.provide(RuntimeSessions.Default),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(SandboxController.Default),
     Layer.provide(Uv.Default),
@@ -116,6 +115,7 @@ const MainLive = Layer.empty
     Layer.provide(Config.Default),
     Layer.provide(OutputChannel.Default),
     Layer.provide(PythonEnvInvalidation.Default),
+    Layer.provide(RuntimeSessions.Default),
   );
 
 export function makeActivate(

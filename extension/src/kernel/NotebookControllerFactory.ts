@@ -11,7 +11,6 @@ import { extractPythonError } from "../lib/extractPythonError.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
 import { installPackages } from "../lib/installPackages.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
-import { LanguageClient } from "../lsp/LanguageClient.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -22,6 +21,7 @@ import {
   type MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
+import { RuntimeSessions } from "./RuntimeSessions.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
 export type NotebookControllerId = Brand.Branded<string, "ControllerId">;
@@ -35,12 +35,13 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
       Constants.Default,
       EnvironmentValidator.Default,
       NotebookSerializer.Default,
+      RuntimeSessions.Default,
     ],
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
-      const marimo = yield* LanguageClient;
+      const runtimeSessions = yield* RuntimeSessions;
       const validator = yield* EnvironmentValidator;
       const serializer = yield* NotebookSerializer;
       const { LanguageId } = yield* Constants;
@@ -89,17 +90,8 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
 
                 const validEnv = yield* validator.validate(options.env);
 
-                yield* marimo.executeCommand({
-                  command: "marimo.api",
-                  params: {
-                    method: "execute-cells",
-                    params: {
-                      notebookUri: notebook.id,
-                      executable: validEnv.executable,
-                      inner: request.value,
-                    },
-                  },
-                });
+                const session = yield* runtimeSessions.getOrCreate(notebook.id);
+                yield* session.executeCells(request.value, validEnv.executable);
               }).pipe(
                 Effect.withSpan("PythonController.execute", {
                   attributes: {
@@ -110,6 +102,11 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                 }),
                 // Known exceptions
                 Effect.catchTags({
+                  RuntimeCommandQueueClosedError: Effect.fn(function* () {
+                    yield* code.window.showErrorMessage(
+                      "The marimo runtime session closed before execution could start.",
+                    );
+                  }),
                   ExecuteCommandError: Effect.fn(function* (error) {
                     yield* Effect.logError("Failed to execute command").pipe(
                       Effect.annotateLogs({
@@ -225,16 +222,8 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
             runPromise(
               Effect.gen(function* () {
                 const notebook = MarimoNotebookDocument.from(rawNotebook);
-                yield* marimo.executeCommand({
-                  command: "marimo.api",
-                  params: {
-                    method: "interrupt",
-                    params: {
-                      notebookUri: notebook.id,
-                      inner: {},
-                    },
-                  },
-                });
+                const session = yield* runtimeSessions.getOrCreate(notebook.id);
+                yield* session.interrupt();
               }).pipe(
                 Effect.withSpan("PythonController.interrupt", {
                   attributes: {

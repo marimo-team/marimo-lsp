@@ -107,6 +107,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       DatasourcesService.Default,
       NotebookEditorRegistry.Default,
       PythonEnvInvalidation.Default,
+      RuntimeSessions.Default,
     ],
     scoped: Effect.gen(function* () {
       yield* Effect.logDebug("Setting up kernel manager");
@@ -616,7 +617,7 @@ function handleStdinPrompt(
 ) {
   return Effect.gen(function* () {
     const code = yield* VsCode;
-    const client = yield* LanguageClient;
+    const runtimeSessions = yield* RuntimeSessions;
     if (operation.console == null) {
       return;
     }
@@ -635,28 +636,12 @@ function handleStdinPrompt(
       });
 
       if (Option.isSome(result)) {
-        yield* client.executeCommand({
-          command: "marimo.api",
-          params: {
-            method: "send-stdin",
-            params: {
-              notebookUri,
-              inner: { text: result.value },
-            },
-          },
-        });
+        const session = yield* runtimeSessions.getOrCreate(notebookUri);
+        yield* session.sendStdin({ text: result.value });
       } else {
         // User cancelled — interrupt the kernel so it stops waiting for input
-        yield* client.executeCommand({
-          command: "marimo.api",
-          params: {
-            method: "interrupt",
-            params: {
-              notebookUri,
-              inner: {},
-            },
-          },
-        });
+        const session = yield* runtimeSessions.getOrCreate(notebookUri);
+        yield* session.interrupt();
       }
     }
   });
