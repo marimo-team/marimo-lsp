@@ -2,7 +2,6 @@ import {
   Data,
   Effect,
   Option,
-  Queue,
   Runtime,
   Stream,
   Array as EffectArray,
@@ -47,6 +46,22 @@ export class NoActiveKernelError extends Data.TaggedError(
 )<{ readonly notebookUri: NotebookId }> {}
 
 /**
+ * Process operations in arrival order for each notebook. Operations from
+ * different notebooks may run concurrently.
+ */
+export function processRuntimeOperations<E, R>(
+  operations: Stream.Stream<MarimoOperation>,
+  process: (operation: MarimoOperation) => Effect.Effect<void, E, R>,
+): Effect.Effect<void, E, R> {
+  return operations.pipe(
+    Stream.mapEffect(process, {
+      key: (operation) => operation.notebookUri,
+    }),
+    Stream.runDrain,
+  );
+}
+
+/**
  * Orchestrates kernel operations for marimo notebooks by composing
  * MarimoLanguageClient, MarimoNotebookRenderer, and MarimoNotebookControllers.
  *
@@ -77,18 +92,10 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       const controllers = yield* ControllerRegistry;
       const runtimeSessions = yield* RuntimeSessions;
 
-      const queue = yield* Queue.unbounded<MarimoOperation>();
-
       yield* Effect.forkScoped(
-        runtimeSessions
-          .operations()
-          .pipe(Stream.runForEach((msg) => Queue.offer(queue, msg))),
-      );
-
-      yield* Effect.forkScoped(
-        Effect.gen(function* () {
-          while (true) {
-            const msg = yield* Queue.take(queue);
+        processRuntimeOperations(
+          runtimeSessions.operations(),
+          Effect.fn("KernelManager.processOperation")(function* (msg) {
             yield* processOperation(msg).pipe(
               Effect.annotateLogs({
                 notebookUri: msg.notebookUri,
@@ -108,8 +115,8 @@ export class KernelManager extends Effect.Service<KernelManager>()(
                 }),
               ),
             );
-          }
-        }),
+          }),
+        ),
       );
 
       // renderer (i.e., front end) -> kernel

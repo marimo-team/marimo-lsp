@@ -18,10 +18,13 @@ import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
-import { KernelManager } from "../../kernel/KernelManager.ts";
+import {
+  KernelManager,
+  processRuntimeOperations,
+} from "../../kernel/KernelManager.ts";
 import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
 import { RuntimeSessions } from "../../kernel/RuntimeSessions.ts";
-import { cellId } from "../../lib/__tests__/branded.ts";
+import { cellId, notebookId } from "../../lib/__tests__/branded.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
@@ -143,6 +146,58 @@ function makeIdleCellOperation(
     },
   };
 }
+
+describe("processRuntimeOperations", () => {
+  it.scoped(
+    "preserves notebook order without blocking other notebooks",
+    Effect.fn(function* () {
+      const firstAStarted = yield* Effect.makeLatch();
+      const releaseFirstA = yield* Effect.makeLatch();
+      const bProcessed = yield* Effect.makeLatch();
+      const processed = yield* Ref.make<ReadonlyArray<string>>([]);
+      const notebookA = notebookId("notebook-a");
+      const notebookB = notebookId("notebook-b");
+
+      const operation = (
+        notebookUri: NotebookId,
+        runId: string,
+      ): MarimoLspNotificationOf<"marimo/operation"> => ({
+        notebookUri,
+        operation: { op: "completed-run", run_id: runId },
+      });
+
+      const fiber = yield* processRuntimeOperations(
+        Stream.make(
+          operation(notebookA, "a-1"),
+          operation(notebookA, "a-2"),
+          operation(notebookB, "b-1"),
+        ),
+        Effect.fn(function* ({ operation }) {
+          assert(operation.op === "completed-run");
+          if (operation.run_id === "a-1") {
+            yield* firstAStarted.open;
+            yield* releaseFirstA.await;
+          }
+          yield* Ref.update(processed, (runIds) => [
+            ...runIds,
+            operation.run_id ?? "",
+          ]);
+          if (operation.run_id === "b-1") {
+            yield* bProcessed.open;
+          }
+        }),
+      ).pipe(Effect.fork);
+
+      yield* firstAStarted.await;
+      yield* bProcessed.await;
+      assert.deepStrictEqual(yield* Ref.get(processed), ["b-1"]);
+
+      yield* releaseFirstA.open;
+      yield* Fiber.join(fiber);
+      assert.deepStrictEqual(yield* Ref.get(processed), ["b-1", "a-1", "a-2"]);
+    }),
+  );
+});
 
 describe("KernelManager stdin", () => {
   it.scoped(
