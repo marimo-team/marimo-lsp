@@ -7,10 +7,11 @@ from __future__ import annotations
 import typing
 from uuid import uuid4
 
-import marimo._ipc as ipc
 from marimo._config.manager import (
     get_default_config_manager,
 )
+from marimo._ipc import QueueManager as IpcQueues
+from marimo._session.managers import IPCQueueManagerImpl as IpcQueueManager
 
 from marimo_lsp.app_file_manager import LspAppFileManager
 from marimo_lsp.kernel_manager import LspKernelManager
@@ -77,7 +78,10 @@ class LspSessionManager:
         if notebook_uri in self._sessions:
             self.close_session(notebook_uri)
 
-        queue_manager, connection_info = ipc.QueueManager.create()
+        # IpcQueues owns the IPC transport; IpcQueueManager adapts it to
+        # marimo's session-level command routing and batching interface.
+        ipc_queues, connection_info = IpcQueues.create()
+        queue_manager = IpcQueueManager.from_ipc(ipc_queues)
         app_file_manager = LspAppFileManager(server=server, notebook_uri=notebook_uri)
         config_manager = get_default_config_manager(current_path=app_file_manager.path)
 

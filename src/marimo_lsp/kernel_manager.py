@@ -20,7 +20,7 @@ from marimo_lsp.loggers import get_logger
 if typing.TYPE_CHECKING:
     from marimo._config.manager import MarimoConfigManager
     from marimo._ipc.types import ConnectionInfo
-    from marimo._session import QueueManager
+    from marimo._session.types import QueueManager
 
     from marimo_lsp.app_file_manager import LspAppFileManager
 
@@ -89,7 +89,7 @@ class LspKernelManager(KernelManagerImpl):
         self,
         *,
         executable: str,
-        queue_manager: ipc.QueueManager,
+        queue_manager: QueueManager,
         app_file_manager: LspAppFileManager,
         config_manager: MarimoConfigManager,
         connection_info: ConnectionInfo,
@@ -107,7 +107,7 @@ class LspKernelManager(KernelManagerImpl):
             mode=SessionMode.RUN,
             config_manager=config_manager,
             configs=app_file_manager.app.cell_manager.config_map(),
-            queue_manager=typing.cast("QueueManager", queue_manager),
+            queue_manager=queue_manager,
             app_metadata=AppMetadata(
                 query_params={},
                 filename=app_file_manager.path,
