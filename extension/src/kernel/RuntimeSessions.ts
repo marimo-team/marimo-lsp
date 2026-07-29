@@ -5,12 +5,15 @@ import {
   HashMap,
   Option,
   PubSub,
+  Ref,
   Scope,
   Stream,
   SynchronizedRef,
+  Array as EffectArray,
 } from "effect";
 
 import { assert } from "../assert.ts";
+import { SCRATCH_CELL_ID } from "../constants.ts";
 import {
   type ExecuteCommandError,
   LanguageClient,
@@ -19,6 +22,7 @@ import {
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 import type {
   DeleteCellRequest,
+  CellOperationNotification,
   ExecuteCellsRequest,
   InvokeFunctionRequest,
   MarimoCommand,
@@ -63,6 +67,14 @@ export interface RuntimeSession {
     request: ExecuteCellsRequest,
     executable: string,
   ) => Effect.Effect<void, RuntimeSendError>;
+  /**
+   * Run isolated code and stream its output until the matching run completes.
+   * Only one scratchpad runs at a time within this session.
+   */
+  readonly executeScratchpad: (
+    code: string,
+    executable: string,
+  ) => Stream.Stream<CellOperationNotification, RuntimeSendError>;
   readonly updateUIElements: (
     request: UpdateUIElementRequest,
   ) => Effect.Effect<void, RuntimeCommandQueueClosedError>;
@@ -143,6 +155,25 @@ function executeCellsCommand(
   };
 }
 
+function executeScratchpadCommand(
+  notebookUri: NotebookId,
+  executable: string,
+  code: string,
+  runId: string,
+): MarimoCommand {
+  return {
+    command: "marimo.api",
+    params: {
+      method: "execute-scratchpad",
+      params: {
+        notebookUri,
+        executable,
+        inner: { code, runId },
+      },
+    },
+  };
+}
+
 function deleteCellCommand(
   notebookUri: NotebookId,
   request: DeleteCellRequest,
@@ -187,6 +218,29 @@ function closeSessionCommand(notebookUri: NotebookId): MarimoCommand {
       params: { notebookUri, inner: {} },
     },
   };
+}
+
+function hasConsoleOutput(operation: CellOperationNotification): boolean {
+  if (operation.console == null) {
+    return false;
+  }
+  return EffectArray.ensure(operation.console).some(
+    (output) => output.channel === "stdout" || output.channel === "stderr",
+  );
+}
+
+function isScratchpadOutput(
+  operation: Notification,
+): operation is CellOperationNotification {
+  return (
+    operation.op === "cell-op" &&
+    (operation.cell_id === SCRATCH_CELL_ID || hasConsoleOutput(operation))
+  );
+}
+
+function isCompletedRunFor(runId: string) {
+  return (operation: Notification): boolean =>
+    operation.op === "completed-run" && operation.run_id === runId;
 }
 
 function mergeUIState(
@@ -356,13 +410,20 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
           Effect.gen(function* () {
             const operations = yield* PubSub.unbounded<Notification>();
             yield* Effect.addFinalizer(() => PubSub.shutdown(operations));
+            const scratchpadLock = yield* Effect.makeSemaphore(1);
             const queue = yield* makeRuntimeCommandQueue(
               (request: RuntimeRequest) => sendRequest(notebookUri, request),
             );
-            return { operations, queue };
+            return { operations, queue, scratchpadLock };
           }),
           scope,
         );
+        const interrupt = Effect.fn("RuntimeSession.interrupt")(function* () {
+          yield* ensureCurrent(notebookUri, token);
+          yield* client
+            .executeCommand(interruptCommand(notebookUri))
+            .pipe(Effect.asVoid);
+        });
         const session: RuntimeSession = {
           notebookUri,
           operations: () => Stream.fromPubSub(resources.operations),
@@ -379,6 +440,69 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
               );
             },
           ),
+          executeScratchpad: (code, executable) =>
+            Stream.unwrapScoped(
+              Effect.gen(function* () {
+                yield* Effect.acquireRelease(
+                  resources.scratchpadLock.take(1),
+                  () => resources.scratchpadLock.release(1),
+                );
+
+                // Subscribe before sending so an immediate completed-run cannot
+                // overtake the stream.
+                const operations = yield* PubSub.subscribe(
+                  resources.operations,
+                );
+                const runId = crypto.randomUUID();
+                const commandSent = yield* Ref.make(false);
+
+                yield* Effect.addFinalizer((exit) =>
+                  Exit.isInterrupted(exit)
+                    ? Ref.get(commandSent).pipe(
+                        Effect.flatMap((sent) =>
+                          sent
+                            ? interrupt().pipe(
+                                Effect.catchAllCause((cause) =>
+                                  Effect.logWarning(
+                                    "Failed to interrupt abandoned scratchpad execution",
+                                  ).pipe(
+                                    Effect.annotateLogs({
+                                      cause,
+                                      notebookUri,
+                                      runId,
+                                    }),
+                                  ),
+                                ),
+                              )
+                            : Effect.void,
+                        ),
+                      )
+                    : Effect.void,
+                );
+
+                // Once queued, finish the send even if the stream is abandoned.
+                // The finalizer will then interrupt the run.
+                yield* Effect.uninterruptible(
+                  resources.queue
+                    .send(
+                      RuntimeRequest.Api({
+                        command: executeScratchpadCommand(
+                          notebookUri,
+                          executable,
+                          code,
+                          runId,
+                        ),
+                      }),
+                    )
+                    .pipe(Effect.andThen(Ref.set(commandSent, true))),
+                );
+
+                return Stream.fromQueue(operations).pipe(
+                  Stream.takeUntil(isCompletedRunFor(runId)),
+                  Stream.filter(isScratchpadOutput),
+                );
+              }),
+            ),
           updateUIElements: Effect.fn("RuntimeSession.updateUIElements")(
             function* (request) {
               if (
@@ -450,12 +574,7 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
               }),
             );
           }),
-          interrupt: Effect.fn("RuntimeSession.interrupt")(function* () {
-            yield* ensureCurrent(notebookUri, token);
-            yield* client
-              .executeCommand(interruptCommand(notebookUri))
-              .pipe(Effect.asVoid);
-          }),
+          interrupt,
           close: Effect.fn("RuntimeSession.close")(function* () {
             yield* ensureCurrent(notebookUri, token);
             yield* resources.queue.close();

@@ -13,6 +13,7 @@ import {
   TestClock,
 } from "effect";
 
+import { SCRATCH_CELL_ID } from "../../constants.ts";
 import {
   base64String,
   cellId,
@@ -23,7 +24,11 @@ import {
 } from "../../lib/__tests__/branded.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
-import type { MarimoCommand, Notification } from "../../types.ts";
+import type {
+  CellOperationNotification,
+  MarimoCommand,
+  Notification,
+} from "../../types.ts";
 import { RuntimeCommandQueueClosedError } from "../RuntimeCommandQueue.ts";
 import { type MarimoOperation, RuntimeSessions } from "../RuntimeSessions.ts";
 
@@ -38,6 +43,20 @@ const completedRun = (
   operation: {
     op: "completed-run",
     run_id: runId,
+  },
+});
+
+const cellOperation = (
+  notebookUri: NotebookId,
+  id: string,
+  overrides: Partial<CellOperationNotification> = {},
+): MarimoOperation => ({
+  notebookUri,
+  operation: {
+    op: "cell-op",
+    cell_id: cellId(id),
+    status: "idle",
+    ...overrides,
   },
 });
 
@@ -87,12 +106,26 @@ const runIds = (
     .map((operation) => operation.run_id);
 
 type MarimoApiCommand = Extract<MarimoCommand, { command: "marimo.api" }>;
+type ScratchpadCommand = MarimoApiCommand & {
+  readonly params: Extract<
+    MarimoApiCommand["params"],
+    { method: "execute-scratchpad" }
+  >;
+};
 
 const marimoApiCommands = (
   commands: ReadonlyArray<MarimoCommand>,
 ): ReadonlyArray<MarimoApiCommand> =>
   commands.filter(
     (command): command is MarimoApiCommand => command.command === "marimo.api",
+  );
+
+const scratchpadCommands = (
+  commands: ReadonlyArray<MarimoCommand>,
+): ReadonlyArray<ScratchpadCommand> =>
+  marimoApiCommands(commands).filter(
+    (command): command is ScratchpadCommand =>
+      command.params.method === "execute-scratchpad",
   );
 
 const apiMethods = (
@@ -131,6 +164,131 @@ describe("RuntimeSessions", () => {
         ]);
         assert.deepStrictEqual(runIds(yield* Fiber.join(operationsB)), ["b-1"]);
         assert.strictEqual(yield* Ref.get(ctx.rawSubscriptions), 1);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.scoped(
+    "streams scratchpad output until its completed run",
+    Effect.fn(function* () {
+      const ctx = yield* withTestContext();
+
+      yield* Effect.gen(function* () {
+        const session = yield* (yield* RuntimeSessions).getOrCreate(NOTEBOOK_A);
+        const execution = yield* session
+          .executeScratchpad("print('hi')", "/usr/bin/python")
+          .pipe(Stream.runCollect, Effect.fork);
+        yield* TestClock.adjust("1 millis");
+
+        const command = scratchpadCommands(yield* Ref.get(ctx.sentCommands))[0];
+        assert(command !== undefined);
+        const runId = command.params.params.inner.runId;
+        assert(runId !== undefined);
+
+        yield* PubSub.publish(
+          ctx.source,
+          cellOperation(NOTEBOOK_A, SCRATCH_CELL_ID, {
+            console: [
+              {
+                channel: "stdout",
+                data: "scratch",
+                mimetype: "text/plain",
+                timestamp: 0,
+              },
+            ],
+          }),
+        );
+        yield* PubSub.publish(
+          ctx.source,
+          cellOperation(NOTEBOOK_A, "cascade", {
+            console: [
+              {
+                channel: "stderr",
+                data: "cascade",
+                mimetype: "text/plain",
+                timestamp: 0,
+              },
+            ],
+          }),
+        );
+        yield* PubSub.publish(
+          ctx.source,
+          cellOperation(NOTEBOOK_A, "status-only"),
+        );
+        yield* PubSub.publish(
+          ctx.source,
+          completedRun(NOTEBOOK_A, "other-run"),
+        );
+        yield* PubSub.publish(ctx.source, completedRun(NOTEBOOK_A, runId));
+
+        assert.deepStrictEqual(
+          Chunk.toReadonlyArray(yield* Fiber.join(execution)).map(
+            (operation) => operation.cell_id,
+          ),
+          [SCRATCH_CELL_ID, cellId("cascade")],
+        );
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.scoped(
+    "serializes scratchpads within a session but not across sessions",
+    Effect.fn(function* () {
+      const ctx = yield* withTestContext();
+
+      yield* Effect.gen(function* () {
+        const sessions = yield* RuntimeSessions;
+        const sessionA = yield* sessions.getOrCreate(NOTEBOOK_A);
+        const sessionB = yield* sessions.getOrCreate(NOTEBOOK_B);
+
+        const a1 = yield* sessionA
+          .executeScratchpad("a1", "/usr/bin/python")
+          .pipe(Stream.runDrain, Effect.fork);
+        const a2 = yield* sessionA
+          .executeScratchpad("a2", "/usr/bin/python")
+          .pipe(Stream.runDrain, Effect.fork);
+        const b1 = yield* sessionB
+          .executeScratchpad("b1", "/usr/bin/python")
+          .pipe(Stream.runDrain, Effect.fork);
+        yield* TestClock.adjust("1 millis");
+
+        const firstCommands = scratchpadCommands(
+          yield* Ref.get(ctx.sentCommands),
+        );
+        expect(firstCommands).toHaveLength(2);
+
+        const firstA = firstCommands.find(
+          ({ params }) => params.params.notebookUri === NOTEBOOK_A,
+        );
+        const firstB = firstCommands.find(
+          ({ params }) => params.params.notebookUri === NOTEBOOK_B,
+        );
+        assert(firstA !== undefined);
+        assert(firstB !== undefined);
+
+        yield* PubSub.publish(
+          ctx.source,
+          completedRun(NOTEBOOK_A, firstA.params.params.inner.runId ?? ""),
+        );
+        yield* PubSub.publish(
+          ctx.source,
+          completedRun(NOTEBOOK_B, firstB.params.params.inner.runId ?? ""),
+        );
+        yield* Fiber.join(a1);
+        yield* Fiber.join(b1);
+        yield* TestClock.adjust("1 millis");
+
+        const commands = scratchpadCommands(yield* Ref.get(ctx.sentCommands));
+        expect(commands).toHaveLength(3);
+        const secondA = commands[2];
+        assert(secondA !== undefined);
+        expect(secondA.params.params.inner.code).toBe("a2");
+
+        yield* PubSub.publish(
+          ctx.source,
+          completedRun(NOTEBOOK_A, secondA.params.params.inner.runId ?? ""),
+        );
+        yield* Fiber.join(a2);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
