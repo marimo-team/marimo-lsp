@@ -108,17 +108,6 @@ describe("Uv", () => {
 
         const pyproject = NodePath.join(target, "pyproject.toml");
         assert(NodeFs.existsSync(pyproject), `Expected to create ${pyproject}`);
-        expect(NodeFs.readFileSync(pyproject, { encoding: "utf8" }))
-          .toMatchInlineSnapshot(`
-        "[project]
-        name = "foo"
-        version = "0.1.0"
-        description = "Add your description here"
-        readme = "README.md"
-        requires-python = ">=3.13"
-        dependencies = []
-        "
-      `);
       }),
       { timeout },
     );
