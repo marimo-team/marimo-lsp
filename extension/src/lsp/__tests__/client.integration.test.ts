@@ -44,34 +44,33 @@ describe("makeNotebookLspClient against uv run ty server", () => {
         expect(typeof client.serverInfo.version).toBe("string");
         expect(Object.keys(client.serverInfo.capabilities).sort())
           .toMatchInlineSnapshot(`
-[
-  "callHierarchyProvider",
-  "codeActionProvider",
-  "completionProvider",
-  "declarationProvider",
-  "definitionProvider",
-  "diagnosticProvider",
-  "documentHighlightProvider",
-  "documentSymbolProvider",
-  "executeCommandProvider",
-  "foldingRangeProvider",
-  "hoverProvider",
-  "implementationProvider",
-  "inlayHintProvider",
-  "notebookDocumentSync",
-  "positionEncoding",
-  "referencesProvider",
-  "renameProvider",
-  "selectionRangeProvider",
-  "semanticTokensProvider",
-  "signatureHelpProvider",
-  "textDocumentSync",
-  "typeDefinitionProvider",
-  "typeHierarchyProvider",
-  "workspace",
-  "workspaceSymbolProvider",
-]
-      `);
+            [
+              "callHierarchyProvider",
+              "codeActionProvider",
+              "completionProvider",
+              "declarationProvider",
+              "definitionProvider",
+              "diagnosticProvider",
+              "documentHighlightProvider",
+              "documentSymbolProvider",
+              "executeCommandProvider",
+              "foldingRangeProvider",
+              "hoverProvider",
+              "inlayHintProvider",
+              "notebookDocumentSync",
+              "positionEncoding",
+              "referencesProvider",
+              "renameProvider",
+              "selectionRangeProvider",
+              "semanticTokensProvider",
+              "signatureHelpProvider",
+              "textDocumentSync",
+              "typeDefinitionProvider",
+              "typeHierarchyProvider",
+              "workspace",
+              "workspaceSymbolProvider",
+            ]
+          `);
 
         // --- 2. Build a notebook with one Python cell ---------------------
         // `x` is declared at the start of the line so hover at (0,0) lands
