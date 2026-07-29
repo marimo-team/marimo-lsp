@@ -19,13 +19,14 @@ import {
   LanguageClient,
   type LanguageClientStartError,
 } from "../lsp/LanguageClient.ts";
+import { MarimoApiClient } from "../lsp/MarimoApiClient.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 import type {
   DeleteCellRequest,
   CellOperationNotification,
   ExecuteCellsRequest,
   InvokeFunctionRequest,
-  MarimoCommand,
+  MarimoApiRequest,
   MarimoLspNotificationOf,
   ModelRequest,
   Notification,
@@ -40,7 +41,7 @@ import {
 export type MarimoOperation = MarimoLspNotificationOf<"marimo/operation">;
 
 type RuntimeRequest = Data.TaggedEnum<{
-  Api: { readonly command: MarimoCommand };
+  Api: { readonly request: MarimoApiRequest };
   UIState: { readonly request: UpdateUIElementRequest };
   ModelState: {
     readonly requests: ReadonlyMap<ModelRequest["modelId"], ModelRequest>;
@@ -102,121 +103,94 @@ interface SessionEntry {
   readonly scope: Scope.CloseableScope;
 }
 
-function modelCommand(
+function modelRequest(
   notebookUri: NotebookId,
   request: ModelRequest,
-): MarimoCommand {
+): MarimoApiRequest {
   return {
-    command: "marimo.api",
-    params: {
-      method: "set-model-value",
-      params: { notebookUri, inner: request },
-    },
+    method: "set-model-value",
+    params: { notebookUri, inner: request },
   };
 }
 
-function invokeFunctionCommand(
+function invokeFunctionRequest(
   notebookUri: NotebookId,
   request: InvokeFunctionRequest,
-): MarimoCommand {
+): MarimoApiRequest {
   return {
-    command: "marimo.api",
-    params: {
-      method: "invoke-function",
-      params: { notebookUri, inner: request },
-    },
+    method: "invoke-function",
+    params: { notebookUri, inner: request },
   };
 }
 
-function uiCommand(
+function uiRequest(
   notebookUri: NotebookId,
   request: UpdateUIElementRequest,
-): MarimoCommand {
+): MarimoApiRequest {
   return {
-    command: "marimo.api",
-    params: {
-      method: "update-ui-element",
-      params: { notebookUri, inner: request },
-    },
+    method: "update-ui-element",
+    params: { notebookUri, inner: request },
   };
 }
 
-function executeCellsCommand(
+function executeCellsRequest(
   notebookUri: NotebookId,
   executable: string,
   request: ExecuteCellsRequest,
-): MarimoCommand {
+): MarimoApiRequest {
   return {
-    command: "marimo.api",
-    params: {
-      method: "execute-cells",
-      params: { notebookUri, executable, inner: request },
-    },
+    method: "execute-cells",
+    params: { notebookUri, executable, inner: request },
   };
 }
 
-function executeScratchpadCommand(
+function executeScratchpadRequest(
   notebookUri: NotebookId,
   executable: string,
   code: string,
   runId: string,
-): MarimoCommand {
+): MarimoApiRequest {
   return {
-    command: "marimo.api",
+    method: "execute-scratchpad",
     params: {
-      method: "execute-scratchpad",
-      params: {
-        notebookUri,
-        executable,
-        inner: { code, runId },
-      },
+      notebookUri,
+      executable,
+      inner: { code, runId },
     },
   };
 }
 
-function deleteCellCommand(
+function deleteCellRequest(
   notebookUri: NotebookId,
   request: DeleteCellRequest,
-): MarimoCommand {
+): MarimoApiRequest {
   return {
-    command: "marimo.api",
-    params: {
-      method: "delete-cell",
-      params: { notebookUri, inner: request },
-    },
+    method: "delete-cell",
+    params: { notebookUri, inner: request },
   };
 }
 
-function sendStdinCommand(
+function sendStdinRequest(
   notebookUri: NotebookId,
   request: SendStdinRequest,
-): MarimoCommand {
+): MarimoApiRequest {
   return {
-    command: "marimo.api",
-    params: {
-      method: "send-stdin",
-      params: { notebookUri, inner: request },
-    },
+    method: "send-stdin",
+    params: { notebookUri, inner: request },
   };
 }
 
-function interruptCommand(notebookUri: NotebookId): MarimoCommand {
+function interruptRequest(notebookUri: NotebookId): MarimoApiRequest {
   return {
-    command: "marimo.api",
-    params: {
-      method: "interrupt",
-      params: { notebookUri, inner: {} },
-    },
+    method: "interrupt",
+    params: { notebookUri, inner: {} },
   };
 }
 
-function closeSessionCommand(notebookUri: NotebookId): MarimoCommand {
+function closeSessionRequest(notebookUri: NotebookId): MarimoApiRequest {
   return {
-    command: "marimo.api",
-    params: {
-      method: "close-session",
-      params: { notebookUri, inner: {} },
-    },
+    method: "close-session",
+    params: { notebookUri, inner: {} },
   };
 }
 
@@ -341,8 +315,10 @@ function mergeUIRequest(
 export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
   "RuntimeSessions",
   {
+    dependencies: [MarimoApiClient.Default],
     scoped: Effect.gen(function* () {
       const client = yield* LanguageClient;
+      const api = yield* MarimoApiClient;
       const allOperations = yield* PubSub.unbounded<MarimoOperation>();
       const sessions = yield* SynchronizedRef.make(
         HashMap.empty<NotebookId, SessionEntry>(),
@@ -353,18 +329,15 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
         runtimeRequest: RuntimeRequest,
       ) {
         return yield* RuntimeRequest.$match(runtimeRequest, {
-          Api: ({ command }) =>
-            client.executeCommand(command).pipe(Effect.asVoid),
+          Api: ({ request }) => api.execute(request).pipe(Effect.asVoid),
           UIState: ({ request }) =>
-            client
-              .executeCommand(uiCommand(notebookUri, request))
-              .pipe(Effect.asVoid),
+            api.execute(uiRequest(notebookUri, request)).pipe(Effect.asVoid),
           ModelState: ({ requests }) =>
             Effect.forEach(
               requests.values(),
               (request) =>
-                client
-                  .executeCommand(modelCommand(notebookUri, request))
+                api
+                  .execute(modelRequest(notebookUri, request))
                   .pipe(Effect.asVoid),
               { discard: true },
             ),
@@ -420,9 +393,7 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
         );
         const interrupt = Effect.fn("RuntimeSession.interrupt")(function* () {
           yield* ensureCurrent(notebookUri, token);
-          yield* client
-            .executeCommand(interruptCommand(notebookUri))
-            .pipe(Effect.asVoid);
+          yield* api.execute(interruptRequest(notebookUri)).pipe(Effect.asVoid);
         });
         const session: RuntimeSession = {
           notebookUri,
@@ -431,7 +402,7 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
             function* (request, executable) {
               yield* resources.queue.send(
                 RuntimeRequest.Api({
-                  command: executeCellsCommand(
+                  request: executeCellsRequest(
                     notebookUri,
                     executable,
                     request,
@@ -486,7 +457,7 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
                   resources.queue
                     .send(
                       RuntimeRequest.Api({
-                        command: executeScratchpadCommand(
+                        request: executeScratchpadRequest(
                           notebookUri,
                           executable,
                           code,
@@ -533,7 +504,7 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
               if (request.message.method === "custom") {
                 yield* resources.queue.send(
                   RuntimeRequest.Api({
-                    command: modelCommand(notebookUri, request),
+                    request: modelRequest(notebookUri, request),
                   }),
                 );
                 return;
@@ -553,7 +524,7 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
             function* (request) {
               yield* resources.queue.send(
                 RuntimeRequest.Api({
-                  command: invokeFunctionCommand(notebookUri, request),
+                  request: invokeFunctionRequest(notebookUri, request),
                 }),
               );
             },
@@ -562,7 +533,7 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
             function* (request) {
               yield* resources.queue.send(
                 RuntimeRequest.Api({
-                  command: deleteCellCommand(notebookUri, request),
+                  request: deleteCellRequest(notebookUri, request),
                 }),
               );
             },
@@ -570,7 +541,7 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
           sendStdin: Effect.fn("RuntimeSession.sendStdin")(function* (request) {
             yield* resources.queue.send(
               RuntimeRequest.Api({
-                command: sendStdinCommand(notebookUri, request),
+                request: sendStdinRequest(notebookUri, request),
               }),
             );
           }),
@@ -578,8 +549,8 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
           close: Effect.fn("RuntimeSession.close")(function* () {
             yield* ensureCurrent(notebookUri, token);
             yield* resources.queue.close();
-            yield* client
-              .executeCommand(closeSessionCommand(notebookUri))
+            yield* api
+              .execute(closeSessionRequest(notebookUri))
               .pipe(
                 Effect.asVoid,
                 Effect.ensuring(shutdown(notebookUri, token)),

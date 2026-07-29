@@ -21,6 +21,7 @@ import { RuntimeSessions } from "../kernel/RuntimeSessions.ts";
 import { SandboxController } from "../kernel/SandboxController.ts";
 import { SessionStateManager } from "../kernel/SessionStateManager.ts";
 import type { LanguageClient } from "../lsp/LanguageClient.ts";
+import { MarimoApiClient } from "../lsp/MarimoApiClient.ts";
 import type { RuffLanguageServer } from "../lsp/RuffLanguageServer.ts";
 import type { TyLanguageServer } from "../lsp/TyLanguageServer.ts";
 import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
@@ -116,6 +117,7 @@ const MainLive = Layer.empty
     Layer.provide(OutputChannel.Default),
     Layer.provide(PythonEnvInvalidation.Default),
     Layer.provide(RuntimeSessions.Default),
+    Layer.provide(MarimoApiClient.Default),
   );
 
 export function makeActivate(

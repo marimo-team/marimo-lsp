@@ -12,7 +12,7 @@ import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { enrichNotebookFromLive } from "../lib/enrichNotebookFromLive.ts";
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { MarimoApiClient } from "../lsp/MarimoApiClient.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -39,9 +39,9 @@ const NotebookCellKind = {
 export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   "NotebookSerializer",
   {
-    dependencies: [Constants.Default],
+    dependencies: [Constants.Default, MarimoApiClient.Default],
     scoped: Effect.gen(function* () {
-      const client = yield* LanguageClient;
+      const api = yield* MarimoApiClient;
       const constants = yield* Constants;
       const code = yield* Effect.serviceOption(VsCode);
 
@@ -49,17 +49,11 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
         function* (notebook: vscode.NotebookData) {
           yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
 
-          const resp = yield* client.executeCommand({
-            command: "marimo.api",
-            params: {
-              method: "serialize",
-              params: {
-                notebook: yield* notebookDataToSerializedNotebook(
-                  notebook,
-                  constants,
-                ),
-              },
-            },
+          const resp = yield* api.serialize({
+            notebook: yield* notebookDataToSerializedNotebook(
+              notebook,
+              constants,
+            ),
           });
           const result = yield* decodeSerializeResponse(resp);
           return new TextEncoder().encode(result.source);
@@ -69,12 +63,8 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       const deserializeEffect = Effect.fn("NotebookSerializer.deserialize")(
         function* (bytes: Uint8Array) {
           yield* Effect.annotateCurrentSpan("bytes", bytes.length);
-          const resp = yield* client.executeCommand({
-            command: "marimo.api",
-            params: {
-              method: "deserialize",
-              params: { source: new TextDecoder().decode(bytes) },
-            },
+          const resp = yield* api.deserialize({
+            source: new TextDecoder().decode(bytes),
           });
           const { cells, ...metadata } = yield* decodeDeserializeResponse(resp);
 

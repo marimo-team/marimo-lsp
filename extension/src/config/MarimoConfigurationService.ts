@@ -7,7 +7,7 @@ import {
   SubscriptionRef,
 } from "effect";
 
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { MarimoApiClient } from "../lsp/MarimoApiClient.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 import type { MarimoConfig } from "../types.ts";
@@ -22,8 +22,9 @@ import { MarimoConfigResponseSchema } from "./schemas.ts";
 export class MarimoConfigurationService extends Effect.Service<MarimoConfigurationService>()(
   "MarimoConfigurationService",
   {
+    dependencies: [MarimoApiClient.Default],
     scoped: Effect.gen(function* () {
-      const client = yield* LanguageClient;
+      const api = yield* MarimoApiClient;
       const editorRegistry = yield* NotebookEditorRegistry;
 
       // Track configurations: NotebookUri -> MarimoConfig
@@ -50,15 +51,9 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
               Effect.annotateLogs({ notebookUri }),
             );
 
-            const result = yield* client.executeCommand({
-              command: "marimo.api",
-              params: {
-                method: "get-configuration",
-                params: {
-                  notebookUri,
-                  inner: {},
-                },
-              },
+            const result = yield* api.getConfiguration({
+              notebookUri,
+              inner: {},
             });
 
             // The LSP may return null when the server is restarting, the
@@ -108,16 +103,10 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
             );
 
             // Send update to LSP server
-            const result = yield* client.executeCommand({
-              command: "marimo.api",
-              params: {
-                method: "update-configuration",
-                params: {
-                  notebookUri,
-                  inner: {
-                    config: partialConfig,
-                  },
-                },
+            const result = yield* api.updateConfiguration({
+              notebookUri,
+              inner: {
+                config: partialConfig,
               },
             });
 

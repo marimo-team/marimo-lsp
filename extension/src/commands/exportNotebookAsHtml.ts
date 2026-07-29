@@ -1,14 +1,14 @@
 import { Effect, Either, Option, Schema } from "effect";
 
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { MarimoApiClient } from "../lsp/MarimoApiClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const exportNotebookAsHtml = Effect.fn("command.exportNotebookAsHtml")(
   function* () {
     const code = yield* VsCode;
-    const client = yield* LanguageClient;
+    const api = yield* MarimoApiClient;
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
       (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
@@ -54,20 +54,14 @@ export const exportNotebookAsHtml = Effect.fn("command.exportNotebookAsHtml")(
       },
       Effect.fn(function* () {
         // Call the LSP API to export the notebook
-        const result = yield* client
-          .executeCommand({
-            command: "marimo.api",
-            params: {
-              method: "export-as-html",
-              params: {
-                notebookUri: notebook.value.id,
-                inner: {
-                  download: false,
-                  files: [],
-                  includeCode: true,
-                  assetUrl: null,
-                },
-              },
+        const result = yield* api
+          .exportAsHtml({
+            notebookUri: notebook.value.id,
+            inner: {
+              download: false,
+              files: [],
+              includeCode: true,
+              assetUrl: null,
             },
           })
           .pipe(
