@@ -17,6 +17,7 @@ import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
 import { ExecutionRegistry } from "../kernel/ExecutionRegistry.ts";
 import { KernelManager } from "../kernel/KernelManager.ts";
+import { RuntimeSessions } from "../kernel/RuntimeSessions.ts";
 import { SandboxController } from "../kernel/SandboxController.ts";
 import { SessionStateManager } from "../kernel/SessionStateManager.ts";
 import type { LanguageClient } from "../lsp/LanguageClient.ts";
@@ -104,6 +105,7 @@ const MainLive = Layer.empty
     Layer.provide(CellStateManager.Default),
     Layer.provide(SessionStateManager.Default),
     Layer.provide(ControllerRegistry.Default),
+    Layer.provide(RuntimeSessions.Default),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(SandboxController.Default),
     Layer.provide(Uv.Default),

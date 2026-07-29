@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Stream } from "effect";
 
 import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
@@ -10,6 +10,7 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
+import { RuntimeSessions } from "../../kernel/RuntimeSessions.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { Api } from "../Api.ts";
 import { VsCode } from "../VsCode.ts";
@@ -23,6 +24,7 @@ const withTestCtx = Effect.fn(function* (
     layer: Layer.empty.pipe(
       Layer.merge(Api.Default),
       Layer.provideMerge(ControllerRegistry.Default),
+      Layer.provide(RuntimeSessions.Default),
       Layer.provide(
         Layer.succeed(
           LanguageClient,
@@ -33,7 +35,7 @@ const withTestCtx = Effect.fn(function* (
               return Effect.die("not implemented");
             },
             streamOf() {
-              return Effect.die("not implemented");
+              return Stream.never;
             },
           }),
         ),

@@ -20,6 +20,7 @@ import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
 import { KernelManager } from "../../kernel/KernelManager.ts";
 import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
+import { RuntimeSessions } from "../../kernel/RuntimeSessions.ts";
 import { cellId } from "../../lib/__tests__/branded.ts";
 import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { VsCode } from "../../platform/VsCode.ts";
@@ -77,6 +78,7 @@ const withTestCtx = Effect.fn(function* () {
 
   const layer = Layer.empty.pipe(
     Layer.provideMerge(KernelManager.Default),
+    Layer.provide(RuntimeSessions.Default),
     Layer.provide(
       Layer.succeed(
         ControllerRegistry,

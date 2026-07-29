@@ -44,11 +44,7 @@ import {
 import { ExecutionRegistry } from "./ExecutionRegistry.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import { handleMissingPackageAlert } from "./operations.ts";
-
-interface MarimoOperation {
-  notebookUri: NotebookId;
-  operation: Notification;
-}
+import { type MarimoOperation, RuntimeSessions } from "./RuntimeSessions.ts";
 
 /** An error returned when code is run for a notebook that has no kernel selected. */
 export class NoActiveKernelError extends Data.TaggedError(
@@ -118,6 +114,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       const client = yield* LanguageClient;
       const renderer = yield* NotebookRenderer;
       const controllers = yield* ControllerRegistry;
+      const runtimeSessions = yield* RuntimeSessions;
 
       const queue = yield* Queue.unbounded<MarimoOperation>();
 
@@ -131,8 +128,8 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       const scratchLock = yield* STM.commit(TSemaphore.make(1));
 
       yield* Effect.forkScoped(
-        client
-          .streamOf("marimo/operation")
+        runtimeSessions
+          .operations()
           .pipe(Stream.runForEach((msg) => Queue.offer(queue, msg))),
       );
 
