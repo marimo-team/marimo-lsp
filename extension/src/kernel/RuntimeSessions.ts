@@ -1,4 +1,5 @@
 import {
+  Data,
   Effect,
   Exit,
   HashMap,
@@ -9,21 +10,61 @@ import {
   SynchronizedRef,
 } from "effect";
 
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { assert } from "../assert.ts";
+import {
+  type ExecuteCommandError,
+  LanguageClient,
+  type LanguageClientStartError,
+} from "../lsp/LanguageClient.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
-import type { MarimoLspNotificationOf, Notification } from "../types.ts";
+import type {
+  InvokeFunctionRequest,
+  MarimoCommand,
+  MarimoLspNotificationOf,
+  ModelRequest,
+  Notification,
+  UpdateUIElementRequest,
+} from "../types.ts";
+import {
+  makeRuntimeCommandQueue,
+  RuntimeCommandQueueClosedError,
+} from "./RuntimeCommandQueue.ts";
 
 export type MarimoOperation = MarimoLspNotificationOf<"marimo/operation">;
+
+type RuntimeRequest = Data.TaggedEnum<{
+  Api: { readonly command: MarimoCommand };
+  UIState: { readonly request: UpdateUIElementRequest };
+  ModelState: {
+    readonly requests: ReadonlyMap<ModelRequest["modelId"], ModelRequest>;
+  };
+}>;
+const RuntimeRequest = Data.taggedEnum<RuntimeRequest>();
+
+type RuntimeSendError =
+  | ExecuteCommandError
+  | LanguageClientStartError
+  | RuntimeCommandQueueClosedError;
 
 /**
  * One live marimo runtime, identified by its notebook URI.
  *
  * Operations are ordered as received from the language server. The stream ends
- * when this session is closed.
+ * when this session is closed. UI and model state may merge while waiting to
+ * send; function calls and custom model messages are always sent in order.
  */
 export interface RuntimeSession {
   readonly notebookUri: NotebookId;
   readonly operations: () => Stream.Stream<Notification>;
+  readonly updateUIElements: (
+    request: UpdateUIElementRequest,
+  ) => Effect.Effect<void, RuntimeCommandQueueClosedError>;
+  readonly updateModel: (
+    request: ModelRequest,
+  ) => Effect.Effect<void, RuntimeSendError>;
+  readonly invokeFunction: (
+    request: InvokeFunctionRequest,
+  ) => Effect.Effect<void, RuntimeSendError>;
   readonly shutdown: () => Effect.Effect<void>;
 }
 
@@ -32,6 +73,132 @@ interface SessionEntry {
   readonly session: RuntimeSession;
   readonly operations: PubSub.PubSub<Notification>;
   readonly scope: Scope.CloseableScope;
+}
+
+function modelCommand(
+  notebookUri: NotebookId,
+  request: ModelRequest,
+): MarimoCommand {
+  return {
+    command: "marimo.api",
+    params: {
+      method: "set-model-value",
+      params: { notebookUri, inner: request },
+    },
+  };
+}
+
+function invokeFunctionCommand(
+  notebookUri: NotebookId,
+  request: InvokeFunctionRequest,
+): MarimoCommand {
+  return {
+    command: "marimo.api",
+    params: {
+      method: "invoke-function",
+      params: { notebookUri, inner: request },
+    },
+  };
+}
+
+function uiCommand(
+  notebookUri: NotebookId,
+  request: UpdateUIElementRequest,
+): MarimoCommand {
+  return {
+    command: "marimo.api",
+    params: {
+      method: "update-ui-element",
+      params: { notebookUri, inner: request },
+    },
+  };
+}
+
+function mergeUIState(
+  older: UpdateUIElementRequest,
+  newer: UpdateUIElementRequest,
+): UpdateUIElementRequest {
+  const values = new Map(
+    older.objectIds.map((objectId, index) => [objectId, older.values[index]]),
+  );
+  for (const [index, objectId] of newer.objectIds.entries()) {
+    values.set(objectId, newer.values[index]);
+  }
+  return {
+    ...newer,
+    objectIds: [...values.keys()],
+    values: [...values.values()],
+  };
+}
+
+function mergeModelUpdate(
+  older: ModelRequest,
+  newer: ModelRequest,
+): ModelRequest {
+  if (older.message.method !== "update" || newer.message.method !== "update") {
+    return newer;
+  }
+
+  const updatedKeys = new Set(Object.keys(newer.message.state));
+  const buffers = new Map<
+    string,
+    {
+      readonly path: ReadonlyArray<string | number>;
+      readonly buffer: ModelRequest["buffers"][number];
+    }
+  >();
+
+  for (const [index, path] of older.message.bufferPaths.entries()) {
+    const buffer = older.buffers[index];
+    if (buffer !== undefined && !updatedKeys.has(String(path[0]))) {
+      buffers.set(JSON.stringify(path), { path, buffer });
+    }
+  }
+  for (const [index, path] of newer.message.bufferPaths.entries()) {
+    const buffer = newer.buffers[index];
+    if (buffer !== undefined) {
+      buffers.set(JSON.stringify(path), { path, buffer });
+    }
+  }
+
+  return {
+    ...newer,
+    message: {
+      method: "update",
+      state: { ...older.message.state, ...newer.message.state },
+      bufferPaths: [...buffers.values()].map(({ path }) => [...path]),
+    },
+    buffers: [...buffers.values()].map(({ buffer }) => buffer),
+  };
+}
+
+function mergeModelState(
+  older: RuntimeRequest,
+  newer: RuntimeRequest,
+): RuntimeRequest {
+  assert(older._tag === "ModelState", "Expected pending model state");
+  assert(newer._tag === "ModelState", "Expected new model state");
+
+  const requests = new Map(older.requests);
+  for (const [modelId, request] of newer.requests) {
+    const previous = requests.get(modelId);
+    requests.set(
+      modelId,
+      previous === undefined ? request : mergeModelUpdate(previous, request),
+    );
+  }
+  return RuntimeRequest.ModelState({ requests });
+}
+
+function mergeUIRequest(
+  older: RuntimeRequest,
+  newer: RuntimeRequest,
+): RuntimeRequest {
+  assert(older._tag === "UIState", "Expected pending UI state");
+  assert(newer._tag === "UIState", "Expected new UI state");
+  return RuntimeRequest.UIState({
+    request: mergeUIState(older.request, newer.request),
+  });
 }
 
 /**
@@ -51,6 +218,29 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
       const sessions = yield* SynchronizedRef.make(
         HashMap.empty<NotebookId, SessionEntry>(),
       );
+
+      const sendRequest = Effect.fn("RuntimeSession.sendRequest")(function* (
+        notebookUri: NotebookId,
+        runtimeRequest: RuntimeRequest,
+      ) {
+        return yield* RuntimeRequest.$match(runtimeRequest, {
+          Api: ({ command }) =>
+            client.executeCommand(command).pipe(Effect.asVoid),
+          UIState: ({ request }) =>
+            client
+              .executeCommand(uiCommand(notebookUri, request))
+              .pipe(Effect.asVoid),
+          ModelState: ({ requests }) =>
+            Effect.forEach(
+              requests.values(),
+              (request) =>
+                client
+                  .executeCommand(modelCommand(notebookUri, request))
+                  .pipe(Effect.asVoid),
+              { discard: true },
+            ),
+        });
+      });
 
       const shutdown = Effect.fn("RuntimeSessions.shutdown")(function* (
         notebookUri: NotebookId,
@@ -75,20 +265,83 @@ export class RuntimeSessions extends Effect.Service<RuntimeSessions>()(
       ) {
         const token = {};
         const scope = yield* Scope.make();
-        const operations = yield* Scope.extend(
+        const resources = yield* Scope.extend(
           Effect.gen(function* () {
             const operations = yield* PubSub.unbounded<Notification>();
             yield* Effect.addFinalizer(() => PubSub.shutdown(operations));
-            return operations;
+            const queue = yield* makeRuntimeCommandQueue(
+              (request: RuntimeRequest) => sendRequest(notebookUri, request),
+            );
+            return { operations, queue };
           }),
           scope,
         );
         const session: RuntimeSession = {
           notebookUri,
-          operations: () => Stream.fromPubSub(operations),
+          operations: () => Stream.fromPubSub(resources.operations),
+          updateUIElements: Effect.fn("RuntimeSession.updateUIElements")(
+            function* (request) {
+              if (
+                request.objectIds.length === 0 ||
+                request.objectIds.length !== request.values.length
+              ) {
+                yield* Effect.logWarning(
+                  "Dropping invalid UI element update",
+                ).pipe(
+                  Effect.annotateLogs({
+                    notebookUri,
+                    objectIdCount: request.objectIds.length,
+                    valueCount: request.values.length,
+                  }),
+                );
+                return;
+              }
+
+              yield* resources.queue.enqueueState({
+                kind: "ui-elements",
+                command: RuntimeRequest.UIState({ request }),
+                merge: mergeUIRequest,
+              });
+            },
+          ),
+          updateModel: Effect.fn("RuntimeSession.updateModel")(
+            function* (request) {
+              if (request.message.method === "custom") {
+                yield* resources.queue.send(
+                  RuntimeRequest.Api({
+                    command: modelCommand(notebookUri, request),
+                  }),
+                );
+                return;
+              }
+
+              yield* resources.queue.enqueueState({
+                kind: "models",
+                command: RuntimeRequest.ModelState({
+                  requests: new Map([[request.modelId, request]]),
+                }),
+                merge: mergeModelState,
+              });
+              return;
+            },
+          ),
+          invokeFunction: Effect.fn("RuntimeSession.invokeFunction")(
+            function* (request) {
+              yield* resources.queue.send(
+                RuntimeRequest.Api({
+                  command: invokeFunctionCommand(notebookUri, request),
+                }),
+              );
+            },
+          ),
           shutdown: () => shutdown(notebookUri, token),
         };
-        return { token, session, operations, scope } satisfies SessionEntry;
+        return {
+          token,
+          session,
+          operations: resources.operations,
+          scope,
+        } satisfies SessionEntry;
       });
 
       const getOrCreate = Effect.fn("RuntimeSessions.getOrCreate")(function* (

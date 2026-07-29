@@ -60,9 +60,9 @@ interface PackageScoped<T> extends NotebookScoped<T> {
 }
 
 type ExecuteCellsRequest = Schemas["ExecuteCellsRequest"];
-type UpdateUIElementRequest = Schemas["UpdateUIElementRequest"];
-type ModelRequest = Schemas["ModelRequest"];
-type InvokeFunctionRequest = Schemas["InvokeFunctionRequest"];
+export type UpdateUIElementRequest = Schemas["UpdateUIElementRequest"];
+export type ModelRequest = Schemas["ModelRequest"];
+export type InvokeFunctionRequest = Schemas["InvokeFunctionRequest"];
 type DeleteCellRequest = Schemas["DeleteCellRequest"];
 type ExportAsHtmlRequest = Schemas["ExportAsHTMLRequest"];
 interface DeserializeRequest {

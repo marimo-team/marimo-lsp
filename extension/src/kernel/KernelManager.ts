@@ -168,42 +168,24 @@ export class KernelManager extends Effect.Service<KernelManager>()(
               const notebook = MarimoNotebookDocument.from(editor.notebook);
               switch (message.command) {
                 case "update-ui-element": {
-                  yield* client.executeCommand({
-                    command: "marimo.api",
-                    params: {
-                      method: message.command,
-                      params: {
-                        notebookUri: notebook.id,
-                        inner: message.params,
-                      },
-                    },
-                  });
+                  const session = yield* runtimeSessions.getOrCreate(
+                    notebook.id,
+                  );
+                  yield* session.updateUIElements(message.params);
                   return;
                 }
                 case "invoke-function": {
-                  yield* client.executeCommand({
-                    command: "marimo.api",
-                    params: {
-                      method: message.command,
-                      params: {
-                        notebookUri: notebook.id,
-                        inner: message.params,
-                      },
-                    },
-                  });
+                  const session = yield* runtimeSessions.getOrCreate(
+                    notebook.id,
+                  );
+                  yield* session.invokeFunction(message.params);
                   return;
                 }
                 case "set-model-value": {
-                  yield* client.executeCommand({
-                    command: "marimo.api",
-                    params: {
-                      method: message.command,
-                      params: {
-                        notebookUri: notebook.id,
-                        inner: message.params,
-                      },
-                    },
-                  });
+                  const session = yield* runtimeSessions.getOrCreate(
+                    notebook.id,
+                  );
+                  yield* session.updateModel(message.params);
                   return;
                 }
                 case "navigate-to-cell": {
