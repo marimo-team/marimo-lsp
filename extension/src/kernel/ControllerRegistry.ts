@@ -98,6 +98,21 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         (hub) => PubSub.shutdown(hub),
       );
 
+      const updateKernelContext = Effect.fn(
+        "ControllerRegistry.updateKernelContext",
+      )(function* () {
+        const activeNotebook = Option.filterMap(
+          yield* code.window.getActiveNotebookEditor(),
+          (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
+        );
+        const selections = yield* Ref.get(selectionsRef);
+        const hasKernel =
+          Option.isSome(activeNotebook) &&
+          HashMap.has(selections, activeNotebook.value.id);
+
+        yield* code.commands.setContext("marimo.notebook.hasKernel", hasKernel);
+      });
+
       yield* Effect.addFinalizer(() =>
         SynchronizedRef.updateEffect(
           handlesRef,
@@ -109,6 +124,18 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
             );
             return HashMap.empty();
           }),
+        ),
+      );
+
+      yield* Effect.forkScoped(updateKernelContext());
+      yield* Effect.forkScoped(
+        code.window
+          .activeNotebookEditorChanges()
+          .pipe(Stream.runForEach(updateKernelContext)),
+      );
+      yield* Effect.forkScoped(
+        Stream.fromPubSub(selectionEvents).pipe(
+          Stream.runForEach(updateKernelContext),
         ),
       );
 

@@ -18,7 +18,6 @@ import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { SandboxController } from "../kernel/SandboxController.ts";
-import { SessionStateManager } from "../kernel/SessionStateManager.ts";
 import type { MarimoClient } from "../lsp/MarimoClient.ts";
 import type { RuffLanguageServer } from "../lsp/RuffLanguageServer.ts";
 import type { TyLanguageServer } from "../lsp/TyLanguageServer.ts";
@@ -99,7 +98,6 @@ const MainLive = Layer.empty
   .pipe(
     Layer.provide(MarimoConfigurationService.Default),
     Layer.provide(ConfigContextManager.Default),
-    Layer.provide(SessionStateManager.Default),
     Layer.provide(ControllerRegistry.Default),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(SandboxController.Default),

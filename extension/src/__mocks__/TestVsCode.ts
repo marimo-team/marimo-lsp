@@ -1528,6 +1528,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly setActiveNotebookEditor: (
     editor: Option.Option<vscode.NotebookEditor>,
   ) => Effect.Effect<void>;
+  readonly selectNotebookController: (
+    controllerId: string,
+    notebook: vscode.NotebookDocument,
+    selected: boolean,
+  ) => Effect.Effect<void>;
   readonly setActiveTextEditor: (
     editor: Option.Option<vscode.TextEditor>,
   ) => Effect.Effect<void>;
@@ -1639,6 +1644,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const controllers = yield* Ref.make(
       HashSet.empty<vscode.NotebookController>(),
     );
+    const controllerSelectionEmitters = new Map<
+      string,
+      EventEmitter<{
+        notebook: vscode.NotebookDocument;
+        selected: boolean;
+      }>
+    >();
     const serializers = yield* Ref.make(
       HashSet.empty<{
         notebookType: string;
@@ -2059,11 +2071,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                     );
                   },
                 };
+                controllerSelectionEmitters.set(id, emitter);
                 yield* Ref.update(controllers, HashSet.add(controller));
                 return controller;
               }),
               (controller) =>
                 Effect.gen(function* () {
+                  controllerSelectionEmitters.delete(controller.id);
                   yield* Effect.sync(() => controller.dispose());
                   yield* Ref.update(controllers, HashSet.remove(controller));
                 }),
@@ -2293,6 +2307,16 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               editor.value,
             ]);
           }
+        }),
+      selectNotebookController: (controllerId, notebook, selected) =>
+        Effect.sync(() => {
+          const emitter = controllerSelectionEmitters.get(controllerId);
+          if (emitter === undefined) {
+            throw new Error(
+              `Notebook controller is not registered: ${controllerId}`,
+            );
+          }
+          emitter.fire({ notebook, selected });
         }),
       setActiveTextEditor: (editor) =>
         Effect.gen(function* () {

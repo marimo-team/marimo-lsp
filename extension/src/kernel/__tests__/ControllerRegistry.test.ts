@@ -1,6 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
 import type * as py from "@vscode/python-extension";
-import { Effect, Layer, Option, TestClock } from "effect";
+import { Effect, Layer, Option, Ref, TestClock } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
@@ -267,6 +267,55 @@ it.effect(
           "selections": [],
         }
       `);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "updates hasKernel when the active notebook or its controller changes",
+  Effect.fn(function* () {
+    const executable = "/usr/local/bin/python3.11";
+    const { layer, vscode } = yield* withTestCtx({
+      initialEnvs: [TestPythonExtension.makeVenv(executable)],
+    });
+
+    yield* Effect.gen(function* () {
+      yield* ControllerRegistry;
+
+      const selectedEditor = TestVsCode.makeNotebookEditor(
+        "/test/selected_mo.py",
+      );
+      const otherEditor = TestVsCode.makeNotebookEditor("/test/other_mo.py");
+
+      yield* vscode.setActiveNotebookEditor(Option.some(selectedEditor));
+      yield* TestClock.adjust("10 millis");
+
+      const contextValues = () =>
+        Effect.map(Ref.get(vscode.executions), (executions) =>
+          executions.flatMap((execution) =>
+            execution.command === "setContext" &&
+            execution.args[0] === "marimo.notebook.hasKernel" &&
+            typeof execution.args[1] === "boolean"
+              ? [execution.args[1]]
+              : [],
+          ),
+        );
+
+      expect((yield* contextValues()).at(-1)).toBe(false);
+
+      yield* vscode.selectNotebookController(
+        `marimo-${executable}`,
+        selectedEditor.notebook,
+        true,
+      );
+      yield* TestClock.adjust("10 millis");
+
+      expect((yield* contextValues()).at(-1)).toBe(true);
+
+      yield* vscode.setActiveNotebookEditor(Option.some(otherEditor));
+      yield* TestClock.adjust("10 millis");
+
+      expect((yield* contextValues()).at(-1)).toBe(false);
     }).pipe(Effect.provide(layer));
   }),
 );
