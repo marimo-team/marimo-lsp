@@ -5,7 +5,7 @@ import {
   ControllerRegistry,
 } from "../../kernel/ControllerRegistry.ts";
 import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
-import { LanguageClient } from "../../lsp/LanguageClient.ts";
+import { MarimoClient } from "../../lsp/MarimoClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -60,7 +60,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
   "PackagesService",
   {
     scoped: Effect.gen(function* () {
-      const client = yield* LanguageClient;
+      const marimo = yield* MarimoClient;
       const controllers = yield* ControllerRegistry;
       const editors = yield* NotebookEditorRegistry;
 
@@ -279,17 +279,11 @@ export class PackagesService extends Effect.Service<PackagesService>()(
             );
 
             // Fetch from language server
-            const rawResult = yield* client
-              .executeCommand({
-                command: "marimo.api",
-                params: {
-                  method: "get-dependency-tree",
-                  params: {
-                    notebookUri,
-                    source,
-                    inner: {},
-                  },
-                },
+            const rawResult = yield* marimo
+              .getDependencyTree({
+                notebookUri,
+                source,
+                inner: {},
               })
               .pipe(
                 Effect.tap((result) =>
@@ -331,17 +325,11 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                     // Venv fallback: fetch the flat package list (which the
                     // server backs with `uv pip list -p <exe>`) and synthesize
                     // a single-level tree from it.
-                    const packageListRaw = yield* client
-                      .executeCommand({
-                        command: "marimo.api",
-                        params: {
-                          method: "get-package-list",
-                          params: {
-                            notebookUri,
-                            source,
-                            inner: {},
-                          },
-                        },
+                    const packageListRaw = yield* marimo
+                      .getPackageList({
+                        notebookUri,
+                        source,
+                        inner: {},
                       })
                       .pipe(
                         Effect.catchAll((fallbackError) =>

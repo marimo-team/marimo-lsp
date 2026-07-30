@@ -2,13 +2,13 @@ import { Effect, Either, Option } from "effect";
 
 import { ExecutionRegistry } from "../kernel/ExecutionRegistry.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const restartKernel = Effect.fn("command.restartKernel")(function* () {
   const code = yield* VsCode;
-  const client = yield* LanguageClient;
+  const marimo = yield* MarimoClient;
   const executions = yield* ExecutionRegistry;
 
   const editor = yield* code.window.getActiveNotebookEditor();
@@ -36,16 +36,10 @@ export const restartKernel = Effect.fn("command.restartKernel")(function* () {
     Effect.fn(function* (progress) {
       progress.report({ message: "Closing session..." });
 
-      const result = yield* client
-        .executeCommand({
-          command: "marimo.api",
-          params: {
-            method: "close-session",
-            params: {
-              notebookUri: notebook.value.id,
-              inner: {},
-            },
-          },
+      const result = yield* marimo
+        .closeSession({
+          notebookUri: notebook.value.id,
+          inner: {},
         })
         .pipe(Effect.either);
 

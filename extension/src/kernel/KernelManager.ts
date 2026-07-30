@@ -16,7 +16,7 @@ import { unreachable } from "../assert.ts";
 import { Config } from "../config/Config.ts";
 import { SCRATCH_CELL_ID } from "../constants.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { applyDocumentTransaction } from "../notebook/applyDocumentTransaction.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
@@ -34,6 +34,7 @@ import {
 } from "../schemas/MarimoNotebookDocument.ts";
 import type {
   CellOperationNotification,
+  MarimoOperation,
   Notification,
   NotificationOf,
 } from "../types.ts";
@@ -44,11 +45,6 @@ import {
 import { ExecutionRegistry } from "./ExecutionRegistry.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import { handleMissingPackageAlert } from "./operations.ts";
-
-interface MarimoOperation {
-  notebookUri: NotebookId;
-  operation: Notification;
-}
 
 /** An error returned when code is run for a notebook that has no kernel selected. */
 export class NoActiveKernelError extends Data.TaggedError(
@@ -91,7 +87,7 @@ function isCompletedRunFor(notebookUri: NotebookId, runId: string) {
 
 /**
  * Orchestrates kernel operations for marimo notebooks by composing
- * MarimoLanguageClient, MarimoNotebookRenderer, and MarimoNotebookControllers.
+ * MarimoClient, NotebookRenderer, and notebook controllers.
  *
  * Receives `marimo/operations` from marimo-lsp and prepares cell executions.
  *
@@ -115,7 +111,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
     scoped: Effect.gen(function* () {
       yield* Effect.logDebug("Setting up kernel manager");
       const code = yield* VsCode;
-      const client = yield* LanguageClient;
+      const marimo = yield* MarimoClient;
       const renderer = yield* NotebookRenderer;
       const controllers = yield* ControllerRegistry;
 
@@ -131,8 +127,8 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       const scratchLock = yield* STM.commit(TSemaphore.make(1));
 
       yield* Effect.forkScoped(
-        client
-          .streamOf("marimo/operation")
+        marimo
+          .operations()
           .pipe(Stream.runForEach((msg) => Queue.offer(queue, msg))),
       );
 
@@ -171,41 +167,23 @@ export class KernelManager extends Effect.Service<KernelManager>()(
               const notebook = MarimoNotebookDocument.from(editor.notebook);
               switch (message.command) {
                 case "update-ui-element": {
-                  yield* client.executeCommand({
-                    command: "marimo.api",
-                    params: {
-                      method: message.command,
-                      params: {
-                        notebookUri: notebook.id,
-                        inner: message.params,
-                      },
-                    },
+                  yield* marimo.updateUIElements({
+                    notebookUri: notebook.id,
+                    inner: message.params,
                   });
                   return;
                 }
                 case "invoke-function": {
-                  yield* client.executeCommand({
-                    command: "marimo.api",
-                    params: {
-                      method: message.command,
-                      params: {
-                        notebookUri: notebook.id,
-                        inner: message.params,
-                      },
-                    },
+                  yield* marimo.invokeFunction({
+                    notebookUri: notebook.id,
+                    inner: message.params,
                   });
                   return;
                 }
                 case "set-model-value": {
-                  yield* client.executeCommand({
-                    command: "marimo.api",
-                    params: {
-                      method: message.command,
-                      params: {
-                        notebookUri: notebook.id,
-                        inner: message.params,
-                      },
-                    },
+                  yield* marimo.updateModel({
+                    notebookUri: notebook.id,
+                    inner: message.params,
                   });
                   return;
                 }
@@ -321,29 +299,17 @@ export class KernelManager extends Effect.Service<KernelManager>()(
               // 2. Send command to kernel, tagged with a runId the kernel echoes
               //    back on the terminating completed-run.
               const runId = crypto.randomUUID();
-              yield* client.executeCommand({
-                command: "marimo.api",
-                params: {
-                  method: "execute-scratchpad",
-                  params: {
-                    notebookUri,
-                    executable,
-                    inner: { code: sourceCode, runId },
-                  },
-                },
+              yield* marimo.executeScratchpad({
+                notebookUri,
+                executable,
+                inner: { code: sourceCode, runId },
               });
 
               // If the consumer abandons this stream before completed-run, interrupt.
               yield* Effect.addFinalizer((exit) =>
                 Exit.isInterrupted(exit)
-                  ? client
-                      .executeCommand({
-                        command: "marimo.api",
-                        params: {
-                          method: "interrupt",
-                          params: { notebookUri, inner: {} },
-                        },
-                      })
+                  ? marimo
+                      .interrupt({ notebookUri, inner: {} })
                       .pipe(
                         Effect.catchAllCause((cause) =>
                           Effect.logWarning(
@@ -637,7 +603,7 @@ function handleStdinPrompt(
 ) {
   return Effect.gen(function* () {
     const code = yield* VsCode;
-    const client = yield* LanguageClient;
+    const marimo = yield* MarimoClient;
     if (operation.console == null) {
       return;
     }
@@ -656,27 +622,15 @@ function handleStdinPrompt(
       });
 
       if (Option.isSome(result)) {
-        yield* client.executeCommand({
-          command: "marimo.api",
-          params: {
-            method: "send-stdin",
-            params: {
-              notebookUri,
-              inner: { text: result.value },
-            },
-          },
+        yield* marimo.sendStdin({
+          notebookUri,
+          inner: { text: result.value },
         });
       } else {
         // User cancelled — interrupt the kernel so it stops waiting for input
-        yield* client.executeCommand({
-          command: "marimo.api",
-          params: {
-            method: "interrupt",
-            params: {
-              notebookUri,
-              inner: {},
-            },
-          },
+        yield* marimo.interrupt({
+          notebookUri,
+          inner: {},
         });
       }
     }

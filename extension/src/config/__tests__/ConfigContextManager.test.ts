@@ -14,7 +14,7 @@ import {
   marimoConfigFixture,
   notebookId,
 } from "../../lib/__tests__/branded.ts";
-import { LanguageClient } from "../../lsp/LanguageClient.ts";
+import { makeMarimoCommands, MarimoClient } from "../../lsp/MarimoClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import type { VsCode } from "../../platform/VsCode.ts";
 import { Commands, VsCode as VsCodeService } from "../../platform/VsCode.ts";
@@ -114,53 +114,50 @@ const TestNotebookEditorRegistryLive = Layer.effect(
   }),
 );
 
-// Test LanguageClient
-const TestLanguageClientLive = Layer.effect(
-  LanguageClient,
+const TestMarimoClientLive = Layer.effect(
+  MarimoClient,
   Effect.gen(function* () {
     const ctx = yield* TestContext;
-    return LanguageClient.make({
+    return MarimoClient.make({
       channel: {
-        name: "mock-language-client",
+        name: "marimo-lsp-test",
         show() {},
       },
       restart: () => Effect.void,
-      streamOf: () => Stream.never,
-      executeCommand: ({ command, params }) =>
-        Effect.gen(function* () {
-          if (!(command === "marimo.api")) {
-            return yield* Effect.die(`Unknown command: ${command}`);
-          }
-
-          if (params.method === "get-configuration") {
-            const config = ctx.configStore.get(params.params.notebookUri);
-            if (!config) {
-              return yield* Effect.die(
-                `Config not found for ${params.params.notebookUri}`,
-              );
+      ...makeMarimoCommands({
+        operations: () => Stream.never,
+        execute: (request) =>
+          Effect.gen(function* () {
+            if (request.method === "get-configuration") {
+              const config = ctx.configStore.get(request.params.notebookUri);
+              if (!config) {
+                return yield* Effect.die(
+                  `Config not found for ${request.params.notebookUri}`,
+                );
+              }
+              return { config };
             }
-            return { config };
-          }
 
-          if (params.method === "update-configuration") {
-            const existing = ctx.configStore.get(params.params.notebookUri);
-            if (existing === undefined) {
-              return yield* Effect.die(
-                `Config not found for ${params.params.notebookUri}`,
-              );
+            if (request.method === "update-configuration") {
+              const existing = ctx.configStore.get(request.params.notebookUri);
+              if (existing === undefined) {
+                return yield* Effect.die(
+                  `Config not found for ${request.params.notebookUri}`,
+                );
+              }
+              const config = {
+                ...existing,
+                ...request.params.inner.config,
+              };
+              ctx.configStore.set(request.params.notebookUri, config);
+              return { config };
             }
-            const config = {
-              ...existing,
-              ...params.params.inner.config,
-            };
-            ctx.configStore.set(params.params.notebookUri, config);
-            return { config };
-          }
 
-          return yield* Effect.die(
-            `Unknown marimo.api method: ${params.method}`,
-          );
-        }),
+            return yield* Effect.die(
+              `Unknown marimo.api method: ${request.method}`,
+            );
+          }),
+      }),
     });
   }),
 );
@@ -172,7 +169,7 @@ const TestLayer = Layer.mergeAll(
 ).pipe(
   Layer.provide(TestVsCodeLive),
   Layer.provide(TestNotebookEditorRegistryLive),
-  Layer.provide(TestLanguageClientLive),
+  Layer.provide(TestMarimoClientLive),
   Layer.provideMerge(TestContextLive),
 );
 

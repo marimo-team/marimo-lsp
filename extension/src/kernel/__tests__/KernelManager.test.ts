@@ -16,12 +16,12 @@ import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
 import { KernelManager } from "../../kernel/KernelManager.ts";
 import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
 import { cellId } from "../../lib/__tests__/branded.ts";
-import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -89,24 +89,16 @@ const withTestCtx = Effect.fn(function* () {
       ),
     ),
     Layer.provide(
-      Layer.succeed(
-        LanguageClient,
-        LanguageClient.make({
-          channel: { name: "marimo-lsp", show() {} },
-          restart: () => Effect.void,
-          executeCommand(cmd) {
-            return Ref.update(executions, (arr) => [...arr, cmd]);
-          },
-          streamOf() {
-            // SAFETY: test stub — `streamOf` has a complex generic return
-            // type, but this test only drives the kernel via a single
-            // pubsub-backed stream. `as never` satisfies whichever stream
-            // type the caller consumes.
-            // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-            return Stream.fromPubSub(operationsPubSub) as never;
-          },
-        }),
-      ),
+      makeTestMarimoClient({
+        execute(request) {
+          const command: MarimoCommand = {
+            command: "marimo.api",
+            params: request,
+          };
+          return Ref.update(executions, (current) => [...current, command]);
+        },
+        operations: () => Stream.fromPubSub(operationsPubSub),
+      }),
     ),
     Layer.provide(TestTelemetryLive),
     Layer.provide(TestSentryLive),

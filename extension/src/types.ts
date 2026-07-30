@@ -125,6 +125,11 @@ type ApiRequest<K extends keyof MarimoApiMethodMap> = {
   };
 }[K];
 
+export type MarimoApiMethod = keyof MarimoApiMethodMap;
+export type MarimoApiParams<K extends MarimoApiMethod> = MarimoApiMethodMap[K];
+export type MarimoApiRequest<K extends MarimoApiMethod = MarimoApiMethod> =
+  ApiRequest<K>;
+
 // client -> language server
 type MarimoCommandMap = {
   "marimo.api": ApiRequest<keyof MarimoApiMethodMap>;
@@ -210,6 +215,8 @@ export type MarimoLspNotification = keyof MarimoLspNotificationMap;
 export type MarimoLspNotificationOf<K extends MarimoLspNotification> = {
   [C in MarimoLspNotification]: MarimoLspNotificationMap[C];
 }[K];
+
+export type MarimoOperation = MarimoLspNotificationOf<"marimo/operation">;
 
 /**
  * Commands that HTML output can send to the renderer.

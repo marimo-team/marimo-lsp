@@ -10,7 +10,7 @@ import { extractPythonError } from "../lib/extractPythonError.ts";
 import { uvAddScriptSafe } from "../lib/installPackages.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { Constants } from "../platform/Constants.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -40,7 +40,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
-      const client = yield* LanguageClient;
+      const marimo = yield* MarimoClient;
       const python = yield* PythonExtension;
       const { LanguageId } = yield* Constants;
 
@@ -118,16 +118,10 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             // handled below with an interactive save prompt.
             const executable = yield* resolveExecutable(notebook);
 
-            yield* client.executeCommand({
-              command: "marimo.api",
-              params: {
-                method: "execute-cells",
-                params: {
-                  notebookUri: notebook.id,
-                  executable,
-                  inner: request.value,
-                },
-              },
+            yield* marimo.executeCells({
+              notebookUri: notebook.id,
+              executable,
+              inner: request.value,
             });
           }).pipe(
             // Handle the expected "unsaved notebook" path before logging, so a
@@ -164,16 +158,16 @@ export class SandboxController extends Effect.Service<SandboxController>()(
                 { channel: uv.channel },
               ),
             ),
-            Effect.catchTag("ExecuteCommandError", (error) => {
+            Effect.catchTag("MarimoCommandError", (error) => {
               const detail = extractPythonError(error.cause);
               return showErrorAndPromptLogs(
                 Option.isSome(detail)
                   ? `Failed to execute marimo command:\n\n${detail.value}`
                   : "Failed to communicate with marimo language server.",
-                { channel: client.channel },
+                { channel: marimo.channel },
               );
             }),
-            Effect.catchTag("LanguageClientStartError", () =>
+            Effect.catchTag("MarimoClientStartError", () =>
               showErrorAndPromptLogs(
                 "Failed to start marimo language server (marimo-lsp).",
               ),
@@ -186,15 +180,9 @@ export class SandboxController extends Effect.Service<SandboxController>()(
         runPromise(
           Effect.gen(function* () {
             const notebook = MarimoNotebookDocument.from(doc);
-            yield* client.executeCommand({
-              command: "marimo.api",
-              params: {
-                method: "interrupt",
-                params: {
-                  notebookUri: notebook.id,
-                  inner: {},
-                },
-              },
+            yield* marimo.interrupt({
+              notebookUri: notebook.id,
+              inner: {},
             });
           }).pipe(
             Effect.withSpan("SandboxController.interrupt", {

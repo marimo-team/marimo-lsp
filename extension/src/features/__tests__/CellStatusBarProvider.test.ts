@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -8,7 +8,7 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { LanguageClient } from "../../lsp/LanguageClient.ts";
+import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { CellStateManager } from "../../notebook/CellStateManager.ts";
 import type { CellMetadata } from "../../schemas/CellMetadata.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
@@ -21,17 +21,7 @@ const withTestCtx = Effect.fn(function* () {
     Layer.provideMerge(CellStateManager.Default),
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
-    Layer.provide(
-      Layer.succeed(
-        LanguageClient,
-        LanguageClient.make({
-          channel: { name: "marimo-lsp", show() {} },
-          restart: () => Effect.void,
-          executeCommand: () => Effect.void,
-          streamOf: () => Stream.never,
-        }),
-      ),
-    ),
+    Layer.provide(makeTestMarimoClient()),
   );
   return { vscode, layer };
 });

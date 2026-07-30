@@ -192,7 +192,7 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
 
         // Splitting the Sentry group by inner failure tag turns coarse
         // "Notebook deserialize failed" buckets into one group per root
-        // cause (LanguageClientStartError vs ExecuteCommandError vs ...).
+        // cause (MarimoClientStartError vs MarimoCommandError vs ...).
         const tags = {
           marimo: "true",
           ...(errorTag ? { "error.tag": errorTag } : {}),

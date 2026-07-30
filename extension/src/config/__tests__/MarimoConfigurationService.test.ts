@@ -7,11 +7,11 @@ import {
   createTestNotebookEditor,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import {
   marimoConfigFixture,
   notebookId,
 } from "../../lib/__tests__/branded.ts";
-import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -39,51 +39,38 @@ const withTestCtx = Effect.fn(function* (
   const layer = MarimoConfigurationService.Default.pipe(
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(
-      Layer.succeed(
-        LanguageClient,
-        LanguageClient.make({
-          channel: {
-            name: "marimo-lsp",
-            show() {},
-          },
-          restart: () => Effect.void,
-          streamOf: () => Stream.never,
-          executeCommand: Effect.fn(function* ({ command, params }) {
-            if (!(command === "marimo.api")) {
-              return yield* Effect.die(`Unknown command: ${command}`);
+      makeTestMarimoClient({
+        execute: Effect.fn(function* (request) {
+          if (request.method === "get-configuration") {
+            const config = configStore.get(request.params.notebookUri);
+            if (config === undefined) {
+              return yield* Effect.die(
+                `Config not found for ${request.params.notebookUri}`,
+              );
             }
+            return { config };
+          }
 
-            if (params.method === "get-configuration") {
-              const config = configStore.get(params.params.notebookUri);
-              if (config === undefined) {
-                return yield* Effect.die(
-                  `Config not found for ${params.params.notebookUri}`,
-                );
-              }
-              return { config };
+          if (request.method === "update-configuration") {
+            const existing = configStore.get(request.params.notebookUri);
+            if (existing === undefined) {
+              return yield* Effect.die(
+                `Config not found for ${request.params.notebookUri}`,
+              );
             }
+            const config = {
+              ...existing,
+              ...request.params.inner.config,
+            };
+            configStore.set(request.params.notebookUri, config);
+            return { config };
+          }
 
-            if (params.method === "update-configuration") {
-              const existing = configStore.get(params.params.notebookUri);
-              if (existing === undefined) {
-                return yield* Effect.die(
-                  `Config not found for ${params.params.notebookUri}`,
-                );
-              }
-              const config = {
-                ...existing,
-                ...params.params.inner.config,
-              };
-              configStore.set(params.params.notebookUri, config);
-              return { config };
-            }
-
-            return yield* Effect.die(
-              `Unexpected marimo.api method: ${params.method}`,
-            );
-          }),
+          return yield* Effect.die(
+            `Unexpected marimo.api method: ${request.method}`,
+          );
         }),
-      ),
+      }),
     ),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),

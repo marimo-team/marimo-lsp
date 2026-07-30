@@ -5,17 +5,19 @@ import * as rpc from "vscode-jsonrpc/node";
 
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import {
-  ExecuteCommandError,
-  findLspExecutable,
-  LanguageClient,
-} from "../lsp/LanguageClient.ts";
+  findMarimoLspExecutable,
+  makeMarimoCommands,
+  MarimoClient,
+  MarimoCommandError,
+} from "../lsp/MarimoClient.ts";
+import type { MarimoCommand } from "../types.ts";
 
-export const TestLanguageClientLive = Layer.scoped(
-  LanguageClient,
+export const TestMarimoClientLive = Layer.scoped(
+  MarimoClient,
   Effect.gen(function* () {
     const { conn } = yield* Effect.acquireRelease(
       Effect.gen(function* () {
-        const exec = yield* findLspExecutable("uv");
+        const exec = yield* findMarimoLspExecutable("uv");
         const proc = NodeChildProcess.spawn(exec.command, exec.args, {
           stdio: ["pipe", "pipe", "inherit"],
         });
@@ -39,31 +41,37 @@ export const TestLanguageClientLive = Layer.scoped(
           proc.kill();
         }),
     );
-    return LanguageClient.make({
+    return MarimoClient.make({
       channel: {
         name: "marimo-lsp",
         show() {},
       },
       restart: () => Effect.void,
-      executeCommand(cmd) {
-        return Effect.tryPromise({
-          try: () =>
-            conn.sendRequest("workspace/executeCommand", {
-              command: cmd.command,
-              arguments: [cmd.params],
-            }),
-          catch: (cause) => new ExecuteCommandError({ command: cmd, cause }),
-        });
-      },
-      streamOf(notification) {
-        return Stream.asyncPush((emit) =>
-          acquireDisposable(() =>
-            conn.onNotification(notification, (msg) => {
-              emit.single(msg);
-            }),
-          ),
-        );
-      },
+      ...makeMarimoCommands({
+        execute(request) {
+          const command: MarimoCommand = {
+            command: "marimo.api",
+            params: request,
+          };
+          return Effect.tryPromise({
+            try: () =>
+              conn.sendRequest("workspace/executeCommand", {
+                command: command.command,
+                arguments: [command.params],
+              }),
+            catch: (cause) => new MarimoCommandError({ command, cause }),
+          });
+        },
+        operations() {
+          return Stream.asyncPush((emit) =>
+            acquireDisposable(() =>
+              conn.onNotification("marimo/operation", (message) => {
+                emit.single(message);
+              }),
+            ),
+          );
+        },
+      }),
     });
   }),
 );

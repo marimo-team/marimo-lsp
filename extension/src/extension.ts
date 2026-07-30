@@ -2,7 +2,7 @@ import { Layer, LogLevel } from "effect";
 
 import { LoggerLive } from "./features/Logger.ts";
 import { makeActivate } from "./features/Main.ts";
-import { LanguageClient } from "./lsp/LanguageClient.ts";
+import { MarimoClient } from "./lsp/MarimoClient.ts";
 import { RuffLanguageServer } from "./lsp/RuffLanguageServer.ts";
 import { TyLanguageServer } from "./lsp/TyLanguageServer.ts";
 import { OutputChannel } from "./platform/OutputChannel.ts";
@@ -16,7 +16,7 @@ export const activate = makeActivate(
     Layer.provideMerge(TyLanguageServer.Default),
     Layer.provideMerge(RuffLanguageServer.Default),
     Layer.provideMerge(PythonExtension.Default),
-    Layer.provideMerge(LanguageClient.Default),
+    Layer.provideMerge(MarimoClient.Default),
     Layer.provideMerge(Telemetry.Default),
     Layer.provide(LoggerLive),
     Layer.provide(OutputChannel.Default),

@@ -1,7 +1,7 @@
 import { Option } from "effect";
 
 /**
- * Extract the last Python exception line from an LSP ExecuteCommandError cause.
+ * Extract the last Python exception line from a MarimoCommandError cause.
  *
  * The cause is typically a ResponseError from vscode-languageclient with:
  * - `.message`: often generic ("An error has occurred")
