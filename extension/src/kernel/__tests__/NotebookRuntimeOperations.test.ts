@@ -18,8 +18,8 @@ import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { NotebookRange, TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
-import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
 import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
+import { PythonController } from "../../kernel/PythonController.ts";
 import { cellId } from "../../lib/__tests__/branded.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
@@ -108,6 +108,7 @@ const withTestCtx = Effect.fn(function* () {
     editor,
     notebook,
     notebookUri,
+    mockController,
     executions,
     inputQueue,
     operationsPubSub,
@@ -320,6 +321,149 @@ describe("NotebookRuntime stdin", () => {
 });
 
 describe("NotebookRuntime scratch stream", () => {
+  it.scoped(
+    "runs one scratchpad at a time within a notebook",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const notebook = (yield* NotebookRuntime).forNotebook(ctx.notebookUri);
+        const first = yield* Effect.fork(
+          notebook.executeScratchpad("print('first')").pipe(Stream.runDrain),
+        );
+        const second = yield* Effect.fork(
+          notebook.executeScratchpad("print('second')").pipe(Stream.runDrain),
+        );
+
+        yield* TestClock.adjust("1 millis");
+
+        const firstCommand = (yield* Ref.get(ctx.executions)).find(
+          (command) =>
+            command.command === "marimo.api" &&
+            command.params.method === "execute-scratchpad",
+        );
+        assert(
+          firstCommand !== undefined &&
+            firstCommand.command === "marimo.api" &&
+            firstCommand.params.method === "execute-scratchpad" &&
+            typeof firstCommand.params.params.inner.runId === "string",
+        );
+        expect(
+          (yield* Ref.get(ctx.executions)).filter(
+            (command) =>
+              command.command === "marimo.api" &&
+              command.params.method === "execute-scratchpad",
+          ),
+        ).toHaveLength(1);
+
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          operation: {
+            op: "completed-run",
+            run_id: firstCommand.params.params.inner.runId,
+          },
+        });
+        yield* TestClock.adjust("1 millis");
+
+        const commands = (yield* Ref.get(ctx.executions)).filter(
+          (command) =>
+            command.command === "marimo.api" &&
+            command.params.method === "execute-scratchpad",
+        );
+        expect(commands).toHaveLength(2);
+        const secondCommand = commands[1];
+        assert(
+          secondCommand !== undefined &&
+            secondCommand.command === "marimo.api" &&
+            secondCommand.params.method === "execute-scratchpad" &&
+            typeof secondCommand.params.params.inner.runId === "string",
+        );
+
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          operation: {
+            op: "completed-run",
+            run_id: secondCommand.params.params.inner.runId,
+          },
+        });
+
+        yield* Fiber.join(first);
+        yield* Fiber.join(second);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.scoped(
+    "allows scratchpad execution in separate notebooks",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+      const otherEditor = TestVsCode.makeNotebookEditor(
+        "/test/other_notebook_mo.py",
+      );
+      const otherNotebook = MarimoNotebookDocument.from(otherEditor.notebook);
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime;
+        yield* ctx.vscode.addNotebookDocument(otherEditor.notebook);
+        yield* runtime.attachController(otherNotebook.id, ctx.mockController);
+
+        const first = yield* Effect.fork(
+          runtime
+            .forNotebook(ctx.notebookUri)
+            .executeScratchpad("print('first')")
+            .pipe(Stream.runDrain),
+        );
+        const second = yield* Effect.fork(
+          runtime
+            .forNotebook(otherNotebook.id)
+            .executeScratchpad("print('second')")
+            .pipe(Stream.runDrain),
+        );
+
+        yield* TestClock.adjust("1 millis");
+
+        const commands: Array<{
+          notebookUri: NotebookId;
+          runId: string;
+        }> = [];
+        for (const command of yield* Ref.get(ctx.executions)) {
+          if (
+            command.command === "marimo.api" &&
+            command.params.method === "execute-scratchpad"
+          ) {
+            assert(typeof command.params.params.inner.runId === "string");
+            commands.push({
+              notebookUri: command.params.params.notebookUri,
+              runId: command.params.params.inner.runId,
+            });
+          }
+        }
+        expect(
+          commands
+            .map((command) => command.notebookUri)
+            .toSorted((a, b) => a.localeCompare(b)),
+        ).toEqual(
+          [ctx.notebookUri, otherNotebook.id].toSorted((a, b) =>
+            a.localeCompare(b),
+          ),
+        );
+
+        for (const command of commands) {
+          yield* PubSub.publish(ctx.operationsPubSub, {
+            notebookUri: command.notebookUri,
+            operation: {
+              op: "completed-run",
+              run_id: command.runId,
+            },
+          });
+        }
+
+        yield* Fiber.join(first);
+        yield* Fiber.join(second);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
   it.scoped(
     "streams scratch + cascade console ops until the matching completed-run",
     Effect.fn(function* () {

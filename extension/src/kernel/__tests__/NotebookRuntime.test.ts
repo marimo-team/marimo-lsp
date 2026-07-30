@@ -1,5 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, Stream } from "effect";
+import { Effect, Layer, Option, Ref, Schedule, Stream } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
@@ -146,6 +146,87 @@ it.scoped(
           execution.args[0] === "marimo.notebook.hasKernel",
       );
       expect(contexts.at(-1)?.args[1]).toBe(true);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+const hasKernelContexts = (vscode: TestVsCode) =>
+  Effect.map(Ref.get(vscode.executions), (executions) =>
+    executions
+      .filter(
+        (execution) =>
+          execution.command === "setContext" &&
+          execution.args[0] === "marimo.notebook.hasKernel",
+      )
+      .map((execution) => execution.args[1]),
+  );
+
+/**
+ * Retries until the runtime's forked subscribers have caught up, then gives up
+ * and returns the last value so a failing assertion reports it.
+ */
+const eventually = <A>(
+  get: Effect.Effect<A>,
+  predicate: (value: A) => boolean,
+) =>
+  Effect.filterOrFail(get, predicate, () => "not settled yet" as const).pipe(
+    Effect.retry(Schedule.recurs(100)),
+    Effect.orElse(() => get),
+  );
+
+it.scoped(
+  "reports no kernel for an active notebook with no controller",
+  Effect.fn(function* () {
+    const { layer, vscode } = yield* makeTestLayer();
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+
+    yield* Effect.gen(function* () {
+      yield* NotebookRuntime;
+      yield* Effect.yieldNow();
+      yield* vscode.setActiveNotebookEditor(Option.some(editor));
+
+      const contexts = yield* eventually(
+        hasKernelContexts(vscode),
+        (values) => values.length > 0,
+      );
+      expect(contexts.at(-1)).toBe(false);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.scoped(
+  "releases a notebook's controller when its document closes",
+  Effect.fn(function* () {
+    const { layer, vscode } = yield* makeTestLayer();
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    const id = notebookId(editor.notebook.uri.toString());
+    const controller: NotebookController = {
+      id: "marimo-/usr/bin/python",
+      createNotebookCellExecution() {
+        throw new Error("not used");
+      },
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      yield* Effect.yieldNow();
+      yield* vscode.setActiveNotebookEditor(Option.some(editor));
+      yield* notebooks.attachController(id, controller);
+      expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(true);
+
+      yield* Effect.yieldNow();
+      yield* vscode.closeNotebook(editor.notebook);
+
+      // Pruning treats a controller as dead once no open notebook selects it,
+      // so the runtime must stop handing this one out. Re-resolve the handle
+      // each attempt: one captured before the close reads the released state.
+      const released = yield* eventually(
+        Effect.suspend(() => notebooks.forNotebook(id).getController()),
+        Option.isNone,
+      );
+      expect(Option.isNone(released)).toBe(true);
+      expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
     }).pipe(Effect.provide(layer));
   }),
 );

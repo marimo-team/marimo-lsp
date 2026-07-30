@@ -207,7 +207,7 @@ function createTestContext() {
  * Binds the shared-venv Python controller to `notebook`, showing it in an
  * editor so VS Code picks up the kernel. The controller id is derived from
  * the Python executable path — see `PythonController.getId` in
- * `src/kernel/NotebookControllerFactory.ts`.
+ * `src/kernel/PythonController.ts`.
  *
  * @param {vscode.NotebookDocument} notebook
  */

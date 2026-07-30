@@ -17,7 +17,6 @@ import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
 import { NotebookControllersLive } from "../kernel/NotebookControllers.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
-import { SandboxController } from "../kernel/SandboxController.ts";
 import type { MarimoClient } from "../lsp/MarimoClient.ts";
 import type { RuffLanguageServer } from "../lsp/RuffLanguageServer.ts";
 import type { TyLanguageServer } from "../lsp/TyLanguageServer.ts";
@@ -100,7 +99,6 @@ const MainLive = Layer.empty
     Layer.provide(MarimoConfigurationService.Default),
     Layer.provide(ConfigContextManager.Default),
     Layer.provide(NotebookEditorRegistry.Default),
-    Layer.provide(SandboxController.Default),
     Layer.provide(Uv.Default),
     Layer.provide(TreeView.Default),
     Layer.provide(StatusBar.Default),
