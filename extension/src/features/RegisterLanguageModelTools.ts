@@ -12,7 +12,7 @@ import {
 
 import { SCRATCH_CELL_ID } from "../constants.ts";
 import { scratchCellNotificationsToVsCodeOutput } from "../kernel/CellExecutions.ts";
-import { KernelManager } from "../kernel/KernelManager.ts";
+import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -68,7 +68,7 @@ export const ExecuteCodeInput = Schema.Struct({
 export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const kernelManager = yield* KernelManager;
+    const notebooks = yield* NotebookRuntime;
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
     const decoder = new TextDecoder();
 
@@ -108,8 +108,9 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
         );
       }
 
-      const ops = yield* kernelManager
-        .executeCodeUnsafe(notebookId.value, input.code)
+      const ops = yield* notebooks
+        .forNotebook(notebookId.value)
+        .executeScratchpad(input.code)
         .pipe(Stream.runCollect);
 
       // Mirror marimo's SSE `/execute` endpoint (`ScratchCellListener.stream`):

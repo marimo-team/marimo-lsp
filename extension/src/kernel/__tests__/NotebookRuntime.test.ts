@@ -1,18 +1,36 @@
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Ref, Stream } from "effect";
+import { Effect, Layer, Ref, Stream } from "effect";
 
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
+import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
+import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
+import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { MarimoApiRequest } from "../../types.ts";
 import { NotebookRuntime } from "../NotebookRuntime.ts";
 
 const notebook = notebookId("notebook-a");
 
+const makeTestLayer = Effect.fn(function* (
+  options: Parameters<typeof makeTestMarimoClient>[0] = {},
+) {
+  const vscode = yield* TestVsCode.make();
+  return Layer.empty.pipe(
+    Layer.provideMerge(NotebookRuntime.Default),
+    Layer.provide(makeTestMarimoClient(options)),
+    Layer.provide(TestTelemetryLive),
+    Layer.provide(TestSentryLive),
+    Layer.provide(TestPythonExtension.Default),
+    Layer.provideMerge(vscode.layer),
+  );
+});
+
 it.scoped(
   "returns a stable handle that binds the notebook ID",
   Effect.fn(function* () {
     const requests = yield* Ref.make<ReadonlyArray<MarimoApiRequest>>([]);
-    const layer = makeTestNotebookRuntime({
+    const layer = yield* makeTestLayer({
       execute: (request) =>
         Ref.update(requests, (current) => [...current, request]),
     });
@@ -24,8 +42,10 @@ it.scoped(
 
       expect(first).toBe(second);
 
-      yield* first.executeCells({ cellIds: [], codes: [] }, "/usr/bin/python");
-      yield* first.interrupt();
+      yield* first
+        .executeCells({ cellIds: [], codes: [] }, "/usr/bin/python")
+        .pipe(Effect.orDie);
+      yield* first.interrupt().pipe(Effect.orDie);
 
       assert.deepStrictEqual(yield* Ref.get(requests), [
         {
@@ -52,7 +72,7 @@ it.scoped(
   "subscribes to MarimoClient operations once",
   Effect.fn(function* () {
     let subscriptions = 0;
-    const layer = makeTestNotebookRuntime({
+    const layer = yield* makeTestLayer({
       operations: () => {
         subscriptions += 1;
         return Stream.never;

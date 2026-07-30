@@ -20,7 +20,6 @@ import {
   cellId,
   UNSAFE_castForNegativeTest,
 } from "../../lib/__tests__/branded.ts";
-import { CellStateManager } from "../../notebook/CellStateManager.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -39,7 +38,6 @@ const withTestCtx = Effect.fn(function* (
   const vscode = yield* TestVsCode.make(options);
   const layer = Layer.empty.pipe(
     Layer.merge(CellExecutions.Default),
-    Layer.merge(CellStateManager.Default),
     Layer.provide(TestNotebookRuntime),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
@@ -1104,7 +1102,6 @@ it.scoped(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
-      const cellStateManager = yield* CellStateManager;
       const code = yield* VsCode;
 
       const notebook = MarimoNotebookDocument.from(editor.notebook);
@@ -1136,21 +1133,21 @@ it.scoped(
         controller: new PythonController(controller, "test-controller"),
       });
 
-      // Check that CellStateManager tracked the cell as stale
+      // Check that CellExecutions tracked the cell as stale
       expect(
-        yield* cellStateManager.isCellStale(
+        yield* executions.isCellStale(
           MarimoNotebookCell.from(cell.rawNotebookCell),
         ),
       ).toBe(true);
 
       // Record execution to clear stale
-      yield* cellStateManager.recordExecution(
+      yield* executions.recordExecution(
         MarimoNotebookCell.from(cell.rawNotebookCell),
       );
 
       // Check that the cell is no longer stale
       expect(
-        yield* cellStateManager.isCellStale(
+        yield* executions.isCellStale(
           MarimoNotebookCell.from(cell.rawNotebookCell),
         ),
       ).toBe(false);
@@ -1165,7 +1162,6 @@ it.scoped(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
-      const cellStateManager = yield* CellStateManager;
 
       // Create a test notebook with a stale cell
       const cellData = {
@@ -1194,14 +1190,14 @@ it.scoped(
       // Wait for NotebookEditorRegistry to process the change
       yield* TestClock.adjust("10 millis");
 
-      // First, invalidate the cell in CellStateManager
-      yield* cellStateManager.invalidateCell(
+      // First, invalidate the cell in CellExecutions
+      yield* executions.invalidateCell(
         MarimoNotebookCell.from(cell.rawNotebookCell),
       );
 
       // Verify cell is tracked as stale
       expect(
-        yield* cellStateManager.isCellStale(
+        yield* executions.isCellStale(
           MarimoNotebookCell.from(cell.rawNotebookCell),
         ),
       ).toBe(true);
@@ -1228,7 +1224,7 @@ it.scoped(
 
       // Check that the cell's stale state was cleared
       expect(
-        yield* cellStateManager.isCellStale(
+        yield* executions.isCellStale(
           MarimoNotebookCell.from(cell.rawNotebookCell),
         ),
       ).toBe(false);
@@ -1243,7 +1239,6 @@ it.scoped(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
-      const cellStateManager = yield* CellStateManager;
 
       const cellData = {
         kind: 1, // Code
@@ -1269,11 +1264,11 @@ it.scoped(
       yield* TestClock.adjust("10 millis");
 
       // Mark the cell stale so we can prove the bail happens before recordExecution
-      yield* cellStateManager.invalidateCell(
+      yield* executions.invalidateCell(
         MarimoNotebookCell.from(cell.rawNotebookCell),
       );
       expect(
-        yield* cellStateManager.isCellStale(
+        yield* executions.isCellStale(
           MarimoNotebookCell.from(cell.rawNotebookCell),
         ),
       ).toBe(true);
@@ -1299,7 +1294,7 @@ it.scoped(
 
       // Stale state preserved because we bail before recordExecution
       expect(
-        yield* cellStateManager.isCellStale(
+        yield* executions.isCellStale(
           MarimoNotebookCell.from(cell.rawNotebookCell),
         ),
       ).toBe(true);

@@ -28,6 +28,7 @@ import {
   type NotebookControllerId,
   PythonController,
 } from "./NotebookControllerFactory.ts";
+import { NotebookRuntime } from "./NotebookRuntime.ts";
 import { SandboxController } from "./SandboxController.ts";
 
 export type AnyController = PythonController | SandboxController;
@@ -41,9 +42,7 @@ export function resolveControllerExecutable(
   controller: AnyController,
   notebook: MarimoNotebookDocument,
 ) {
-  return controller._tag === "PythonController"
-    ? Effect.succeed(controller.executable)
-    : controller.resolveExecutable(notebook);
+  return controller.resolveExecutable(notebook);
 }
 
 interface NotebookControllerHandle {
@@ -69,6 +68,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       const code = yield* VsCode;
       const pyExt = yield* PythonExtension;
       const factory = yield* NotebookControllerFactory;
+      const notebooks = yield* NotebookRuntime;
       const sandboxController = yield* SandboxController;
 
       const uvCacheDir = yield* uv.getCacheDir().pipe(
@@ -133,6 +133,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
               handlesRef,
               selectionsRef,
               selectionEvents,
+              notebooks,
             }).pipe(
               Effect.provideService(VsCode, code),
               Effect.provideService(NotebookControllerFactory, factory),
@@ -175,6 +176,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
           sandboxController,
           selectionsRef,
           selectionEvents,
+          notebooks,
         ),
       );
 
@@ -285,6 +287,7 @@ const trackControllerSelections = (
     notebookUri: NotebookId;
     controller: AnyController;
   }>,
+  notebooks: NotebookRuntime,
 ) =>
   controller.selectedNotebookChanges().pipe(
     Stream.runForEach(
@@ -295,6 +298,7 @@ const trackControllerSelections = (
           return;
         }
         const notebook = MarimoNotebookDocument.from(e.notebook);
+        yield* notebooks.selectController(notebook.id, controller);
         yield* Ref.update(selectionsRef, HashMap.set(notebook.id, controller));
         yield* PubSub.publish(selectionEvents, {
           notebookUri: notebook.id,
@@ -321,8 +325,10 @@ const createOrUpdateController = Effect.fn("ControllerRegistry.createOrUpdate")(
       notebookUri: NotebookId;
       controller: AnyController;
     }>;
+    notebooks: NotebookRuntime;
   }) {
-    const { env, selectionsRef, selectionEvents, handlesRef } = options;
+    const { env, selectionsRef, selectionEvents, handlesRef, notebooks } =
+      options;
     const code = yield* VsCode;
     const factory = yield* NotebookControllerFactory;
     const controllerId = PythonController.getId(env);
@@ -357,6 +363,7 @@ const createOrUpdateController = Effect.fn("ControllerRegistry.createOrUpdate")(
                 controller,
                 selectionsRef,
                 selectionEvents,
+                notebooks,
               ),
             );
 

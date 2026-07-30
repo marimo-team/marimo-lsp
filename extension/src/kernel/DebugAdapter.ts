@@ -13,7 +13,7 @@ import {
   type NotebookId,
   NotebookIdFromString,
 } from "../schemas/MarimoNotebookDocument.ts";
-import { KernelManager } from "./KernelManager.ts";
+import { NotebookRuntime } from "./NotebookRuntime.ts";
 
 const DEBUG_TYPE = "marimo";
 
@@ -91,7 +91,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
     dependencies: [NotebookSerializer.Default, OutputChannel.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
-      const kernelManager = yield* KernelManager;
+      const notebooks = yield* NotebookRuntime;
 
       const debugpyLibsPath = yield* resolveDebugpyPath(code);
 
@@ -203,7 +203,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
             // Activate debugpy (idempotent — returns existing port if running).
             yield* Effect.logInfo("Activating debugpy in kernel");
             const state = yield* activateDebugpy(
-              kernelManager,
+              notebooks,
               notebookUri,
               debugpyLibsPath,
             );
@@ -274,13 +274,13 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
  * and parsing the port + tmpdir from stdout.
  */
 function activateDebugpy(
-  kernelManager: KernelManager,
+  notebooks: NotebookRuntime,
   notebookUri: NotebookId,
   debugpyLibsPath: string,
 ) {
   return Effect.gen(function* () {
     const script = activationScript(debugpyLibsPath);
-    const ops = kernelManager.executeCodeUnsafe(notebookUri, script);
+    const ops = notebooks.forNotebook(notebookUri).executeScratchpad(script);
 
     // Collect all console outputs and find the JSON with port + tmpdir
     let result: DebugpyState | undefined;

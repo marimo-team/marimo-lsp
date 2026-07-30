@@ -49,7 +49,7 @@ export const activate: vscode.ActivationFunction = (context) => {
    * 1. Embed onclick handlers in the HTML that post messages to window.parent
    * 2. Catch those messages here in the renderer
    * 3. Forward them to the extension via context.postMessage()
-   * 4. The extension handles them in KernelManager.ts
+   * 4. The extension handles them in NotebookRuntime.ts
    *
    * This enables features like "This variable was defined in [cell-2]" where clicking
    * "cell-2" navigates to that cell in the notebook.

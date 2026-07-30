@@ -226,7 +226,7 @@ export type MarimoOperation = MarimoLspNotificationOf<"marimo/operation">;
  * Instead, the HTML uses `window.parent.postMessage()` to send messages to the renderer,
  * which forwards them to the extension.
  *
- * Flow: HTML onclick → window.parent.postMessage() → renderer.tsx → KernelManager.ts
+ * Flow: HTML onclick → window.parent.postMessage() → renderer.tsx → NotebookRuntime.ts
  *
  * Example: Error messages include `<a onclick="postMessage({command: 'navigate_to_cell', ...})">cell-2</a>`
  *

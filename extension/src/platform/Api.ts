@@ -18,7 +18,7 @@ import type * as vscode from "vscode";
 import { Config } from "../config/Config.ts";
 import { scratchCellNotificationsToVsCodeOutput } from "../kernel/CellExecutions.ts";
 import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
-import { KernelManager } from "../kernel/KernelManager.ts";
+import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { OutputChannel } from "./OutputChannel.ts";
@@ -73,13 +73,12 @@ export class Api extends Effect.Service<Api>()("Api", {
   dependencies: [
     Uv.Default,
     Config.Default,
-    KernelManager.Default,
     OutputChannel.Default,
     ControllerRegistry.Default,
   ],
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
-    const kernelManager = yield* KernelManager;
+    const notebooks = yield* NotebookRuntime;
     const controllers = yield* ControllerRegistry;
 
     const runtime = yield* Effect.runtime();
@@ -133,13 +132,16 @@ export class Api extends Effect.Service<Api>()("Api", {
             return Effect.sync(() => disposable?.dispose());
           });
 
-          return kernelManager.executeCodeUnsafe(doc.value.id, cellCode).pipe(
-            Stream.filterMap((op) =>
-              scratchCellNotificationsToVsCodeOutput(op, code),
-            ),
-            Stream.interruptWhen(cancelled),
-            Stream.toAsyncIterableRuntime(runtime),
-          );
+          return notebooks
+            .forNotebook(doc.value.id)
+            .executeScratchpad(cellCode)
+            .pipe(
+              Stream.filterMap((op) =>
+                scratchCellNotificationsToVsCodeOutput(op, code),
+              ),
+              Stream.interruptWhen(cancelled),
+              Stream.toAsyncIterableRuntime(runtime),
+            );
         },
       };
 

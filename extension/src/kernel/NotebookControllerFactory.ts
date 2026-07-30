@@ -276,6 +276,9 @@ export class PythonController {
   createNotebookCellExecution(cell: MarimoNotebookCell) {
     return this.#inner.createNotebookCellExecution(cell.rawNotebookCell);
   }
+  resolveExecutable(_notebook: MarimoNotebookDocument) {
+    return Effect.succeed(this.executable);
+  }
   selectedNotebookChanges() {
     return Stream.asyncPush<{
       notebook: vscode.NotebookDocument;

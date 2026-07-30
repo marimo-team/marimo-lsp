@@ -1,5 +1,5 @@
 import * as semver from "@std/semver";
-import { Data, Effect, Option, Runtime, Schema, Stream } from "effect";
+import { Effect, Option, Runtime, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
@@ -20,19 +20,9 @@ import { Uv } from "../python/Uv.ts";
 import {
   type MarimoNotebookCell,
   MarimoNotebookDocument,
-  type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
-import { NotebookRuntime } from "./NotebookRuntime.ts";
-
-/**
- * An error returned when a sandbox kernel is asked to run for an unsaved
- * notebook. The sandbox derives a per-notebook virtual environment from the
- * script file on disk, so the notebook must be saved first.
- */
-export class UnsavedNotebookError extends Data.TaggedError(
-  "UnsavedNotebookError",
-)<{ readonly notebookUri: NotebookId }> {}
+import { NotebookRuntime, UnsavedNotebookError } from "./NotebookRuntime.ts";
 
 export class SandboxController extends Effect.Service<SandboxController>()(
   "SandboxController",
