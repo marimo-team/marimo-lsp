@@ -73,8 +73,8 @@ just test-ts --watch               # vitest in watch mode
 
 ## Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for details on how the LSP server and
-extension work together.
+See the Architecture section of [CLAUDE.md](./CLAUDE.md) for how the LSP server
+and extension work together.
 
 ## Logging (Extension)
 

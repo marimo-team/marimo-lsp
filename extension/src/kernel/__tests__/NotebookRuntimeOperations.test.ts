@@ -18,9 +18,12 @@ import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { NotebookRange, TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
-import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
+import {
+  NotebookRuntime,
+  processRuntimeOperations,
+} from "../../kernel/NotebookRuntime.ts";
 import { PythonController } from "../../kernel/PythonController.ts";
-import { cellId } from "../../lib/__tests__/branded.ts";
+import { cellId, notebookId } from "../../lib/__tests__/branded.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -130,6 +133,200 @@ function makeIdleCellOperation(
     },
   };
 }
+
+describe("NotebookRuntime operation processing", () => {
+  it.scoped(
+    "projects only the latest cell output received during a pending projection",
+    Effect.fn(function* () {
+      const source =
+        yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
+      const firstStarted = yield* Effect.makeLatch();
+      const releaseFirst = yield* Effect.makeLatch();
+      const latestProcessed = yield* Effect.makeLatch();
+      const processed = yield* Ref.make<
+        ReadonlyArray<{ runId: string | null | undefined; project: boolean }>
+      >([]);
+      const notebook = notebookId("notebook");
+
+      const fiber = yield* processRuntimeOperations(
+        Stream.fromPubSub(source),
+        Effect.fn(function* ({ operation }, options) {
+          assert(operation.op === "cell-op");
+          yield* Ref.update(processed, (items) => [
+            ...items,
+            {
+              runId: operation.run_id,
+              project: options.renderCellOutput,
+            },
+          ]);
+          if (operation.run_id === "one") {
+            yield* firstStarted.open;
+            yield* releaseFirst.await;
+          }
+          if (operation.run_id === "three") {
+            yield* latestProcessed.open;
+          }
+        }),
+      ).pipe(Effect.fork);
+      yield* TestClock.adjust("1 millis");
+
+      yield* PubSub.publish(
+        source,
+        makeIdleCellOperation(notebook, "cell", { run_id: "one" }),
+      );
+      yield* firstStarted.await;
+      yield* PubSub.publish(
+        source,
+        makeIdleCellOperation(notebook, "cell", { run_id: "two" }),
+      );
+      yield* PubSub.publish(
+        source,
+        makeIdleCellOperation(notebook, "cell", { run_id: "three" }),
+      );
+
+      yield* releaseFirst.open;
+      yield* latestProcessed.await;
+      yield* Fiber.interrupt(fiber);
+
+      assert.deepStrictEqual(yield* Ref.get(processed), [
+        { runId: "one", project: true },
+        { runId: "two", project: false },
+        { runId: "three", project: true },
+      ]);
+    }),
+  );
+
+  it.scoped(
+    "projects the newest renderable output when a state-only cell-op trails it",
+    Effect.fn(function* () {
+      const source =
+        yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
+      const blockerStarted = yield* Effect.makeLatch();
+      const releaseBlocker = yield* Effect.makeLatch();
+      const trailerProcessed = yield* Effect.makeLatch();
+      const processed = yield* Ref.make<
+        ReadonlyArray<{ label: string; project: boolean }>
+      >([]);
+      const notebook = notebookId("notebook");
+
+      const fiber = yield* processRuntimeOperations(
+        Stream.fromPubSub(source),
+        Effect.fn(function* ({ operation }, options) {
+          assert(operation.op === "cell-op");
+          const label =
+            operation.serialization ?? operation.run_id ?? "unlabelled";
+          yield* Ref.update(processed, (items) => [
+            ...items,
+            { label, project: options.renderCellOutput },
+          ]);
+          if (label === "blocker") {
+            yield* blockerStarted.open;
+            yield* releaseBlocker.await;
+          }
+          if (label === "serialization") yield* trailerProcessed.open;
+        }),
+      ).pipe(Effect.fork);
+      yield* TestClock.adjust("1 millis");
+
+      // Occupy the worker so the next two operations arrive as one batch.
+      yield* PubSub.publish(
+        source,
+        makeIdleCellOperation(notebook, "cell", { run_id: "blocker" }),
+      );
+      yield* blockerStarted.await;
+
+      // The kernel's terminal op for the run, carrying the output it produced.
+      yield* PubSub.publish(
+        source,
+        makeIdleCellOperation(notebook, "cell", {
+          run_id: "settle",
+          output: {
+            mimetype: "text/plain",
+            channel: "output",
+            data: "42",
+            timestamp: 0,
+          },
+        }),
+      );
+      // Edit mode appends `render_toplevel_defs` after `_set_status_idle`, so a
+      // cell defining a top-level function or class emits this payload-less
+      // hint right behind the settle op. It must not take the render slot.
+      yield* PubSub.publish(source, {
+        notebookUri: notebook,
+        operation: {
+          op: "cell-op" as const,
+          cell_id: cellId("cell"),
+          serialization: "serialization",
+        },
+      });
+
+      yield* releaseBlocker.open;
+      yield* trailerProcessed.await;
+      yield* Fiber.interrupt(fiber);
+
+      assert.deepStrictEqual(yield* Ref.get(processed), [
+        { label: "blocker", project: true },
+        { label: "settle", project: true },
+        { label: "serialization", project: false },
+      ]);
+    }),
+  );
+
+  it.scoped(
+    "processes separate notebooks independently",
+    Effect.fn(function* () {
+      const source =
+        yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
+      const firstStarted = yield* Effect.makeLatch();
+      const releaseFirst = yield* Effect.makeLatch();
+      const otherProcessed = yield* Effect.makeLatch();
+      const secondProcessed = yield* Effect.makeLatch();
+      const processed = yield* Ref.make<ReadonlyArray<string>>([]);
+      const notebookA = notebookId("notebook-a");
+      const notebookB = notebookId("notebook-b");
+
+      const fiber = yield* processRuntimeOperations(
+        Stream.fromPubSub(source),
+        Effect.fn(function* ({ operation }) {
+          assert(operation.op === "cell-op");
+          const runId = operation.run_id;
+          assert(typeof runId === "string");
+          if (runId === "a-1") {
+            yield* firstStarted.open;
+            yield* releaseFirst.await;
+          }
+          yield* Ref.update(processed, (items) => [...items, runId]);
+          if (runId === "b-1") yield* otherProcessed.open;
+          if (runId === "a-2") yield* secondProcessed.open;
+        }),
+      ).pipe(Effect.fork);
+      yield* TestClock.adjust("1 millis");
+
+      yield* PubSub.publish(
+        source,
+        makeIdleCellOperation(notebookA, "cell", { run_id: "a-1" }),
+      );
+      yield* firstStarted.await;
+      yield* PubSub.publish(
+        source,
+        makeIdleCellOperation(notebookA, "cell", { run_id: "a-2" }),
+      );
+      yield* PubSub.publish(
+        source,
+        makeIdleCellOperation(notebookB, "cell", { run_id: "b-1" }),
+      );
+
+      yield* otherProcessed.await;
+      assert.deepStrictEqual(yield* Ref.get(processed), ["b-1"]);
+
+      yield* releaseFirst.open;
+      yield* secondProcessed.await;
+      yield* Fiber.interrupt(fiber);
+
+      assert.deepStrictEqual(yield* Ref.get(processed), ["b-1", "a-1", "a-2"]);
+    }),
+  );
+});
 
 describe("NotebookRuntime cell identity", () => {
   it.scoped(

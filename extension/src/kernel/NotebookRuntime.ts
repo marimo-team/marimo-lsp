@@ -1,7 +1,9 @@
 import {
+  Chunk,
   Data,
   Effect,
   Exit,
+  Fiber,
   Option,
   PubSub,
   Queue,
@@ -195,7 +197,6 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       const renderer = yield* NotebookRenderer;
       const executions = yield* CellExecutions;
       const operations = yield* PubSub.unbounded<MarimoOperation>();
-      const operationQueue = yield* Queue.unbounded<MarimoOperation>();
       const notebooks = new Map<NotebookId, NotebookState>();
       const controllerSelections =
         yield* PubSub.unbounded<NotebookControllerSelection>();
@@ -359,43 +360,39 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
         ),
       );
       yield* Effect.forkScoped(
-        marimo.operations().pipe(
-          Stream.runForEach((operation) =>
-            Effect.gen(function* () {
-              yield* PubSub.publish(operations, operation);
-              yield* Queue.offer(operationQueue, operation);
-            }),
+        processRuntimeOperations(
+          marimo
+            .operations()
+            .pipe(
+              Stream.tap((operation) => PubSub.publish(operations, operation)),
+            ),
+          Effect.fn("NotebookRuntime.processOperation")(
+            function* (message, options) {
+              yield* processOperation(message, {
+                forNotebook,
+                ...options,
+              }).pipe(
+                Effect.annotateLogs({
+                  notebookUri: message.notebookUri,
+                  operation: message.operation.op,
+                }),
+                Effect.withSpan("process-operation"),
+                Effect.catchAllCause(
+                  Effect.fn(function* (cause) {
+                    yield* Effect.logError(
+                      "Failed to process marimo operation",
+                    ).pipe(Effect.annotateLogs({ cause }));
+                    yield* Effect.fork(
+                      showErrorAndPromptLogs(
+                        "Failed to process marimo operation.",
+                      ),
+                    );
+                  }),
+                ),
+              );
+            },
           ),
         ),
-      );
-
-      yield* Effect.forkScoped(
-        Effect.gen(function* () {
-          while (true) {
-            const message = yield* Queue.take(operationQueue);
-            yield* processOperation(message, {
-              forNotebook,
-            }).pipe(
-              Effect.annotateLogs({
-                notebookUri: message.notebookUri,
-                operation: message.operation.op,
-              }),
-              Effect.withSpan("process-operation"),
-              Effect.catchAllCause(
-                Effect.fn(function* (cause) {
-                  yield* Effect.logError(
-                    "Failed to process marimo operation",
-                  ).pipe(Effect.annotateLogs({ cause }));
-                  yield* Effect.fork(
-                    showErrorAndPromptLogs(
-                      "Failed to process marimo operation.",
-                    ),
-                  );
-                }),
-              ),
-            );
-          }
-        }),
       );
 
       yield* Effect.forkScoped(
@@ -540,6 +537,104 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
   },
 ) {}
 
+/**
+ * Processes operations in order with one worker per notebook.
+ *
+ * Operations received while a worker is busy form the next batch. Every
+ * operation updates runtime state, but only the newest renderable output for
+ * each cell in that batch is projected into VS Code.
+ */
+export function processRuntimeOperations<E, R>(
+  operations: Stream.Stream<MarimoOperation>,
+  process: (
+    operation: MarimoOperation,
+    options: { readonly renderCellOutput: boolean },
+  ) => Effect.Effect<void, E, R>,
+): Effect.Effect<void, E, R> {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      type Work = Option.Option<MarimoOperation>;
+      const queues = new Map<NotebookId, Queue.Queue<Work>>();
+      const workers: Array<Fiber.RuntimeFiber<void, E>> = [];
+
+      const processBatch = (batch: ReadonlyArray<MarimoOperation>) => {
+        // The newest op for a cell may carry no payload at all — marimo sends
+        // state-only cell-ops (`stale_inputs`, `serialization`) that trail the
+        // terminal `idle` op. Project the newest op that can actually render,
+        // so a payload-less trailer never costs the cell its output.
+        const renderIndex = new Map<NotebookCellId, number>();
+        for (const [index, message] of batch.entries()) {
+          const operation = message.operation;
+          if (operation.op !== "cell-op") continue;
+          if (
+            operation.status === "idle" ||
+            operation.output != null ||
+            operation.console != null
+          ) {
+            renderIndex.set(operation.cell_id, index);
+          }
+        }
+
+        return Effect.forEach(
+          batch,
+          (message, index) => {
+            const operation = message.operation;
+            return process(message, {
+              renderCellOutput:
+                operation.op !== "cell-op" ||
+                renderIndex.get(operation.cell_id) === index,
+            });
+          },
+          { discard: true },
+        );
+      };
+
+      const runWorker = (queue: Queue.Queue<Work>) =>
+        Effect.gen(function* () {
+          while (true) {
+            const first = yield* Queue.take(queue);
+            if (Option.isNone(first)) return;
+
+            const waiting = yield* Queue.takeAll(queue);
+            const batch = [
+              first.value,
+              ...Chunk.toReadonlyArray(waiting).flatMap((item) =>
+                Option.match(item, {
+                  onNone: () => [],
+                  onSome: (message) => [message],
+                }),
+              ),
+            ];
+            yield* processBatch(batch);
+
+            if (Chunk.some(waiting, Option.isNone)) return;
+          }
+        });
+
+      yield* operations.pipe(
+        Stream.runForEach((message) =>
+          Effect.gen(function* () {
+            let queue = queues.get(message.notebookUri);
+            if (queue === undefined) {
+              queue = yield* Queue.unbounded<Work>();
+              queues.set(message.notebookUri, queue);
+              workers.push(yield* Effect.forkScoped(runWorker(queue)));
+            }
+            yield* Queue.offer(queue, Option.some(message));
+          }),
+        ),
+      );
+
+      yield* Effect.forEach(
+        queues.values(),
+        (queue) => Queue.offer(queue, Option.none()),
+        { discard: true },
+      );
+      yield* Effect.forEach(workers, Fiber.join, { discard: true });
+    }),
+  );
+}
+
 function isValueUpdateEcho(
   operation: NotificationOf<"send-ui-element-message">,
 ): boolean {
@@ -555,6 +650,7 @@ function processOperation(
   { notebookUri, operation }: MarimoOperation,
   options: {
     forNotebook: (notebookId: NotebookId) => NotebookHandle;
+    readonly renderCellOutput: boolean;
   },
 ) {
   return Effect.gen(function* () {
@@ -659,6 +755,7 @@ function processNotebookOperation(
     | NotificationOf<"model-lifecycle">,
   options: {
     forNotebook: (notebookId: NotebookId) => NotebookHandle;
+    readonly renderCellOutput: boolean;
   },
 ) {
   return Effect.gen(function* () {
@@ -693,6 +790,7 @@ function processNotebookOperation(
         yield* executions.handleOperation(operation, {
           editor: editor.value,
           controller: controller.value,
+          renderOutput: options.renderCellOutput,
         });
         yield* Effect.fork(
           handleStdinPrompt(operation, options.forNotebook(notebookUri)),

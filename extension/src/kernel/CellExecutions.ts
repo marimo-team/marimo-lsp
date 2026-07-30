@@ -493,6 +493,7 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
           options: {
             editor: vscode.NotebookEditor;
             controller: CellExecutionController;
+            renderOutput?: boolean;
           },
         ) =>
           Effect.gen(function* () {
@@ -540,6 +541,13 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
               notebook: editor.notebook,
             };
             for (const action of result.actions) {
+              if (
+                options.renderOutput === false &&
+                (action._tag === "EmitOutputs" ||
+                  action._tag === "FinalizeOutputs")
+              ) {
+                continue;
+              }
               // oxlint-disable-next-line eslint/no-await-in-loop -- actions are
               // ordered (e.g. FinalizeOutputs must land before EndExecution)
               yield* perform(action, ctx);

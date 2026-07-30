@@ -27,8 +27,6 @@ To launch the extension for manual testing, open the repo in VS Code and press *
 
 ## Architecture
 
-Read `ARCHITECTURE.md` first — it documents the custom LSP protocol (commands like `marimo.run`, `marimo.serialize`, `marimo.set_ui_element_value`, and the `marimo/operation` server→client notification stream). The key mental model:
-
 1. **VS Code notebook protocol** handles cell text sync (`notebookDocument/didOpen`, `didChange`, ...).
 2. **Custom LSP commands** drive kernel actions (run cells, interrupt, call UI element functions, (de)serialize).
 3. **`marimo/operation` notifications** stream kernel output/state (`cell-op`, `variables`, `data-*-preview`, `alert`, package install progress, …) from server to client.
@@ -134,4 +132,4 @@ Don't conflate these when editing. The cron only touches the first.
 ## Gotchas
 
 - **Marimo controllers leave `executionOrder` undefined.** Tests that wait for `executionOrder` to increment will hang forever — gate on cell state or output instead.
-- **`ARCHITECTURE.md` file-path references can lag the code** (services were renamed/moved from `services/` into subdirs like `kernel/`, `notebook/`, `config/`). Prefer grep over trusting a stale path.
+- **File paths in docs lag the code.** Services get renamed and moved between `kernel/`, `notebook/`, and `config/`. Prefer grep over trusting a path you read in Markdown.
