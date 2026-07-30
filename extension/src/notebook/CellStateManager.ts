@@ -1,7 +1,7 @@
 import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 import type * as vscode from "vscode";
 
-import { MarimoClient } from "../lsp/MarimoClient.ts";
+import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -39,7 +39,7 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const editorRegistry = yield* NotebookEditorRegistry;
-      const marimo = yield* MarimoClient;
+      const notebooks = yield* NotebookRuntime;
 
       // The only mutable state: what code the kernel last ran for each cell.
       // None = never executed or invalidated. Some(code) = output reflects code.
@@ -181,11 +181,9 @@ export class CellStateManager extends Effect.Service<CellStateManager>()(
                 });
 
                 // Notify backend
-                yield* marimo
-                  .deleteCell({
-                    notebookUri: event.notebook.id,
-                    inner: { cellId },
-                  })
+                yield* notebooks
+                  .forNotebook(event.notebook.id)
+                  .deleteCell({ cellId })
                   .pipe(
                     Effect.catchAllCause((cause) =>
                       Effect.logWarning(

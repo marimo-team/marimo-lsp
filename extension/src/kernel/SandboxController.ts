@@ -23,6 +23,7 @@ import {
   type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
+import { NotebookRuntime } from "./NotebookRuntime.ts";
 
 /**
  * An error returned when a sandbox kernel is asked to run for an unsaved
@@ -41,6 +42,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       const uv = yield* Uv;
       const code = yield* VsCode;
       const marimo = yield* MarimoClient;
+      const notebooks = yield* NotebookRuntime;
       const python = yield* PythonExtension;
       const { LanguageId } = yield* Constants;
 
@@ -118,11 +120,9 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             // handled below with an interactive save prompt.
             const executable = yield* resolveExecutable(notebook);
 
-            yield* marimo.executeCells({
-              notebookUri: notebook.id,
-              executable,
-              inner: request.value,
-            });
+            yield* notebooks
+              .forNotebook(notebook.id)
+              .executeCells(request.value, executable);
           }).pipe(
             // Handle the expected "unsaved notebook" path before logging, so a
             // normal save prompt isn't recorded as an error. (sandboxing only
@@ -180,10 +180,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
         runPromise(
           Effect.gen(function* () {
             const notebook = MarimoNotebookDocument.from(doc);
-            yield* marimo.interrupt({
-              notebookUri: notebook.id,
-              inner: {},
-            });
+            yield* notebooks.forNotebook(notebook.id).interrupt();
           }).pipe(
             Effect.withSpan("SandboxController.interrupt", {
               attributes: {

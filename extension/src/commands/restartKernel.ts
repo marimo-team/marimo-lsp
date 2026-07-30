@@ -1,14 +1,14 @@
 import { Effect, Either, Option } from "effect";
 
 import { CellExecutions } from "../kernel/CellExecutions.ts";
+import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const restartKernel = Effect.fn("command.restartKernel")(function* () {
   const code = yield* VsCode;
-  const marimo = yield* MarimoClient;
+  const notebooks = yield* NotebookRuntime;
   const executions = yield* CellExecutions;
 
   const editor = yield* code.window.getActiveNotebookEditor();
@@ -36,11 +36,9 @@ export const restartKernel = Effect.fn("command.restartKernel")(function* () {
     Effect.fn(function* (progress) {
       progress.report({ message: "Closing session..." });
 
-      const result = yield* marimo
-        .closeSession({
-          notebookUri: notebook.value.id,
-          inner: {},
-        })
+      const result = yield* notebooks
+        .forNotebook(notebook.value.id)
+        .close()
         .pipe(Effect.either);
 
       if (Either.isLeft(result)) {

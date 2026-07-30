@@ -17,6 +17,7 @@ import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
 import { KernelManager } from "../kernel/KernelManager.ts";
+import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { SandboxController } from "../kernel/SandboxController.ts";
 import { SessionStateManager } from "../kernel/SessionStateManager.ts";
 import type { MarimoClient } from "../lsp/MarimoClient.ts";
@@ -114,6 +115,7 @@ const MainLive = Layer.empty
     Layer.provide(Config.Default),
     Layer.provide(OutputChannel.Default),
     Layer.provide(PythonEnvInvalidation.Default),
+    Layer.provide(NotebookRuntime.Default),
   );
 
 export function makeActivate(

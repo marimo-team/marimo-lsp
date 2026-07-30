@@ -16,7 +16,7 @@ import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
 import { KernelManager } from "../../kernel/KernelManager.ts";
@@ -89,7 +89,7 @@ const withTestCtx = Effect.fn(function* () {
       ),
     ),
     Layer.provide(
-      makeTestMarimoClient({
+      makeTestNotebookRuntime({
         execute(request) {
           const command: MarimoCommand = {
             command: "marimo.api",

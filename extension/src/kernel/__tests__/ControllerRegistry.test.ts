@@ -9,13 +9,13 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
 import { Constants } from "../../platform/Constants.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 
-const TestMarimoClient = makeTestMarimoClient();
+const TestNotebookRuntime = makeTestNotebookRuntime();
 
 const withTestCtx = Effect.fn(function* (
   options: { initialEnvs?: Array<py.ResolvedEnvironment> } = {},
@@ -27,7 +27,7 @@ const withTestCtx = Effect.fn(function* (
   const layer = Layer.empty.pipe(
     Layer.provideMerge(ControllerRegistry.Default),
     Layer.provide(Constants.Default),
-    Layer.provide(TestMarimoClient),
+    Layer.provide(TestNotebookRuntime),
     Layer.provide(TestTelemetryLive),
     Layer.provide(TestSentryLive),
     Layer.provideMerge(vscode.layer),

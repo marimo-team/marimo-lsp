@@ -9,7 +9,7 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
 import { Api } from "../Api.ts";
 import { VsCode } from "../VsCode.ts";
@@ -23,7 +23,7 @@ const withTestCtx = Effect.fn(function* (
     layer: Layer.empty.pipe(
       Layer.merge(Api.Default),
       Layer.provideMerge(ControllerRegistry.Default),
-      Layer.provide(makeTestMarimoClient()),
+      Layer.provide(makeTestNotebookRuntime()),
       Layer.provide(TestTelemetryLive),
       Layer.provide(TestSentryLive),
       Layer.provide(TestPythonExtension.Default),

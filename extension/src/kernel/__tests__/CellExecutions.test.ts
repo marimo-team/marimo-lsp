@@ -9,7 +9,7 @@ import {
   createTestNotebookEditor,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import {
   buildCellOutputs,
@@ -31,7 +31,7 @@ import type {
   CellRuntimeState,
 } from "../../types.ts";
 
-const TestMarimoClient = makeTestMarimoClient();
+const TestNotebookRuntime = makeTestNotebookRuntime();
 
 const withTestCtx = Effect.fn(function* (
   options: Parameters<(typeof TestVsCode)["make"]>[0] = {},
@@ -40,7 +40,7 @@ const withTestCtx = Effect.fn(function* (
   const layer = Layer.empty.pipe(
     Layer.merge(CellExecutions.Default),
     Layer.merge(CellStateManager.Default),
-    Layer.provide(TestMarimoClient),
+    Layer.provide(TestNotebookRuntime),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
   );
