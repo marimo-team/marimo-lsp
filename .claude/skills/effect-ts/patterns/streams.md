@@ -40,21 +40,20 @@ Stream.runLast(s); Stream.toAsyncIterableRuntime(rt)(s);
 
 Three flavors, distinguished by what the register callback returns:
 
-- **`asyncPush((emit) => scopedEff)`** — register returns `Effect<unknown, E, R | Scope>`; cleanup = the Scope's release. **Preferred** for VS Code `Disposable`-style listeners (~22 sites in `platform/VsCode.ts`, `lsp/LanguageClient.ts`).
+- **`asyncPush((emit) => scopedEff)`** — register returns `Effect<unknown, E, R | Scope>`; cleanup = the Scope's release. **Preferred** for VS Code `Disposable`-style listeners (~22 sites in `platform/VsCode.ts`, `lsp/MarimoClient.ts`).
 - **`asyncScoped((emit) => scopedEff)`** — same scoped contract; older API. `emit` is the generic `Emit` (supports `emit.end()` / `emit.fail()` from inside).
 - **`asyncEffect((emit) => Eff)`** — register returns a *non-scoped* `Effect`; use when there's no resource to release.
 
 Gotcha: the callback returns a cleanup `Effect`, not raw teardown. `acquireDisposable` (`extension/src/lib/acquireDisposable.ts:8`) lifts `() => Disposable` to `Effect<Disposable, never, Scope>` via `Effect.acquireRelease`, slotting straight in:
 
 ```ts
-// extension/src/lsp/LanguageClient.ts:223
-streamOf<Notification extends MarimoLspNotification>(notification: Notification) {
-  return Stream.asyncPush<MarimoLspNotificationOf<Notification>>((emit) =>
+// extension/src/lsp/MarimoClient.ts:291
+operations: () =>
+  Stream.asyncPush<MarimoOperation>((emit) =>
     acquireDisposable(() =>
-      client.onNotification(notification, (msg) => emit.single(msg)),
+      client.onNotification("marimo/operation", (message) => emit.single(message)),
     ),
-  );
-}
+  ),
 ```
 
 The `Disposable` is released on stream interruption automatically. Same shape: `platform/VsCode.ts:203,214,223,232,403,410,417,424,431,458` and `python/PythonExtension.ts:26,35`.
@@ -63,9 +62,9 @@ The `Disposable` is released on stream interruption automatically. Same shape: `
 
 Both terminators are equally common; pick by where the work lives. `mapEffect(f) ∘ runDrain` and `runForEach(f)` produce identical results — pick the more readable shape.
 
-- **`runDrain`** when the per-element effect is already in `mapEffect`/`tap` — the stream *is* the body. (`kernel/KernelManager.ts:82`)
+- **`runDrain`** when the per-element effect is already in `mapEffect`/`tap` — the stream *is* the body. (`kernel/KernelManager.ts:129`)
   ```ts
-  yield* Effect.forkScoped(client.streamOf("marimo/operation").pipe(
+  yield* Effect.forkScoped(marimo.operations().pipe(
     Stream.mapEffect(Effect.fn(function* (msg) { yield* Queue.offer(queue, msg); })),
     Stream.runDrain));
   ```

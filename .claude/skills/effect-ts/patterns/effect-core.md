@@ -92,23 +92,24 @@ Three tools, layered:
 
 ## Worked examples (from this repo)
 
-**Entry-point with span + structured error** (`extension/src/lsp/LanguageClient.ts:199`)
+**Entry-point with span + structured error** (`extension/src/lsp/MarimoClient.ts:266`)
 
 ```ts
-executeCommand: Effect.fn(function* (cmd: MarimoCommand) {
+execute: Effect.fn(function* (request) {
+  const command: MarimoCommand = { command: "marimo.api", params: request };
   return yield* Effect.tryPromise({
     try: (signal) => client.sendRequest("workspace/executeCommand",
-      { command: cmd.command, arguments: [cmd.params] }, tokenFromSignal(signal)),
-    catch: (cause) => new ExecuteCommandError({ command: cmd, cause }),
+      { command: command.command, arguments: [command.params] }, tokenFromSignal(signal)),
+    catch: (cause) => new MarimoCommandError({ command, cause }),
   }).pipe(
     Effect.withSpan("lsp.executeCommand", {
-      attributes: { command: cmd.command, method: extractMethod(cmd) },
+      attributes: { command: command.command, method: request.method },
     }),
   );
 }),
 ```
 
-The dynamic `command` value goes on the span; the rejection is mapped to a typed `ExecuteCommandError`.
+The dynamic `command` value goes on the span; the rejection is mapped to a typed `MarimoCommandError`.
 
 **`forkScoped` + `Stream.mapEffect` + `Effect.fn` per event** (`extension/src/features/ThemeSync.ts:20`)
 
