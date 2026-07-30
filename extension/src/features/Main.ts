@@ -13,9 +13,9 @@ import type * as vscode from "vscode";
 import { Config } from "../config/Config.ts";
 import { ConfigContextManager } from "../config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
+import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
-import { ExecutionRegistry } from "../kernel/ExecutionRegistry.ts";
 import { KernelManager } from "../kernel/KernelManager.ts";
 import { SandboxController } from "../kernel/SandboxController.ts";
 import { SessionStateManager } from "../kernel/SessionStateManager.ts";
@@ -91,7 +91,7 @@ const MainLive = Layer.empty
     Layer.provide(GitHubClient.Default),
     Layer.provide(NotebookRenderer.Default),
     Layer.provide(NotebookSerializer.Default),
-    Layer.provide(ExecutionRegistry.Default),
+    Layer.provide(CellExecutions.Default),
     Layer.provide(VariablesService.Default),
     Layer.provide(DatasourcesService.Default),
     Layer.provide(PackagesService.Default),

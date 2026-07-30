@@ -38,11 +38,11 @@ import type {
   Notification,
   NotificationOf,
 } from "../types.ts";
+import { CellExecutions } from "./CellExecutions.ts";
 import {
   ControllerRegistry,
   resolveControllerExecutable,
 } from "./ControllerRegistry.ts";
-import { ExecutionRegistry } from "./ExecutionRegistry.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import { handleMissingPackageAlert } from "./operations.ts";
 
@@ -103,7 +103,7 @@ export class KernelManager extends Effect.Service<KernelManager>()(
       OutputChannel.Default,
       VariablesService.Default,
       NotebookRenderer.Default,
-      ExecutionRegistry.Default,
+      CellExecutions.Default,
       DatasourcesService.Default,
       NotebookEditorRegistry.Default,
       PythonEnvInvalidation.Default,
@@ -493,7 +493,7 @@ function processSessionOperation(
     const config = yield* Config;
     const editors = yield* NotebookEditorRegistry;
     const renderer = yield* NotebookRenderer;
-    const executions = yield* ExecutionRegistry;
+    const executions = yield* CellExecutions;
     const controllers = yield* ControllerRegistry;
     const envInvalidation = yield* PythonEnvInvalidation;
     const runPromise = Runtime.runPromise(yield* Effect.runtime());
@@ -535,7 +535,7 @@ function processSessionOperation(
           yield* PubSub.publish(scratchOps, { notebookUri, event: operation });
         }
 
-        yield* executions.handleCellOperation(operation, {
+        yield* executions.handleOperation(operation, {
           editor,
           controller,
         });
@@ -546,7 +546,7 @@ function processSessionOperation(
         break;
       }
       case "interrupted": {
-        yield* executions.handleInterrupted(editor);
+        yield* executions.handleInterrupt(editor);
         break;
       }
       case "missing-package-alert": {

@@ -13,8 +13,8 @@ import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import {
   buildCellOutputs,
-  ExecutionRegistry,
-} from "../../kernel/ExecutionRegistry.ts";
+  CellExecutions,
+} from "../../kernel/CellExecutions.ts";
 import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
 import {
   cellId,
@@ -38,7 +38,7 @@ const withTestCtx = Effect.fn(function* (
 ) {
   const vscode = yield* TestVsCode.make(options);
   const layer = Layer.empty.pipe(
-    Layer.merge(ExecutionRegistry.Default),
+    Layer.merge(CellExecutions.Default),
     Layer.merge(CellStateManager.Default),
     Layer.provide(TestMarimoClient),
     Layer.provide(TestTelemetryLive),
@@ -1103,7 +1103,7 @@ it.scoped(
     const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
 
     yield* Effect.gen(function* () {
-      const registry = yield* ExecutionRegistry;
+      const executions = yield* CellExecutions;
       const cellStateManager = yield* CellStateManager;
       const code = yield* VsCode;
 
@@ -1131,7 +1131,7 @@ it.scoped(
         stale_inputs: true,
       };
 
-      yield* registry.handleCellOperation(message, {
+      yield* executions.handleOperation(message, {
         editor,
         controller: new PythonController(controller, "test-controller"),
       });
@@ -1164,7 +1164,7 @@ it.scoped(
     const ctx = yield* withTestCtx();
 
     yield* Effect.gen(function* () {
-      const registry = yield* ExecutionRegistry;
+      const executions = yield* CellExecutions;
       const cellStateManager = yield* CellStateManager;
 
       // Create a test notebook with a stale cell
@@ -1221,7 +1221,7 @@ it.scoped(
         run_id: "test-run-id",
       };
 
-      yield* registry.handleCellOperation(message, {
+      yield* executions.handleOperation(message, {
         editor,
         controller: new PythonController(controller, "test-controller"),
       });
@@ -1242,7 +1242,7 @@ it.scoped(
     const ctx = yield* withTestCtx();
 
     yield* Effect.gen(function* () {
-      const registry = yield* ExecutionRegistry;
+      const executions = yield* CellExecutions;
       const cellStateManager = yield* CellStateManager;
 
       const cellData = {
@@ -1292,7 +1292,7 @@ it.scoped(
         run_id: null,
       };
 
-      yield* registry.handleCellOperation(message, {
+      yield* executions.handleOperation(message, {
         editor,
         controller: new PythonController(controller, "test-controller"),
       });
@@ -1353,7 +1353,7 @@ it.scoped(
     const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
 
     yield* Effect.gen(function* () {
-      const registry = yield* ExecutionRegistry;
+      const executions = yield* CellExecutions;
 
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cell = notebook.cellAt(0);
@@ -1372,7 +1372,7 @@ it.scoped(
         run_id: "test-run-id",
       };
 
-      yield* registry.handleCellOperation(message, {
+      yield* executions.handleOperation(message, {
         editor,
         controller,
       });
@@ -1405,7 +1405,7 @@ it.scoped(
     const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
 
     yield* Effect.gen(function* () {
-      const registry = yield* ExecutionRegistry;
+      const executions = yield* CellExecutions;
 
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cell = notebook.cellAt(0);
@@ -1431,7 +1431,7 @@ it.scoped(
         },
       };
 
-      yield* registry.handleCellOperation(message, {
+      yield* executions.handleOperation(message, {
         editor,
         controller,
       });

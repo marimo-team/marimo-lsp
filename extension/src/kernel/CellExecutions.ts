@@ -60,7 +60,7 @@ import type { SandboxController } from "./SandboxController.ts";
  * is no longer part of the notebook (e.g., deleted between the time we looked
  * it up and the time we tried to create an execution for it).
  */
-export class InvalidCellError extends Data.TaggedError("InvalidCellError")<{
+class InvalidCellError extends Data.TaggedError("InvalidCellError")<{
   readonly cellId: NotebookCellId;
   readonly cause: unknown;
 }> {}
@@ -94,8 +94,14 @@ interface PerformContext {
   readonly notebook: vscode.NotebookDocument | undefined;
 }
 
-export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
-  "ExecutionRegistry",
+/**
+ * Owns the state and VS Code resources for cell executions.
+ *
+ * Cell operations update the run state, diagnostics, and projected output for
+ * one cell. Interrupts end every active execution for an editor.
+ */
+export class CellExecutions extends Effect.Service<CellExecutions>()(
+  "CellExecutions",
   {
     dependencies: [CellStateManager.Default],
     scoped: Effect.gen(function* () {
@@ -299,7 +305,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
         });
 
       return {
-        handleInterrupted: (editor: vscode.NotebookEditor) =>
+        handleInterrupt: (editor: vscode.NotebookEditor) =>
           Effect.gen(function* () {
             const map = yield* Ref.get(records);
             const targets = EffectArray.fromIterable(
@@ -322,7 +328,7 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
               }
             }
           }),
-        handleCellOperation: (
+        handleOperation: (
           msg: CellOperationNotification,
           options: {
             editor: vscode.NotebookEditor;
@@ -442,7 +448,7 @@ export function buildCellOutputs(
  * slot is created once, in the order it first appears, and tall built-in
  * outputs (a traceback) are measured once instead of on every cell-op.
  */
-export function buildKeyedCellOutputs(
+function buildKeyedCellOutputs(
   cellId: NotebookCellId,
   state: CellRuntimeState,
   code: VsCode,

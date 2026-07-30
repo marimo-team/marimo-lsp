@@ -16,8 +16,8 @@ import {
 import type * as vscode from "vscode";
 
 import { Config } from "../config/Config.ts";
+import { scratchCellNotificationsToVsCodeOutput } from "../kernel/CellExecutions.ts";
 import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
-import { scratchCellNotificationsToVsCodeOutput } from "../kernel/ExecutionRegistry.ts";
 import { KernelManager } from "../kernel/KernelManager.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";

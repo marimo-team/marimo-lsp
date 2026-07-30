@@ -1,6 +1,6 @@
 import { Effect, Either, Option } from "effect";
 
-import { ExecutionRegistry } from "../kernel/ExecutionRegistry.ts";
+import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -9,7 +9,7 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 export const restartKernel = Effect.fn("command.restartKernel")(function* () {
   const code = yield* VsCode;
   const marimo = yield* MarimoClient;
-  const executions = yield* ExecutionRegistry;
+  const executions = yield* CellExecutions;
 
   const editor = yield* code.window.getActiveNotebookEditor();
   if (Option.isNone(editor)) {
@@ -49,7 +49,7 @@ export const restartKernel = Effect.fn("command.restartKernel")(function* () {
         return;
       }
 
-      yield* executions.handleInterrupted(editor.value);
+      yield* executions.handleInterrupt(editor.value);
 
       // Clear all cell outputs by replacing each cell with fresh version
       const edit = new code.WorkspaceEdit();
