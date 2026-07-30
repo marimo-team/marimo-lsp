@@ -77,6 +77,16 @@ interface RunResource {
   readonly projection: CellOutputProjection;
 }
 
+interface CellExecutionKey {
+  readonly notebookId: NotebookId;
+  readonly cellId: NotebookCellId;
+}
+
+const cellExecutionKey = (
+  notebookId: NotebookId,
+  cellId: NotebookCellId,
+): CellExecutionKey => Data.struct({ notebookId, cellId });
+
 /**
  * Everything the registry tracks for one cell: the pure {@link CellRunEntry},
  * the editor it belongs to (for interrupt fan-out), and its live execution
@@ -94,6 +104,7 @@ interface RunRecord {
  * executions); actions that require them assert their presence.
  */
 interface PerformContext {
+  readonly key: CellExecutionKey;
   readonly cellId: NotebookCellId;
   readonly notebookCell: MarimoNotebookCell | undefined;
   readonly controller: CellExecutionController | undefined;
@@ -116,7 +127,7 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
       const code = yield* VsCode;
       const editorRegistry = yield* NotebookEditorRegistry;
       const records = yield* Ref.make(
-        HashMap.empty<NotebookCellId, RunRecord>(),
+        HashMap.empty<CellExecutionKey, RunRecord>(),
       );
       const lastExecutedCodeRef = yield* SubscriptionRef.make(
         HashMap.empty<
@@ -300,21 +311,20 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
         });
 
       const setResource = (
-        cellId: NotebookCellId,
+        key: CellExecutionKey,
         resource: Option.Option<RunResource>,
       ) =>
         Ref.update(records, (map) =>
-          Option.match(HashMap.get(map, cellId), {
-            onSome: (record) =>
-              HashMap.set(map, cellId, { ...record, resource }),
+          Option.match(HashMap.get(map, key), {
+            onSome: (record) => HashMap.set(map, key, { ...record, resource }),
             onNone: () => map,
           }),
         );
 
-      const getResource = (cellId: NotebookCellId) =>
+      const getResource = (key: CellExecutionKey) =>
         Ref.get(records).pipe(
           Effect.map((map) =>
-            HashMap.get(map, cellId).pipe(
+            HashMap.get(map, key).pipe(
               Option.flatMap((record) => record.resource),
             ),
           ),
@@ -323,17 +333,22 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
       // Run `f` against the cell's live execution, or log+skip when there is
       // none (a benign race: the execution was ended concurrently).
       const withResource = (
-        cellId: NotebookCellId,
+        key: CellExecutionKey,
         f: (resource: RunResource) => Effect.Effect<void>,
       ) =>
-        getResource(cellId).pipe(
+        getResource(key).pipe(
           Effect.flatMap(
             Option.match({
               onSome: f,
               onNone: () =>
                 Effect.logDebug(
                   "No live execution for cell; skipping action",
-                ).pipe(Effect.annotateLogs({ cellId })),
+                ).pipe(
+                  Effect.annotateLogs({
+                    notebookId: key.notebookId,
+                    cellId: key.cellId,
+                  }),
+                ),
             }),
           ),
         );
@@ -343,7 +358,7 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
         state: CellRuntimeState,
         final: boolean,
       ) =>
-        withResource(ctx.cellId, ({ projection }) => {
+        withResource(ctx.key, ({ projection }) => {
           const keyed = buildKeyedCellOutputs(
             ctx.cellId,
             state,
@@ -379,7 +394,7 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
                   new InvalidCellError({ cellId: ctx.cellId, cause }),
               });
               yield* setResource(
-                ctx.cellId,
+                ctx.key,
                 Option.some({
                   execution,
                   projection: new CellOutputProjection(execution),
@@ -387,19 +402,19 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
               );
             }),
           StartExecution: ({ startTime }) =>
-            withResource(ctx.cellId, ({ execution }) =>
+            withResource(ctx.key, ({ execution }) =>
               Effect.sync(() => execution.start(startTime)),
             ),
           EmitOutputs: ({ state }) => emitOutputs(ctx, state, false),
           FinalizeOutputs: ({ state }) => emitOutputs(ctx, state, true),
           EndExecution: ({ success, endTime }) =>
-            withResource(ctx.cellId, ({ execution }) =>
+            withResource(ctx.key, ({ execution }) =>
               Effect.gen(function* () {
                 // `end` throws if already ended (a race); swallow it.
                 yield* Effect.try(() => execution.end(success, endTime)).pipe(
                   Effect.ignore,
                 );
-                yield* setResource(ctx.cellId, Option.none());
+                yield* setResource(ctx.key, Option.none());
               }),
             ),
           ApplyRuntimeError: ({ state }) => {
@@ -455,13 +470,14 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
             const targets = EffectArray.fromIterable(
               HashMap.entries(map),
             ).filter(([, record]) => record.editor === editor);
-            for (const [cellId, record] of targets) {
+            for (const [key, record] of targets) {
               const { entry, actions } = step(record.entry, Op.Interrupt());
               yield* Ref.update(records, (m) =>
-                HashMap.set(m, cellId, { ...record, entry }),
+                HashMap.set(m, key, { ...record, entry }),
               );
               const ctx: PerformContext = {
-                cellId,
+                key,
+                cellId: key.cellId,
                 notebookCell: undefined,
                 controller: undefined,
                 notebook: undefined,
@@ -482,15 +498,16 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
           Effect.gen(function* () {
             const { editor, controller } = options;
             const cellId = extractCellIdFromCellMessage(msg);
+            const notebook = MarimoNotebookDocument.from(editor.notebook);
+            const key = cellExecutionKey(notebook.id, cellId);
 
             const map = yield* Ref.get(records);
-            const record = Option.getOrElse(HashMap.get(map, cellId), () => ({
+            const record = Option.getOrElse(HashMap.get(map, key), () => ({
               entry: makeCellRunEntry(cellId),
               editor,
               resource: Option.none<RunResource>(),
             }));
 
-            const notebook = MarimoNotebookDocument.from(editor.notebook);
             const notebookCell = yield* findNotebookCell(notebook, cellId);
 
             // Fold the cell-op into the run state once, up front, so the folded
@@ -502,7 +519,7 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
                 "Queued cell-op missing run_id; cannot track execution",
               ).pipe(Effect.annotateLogs({ cellId, status: msg.status }));
               yield* Ref.update(records, (m) =>
-                HashMap.set(m, cellId, {
+                HashMap.set(m, key, {
                   ...record,
                   entry: { ...record.entry, state: next },
                 }),
@@ -512,10 +529,11 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
 
             const result = step(record.entry, op.value);
             yield* Ref.update(records, (m) =>
-              HashMap.set(m, cellId, { ...record, entry: result.entry }),
+              HashMap.set(m, key, { ...record, entry: result.entry }),
             );
 
             const ctx: PerformContext = {
+              key,
               cellId,
               notebookCell,
               controller,

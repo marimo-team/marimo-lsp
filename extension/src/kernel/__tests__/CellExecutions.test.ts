@@ -1078,6 +1078,71 @@ describe("buildCellOutputs", () => {
 });
 
 it.scoped(
+  "tracks equal cell IDs independently across notebooks",
+  Effect.fn(function* () {
+    const makeEditor = (path: string) =>
+      TestVsCode.makeNotebookEditor(path, {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: { stableId: "shared-cell" },
+            },
+          ],
+        },
+      });
+    const firstEditor = makeEditor("/test/first_notebook_mo.py");
+    const secondEditor = makeEditor("/test/second_notebook_mo.py");
+    const ctx = yield* withTestCtx({
+      initialDocuments: [firstEditor.notebook, secondEditor.notebook],
+    });
+
+    yield* Effect.gen(function* () {
+      const executions = yield* CellExecutions;
+      const code = yield* VsCode;
+      const vscodeController = yield* code.notebooks.createNotebookController(
+        "test-controller",
+        NOTEBOOK_TYPE,
+        "test-controller",
+      );
+      const createdFor: string[] = [];
+      const controller = {
+        createNotebookCellExecution(cell: MarimoNotebookCell) {
+          createdFor.push(cell.notebook.id);
+          return vscodeController.createNotebookCellExecution(
+            cell.rawNotebookCell,
+          );
+        },
+      };
+      const message: CellOperationNotification = {
+        op: "cell-op",
+        cell_id: cellId("shared-cell"),
+        status: "queued",
+        run_id: "shared-run",
+      };
+
+      yield* executions.handleOperation(message, {
+        editor: firstEditor,
+        controller,
+      });
+      yield* executions.handleOperation(message, {
+        editor: secondEditor,
+        controller,
+      });
+
+      expect(createdFor.toSorted((a, b) => a.localeCompare(b))).toEqual(
+        [
+          MarimoNotebookDocument.from(firstEditor.notebook).id,
+          MarimoNotebookDocument.from(secondEditor.notebook).id,
+        ].toSorted((a, b) => a.localeCompare(b)),
+      );
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.scoped(
   "marks cell as stale when message has staleInputs",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(
