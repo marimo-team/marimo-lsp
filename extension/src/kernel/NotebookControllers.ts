@@ -34,7 +34,7 @@ import {
   type NotebookControllerId,
   PythonController,
 } from "./PythonController.ts";
-import { SandboxController } from "./SandboxController.ts";
+import { createSandboxController } from "./SandboxController.ts";
 
 export interface NotebookController extends RuntimeNotebookController {
   readonly selectedNotebookChanges: () => Stream.Stream<{
@@ -62,7 +62,7 @@ export const NotebookControllersLive = Layer.scopedDiscard(
     const code = yield* VsCode;
     const pyExt = yield* PythonExtension;
     const notebooks = yield* NotebookRuntime;
-    const sandboxController = yield* SandboxController;
+    const sandboxController = yield* createSandboxController();
 
     const uvCacheDir = yield* uv.getCacheDir().pipe(
       Effect.map((path) => code.Uri.file(path)),
@@ -153,7 +153,6 @@ export const NotebookControllersLive = Layer.scopedDiscard(
 ).pipe(
   Layer.provide(Uv.Default),
   Layer.provide(OutputChannel.Default),
-  Layer.provide(SandboxController.Default),
   Layer.provide(Config.Default),
   Layer.provide(Constants.Default),
   Layer.provide(EnvironmentValidator.Default),
@@ -163,7 +162,7 @@ export const NotebookControllersLive = Layer.scopedDiscard(
 const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(
   function* (options: {
     notebook: MarimoNotebookDocument;
-    sandboxController: SandboxController;
+    sandboxController: NotebookController;
     handlesRef: SynchronizedRef.SynchronizedRef<
       HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
     >;
