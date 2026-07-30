@@ -2,13 +2,11 @@ import {
   Data,
   Effect,
   Exit,
-  HashMap,
   Option,
   PubSub,
   Queue,
   Ref,
   Runtime,
-  STM,
   Stream,
   TSemaphore,
   Array as EffectArray,
@@ -132,6 +130,11 @@ export interface NotebookHandle {
   readonly close: () => ReturnType<MarimoClient["closeSession"]>;
 }
 
+interface NotebookState {
+  readonly handle: NotebookHandle;
+  readonly controller: Ref.Ref<Option.Option<NotebookController>>;
+}
+
 function hasRunId<T extends { run_id?: string | null }>(
   event: T,
 ): event is T & { run_id: string } {
@@ -193,11 +196,7 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       const executions = yield* CellExecutions;
       const operations = yield* PubSub.unbounded<MarimoOperation>();
       const operationQueue = yield* Queue.unbounded<MarimoOperation>();
-      const scratchpadLock = yield* STM.commit(TSemaphore.make(1));
-      const handles = new Map<NotebookId, NotebookHandle>();
-      const controllers = yield* Ref.make(
-        HashMap.empty<NotebookId, NotebookController>(),
-      );
+      const notebooks = new Map<NotebookId, NotebookState>();
       const controllerSelections =
         yield* PubSub.unbounded<NotebookControllerSelection>();
 
@@ -208,10 +207,13 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
         ),
       );
 
-      const makeHandle = (notebookId: NotebookId): NotebookHandle => ({
+      const makeHandle = (
+        notebookId: NotebookId,
+        controller: Ref.Ref<Option.Option<NotebookController>>,
+        scratchpadLock: TSemaphore.TSemaphore,
+      ): NotebookHandle => ({
         id: notebookId,
-        getController: () =>
-          Effect.map(Ref.get(controllers), HashMap.get(notebookId)),
+        getController: () => Ref.get(controller),
         executeCells: (request, executable) =>
           marimo.executeCells({
             notebookUri: notebookId,
@@ -223,11 +225,8 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
             Effect.gen(function* () {
               yield* TSemaphore.withPermitsScoped(scratchpadLock, 1);
 
-              const controller = HashMap.get(
-                yield* Ref.get(controllers),
-                notebookId,
-              );
-              if (Option.isNone(controller)) {
+              const selectedController = yield* Ref.get(controller);
+              if (Option.isNone(selectedController)) {
                 return yield* new NoActiveKernelError({
                   notebookUri: notebookId,
                 });
@@ -235,7 +234,7 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
 
               const notebook = yield* findOpenNotebook(notebookId);
               const executable =
-                yield* controller.value.resolveExecutable(notebook);
+                yield* selectedController.value.resolveExecutable(notebook);
               const subscription = yield* PubSub.subscribe(operations);
               const runId = crypto.randomUUID();
 
@@ -303,14 +302,27 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
           marimo.closeSession({ notebookUri: notebookId, inner: {} }),
       });
 
-      const forNotebook = (notebookId: NotebookId) => {
-        const existing = handles.get(notebookId);
+      const makeState = (notebookId: NotebookId): NotebookState => {
+        const controller = Ref.unsafeMake<Option.Option<NotebookController>>(
+          Option.none(),
+        );
+        return {
+          controller,
+          handle: makeHandle(notebookId, controller, TSemaphore.unsafeMake(1)),
+        };
+      };
+
+      const stateForNotebook = (notebookId: NotebookId) => {
+        const existing = notebooks.get(notebookId);
         if (existing !== undefined) return existing;
 
-        const handle = makeHandle(notebookId);
-        handles.set(notebookId, handle);
-        return handle;
+        const state = makeState(notebookId);
+        notebooks.set(notebookId, state);
+        return state;
       };
+
+      const forNotebook = (notebookId: NotebookId) =>
+        stateForNotebook(notebookId).handle;
 
       const updateKernelContext = Effect.fn(
         "NotebookRuntime.updateKernelContext",
@@ -321,7 +333,9 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
         );
         const hasKernel =
           Option.isSome(activeNotebook) &&
-          HashMap.has(yield* Ref.get(controllers), activeNotebook.value.id);
+          Option.isSome(
+            yield* forNotebook(activeNotebook.value.id).getController(),
+          );
 
         yield* code.commands.setContext("marimo.notebook.hasKernel", hasKernel);
       });
@@ -348,7 +362,6 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
           while (true) {
             const message = yield* Queue.take(operationQueue);
             yield* processOperation(message, {
-              controllers,
               forNotebook,
             }).pipe(
               Effect.annotateLogs({
@@ -477,9 +490,9 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
           return Effect.gen(function* () {
             yield* Effect.uninterruptible(
               Effect.gen(function* () {
-                yield* Ref.update(
-                  controllers,
-                  HashMap.set(notebookId, controller),
+                yield* Ref.set(
+                  stateForNotebook(notebookId).controller,
+                  Option.some(controller),
                 );
                 yield* PubSub.publish(controllerSelections, {
                   notebookUri: notebookId,
@@ -529,7 +542,6 @@ function isValueUpdateEcho(
 function processOperation(
   { notebookUri, operation }: MarimoOperation,
   options: {
-    controllers: Ref.Ref<HashMap.HashMap<NotebookId, NotebookController>>;
     forNotebook: (notebookId: NotebookId) => NotebookHandle;
   },
 ) {
@@ -634,7 +646,6 @@ function processNotebookOperation(
     | NotificationOf<"send-ui-element-message">
     | NotificationOf<"model-lifecycle">,
   options: {
-    controllers: Ref.Ref<HashMap.HashMap<NotebookId, NotebookController>>;
     forNotebook: (notebookId: NotebookId) => NotebookHandle;
   },
 ) {
@@ -654,10 +665,7 @@ function processNotebookOperation(
       return;
     }
 
-    const controller = HashMap.get(
-      yield* Ref.get(options.controllers),
-      notebookUri,
-    );
+    const controller = yield* options.forNotebook(notebookUri).getController();
     if (Option.isNone(controller)) {
       yield* Effect.logWarning("No active controller, skipping operation");
       return;
