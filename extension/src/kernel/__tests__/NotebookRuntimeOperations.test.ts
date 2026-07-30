@@ -197,6 +197,82 @@ describe("NotebookRuntime operation processing", () => {
   );
 
   it.scoped(
+    "projects the newest renderable output when a state-only cell-op trails it",
+    Effect.fn(function* () {
+      const source =
+        yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
+      const blockerStarted = yield* Effect.makeLatch();
+      const releaseBlocker = yield* Effect.makeLatch();
+      const trailerProcessed = yield* Effect.makeLatch();
+      const processed = yield* Ref.make<
+        ReadonlyArray<{ label: string; project: boolean }>
+      >([]);
+      const notebook = notebookId("notebook");
+
+      const fiber = yield* processRuntimeOperations(
+        Stream.fromPubSub(source),
+        Effect.fn(function* ({ operation }, options) {
+          assert(operation.op === "cell-op");
+          const label =
+            operation.serialization ?? operation.run_id ?? "unlabelled";
+          yield* Ref.update(processed, (items) => [
+            ...items,
+            { label, project: options.renderCellOutput },
+          ]);
+          if (label === "blocker") {
+            yield* blockerStarted.open;
+            yield* releaseBlocker.await;
+          }
+          if (label === "serialization") yield* trailerProcessed.open;
+        }),
+      ).pipe(Effect.fork);
+      yield* TestClock.adjust("1 millis");
+
+      // Occupy the worker so the next two operations arrive as one batch.
+      yield* PubSub.publish(
+        source,
+        makeIdleCellOperation(notebook, "cell", { run_id: "blocker" }),
+      );
+      yield* blockerStarted.await;
+
+      // The kernel's terminal op for the run, carrying the output it produced.
+      yield* PubSub.publish(
+        source,
+        makeIdleCellOperation(notebook, "cell", {
+          run_id: "settle",
+          output: {
+            mimetype: "text/plain",
+            channel: "output",
+            data: "42",
+            timestamp: 0,
+          },
+        }),
+      );
+      // Edit mode appends `render_toplevel_defs` after `_set_status_idle`, so a
+      // cell defining a top-level function or class emits this payload-less
+      // hint right behind the settle op. It must not take the render slot.
+      yield* PubSub.publish(source, {
+        notebookUri: notebook,
+        operation: {
+          op: "cell-op" as const,
+          cell_id: cellId("cell"),
+          serialization: "serialization",
+        },
+      });
+
+      yield* releaseBlocker.open;
+      yield* trailerProcessed.await;
+      yield* Fiber.interrupt(fiber);
+
+      assert.deepStrictEqual(yield* Ref.get(processed), [
+        { label: "blocker", project: true },
+        { label: "settle", project: true },
+        { label: "serialization", project: false },
+      ]);
+    }),
+  );
+
+  it.scoped(
     "processes separate notebooks independently",
     Effect.fn(function* () {
       const source =

@@ -541,8 +541,8 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
  * Processes operations in order with one worker per notebook.
  *
  * Operations received while a worker is busy form the next batch. Every
- * operation updates runtime state, but only the newest output for each cell in
- * that batch is projected into VS Code.
+ * operation updates runtime state, but only the newest renderable output for
+ * each cell in that batch is projected into VS Code.
  */
 export function processRuntimeOperations<E, R>(
   operations: Stream.Stream<MarimoOperation>,
@@ -558,10 +558,20 @@ export function processRuntimeOperations<E, R>(
       const workers: Array<Fiber.RuntimeFiber<void, E>> = [];
 
       const processBatch = (batch: ReadonlyArray<MarimoOperation>) => {
-        const latestCellOperation = new Map<NotebookCellId, number>();
+        // The newest op for a cell may carry no payload at all — marimo sends
+        // state-only cell-ops (`stale_inputs`, `serialization`) that trail the
+        // terminal `idle` op. Project the newest op that can actually render,
+        // so a payload-less trailer never costs the cell its output.
+        const renderIndex = new Map<NotebookCellId, number>();
         for (const [index, message] of batch.entries()) {
-          if (message.operation.op === "cell-op") {
-            latestCellOperation.set(message.operation.cell_id, index);
+          const operation = message.operation;
+          if (operation.op !== "cell-op") continue;
+          if (
+            operation.status === "idle" ||
+            operation.output != null ||
+            operation.console != null
+          ) {
+            renderIndex.set(operation.cell_id, index);
           }
         }
 
@@ -569,17 +579,10 @@ export function processRuntimeOperations<E, R>(
           batch,
           (message, index) => {
             const operation = message.operation;
-            const isLatest =
-              operation.op !== "cell-op" ||
-              latestCellOperation.get(operation.cell_id) === index;
-            const hasCurrentOutput =
-              operation.op !== "cell-op" ||
-              operation.status === "idle" ||
-              operation.output != null ||
-              operation.console != null;
-
             return process(message, {
-              renderCellOutput: isLatest && hasCurrentOutput,
+              renderCellOutput:
+                operation.op !== "cell-op" ||
+                renderIndex.get(operation.cell_id) === index,
             });
           },
           { discard: true },
