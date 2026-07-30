@@ -109,8 +109,8 @@ Nothing to release — we set `globalThis.__marimoDebug` and walk away. If you w
 **Scoped service that owns resources.** `scoped` build + `Effect.forkScoped`, so fibers die when the layer's scope closes.
 
 ```ts
-// extension/src/kernel/KernelManager.ts:96
-export class KernelManager extends Effect.Service<KernelManager>()("KernelManager", {
+// extension/src/kernel/NotebookRuntime.ts:169
+export class NotebookRuntime extends Effect.Service<NotebookRuntime>()("NotebookRuntime", {
   dependencies: [Uv.Default, Config.Default, /* ... */ NotebookRenderer.Default],
   scoped: Effect.gen(function* () {
     const marimo = yield* MarimoClient;

@@ -22,7 +22,11 @@ import {
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
-import { NotebookRuntime, UnsavedNotebookError } from "./NotebookRuntime.ts";
+import {
+  ExecutableResolutionError,
+  NotebookRuntime,
+  UnsavedNotebookError,
+} from "./NotebookRuntime.ts";
 
 export class SandboxController extends Effect.Service<SandboxController>()(
   "SandboxController",
@@ -192,7 +196,17 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       return {
         _tag: "SandboxController" as const,
         id: controller.id,
-        resolveExecutable,
+        resolveExecutable: (notebook: MarimoNotebookDocument) =>
+          resolveExecutable(notebook).pipe(
+            Effect.mapError((error) =>
+              error._tag === "UnsavedNotebookError"
+                ? error
+                : new ExecutableResolutionError({
+                    notebookUri: notebook.id,
+                    cause: error,
+                  }),
+            ),
+          ),
         createNotebookCellExecution(cell: MarimoNotebookCell) {
           return controller.createNotebookCellExecution(cell.rawNotebookCell);
         },

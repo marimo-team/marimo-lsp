@@ -65,7 +65,7 @@ export interface NotebookController {
   ) => vscode.NotebookCellExecution;
   readonly resolveExecutable: (
     notebook: MarimoNotebookDocument,
-  ) => Effect.Effect<string, NotebookExecutableError>;
+  ) => Effect.Effect<string, ExecutableResolutionError | UnsavedNotebookError>;
 }
 
 /** No controller is selected for the notebook. */
@@ -73,10 +73,10 @@ export class NoActiveKernelError extends Data.TaggedError(
   "NoActiveKernelError",
 )<{ readonly notebookUri: NotebookId }> {}
 
-/** An error returned while a controller resolves its Python executable. */
-export interface NotebookExecutableError {
-  readonly _tag: string;
-}
+/** A controller could not resolve a Python executable for the notebook. */
+export class ExecutableResolutionError extends Data.TaggedError(
+  "ExecutableResolutionError",
+)<{ readonly notebookUri: NotebookId; readonly cause: unknown }> {}
 
 /** A sandbox controller needs a saved notebook to resolve its environment. */
 export class UnsavedNotebookError extends Data.TaggedError(
@@ -99,10 +99,10 @@ export interface NotebookHandle {
     code: string,
   ) => Stream.Stream<
     CellOperationNotification,
+    | ExecutableResolutionError
     | MarimoClientStartError
     | MarimoCommandError
     | NoActiveKernelError
-    | NotebookExecutableError
     | UnsavedNotebookError
   >;
   readonly updateUIElements: (

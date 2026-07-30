@@ -46,7 +46,7 @@ Read `ARCHITECTURE.md` first — it documents the custom LSP protocol (commands 
 Built on **Effect-TS**. Everything is wired as `Layer`s (services) assembled in `layers/Main.ts` via `makeActivate(...)` in `features/Main.ts`. Directory roles:
 
 - `features/` — top-level layers that only register side effects (commands, codelens, file detection, theme sync, debug, cell-metadata bindings).
-- `services/`, `kernel/`, `notebook/`, `config/`, `lsp/`, `platform/`, `python/`, `telemetry/` — the actual services composed into `MainLive`. E.g. `KernelManager` consumes `marimo/operation`, `ExecutionRegistry` drives `NotebookCellExecution` state, `CellStateManager` tracks stale cells and the `marimo.notebook.hasStaleCells` context key, `NotebookRenderer` renders `application/vnd.marimo+html` MIME outputs, `VariablesService`/`DatasourcesService`/`PackagesService` back the tree views.
+- `services/`, `kernel/`, `notebook/`, `config/`, `lsp/`, `platform/`, `python/`, `telemetry/` — the actual services composed into `MainLive`. E.g. `NotebookRuntime` consumes `marimo/operation`, `CellExecutions` drives `NotebookCellExecution` state and tracks stale cells behind the `marimo.notebook.hasStaleCells` context key, `NotebookRenderer` renders `application/vnd.marimo+html` MIME outputs, `VariablesService`/`DatasourcesService`/`PackagesService` back the tree views.
 - `commands/` — one file per VS Code command registered in `package.json`.
 - `renderer/` — webview-side notebook renderer (`renderer.tsx`) that embeds marimo's frontend.
 - `panel/`, `views/` — tree views for recents, variables, datasources, packages.
