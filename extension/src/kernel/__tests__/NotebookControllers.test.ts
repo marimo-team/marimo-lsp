@@ -10,7 +10,7 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
+import { NotebookControllers } from "../../kernel/NotebookControllers.ts";
 import { Constants } from "../../platform/Constants.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
@@ -25,7 +25,7 @@ const withTestCtx = Effect.fn(function* (
   const py = yield* TestPythonExtension.make(initialEnvs);
 
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(ControllerRegistry.Default),
+    Layer.provideMerge(NotebookControllers.Default),
     Layer.provide(Constants.Default),
     Layer.provide(TestNotebookRuntime),
     Layer.provide(TestTelemetryLive),
@@ -44,13 +44,13 @@ it.effect(
 
     const controller = yield* Effect.gen(function* () {
       const code = yield* VsCode;
-      const registry = yield* ControllerRegistry;
+      const controllers = yield* NotebookControllers;
 
       const notebook = MarimoNotebookDocument.from(
         createTestNotebookDocument(code.Uri.file("/test/notebook_mo.py")),
       );
 
-      return yield* registry.getActiveController(notebook);
+      return yield* controllers.getSelected(notebook);
     }).pipe(Effect.provide(layer));
 
     expect(Option.isNone(controller)).toBe(true);
@@ -68,8 +68,8 @@ it.effect(
     });
 
     const snapshot = yield* Effect.gen(function* () {
-      const registry = yield* ControllerRegistry;
-      return yield* registry.snapshot();
+      const controllers = yield* NotebookControllers;
+      return yield* controllers.snapshot();
     }).pipe(Effect.provide(layer));
 
     expect(snapshot).toMatchInlineSnapshot(`
@@ -98,10 +98,10 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const registry = yield* ControllerRegistry;
+      const controllers = yield* NotebookControllers;
 
       // Initial state - should have one controller
-      const snapshot1 = yield* registry.snapshot();
+      const snapshot1 = yield* controllers.snapshot();
       expect(snapshot1).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -122,7 +122,7 @@ it.effect(
       yield* TestClock.adjust("100 millis");
 
       // Should now have two controllers
-      const snapshot2 = yield* registry.snapshot();
+      const snapshot2 = yield* controllers.snapshot();
       expect(snapshot2).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -150,10 +150,10 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const registry = yield* ControllerRegistry;
+      const controllers = yield* NotebookControllers;
 
       // Initial state - should have three controllers (includes global env)
-      const snapshot1 = yield* registry.snapshot();
+      const snapshot1 = yield* controllers.snapshot();
       expect(snapshot1).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -182,7 +182,7 @@ it.effect(
       yield* TestClock.adjust("100 millis");
 
       // Should now have two controllers
-      const snapshot2 = yield* registry.snapshot();
+      const snapshot2 = yield* controllers.snapshot();
       expect(snapshot2).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -219,7 +219,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const code = yield* VsCode;
-      const registry = yield* ControllerRegistry;
+      const controllers = yield* NotebookControllers;
 
       const notebook1 = MarimoNotebookDocument.from(
         createTestNotebookDocument(code.Uri.file("/test/notebook1_mo.py")),
@@ -239,15 +239,15 @@ it.effect(
         ]
       `);
 
-      // Verify getActiveController returns None initially
-      const controller1 = yield* registry.getActiveController(notebook1);
-      const controller2 = yield* registry.getActiveController(notebook2);
+      // Verify getSelected returns None initially
+      const controller1 = yield* controllers.getSelected(notebook1);
+      const controller2 = yield* controllers.getSelected(notebook2);
 
       assert(Option.isNone(controller1));
       assert(Option.isNone(controller2));
 
       // Verify snapshot shows no selections (includes global env)
-      const snapshot = yield* registry.snapshot();
+      const snapshot = yield* controllers.snapshot();
       expect(snapshot).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -280,7 +280,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      yield* ControllerRegistry;
+      yield* NotebookControllers;
 
       const selectedEditor = TestVsCode.makeNotebookEditor(
         "/test/selected_mo.py",
@@ -331,10 +331,10 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const registry = yield* ControllerRegistry;
+      const controllers = yield* NotebookControllers;
 
       // Initial state
-      const snapshot1 = yield* registry.snapshot();
+      const snapshot1 = yield* controllers.snapshot();
       expect(snapshot1).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -359,7 +359,7 @@ it.effect(
       yield* TestClock.adjust("100 millis");
 
       // Should remove since no notebook is using it
-      const snapshot2 = yield* registry.snapshot();
+      const snapshot2 = yield* controllers.snapshot();
       expect(snapshot2).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -390,14 +390,14 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const registry = yield* ControllerRegistry;
+      const controllers = yield* NotebookControllers;
 
       const env1 = TestPythonExtension.makeVenv("/usr/local/bin/python3.11");
       const env2 = TestPythonExtension.makeVenv("/home/user/.venv/bin/python");
       const env3 = TestPythonExtension.makeVenv("/opt/python3.12/bin/python");
 
       // Initial: 2 controllers (includes global env)
-      let snapshot = yield* registry.snapshot();
+      let snapshot = yield* controllers.snapshot();
       expect(snapshot).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -418,7 +418,7 @@ it.effect(
       yield* py.addEnvironment(env2);
       yield* TestClock.adjust("100 millis");
 
-      snapshot = yield* registry.snapshot();
+      snapshot = yield* controllers.snapshot();
       expect(snapshot).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -439,7 +439,7 @@ it.effect(
       yield* py.addEnvironment(env3);
       yield* TestClock.adjust("100 millis");
 
-      snapshot = yield* registry.snapshot();
+      snapshot = yield* controllers.snapshot();
       expect(snapshot).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -468,7 +468,7 @@ it.effect(
       yield* py.removeEnvironment(env2);
       yield* TestClock.adjust("100 millis");
 
-      snapshot = yield* registry.snapshot();
+      snapshot = yield* controllers.snapshot();
       expect(snapshot).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -493,7 +493,7 @@ it.effect(
       yield* py.removeEnvironment(env1);
       yield* TestClock.adjust("100 millis");
 
-      snapshot = yield* registry.snapshot();
+      snapshot = yield* controllers.snapshot();
       expect(snapshot).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -525,12 +525,12 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const registry = yield* ControllerRegistry;
+      const controllers = yield* NotebookControllers;
 
       const env1 = TestPythonExtension.makeVenv("/usr/local/bin/python3.11");
 
       // Initial snapshot
-      const snapshot1 = yield* registry.snapshot();
+      const snapshot1 = yield* controllers.snapshot();
       expect(snapshot1).toMatchInlineSnapshot(`
         {
           "controllers": [
@@ -551,7 +551,7 @@ it.effect(
       yield* py.addEnvironment(env1);
       yield* TestClock.adjust("100 millis");
 
-      const snapshot2 = yield* registry.snapshot();
+      const snapshot2 = yield* controllers.snapshot();
       expect(snapshot2).toMatchInlineSnapshot(`
         {
           "controllers": [

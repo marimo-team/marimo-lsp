@@ -1,10 +1,9 @@
 import { Effect, HashMap, Option, Schema, SubscriptionRef } from "effect";
 
 import {
-  type AnyController,
-  ControllerRegistry,
-} from "../../kernel/ControllerRegistry.ts";
-import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
+  type NotebookController,
+  NotebookControllers,
+} from "../../kernel/NotebookControllers.ts";
 import { MarimoClient } from "../../lsp/MarimoClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
@@ -19,12 +18,12 @@ import {
 
 /**
  * Derive how to ask the server about a notebook's python environment from
- * the controller that's currently selected. A `PythonController` knows its
- * executable up front (`venv` mode); the sandbox controller doesn't and the
- * server resolves the env via `uv tree --script <file>` (`script` mode).
+ * the controller that's currently selected. Environment controllers know
+ * their executable up front (`venv` mode); the sandbox controller doesn't and
+ * the server resolves the env via `uv tree --script <file>` (`script` mode).
  */
-function controllerSource(controller: AnyController): PackageSource {
-  return controller instanceof PythonController
+function controllerSource(controller: NotebookController): PackageSource {
+  return typeof controller.executable === "string"
     ? { kind: "venv", executable: controller.executable }
     : { kind: "script" };
 }
@@ -61,7 +60,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
   {
     scoped: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
-      const controllers = yield* ControllerRegistry;
+      const controllers = yield* NotebookControllers;
       const editors = yield* NotebookEditorRegistry;
 
       // Track package lists: NotebookUri -> PackageListState
@@ -247,7 +246,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               return null;
             }
 
-            const activeController = yield* controllers.getActiveController(
+            const activeController = yield* controllers.getSelected(
               activeNotebook.value,
             );
             if (Option.isNone(activeController)) {

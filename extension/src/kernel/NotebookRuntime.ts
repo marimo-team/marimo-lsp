@@ -433,7 +433,7 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       );
 
       return {
-        selectController(
+        attachController(
           notebookId: NotebookId,
           controller: NotebookController,
         ) {

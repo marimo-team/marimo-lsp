@@ -17,7 +17,7 @@ import type * as vscode from "vscode";
 
 import { Config } from "../config/Config.ts";
 import { scratchCellNotificationsToVsCodeOutput } from "../kernel/CellExecutions.ts";
-import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
+import { NotebookControllers } from "../kernel/NotebookControllers.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
@@ -74,12 +74,12 @@ export class Api extends Effect.Service<Api>()("Api", {
     Uv.Default,
     Config.Default,
     OutputChannel.Default,
-    ControllerRegistry.Default,
+    NotebookControllers.Default,
   ],
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const notebooks = yield* NotebookRuntime;
-    const controllers = yield* ControllerRegistry;
+    const controllers = yield* NotebookControllers;
 
     const runtime = yield* Effect.runtime();
     const runPromise = Runtime.runPromise(runtime);
@@ -107,7 +107,7 @@ export class Api extends Effect.Service<Api>()("Api", {
       // Just check if we have a controller.
       // TODO: Have proper statuses?
       const isKernelActive = Option.isSome(
-        yield* controllers.getActiveController(doc.value),
+        yield* controllers.getSelected(doc.value),
       );
 
       if (!isKernelActive) {

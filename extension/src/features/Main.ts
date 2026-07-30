@@ -14,8 +14,8 @@ import { Config } from "../config/Config.ts";
 import { ConfigContextManager } from "../config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
-import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
+import { NotebookControllers } from "../kernel/NotebookControllers.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { SandboxController } from "../kernel/SandboxController.ts";
 import type { MarimoClient } from "../lsp/MarimoClient.ts";
@@ -98,7 +98,7 @@ const MainLive = Layer.empty
   .pipe(
     Layer.provide(MarimoConfigurationService.Default),
     Layer.provide(ConfigContextManager.Default),
-    Layer.provide(ControllerRegistry.Default),
+    Layer.provide(NotebookControllers.Default),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(SandboxController.Default),
     Layer.provide(Uv.Default),

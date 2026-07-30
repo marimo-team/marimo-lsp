@@ -50,7 +50,7 @@ export function makeTestNotebookRuntime(options: Options = {}) {
     Layer.succeed(
       NotebookRuntime,
       NotebookRuntime.make({
-        selectController: () => Effect.void,
+        attachController: () => Effect.void,
         forNotebook,
       }),
     ),

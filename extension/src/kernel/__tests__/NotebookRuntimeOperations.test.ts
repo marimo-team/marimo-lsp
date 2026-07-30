@@ -97,7 +97,7 @@ const withTestCtx = Effect.fn(function* () {
   const selectedLayer = Layer.effectDiscard(
     NotebookRuntime.pipe(
       Effect.flatMap((runtime) =>
-        runtime.selectController(notebookUri, mockController),
+        runtime.attachController(notebookUri, mockController),
       ),
     ),
   ).pipe(Layer.provide(layer));

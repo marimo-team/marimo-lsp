@@ -1,6 +1,6 @@
 import { Effect, Either, Option } from "effect";
 
-import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
+import { NotebookControllers } from "../kernel/NotebookControllers.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
@@ -14,7 +14,7 @@ export const updateActivePythonEnvironment = Effect.fn(
   const uv = yield* Uv;
   const code = yield* VsCode;
   const py = yield* PythonExtension;
-  const controllers = yield* ControllerRegistry;
+  const controllers = yield* NotebookControllers;
 
   const editor = yield* code.window.getActiveNotebookEditor();
 
@@ -34,7 +34,7 @@ export const updateActivePythonEnvironment = Effect.fn(
     return;
   }
 
-  const controller = yield* controllers.getActiveController(notebook.value);
+  const controller = yield* controllers.getSelected(notebook.value);
 
   if (Option.isNone(controller)) {
     yield* code.window.showInformationMessage(
@@ -44,7 +44,7 @@ export const updateActivePythonEnvironment = Effect.fn(
   }
 
   let executable: string;
-  if (controller.value._tag === "PythonController") {
+  if (typeof controller.value.executable === "string") {
     executable = controller.value.executable;
   } else {
     const script = editor.value.notebook.uri.fsPath;

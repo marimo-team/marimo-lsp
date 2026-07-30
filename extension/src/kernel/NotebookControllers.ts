@@ -28,21 +28,21 @@ import {
   type NotebookControllerId,
   PythonController,
 } from "./NotebookControllerFactory.ts";
-import { NotebookRuntime } from "./NotebookRuntime.ts";
+import {
+  type NotebookController as RuntimeNotebookController,
+  NotebookRuntime,
+} from "./NotebookRuntime.ts";
 import { SandboxController } from "./SandboxController.ts";
 
-export type AnyController = PythonController | SandboxController;
-
-/**
- * The python executable for running `notebook` on `controller`. A Python
- * controller's executable is fixed; the sandbox controller resolves (and syncs)
- * a per-notebook venv, so it needs the notebook.
- */
-export function resolveControllerExecutable(
-  controller: AnyController,
-  notebook: MarimoNotebookDocument,
-) {
-  return controller.resolveExecutable(notebook);
+export interface NotebookController extends RuntimeNotebookController {
+  readonly selectedNotebookChanges: () => Stream.Stream<{
+    notebook: vscode.NotebookDocument;
+    selected: boolean;
+  }>;
+  readonly updateNotebookAffinity: (
+    notebook: vscode.NotebookDocument,
+    affinity: vscode.NotebookControllerAffinity,
+  ) => Effect.Effect<void>;
 }
 
 interface NotebookControllerHandle {
@@ -51,11 +51,21 @@ interface NotebookControllerHandle {
 }
 
 /**
- * Manages notebook execution controllers for marimo notebooks,
- * handling controller registration, selection, and execution lifecycle.
+ * Owns the VS Code controllers available to marimo notebooks and records which
+ * one is selected for each notebook.
+ *
+ * ```ts
+ * const controllers = yield* NotebookControllers;
+ *
+ * const selected = yield* controllers.getSelected(notebook);
+ * const changes = controllers.selectionChanges();
+ * ```
+ *
+ * Selected controllers are attached to NotebookRuntime for execution and
+ * incoming kernel messages.
  */
-export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
-  "ControllerRegistry",
+export class NotebookControllers extends Effect.Service<NotebookControllers>()(
+  "NotebookControllers",
   {
     dependencies: [
       Uv.Default,
@@ -85,7 +95,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         HashMap.empty<NotebookControllerId, NotebookControllerHandle>(),
       );
       const selectionsRef = yield* Ref.make(
-        HashMap.empty<NotebookId, AnyController>(),
+        HashMap.empty<NotebookId, NotebookController>(),
       );
       // Per-notebook controller-selection events. Subscribers (e.g. the
       // packages panel) need to react when the user switches kernels on a
@@ -93,13 +103,13 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       const selectionEvents = yield* Effect.acquireRelease(
         PubSub.unbounded<{
           notebookUri: NotebookId;
-          controller: AnyController;
+          controller: NotebookController;
         }>(),
         (hub) => PubSub.shutdown(hub),
       );
 
       const updateKernelContext = Effect.fn(
-        "ControllerRegistry.updateKernelContext",
+        "NotebookControllers.updateKernelContext",
       )(function* () {
         const activeNotebook = Option.filterMap(
           yield* code.window.getActiveNotebookEditor(),
@@ -139,7 +149,7 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
         ),
       );
 
-      const refresh = Effect.fn("ControllerRegistry.refresh")(function* () {
+      const refresh = Effect.fn("NotebookControllers.refresh")(function* () {
         const envs = yield* pyExt.knownEnvironments();
         const filteredEnvs = envs.filter(
           (env) =>
@@ -208,10 +218,10 @@ export class ControllerRegistry extends Effect.Service<ControllerRegistry>()(
       );
 
       return {
-        getActiveController(notebook: MarimoNotebookDocument) {
+        getSelected(notebook: MarimoNotebookDocument) {
           return Effect.map(Ref.get(selectionsRef), HashMap.get(notebook.id));
         },
-        streamSelectionChanges() {
+        selectionChanges() {
           return Stream.fromPubSub(selectionEvents);
         },
         // for testing only
@@ -308,11 +318,11 @@ const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(
 );
 
 const trackControllerSelections = (
-  controller: AnyController,
-  selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, AnyController>>,
+  controller: NotebookController,
+  selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, NotebookController>>,
   selectionEvents: PubSub.PubSub<{
     notebookUri: NotebookId;
-    controller: AnyController;
+    controller: NotebookController;
   }>,
   notebooks: NotebookRuntime,
 ) =>
@@ -325,7 +335,7 @@ const trackControllerSelections = (
           return;
         }
         const notebook = MarimoNotebookDocument.from(e.notebook);
-        yield* notebooks.selectController(notebook.id, controller);
+        yield* notebooks.attachController(notebook.id, controller);
         yield* Ref.update(selectionsRef, HashMap.set(notebook.id, controller));
         yield* PubSub.publish(selectionEvents, {
           notebookUri: notebook.id,
@@ -341,71 +351,71 @@ const trackControllerSelections = (
     ),
   );
 
-const createOrUpdateController = Effect.fn("ControllerRegistry.createOrUpdate")(
-  function* (options: {
-    env: py.Environment;
-    handlesRef: SynchronizedRef.SynchronizedRef<
-      HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
-    >;
-    selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, AnyController>>;
-    selectionEvents: PubSub.PubSub<{
-      notebookUri: NotebookId;
-      controller: AnyController;
-    }>;
-    notebooks: NotebookRuntime;
-  }) {
-    const { env, selectionsRef, selectionEvents, handlesRef, notebooks } =
-      options;
-    const code = yield* VsCode;
-    const factory = yield* NotebookControllerFactory;
-    const controllerId = PythonController.getId(env);
-    const controllerLabel = formatControllerLabel(code, env);
+const createOrUpdateController = Effect.fn(
+  "NotebookControllers.createOrUpdate",
+)(function* (options: {
+  env: py.Environment;
+  handlesRef: SynchronizedRef.SynchronizedRef<
+    HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
+  >;
+  selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, NotebookController>>;
+  selectionEvents: PubSub.PubSub<{
+    notebookUri: NotebookId;
+    controller: NotebookController;
+  }>;
+  notebooks: NotebookRuntime;
+}) {
+  const { env, selectionsRef, selectionEvents, handlesRef, notebooks } =
+    options;
+  const code = yield* VsCode;
+  const factory = yield* NotebookControllerFactory;
+  const controllerId = PythonController.getId(env);
+  const controllerLabel = formatControllerLabel(code, env);
 
-    yield* Effect.annotateCurrentSpan("controllerId", controllerId);
+  yield* Effect.annotateCurrentSpan("controllerId", controllerId);
 
-    yield* SynchronizedRef.updateEffect(
-      handlesRef,
-      Effect.fn(function* (map) {
-        const existing = HashMap.get(map, controllerId);
+  yield* SynchronizedRef.updateEffect(
+    handlesRef,
+    Effect.fn(function* (map) {
+      const existing = HashMap.get(map, controllerId);
 
-        // Just update description if we already have a controller
-        if (Option.isSome(existing)) {
-          yield* existing.value.controller.mutateDescription(controllerLabel);
-          yield* Effect.logTrace("Controller already exists, updated label");
-          return map;
-        }
+      // Just update description if we already have a controller
+      if (Option.isSome(existing)) {
+        yield* existing.value.controller.mutateDescription(controllerLabel);
+        yield* Effect.logTrace("Controller already exists, updated label");
+        return map;
+      }
 
-        // Create a disposable scope
-        const scope = yield* Scope.make();
-        const controller = yield* Scope.extend(
-          Effect.gen(function* () {
-            const controller = yield* factory.createNotebookController({
-              env,
-              id: controllerId,
-              label: controllerLabel,
-            });
+      // Create a disposable scope
+      const scope = yield* Scope.make();
+      const controller = yield* Scope.extend(
+        Effect.gen(function* () {
+          const controller = yield* factory.createNotebookController({
+            env,
+            id: controllerId,
+            label: controllerLabel,
+          });
 
-            yield* Effect.forkScoped(
-              trackControllerSelections(
-                controller,
-                selectionsRef,
-                selectionEvents,
-                notebooks,
-              ),
-            );
+          yield* Effect.forkScoped(
+            trackControllerSelections(
+              controller,
+              selectionsRef,
+              selectionEvents,
+              notebooks,
+            ),
+          );
 
-            return controller;
-          }),
-          scope,
-        );
+          return controller;
+        }),
+        scope,
+      );
 
-        yield* Effect.logTrace("Created new controller");
+      yield* Effect.logTrace("Created new controller");
 
-        return HashMap.set(map, controllerId, { controller, scope });
-      }),
-    );
-  },
-);
+      return HashMap.set(map, controllerId, { controller, scope });
+    }),
+  );
+});
 
 const pruneStaleControllers = Effect.fn("pruneStaleControllers")(
   function* (options: {
@@ -413,7 +423,7 @@ const pruneStaleControllers = Effect.fn("pruneStaleControllers")(
     handlesRef: SynchronizedRef.SynchronizedRef<
       HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
     >;
-    selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, AnyController>>;
+    selectionsRef: Ref.Ref<HashMap.HashMap<NotebookId, NotebookController>>;
   }) {
     const { envs, handlesRef, selectionsRef } = options;
     yield* Effect.logTrace("Checking for stale controllers");
