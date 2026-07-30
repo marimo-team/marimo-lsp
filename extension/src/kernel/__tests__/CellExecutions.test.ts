@@ -15,7 +15,7 @@ import {
   buildCellOutputs,
   CellExecutions,
 } from "../../kernel/CellExecutions.ts";
-import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
+import { PythonController } from "../../kernel/PythonController.ts";
 import {
   cellId,
   UNSAFE_castForNegativeTest,

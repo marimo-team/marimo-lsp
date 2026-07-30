@@ -9,8 +9,8 @@ import {
 } from "../../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../../constants.ts";
-import { PythonController } from "../../../kernel/NotebookControllerFactory.ts";
 import { type NotebookController } from "../../../kernel/NotebookRuntime.ts";
+import { PythonController } from "../../../kernel/PythonController.ts";
 import { notebookId } from "../../../lib/__tests__/branded.ts";
 import { NotebookEditorRegistry } from "../../../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../../../platform/VsCode.ts";

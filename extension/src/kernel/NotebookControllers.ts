@@ -14,22 +14,26 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
+import { Config } from "../config/Config.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
+import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
+import { Constants } from "../platform/Constants.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import {
-  NotebookControllerFactory,
-  type NotebookControllerId,
-  PythonController,
-} from "./NotebookControllerFactory.ts";
-import {
   type NotebookController as RuntimeNotebookController,
   NotebookRuntime,
 } from "./NotebookRuntime.ts";
+import {
+  createPythonController,
+  type NotebookControllerId,
+  PythonController,
+} from "./PythonController.ts";
 import { SandboxController } from "./SandboxController.ts";
 
 export interface NotebookController extends RuntimeNotebookController {
@@ -57,7 +61,6 @@ export const NotebookControllersLive = Layer.scopedDiscard(
     const uv = yield* Uv;
     const code = yield* VsCode;
     const pyExt = yield* PythonExtension;
-    const factory = yield* NotebookControllerFactory;
     const notebooks = yield* NotebookRuntime;
     const sandboxController = yield* SandboxController;
 
@@ -109,10 +112,7 @@ export const NotebookControllersLive = Layer.scopedDiscard(
             env,
             handlesRef,
             notebooks,
-          }).pipe(
-            Effect.provideService(VsCode, code),
-            Effect.provideService(NotebookControllerFactory, factory),
-          ),
+          }).pipe(Effect.provideService(VsCode, code)),
         { discard: true },
       );
       yield* pruneStaleControllers({
@@ -154,7 +154,10 @@ export const NotebookControllersLive = Layer.scopedDiscard(
   Layer.provide(Uv.Default),
   Layer.provide(OutputChannel.Default),
   Layer.provide(SandboxController.Default),
-  Layer.provide(NotebookControllerFactory.Default),
+  Layer.provide(Config.Default),
+  Layer.provide(Constants.Default),
+  Layer.provide(EnvironmentValidator.Default),
+  Layer.provide(NotebookSerializer.Default),
 );
 
 const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(
@@ -259,7 +262,6 @@ const createOrUpdateController = Effect.fn(
 }) {
   const { env, handlesRef, notebooks } = options;
   const code = yield* VsCode;
-  const factory = yield* NotebookControllerFactory;
   const controllerId = PythonController.getId(env);
   const controllerLabel = formatControllerLabel(code, env);
 
@@ -281,7 +283,7 @@ const createOrUpdateController = Effect.fn(
       const scope = yield* Scope.make();
       const controller = yield* Scope.extend(
         Effect.gen(function* () {
-          const controller = yield* factory.createNotebookController({
+          const controller = yield* createPythonController({
             env,
             id: controllerId,
             label: controllerLabel,
