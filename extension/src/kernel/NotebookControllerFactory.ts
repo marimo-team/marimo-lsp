@@ -11,7 +11,6 @@ import { extractPythonError } from "../lib/extractPythonError.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
 import { installPackages } from "../lib/installPackages.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
-import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -22,6 +21,7 @@ import {
   type MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
+import { NotebookRuntime } from "./NotebookRuntime.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
 export type NotebookControllerId = Brand.Branded<string, "ControllerId">;
@@ -40,7 +40,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
       const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
-      const marimo = yield* MarimoClient;
+      const notebooks = yield* NotebookRuntime;
       const validator = yield* EnvironmentValidator;
       const serializer = yield* NotebookSerializer;
       const { LanguageId } = yield* Constants;
@@ -89,11 +89,9 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
 
                 const validEnv = yield* validator.validate(options.env);
 
-                yield* marimo.executeCells({
-                  notebookUri: notebook.id,
-                  executable: validEnv.executable,
-                  inner: request.value,
-                });
+                yield* notebooks
+                  .forNotebook(notebook.id)
+                  .executeCells(request.value, validEnv.executable);
               }).pipe(
                 Effect.withSpan("PythonController.execute", {
                   attributes: {
@@ -219,10 +217,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
             runPromise(
               Effect.gen(function* () {
                 const notebook = MarimoNotebookDocument.from(rawNotebook);
-                yield* marimo.interrupt({
-                  notebookUri: notebook.id,
-                  inner: {},
-                });
+                yield* notebooks.forNotebook(notebook.id).interrupt();
               }).pipe(
                 Effect.withSpan("PythonController.interrupt", {
                   attributes: {
@@ -280,6 +275,9 @@ export class PythonController {
   }
   createNotebookCellExecution(cell: MarimoNotebookCell) {
     return this.#inner.createNotebookCellExecution(cell.rawNotebookCell);
+  }
+  resolveExecutable(_notebook: MarimoNotebookDocument) {
+    return Effect.succeed(this.executable);
   }
   selectedNotebookChanges() {
     return Stream.asyncPush<{

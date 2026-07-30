@@ -62,10 +62,10 @@ The `Disposable` is released on stream interruption automatically. Same shape: `
 
 Both terminators are equally common; pick by where the work lives. `mapEffect(f) ∘ runDrain` and `runForEach(f)` produce identical results — pick the more readable shape.
 
-- **`runDrain`** when the per-element effect is already in `mapEffect`/`tap` — the stream *is* the body. (`kernel/KernelManager.ts:129`)
+- **`runDrain`** when the per-element effect is already in `mapEffect`/`tap` — the stream *is* the body. (`config/ConfigContextManager.ts:45`)
   ```ts
-  yield* Effect.forkScoped(marimo.operations().pipe(
-    Stream.mapEffect(Effect.fn(function* (msg) { yield* Queue.offer(queue, msg); })),
+  yield* Effect.forkScoped(config.runtime.onCellChange.pipe(
+    Stream.tap((mode) => code.commands.setContext("marimo.config.runtime.on_cell_change", ...)),
     Stream.runDrain));
   ```
 - **`runForEach(f)`** when the handler *is* the body — no upstream `mapEffect`/`tap`. (`python/PythonEnvInvalidation.ts:19`)

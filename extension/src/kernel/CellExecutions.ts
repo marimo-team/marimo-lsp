@@ -10,6 +10,8 @@ import {
   HashMap,
   Option,
   Ref,
+  Stream,
+  SubscriptionRef,
   Array as EffectArray,
 } from "effect";
 import type * as vscode from "vscode";
@@ -23,7 +25,7 @@ import {
   parseTraceback,
   type TracebackCellFrame,
 } from "../lib/tracebacks.ts";
-import { CellStateManager } from "../notebook/CellStateManager.ts";
+import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   findNotebookCell,
@@ -33,6 +35,7 @@ import {
 import {
   extractCellIdFromCellMessage,
   type NotebookCellId,
+  type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
 import {
   type CellOperationNotification,
@@ -52,15 +55,18 @@ import {
   step,
   transitionCell,
 } from "./CellRunReducer.ts";
-import type { PythonController } from "./NotebookControllerFactory.ts";
-import type { SandboxController } from "./SandboxController.ts";
+interface CellExecutionController {
+  readonly createNotebookCellExecution: (
+    cell: MarimoNotebookCell,
+  ) => vscode.NotebookCellExecution;
+}
 
 /**
  * Thrown when VS Code's `createNotebookCellExecution` fails because the cell
  * is no longer part of the notebook (e.g., deleted between the time we looked
  * it up and the time we tried to create an execution for it).
  */
-export class InvalidCellError extends Data.TaggedError("InvalidCellError")<{
+class InvalidCellError extends Data.TaggedError("InvalidCellError")<{
   readonly cellId: NotebookCellId;
   readonly cause: unknown;
 }> {}
@@ -90,20 +96,148 @@ interface RunRecord {
 interface PerformContext {
   readonly cellId: NotebookCellId;
   readonly notebookCell: MarimoNotebookCell | undefined;
-  readonly controller: PythonController | SandboxController | undefined;
+  readonly controller: CellExecutionController | undefined;
   readonly notebook: vscode.NotebookDocument | undefined;
 }
 
-export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
-  "ExecutionRegistry",
+/**
+ * Owns the state and VS Code resources for cell executions.
+ *
+ * Cell operations update the run state, diagnostics, and projected output for
+ * one cell. The same execution record tracks the code last accepted by the
+ * kernel, which is used to derive whether the cell is stale. Interrupts end
+ * every active execution for an editor.
+ */
+export class CellExecutions extends Effect.Service<CellExecutions>()(
+  "CellExecutions",
   {
-    dependencies: [CellStateManager.Default],
+    dependencies: [NotebookEditorRegistry.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
-      const cellStateManager = yield* CellStateManager;
+      const editorRegistry = yield* NotebookEditorRegistry;
       const records = yield* Ref.make(
         HashMap.empty<NotebookCellId, RunRecord>(),
       );
+      const lastExecutedCodeRef = yield* SubscriptionRef.make(
+        HashMap.empty<
+          NotebookId,
+          HashMap.HashMap<NotebookCellId, Option.Option<string>>
+        >(),
+      );
+
+      const isCellStale = (cell: MarimoNotebookCell) => {
+        const cellId = cell.id;
+        if (Option.isNone(cellId)) {
+          return Effect.succeed(false);
+        }
+        const notebookId = cell.notebook.id;
+        const currentCode = cell.document.getText();
+
+        return SubscriptionRef.get(lastExecutedCodeRef).pipe(
+          Effect.map((map) =>
+            Option.match(
+              HashMap.get(map, notebookId).pipe(
+                Option.flatMap(HashMap.get(cellId.value)),
+              ),
+              {
+                onNone: () => false,
+                onSome: (lastExecutedCode) =>
+                  Option.match(lastExecutedCode, {
+                    onNone: () => true,
+                    onSome: (executedCode) => executedCode !== currentCode,
+                  }),
+              },
+            ),
+          ),
+        );
+      };
+
+      const updateStaleContext = Effect.fn(function* () {
+        const activeNotebook = yield* editorRegistry.getActiveNotebookUri();
+        const hasStaleCells = yield* Option.match(activeNotebook, {
+          onNone: () => Effect.succeed(false),
+          onSome: (notebookId) =>
+            Effect.gen(function* () {
+              const editor =
+                yield* editorRegistry.getLastNotebookEditor(notebookId);
+              if (Option.isNone(editor)) return false;
+              const notebook = MarimoNotebookDocument.tryFrom(
+                editor.value.notebook,
+              );
+              if (Option.isNone(notebook)) return false;
+              for (const cell of notebook.value.getCells()) {
+                if (yield* isCellStale(cell)) return true;
+              }
+              return false;
+            }),
+        });
+
+        yield* code.commands.setContext(
+          "marimo.notebook.hasStaleCells",
+          hasStaleCells,
+        );
+      });
+
+      const contentChanges = code.workspace.notebookDocumentChanges().pipe(
+        Stream.filter((event) => {
+          if (Option.isNone(MarimoNotebookDocument.tryFrom(event.notebook))) {
+            return false;
+          }
+          return event.cellChanges.some(
+            (change) => change.document !== undefined,
+          );
+        }),
+      );
+
+      yield* Effect.forkScoped(
+        lastExecutedCodeRef.changes.pipe(Stream.runForEach(updateStaleContext)),
+      );
+      yield* Effect.forkScoped(
+        editorRegistry
+          .streamActiveNotebookChanges()
+          .pipe(Stream.runForEach(updateStaleContext)),
+      );
+      yield* Effect.forkScoped(
+        contentChanges.pipe(
+          Stream.mapEffect(updateStaleContext),
+          Stream.runDrain,
+        ),
+      );
+
+      const recordExecution = (cell: MarimoNotebookCell) => {
+        const cellId = cell.id;
+        if (Option.isNone(cellId)) return Effect.void;
+        const notebookId = cell.notebook.id;
+        const currentCode = cell.document.getText();
+        return SubscriptionRef.update(lastExecutedCodeRef, (map) => {
+          const notebookMap = Option.getOrElse(
+            HashMap.get(map, notebookId),
+            () => HashMap.empty<NotebookCellId, Option.Option<string>>(),
+          );
+          return HashMap.set(
+            map,
+            notebookId,
+            HashMap.set(notebookMap, cellId.value, Option.some(currentCode)),
+          );
+        });
+      };
+
+      const invalidateCell = (cell: MarimoNotebookCell) => {
+        const cellId = cell.id;
+        if (Option.isNone(cellId)) return Effect.void;
+        const notebookId = cell.notebook.id;
+        return SubscriptionRef.update(lastExecutedCodeRef, (map) => {
+          const notebookMap = Option.getOrElse(
+            HashMap.get(map, notebookId),
+            () => HashMap.empty<NotebookCellId, Option.Option<string>>(),
+          );
+          return HashMap.set(
+            map,
+            notebookId,
+            HashMap.set(notebookMap, cellId.value, Option.none()),
+          );
+        });
+      };
 
       yield* Effect.addFinalizer(() =>
         Ref.update(records, (map) => {
@@ -287,19 +421,35 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
               ctx.notebookCell !== undefined,
               "RecordExecution requires a notebook cell",
             );
-            return cellStateManager.recordExecution(ctx.notebookCell);
+            return recordExecution(ctx.notebookCell);
           },
           InvalidateCell: () => {
             assert(
               ctx.notebookCell !== undefined,
               "InvalidateCell requires a notebook cell",
             );
-            return cellStateManager.invalidateCell(ctx.notebookCell);
+            return invalidateCell(ctx.notebookCell);
           },
         });
 
       return {
-        handleInterrupted: (editor: vscode.NotebookEditor) =>
+        isCellStale,
+        recordExecution,
+        invalidateCell,
+        forgetCell(notebookId: NotebookId, cellId: NotebookCellId) {
+          return SubscriptionRef.update(lastExecutedCodeRef, (map) => {
+            const notebookMap = HashMap.get(map, notebookId);
+            if (Option.isNone(notebookMap)) return map;
+            const updated = HashMap.remove(notebookMap.value, cellId);
+            return HashMap.isEmpty(updated)
+              ? HashMap.remove(map, notebookId)
+              : HashMap.set(map, notebookId, updated);
+          });
+        },
+        get changes(): Stream.Stream<void> {
+          return Stream.merge(lastExecutedCodeRef.changes, contentChanges);
+        },
+        handleInterrupt: (editor: vscode.NotebookEditor) =>
           Effect.gen(function* () {
             const map = yield* Ref.get(records);
             const targets = EffectArray.fromIterable(
@@ -322,11 +472,11 @@ export class ExecutionRegistry extends Effect.Service<ExecutionRegistry>()(
               }
             }
           }),
-        handleCellOperation: (
+        handleOperation: (
           msg: CellOperationNotification,
           options: {
             editor: vscode.NotebookEditor;
-            controller: PythonController | SandboxController;
+            controller: CellExecutionController;
           },
         ) =>
           Effect.gen(function* () {
@@ -442,7 +592,7 @@ export function buildCellOutputs(
  * slot is created once, in the order it first appears, and tall built-in
  * outputs (a traceback) are measured once instead of on every cell-op.
  */
-export function buildKeyedCellOutputs(
+function buildKeyedCellOutputs(
   cellId: NotebookCellId,
   state: CellRuntimeState,
   code: VsCode,

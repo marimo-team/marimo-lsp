@@ -13,17 +13,15 @@ import type * as vscode from "vscode";
 import { Config } from "../config/Config.ts";
 import { ConfigContextManager } from "../config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
+import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
-import { ExecutionRegistry } from "../kernel/ExecutionRegistry.ts";
-import { KernelManager } from "../kernel/KernelManager.ts";
+import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { SandboxController } from "../kernel/SandboxController.ts";
-import { SessionStateManager } from "../kernel/SessionStateManager.ts";
 import type { MarimoClient } from "../lsp/MarimoClient.ts";
 import type { RuffLanguageServer } from "../lsp/RuffLanguageServer.ts";
 import type { TyLanguageServer } from "../lsp/TyLanguageServer.ts";
 import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
-import { CellStateManager } from "../notebook/CellStateManager.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
@@ -87,11 +85,10 @@ const MainLive = Layer.empty
   .pipe(
     Layer.provideMerge(Api.Default),
     Layer.provide(DebugAdapter.Default),
-    Layer.provide(KernelManager.Default),
     Layer.provide(GitHubClient.Default),
     Layer.provide(NotebookRenderer.Default),
     Layer.provide(NotebookSerializer.Default),
-    Layer.provide(ExecutionRegistry.Default),
+    Layer.provide(CellExecutions.Default),
     Layer.provide(VariablesService.Default),
     Layer.provide(DatasourcesService.Default),
     Layer.provide(PackagesService.Default),
@@ -101,8 +98,6 @@ const MainLive = Layer.empty
   .pipe(
     Layer.provide(MarimoConfigurationService.Default),
     Layer.provide(ConfigContextManager.Default),
-    Layer.provide(CellStateManager.Default),
-    Layer.provide(SessionStateManager.Default),
     Layer.provide(ControllerRegistry.Default),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(SandboxController.Default),
@@ -114,6 +109,7 @@ const MainLive = Layer.empty
     Layer.provide(Config.Default),
     Layer.provide(OutputChannel.Default),
     Layer.provide(PythonEnvInvalidation.Default),
+    Layer.provide(NotebookRuntime.Default),
   );
 
 export function makeActivate(

@@ -7,14 +7,13 @@ import { findVenvPath } from "../python/findVenvPath.ts";
 import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { NotificationOf } from "../types.ts";
-import type { PythonController } from "./NotebookControllerFactory.ts";
-import type { SandboxController } from "./SandboxController.ts";
+import type { NotebookController } from "./NotebookRuntime.ts";
 
 export const handleMissingPackageAlert = Effect.fn("handleMissingPackageAlert")(
   function* (
     operation: NotificationOf<"missing-package-alert">,
     notebook: MarimoNotebookDocument,
-    controller: PythonController | SandboxController,
+    controller: NotebookController,
   ) {
     const code = yield* VsCode;
     const config = yield* Config;
@@ -38,7 +37,7 @@ export const handleMissingPackageAlert = Effect.fn("handleMissingPackageAlert")(
 
     let options: { script: MarimoNotebookDocument } | { venvPath: string };
 
-    if ("executable" in controller) {
+    if (typeof controller.executable === "string") {
       // Only venv environments (with pyvenv.cfg) support uv package installation
       // Non-venv environments (pixi, conda, bazel, global) are skipped
       const venvPath = findVenvPath(controller.executable);

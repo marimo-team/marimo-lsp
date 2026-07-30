@@ -1,7 +1,7 @@
 import { Effect, Layer, Option, Stream } from "effect";
 
 import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
-import { CellStateManager } from "../notebook/CellStateManager.ts";
+import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -18,7 +18,7 @@ const DEFAULT_NAME = "_";
 export const CellStatusBarProviderLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const cellStateManager = yield* CellStateManager;
+    const executions = yield* CellExecutions;
 
     // Stream that fires when metadata changes on any marimo notebook cell
     const metadataChanges = code.workspace.notebookDocumentChanges().pipe(
@@ -32,13 +32,13 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
       }),
     );
 
-    // Staleness provider — derived from CellStateManager execution records
+    // Staleness provider — derived from CellExecutions records
     yield* code.notebooks.registerNotebookCellStatusBarItemProvider(
       NOTEBOOK_TYPE,
       {
         provideCellStatusBarItems(raw) {
           const cell = MarimoNotebookCell.from(raw);
-          return cellStateManager.isCellStale(cell).pipe(
+          return executions.isCellStale(cell).pipe(
             Effect.map((stale) => {
               if (!stale) return [];
               const item = new code.NotebookCellStatusBarItem(
@@ -51,7 +51,7 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
             }),
           );
         },
-        changes: Stream.merge(cellStateManager.changes, metadataChanges),
+        changes: Stream.merge(executions.changes, metadataChanges),
       },
     );
 

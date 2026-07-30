@@ -15,12 +15,11 @@ import {
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import { NotebookRange, TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
-import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
-import { KernelManager } from "../../kernel/KernelManager.ts";
 import { PythonController } from "../../kernel/NotebookControllerFactory.ts";
+import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { cellId } from "../../lib/__tests__/branded.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
@@ -38,7 +37,7 @@ const withTestCtx = Effect.fn(function* () {
   // Capture executeCommand calls
   const executions = yield* Ref.make<ReadonlyArray<MarimoCommand>>([]);
 
-  // PubSub to push operations into the KernelManager stream
+  // PubSub to push operations into NotebookRuntime
   const operationsPubSub =
     yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
 
@@ -76,18 +75,7 @@ const withTestCtx = Effect.fn(function* () {
   }).pipe(Effect.provide(vscode.layer));
 
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(KernelManager.Default),
-    Layer.provide(
-      Layer.succeed(
-        ControllerRegistry,
-        ControllerRegistry.make({
-          getActiveController: () =>
-            Effect.succeed(Option.some(mockController)),
-          streamSelectionChanges: () => Stream.empty,
-          snapshot: () => Effect.succeed({ controllers: [], selections: [] }),
-        }),
-      ),
-    ),
+    Layer.provideMerge(NotebookRuntime.Default),
     Layer.provide(
       makeTestMarimoClient({
         execute(request) {
@@ -106,8 +94,16 @@ const withTestCtx = Effect.fn(function* () {
     Layer.provideMerge(vscode.layer),
   );
 
+  const selectedLayer = Layer.effectDiscard(
+    NotebookRuntime.pipe(
+      Effect.flatMap((runtime) =>
+        runtime.selectController(notebookUri, mockController),
+      ),
+    ),
+  ).pipe(Layer.provide(layer));
+
   return {
-    layer,
+    layer: Layer.merge(layer, selectedLayer),
     vscode,
     editor,
     notebook,
@@ -134,7 +130,86 @@ function makeIdleCellOperation(
   };
 }
 
-describe("KernelManager stdin", () => {
+describe("NotebookRuntime cell identity", () => {
+  it.scoped(
+    "notifies marimo when a cell is deleted",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        yield* NotebookRuntime;
+
+        const cell = ctx.editor.notebook.cellAt(0);
+        yield* ctx.vscode.notebookChange({
+          notebook: ctx.editor.notebook,
+          metadata: undefined,
+          cellChanges: [],
+          contentChanges: [
+            {
+              range: new NotebookRange(0, 1),
+              removedCells: [cell],
+              addedCells: [],
+            },
+          ],
+        });
+        yield* TestClock.adjust("10 millis");
+
+        expect(yield* Ref.get(ctx.executions)).toContainEqual({
+          command: "marimo.api",
+          params: {
+            method: "delete-cell",
+            params: {
+              notebookUri: ctx.notebookUri,
+              inner: { cellId: "cell-1" },
+            },
+          },
+        });
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.scoped(
+    "does not delete a cell that moved within the notebook",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        yield* NotebookRuntime;
+
+        const cell = ctx.editor.notebook.cellAt(0);
+        yield* ctx.vscode.notebookChange({
+          notebook: ctx.editor.notebook,
+          metadata: undefined,
+          cellChanges: [],
+          contentChanges: [
+            {
+              range: new NotebookRange(0, 1),
+              removedCells: [cell],
+              addedCells: [],
+            },
+            {
+              range: new NotebookRange(1, 1),
+              removedCells: [],
+              addedCells: [cell],
+            },
+          ],
+        });
+        yield* TestClock.adjust("10 millis");
+
+        const commands = yield* Ref.get(ctx.executions);
+        expect(
+          commands.some(
+            (command) =>
+              command.command === "marimo.api" &&
+              command.params.method === "delete-cell",
+          ),
+        ).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+});
+
+describe("NotebookRuntime stdin", () => {
   it.scoped(
     "prompts for input on stdin cell-op and sends response",
     Effect.fn(function* () {
@@ -244,26 +319,27 @@ describe("KernelManager stdin", () => {
   );
 });
 
-describe("KernelManager scratch stream", () => {
+describe("NotebookRuntime scratch stream", () => {
   it.scoped(
     "streams scratch + cascade console ops until the matching completed-run",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        const manager = yield* KernelManager;
+        const runtime = yield* NotebookRuntime;
 
         // Route cell-op notifications through processSessionOperation.
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
 
         const streamFiber = yield* Effect.fork(
-          manager
-            .executeCodeUnsafe(ctx.notebookUri, "print('hi')")
+          runtime
+            .forNotebook(ctx.notebookUri)
+            .executeScratchpad("print('hi')")
             .pipe(Stream.runCollect),
         );
 
-        // Let executeCodeUnsafe enqueue marimo.api with generated runId.
+        // Let executeScratchpad enqueue marimo.api with its generated runId.
         yield* TestClock.adjust("1 millis");
 
         const executions = yield* Ref.get(ctx.executions);
@@ -350,18 +426,19 @@ describe("KernelManager scratch stream", () => {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        const manager = yield* KernelManager;
+        const runtime = yield* NotebookRuntime;
 
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
 
         const streamFiber = yield* Effect.fork(
-          manager
-            .executeCodeUnsafe(ctx.notebookUri, "print('hi')")
+          runtime
+            .forNotebook(ctx.notebookUri)
+            .executeScratchpad("print('hi')")
             .pipe(Stream.runCollect),
         );
 
-        // Let executeCodeUnsafe send the scratchpad command and arm the
+        // Let executeScratchpad send the command and arm the
         // interrupt-on-abandon finalizer.
         yield* TestClock.adjust("1 millis");
 
@@ -398,14 +475,15 @@ describe("KernelManager scratch stream", () => {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        const manager = yield* KernelManager;
+        const runtime = yield* NotebookRuntime;
 
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
 
         const streamFiber = yield* Effect.fork(
-          manager
-            .executeCodeUnsafe(ctx.notebookUri, "print('hi')")
+          runtime
+            .forNotebook(ctx.notebookUri)
+            .executeScratchpad("print('hi')")
             .pipe(Stream.runCollect),
         );
 

@@ -1,14 +1,14 @@
 import { Effect, flow, Option } from "effect";
 
+import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { CellStateManager } from "../notebook/CellStateManager.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const runStale = Effect.fn("command.runStale")(
   function* () {
     const code = yield* VsCode;
-    const cellStateManager = yield* CellStateManager;
+    const executions = yield* CellExecutions;
     const notebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
       (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
@@ -22,7 +22,7 @@ export const runStale = Effect.fn("command.runStale")(
     }
 
     const staleCells = yield* Effect.filter(notebook.value.getCells(), (cell) =>
-      cellStateManager.isCellStale(cell),
+      executions.isCellStale(cell),
     );
 
     if (staleCells.length === 0) {

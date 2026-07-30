@@ -1,5 +1,5 @@
 import * as semver from "@std/semver";
-import { Data, Effect, Option, Runtime, Schema, Stream } from "effect";
+import { Effect, Option, Runtime, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
@@ -20,18 +20,13 @@ import { Uv } from "../python/Uv.ts";
 import {
   type MarimoNotebookCell,
   MarimoNotebookDocument,
-  type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
-
-/**
- * An error returned when a sandbox kernel is asked to run for an unsaved
- * notebook. The sandbox derives a per-notebook virtual environment from the
- * script file on disk, so the notebook must be saved first.
- */
-export class UnsavedNotebookError extends Data.TaggedError(
-  "UnsavedNotebookError",
-)<{ readonly notebookUri: NotebookId }> {}
+import {
+  ExecutableResolutionError,
+  NotebookRuntime,
+  UnsavedNotebookError,
+} from "./NotebookRuntime.ts";
 
 export class SandboxController extends Effect.Service<SandboxController>()(
   "SandboxController",
@@ -41,6 +36,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       const uv = yield* Uv;
       const code = yield* VsCode;
       const marimo = yield* MarimoClient;
+      const notebooks = yield* NotebookRuntime;
       const python = yield* PythonExtension;
       const { LanguageId } = yield* Constants;
 
@@ -118,11 +114,9 @@ export class SandboxController extends Effect.Service<SandboxController>()(
             // handled below with an interactive save prompt.
             const executable = yield* resolveExecutable(notebook);
 
-            yield* marimo.executeCells({
-              notebookUri: notebook.id,
-              executable,
-              inner: request.value,
-            });
+            yield* notebooks
+              .forNotebook(notebook.id)
+              .executeCells(request.value, executable);
           }).pipe(
             // Handle the expected "unsaved notebook" path before logging, so a
             // normal save prompt isn't recorded as an error. (sandboxing only
@@ -180,10 +174,7 @@ export class SandboxController extends Effect.Service<SandboxController>()(
         runPromise(
           Effect.gen(function* () {
             const notebook = MarimoNotebookDocument.from(doc);
-            yield* marimo.interrupt({
-              notebookUri: notebook.id,
-              inner: {},
-            });
+            yield* notebooks.forNotebook(notebook.id).interrupt();
           }).pipe(
             Effect.withSpan("SandboxController.interrupt", {
               attributes: {
@@ -205,7 +196,17 @@ export class SandboxController extends Effect.Service<SandboxController>()(
       return {
         _tag: "SandboxController" as const,
         id: controller.id,
-        resolveExecutable,
+        resolveExecutable: (notebook: MarimoNotebookDocument) =>
+          resolveExecutable(notebook).pipe(
+            Effect.mapError((error) =>
+              error._tag === "UnsavedNotebookError"
+                ? error
+                : new ExecutableResolutionError({
+                    notebookUri: notebook.id,
+                    cause: error,
+                  }),
+            ),
+          ),
         createNotebookCellExecution(cell: MarimoNotebookCell) {
           return controller.createNotebookCellExecution(cell.rawNotebookCell);
         },

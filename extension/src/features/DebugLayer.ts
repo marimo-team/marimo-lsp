@@ -1,10 +1,8 @@
 import { Effect, Layer } from "effect";
 
+import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { ControllerRegistry } from "../kernel/ControllerRegistry.ts";
-import { ExecutionRegistry } from "../kernel/ExecutionRegistry.ts";
-import { KernelManager } from "../kernel/KernelManager.ts";
-import { SessionStateManager } from "../kernel/SessionStateManager.ts";
-import { CellStateManager } from "../notebook/CellStateManager.ts";
+import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { VariablesService } from "../panel/variables/VariablesService.ts";
 
@@ -27,12 +25,10 @@ export const DebugLayerLive = Layer.effectDiscard(
 
     globalThis.__marimoDebug = {
       controllerRegistry: yield* ControllerRegistry,
-      cellStateManager: yield* CellStateManager,
-      executionRegistry: yield* ExecutionRegistry,
+      cellExecutions: yield* CellExecutions,
       variablesService: yield* VariablesService,
       notebookEditorRegistry: yield* NotebookEditorRegistry,
-      kernelManager: yield* KernelManager,
-      sessionStateManager: yield* SessionStateManager,
+      notebookRuntime: yield* NotebookRuntime,
     };
   }),
 );
