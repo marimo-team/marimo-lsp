@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-In `Effect<A, E, R>` the `R` channel is a **set of `Context.Tag`s** the effect needs. A `Layer<ROut, E, RIn>` is a recipe that produces those tags. Pick the constructor by **what the build step does**: `Layer.succeed`/`sync` for pure values; `Layer.effect` for an `Effect` build with no cleanup; `Layer.scoped` when the service owns a resource that must be released (forked fibers, subscriptions, sockets). In this repo we almost always reach for `Effect.Service<Self>()("Name", { effect | scoped, dependencies })` — it bundles tag + live layer + `.Default` in one class. Top-level assembly lives in `extension/src/features/Main.ts`; platform tags (`VsCode`, `LanguageClient`, `Telemetry`, `Sentry`, ...) come from the caller and are wired in at activation.
+In `Effect<A, E, R>` the `R` channel is a **set of `Context.Tag`s** the effect needs. A `Layer<ROut, E, RIn>` is a recipe that produces those tags. Pick the constructor by **what the build step does**: `Layer.succeed`/`sync` for pure values; `Layer.effect` for an `Effect` build with no cleanup; `Layer.scoped` when the service owns a resource that must be released (forked fibers, subscriptions, sockets). In this repo we almost always reach for `Effect.Service<Self>()("Name", { effect | scoped, dependencies })` — it bundles tag + live layer + `.Default` in one class. Top-level assembly lives in `extension/src/features/Main.ts`; platform tags (`VsCode`, `MarimoClient`, `Telemetry`, `Sentry`, ...) come from the caller and are wired in at activation.
 
 ## Constructors & combinators
 
@@ -58,7 +58,7 @@ It's the only `Context.Tag` in `extension/src` for this exact reason. Everything
 
 Two cross-cutting facts about `Effect.Service`:
 
-- `dependencies: [...]` pre-provides those layers to `.Default` — they no longer appear in `RIn`. Use when a dependency is always the same in production; leave it out when the dependency must be substituted at the boundary (e.g. `VsCode`, `LanguageClient`).
+- `dependencies: [...]` pre-provides those layers to `.Default` — they no longer appear in `RIn`. Use when a dependency is always the same in production; leave it out when the dependency must be substituted at the boundary (e.g. `VsCode`, `MarimoClient`).
 - `effect` vs `scoped` is the same trade-off as `Layer.effect` vs `Layer.scoped`. If you yield anything that needs cleanup (`PubSub`, `Queue`, `Effect.forkScoped`, `Effect.acquireRelease`), use `scoped`.
 
 ## Side-effect-only layers: `scopedDiscard` vs `effectDiscard`
@@ -109,14 +109,14 @@ Nothing to release — we set `globalThis.__marimoDebug` and walk away. If you w
 **Scoped service that owns resources.** `scoped` build + `Effect.forkScoped`, so fibers die when the layer's scope closes.
 
 ```ts
-// extension/src/kernel/KernelManager.ts:53
+// extension/src/kernel/KernelManager.ts:96
 export class KernelManager extends Effect.Service<KernelManager>()("KernelManager", {
   dependencies: [Uv.Default, Config.Default, /* ... */ NotebookRenderer.Default],
   scoped: Effect.gen(function* () {
-    const client = yield* LanguageClient;
+    const marimo = yield* MarimoClient;
     const queue = yield* Queue.unbounded<MarimoOperation>();
     yield* Effect.forkScoped(
-      client.streamOf("marimo/operation").pipe(
+      marimo.operations().pipe(
         Stream.mapEffect((msg) => Queue.offer(queue, msg)),
         Stream.runDrain,
       ),

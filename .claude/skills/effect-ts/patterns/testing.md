@@ -175,18 +175,18 @@ export const TestSentryLive = Layer.succeed(Sentry, Sentry.make({
 }));
 ```
 
-Same shape: `TestTelemetry.ts:8`, `TestExtensionContext.ts:28`. Inline `Layer.succeed(LanguageClient, LanguageClient.make({...}))` inside a `withTestCtx` fixture (`CellStateManager.test.ts:23`) is the variant when you need to capture commands into a per-test `Ref`.
+Same shape: `TestTelemetry.ts:8`, `TestExtensionContext.ts:28`. `makeTestMarimoClient({ execute })` (`__tests__/__utils__/TestMarimoClient.ts:11`) wraps this shape as a parameterized helper — used by nine test files — and is the variant when you need to capture commands into a per-test `Ref`.
 
-**`Layer.scoped(Tag, Effect.gen(...))`** — fake owns a resource (subprocess, file handle, subscription). Canonical: `TestLanguageClient.ts:13` spawns the real `marimo-lsp` subprocess via `Effect.acquireRelease`:
+**`Layer.scoped(Tag, Effect.gen(...))`** — fake owns a resource (subprocess, file handle, subscription). Canonical: `TestMarimoClient.ts:15` spawns the real `marimo-lsp` subprocess via `Effect.acquireRelease`:
 
 ```ts
-export const TestLanguageClientLive = Layer.scoped(LanguageClient,
+export const TestMarimoClientLive = Layer.scoped(MarimoClient,
   Effect.gen(function*() {
     const { conn } = yield* Effect.acquireRelease(
       Effect.gen(function*() { /* spawn, initialize */ return { conn, proc }; }),
       ({ conn, proc }) => Effect.sync(() => { conn.dispose(); proc.kill(); }),
     );
-    return LanguageClient.make({ /* executeCommand → conn.sendRequest, ... */ });
+    return MarimoClient.make({ /* execute → conn.sendRequest, ... */ });
   }),
 );
 ```

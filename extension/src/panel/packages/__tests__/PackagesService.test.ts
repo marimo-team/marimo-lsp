@@ -6,6 +6,7 @@ import {
   createTestNotebookEditor,
   TestVsCode,
 } from "../../../__mocks__/TestVsCode.ts";
+import { makeTestMarimoClient } from "../../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../../constants.ts";
 import {
   type AnyController,
@@ -13,7 +14,6 @@ import {
 } from "../../../kernel/ControllerRegistry.ts";
 import { PythonController } from "../../../kernel/NotebookControllerFactory.ts";
 import { notebookId } from "../../../lib/__tests__/branded.ts";
-import { LanguageClient } from "../../../lsp/LanguageClient.ts";
 import { NotebookEditorRegistry } from "../../../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../../../platform/VsCode.ts";
 import { PackagesService } from "../PackagesService.ts";
@@ -31,25 +31,12 @@ function makeContext(options: {
 }) {
   const recorded: ExecutedCommand[] = [];
 
-  const languageClient = Layer.succeed(
-    LanguageClient,
-    LanguageClient.make({
-      channel: { name: "marimo-lsp", show() {} },
-      restart: () => Effect.void,
-      executeCommand(cmd) {
-        recorded.push({ command: cmd.command, params: cmd.params });
-        return Effect.succeed(
-          options.treeResponse ?? { tree: null },
-          // SAFETY: LanguageClient.executeCommand is `Effect<unknown>` in the
-          // production signature; the test fixture pre-shapes the response.
-          // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-        ) as Effect.Effect<unknown>;
-      },
-      streamOf() {
-        return Stream.never;
-      },
-    }),
-  );
+  const marimoClient = makeTestMarimoClient({
+    execute(request) {
+      recorded.push({ command: "marimo.api", params: request });
+      return Effect.succeed(options.treeResponse ?? { tree: null });
+    },
+  });
 
   const editorMock = Layer.succeed(
     NotebookEditorRegistry,
@@ -83,7 +70,7 @@ function makeContext(options: {
 
   const layer = Layer.empty.pipe(
     Layer.provideMerge(PackagesService.Default),
-    Layer.provide(languageClient),
+    Layer.provide(marimoClient),
     Layer.provide(editorMock),
     Layer.provide(controllerMock),
   );
@@ -103,7 +90,7 @@ const makePythonController = Effect.fn(function* (executable: string) {
 
 // SAFETY: building a real `SandboxController` would require its full
 // dependency graph (Uv, OutputChannel, Constants, PythonExtension, VsCode,
-// LanguageClient) — heavier than the test it serves. The packages flow's
+// MarimoClient) — heavier than the test it serves. The packages flow's
 // only contract with the controller here is `instanceof PythonController`,
 // so any non-PythonController value exercises the script branch.
 function makeNonPythonController(): AnyController {

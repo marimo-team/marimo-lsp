@@ -11,7 +11,7 @@ import { extractPythonError } from "../lib/extractPythonError.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
 import { installPackages } from "../lib/installPackages.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -40,7 +40,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
       const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
-      const marimo = yield* LanguageClient;
+      const marimo = yield* MarimoClient;
       const validator = yield* EnvironmentValidator;
       const serializer = yield* NotebookSerializer;
       const { LanguageId } = yield* Constants;
@@ -89,16 +89,10 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
 
                 const validEnv = yield* validator.validate(options.env);
 
-                yield* marimo.executeCommand({
-                  command: "marimo.api",
-                  params: {
-                    method: "execute-cells",
-                    params: {
-                      notebookUri: notebook.id,
-                      executable: validEnv.executable,
-                      inner: request.value,
-                    },
-                  },
+                yield* marimo.executeCells({
+                  notebookUri: notebook.id,
+                  executable: validEnv.executable,
+                  inner: request.value,
                 });
               }).pipe(
                 Effect.withSpan("PythonController.execute", {
@@ -110,7 +104,7 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
                 }),
                 // Known exceptions
                 Effect.catchTags({
-                  ExecuteCommandError: Effect.fn(function* (error) {
+                  MarimoCommandError: Effect.fn(function* (error) {
                     yield* Effect.logError("Failed to execute command").pipe(
                       Effect.annotateLogs({
                         cause: Cause.fail(error),
@@ -225,15 +219,9 @@ export class NotebookControllerFactory extends Effect.Service<NotebookController
             runPromise(
               Effect.gen(function* () {
                 const notebook = MarimoNotebookDocument.from(rawNotebook);
-                yield* marimo.executeCommand({
-                  command: "marimo.api",
-                  params: {
-                    method: "interrupt",
-                    params: {
-                      notebookUri: notebook.id,
-                      inner: {},
-                    },
-                  },
+                yield* marimo.interrupt({
+                  notebookUri: notebook.id,
+                  inner: {},
                 });
               }).pipe(
                 Effect.withSpan("PythonController.interrupt", {

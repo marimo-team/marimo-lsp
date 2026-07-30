@@ -3,7 +3,7 @@ import { Effect, Layer, LogLevel } from "effect";
 
 import * as pkg from "../../package.json";
 import { getTestExtensionContext } from "../__mocks__/TestExtensionContext.ts";
-import { TestLanguageClientLive } from "../__mocks__/TestLanguageClient.ts";
+import { TestMarimoClientLive } from "../__mocks__/TestMarimoClient.ts";
 import { TestPythonExtension } from "../__mocks__/TestPythonExtension.ts";
 import { TestRuffLanguageServerLive } from "../__mocks__/TestRuffLanguageServer.ts";
 import { TestSentryLive } from "../__mocks__/TestSentry.ts";
@@ -18,7 +18,7 @@ const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
     Layer.provideMerge(vscode.layer),
-    Layer.provideMerge(TestLanguageClientLive),
+    Layer.provideMerge(TestMarimoClientLive),
     Layer.provideMerge(TestPythonExtension.Default),
     Layer.provideMerge(TestTyLanguageServerLive),
     Layer.provideMerge(TestRuffLanguageServerLive),

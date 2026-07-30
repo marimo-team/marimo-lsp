@@ -1,18 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  Effect,
-  Layer,
-  Option,
-  Ref,
-  Stream,
-  SubscriptionRef,
-  TestClock,
-} from "effect";
+import { Effect, Layer, Option, Ref, SubscriptionRef, TestClock } from "effect";
 
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { LanguageClient } from "../../lsp/LanguageClient.ts";
+import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import type { MarimoCommand } from "../../types.ts";
 import { ThemeSyncLive } from "../ThemeSync.ts";
@@ -47,19 +39,15 @@ const withTestCtx = Effect.fn(function* (
     Layer.provideMerge(ThemeSyncLive),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(
-      Layer.succeed(
-        LanguageClient,
-        LanguageClient.make({
-          channel: { name: "marimo-lsp", show() {} },
-          restart: () => Effect.void,
-          executeCommand(cmd) {
-            return Ref.update(executions, (arr) => [...arr, cmd]);
-          },
-          streamOf() {
-            return Stream.never;
-          },
-        }),
-      ),
+      makeTestMarimoClient({
+        execute(request) {
+          const command: MarimoCommand = {
+            command: "marimo.api",
+            params: request,
+          };
+          return Ref.update(executions, (current) => [...current, command]);
+        },
+      }),
     ),
     Layer.provide(TestTelemetryLive),
     Layer.provide(TestSentryLive),

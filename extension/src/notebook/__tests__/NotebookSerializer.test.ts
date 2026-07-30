@@ -4,14 +4,14 @@ import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
 import packageJson from "../../../package.json";
-import { TestLanguageClientLive } from "../../__mocks__/TestLanguageClient.ts";
+import { TestMarimoClientLive } from "../../__mocks__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { NotebookSerializer } from "../../notebook/NotebookSerializer.ts";
 import { Constants } from "../../platform/Constants.ts";
 
 const NotebookSerializerLive = Layer.empty.pipe(
   Layer.provideMerge(NotebookSerializer.Default),
-  Layer.provideMerge(TestLanguageClientLive),
+  Layer.provideMerge(TestMarimoClientLive),
   Layer.provideMerge(Constants.Default),
 );
 

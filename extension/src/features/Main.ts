@@ -19,7 +19,7 @@ import { ExecutionRegistry } from "../kernel/ExecutionRegistry.ts";
 import { KernelManager } from "../kernel/KernelManager.ts";
 import { SandboxController } from "../kernel/SandboxController.ts";
 import { SessionStateManager } from "../kernel/SessionStateManager.ts";
-import type { LanguageClient } from "../lsp/LanguageClient.ts";
+import type { MarimoClient } from "../lsp/MarimoClient.ts";
 import type { RuffLanguageServer } from "../lsp/RuffLanguageServer.ts";
 import type { TyLanguageServer } from "../lsp/TyLanguageServer.ts";
 import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
@@ -118,7 +118,7 @@ const MainLive = Layer.empty
 
 export function makeActivate(
   layer: Layer.Layer<
-    | LanguageClient
+    | MarimoClient
     | VsCode
     | PythonExtension
     | Telemetry

@@ -3,7 +3,7 @@ import * as NodePath from "node:path";
 import { Cause, Chunk, Effect, Either, flow, Schema, Option } from "effect";
 
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { GitHubClient } from "../platform/GitHubClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -15,7 +15,7 @@ export const publishMarimoNotebookGist = Effect.fn(
   function* () {
     const code = yield* VsCode;
     const gh = yield* GitHubClient;
-    const client = yield* LanguageClient;
+    const marimo = yield* MarimoClient;
     const serializer = yield* NotebookSerializer;
 
     const notebook = Option.filterMap(
@@ -62,16 +62,10 @@ export const publishMarimoNotebookGist = Effect.fn(
     };
 
     // Try to export ipynb with outputs for GitHub rendering
-    const ipynbResult = yield* client
-      .executeCommand({
-        command: "marimo.api",
-        params: {
-          method: "export-as-ipynb",
-          params: {
-            notebookUri: notebook.value.id,
-            inner: {},
-          },
-        },
+    const ipynbResult = yield* marimo
+      .exportAsIpynb({
+        notebookUri: notebook.value.id,
+        inner: {},
       })
       .pipe(Effect.andThen(Schema.decodeUnknown(Schema.String)), Effect.either);
 

@@ -9,8 +9,8 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
-import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { Api } from "../Api.ts";
 import { VsCode } from "../VsCode.ts";
 
@@ -23,21 +23,7 @@ const withTestCtx = Effect.fn(function* (
     layer: Layer.empty.pipe(
       Layer.merge(Api.Default),
       Layer.provideMerge(ControllerRegistry.Default),
-      Layer.provide(
-        Layer.succeed(
-          LanguageClient,
-          LanguageClient.make({
-            channel: { name: "marimo-lsp-test", show() {} },
-            restart: () => Effect.void,
-            executeCommand() {
-              return Effect.die("not implemented");
-            },
-            streamOf() {
-              return Effect.die("not implemented");
-            },
-          }),
-        ),
-      ),
+      Layer.provide(makeTestMarimoClient()),
       Layer.provide(TestTelemetryLive),
       Layer.provide(TestSentryLive),
       Layer.provide(TestPythonExtension.Default),

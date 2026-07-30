@@ -1,6 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
 import type * as py from "@vscode/python-extension";
-import { Effect, Layer, Option, Stream, TestClock } from "effect";
+import { Effect, Layer, Option, TestClock } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
@@ -9,26 +9,13 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { ControllerRegistry } from "../../kernel/ControllerRegistry.ts";
-import { LanguageClient } from "../../lsp/LanguageClient.ts";
 import { Constants } from "../../platform/Constants.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 
-// Simple mock LanguageClient that doesn't spawn a real LSP process
-const TestLanguageClientMock = Layer.succeed(
-  LanguageClient,
-  LanguageClient.make({
-    channel: { name: "marimo-lsp", show() {} },
-    restart: () => Effect.void,
-    executeCommand() {
-      return Effect.void;
-    },
-    streamOf() {
-      return Stream.never;
-    },
-  }),
-);
+const TestMarimoClient = makeTestMarimoClient();
 
 const withTestCtx = Effect.fn(function* (
   options: { initialEnvs?: Array<py.ResolvedEnvironment> } = {},
@@ -40,7 +27,7 @@ const withTestCtx = Effect.fn(function* (
   const layer = Layer.empty.pipe(
     Layer.provideMerge(ControllerRegistry.Default),
     Layer.provide(Constants.Default),
-    Layer.provide(TestLanguageClientMock),
+    Layer.provide(TestMarimoClient),
     Layer.provide(TestTelemetryLive),
     Layer.provide(TestSentryLive),
     Layer.provideMerge(vscode.layer),

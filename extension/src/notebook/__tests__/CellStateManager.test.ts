@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, Stream, TestClock } from "effect";
+import { Effect, Layer, Option, Ref, TestClock } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -7,7 +7,7 @@ import {
   NotebookRange,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { LanguageClient } from "../../lsp/LanguageClient.ts";
+import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { CellStateManager } from "../../notebook/CellStateManager.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
@@ -21,22 +21,15 @@ const withTestCtx = Effect.fn(function* () {
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
     Layer.provide(
-      Layer.succeed(
-        LanguageClient,
-        LanguageClient.make({
-          channel: {
-            name: "marimo-lsp",
-            show() {},
-          },
-          restart: () => Effect.void,
-          executeCommand(cmd) {
-            return Ref.update(executions, (arr) => [...arr, cmd]);
-          },
-          streamOf() {
-            return Stream.never;
-          },
-        }),
-      ),
+      makeTestMarimoClient({
+        execute(request) {
+          const command: MarimoCommand = {
+            command: "marimo.api",
+            params: request,
+          };
+          return Ref.update(executions, (current) => [...current, command]);
+        },
+      }),
     ),
   );
   return { vscode, layer, executions };

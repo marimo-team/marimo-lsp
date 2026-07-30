@@ -7,7 +7,7 @@ import {
   SubscriptionRef,
 } from "effect";
 
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 import type { MarimoConfig } from "../types.ts";
@@ -23,7 +23,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
   "MarimoConfigurationService",
   {
     scoped: Effect.gen(function* () {
-      const client = yield* LanguageClient;
+      const marimo = yield* MarimoClient;
       const editorRegistry = yield* NotebookEditorRegistry;
 
       // Track configurations: NotebookUri -> MarimoConfig
@@ -50,15 +50,9 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
               Effect.annotateLogs({ notebookUri }),
             );
 
-            const result = yield* client.executeCommand({
-              command: "marimo.api",
-              params: {
-                method: "get-configuration",
-                params: {
-                  notebookUri,
-                  inner: {},
-                },
-              },
+            const result = yield* marimo.getConfiguration({
+              notebookUri,
+              inner: {},
             });
 
             // The LSP may return null when the server is restarting, the
@@ -108,16 +102,10 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
             );
 
             // Send update to LSP server
-            const result = yield* client.executeCommand({
-              command: "marimo.api",
-              params: {
-                method: "update-configuration",
-                params: {
-                  notebookUri,
-                  inner: {
-                    config: partialConfig,
-                  },
-                },
+            const result = yield* marimo.updateConfiguration({
+              notebookUri,
+              inner: {
+                config: partialConfig,
               },
             });
 

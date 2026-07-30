@@ -1,6 +1,6 @@
 import { Effect, Layer, Stream } from "effect";
 
-import { LanguageClient } from "../lsp/LanguageClient.ts";
+import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../platform/VsCode.ts";
 
@@ -14,7 +14,7 @@ import { VsCode } from "../platform/VsCode.ts";
 export const ThemeSyncLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const client = yield* LanguageClient;
+    const marimo = yield* MarimoClient;
     const editorRegistry = yield* NotebookEditorRegistry;
 
     yield* Effect.forkScoped(
@@ -24,23 +24,15 @@ export const ThemeSyncLive = Layer.scopedDiscard(
       ).pipe(
         Stream.runForEach(
           Effect.fn("ThemeSync.sync")(function* ([theme]) {
-            yield* client
-              .executeCommand({
-                command: "marimo.api",
-                params: {
-                  method: "set-display-theme",
-                  params: { theme },
-                },
-              })
-              .pipe(
-                Effect.catchAll(
-                  Effect.fn(function* (error) {
-                    yield* Effect.logWarning("Failed to sync theme").pipe(
-                      Effect.annotateLogs({ error }),
-                    );
-                  }),
-                ),
-              );
+            yield* marimo.setDisplayTheme({ theme }).pipe(
+              Effect.catchAll(
+                Effect.fn(function* (error) {
+                  yield* Effect.logWarning("Failed to sync theme").pipe(
+                    Effect.annotateLogs({ error }),
+                  );
+                }),
+              ),
+            );
           }),
         ),
       ),
