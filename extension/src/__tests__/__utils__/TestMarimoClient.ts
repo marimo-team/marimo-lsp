@@ -1,6 +1,8 @@
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Option, PubSub, Stream } from "effect";
 
 import {
+  type NotebookController,
+  type NotebookControllerSelection,
   type NotebookHandle,
   NotebookRuntime,
 } from "../../kernel/NotebookRuntime.ts";
@@ -11,6 +13,7 @@ import type { MarimoApiRequest, MarimoOperation } from "../../types.ts";
 interface Options {
   readonly execute?: (request: MarimoApiRequest) => Effect.Effect<unknown>;
   readonly operations?: () => Stream.Stream<MarimoOperation>;
+  readonly initialControllers?: ReadonlyArray<NotebookControllerSelection>;
 }
 
 export function makeTestMarimoClient(options: Options = {}) {
@@ -19,39 +22,69 @@ export function makeTestMarimoClient(options: Options = {}) {
 
 export function makeTestNotebookRuntime(options: Options = {}) {
   const client = makeTestMarimoClientValue(options);
-  const handles = new Map<NotebookId, NotebookHandle>();
-  const forNotebook = (notebookId: NotebookId): NotebookHandle => {
-    const existing = handles.get(notebookId);
-    if (existing !== undefined) return existing;
-    const handle: NotebookHandle = {
-      id: notebookId,
-      executeCells: (inner, executable) =>
-        client.executeCells({ notebookUri: notebookId, executable, inner }),
-      executeScratchpad: () => Stream.empty,
-      updateUIElements: (inner) =>
-        client.updateUIElements({ notebookUri: notebookId, inner }),
-      updateModel: (inner) =>
-        client.updateModel({ notebookUri: notebookId, inner }),
-      invokeFunction: (inner) =>
-        client.invokeFunction({ notebookUri: notebookId, inner }),
-      deleteCell: (inner) =>
-        client.deleteCell({ notebookUri: notebookId, inner }),
-      sendStdin: (inner) =>
-        client.sendStdin({ notebookUri: notebookId, inner }),
-      interrupt: () => client.interrupt({ notebookUri: notebookId, inner: {} }),
-      close: () => client.closeSession({ notebookUri: notebookId, inner: {} }),
-    };
-    handles.set(notebookId, handle);
-    return handle;
-  };
-
   return Layer.merge(
     Layer.succeed(MarimoClient, client),
-    Layer.succeed(
+    Layer.scoped(
       NotebookRuntime,
-      NotebookRuntime.make({
-        attachController: () => Effect.void,
-        forNotebook,
+      Effect.gen(function* () {
+        const handles = new Map<NotebookId, NotebookHandle>();
+        const controllers = new Map<NotebookId, NotebookController>(
+          options.initialControllers?.map(({ notebookUri, controller }) => [
+            notebookUri,
+            controller,
+          ]),
+        );
+        const selections =
+          yield* PubSub.unbounded<NotebookControllerSelection>();
+        yield* Effect.addFinalizer(() => PubSub.shutdown(selections));
+
+        const forNotebook = (notebookId: NotebookId): NotebookHandle => {
+          const existing = handles.get(notebookId);
+          if (existing !== undefined) return existing;
+          const handle: NotebookHandle = {
+            id: notebookId,
+            getController: () =>
+              Effect.sync(() =>
+                Option.fromNullable(controllers.get(notebookId)),
+              ),
+            executeCells: (inner, executable) =>
+              client.executeCells({
+                notebookUri: notebookId,
+                executable,
+                inner,
+              }),
+            executeScratchpad: () => Stream.empty,
+            updateUIElements: (inner) =>
+              client.updateUIElements({ notebookUri: notebookId, inner }),
+            updateModel: (inner) =>
+              client.updateModel({ notebookUri: notebookId, inner }),
+            invokeFunction: (inner) =>
+              client.invokeFunction({ notebookUri: notebookId, inner }),
+            deleteCell: (inner) =>
+              client.deleteCell({ notebookUri: notebookId, inner }),
+            sendStdin: (inner) =>
+              client.sendStdin({ notebookUri: notebookId, inner }),
+            interrupt: () =>
+              client.interrupt({ notebookUri: notebookId, inner: {} }),
+            close: () =>
+              client.closeSession({ notebookUri: notebookId, inner: {} }),
+          };
+          handles.set(notebookId, handle);
+          return handle;
+        };
+
+        return NotebookRuntime.make({
+          attachController: (notebookId, controller) =>
+            Effect.gen(function* () {
+              controllers.set(notebookId, controller);
+              yield* PubSub.publish(selections, {
+                notebookUri: notebookId,
+                controller,
+              });
+            }),
+          controllerChanges: () => Stream.fromPubSub(selections),
+          forNotebook,
+        });
       }),
     ),
   );

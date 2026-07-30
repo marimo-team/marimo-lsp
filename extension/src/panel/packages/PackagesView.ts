@@ -1,6 +1,6 @@
 import { Effect, Layer, Option, Ref, Stream } from "effect";
 
-import { NotebookControllers } from "../../kernel/NotebookControllers.ts";
+import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -29,7 +29,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
     const treeView = yield* TreeView;
     const packagesService = yield* PackagesService;
     const editorRegistry = yield* NotebookEditorRegistry;
-    const controllers = yield* NotebookControllers;
+    const notebooks = yield* NotebookRuntime;
     const code = yield* VsCode;
 
     // Track the current package tree items for the active notebook
@@ -166,7 +166,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
     // streamDependencyTreeChanges, which triggers refreshPackages to
     // re-fetch with the new controller's `target`.
     yield* Effect.forkScoped(
-      controllers.selectionChanges().pipe(
+      notebooks.controllerChanges().pipe(
         Stream.runForEach(
           Effect.fn(function* ({ notebookUri }) {
             yield* packagesService.clearNotebook(notebookUri);

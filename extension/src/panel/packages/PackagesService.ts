@@ -2,8 +2,8 @@ import { Effect, HashMap, Option, Schema, SubscriptionRef } from "effect";
 
 import {
   type NotebookController,
-  NotebookControllers,
-} from "../../kernel/NotebookControllers.ts";
+  NotebookRuntime,
+} from "../../kernel/NotebookRuntime.ts";
 import { MarimoClient } from "../../lsp/MarimoClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
@@ -60,7 +60,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
   {
     scoped: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
-      const controllers = yield* NotebookControllers;
+      const notebooks = yield* NotebookRuntime;
       const editors = yield* NotebookEditorRegistry;
 
       // Track package lists: NotebookUri -> PackageListState
@@ -246,9 +246,9 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               return null;
             }
 
-            const activeController = yield* controllers.getSelected(
-              activeNotebook.value,
-            );
+            const activeController = yield* notebooks
+              .forNotebook(activeNotebook.value.id)
+              .getController();
             if (Option.isNone(activeController)) {
               yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
                 HashMap.set(map, notebookUri, {

@@ -68,6 +68,11 @@ export interface NotebookController {
   ) => Effect.Effect<string, ExecutableResolutionError | UnsavedNotebookError>;
 }
 
+export interface NotebookControllerSelection {
+  readonly notebookUri: NotebookId;
+  readonly controller: NotebookController;
+}
+
 /** No controller is selected for the notebook. */
 export class NoActiveKernelError extends Data.TaggedError(
   "NoActiveKernelError",
@@ -91,6 +96,9 @@ export class UnsavedNotebookError extends Data.TaggedError(
  */
 export interface NotebookHandle {
   readonly id: NotebookId;
+  readonly getController: () => Effect.Effect<
+    Option.Option<NotebookController>
+  >;
   readonly executeCells: (
     request: InnerRequest<"execute-cells">,
     executable: string,
@@ -190,11 +198,20 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       const controllers = yield* Ref.make(
         HashMap.empty<NotebookId, NotebookController>(),
       );
+      const controllerSelections =
+        yield* PubSub.unbounded<NotebookControllerSelection>();
 
-      yield* Effect.addFinalizer(() => PubSub.shutdown(operations));
+      yield* Effect.addFinalizer(() =>
+        Effect.all(
+          [PubSub.shutdown(operations), PubSub.shutdown(controllerSelections)],
+          { discard: true },
+        ),
+      );
 
       const makeHandle = (notebookId: NotebookId): NotebookHandle => ({
         id: notebookId,
+        getController: () =>
+          Effect.map(Ref.get(controllers), HashMap.get(notebookId)),
         executeCells: (request, executable) =>
           marimo.executeCells({
             notebookUri: notebookId,
@@ -295,6 +312,26 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
         return handle;
       };
 
+      const updateKernelContext = Effect.fn(
+        "NotebookRuntime.updateKernelContext",
+      )(function* () {
+        const activeNotebook = Option.filterMap(
+          yield* code.window.getActiveNotebookEditor(),
+          (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
+        );
+        const hasKernel =
+          Option.isSome(activeNotebook) &&
+          HashMap.has(yield* Ref.get(controllers), activeNotebook.value.id);
+
+        yield* code.commands.setContext("marimo.notebook.hasKernel", hasKernel);
+      });
+
+      yield* Effect.forkScoped(updateKernelContext());
+      yield* Effect.forkScoped(
+        code.window
+          .activeNotebookEditorChanges()
+          .pipe(Stream.runForEach(updateKernelContext)),
+      );
       yield* Effect.forkScoped(
         marimo.operations().pipe(
           Stream.runForEach((operation) =>
@@ -437,7 +474,24 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
           notebookId: NotebookId,
           controller: NotebookController,
         ) {
-          return Ref.update(controllers, HashMap.set(notebookId, controller));
+          return Effect.gen(function* () {
+            yield* Effect.uninterruptible(
+              Effect.gen(function* () {
+                yield* Ref.update(
+                  controllers,
+                  HashMap.set(notebookId, controller),
+                );
+                yield* PubSub.publish(controllerSelections, {
+                  notebookUri: notebookId,
+                  controller,
+                });
+              }),
+            );
+            yield* updateKernelContext();
+          });
+        },
+        controllerChanges() {
+          return Stream.fromPubSub(controllerSelections);
         },
         forNotebook,
       };

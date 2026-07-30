@@ -1,5 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Layer, Ref, Stream } from "effect";
+import { Effect, Layer, Option, Ref, Stream } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
@@ -8,7 +8,10 @@ import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { MarimoApiRequest } from "../../types.ts";
-import { NotebookRuntime } from "../NotebookRuntime.ts";
+import {
+  type NotebookController,
+  NotebookRuntime,
+} from "../NotebookRuntime.ts";
 
 const notebook = notebookId("notebook-a");
 
@@ -16,21 +19,24 @@ const makeTestLayer = Effect.fn(function* (
   options: Parameters<typeof makeTestMarimoClient>[0] = {},
 ) {
   const vscode = yield* TestVsCode.make();
-  return Layer.empty.pipe(
-    Layer.provideMerge(NotebookRuntime.Default),
-    Layer.provide(makeTestMarimoClient(options)),
-    Layer.provide(TestTelemetryLive),
-    Layer.provide(TestSentryLive),
-    Layer.provide(TestPythonExtension.Default),
-    Layer.provideMerge(vscode.layer),
-  );
+  return {
+    vscode,
+    layer: Layer.empty.pipe(
+      Layer.provideMerge(NotebookRuntime.Default),
+      Layer.provide(makeTestMarimoClient(options)),
+      Layer.provide(TestTelemetryLive),
+      Layer.provide(TestSentryLive),
+      Layer.provide(TestPythonExtension.Default),
+      Layer.provideMerge(vscode.layer),
+    ),
+  };
 });
 
 it.scoped(
   "returns a stable handle that binds the notebook ID",
   Effect.fn(function* () {
     const requests = yield* Ref.make<ReadonlyArray<MarimoApiRequest>>([]);
-    const layer = yield* makeTestLayer({
+    const { layer } = yield* makeTestLayer({
       execute: (request) =>
         Ref.update(requests, (current) => [...current, request]),
     });
@@ -72,7 +78,7 @@ it.scoped(
   "subscribes to MarimoClient operations once",
   Effect.fn(function* () {
     let subscriptions = 0;
-    const layer = yield* makeTestLayer({
+    const { layer } = yield* makeTestLayer({
       operations: () => {
         subscriptions += 1;
         return Stream.never;
@@ -85,6 +91,61 @@ it.scoped(
       notebooks.forNotebook(notebookId("notebook-b"));
 
       expect(subscriptions).toBe(1);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.scoped(
+  "owns the selected controller",
+  Effect.fn(function* () {
+    const { layer } = yield* makeTestLayer();
+    const controller: NotebookController = {
+      id: "marimo-/usr/bin/python",
+      createNotebookCellExecution() {
+        throw new Error("not used");
+      },
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      const handle = notebooks.forNotebook(notebook);
+
+      expect(Option.isNone(yield* handle.getController())).toBe(true);
+      yield* notebooks.attachController(notebook, controller);
+
+      expect(yield* handle.getController()).toEqual(Option.some(controller));
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.scoped(
+  "updates the active notebook kernel context when a controller is attached",
+  Effect.fn(function* () {
+    const { layer, vscode } = yield* makeTestLayer();
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    const controller: NotebookController = {
+      id: "marimo-/usr/bin/python",
+      createNotebookCellExecution() {
+        throw new Error("not used");
+      },
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      yield* vscode.setActiveNotebookEditor(Option.some(editor));
+      yield* notebooks.attachController(
+        notebookId(editor.notebook.uri.toString()),
+        controller,
+      );
+
+      const contexts = (yield* Ref.get(vscode.executions)).filter(
+        (execution) =>
+          execution.command === "setContext" &&
+          execution.args[0] === "marimo.notebook.hasKernel",
+      );
+      expect(contexts.at(-1)?.args[1]).toBe(true);
     }).pipe(Effect.provide(layer));
   }),
 );

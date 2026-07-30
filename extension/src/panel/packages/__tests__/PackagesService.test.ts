@@ -5,14 +5,12 @@ import {
   createTestNotebookDocument,
   createTestNotebookEditor,
   TestVsCode,
+  Uri,
 } from "../../../__mocks__/TestVsCode.ts";
-import { makeTestMarimoClient } from "../../../__tests__/__utils__/TestMarimoClient.ts";
+import { makeTestNotebookRuntime } from "../../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../../constants.ts";
 import { PythonController } from "../../../kernel/NotebookControllerFactory.ts";
-import {
-  type NotebookController,
-  NotebookControllers,
-} from "../../../kernel/NotebookControllers.ts";
+import { type NotebookController } from "../../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../../lib/__tests__/branded.ts";
 import { NotebookEditorRegistry } from "../../../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../../../platform/VsCode.ts";
@@ -31,11 +29,15 @@ function makeContext(options: {
 }) {
   const recorded: ExecutedCommand[] = [];
 
-  const marimoClient = makeTestMarimoClient({
+  const runtime = makeTestNotebookRuntime({
     execute(request) {
       recorded.push({ command: "marimo.api", params: request });
       return Effect.succeed(options.treeResponse ?? { tree: null });
     },
+    initialControllers: Option.match(options.controller, {
+      onNone: () => [],
+      onSome: (controller) => [{ notebookUri: NOTEBOOK_URI, controller }],
+    }),
   });
 
   const editorMock = Layer.succeed(
@@ -49,7 +51,7 @@ function makeContext(options: {
         Effect.succeed(
           Option.some(
             createTestNotebookEditor(
-              createTestNotebookDocument(NOTEBOOK_URI, {
+              createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
                 notebookType: "marimo-notebook",
               }),
             ),
@@ -59,20 +61,10 @@ function makeContext(options: {
     }),
   );
 
-  const controllerMock = Layer.succeed(
-    NotebookControllers,
-    NotebookControllers.make({
-      getSelected: () => Effect.succeed(options.controller),
-      selectionChanges: () => Stream.empty,
-      snapshot: () => Effect.succeed({ controllers: [], selections: [] }),
-    }),
-  );
-
   const layer = Layer.empty.pipe(
     Layer.provideMerge(PackagesService.Default),
-    Layer.provide(marimoClient),
+    Layer.provide(runtime),
     Layer.provide(editorMock),
-    Layer.provide(controllerMock),
   );
 
   return { layer, recorded };
@@ -95,8 +87,6 @@ function makeNonPythonController(): NotebookController {
       throw new Error("Not used by PackagesService tests");
     },
     resolveExecutable: () => Effect.succeed("/unused"),
-    selectedNotebookChanges: () => Stream.empty,
-    updateNotebookAffinity: () => Effect.void,
   };
 }
 
@@ -214,8 +204,8 @@ describe("PackagesService", () => {
         expect(recorded).toHaveLength(1);
 
         // After clearNotebook the cache is empty, so the next fetch re-issues.
-        // This is the seam PackagesView relies on for controller-switch
-        // invalidation (see NotebookControllers.selectionChanges).
+        // PackagesView performs this invalidation when the runtime reports a
+        // controller change.
         yield* svc.clearNotebook(NOTEBOOK_URI);
         yield* svc.fetchDependencyTree(NOTEBOOK_URI);
         expect(recorded).toHaveLength(2);

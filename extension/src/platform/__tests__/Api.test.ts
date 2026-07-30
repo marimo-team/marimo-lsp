@@ -10,7 +10,6 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import { NotebookControllers } from "../../kernel/NotebookControllers.ts";
 import { Api } from "../Api.ts";
 import { VsCode } from "../VsCode.ts";
 
@@ -22,7 +21,6 @@ const withTestCtx = Effect.fn(function* (
     vscode: testVsCode,
     layer: Layer.empty.pipe(
       Layer.merge(Api.Default),
-      Layer.provideMerge(NotebookControllers.Default),
       Layer.provide(makeTestNotebookRuntime()),
       Layer.provide(TestTelemetryLive),
       Layer.provide(TestSentryLive),

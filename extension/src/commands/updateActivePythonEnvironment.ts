@@ -1,6 +1,6 @@
 import { Effect, Either, Option } from "effect";
 
-import { NotebookControllers } from "../kernel/NotebookControllers.ts";
+import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
@@ -14,7 +14,7 @@ export const updateActivePythonEnvironment = Effect.fn(
   const uv = yield* Uv;
   const code = yield* VsCode;
   const py = yield* PythonExtension;
-  const controllers = yield* NotebookControllers;
+  const notebooks = yield* NotebookRuntime;
 
   const editor = yield* code.window.getActiveNotebookEditor();
 
@@ -34,7 +34,9 @@ export const updateActivePythonEnvironment = Effect.fn(
     return;
   }
 
-  const controller = yield* controllers.getSelected(notebook.value);
+  const controller = yield* notebooks
+    .forNotebook(notebook.value.id)
+    .getController();
 
   if (Option.isNone(controller)) {
     yield* code.window.showInformationMessage(
