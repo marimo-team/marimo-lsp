@@ -347,6 +347,18 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
           .pipe(Stream.runForEach(updateKernelContext)),
       );
       yield* Effect.forkScoped(
+        code.workspace.notebookDocumentClosed().pipe(
+          Stream.runForEach(
+            Effect.fn("NotebookRuntime.releaseNotebook")(function* (document) {
+              const notebook = MarimoNotebookDocument.tryFrom(document);
+              if (Option.isNone(notebook)) return;
+              notebooks.delete(notebook.value.id);
+              yield* updateKernelContext();
+            }),
+          ),
+        ),
+      );
+      yield* Effect.forkScoped(
         marimo.operations().pipe(
           Stream.runForEach((operation) =>
             Effect.gen(function* () {
