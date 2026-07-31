@@ -341,10 +341,22 @@
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
-        "command": "marimo.clearRecentNotebooks",
-        "title": "Clear recent notebooks",
+        "command": "marimo.restartSession",
+        "title": "Restart Kernel",
         "category": "marimo",
-        "icon": "$(clear-all)"
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "marimo.shutdownSession",
+        "title": "Shut Down Kernel",
+        "category": "marimo",
+        "icon": "$(close)"
+      },
+      {
+        "command": "marimo.shutdownAllSessions",
+        "title": "Shut Down All Kernels",
+        "category": "marimo",
+        "icon": "$(trash)"
       },
       {
         "command": "marimo.refreshPackages",
@@ -454,8 +466,8 @@
     "views": {
       "marimo-explorer": [
         {
-          "id": "marimo-explorer-recents",
-          "name": "Recent Notebooks"
+          "id": "marimo-explorer-sessions",
+          "name": "Sessions"
         },
         {
           "id": "marimo-explorer-variables",
@@ -473,6 +485,14 @@
     },
     "menus": {
       "commandPalette": [
+        {
+          "command": "marimo.restartSession",
+          "when": "never"
+        },
+        {
+          "command": "marimo.shutdownSession",
+          "when": "never"
+        },
         {
           "command": "marimo.config.toggleOnCellChangeAutoRun",
           "when": "never"
@@ -502,14 +522,36 @@
       ],
       "view/title": [
         {
-          "command": "marimo.clearRecentNotebooks",
-          "when": "view == marimo-explorer-recents",
+          "command": "marimo.shutdownAllSessions",
+          "when": "view == marimo-explorer-sessions && marimo.hasLiveSessions",
           "group": "navigation"
         },
         {
           "command": "marimo.refreshPackages",
           "when": "view == marimo-explorer-packages",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "marimo.restartSession",
+          "when": "view == marimo-explorer-sessions && viewItem == marimoSession",
+          "group": "inline@1"
+        },
+        {
+          "command": "marimo.shutdownSession",
+          "when": "view == marimo-explorer-sessions && viewItem == marimoSession",
+          "group": "inline@2"
+        },
+        {
+          "command": "marimo.restartSession",
+          "when": "view == marimo-explorer-sessions && viewItem == marimoSession",
+          "group": "session@1"
+        },
+        {
+          "command": "marimo.shutdownSession",
+          "when": "view == marimo-explorer-sessions && viewItem == marimoSession",
+          "group": "session@2"
         }
       ],
       "notebook/toolbar": [
@@ -546,7 +588,13 @@
           "group": "navigation@5"
         }
       ]
-    }
+    },
+    "viewsWelcome": [
+      {
+        "view": "marimo-explorer-sessions",
+        "contents": "No live sessions. Run a cell in a marimo notebook to start one."
+      }
+    ]
   },
   "activationEvents": [
     "onStartupFinished"

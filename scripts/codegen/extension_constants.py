@@ -58,6 +58,7 @@ def generate() -> str:
         "marimo.notebook.hasKernel",
         "marimo.config.runtime.on_cell_change",
         "marimo.config.runtime.auto_reload",
+        "marimo.hasLiveSessions",
         "marimo.isPythonFileMarimoNotebook",
     ]
     return f"""// AUTO-GENERATED FILE — DO NOT EDIT.

@@ -51,9 +51,9 @@ const NotebookCommandContextSchema = Schema.Struct({
 
 export type NotebookCommandContext = typeof NotebookCommandContextSchema.Type;
 
-export function withFirstArgument<A>(
+export function withFirstArgument<A, I>(
   command: MarimoCommand,
-  schema: Schema.Schema<A>,
+  schema: Schema.Schema<A, I>,
 ): MarimoCommand<[A], void> {
   return {
     [MarimoCommandTypeId]: {

@@ -2000,6 +2000,12 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           notebookDocumentClosed() {
             return Stream.fromPubSub(documentClosed);
           },
+          fileRenames() {
+            return Stream.never;
+          },
+          fileDeletes() {
+            return Stream.never;
+          },
           textDocumentChanges() {
             return Stream.never;
           },

@@ -14,7 +14,7 @@ import { VsCode } from "../platform/VsCode.ts";
  *
  *   // Create a tree data provider
  *   const provider = yield* treeView.createTreeDataProvider({
- *     viewId: "marimo-explorer-recents",
+ *     viewId: "marimo-explorer-sessions",
  *     getChildren: (element) => {
  *       // Return array of tree items
  *       return Effect.succeed([]);
@@ -40,6 +40,7 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
         viewId: MarimoView;
         getChildren: (element?: T) => Effect.Effect<T[]>;
         getTreeItem: (element: T) => Effect.Effect<TreeItem>;
+        showCollapseAll?: boolean;
       }) {
         // Create event emitter for refresh events
         const eventEmitter = yield* Effect.acquireRelease(
@@ -47,7 +48,7 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
           (emitter) => Effect.sync(() => emitter.dispose()),
         );
 
-        yield* code.window.createTreeView(options.viewId, {
+        const treeView = yield* code.window.createTreeView(options.viewId, {
           treeDataProvider: {
             onDidChangeTreeData: eventEmitter.event,
 
@@ -63,7 +64,7 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
               return Effect.runPromise(options.getChildren(element));
             },
           },
-          showCollapseAll: true,
+          showCollapseAll: options.showCollapseAll ?? true,
         });
 
         return {
@@ -72,6 +73,14 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
            */
           refresh(element?: T) {
             return Effect.sync(() => eventEmitter.fire(element ?? null));
+          },
+
+          /** Reveals an element in the tree view. */
+          reveal(
+            element: T,
+            opts?: { select?: boolean; focus?: boolean; expand?: boolean },
+          ) {
+            return Effect.promise(() => treeView.reveal(element, opts));
           },
         };
       }),
@@ -87,6 +96,7 @@ export interface TreeItem {
   description?: string;
   tooltip?: string;
   iconPath?: string | { light: string; dark: string };
+  themeIcon?: string;
   contextValue?: string;
   command?:
     | string
@@ -131,6 +141,10 @@ function toVSCodeTreeItem(vscode: VsCode, item: TreeItem): vscode.TreeItem {
         dark: vscode.Uri.file(item.iconPath.dark),
       };
     }
+  }
+
+  if (item.themeIcon) {
+    treeItem.iconPath = new vscode.ThemeIcon(item.themeIcon);
   }
 
   if (item.contextValue) {

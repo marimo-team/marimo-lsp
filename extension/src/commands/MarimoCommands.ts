@@ -5,6 +5,7 @@ import {
   withOptionalNotebookContext,
   VscodeUriSchema,
 } from "../commands.ts";
+import { NotebookIdFromString } from "../schemas/MarimoNotebookDocument.ts";
 import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 
 const notebookCommands = {
@@ -35,6 +36,10 @@ const notebookCommands = {
   ),
 };
 
+const SessionAction = Schema.Struct({
+  notebookUri: NotebookIdFromString,
+});
+
 /**
  * Commands contributed by this extension, with exceptional contracts refined
  * here. Generated commands use the conventional `[] -> void` contract.
@@ -45,5 +50,13 @@ export const MarimoCommands = {
   openAsMarimoNotebook: withFirstArgument(
     GeneratedMarimoCommands.openAsMarimoNotebook,
     Schema.UndefinedOr(Schema.Union(Schema.String, VscodeUriSchema)),
+  ),
+  restartSession: withFirstArgument(
+    GeneratedMarimoCommands.restartSession,
+    SessionAction,
+  ),
+  shutdownSession: withFirstArgument(
+    GeneratedMarimoCommands.shutdownSession,
+    SessionAction,
   ),
 } as const;
