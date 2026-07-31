@@ -7,9 +7,12 @@ from __future__ import annotations
 import json
 import queue
 import threading
+import time
+import typing
 from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
+import msgspec
 from marimo._config.manager import get_default_config_manager
 from marimo._ipc import QueueManager as IpcQueues
 from marimo._runtime.commands import (
@@ -27,6 +30,7 @@ from marimo._session.state.session_view import SessionView
 from marimo_lsp.app_file_manager import LspAppFileManager, sync_app_with_workspace
 from marimo_lsp.kernel_manager import LspKernelManager
 from marimo_lsp.loggers import get_logger
+from marimo_lsp.models import SessionInfo
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -69,6 +73,10 @@ class _OperationSink:
         self._attached = False
         logger.info(f"Detached client for {self._notebook_uri}")
 
+    def move(self, notebook_uri: str) -> None:
+        """Route future operations to a renamed notebook."""
+        self._notebook_uri = notebook_uri
+
     def notify(self, message: KernelMessage) -> None:
         if not self._attached:
             return
@@ -99,13 +107,16 @@ class Session:
         kernel_manager: LspKernelManager,
         app_file_manager: LspAppFileManager,
         config_manager: MarimoConfigManager,
+        on_change: typing.Callable[[], None] | None = None,
+        session_view: SessionView | None = None,
+        started_at: float | None = None,
     ) -> None:
         self.initialization_id = initialization_id
         self._notebook_uri = notebook_uri
         self._app_file_manager = app_file_manager
         self._config_manager = config_manager
         # Used by exporters and scratchpad snapshots.
-        self.session_view = SessionView()
+        self.session_view = session_view if session_view is not None else SessionView()
 
         self._operation_sink = operation_sink
         self._queue_manager = queue_manager
@@ -113,6 +124,9 @@ class Session:
         self._closed = False
         self._listener_thread: threading.Thread | None = None
         self._runtime_config = config_manager.get_config(hide_secrets=False)
+        self.started_at = started_at if started_at is not None else time.time()
+        self._status: typing.Literal["idle", "running"] = "idle"
+        self._on_change = on_change or (lambda: None)
 
         try:
             self._kernel_manager.start_kernel()
@@ -138,6 +152,11 @@ class Session:
         return self._kernel_manager.executable
 
     @property
+    def working_directory(self) -> str | None:
+        """Return the configured kernel working directory."""
+        return self._kernel_manager.working_directory
+
+    @property
     def attached(self) -> bool:
         """Return whether operations are forwarded to the notebook client."""
         return self._operation_sink.attached
@@ -151,6 +170,16 @@ class Session:
     def filename(self) -> str | None:
         """Return the notebook filename, when it has one."""
         return self._app_file_manager.filename
+
+    @property
+    def app_file_manager(self) -> LspAppFileManager:
+        """Return the app state used to build a replacement kernel."""
+        return self._app_file_manager
+
+    @property
+    def config_manager(self) -> MarimoConfigManager:
+        """Return the configuration used to build a replacement kernel."""
+        return self._config_manager
 
     def get_config(self, *, hide_secrets: bool = True) -> MarimoConfig:
         """Return this session's configured marimo settings."""
@@ -183,12 +212,49 @@ class Session:
                     if msg is None:
                         return
                     self.session_view.add_raw_notification(msg)
+                    self._update_status(msg)
                     self._operation_sink.notify(msg)
                 except queue.Empty:
                     continue
 
         self._listener_thread = threading.Thread(target=listen, daemon=True)
         self._listener_thread.start()
+
+    def _update_status(self, message: KernelMessage) -> None:
+        try:
+            operation = json.loads(message)
+        except json.JSONDecodeError:
+            return
+
+        if operation.get("op") == "completed-run":
+            self._set_status("idle")
+        elif operation.get("op") == "cell-op" and operation.get("status") in {
+            "queued",
+            "running",
+        }:
+            self._set_status("running")
+
+    def _set_status(self, status: typing.Literal["idle", "running"]) -> None:
+        if self._status == status:
+            return
+        self._status = status
+        self._on_change()
+
+    def mark_running(self) -> None:
+        """Mark the session busy before sending an execution request."""
+        self._set_status("running")
+
+    def describe(self) -> SessionInfo:
+        """Return the public snapshot for this live session."""
+        return SessionInfo(
+            session_id=self.initialization_id,
+            notebook_uri=self._notebook_uri,
+            filename=self.filename,
+            executable=self.executable,
+            started_at=self.started_at,
+            status=self._status,
+            attached=self.attached,
+        )
 
     def put_input(self, text: str) -> None:
         """Send user input to the kernel's stdin."""
@@ -227,13 +293,15 @@ class Session:
             from_consumer_id=None,
         )
 
-    def detach(self) -> None:
+    def detach(self, *, notify: bool = True) -> None:
         """Detach the client and pause auto-reload without stopping the kernel."""
         if not self.attached:
             return
 
         self._operation_sink.detach()
         self.update_runtime_config(self._runtime_config)
+        if notify:
+            self._on_change()
 
     def attach(self) -> None:
         """Reattach the client and restore the configured auto-reload mode."""
@@ -242,6 +310,14 @@ class Session:
 
         self._operation_sink.attach()
         self.update_runtime_config(self._runtime_config)
+        self._on_change()
+
+    def move(self, notebook_uri: str) -> None:
+        """Move this session to a renamed notebook URI."""
+        self._notebook_uri = notebook_uri
+        self._operation_sink.move(notebook_uri)
+        self._app_file_manager.move(notebook_uri)
+        self._on_change()
 
     def instantiate(
         self,
@@ -275,6 +351,7 @@ class Session:
         if self._closed:
             return
         self._closed = True
+        self._on_change = lambda: None
         logger.info(f"Closing session {self.initialization_id}")
         self._kernel_manager.close_kernel()
         self._queue_manager.close_queues()
@@ -290,7 +367,23 @@ class Sessions:
 
     def __iter__(self) -> Iterator[Session]:
         """Iterate over the live sessions."""
-        return iter(self._sessions.values())
+        # Status updates arrive on kernel listener threads. Snapshot values so
+        # a concurrent lifecycle action cannot resize the dict mid-iteration.
+        return iter(tuple(self._sessions.values()))
+
+    def describe(self) -> list[SessionInfo]:
+        """Return newest-first public descriptions of all live sessions."""
+        return sorted(
+            (session.describe() for session in self),
+            key=lambda session: session.started_at,
+            reverse=True,
+        )
+
+    def _notify_changed(self) -> None:
+        self._server.protocol.notify(
+            "marimo/sessionsChanged",
+            {"sessions": msgspec.to_builtins(self.describe())},
+        )
 
     def get(self, notebook_uri: str) -> Session | None:
         """Return the live session for a notebook, if one exists."""
@@ -316,6 +409,7 @@ class Sessions:
         self._sessions[notebook_uri] = replacement
         if current is not None:
             self._close(current, notebook_uri)
+        self._notify_changed()
         return replacement
 
     def _create(
@@ -323,14 +417,22 @@ class Sessions:
         notebook_uri: str,
         executable: str,
         working_directory: str | None = None,
+        *,
+        previous: Session | None = None,
     ) -> Session:
+        app_file_manager = previous.app_file_manager if previous else None
+        config_manager = previous.config_manager if previous else None
+        if app_file_manager is None:
+            app_file_manager = LspAppFileManager(
+                server=self._server,
+                notebook_uri=notebook_uri,
+            )
+        if config_manager is None:
+            config_manager = get_default_config_manager(
+                current_path=app_file_manager.path
+            )
         ipc_queues, connection_info = IpcQueues.create()
         queue_manager = IpcQueueManager.from_ipc(ipc_queues)
-        app_file_manager = LspAppFileManager(
-            server=self._server,
-            notebook_uri=notebook_uri,
-        )
-        config_manager = get_default_config_manager(current_path=app_file_manager.path)
         kernel_manager = LspKernelManager(
             executable=executable,
             queue_manager=queue_manager,
@@ -349,7 +451,54 @@ class Sessions:
             kernel_manager=kernel_manager,
             app_file_manager=app_file_manager,
             config_manager=config_manager,
+            on_change=self._notify_changed,
+            session_view=previous.session_view if previous else None,
+            started_at=previous.started_at if previous else None,
         )
+
+    def restart(
+        self, notebook_uri: str, *, executable: str | None = None
+    ) -> Session | None:
+        """Atomically replace a live session's kernel."""
+        current = self.get(notebook_uri)
+        if current is None:
+            if executable is None:
+                return None
+            replacement = self._create(notebook_uri, executable)
+            self._sessions[notebook_uri] = replacement
+            self._notify_changed()
+            return replacement
+
+        replacement = self._create(
+            notebook_uri,
+            current.executable,
+            current.working_directory,
+            previous=current,
+        )
+        if not current.attached:
+            replacement.detach(notify=False)
+        self._sessions[notebook_uri] = replacement
+        self._close(current, notebook_uri)
+        self._notify_changed()
+        return replacement
+
+    def move(self, notebook_uri: str, new_notebook_uri: str) -> None:
+        """Move a live session to a renamed notebook URI."""
+        session = self._sessions.pop(notebook_uri, None)
+        if session is None:
+            return
+        replaced = self._sessions.pop(new_notebook_uri, None)
+        if replaced is not None:
+            self._close(replaced, new_notebook_uri)
+        self._sessions[new_notebook_uri] = session
+        session.move(new_notebook_uri)
+        try:
+            session.sync(self._server.workspace)
+        except KeyError:
+            pass
+        else:
+            session.attach()
+        self._notify_changed()
 
     def attach(self, notebook_uri: str, workspace: Workspace) -> None:
         """Attach and synchronize an existing session."""
@@ -378,6 +527,7 @@ class Sessions:
             return
 
         self._close(session, notebook_uri)
+        self._notify_changed()
 
     @staticmethod
     def _close(session: Session, notebook_uri: str) -> None:
@@ -391,5 +541,7 @@ class Sessions:
     def close_all(self) -> None:
         """Close all live sessions."""
         logger.info("Closing all sessions")
-        for notebook_uri in list(self._sessions):
-            self.close(notebook_uri)
+        live = self._sessions
+        self._sessions = {}
+        for notebook_uri, session in live.items():
+            self._close(session, notebook_uri)

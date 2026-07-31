@@ -51,10 +51,14 @@ from marimo_lsp.models import (
     InterruptRequest,
     ListPackagesRequest,
     ListPackagesResponse,
+    ListSessionsRequest,
+    ListSessionsResponse,
     ModelRequest,
+    MoveSessionRequest,
     NotebookCommand,
     NotebookDocument,
     PackageCommand,
+    RestartSessionRequest,
     ScriptSource,
     SerializeResponse,
     SessionCommand,
@@ -211,6 +215,7 @@ async def run(
     session = ctx.sessions.start(
         args.notebook_uri, args.executable, args.working_directory
     )
+    session.mark_running()
 
     session.instantiate(
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
@@ -303,6 +308,34 @@ async def close_session(
     ctx.sessions.close(args.notebook_uri)
 
 
+@marimo_api("restart-session")
+async def restart_session(
+    ctx: ApiContext,
+    args: NotebookCommand[RestartSessionRequest],
+) -> None:
+    logger.info(f"restart_session for {args.notebook_uri}")
+    ctx.sessions.restart(args.notebook_uri, executable=args.inner.executable)
+
+
+@marimo_api("move-session")
+async def move_session(
+    ctx: ApiContext,
+    args: NotebookCommand[MoveSessionRequest],
+) -> None:
+    logger.info(
+        f"move_session from {args.notebook_uri} to {args.inner.new_notebook_uri}"
+    )
+    ctx.sessions.move(args.notebook_uri, args.inner.new_notebook_uri)
+
+
+@marimo_api("list-sessions")
+async def list_sessions(
+    ctx: ApiContext,
+    _args: ListSessionsRequest,
+) -> ListSessionsResponse:
+    return ListSessionsResponse(sessions=ctx.sessions.describe())
+
+
 @marimo_api("execute-scratchpad")
 async def execute_scratch(
     ctx: ApiContext,
@@ -330,6 +363,7 @@ async def execute_scratch(
     session = ctx.sessions.start(
         args.notebook_uri, args.executable, args.working_directory
     )
+    session.mark_running()
 
     session.instantiate(
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),

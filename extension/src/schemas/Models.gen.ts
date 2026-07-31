@@ -553,6 +553,58 @@ export const CloseSessionPayload = Schema.Struct({
   inner: CloseSessionRequest,
 });
 
+/**
+ * A request to restart a live session's kernel.
+ */
+export const RestartSessionRequest = Schema.Struct({
+  executable: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
+}).annotations({ identifier: "RestartSessionRequest" });
+export type RestartSessionRequest = typeof RestartSessionRequest.Type;
+
+export const RestartSessionPayload = Schema.Struct({
+  notebookUri: Schema.String,
+  inner: RestartSessionRequest,
+});
+
+/**
+ * A request to move a live session to a renamed notebook URI.
+ */
+export const MoveSessionRequest = Schema.Struct({
+  newNotebookUri: Schema.String,
+}).annotations({ identifier: "MoveSessionRequest" });
+export type MoveSessionRequest = typeof MoveSessionRequest.Type;
+
+export const MoveSessionPayload = Schema.Struct({
+  notebookUri: Schema.String,
+  inner: MoveSessionRequest,
+});
+
+/**
+ * User-facing state for one live kernel session.
+ */
+export const SessionInfo = Schema.Struct({
+  sessionId: Schema.String,
+  notebookUri: Schema.String,
+  filename: Schema.NullOr(Schema.String),
+  executable: Schema.String,
+  startedAt: Schema.Number,
+  status: Schema.Literal("idle", "running"),
+  attached: Schema.Boolean,
+}).annotations({ identifier: "SessionInfo" });
+export type SessionInfo = typeof SessionInfo.Type;
+
+/**
+ * Snapshot of all live sessions owned by this language server.
+ */
+export const ListSessionsResponse = Schema.Struct({
+  sessions: Schema.Array(SessionInfo),
+}).annotations({ identifier: "ListSessionsResponse" });
+export type ListSessionsResponse = typeof ListSessionsResponse.Type;
+
+export const ListSessionsPayload = Schema.Struct({});
+
 export const ExecuteScratchpadPayload = Schema.Struct({
   notebookUri: Schema.String,
   inner: ExecuteScratchRequest,
@@ -1331,6 +1383,18 @@ export type MarimoApiCall =
       readonly params: typeof CloseSessionPayload.Encoded;
     }
   | {
+      readonly method: "restart-session";
+      readonly params: typeof RestartSessionPayload.Encoded;
+    }
+  | {
+      readonly method: "move-session";
+      readonly params: typeof MoveSessionPayload.Encoded;
+    }
+  | {
+      readonly method: "list-sessions";
+      readonly params: typeof ListSessionsPayload.Encoded;
+    }
+  | {
       readonly method: "execute-scratchpad";
       readonly params: typeof ExecuteScratchpadPayload.Encoded;
     }
@@ -1452,6 +1516,27 @@ export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({
       { method: "close-session", params },
       CloseSessionPayload,
       Schema.Null,
+    ),
+  restartSession: (params: typeof RestartSessionPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "restart-session", params },
+      RestartSessionPayload,
+      Schema.Null,
+    ),
+  moveSession: (params: typeof MoveSessionPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "move-session", params },
+      MoveSessionPayload,
+      Schema.Null,
+    ),
+  listSessions: (params: typeof ListSessionsPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "list-sessions", params },
+      ListSessionsPayload,
+      ListSessionsResponse,
     ),
   executeScratchpad: (params: typeof ExecuteScratchpadPayload.Encoded) =>
     dispatch(

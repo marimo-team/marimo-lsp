@@ -248,6 +248,42 @@ class CloseSessionRequest(msgspec.Struct, rename="camel"):
     """A request to close the current session."""
 
 
+class RestartSessionRequest(msgspec.Struct, rename="camel"):
+    """A request to restart a live session's kernel."""
+
+    executable: str | None = None
+    """Executable used to restore a session that was just shut down."""
+
+
+class MoveSessionRequest(msgspec.Struct, rename="camel"):
+    """A request to move a live session to a renamed notebook URI."""
+
+    new_notebook_uri: str
+    """The notebook URI after the rename."""
+
+
+class ListSessionsRequest(msgspec.Struct, rename="camel"):
+    """A request for all live sessions owned by this language server."""
+
+
+class SessionInfo(msgspec.Struct, rename="camel", frozen=True):
+    """User-facing state for one live kernel session."""
+
+    session_id: str
+    notebook_uri: str
+    filename: str | None
+    executable: str
+    started_at: float
+    status: typing.Literal["idle", "running"]
+    attached: bool
+
+
+class ListSessionsResponse(msgspec.Struct, rename="camel"):
+    """Snapshot of all live sessions owned by this language server."""
+
+    sessions: list[SessionInfo]
+
+
 class ExportAsIpynbRequest(msgspec.Struct, rename="camel"):
     """A request to export the notebook as ipynb."""
 

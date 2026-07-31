@@ -21,6 +21,7 @@ from marimo._session.managers import IPCQueueManagerImpl
 from marimo._session.state.session_view import SessionView
 from marimo._types.ids import CellId_t, RequestId, UIElementId
 
+from marimo_lsp.models import SessionInfo
 from marimo_lsp.sessions import Session, Sessions, _OperationSink
 
 
@@ -29,6 +30,8 @@ def _make_session() -> tuple[Session, Mock]:
     ipc_queue_manager = Mock()
     session._queue_manager = IPCQueueManagerImpl.from_ipc(ipc_queue_manager)
     session.session_view = SessionView()
+    session._on_change = Mock()
+    session._status = "idle"
     return session, ipc_queue_manager
 
 
@@ -186,6 +189,52 @@ def test_detached_operation_sink_drops_messages_until_reattached() -> None:
     )
 
 
+def test_session_status_tracks_running_and_completed_operations() -> None:
+    session, _ = _make_session()
+
+    session._update_status(KernelMessage(b'{"op": "cell-op", "status": "running"}'))
+    assert session._status == "running"
+
+    session._update_status(KernelMessage(b'{"op": "completed-run"}'))
+    assert session._status == "idle"
+    assert session._on_change.call_count == 2
+
+
+def test_sessions_changed_notification_contains_public_snapshot() -> None:
+    server = Mock()
+    sessions = Sessions(server)
+    session = Mock(spec=Session)
+    session.describe.return_value = SessionInfo(
+        session_id="session",
+        notebook_uri="file:///test.py",
+        filename="test.py",
+        executable="/usr/bin/python",
+        started_at=42,
+        status="idle",
+        attached=False,
+    )
+    sessions._sessions["file:///test.py"] = session
+
+    sessions._notify_changed()
+
+    server.protocol.notify.assert_called_once_with(
+        "marimo/sessionsChanged",
+        {
+            "sessions": [
+                {
+                    "sessionId": "session",
+                    "notebookUri": "file:///test.py",
+                    "filename": "test.py",
+                    "executable": "/usr/bin/python",
+                    "startedAt": 42,
+                    "status": "idle",
+                    "attached": False,
+                }
+            ]
+        },
+    )
+
+
 def test_start_reuses_session_with_same_executable() -> None:
     sessions = Sessions(Mock())
     current = Mock(spec=Session)
@@ -221,14 +270,17 @@ def test_start_replaces_session_after_replacement_starts() -> None:
     current = Mock(spec=Session)
     current.executable = "/old/python"
     replacement = Mock(spec=Session)
+    replacement.describe.return_value = Mock()
     sessions._sessions["file:///test.py"] = current
     sessions._create = Mock(return_value=replacement)
+    sessions._notify_changed = Mock()
 
     result = sessions.start("file:///test.py", "/new/python")
 
     assert result is replacement
     assert sessions.get("file:///test.py") is replacement
     current.close.assert_called_once_with()
+    sessions._notify_changed.assert_called_once_with()
 
 
 def test_failed_replacement_preserves_existing_session() -> None:
@@ -243,3 +295,46 @@ def test_failed_replacement_preserves_existing_session() -> None:
 
     assert sessions.get("file:///test.py") is current
     current.close.assert_not_called()
+
+
+def test_restart_replaces_kernel_without_reloading_closed_notebook() -> None:
+    sessions = Sessions(Mock())
+    current = Mock(spec=Session)
+    current.executable = "/usr/bin/python"
+    current.working_directory = "/workspace"
+    current.attached = False
+    current.session_view = Mock()
+    current.started_at = 42
+    replacement = Mock(spec=Session)
+    sessions._sessions["file:///test.py"] = current
+    sessions._create = Mock(return_value=replacement)
+    sessions._notify_changed = Mock()
+
+    result = sessions.restart("file:///test.py")
+
+    assert result is replacement
+    sessions._create.assert_called_once_with(
+        "file:///test.py",
+        "/usr/bin/python",
+        "/workspace",
+        previous=current,
+    )
+    replacement.detach.assert_called_once_with(notify=False)
+    current.close.assert_called_once_with()
+    sessions._notify_changed.assert_called_once_with()
+
+
+def test_move_preserves_live_session() -> None:
+    server = Mock()
+    server.workspace.notebook_documents = {}
+    sessions = Sessions(server)
+    current = Mock(spec=Session)
+    sessions._sessions["file:///old.py"] = current
+    sessions._notify_changed = Mock()
+
+    sessions.move("file:///old.py", "file:///new.py")
+
+    assert sessions.get("file:///old.py") is None
+    assert sessions.get("file:///new.py") is current
+    current.move.assert_called_once_with("file:///new.py")
+    sessions._notify_changed.assert_called_once_with()
