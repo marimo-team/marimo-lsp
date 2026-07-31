@@ -209,6 +209,7 @@ def test_sessions_changed_notification_contains_public_snapshot() -> None:
         notebook_uri="file:///test.py",
         filename="test.py",
         executable="/usr/bin/python",
+        working_directory="/workspace",
         started_at=42,
         status="idle",
         attached=False,
@@ -226,6 +227,7 @@ def test_sessions_changed_notification_contains_public_snapshot() -> None:
                     "notebookUri": "file:///test.py",
                     "filename": "test.py",
                     "executable": "/usr/bin/python",
+                    "workingDirectory": "/workspace",
                     "startedAt": 42,
                     "status": "idle",
                     "attached": False,
@@ -242,7 +244,7 @@ def test_start_reuses_session_with_same_executable() -> None:
     sessions._sessions["file:///test.py"] = current
     sessions._create = Mock()
 
-    result = sessions.start("file:///test.py", "/usr/bin/python")
+    result = sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
 
     assert result is current
     current.attach.assert_called_once_with()
@@ -275,7 +277,7 @@ def test_start_replaces_session_after_replacement_starts() -> None:
     sessions._create = Mock(return_value=replacement)
     sessions._notify_changed = Mock()
 
-    result = sessions.start("file:///test.py", "/new/python")
+    result = sessions.start("file:///test.py", "/new/python", "/workspace")
 
     assert result is replacement
     assert sessions.get("file:///test.py") is replacement
@@ -291,7 +293,7 @@ def test_failed_replacement_preserves_existing_session() -> None:
     sessions._create = Mock(side_effect=RuntimeError("failed to start"))
 
     with pytest.raises(RuntimeError, match="failed to start"):
-        sessions.start("file:///test.py", "/new/python")
+        sessions.start("file:///test.py", "/new/python", "/workspace")
 
     assert sessions.get("file:///test.py") is current
     current.close.assert_not_called()
@@ -310,7 +312,11 @@ def test_restart_replaces_kernel_without_reloading_closed_notebook() -> None:
     sessions._create = Mock(return_value=replacement)
     sessions._notify_changed = Mock()
 
-    result = sessions.restart("file:///test.py")
+    result = sessions.restart(
+        "file:///test.py",
+        executable="/usr/bin/python",
+        working_directory="/workspace",
+    )
 
     assert result is replacement
     sessions._create.assert_called_once_with(
@@ -322,6 +328,24 @@ def test_restart_replaces_kernel_without_reloading_closed_notebook() -> None:
     replacement.detach.assert_called_once_with(notify=False)
     current.close.assert_called_once_with()
     sessions._notify_changed.assert_called_once_with()
+
+
+def test_restore_uses_requested_working_directory() -> None:
+    sessions = Sessions(Mock())
+    replacement = Mock(spec=Session)
+    sessions._create = Mock(return_value=replacement)
+    sessions._notify_changed = Mock()
+
+    result = sessions.restart(
+        "file:///test.py",
+        executable="/usr/bin/python",
+        working_directory="/workspace",
+    )
+
+    assert result is replacement
+    sessions._create.assert_called_once_with(
+        "file:///test.py", "/usr/bin/python", "/workspace"
+    )
 
 
 def test_move_preserves_live_session() -> None:

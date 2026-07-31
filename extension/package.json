@@ -341,6 +341,12 @@
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
+        "command": "marimo.openSession",
+        "title": "Open Notebook",
+        "category": "marimo",
+        "icon": "$(go-to-file)"
+      },
+      {
         "command": "marimo.restartSession",
         "title": "Restart Kernel",
         "category": "marimo",
@@ -485,6 +491,10 @@
     },
     "menus": {
       "commandPalette": [
+        {
+          "command": "marimo.openSession",
+          "when": "never"
+        },
         {
           "command": "marimo.restartSession",
           "when": "never"

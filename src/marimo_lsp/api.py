@@ -314,7 +314,11 @@ async def restart_session(
     args: NotebookCommand[RestartSessionRequest],
 ) -> None:
     logger.info(f"restart_session for {args.notebook_uri}")
-    ctx.sessions.restart(args.notebook_uri, executable=args.inner.executable)
+    ctx.sessions.restart(
+        args.notebook_uri,
+        executable=args.inner.executable,
+        working_directory=args.inner.working_directory,
+    )
 
 
 @marimo_api("move-session")

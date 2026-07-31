@@ -311,6 +311,7 @@ it.scoped(
         notebookUri: ReturnType<typeof notebookId>;
         filename: string;
         executable: string;
+        workingDirectory: string;
         startedAt: number;
         status: "idle";
         attached: boolean;
@@ -333,6 +334,7 @@ it.scoped(
             notebookUri: id,
             filename: "notebook_mo.py",
             executable: "/usr/bin/python",
+            workingDirectory: "/test",
             startedAt: 1,
             status: "idle",
             attached: true,

@@ -85,7 +85,6 @@ export function withOptionalNotebookContext(
     },
   };
 }
-
 export function commandId(command: MarimoCommand): string {
   return command[MarimoCommandTypeId].id;
 }

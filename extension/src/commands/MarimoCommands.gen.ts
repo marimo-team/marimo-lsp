@@ -25,6 +25,7 @@ export const GeneratedMarimoCommands = {
   newMarimoNotebook: marimoCommand("marimo.newMarimoNotebook"),
   openAsMarimoNotebook: marimoCommand("marimo.openAsMarimoNotebook"),
   openOutlineView: marimoCommand("marimo.openOutlineView"),
+  openSession: marimoCommand("marimo.openSession"),
   openTutorial: marimoCommand("marimo.openTutorial"),
   publishMarimoNotebook: marimoCommand("marimo.publishMarimoNotebook"),
   publishMarimoNotebookGist: marimoCommand("marimo.publishMarimoNotebookGist"),

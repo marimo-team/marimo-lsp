@@ -364,9 +364,7 @@ export const SessionCommand = <S extends Schema.Schema.Any>(inner: S) =>
     notebookUri: Schema.String,
     inner,
     executable: Schema.String,
-    workingDirectory: Schema.optionalWith(Schema.NullOr(Schema.String), {
-      default: () => null,
-    }),
+    workingDirectory: Schema.String,
   });
 
 /**
@@ -427,9 +425,7 @@ export const ExecuteCellsPayload = Schema.Struct({
   notebookUri: Schema.String,
   inner: ExecuteCellsRequest,
   executable: Schema.String,
-  workingDirectory: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
+  workingDirectory: Schema.String,
 });
 
 export const UpdateUIElementRequest = Schema.Struct({
@@ -557,9 +553,8 @@ export const CloseSessionPayload = Schema.Struct({
  * A request to restart a live session's kernel.
  */
 export const RestartSessionRequest = Schema.Struct({
-  executable: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
+  executable: Schema.String,
+  workingDirectory: Schema.String,
 }).annotations({ identifier: "RestartSessionRequest" });
 export type RestartSessionRequest = typeof RestartSessionRequest.Type;
 
@@ -589,6 +584,7 @@ export const SessionInfo = Schema.Struct({
   notebookUri: Schema.String,
   filename: Schema.NullOr(Schema.String),
   executable: Schema.String,
+  workingDirectory: Schema.String,
   startedAt: Schema.Number,
   status: Schema.Literal("idle", "running"),
   attached: Schema.Boolean,
@@ -609,9 +605,7 @@ export const ExecuteScratchpadPayload = Schema.Struct({
   notebookUri: Schema.String,
   inner: ExecuteScratchRequest,
   executable: Schema.String,
-  workingDirectory: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
+  workingDirectory: Schema.String,
 });
 
 export const PackageDescription = Schema.Struct({

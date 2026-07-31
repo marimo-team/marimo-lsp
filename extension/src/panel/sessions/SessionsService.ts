@@ -64,6 +64,8 @@ export class SessionsService extends Effect.Service<SessionsService>()(
       const restart = Effect.fn("SessionsService.restart")(function* (
         notebookUri: NotebookId,
       ) {
+        const current = yield* find(notebookUri);
+        if (Option.isNone(current)) return;
         yield* SubscriptionRef.update(sessions, (items) =>
           items.map((item) =>
             item.notebookUri === notebookUri
@@ -72,7 +74,13 @@ export class SessionsService extends Effect.Service<SessionsService>()(
           ),
         );
         yield* marimo
-          .restartSession({ notebookUri, inner: {} })
+          .restartSession({
+            notebookUri,
+            inner: {
+              executable: current.value.executable,
+              workingDirectory: current.value.workingDirectory,
+            },
+          })
           .pipe(Effect.tapError(() => refresh()));
         yield* refresh();
       });
@@ -105,11 +113,12 @@ export class SessionsService extends Effect.Service<SessionsService>()(
         restore: Effect.fn("SessionsService.restore")(function* (
           notebookUri: NotebookId,
           executable: string,
+          workingDirectory: string,
         ) {
           yield* marimo
             .restartSession({
               notebookUri,
-              inner: { executable },
+              inner: { executable, workingDirectory },
             })
             .pipe(
               Effect.retry(

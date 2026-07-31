@@ -34,6 +34,7 @@ it.scoped(
     yield* marimo.executeCells({
       notebookUri: notebook,
       executable: "/python",
+      workingDirectory: "/workspace",
       inner: { cellIds: [], codes: [] },
     });
     yield* marimo.setDisplayTheme({ theme: "dark" });
@@ -44,6 +45,7 @@ it.scoped(
         params: {
           notebookUri: notebook,
           executable: "/python",
+          workingDirectory: "/workspace",
           inner: { cellIds: [], codes: [] },
         },
       },

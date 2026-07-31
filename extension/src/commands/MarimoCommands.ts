@@ -51,6 +51,10 @@ export const MarimoCommands = {
     GeneratedMarimoCommands.openAsMarimoNotebook,
     Schema.UndefinedOr(Schema.Union(Schema.String, VscodeUriSchema)),
   ),
+  openSession: withFirstArgument(
+    GeneratedMarimoCommands.openSession,
+    SessionAction,
+  ),
   restartSession: withFirstArgument(
     GeneratedMarimoCommands.restartSession,
     SessionAction,

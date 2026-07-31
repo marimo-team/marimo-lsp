@@ -14,6 +14,7 @@ const SNAPSHOT = {
       notebookUri: NOTEBOOK_URI,
       filename: "notebook.py",
       executable: "/venv/bin/python",
+      workingDirectory: "/workspace",
       startedAt: 42,
       status: "idle",
       attached: false,
@@ -66,7 +67,13 @@ it.effect(
       { method: "list-sessions", params: {} },
       {
         method: "restart-session",
-        params: { notebookUri: NOTEBOOK_URI, inner: {} },
+        params: {
+          notebookUri: NOTEBOOK_URI,
+          inner: {
+            executable: "/venv/bin/python",
+            workingDirectory: "/workspace",
+          },
+        },
       },
       { method: "list-sessions", params: {} },
     ]);

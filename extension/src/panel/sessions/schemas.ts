@@ -7,6 +7,7 @@ export const SessionInfo = Schema.Struct({
   notebookUri: NotebookIdFromString,
   filename: Schema.NullOr(Schema.String),
   executable: Schema.String,
+  workingDirectory: Schema.String,
   startedAt: Schema.Number,
   status: Schema.Literal("idle", "running"),
   attached: Schema.Boolean,

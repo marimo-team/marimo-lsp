@@ -55,8 +55,8 @@ class SessionCommand(NotebookCommand[T]):
     executable: str
     """The target environment Python executable."""
 
-    working_directory: str | None = None
-    """Optional absolute working directory for a newly launched kernel."""
+    working_directory: str
+    """Absolute working directory for the launched kernel."""
 
 
 class VenvSource(msgspec.Struct, tag="venv", tag_field="kind", rename="camel"):
@@ -251,8 +251,11 @@ class CloseSessionRequest(msgspec.Struct, rename="camel"):
 class RestartSessionRequest(msgspec.Struct, rename="camel"):
     """A request to restart a live session's kernel."""
 
-    executable: str | None = None
-    """Executable used to restore a session that was just shut down."""
+    executable: str
+    """Executable used to restart or restore the session."""
+
+    working_directory: str
+    """Working directory used to restart or restore the session."""
 
 
 class MoveSessionRequest(msgspec.Struct, rename="camel"):
@@ -273,6 +276,7 @@ class SessionInfo(msgspec.Struct, rename="camel", frozen=True):
     notebook_uri: str
     filename: str | None
     executable: str
+    working_directory: str
     started_at: float
     status: typing.Literal["idle", "running"]
     attached: bool

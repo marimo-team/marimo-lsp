@@ -152,7 +152,7 @@ class Session:
         return self._kernel_manager.executable
 
     @property
-    def working_directory(self) -> str | None:
+    def working_directory(self) -> str:
         """Return the configured kernel working directory."""
         return self._kernel_manager.working_directory
 
@@ -251,6 +251,7 @@ class Session:
             notebook_uri=self._notebook_uri,
             filename=self.filename,
             executable=self.executable,
+            working_directory=self.working_directory,
             started_at=self.started_at,
             status=self._status,
             attached=self.attached,
@@ -393,7 +394,7 @@ class Sessions:
         self,
         notebook_uri: str,
         executable: str,
-        working_directory: str | None = None,
+        working_directory: str,
     ) -> Session:
         """Start or reuse the notebook's session.
 
@@ -416,7 +417,7 @@ class Sessions:
         self,
         notebook_uri: str,
         executable: str,
-        working_directory: str | None = None,
+        working_directory: str,
         *,
         previous: Session | None = None,
     ) -> Session:
@@ -457,14 +458,16 @@ class Sessions:
         )
 
     def restart(
-        self, notebook_uri: str, *, executable: str | None = None
+        self,
+        notebook_uri: str,
+        *,
+        executable: str,
+        working_directory: str,
     ) -> Session | None:
         """Atomically replace a live session's kernel."""
         current = self.get(notebook_uri)
         if current is None:
-            if executable is None:
-                return None
-            replacement = self._create(notebook_uri, executable)
+            replacement = self._create(notebook_uri, executable, working_directory)
             self._sessions[notebook_uri] = replacement
             self._notify_changed()
             return replacement
