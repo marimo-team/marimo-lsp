@@ -163,6 +163,12 @@ export const createSandboxController = Effect.fn("createSandboxController")(
               "Failed to start marimo language server (marimo-lsp).",
             ),
           ),
+          Effect.catchTag("ParseError", (error) =>
+            showErrorAndPromptLogs(
+              "marimo language server sent a response the extension could not parse.",
+              { channel: marimo.channel },
+            ).pipe(Effect.annotateLogs({ error: String(error) })),
+          ),
           Effect.annotateLogs({ notebook: rawNotebook.uri.fsPath }),
         ),
       );

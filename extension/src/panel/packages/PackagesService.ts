@@ -1,4 +1,4 @@
-import { Effect, HashMap, Option, Schema, SubscriptionRef } from "effect";
+import { Effect, HashMap, Option, SubscriptionRef } from "effect";
 
 import {
   type NotebookController,
@@ -8,13 +8,11 @@ import { MarimoClient } from "../../lsp/MarimoClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
-import type { PackageSource } from "../../types.ts";
-import {
-  type DependencyTreeNode,
-  DependencyTreeResponse,
-  ListPackagesResponse,
-  type PackageDescription,
-} from "./schemas.ts";
+import type {
+  DependencyTreeNode,
+  PackageDescription,
+  PackageSource,
+} from "../../schemas/Models.gen.ts";
 
 /**
  * Derive how to ask the server about a notebook's python environment from
@@ -28,14 +26,8 @@ function controllerSource(controller: NotebookController): PackageSource {
     : { kind: "script" };
 }
 
-// Re-export schema types for convenience
-export type { DependencyTreeNode };
-export type PackageDescriptionType = Schema.Schema.Type<
-  typeof PackageDescription
->;
-
 interface PackageListState {
-  packages: PackageDescriptionType[];
+  packages: PackageDescription[];
   loading: boolean;
   error: string | null;
 }
@@ -79,7 +71,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          */
         updatePackageList(
           notebookUri: NotebookId,
-          packages: PackageDescriptionType[],
+          packages: PackageDescription[],
         ) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(packageListsRef, (map) =>
@@ -290,9 +282,6 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                     Effect.annotateLogs({ notebookUri, result }),
                   ),
                 ),
-                Effect.flatMap((raw) =>
-                  Schema.decodeUnknown(DependencyTreeResponse)(raw),
-                ),
                 Effect.catchAll((error) =>
                   Effect.gen(function* () {
                     const errorMsg = String(error);
@@ -356,16 +345,11 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                         ),
                       );
 
-                    const packageListResult =
-                      yield* Schema.decodeUnknown(ListPackagesResponse)(
-                        packageListRaw,
-                      );
-
                     const flatTree: DependencyTreeNode = {
                       name: "installed-packages",
                       version: null,
                       tags: [],
-                      dependencies: packageListResult.packages.map((pkg) => ({
+                      dependencies: packageListRaw.packages.map((pkg) => ({
                         name: pkg.name,
                         version: pkg.version,
                         tags: [],

@@ -5,6 +5,7 @@ import {
   Exit,
   Fiber,
   Option,
+  type ParseResult,
   PubSub,
   Queue,
   Ref,
@@ -43,8 +44,6 @@ import {
 } from "../schemas/MarimoNotebookDocument.ts";
 import type {
   CellOperationNotification,
-  MarimoApiMethod,
-  MarimoApiParams,
   MarimoOperation,
   NotificationOf,
 } from "../types.ts";
@@ -52,10 +51,13 @@ import { CellExecutions } from "./CellExecutions.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import { handleMissingPackageAlert } from "./operations.ts";
 
-type InnerRequest<K extends MarimoApiMethod> =
-  MarimoApiParams<K> extends { readonly inner: infer Request }
+type InnerRequest<K extends keyof MarimoClient> = MarimoClient[K] extends (
+  params: infer Params,
+) => unknown
+  ? Params extends { readonly inner: infer Request }
     ? Request
-    : never;
+    : never
+  : never;
 
 export interface NotebookController {
   readonly id: string;
@@ -100,7 +102,7 @@ export interface NotebookHandle {
     Option.Option<NotebookController>
   >;
   readonly executeCells: (
-    request: InnerRequest<"execute-cells">,
+    request: InnerRequest<"executeCells">,
     executable: string,
   ) => ReturnType<MarimoClient["executeCells"]>;
   readonly executeScratchpad: (
@@ -111,22 +113,23 @@ export interface NotebookHandle {
     | MarimoClientStartError
     | MarimoCommandError
     | NoActiveKernelError
+    | ParseResult.ParseError
     | UnsavedNotebookError
   >;
   readonly updateUIElements: (
-    request: InnerRequest<"update-ui-element">,
-  ) => ReturnType<MarimoClient["updateUIElements"]>;
+    request: InnerRequest<"updateUiElement">,
+  ) => ReturnType<MarimoClient["updateUiElement"]>;
   readonly updateModel: (
-    request: InnerRequest<"set-model-value">,
-  ) => ReturnType<MarimoClient["updateModel"]>;
+    request: InnerRequest<"setModelValue">,
+  ) => ReturnType<MarimoClient["setModelValue"]>;
   readonly invokeFunction: (
-    request: InnerRequest<"invoke-function">,
+    request: InnerRequest<"invokeFunction">,
   ) => ReturnType<MarimoClient["invokeFunction"]>;
   readonly deleteCell: (
-    request: InnerRequest<"delete-cell">,
+    request: InnerRequest<"deleteCell">,
   ) => ReturnType<MarimoClient["deleteCell"]>;
   readonly sendStdin: (
-    request: InnerRequest<"send-stdin">,
+    request: InnerRequest<"sendStdin">,
   ) => ReturnType<MarimoClient["sendStdin"]>;
   readonly interrupt: () => ReturnType<MarimoClient["interrupt"]>;
   readonly close: () => ReturnType<MarimoClient["closeSession"]>;
@@ -273,12 +276,12 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
             }),
           ),
         updateUIElements: (request) =>
-          marimo.updateUIElements({
+          marimo.updateUiElement({
             notebookUri: notebookId,
             inner: request,
           }),
         updateModel: (request) =>
-          marimo.updateModel({
+          marimo.setModelValue({
             notebookUri: notebookId,
             inner: request,
           }),

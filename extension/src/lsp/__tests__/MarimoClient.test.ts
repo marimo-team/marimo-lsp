@@ -3,10 +3,10 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Effect, Ref, Stream } from "effect";
+import { Effect, Exit, Ref, Stream } from "effect";
 
 import { notebookId } from "../../lib/__tests__/branded.ts";
-import type { MarimoCommand } from "../../types.ts";
+import type { MarimoApiCall } from "../../types.ts";
 import {
   findMarimoLspExecutable,
   makeMarimoCommands,
@@ -17,15 +17,16 @@ const notebook = notebookId("notebook-a");
 it.scoped(
   "constructs marimo.api commands through named methods",
   Effect.fn(function* () {
-    const commands = yield* Ref.make<ReadonlyArray<MarimoCommand>>([]);
+    const calls = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+    const responses: Record<string, unknown> = {
+      "execute-cells": null,
+      "set-display-theme": { success: true },
+    };
     const marimo = makeMarimoCommands({
-      execute: (request) => {
-        const command: MarimoCommand = {
-          command: "marimo.api",
-          params: request,
-        };
-        return Ref.update(commands, (current) => [...current, command]);
-      },
+      execute: (request) =>
+        Ref.update(calls, (current) => [...current, request]).pipe(
+          Effect.as(responses[request.method]),
+        ),
       operations: () => Stream.empty,
     });
 
@@ -36,28 +37,89 @@ it.scoped(
     });
     yield* marimo.setDisplayTheme({ theme: "dark" });
 
-    assert.deepStrictEqual(yield* Ref.get(commands), [
+    assert.deepStrictEqual(yield* Ref.get(calls), [
       {
-        command: "marimo.api",
+        method: "execute-cells",
         params: {
-          method: "execute-cells",
-          params: {
-            notebookUri: notebook,
-            executable: "/python",
-            inner: { cellIds: [], codes: [] },
-          },
+          notebookUri: notebook,
+          executable: "/python",
+          inner: { cellIds: [], codes: [] },
         },
       },
       {
-        command: "marimo.api",
-        params: {
-          method: "set-display-theme",
-          params: { theme: "dark" },
-        },
+        method: "set-display-theme",
+        params: { theme: "dark" },
       },
     ]);
   }),
 );
+
+describe("generated api client", () => {
+  it.scoped(
+    "parses responses against the method's success schema",
+    Effect.fn(function* () {
+      const marimo = makeMarimoCommands({
+        execute: () =>
+          Effect.succeed({
+            tree: { name: "root", version: null, tags: [], dependencies: [] },
+          }),
+        operations: () => Stream.empty,
+      });
+
+      const response = yield* marimo.getDependencyTree({
+        notebookUri: notebook,
+        source: { kind: "script" },
+        inner: {},
+      });
+
+      // Response is parsed, not asserted: `tree` is a typed DependencyTreeNode.
+      assert.strictEqual(response.tree?.name, "root");
+    }),
+  );
+
+  it.scoped(
+    "fails with ParseError when the server response violates the contract",
+    Effect.fn(function* () {
+      const marimo = makeMarimoCommands({
+        execute: () => Effect.succeed({ tree: "not-a-tree" }),
+        operations: () => Stream.empty,
+      });
+
+      const exit = yield* marimo
+        .getDependencyTree({
+          notebookUri: notebook,
+          source: { kind: "script" },
+          inner: {},
+        })
+        .pipe(Effect.exit);
+
+      assert.isTrue(Exit.isFailure(exit));
+      assert.include(String(exit), "DependencyTreeResponse");
+    }),
+  );
+
+  it.scoped(
+    "rejects params the server would reject, before hitting the wire",
+    Effect.fn(function* () {
+      const marimo = makeMarimoCommands({
+        execute: () => Effect.die("should not reach the transport"),
+        operations: () => Stream.empty,
+      });
+
+      const exit = yield* marimo
+        .getDependencyTree({
+          notebookUri: notebook,
+          // @ts-expect-error -- deliberately malformed source
+          source: { kind: "conda" },
+          inner: {},
+        })
+        .pipe(Effect.exit);
+
+      assert.isTrue(Exit.isFailure(exit));
+      assert.include(String(exit), "PackageSource");
+    }),
+  );
+});
 
 describe("findMarimoLspExecutable", () => {
   it.scoped("uses a compatible Python range for the bundled LSP", () =>

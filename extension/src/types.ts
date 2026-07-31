@@ -36,106 +36,20 @@ export type DocumentTransactionNotification =
 export type DocumentChange =
   DocumentTransactionNotification["transaction"]["changes"][number];
 
-export type MarimoConfig = Schemas["MarimoConfig"];
-
-interface NotebookScoped<T> {
-  notebookUri: NotebookId;
-  inner: T;
-}
-
-interface SessionScoped<T> extends NotebookScoped<T> {
-  executable: string;
-}
+export type MarimoConfig = Gen.MarimoConfig;
 
 /**
- * Discriminated union describing how the server should resolve a notebook's
- * python environment for package introspection.
+ * Wire shape of one `marimo.api` call. The generated client
+ * (`schemas/Models.gen.ts`, from the `API_METHODS` registry in
+ * `src/marimo_lsp/api.py`) owns the per-method payload/response schemas;
+ * this is what they erase to at the transport.
  */
-export type PackageSource =
-  | { kind: "venv"; executable: string }
-  | { kind: "script" };
+export type MarimoApiCall = Gen.MarimoApiCall;
 
-interface PackageScoped<T> extends NotebookScoped<T> {
-  source: PackageSource;
-}
-
-type ExecuteCellsRequest = Schemas["ExecuteCellsRequest"];
-type UpdateUIElementRequest = Schemas["UpdateUIElementRequest"];
-type ModelRequest = Schemas["ModelRequest"];
-type InvokeFunctionRequest = Schemas["InvokeFunctionRequest"];
-type DeleteCellRequest = Schemas["DeleteCellRequest"];
-type ExportAsHtmlRequest = Schemas["ExportAsHTMLRequest"];
-type InterruptRequest = {};
-type ListPackagesRequest = {};
-type DependencyTreeRequest = {};
-type GetConfigurationRequest = {};
-type CloseSessionRequest = {};
-type ExportAsIpynbRequest = {};
-
-interface ExecuteScratchRequest {
-  code: string;
-  /** Correlation id echoed on the terminating `completed-run` notification. */
-  runId?: string;
-}
-
-type SendStdinRequest = Schemas["StdinRequest"];
-
-interface UpdateConfigurationRequest {
-  config: Record<string, unknown>;
-}
-
-interface SetDisplayThemeRequest {
-  theme: "light" | "dark";
-}
-
-// API methods routed through marimo.api
-type MarimoApiMethodMap = {
-  // marimo core API
-  "execute-cells": SessionScoped<ExecuteCellsRequest>;
-  "update-ui-element": NotebookScoped<UpdateUIElementRequest>;
-  "set-model-value": NotebookScoped<ModelRequest>;
-  "invoke-function": NotebookScoped<InvokeFunctionRequest>;
-  "delete-cell": NotebookScoped<DeleteCellRequest>;
-  "get-package-list": PackageScoped<ListPackagesRequest>;
-  "get-dependency-tree": PackageScoped<DependencyTreeRequest>;
-  "get-configuration": NotebookScoped<GetConfigurationRequest>;
-  "update-configuration": NotebookScoped<UpdateConfigurationRequest>;
-  "close-session": NotebookScoped<CloseSessionRequest>;
-  "execute-scratchpad": SessionScoped<ExecuteScratchRequest>;
-  "export-as-html": NotebookScoped<ExportAsHtmlRequest>;
-  "export-as-ipynb": NotebookScoped<ExportAsIpynbRequest>;
-  interrupt: NotebookScoped<InterruptRequest>;
-  "send-stdin": NotebookScoped<SendStdinRequest>;
-  // marimo-lsp API
-  serialize: typeof Gen.SerializePayload.Encoded;
-  deserialize: typeof Gen.DeserializePayload.Encoded;
-  "set-display-theme": SetDisplayThemeRequest;
-};
-
-type ApiRequest<K extends keyof MarimoApiMethodMap> = {
-  [M in keyof MarimoApiMethodMap]: {
-    method: M;
-    params: MarimoApiMethodMap[M];
-  };
-}[K];
-
-export type MarimoApiMethod = keyof MarimoApiMethodMap;
-export type MarimoApiParams<K extends MarimoApiMethod> = MarimoApiMethodMap[K];
-export type MarimoApiRequest<K extends MarimoApiMethod = MarimoApiMethod> =
-  ApiRequest<K>;
-
-// client -> language server
-type MarimoCommandMap = {
-  "marimo.api": ApiRequest<keyof MarimoApiMethodMap>;
-  "marimo.convert": { uri: string };
-};
-
-type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {
-  [C in keyof MarimoCommandMap]: {
-    command: C;
-    params: MarimoCommandMap[C];
-  };
-}[K];
+/** The kernel-bound `inner` payload of a generated `marimo.api` method. */
+type InnerOf<Payload> = Payload extends { readonly inner: infer Inner }
+  ? Inner
+  : never;
 
 /**
  * Subset of API methods allowed to be dispatched by the renderer.
@@ -156,9 +70,9 @@ type MarimoCommandMessageOf<K extends keyof MarimoCommandMap> = {
  */
 type RendererCommandMap = {
   // Forward to extension marimo.api
-  "update-ui-element": MarimoApiMethodMap["update-ui-element"]["inner"];
-  "set-model-value": MarimoApiMethodMap["set-model-value"]["inner"];
-  "invoke-function": MarimoApiMethodMap["invoke-function"]["inner"];
+  "update-ui-element": InnerOf<typeof Gen.UpdateUiElementPayload.Encoded>;
+  "set-model-value": InnerOf<typeof Gen.SetModelValuePayload.Encoded>;
+  "invoke-function": InnerOf<typeof Gen.InvokeFunctionPayload.Encoded>;
   // Custom
   "navigate-to-cell": { cellId: NotebookCellId };
   // Image toolbar: the sandboxed renderer can't read cross-origin image bytes,
@@ -174,8 +88,6 @@ type RendererCommandMessageOf<K extends keyof RendererCommandMap> = {
     params: RendererCommandMap[C];
   };
 }[K];
-
-export type MarimoCommand = MarimoCommandMessageOf<keyof MarimoCommandMap>;
 
 // renderer -> extension
 export type RendererCommand = RendererCommandMessageOf<

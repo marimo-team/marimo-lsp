@@ -10,7 +10,6 @@ import {
   MarimoClient,
   MarimoCommandError,
 } from "../lsp/MarimoClient.ts";
-import type { MarimoCommand } from "../types.ts";
 
 export const TestMarimoClientLive = Layer.scoped(
   MarimoClient,
@@ -49,7 +48,7 @@ export const TestMarimoClientLive = Layer.scoped(
       restart: () => Effect.void,
       ...makeMarimoCommands({
         execute(request) {
-          const command: MarimoCommand = {
+          const command = {
             command: "marimo.api",
             params: request,
           };

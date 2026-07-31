@@ -7,7 +7,7 @@ import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
-import type { MarimoApiRequest } from "../../types.ts";
+import type { MarimoApiCall } from "../../types.ts";
 import {
   type NotebookController,
   NotebookRuntime,
@@ -35,7 +35,7 @@ const makeTestLayer = Effect.fn(function* (
 it.scoped(
   "returns a stable handle that binds the notebook ID",
   Effect.fn(function* () {
-    const requests = yield* Ref.make<ReadonlyArray<MarimoApiRequest>>([]);
+    const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
     const { layer } = yield* makeTestLayer({
       execute: (request) =>
         Ref.update(requests, (current) => [...current, request]),
