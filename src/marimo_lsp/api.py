@@ -100,7 +100,7 @@ type ApiHandler[Req, Res] = typing.Callable[
 
 @dataclasses.dataclass(frozen=True)
 class ApiMethod[Req, Res]:
-    """One ``marimo.api`` method and its wire contract."""
+    """One ``marimo.api`` method consumed by dispatch and schema generation."""
 
     name: str
     request: TypeForm[Req]

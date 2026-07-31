@@ -56,6 +56,11 @@ build:
     pnpm -C extension build
     pnpm -C extension embed-sdist
 
+# Regenerate Effect Schemas in extension/src from msgspec models
+[group('build')]
+generate-schemas:
+    uv run scripts/generate_effect_schemas.py
+
 # setup --------------------------------------------------------------
 
 [group('setup')]
