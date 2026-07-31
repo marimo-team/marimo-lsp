@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Callable
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING
 
 import lsprotocol.types as lsp
 
@@ -14,14 +14,14 @@ if TYPE_CHECKING:
     from marimo._runtime.dataflow import DirectedGraph
     from marimo._types.ids import CellId_t
 
-DiagnosticRule: TypeAlias = Callable[
+type DiagnosticRule = Callable[
     [
-        "DirectedGraph",
-        "dict[CellId_t, str]",
-        "dict[CellId_t, str]",
-        "dict[CellId_t, int]",
+        DirectedGraph,
+        dict[CellId_t, str],
+        dict[CellId_t, str],
+        dict[CellId_t, int],
     ],
-    "dict[str, list[lsp.Diagnostic]]",
+    dict[str, list[lsp.Diagnostic]],
 ]
 
 

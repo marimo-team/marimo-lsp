@@ -10,6 +10,9 @@ import marimo._server.models.models as core
 import msgspec
 from marimo._convert.common.format import DEFAULT_MARKDOWN_PREFIX
 
+# NOTE: the generic structs below use the legacy TypeVar spelling (noqa: UP046)
+# because msgspec's annotation resolver cannot see PEP 695 type parameters —
+# `NotebookCommand[X]` raises `NameError: name 'T' is not defined` at decode.
 T = typing.TypeVar("T", bound=msgspec.Struct)
 
 # Sentinel the frontend `@marimo-team/smart-cells` SQL parser writes into
@@ -18,7 +21,7 @@ T = typing.TypeVar("T", bound=msgspec.Struct)
 DEFAULT_SQL_ENGINE = "__marimo_duckdb"
 
 
-class NotebookCommand(msgspec.Struct, typing.Generic[T], rename="camel"):
+class NotebookCommand(msgspec.Struct, typing.Generic[T], rename="camel"):  # noqa: UP046
     """Wraps a marimo command with its target notebook context.
 
     Associates any marimo command/request with the specific notebook

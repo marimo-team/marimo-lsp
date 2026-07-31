@@ -183,7 +183,7 @@ class Session:
                         return
                     self.session_view.add_raw_notification(msg)
                     self._operation_sink.notify(msg)
-                except queue.Empty:  # noqa: PERF203
+                except queue.Empty:
                     continue
 
         self._listener_thread = threading.Thread(target=listen, daemon=True)
