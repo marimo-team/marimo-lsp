@@ -13,7 +13,11 @@ import { tokenFromSignal } from "../lib/tokenFromSignal.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Uv } from "../python/Uv.ts";
 import * as Api from "../schemas/Models.gen.ts";
-import type { MarimoApiCall, MarimoOperation } from "../types.ts";
+import type {
+  MarimoApiCall,
+  MarimoOperation,
+  MarimoSessionsChanged,
+} from "../types.ts";
 
 const MAX_STDERR_LINES = 200;
 
@@ -50,11 +54,13 @@ export class MarimoCommandError extends Data.TaggedError("MarimoCommandError")<{
 interface MarimoTransport<Error = never> {
   readonly execute: (request: MarimoApiCall) => Effect.Effect<unknown, Error>;
   readonly operations: () => Stream.Stream<MarimoOperation>;
+  readonly sessionChanges?: () => Stream.Stream<MarimoSessionsChanged>;
 }
 
 export function makeMarimoCommands<Error>(transport: MarimoTransport<Error>) {
   return {
     operations: transport.operations,
+    sessionChanges: transport.sessionChanges ?? (() => Stream.never),
     ...Api.makeApiClient(transport.execute),
   };
 }
@@ -276,6 +282,14 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
           );
         }),
         operations,
+        sessionChanges: () =>
+          Stream.asyncPush<MarimoSessionsChanged>((emit) =>
+            acquireDisposable(() =>
+              client.onNotification("marimo/sessionsChanged", (message) => {
+                emit.single(message);
+              }),
+            ),
+          ),
       };
 
       return {

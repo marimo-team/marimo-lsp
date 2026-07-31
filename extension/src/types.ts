@@ -37,6 +37,8 @@ export type DocumentChange =
   DocumentTransactionNotification["transaction"]["changes"][number];
 
 export type MarimoConfig = Gen.MarimoConfig;
+export type SessionInfo = Gen.SessionInfo;
+export type SessionsSnapshot = Gen.ListSessionsResponse;
 
 /**
  * Wire shape of one `marimo.api` call. The generated client
@@ -115,6 +117,7 @@ export type RendererReceiveMessage =
 // Language server -> client
 type MarimoLspNotificationMap = {
   "marimo/operation": { notebookUri: NotebookId; operation: Notification };
+  "marimo/sessionsChanged": SessionsSnapshot;
   "window/logMessage": lsp.LogMessageParams;
 };
 export type MarimoLspNotification = keyof MarimoLspNotificationMap;
@@ -123,6 +126,8 @@ export type MarimoLspNotificationOf<K extends MarimoLspNotification> = {
 }[K];
 
 export type MarimoOperation = MarimoLspNotificationOf<"marimo/operation">;
+export type MarimoSessionsChanged =
+  MarimoLspNotificationOf<"marimo/sessionsChanged">;
 
 /**
  * Commands that HTML output can send to the renderer.

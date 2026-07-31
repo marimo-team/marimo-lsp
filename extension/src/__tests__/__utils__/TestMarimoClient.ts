@@ -17,13 +17,18 @@ import {
 } from "../../kernel/NotebookRuntime.ts";
 import { makeMarimoCommands, MarimoClient } from "../../lsp/MarimoClient.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
-import type { MarimoApiCall, MarimoOperation } from "../../types.ts";
+import type {
+  MarimoApiCall,
+  MarimoOperation,
+  MarimoSessionsChanged,
+} from "../../types.ts";
 
 interface Options {
   readonly execute?: (
     request: MarimoApiCall,
   ) => Effect.Effect<unknown, ParseResult.ParseError>;
   readonly operations?: () => Stream.Stream<MarimoOperation>;
+  readonly sessionChanges?: () => Stream.Stream<MarimoSessionsChanged>;
   readonly initialControllers?: ReadonlyArray<NotebookControllerSelection>;
   readonly runtimeSession?: RuntimeSession;
   readonly runtimeSessions?: ReadonlyArray<RuntimeSessionEntry>;
@@ -118,6 +123,7 @@ function makeTestMarimoClientValue(options: Options) {
     ...makeMarimoCommands({
       execute: options.execute ?? (() => Effect.succeed(null)),
       operations: options.operations ?? (() => Stream.never),
+      sessionChanges: options.sessionChanges ?? (() => Stream.never),
     }),
   });
 }
