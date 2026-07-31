@@ -8,7 +8,14 @@ import typing
 
 import marimo._server.models.models as core
 import msgspec
+
+# These stay runtime imports (noqa: TC002) even though they only appear in
+# annotations: msgspec resolves the stringified annotations when the structs
+# are first encoded/inspected, which fails under TYPE_CHECKING-only imports.
+from marimo._config.config import MarimoConfig  # noqa: TC002
 from marimo._convert.common.format import DEFAULT_MARKDOWN_PREFIX
+from marimo._runtime.packages.package_manager import PackageDescription  # noqa: TC002
+from marimo._server.models.packages import DependencyTreeNode  # noqa: TC002
 
 # NOTE: the generic structs below use the legacy TypeVar spelling (noqa: UP046)
 # because msgspec's annotation resolver cannot see PEP 695 type parameters —
@@ -218,6 +225,51 @@ class ApiRequest(msgspec.Struct, rename="camel"):
 
     params: dict[str, typing.Any]
     """The parameters for the method."""
+
+
+class ListPackagesResponse(msgspec.Struct, rename="camel"):
+    """Response for ``get-package-list``."""
+
+    packages: list[PackageDescription]
+    """Installed packages in the notebook's environment."""
+
+
+class DependencyTreeResponse(msgspec.Struct, rename="camel"):
+    """Response for ``get-dependency-tree``."""
+
+    tree: DependencyTreeNode | None = None
+    """The environment's dependency tree, or ``None`` when unresolvable."""
+
+
+class SerializeResponse(msgspec.Struct, rename="camel"):
+    """Response for ``serialize``."""
+
+    source: str
+    """The notebook rendered as Python source."""
+
+
+class GetConfigurationResponse(msgspec.Struct, rename="camel"):
+    """Response for ``get-configuration``."""
+
+    config: MarimoConfig
+    """The resolved marimo configuration (defaults when no session exists)."""
+
+
+class UpdateConfigurationResponse(msgspec.Struct, rename="camel"):
+    """Response for ``update-configuration``."""
+
+    success: bool
+    config: MarimoConfig | None = None
+    """The updated configuration on success."""
+
+    error: str | None = None
+    """Human-readable failure reason when ``success`` is ``False``."""
+
+
+class SetDisplayThemeResponse(msgspec.Struct, rename="camel"):
+    """Response for ``set-display-theme``."""
+
+    success: bool
 
 
 ExecuteCellsRequest = core.ExecuteCellsRequest

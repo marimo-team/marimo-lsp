@@ -6,9 +6,14 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import typing
 from typing import TYPE_CHECKING, cast
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 import msgspec
+from marimo._config.config import DEFAULT_CONFIG
 from marimo._convert.converters import MarimoConvert
 from marimo._export.exporter import Exporter
 from marimo._export.requests import HTMLExportRequest, IPYNBExportRequest
@@ -17,6 +22,7 @@ from marimo._runtime.commands import (
     ExecuteScratchpadCommand,
     InvokeFunctionCommand,
 )
+from marimo._runtime.packages.package_manager import PackageDescription
 from marimo._runtime.packages.package_managers import create_package_manager
 from marimo._schemas.export import ExportAsHTMLRequest, to_html_export_options
 from marimo._schemas.export_options import IPYNBExportOptions
@@ -25,6 +31,7 @@ from marimo._session.requests import InstantiateNotebookRequest
 from marimo._session.state.serialize import serialize_session_view
 from marimo._utils.parse_dataclass import parse_raw
 from pygls.uris import to_fs_path
+from typing_extensions import TypeForm
 
 from marimo_lsp.app_file_manager import find_notebook_document, snapshot_for_scratchpad
 from marimo_lsp.loggers import get_logger
@@ -32,22 +39,28 @@ from marimo_lsp.models import (
     CloseSessionRequest,
     DeleteCellRequest,
     DependencyTreeRequest,
+    DependencyTreeResponse,
     DeserializeRequest,
     ExecuteCellsRequest,
     ExecuteScratchRequest,
     ExportAsIpynbRequest,
     GetConfigurationRequest,
+    GetConfigurationResponse,
     InterruptRequest,
     ListPackagesRequest,
+    ListPackagesResponse,
     ModelRequest,
     NotebookCommand,
     PackageCommand,
     ScriptSource,
     SerializeRequest,
+    SerializeResponse,
     SessionCommand,
     SetDisplayThemeRequest,
+    SetDisplayThemeResponse,
     StdinRequest,
     UpdateConfigurationRequest,
+    UpdateConfigurationResponse,
     UpdateUIElementRequest,
     VenvSource,
 )
@@ -65,7 +78,7 @@ if TYPE_CHECKING:
     from marimo_lsp.sessions import Sessions
 
 
-__all__ = ["handle_api_command"]
+__all__ = ["API_METHODS", "ApiMethod", "handle_api_command"]
 
 logger = get_logger()
 
@@ -220,12 +233,12 @@ async def execute_scratch(
 
 async def get_package_list(
     args: PackageCommand[ListPackagesRequest],
-):
+) -> ListPackagesResponse:
     logger.info(f"get_package_list for {args.notebook_uri}")
     package_manager = _package_manager_for(args.source)
     if not package_manager.is_manager_installed():
         logger.warning(f"Package manager not installed for {args.notebook_uri}")
-        return {"packages": []}
+        return ListPackagesResponse(packages=[])
 
     if isinstance(args.source, ScriptSource):
         # No bound venv to `uv pip list` against; flatten `uv tree --script`
@@ -234,17 +247,16 @@ async def get_package_list(
         # script's.
         filename = _script_filename(args.notebook_uri)
         if filename is None:
-            return {"packages": []}
+            return ListPackagesResponse(packages=[])
         tree = package_manager.dependency_tree(filename)
-        return msgspec.to_builtins({"packages": _flatten_tree(tree)})
+        return ListPackagesResponse(packages=_flatten_tree(tree))
 
-    packages = package_manager.list_packages()
-    return msgspec.to_builtins({"packages": packages})
+    return ListPackagesResponse(packages=package_manager.list_packages())
 
 
 async def get_dependency_tree(
     args: PackageCommand[DependencyTreeRequest],
-):
+) -> DependencyTreeResponse:
     logger.info(f"get_dependency_tree for {args.notebook_uri}")
     package_manager = _package_manager_for(args.source)
 
@@ -253,12 +265,12 @@ async def get_dependency_tree(
         # and let `uv tree --script <file>` resolve the env.
         filename = _script_filename(args.notebook_uri)
         if filename is None:
-            return {"tree": None}
+            return DependencyTreeResponse(tree=None)
         tree = package_manager.dependency_tree(filename)
     else:
         tree = package_manager.dependency_tree()
 
-    return msgspec.to_builtins({"tree": tree})
+    return DependencyTreeResponse(tree=tree)
 
 
 def _script_filename(notebook_uri: str) -> str | None:
@@ -278,7 +290,7 @@ def _script_filename(notebook_uri: str) -> str | None:
     return filename
 
 
-def _flatten_tree(tree: object) -> list[dict[str, str]]:
+def _flatten_tree(tree: object) -> list[PackageDescription]:
     """Walk a `uv tree` result and return a deduplicated list of packages.
 
     Mirrors marimo's own `UvPackageManager.list_packages` flattening so that
@@ -288,7 +300,7 @@ def _flatten_tree(tree: object) -> list[dict[str, str]]:
     if tree is None:
         return []
     seen: set[str] = set()
-    packages: list[dict[str, str]] = []
+    packages: list[PackageDescription] = []
     stack: list[object] = list(getattr(tree, "dependencies", []))
     while stack:
         node = stack.pop()
@@ -297,9 +309,9 @@ def _flatten_tree(tree: object) -> list[dict[str, str]]:
             continue
         seen.add(name)
         version = getattr(node, "version", None) or ""
-        packages.append({"name": name, "version": version})
+        packages.append(PackageDescription(name=name, version=version))
         stack.extend(getattr(node, "dependencies", []))
-    return sorted(packages, key=lambda p: p["name"])
+    return sorted(packages, key=lambda p: p.name)
 
 
 def _package_manager_for(source: VenvSource | ScriptSource) -> LspPackageManager:
@@ -317,9 +329,9 @@ def _package_manager_for(source: VenvSource | ScriptSource) -> LspPackageManager
     )
 
 
-async def serialize(args: SerializeRequest):
+async def serialize(args: SerializeRequest) -> SerializeResponse:
     ir = parse_raw(args.notebook, cls=NotebookSerialization)
-    return {"source": MarimoConvert.from_ir(ir).to_py()}
+    return SerializeResponse(source=MarimoConvert.from_ir(ir).to_py())
 
 
 async def deserialize(args: DeserializeRequest):
@@ -338,42 +350,41 @@ async def deserialize(args: DeserializeRequest):
 async def get_configuration(
     sessions: Sessions,
     args: NotebookCommand[GetConfigurationRequest],
-):
+) -> GetConfigurationResponse:
     """Get the current marimo configuration."""
     session = sessions.get(args.notebook_uri)
     if not session:
         logger.warning(f"No session found for {args.notebook_uri}")
-        return {"config": {}}
+        return GetConfigurationResponse(config=DEFAULT_CONFIG)
 
-    config = session.get_config()
-    return msgspec.to_builtins({"config": config})
+    return GetConfigurationResponse(config=session.get_config())
 
 
 async def update_configuration(
     sessions: Sessions,
     args: NotebookCommand[UpdateConfigurationRequest],
-):
+) -> UpdateConfigurationResponse:
     """Update the marimo user configuration."""
     session = sessions.get(args.notebook_uri)
     if not session:
         logger.warning(f"No session found for {args.notebook_uri}")
-        return {"success": False, "error": "No session found"}
+        return UpdateConfigurationResponse(success=False, error="No session found")
 
     try:
         updated_config = session.save_config(
             cast("PartialMarimoConfig", args.inner.config),
         )
 
-        return msgspec.to_builtins({"success": True, "config": updated_config})
+        return UpdateConfigurationResponse(success=True, config=updated_config)
     except Exception as e:
         logger.exception(f"Error updating configuration for {args.notebook_uri}")
-        return {"success": False, "error": str(e)}
+        return UpdateConfigurationResponse(success=False, error=str(e))
 
 
 async def set_display_theme(
     sessions: Sessions,
     args: SetDisplayThemeRequest,
-):
+) -> SetDisplayThemeResponse:
     """Set the display theme in all kernels without persisting to disk."""
     for session in sessions:
         config = session.get_config(hide_secrets=False)
@@ -382,7 +393,7 @@ async def set_display_theme(
             "MarimoConfig", {**config, "display": {**display, "theme": args.theme}}
         )
         session.update_runtime_config(updated)
-    return {"success": True}
+    return SetDisplayThemeResponse(success=True)
 
 
 async def export_as_html(
@@ -446,107 +457,176 @@ async def export_as_ipynb(
     return json.dumps(ipynb)
 
 
-async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
+@dataclasses.dataclass(frozen=True)
+class ApiContext:
+    """Server-side dependencies a handler can reach for."""
+
+    ls: LanguageServer
+    sessions: Sessions
+
+
+@dataclasses.dataclass(frozen=True)
+class ApiMethod[Req, Res]:
+    """One ``marimo.api`` method: the single source of truth for its wire contract.
+
+    The server dispatches and validates wire values from this table. Genericity
+    ties each entry's handler to its request/response annotations, so a
+    mismatched handler fails type-checking at table construction.
+    """
+
+    name: str
+    """Wire method name (kebab-case)."""
+
+    request: TypeForm[Req]
+    """msgspec annotation the incoming ``params`` must convert to."""
+
+    response: TypeForm[Res] | None
+    """msgspec annotation the handler's return value is validated against.
+
+    ``None`` marks a fire-and-forget method whose response is always ``null``.
+    """
+
+    handler: Callable[[ApiContext, Req], typing.Awaitable[Res]]
+
+
+API_METHODS: tuple[ApiMethod[typing.Any, typing.Any], ...] = (
+    ApiMethod(
+        "execute-cells",
+        SessionCommand[ExecuteCellsRequest],
+        None,
+        lambda ctx, args: run(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "send-stdin",
+        NotebookCommand[StdinRequest],
+        None,
+        lambda ctx, args: send_stdin(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "interrupt",
+        NotebookCommand[InterruptRequest],
+        None,
+        lambda ctx, args: interrupt(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "delete-cell",
+        NotebookCommand[DeleteCellRequest],
+        None,
+        lambda ctx, args: delete_cell(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "update-ui-element",
+        NotebookCommand[UpdateUIElementRequest],
+        None,
+        lambda ctx, args: set_ui_element_value(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "set-model-value",
+        NotebookCommand[ModelRequest],
+        None,
+        lambda ctx, args: set_model_value(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "invoke-function",
+        NotebookCommand[InvokeFunctionCommand],
+        None,
+        lambda ctx, args: function_call_request(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "close-session",
+        NotebookCommand[CloseSessionRequest],
+        None,
+        lambda ctx, args: close_session(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "serialize",
+        SerializeRequest,
+        SerializeResponse,
+        lambda _ctx, args: serialize(args),
+    ),
+    # NOTE: the deserialize payload is marimo's `NotebookSerialization`, which
+    # msgspec cannot introspect (it embeds `ast` nodes), so the response stays
+    # opaque on the wire. The client parses it with its hand-written
+    # `SerializedNotebook` schema (`extension/src/schemas/SerializedNotebook.ts`).
+    ApiMethod(
+        "deserialize",
+        DeserializeRequest,
+        dict[str, typing.Any],
+        lambda _ctx, args: deserialize(args),
+    ),
+    ApiMethod(
+        "get-package-list",
+        PackageCommand[ListPackagesRequest],
+        ListPackagesResponse,
+        lambda _ctx, args: get_package_list(args),
+    ),
+    ApiMethod(
+        "get-dependency-tree",
+        PackageCommand[DependencyTreeRequest],
+        DependencyTreeResponse,
+        lambda _ctx, args: get_dependency_tree(args),
+    ),
+    ApiMethod(
+        "get-configuration",
+        NotebookCommand[GetConfigurationRequest],
+        GetConfigurationResponse,
+        lambda ctx, args: get_configuration(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "update-configuration",
+        NotebookCommand[UpdateConfigurationRequest],
+        UpdateConfigurationResponse,
+        lambda ctx, args: update_configuration(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "set-display-theme",
+        SetDisplayThemeRequest,
+        SetDisplayThemeResponse,
+        lambda ctx, args: set_display_theme(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "export-as-html",
+        NotebookCommand[ExportAsHTMLRequest],
+        str,
+        lambda ctx, args: export_as_html(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "export-as-ipynb",
+        NotebookCommand[ExportAsIpynbRequest],
+        str,
+        lambda ctx, args: export_as_ipynb(ctx.sessions, args),
+    ),
+    ApiMethod(
+        "execute-scratchpad",
+        SessionCommand[ExecuteScratchRequest],
+        None,
+        lambda ctx, args: execute_scratch(ctx.ls, ctx.sessions, args),
+    ),
+)
+
+_API_BY_NAME = {method.name: method for method in API_METHODS}
+
+
+async def handle_api_command(
     ls: LanguageServer, sessions: Sessions, method: str, params: dict
 ) -> object:
-    """Unified API endpoint for all marimo internal methods."""
-    if method == "execute-cells":
-        return await run(
-            sessions,
-            msgspec.convert(params, type=SessionCommand[ExecuteCellsRequest]),
-        )
+    """Unified API endpoint for all marimo internal methods.
 
-    if method == "send-stdin":
-        return await send_stdin(
-            sessions, msgspec.convert(params, type=NotebookCommand[StdinRequest])
-        )
+    Converts ``params`` into the method's request type, runs the handler, and
+    validates the result against the declared response annotation so the wire
+    always matches the generated client schemas.
+    """
+    spec = _API_BY_NAME.get(method)
+    if spec is None:
+        logger.warning(f"Unknown API method: {method}")
+        raise ValueError(method)
 
-    if method == "interrupt":
-        return await interrupt(
-            sessions, msgspec.convert(params, type=NotebookCommand[InterruptRequest])
-        )
+    request = msgspec.convert(params, type=spec.request)
+    result = await spec.handler(ApiContext(ls=ls, sessions=sessions), request)
 
-    if method == "delete-cell":
-        return await delete_cell(
-            sessions, msgspec.convert(params, type=NotebookCommand[DeleteCellRequest])
-        )
+    if spec.response is None:
+        return None
 
-    if method == "update-ui-element":
-        return await set_ui_element_value(
-            sessions,
-            msgspec.convert(params, type=NotebookCommand[UpdateUIElementRequest]),
-        )
-
-    if method == "set-model-value":
-        return await set_model_value(
-            sessions,
-            msgspec.convert(params, type=NotebookCommand[ModelRequest]),
-        )
-
-    if method == "invoke-function":
-        return await function_call_request(
-            sessions,
-            msgspec.convert(params, type=NotebookCommand[InvokeFunctionCommand]),
-        )
-
-    if method == "close-session":
-        return await close_session(
-            sessions,
-            msgspec.convert(params, type=NotebookCommand[CloseSessionRequest]),
-        )
-
-    if method == "serialize":
-        return await serialize(msgspec.convert(params, type=SerializeRequest))
-
-    if method == "deserialize":
-        return await deserialize(msgspec.convert(params, type=DeserializeRequest))
-
-    if method == "get-package-list":
-        return await get_package_list(
-            msgspec.convert(params, type=PackageCommand[ListPackagesRequest]),
-        )
-
-    if method == "get-dependency-tree":
-        return await get_dependency_tree(
-            msgspec.convert(params, type=PackageCommand[DependencyTreeRequest]),
-        )
-
-    if method == "get-configuration":
-        return await get_configuration(
-            sessions,
-            msgspec.convert(params, type=NotebookCommand[GetConfigurationRequest]),
-        )
-
-    if method == "update-configuration":
-        return await update_configuration(
-            sessions,
-            msgspec.convert(params, type=NotebookCommand[UpdateConfigurationRequest]),
-        )
-
-    if method == "set-display-theme":
-        return await set_display_theme(
-            sessions,
-            msgspec.convert(params, type=SetDisplayThemeRequest),
-        )
-
-    if method == "export-as-html":
-        return await export_as_html(
-            sessions,
-            msgspec.convert(params, type=NotebookCommand[ExportAsHTMLRequest]),
-        )
-
-    if method == "export-as-ipynb":
-        return await export_as_ipynb(
-            sessions,
-            msgspec.convert(params, type=NotebookCommand[ExportAsIpynbRequest]),
-        )
-
-    if method == "execute-scratchpad":
-        return await execute_scratch(
-            ls,
-            sessions,
-            msgspec.convert(params, type=SessionCommand[ExecuteScratchRequest]),
-        )
-
-    logger.warning(f"Unknown API method: {method}")
-    raise ValueError(method)
+    payload = msgspec.to_builtins(result)
+    validated = msgspec.convert(payload, type=spec.response)
+    return msgspec.to_builtins(validated)
