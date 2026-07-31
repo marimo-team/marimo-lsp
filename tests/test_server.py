@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from typing import TYPE_CHECKING, Any, cast
+from unittest.mock import MagicMock, patch
 
 if TYPE_CHECKING:
     import pathlib
@@ -19,6 +20,10 @@ import pytest_lsp
 from dirty_equals import IsFloat, IsList, IsUUID
 from inline_snapshot import snapshot
 from pytest_lsp import ClientServerConfig, LanguageClient
+
+import marimo_lsp.server as server_module
+from marimo_lsp.diagnostics import GraphUpdaterRegistry
+from marimo_lsp.sessions import Sessions
 
 
 class NotebookCell(lsp.NotebookCell):
@@ -224,6 +229,37 @@ async def test_notebook_did_close(client: LanguageClient) -> None:
     )
     # TODO: Not a great test. No exception means success
     # We should have some way of querying the graph state
+
+
+@pytest.mark.asyncio
+async def test_file_notebook_did_close_detaches_session() -> None:
+    """Closing a file-backed notebook detaches without stopping its session."""
+    sessions = MagicMock(spec=Sessions)
+    graph_registry = MagicMock(spec=GraphUpdaterRegistry)
+
+    with (
+        patch.object(server_module, "Sessions", return_value=sessions),
+        patch.object(
+            server_module,
+            "GraphUpdaterRegistry",
+            return_value=graph_registry,
+        ),
+        patch.object(server_module.atexit, "register"),
+    ):
+        server = server_module.create_server()
+
+    uri = "file:///test.py"
+    did_close = server.protocol.fm.features[lsp.NOTEBOOK_DOCUMENT_DID_CLOSE]
+    await did_close(
+        lsp.DidCloseNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocumentIdentifier(uri=uri),
+            cell_text_documents=[],
+        )
+    )
+
+    graph_registry.remove.assert_called_once_with(uri)
+    sessions.detach.assert_called_once_with(uri)
+    sessions.close.assert_not_called()
 
 
 @pytest.mark.asyncio

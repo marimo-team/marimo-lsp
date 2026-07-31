@@ -13,7 +13,6 @@ from marimo._convert.converters import MarimoConvert
 from marimo._runtime.commands import (
     ExecuteScratchpadCommand,
     InvokeFunctionCommand,
-    UpdateUserConfigCommand,
 )
 from marimo._runtime.packages.package_managers import create_package_manager
 from marimo._schemas.serialization import NotebookSerialization
@@ -55,7 +54,7 @@ if TYPE_CHECKING:
     from marimo._config.config import DisplayConfig, MarimoConfig, PartialMarimoConfig
     from pygls.lsp.server import LanguageServer
 
-    from marimo_lsp.session_manager import LspSessionManager
+    from marimo_lsp.sessions import Sessions
 
 
 __all__ = ["handle_api_command"]
@@ -72,19 +71,11 @@ def _get_display_config(config: MarimoConfig) -> DisplayConfig:
 
 
 async def run(
-    ls: LanguageServer,
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: SessionCommand[ExecuteCellsRequest],
 ):
     logger.info(f"run for {args.notebook_uri}")
-    session = manager.get_session(args.notebook_uri)
-    if session is None or session.kernel_manager.executable != args.executable:
-        session = manager.create_session(
-            server=ls,
-            executable=args.executable,
-            notebook_uri=args.notebook_uri,
-        )
-        logger.info(f"Created and synced session {args.notebook_uri}")
+    session = sessions.start(args.notebook_uri, args.executable)
 
     session.instantiate(
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
@@ -95,41 +86,41 @@ async def run(
 
 
 async def set_ui_element_value(
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: NotebookCommand[UpdateUIElementRequest],
 ):
     logger.info(f"set_ui_element_value for {args.notebook_uri}")
-    session = manager.get_session(args.notebook_uri)
+    session = sessions.get(args.notebook_uri)
     assert session, f"No session in workspace for {args.notebook_uri}"
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
 
 
 async def set_model_value(
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: NotebookCommand[ModelRequest],
 ):
     logger.info(f"set_model_value for {args.notebook_uri}")
-    session = manager.get_session(args.notebook_uri)
+    session = sessions.get(args.notebook_uri)
     assert session, f"No session in workspace for {args.notebook_uri}"
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
 
 
 async def function_call_request(
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: NotebookCommand[InvokeFunctionCommand],
 ):
     logger.info(f"function_call_request for {args.notebook_uri}")
-    session = manager.get_session(args.notebook_uri)
+    session = sessions.get(args.notebook_uri)
     assert session, f"No session in workspace for {args.notebook_uri}"
     session.put_control_request(args.inner, from_consumer_id=None)
 
 
 async def interrupt(
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: NotebookCommand[InterruptRequest],
 ):
     logger.info(f"interrupt for {args.notebook_uri}")
-    session = manager.get_session(args.notebook_uri)
+    session = sessions.get(args.notebook_uri)
     if session:
         session.try_interrupt()
         logger.info(f"Interrupt request sent for {args.notebook_uri}")
@@ -138,11 +129,11 @@ async def interrupt(
 
 
 async def delete_cell(
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: NotebookCommand[DeleteCellRequest],
 ):
     logger.info(f"delete_cell for {args.notebook_uri}")
-    session = manager.get_session(args.notebook_uri)
+    session = sessions.get(args.notebook_uri)
     if session:
         session.put_control_request(args.inner.as_command(), from_consumer_id=None)
         logger.info(f"Delete cell request sent for {args.notebook_uri}")
@@ -151,11 +142,11 @@ async def delete_cell(
 
 
 async def send_stdin(
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: NotebookCommand[StdinRequest],
 ):
     logger.info(f"send_stdin for {args.notebook_uri}")
-    session = manager.get_session(args.notebook_uri)
+    session = sessions.get(args.notebook_uri)
     if session:
         session.put_input(args.inner.text)
     else:
@@ -163,16 +154,16 @@ async def send_stdin(
 
 
 async def close_session(
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: NotebookCommand[CloseSessionRequest],
 ):
     logger.info(f"close_session for {args.notebook_uri}")
-    manager.close_session(args.notebook_uri)
+    sessions.close(args.notebook_uri)
 
 
 async def execute_scratch(
     ls: LanguageServer,
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: SessionCommand[ExecuteScratchRequest],
 ):
     """Execute code in the scratchpad (isolated from dependency graph).
@@ -194,14 +185,7 @@ async def execute_scratch(
         )
         return
 
-    session = manager.get_session(args.notebook_uri)
-    if session is None or session.kernel_manager.executable != args.executable:
-        session = manager.create_session(
-            server=ls,
-            executable=args.executable,
-            notebook_uri=args.notebook_uri,
-        )
-        logger.info(f"Created and synced session {args.notebook_uri}")
+    session = sessions.start(args.notebook_uri, args.executable)
 
     session.instantiate(
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
@@ -344,39 +328,32 @@ async def deserialize(args: DeserializeRequest):
 
 
 async def get_configuration(
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: NotebookCommand[GetConfigurationRequest],
 ):
     """Get the current marimo configuration."""
-    session = manager.get_session(args.notebook_uri)
+    session = sessions.get(args.notebook_uri)
     if not session:
         logger.warning(f"No session found for {args.notebook_uri}")
         return {"config": {}}
 
-    # Get the configuration from the session's config manager
-    config = session.config_manager.get_config(hide_secrets=True)
+    config = session.get_config()
     return msgspec.to_builtins({"config": config})
 
 
 async def update_configuration(
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: NotebookCommand[UpdateConfigurationRequest],
 ):
     """Update the marimo user configuration."""
-    session = manager.get_session(args.notebook_uri)
+    session = sessions.get(args.notebook_uri)
     if not session:
         logger.warning(f"No session found for {args.notebook_uri}")
         return {"success": False, "error": "No session found"}
 
     try:
-        updated_config = session.config_manager.save_config(
-            cast("PartialMarimoConfig", args.inner.config)
-        )
-
-        # Update the kernel's view of the config
-        session.put_control_request(
-            UpdateUserConfigCommand(config=updated_config),
-            from_consumer_id=None,
+        updated_config = session.save_config(
+            cast("PartialMarimoConfig", args.inner.config),
         )
 
         return msgspec.to_builtins({"success": True, "config": updated_config})
@@ -386,38 +363,35 @@ async def update_configuration(
 
 
 async def set_display_theme(
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: SetDisplayThemeRequest,
 ):
     """Set the display theme in all kernels without persisting to disk."""
-    for session in manager.sessions():
-        config = session.config_manager.get_config(hide_secrets=False)
+    for session in sessions:
+        config = session.get_config(hide_secrets=False)
         display = _get_display_config(config)
         updated = cast(
             "MarimoConfig", {**config, "display": {**display, "theme": args.theme}}
         )
-        session.put_control_request(
-            UpdateUserConfigCommand(config=updated),
-            from_consumer_id=None,
-        )
+        session.update_runtime_config(updated)
     return {"success": True}
 
 
 async def export_as_html(
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: NotebookCommand[ExportAsHTMLRequest],
 ):
     """Export the notebook as HTML with current outputs."""
     logger.info(f"export_as_html for {args.notebook_uri}")
-    session = manager.get_session(args.notebook_uri)
+    session = sessions.get(args.notebook_uri)
     assert session, f"No session in workspace for {args.notebook_uri}"
 
     # Export the notebook with current outputs using the Exporter
     html, _filename = Exporter().export_as_html(
-        app=session.app_file_manager.app,
-        filename=session.app_file_manager.filename,
+        app=session.app,
+        filename=session.filename,
         session_view=session.session_view,
-        display_config=_get_display_config(session.config_manager.get_config()),
+        display_config=_get_display_config(session.get_config()),
         request=args.inner,
     )
 
@@ -425,16 +399,16 @@ async def export_as_html(
 
 
 async def export_as_ipynb(
-    manager: LspSessionManager,
+    sessions: Sessions,
     args: NotebookCommand[ExportAsIpynbRequest],
 ) -> str:
     """Export the notebook as ipynb with current outputs."""
     logger.info(f"export_as_ipynb for {args.notebook_uri}")
-    session = manager.get_session(args.notebook_uri)
+    session = sessions.get(args.notebook_uri)
     assert session, f"No session in workspace for {args.notebook_uri}"
 
     ipynb_str = Exporter().export_as_ipynb(
-        app=session.app_file_manager.app,
+        app=session.app,
         sort_mode="top-down",
         session_view=session.session_view,
     )
@@ -444,7 +418,7 @@ async def export_as_ipynb(
     ipynb = json.loads(ipynb_str)
     session_data = serialize_session_view(
         session.session_view,
-        cell_ids=session.app_file_manager.app.cell_manager.cell_ids(),
+        cell_ids=session.app.cell_manager.cell_ids(),
         drop_virtual_file_outputs=True,
     )
     ipynb.setdefault("metadata", {}).setdefault("marimo", {})["session"] = session_data
@@ -452,52 +426,51 @@ async def export_as_ipynb(
 
 
 async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
-    ls: LanguageServer, manager: LspSessionManager, method: str, params: dict
+    ls: LanguageServer, sessions: Sessions, method: str, params: dict
 ) -> object:
     """Unified API endpoint for all marimo internal methods."""
     if method == "execute-cells":
         return await run(
-            ls,
-            manager,
+            sessions,
             msgspec.convert(params, type=SessionCommand[ExecuteCellsRequest]),
         )
 
     if method == "send-stdin":
         return await send_stdin(
-            manager, msgspec.convert(params, type=NotebookCommand[StdinRequest])
+            sessions, msgspec.convert(params, type=NotebookCommand[StdinRequest])
         )
 
     if method == "interrupt":
         return await interrupt(
-            manager, msgspec.convert(params, type=NotebookCommand[InterruptRequest])
+            sessions, msgspec.convert(params, type=NotebookCommand[InterruptRequest])
         )
 
     if method == "delete-cell":
         return await delete_cell(
-            manager, msgspec.convert(params, type=NotebookCommand[DeleteCellRequest])
+            sessions, msgspec.convert(params, type=NotebookCommand[DeleteCellRequest])
         )
 
     if method == "update-ui-element":
         return await set_ui_element_value(
-            manager,
+            sessions,
             msgspec.convert(params, type=NotebookCommand[UpdateUIElementRequest]),
         )
 
     if method == "set-model-value":
         return await set_model_value(
-            manager,
+            sessions,
             msgspec.convert(params, type=NotebookCommand[ModelRequest]),
         )
 
     if method == "invoke-function":
         return await function_call_request(
-            manager,
+            sessions,
             msgspec.convert(params, type=NotebookCommand[InvokeFunctionCommand]),
         )
 
     if method == "close-session":
         return await close_session(
-            manager,
+            sessions,
             msgspec.convert(params, type=NotebookCommand[CloseSessionRequest]),
         )
 
@@ -519,38 +492,38 @@ async def handle_api_command(  # noqa: C901, PLR0911, PLR0912
 
     if method == "get-configuration":
         return await get_configuration(
-            manager,
+            sessions,
             msgspec.convert(params, type=NotebookCommand[GetConfigurationRequest]),
         )
 
     if method == "update-configuration":
         return await update_configuration(
-            manager,
+            sessions,
             msgspec.convert(params, type=NotebookCommand[UpdateConfigurationRequest]),
         )
 
     if method == "set-display-theme":
         return await set_display_theme(
-            manager,
+            sessions,
             msgspec.convert(params, type=SetDisplayThemeRequest),
         )
 
     if method == "export-as-html":
         return await export_as_html(
-            manager,
+            sessions,
             msgspec.convert(params, type=NotebookCommand[ExportAsHTMLRequest]),
         )
 
     if method == "export-as-ipynb":
         return await export_as_ipynb(
-            manager,
+            sessions,
             msgspec.convert(params, type=NotebookCommand[ExportAsIpynbRequest]),
         )
 
     if method == "execute-scratchpad":
         return await execute_scratch(
             ls,
-            manager,
+            sessions,
             msgspec.convert(params, type=SessionCommand[ExecuteScratchRequest]),
         )
 
