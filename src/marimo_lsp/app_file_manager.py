@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace
 
-    from marimo_lsp.session import LspSession
+    from marimo_lsp.sessions import Session
 
 
 class LspAppFileManager:
@@ -216,7 +216,7 @@ def _snapshot_notebook_cells(
 
 def snapshot_for_scratchpad(
     workspace: Workspace,
-    session: LspSession,
+    session: Session,
     notebook: NotebookDocument,
 ) -> tuple[tuple[NotebookCell, ...], CellOutputs]:
     """Snapshot the LSP notebook document's cells for code mode."""

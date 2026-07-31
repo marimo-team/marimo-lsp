@@ -15,12 +15,11 @@ from pygls.lsp.server import LanguageServer
 from pygls.uris import to_fs_path, uri_scheme
 
 from marimo_lsp.api import handle_api_command
-from marimo_lsp.app_file_manager import sync_app_with_workspace
 from marimo_lsp.completions import get_completions
 from marimo_lsp.diagnostics import GraphUpdaterRegistry
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import ApiRequest, ConvertRequest
-from marimo_lsp.session_manager import LspSessionManager
+from marimo_lsp.sessions import Sessions
 
 logger = get_logger()
 
@@ -45,30 +44,24 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
             save=True,
         ),
     )
-    manager = LspSessionManager()
+    sessions = Sessions(server)
     graph_registry = GraphUpdaterRegistry(server)
 
     # Register atexit handler to ensure kernel processes are cleaned up
     # when the LSP server exits (e.g., extension host restart, VS Code close).
     # This prevents orphaned kernel subprocesses from consuming memory.
-    atexit.register(manager.shutdown)
+    atexit.register(sessions.close_all)
 
     # Lsp Features
     @server.feature(lsp.SHUTDOWN)
-    def shutdown(params: None) -> None:  # noqa: ARG001
-        manager.shutdown()
+    def shutdown(params: None) -> None:
+        del params
+        sessions.close_all()
 
     @server.feature(lsp.NOTEBOOK_DOCUMENT_DID_OPEN)
     async def did_open(params: lsp.DidOpenNotebookDocumentParams) -> None:
         logger.info(f"notebookDocument/didOpen {params.notebook_document.uri}")
-        session = manager.get_session(notebook_uri=params.notebook_document.uri)
-        if session:
-            sync_app_with_workspace(
-                workspace=server.workspace,
-                notebook_uri=params.notebook_document.uri,
-                app=session.app_file_manager.app,
-            )
-            logger.info(f"Synced session {params.notebook_document.uri}")
+        sessions.attach(params.notebook_document.uri, server.workspace)
 
         # Immediate compile + publish — needed for initial cell ordering
         updater = graph_registry.get_or_create(params.notebook_document.uri)
@@ -77,13 +70,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     @server.feature(lsp.NOTEBOOK_DOCUMENT_DID_CHANGE)
     async def did_change(params: lsp.DidChangeNotebookDocumentParams) -> None:
         logger.info(f"notebookDocument/didChange {params.notebook_document.uri}")
-        session = manager.get_session(notebook_uri=params.notebook_document.uri)
-        if session:
-            sync_app_with_workspace(
-                workspace=server.workspace,
-                notebook_uri=params.notebook_document.uri,
-                app=session.app_file_manager.app,
-            )
+        sessions.sync(params.notebook_document.uri, server.workspace)
         logger.info(f"Synced session {params.notebook_document.uri}")
 
         # Schedule debounced recompilation — compiles after 150ms of quiet
@@ -93,13 +80,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
     @server.feature(lsp.NOTEBOOK_DOCUMENT_DID_SAVE)
     async def did_save(params: lsp.DidSaveNotebookDocumentParams) -> None:
         logger.info(f"notebookDocument/didSave {params.notebook_document.uri}")
-        session = manager.get_session(notebook_uri=params.notebook_document.uri)
-        if session:
-            sync_app_with_workspace(
-                workspace=server.workspace,
-                notebook_uri=params.notebook_document.uri,
-                app=session.app_file_manager.app,
-            )
+        sessions.sync(params.notebook_document.uri, server.workspace)
         logger.info(f"Synced session {params.notebook_document.uri}")
 
     @server.feature(lsp.NOTEBOOK_DOCUMENT_DID_CLOSE)
@@ -112,8 +93,10 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         # Only close untitled sessions, when closing documents...
         # Others can stay alive
         if params.notebook_document.uri.startswith("untitled:"):
-            manager.close_session(params.notebook_document.uri)
+            sessions.close(params.notebook_document.uri)
             logger.info(f"Closed {params.notebook_document.uri}")
+        else:
+            sessions.detach(params.notebook_document.uri)
 
     @server.feature(lsp.TEXT_DOCUMENT_DIAGNOSTIC)
     def diagnostics(params: lsp.DocumentDiagnosticParams):
@@ -197,7 +180,7 @@ def create_server() -> LanguageServer:  # noqa: C901, PLR0915
         """Unified API endpoint for all marimo internal methods."""
         logger.info("marimo.api")
         args = msgspec.convert(params, type=ApiRequest)
-        return await handle_api_command(ls, manager, args.method, args.params)
+        return await handle_api_command(ls, sessions, args.method, args.params)
 
     @server.command("marimo.convert")
     async def convert(ls: LanguageServer, params: typing.Any):  # noqa: ANN401
