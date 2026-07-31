@@ -1879,8 +1879,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           showTextDocument() {
             return Effect.void;
           },
-          withProgress() {
-            return Effect.void;
+          withProgress(_options, fn) {
+            return Effect.orDie(fn({ report() {} }));
           },
           ...options.window,
         }),

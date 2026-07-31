@@ -285,7 +285,7 @@ export class Window extends Effect.Service<Window>()("Window", {
       ) {
         return Effect.gen(function* () {
           const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
-          yield* Effect.promise((signal) =>
+          return yield* Effect.promise((signal) =>
             api.withProgress(options, (progress, token) =>
               runPromise(
                 Effect.gen(function* () {
@@ -294,7 +294,7 @@ export class Window extends Effect.Service<Window>()("Window", {
                   yield* acquireDisposable(() =>
                     token.onCancellationRequested(kill),
                   );
-                  yield* Fiber.join(fiber);
+                  return yield* Fiber.join(fiber);
                 }).pipe(Effect.scoped),
                 { signal },
               ),

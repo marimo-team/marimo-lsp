@@ -1,10 +1,10 @@
-import { Effect, Either, Option } from "effect";
+import { Effect, Option } from "effect";
 
 import type { NotebookCommandContext } from "../commands.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
+import { SessionsService } from "../panel/sessions/SessionsService.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
@@ -12,7 +12,7 @@ export const restartKernel = Effect.fn("command.restartKernel")(function* (
   context?: NotebookCommandContext,
 ) {
   const code = yield* VsCode;
-  const notebooks = yield* NotebookRuntime;
+  const sessions = yield* SessionsService;
   const executions = yield* CellExecutions;
 
   const editor = yield* getNotebookCommandEditor(context);
@@ -31,52 +31,46 @@ export const restartKernel = Effect.fn("command.restartKernel")(function* (
     return;
   }
 
-  yield* code.window.withProgress(
+  if (Option.isNone(yield* sessions.find(notebook.value.id))) {
+    yield* code.window.showInformationMessage(
+      "This notebook does not have a live kernel",
+    );
+    return;
+  }
+
+  const restarted = yield* code.window.withProgress(
     {
       location: code.ProgressLocation.Window,
       title: "Restarting kernel",
-      cancellable: true,
+      cancellable: false,
     },
     Effect.fn(function* (progress) {
-      progress.report({ message: "Closing session..." });
+      progress.report({ message: "Restarting session..." });
 
-      const result = yield* notebooks
-        .forNotebook(notebook.value.id)
-        .close()
-        .pipe(Effect.either);
+      const succeeded = yield* sessions.restart(notebook.value.id).pipe(
+        Effect.as(true),
+        Effect.catchAllCause(
+          Effect.fn(function* (cause) {
+            yield* Effect.logError("Failed to restart kernel").pipe(
+              Effect.annotateLogs({ cause }),
+            );
+            yield* showErrorAndPromptLogs("Failed to restart kernel.");
+            return false;
+          }),
+        ),
+      );
 
-      if (Either.isLeft(result)) {
-        yield* Effect.logFatal("Failed to restart kernel", result.left);
-        yield* showErrorAndPromptLogs("Failed to restart kernel.");
-        return;
-      }
+      if (!succeeded) return false;
 
       yield* executions.handleInterrupt(editor.value);
 
-      // Clear all cell outputs by replacing each cell with fresh version
-      const edit = new code.WorkspaceEdit();
-      const cells = editor.value.notebook.getCells();
-      const freshCells = cells.map((cell) => {
-        const freshCell = new code.NotebookCellData(
-          cell.kind,
-          cell.document.getText(),
-          cell.document.languageId,
-        );
-        freshCell.metadata = cell.metadata;
-        return freshCell;
-      });
-      edit.set(editor.value.notebook.uri, [
-        code.NotebookEdit.replaceCells(
-          new code.NotebookRange(0, cells.length),
-          freshCells,
-        ),
-      ]);
-      yield* code.workspace.applyEdit(edit);
-
       progress.report({ message: "Kernel restarted." });
       yield* Effect.sleep("500 millis");
+      return true;
     }),
   );
 
-  yield* code.window.showInformationMessage("Kernel restarted successfully");
+  if (restarted) {
+    yield* code.window.showInformationMessage("Kernel restarted successfully");
+  }
 });
