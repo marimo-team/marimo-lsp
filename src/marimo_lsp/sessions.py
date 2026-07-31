@@ -111,8 +111,23 @@ class Session:
         self._kernel_manager = kernel_manager
         self._closed = False
         self._listener_thread: threading.Thread | None = None
+        self._runtime_config = config_manager.get_config(hide_secrets=False)
 
-        self._kernel_manager.start_kernel()
+        try:
+            self._kernel_manager.start_kernel()
+        except Exception:
+            # Session construction transfers ownership of the IPC transport.
+            # Release it when startup fails before a Session can be returned.
+            if self._kernel_manager.kernel_task is not None:
+                try:
+                    self._kernel_manager.close_kernel()
+                except Exception:
+                    logger.exception("Error closing partially started kernel")
+            try:
+                self._queue_manager.close_queues()
+            except Exception:
+                logger.exception("Error closing queues after failed kernel start")
+            raise
         self._start_message_listener()
         logger.info(f"Started session {initialization_id}")
 
@@ -191,9 +206,6 @@ class Session:
         del from_consumer_id
         self._queue_manager.put_control_request(request)
 
-    def _configured_runtime(self) -> MarimoConfig:
-        return self.get_config(hide_secrets=False)
-
     def _effective_runtime(self, config: MarimoConfig) -> MarimoConfig:
         if self.attached:
             return config
@@ -206,6 +218,7 @@ class Session:
 
     def update_runtime_config(self, config: MarimoConfig) -> None:
         """Apply configuration subject to this session's attachment policy."""
+        self._runtime_config = config
         self.put_control_request(
             UpdateUserConfigCommand(config=self._effective_runtime(config)),
             from_consumer_id=None,
@@ -217,7 +230,7 @@ class Session:
             return
 
         self._operation_sink.detach()
-        self.update_runtime_config(self._configured_runtime())
+        self.update_runtime_config(self._runtime_config)
 
     def attach(self) -> None:
         """Reattach the client and restore the configured auto-reload mode."""
@@ -225,7 +238,7 @@ class Session:
             return
 
         self._operation_sink.attach()
-        self.update_runtime_config(self._configured_runtime())
+        self.update_runtime_config(self._runtime_config)
 
     def instantiate(
         self,

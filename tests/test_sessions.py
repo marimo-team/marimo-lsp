@@ -65,7 +65,7 @@ def test_out_of_band_commands_are_routed_to_completion_queue() -> None:
     queue_manager.set_ui_element_queue.put.assert_not_called()
 
 
-def test_detach_pauses_and_attach_restores_auto_reload() -> None:
+def test_detach_only_overrides_auto_reload() -> None:
     session, queue_manager = _make_session()
     default_runtime = cast("RuntimeConfig", DEFAULT_CONFIG.get("runtime", {}))
     configured = cast(
@@ -78,14 +78,22 @@ def test_detach_pauses_and_attach_restores_auto_reload() -> None:
     session._config_manager = Mock()
     session._config_manager.get_config.return_value = configured
     session._operation_sink = _OperationSink(Mock(), "file:///test.py")
+    display = cast("dict[str, object]", configured.get("display", {}))
+    runtime_config = cast(
+        "MarimoConfig",
+        {**configured, "display": {**display, "theme": "dark"}},
+    )
+    session._runtime_config = runtime_config
 
     session.detach()
 
     paused = queue_manager.control_queue.put.call_args_list[0].args[0]
     assert isinstance(paused, UpdateUserConfigCommand)
     paused_runtime = cast("RuntimeConfig", paused.config.get("runtime", {}))
+    paused_display = cast("dict[str, object]", paused.config.get("display", {}))
     configured_runtime = cast("RuntimeConfig", configured.get("runtime", {}))
     assert paused_runtime.get("auto_reload") == "off"
+    assert paused_display["theme"] == "dark"
     assert configured_runtime.get("auto_reload") == "autorun"
     assert not session.attached
 
@@ -94,8 +102,33 @@ def test_detach_pauses_and_attach_restores_auto_reload() -> None:
     restored = queue_manager.control_queue.put.call_args_list[1].args[0]
     assert isinstance(restored, UpdateUserConfigCommand)
     restored_runtime = cast("RuntimeConfig", restored.config.get("runtime", {}))
+    restored_display = cast("dict[str, object]", restored.config.get("display", {}))
     assert restored_runtime.get("auto_reload") == "autorun"
+    assert restored_display["theme"] == "dark"
     assert session.attached
+
+
+def test_failed_kernel_start_closes_replacement_resources() -> None:
+    queue_manager = Mock()
+    kernel_manager = Mock()
+    kernel_manager.kernel_task = Mock()
+    kernel_manager.start_kernel.side_effect = RuntimeError("failed to start")
+    config_manager = Mock()
+    config_manager.get_config.return_value = DEFAULT_CONFIG
+
+    with pytest.raises(RuntimeError, match="failed to start"):
+        Session(
+            initialization_id="session",
+            notebook_uri="file:///test.py",
+            operation_sink=Mock(),
+            queue_manager=queue_manager,
+            kernel_manager=kernel_manager,
+            app_file_manager=Mock(),
+            config_manager=config_manager,
+        )
+
+    kernel_manager.close_kernel.assert_called_once_with()
+    queue_manager.close_queues.assert_called_once_with()
 
 
 def test_detached_session_keeps_auto_reload_paused_after_config_update() -> None:
