@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { type MarimoError, prettyErrorMessage } from "../errors.ts";
 import { cellId } from "./branded.ts";

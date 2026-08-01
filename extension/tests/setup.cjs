@@ -13,7 +13,7 @@ const { activateExtension } = require("./helpers.cjs");
 module.exports.mochaHooks = {
   // Cold install on a fresh CI container: `uv pip install marimo` can take
   // 20–40s. Give it plenty of room; subsequent test timeouts stay tight.
-  beforeAll: async function () {
+  beforeAll: /** @this {Mocha.Context} */ async function () {
     this.timeout(120_000);
     await activateExtension();
   },

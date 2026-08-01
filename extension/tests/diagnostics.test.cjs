@@ -71,19 +71,18 @@ suite("diagnostics", function () {
 
     NodeAssert.strictEqual(nb.cellCount, 3);
 
-    /** Hover at (0,0) of a cell and return the joined contents as a string. */
+    /**
+     * Hover at (0,0) of a cell and return the joined contents as a string.
+     *
+     * @param {vscode.NotebookCell} cell
+     */
     async function hoverText(cell) {
-      // SAFETY: vscode.commands.executeCommand returns Promise<unknown>;
-      // executeHoverProvider's documented return is Hover[] | undefined.
-      /* oxlint-disable typescript/no-unsafe-type-assertion */
-      const hovers = /** @type {vscode.Hover[] | undefined} */ (
-        await vscode.commands.executeCommand(
-          "vscode.executeHoverProvider",
-          cell.document.uri,
-          new vscode.Position(0, 0),
-        )
+      /** @type {vscode.Hover[] | undefined} */
+      const hovers = await vscode.commands.executeCommand(
+        "vscode.executeHoverProvider",
+        cell.document.uri,
+        new vscode.Position(0, 0),
       );
-      /* oxlint-enable typescript/no-unsafe-type-assertion */
       if (!Array.isArray(hovers) || hovers.length === 0) return "";
       return hovers
         .flatMap((h) =>

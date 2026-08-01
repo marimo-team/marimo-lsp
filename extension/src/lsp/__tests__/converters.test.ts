@@ -608,9 +608,7 @@ describe("toLspFoldingRangeKind", () => {
       for (const [name, value] of stringEntries(lsp.FoldingRangeKind)) {
         mapping[name] = toLspFoldingRangeKind(value);
       }
-      mapping.__unknown__ = toLspFoldingRangeKind(
-        "unknown-server-kind" as lsp.FoldingRangeKind,
-      );
+      mapping.__unknown__ = toLspFoldingRangeKind("unknown-server-kind");
       expect(mapping).toMatchInlineSnapshot(`
       	{
       	  "Comment": 1,

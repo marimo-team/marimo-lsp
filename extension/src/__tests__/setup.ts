@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { vi } from "vite-plus/test";
 
 vi.mock("vscode", () => ({}));
 vi.mock("vscode-languageclient/node", () => ({

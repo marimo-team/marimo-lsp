@@ -1,5 +1,5 @@
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { cellId } from "../../lib/__tests__/branded.ts";
 import type { CellRuntimeState } from "../../types.ts";

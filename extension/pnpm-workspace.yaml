@@ -1,0 +1,8 @@
+allowBuilds:
+  "@parcel/watcher": true
+  esbuild: true
+  msgpackr-extract: true
+overrides:
+  vite: npm:@voidzero-dev/vite-plus-core@0.2.7
+  vitest: 4.1.10
+verifyDepsBeforeRun: warn
