@@ -335,10 +335,7 @@ class Emitter:
             # tolerates an omitted tag when decoding a concrete struct, it
             # requires the discriminator when decoding a tagged union.
             tag = _ts_string(str(t.tag))
-            lines.append(
-                f"{indent}{_prop(t.tag_field)}: "
-                f"Schema.Literal({tag}),"
-            )
+            lines.append(f"{indent}{_prop(t.tag_field)}: Schema.Literal({tag}),")
         for field in t.fields:
             expr = self.type_expr(field.type)
             prop = _prop(field.encode_name)
