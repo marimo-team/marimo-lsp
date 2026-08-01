@@ -158,7 +158,7 @@ const TestMarimoClientLive = Layer.effect(
               }
               const config = mergeMarimoConfig(existing, params.inner.config);
               ctx.configStore.set(params.notebookUri, config);
-              return { success: true, config };
+              return config;
             }
 
             return yield* Effect.die(

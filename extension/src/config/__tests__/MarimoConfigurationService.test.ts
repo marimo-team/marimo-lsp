@@ -70,7 +70,7 @@ const withTestCtx = Effect.fn(function* (
             }
             const config = mergeMarimoConfig(existing, params.inner.config);
             configStore.set(params.notebookUri, config);
-            return { success: true, config };
+            return config;
           }
 
           return yield* Effect.die(

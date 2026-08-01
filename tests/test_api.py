@@ -73,7 +73,7 @@ async def test_update_configuration_returns_saved_config() -> None:
         ),
     )
 
-    assert result.config == DEFAULT_CONFIG
+    assert result == DEFAULT_CONFIG
 
 
 @pytest.mark.asyncio

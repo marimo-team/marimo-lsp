@@ -119,6 +119,28 @@ describe("generated api client", () => {
       assert.include(String(exit), "PackageSource");
     }),
   );
+
+  it.scoped(
+    "requires tagged-union discriminators before hitting the wire",
+    Effect.fn(function* () {
+      const marimo = makeMarimoCommands({
+        execute: () => Effect.die("should not reach the transport"),
+        operations: () => Stream.empty,
+      });
+
+      const exit = yield* marimo
+        .getDependencyTree({
+          notebookUri: notebook,
+          // @ts-expect-error -- msgspec requires `kind` for union decoding
+          source: { executable: "/usr/bin/python3" },
+          inner: {},
+        })
+        .pipe(Effect.exit);
+
+      assert.isTrue(Exit.isFailure(exit));
+      assert.include(String(exit), "PackageSource");
+    }),
+  );
 });
 
 describe("findMarimoLspExecutable", () => {
