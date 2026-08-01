@@ -181,7 +181,7 @@ export const makeDapProxy = Effect.fn("makeDapProxy")(function* (
     Stream.runForEach((json) =>
       Effect.sync(() => {
         rewriteSourcePaths(json, mapping.fileToCell);
-        emitter.fire(json as vscode.DebugProtocolMessage);
+        emitter.fire(json);
       }),
     ),
     Effect.catchAll((error) =>

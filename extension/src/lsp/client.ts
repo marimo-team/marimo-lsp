@@ -43,6 +43,8 @@ import { VariablesService } from "../panel/variables/VariablesService.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 
+const CODE_NOTEBOOK_CELL_KIND: vscode.NotebookCellKind = 2;
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
@@ -209,7 +211,7 @@ const LspCell = {
   /** Convert to the cell reference used in structural array changes. */
   toNotebookCell: (c: vscode.NotebookCell) => ({
     kind:
-      (c.kind as number) === 2
+      c.kind === CODE_NOTEBOOK_CELL_KIND
         ? lsp.NotebookCellKind.Code
         : lsp.NotebookCellKind.Markup,
     document: c.document.uri.toString(),

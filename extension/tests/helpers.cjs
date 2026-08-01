@@ -299,6 +299,7 @@ function cellOutputText(cell) {
 }
 
 module.exports = {
+  activateExtension,
   createTestContext,
   selectKernel,
   runCell,

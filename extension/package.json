@@ -42,7 +42,7 @@
     "@types/react-dom": "^19.2.2",
     "@types/vscode": "^1.108.0",
     "@types/vscode-notebook-renderer": "^1.72.4",
-    "@vitest/coverage-v8": "^4.0.0",
+    "@vitest/coverage-v8": "4.1.10",
     "@vscode/debugprotocol": "^1.68.0",
     "@vscode/python-extension": "^1.0.6",
     "@vscode/test-cli": "^0.0.12",
@@ -60,9 +60,9 @@
     "tinyspy": "^4.0.4",
     "turbo": "^2.5.8",
     "typescript": "^6.0.3",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.1.24",
-    "vite-plus": "0.1.24",
-    "vitest": "npm:@voidzero-dev/vite-plus-test@0.1.24",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.7",
+    "vite-plus": "0.2.7",
+    "vitest": "4.1.10",
     "vscode-jsonrpc": "^9.0.0",
     "vscode-languageclient": "10.0.0",
     "vscode-languageserver-protocol": "^3.18.0"
@@ -538,11 +538,5 @@
   "engines": {
     "vscode": "^1.108.0"
   },
-  "packageManager": "pnpm@10.28.2",
-  "pnpm": {
-    "overrides": {
-      "vite": "npm:@voidzero-dev/vite-plus-core@0.1.24",
-      "vitest": "npm:@voidzero-dev/vite-plus-test@0.1.24"
-    }
-  }
+  "packageManager": "pnpm@11.18.0"
 }
