@@ -331,12 +331,13 @@ class Emitter:
     def fields_src(self, t: _StructLike, indent: str) -> str:
         lines: list[str] = []
         if isinstance(t, mi.StructType) and t.tag_field is not None:
-            # msgspec always encodes the tag but tolerates its absence when
-            # decoding into the concrete struct; optionalWith mirrors that.
+            # This schema describes the encoded wire shape. Although msgspec
+            # tolerates an omitted tag when decoding a concrete struct, it
+            # requires the discriminator when decoding a tagged union.
             tag = _ts_string(str(t.tag))
             lines.append(
                 f"{indent}{_prop(t.tag_field)}: "
-                f"Schema.optionalWith(Schema.Literal({tag}), {{ default: () => {tag} }}),"
+                f"Schema.Literal({tag}),"
             )
         for field in t.fields:
             expr = self.type_expr(field.type)

@@ -9,7 +9,7 @@ import { Effect, ParseResult, Schema } from "effect";
  * The notebook's environment is a concrete venv with a known python executable.
  */
 export const VenvSource = Schema.Struct({
-  kind: Schema.optionalWith(Schema.Literal("venv"), { default: () => "venv" }),
+  kind: Schema.Literal("venv"),
   executable: Schema.String,
 }).annotations({ identifier: "VenvSource" });
 export type VenvSource = typeof VenvSource.Type;
@@ -21,9 +21,7 @@ export type VenvSource = typeof VenvSource.Type;
  * derives the venv from the script's inline metadata.
  */
 export const ScriptSource = Schema.Struct({
-  kind: Schema.optionalWith(Schema.Literal("script"), {
-    default: () => "script",
-  }),
+  kind: Schema.Literal("script"),
 }).annotations({ identifier: "ScriptSource" });
 export type ScriptSource = typeof ScriptSource.Type;
 

@@ -31,6 +31,13 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
 
     const bad = Schema.decodeUnknownEither(PackageSource)({ kind: "conda" });
     expect(Either.isLeft(bad)).toBe(true);
+
+    // msgspec accepts an omitted tag when decoding a concrete struct, but
+    // requires it when decoding the tagged union used at this wire boundary.
+    const missing = Schema.decodeUnknownEither(PackageSource)({
+      executable: "/usr/bin/python3",
+    });
+    expect(Either.isLeft(missing)).toBe(true);
   });
 
   it("rejects payloads msgspec would reject", () => {
