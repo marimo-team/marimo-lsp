@@ -38,7 +38,9 @@ it.scoped(
     const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
     const { layer } = yield* makeTestLayer({
       execute: (request) =>
-        Ref.update(requests, (current) => [...current, request]),
+        Ref.update(requests, (current) => [...current, request]).pipe(
+          Effect.as(null),
+        ),
     });
 
     yield* Effect.gen(function* () {

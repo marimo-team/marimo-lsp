@@ -84,7 +84,10 @@ const withTestCtx = Effect.fn(function* () {
     Layer.provide(
       makeTestMarimoClient({
         execute(request) {
-          return Ref.update(executions, (current) => [...current, request]);
+          return Ref.update(executions, (current) => [
+            ...current,
+            request,
+          ]).pipe(Effect.as(null));
         },
         operations: () => Stream.fromPubSub(operationsPubSub),
       }),

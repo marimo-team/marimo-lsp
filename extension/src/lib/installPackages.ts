@@ -130,7 +130,7 @@ export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
     edit.set(doc.uri, [
       code.NotebookEdit.updateNotebookMetadata({
         ...doc.metadata,
-        header: { value: newHeader },
+        header: newHeader,
       }),
     ]);
     yield* code.workspace.applyEdit(edit);

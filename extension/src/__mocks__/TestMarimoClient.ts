@@ -51,7 +51,7 @@ export const TestMarimoClientLive = Layer.scoped(
           const command = {
             command: "marimo.api",
             params: request,
-          };
+          } as const;
           return Effect.tryPromise({
             try: () =>
               conn.sendRequest("workspace/executeCommand", {

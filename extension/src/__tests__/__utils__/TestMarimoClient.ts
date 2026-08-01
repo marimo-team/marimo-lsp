@@ -104,7 +104,7 @@ function makeTestMarimoClientValue(options: Options) {
     channel: { name: "marimo-lsp-test", show() {} },
     restart: () => Effect.void,
     ...makeMarimoCommands({
-      execute: options.execute ?? (() => Effect.void),
+      execute: options.execute ?? (() => Effect.succeed(null)),
       operations: options.operations ?? (() => Stream.never),
     }),
   });

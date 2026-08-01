@@ -34,7 +34,10 @@ export class MarimoClientStartError extends Data.TaggedError(
 }> {}
 
 export class MarimoCommandError extends Data.TaggedError("MarimoCommandError")<{
-  readonly command: { readonly command: string; readonly params: unknown };
+  readonly command: {
+    readonly command: "marimo.api";
+    readonly params: MarimoApiCall;
+  };
   readonly cause: unknown;
 }> {}
 
@@ -229,7 +232,7 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
           const command = {
             command: "marimo.api",
             params: request,
-          };
+          } as const;
           return yield* Effect.tryPromise({
             try: (signal) =>
               client.sendRequest<unknown>(
