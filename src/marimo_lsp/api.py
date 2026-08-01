@@ -5,15 +5,13 @@
 from __future__ import annotations
 
 import dataclasses
+import inspect
 import json
 import typing
 from typing import TYPE_CHECKING, cast
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
 import msgspec
-from marimo._config.config import DEFAULT_CONFIG
+from marimo._config.config import DEFAULT_CONFIG, MarimoConfig
 from marimo._convert.converters import MarimoConvert
 from marimo._export.exporter import Exporter
 from marimo._export.requests import HTMLExportRequest, IPYNBExportRequest
@@ -60,7 +58,6 @@ from marimo_lsp.models import (
     SetDisplayThemeResponse,
     StdinRequest,
     UpdateConfigurationRequest,
-    UpdateConfigurationResponse,
     UpdateUIElementRequest,
     VenvSource,
 )
@@ -69,7 +66,6 @@ from marimo_lsp.package_manager import LspPackageManager
 if TYPE_CHECKING:
     from marimo._config.config import (
         DisplayConfig,
-        MarimoConfig,
         PartialMarimoConfig,
         SharingConfig,
     )
@@ -78,9 +74,116 @@ if TYPE_CHECKING:
     from marimo_lsp.sessions import Sessions
 
 
-__all__ = ["API_METHODS", "ApiMethod", "handle_api_command"]
+__all__ = ["API_METHODS", "ApiBuilder", "ApiMethod", "handle_api_command"]
 
 logger = get_logger()
+_API_HANDLER_PARAMETER_COUNT = 2
+
+
+@dataclasses.dataclass(frozen=True)
+class ApiContext:
+    """Server-side dependencies available to API handlers."""
+
+    ls: LanguageServer
+    sessions: Sessions
+
+
+type ApiHandler[Req, Res] = typing.Callable[
+    [ApiContext, Req],
+    typing.Awaitable[Res],
+]
+
+
+@dataclasses.dataclass(frozen=True)
+class ApiMethod[Req, Res]:
+    """One ``marimo.api`` method and its wire contract."""
+
+    name: str
+    request: TypeForm[Req]
+    response: TypeForm[Res]
+    handler: ApiHandler[Req, Res]
+
+
+class ApiBuilder:
+    """Build a method table from typed async handler declarations."""
+
+    def __init__(self) -> None:
+        self._methods: list[ApiMethod[typing.Any, typing.Any]] = []
+        self._built = False
+
+    def __call__[Req, Res](
+        self,
+        name: str,
+    ) -> typing.Callable[[ApiHandler[Req, Res]], ApiHandler[Req, Res]]:
+        """Register an async handler under its wire method name."""
+
+        def register(handler: ApiHandler[Req, Res]) -> ApiHandler[Req, Res]:
+            if self._built:
+                msg = "cannot register API methods after build()"
+                raise RuntimeError(msg)
+            if not inspect.iscoroutinefunction(handler):
+                msg = f"API handler {name!r} must be async"
+                raise TypeError(msg)
+
+            parameters = list(inspect.signature(handler).parameters.values())
+            positional = {
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            }
+            if len(parameters) != _API_HANDLER_PARAMETER_COUNT or any(
+                parameter.kind not in positional for parameter in parameters
+            ):
+                msg = f"API handler {name!r} must accept (ApiContext, request)"
+                raise TypeError(msg)
+
+            hints = typing.get_type_hints(handler)
+            context_parameter, request_parameter = parameters
+            if hints.get(context_parameter.name) is not ApiContext:
+                msg = f"API handler {name!r} first parameter must be ApiContext"
+                raise TypeError(msg)
+            if request_parameter.name not in hints:
+                msg = f"API handler {name!r} request parameter must be annotated"
+                raise TypeError(msg)
+            if "return" not in hints:
+                msg = f"API handler {name!r} return type must be annotated"
+                raise TypeError(msg)
+
+            request = cast("TypeForm[Req]", hints[request_parameter.name])
+            response_hint = hints["return"]
+            response = cast(
+                "TypeForm[Res]",
+                type(None) if response_hint is None else response_hint,
+            )
+            self._methods.append(ApiMethod(name, request, response, handler))
+            return handler
+
+        return register
+
+    def build(self) -> tuple[ApiMethod[typing.Any, typing.Any], ...]:
+        """Validate and return the immutable method table."""
+        if self._built:
+            msg = "API method table has already been built"
+            raise RuntimeError(msg)
+
+        names: set[str] = set()
+        for method in self._methods:
+            if method.name in names:
+                msg = f"duplicate API method: {method.name!r}"
+                raise ValueError(msg)
+            names.add(method.name)
+
+        self._built = True
+        return tuple(self._methods)
+
+
+marimo_api = ApiBuilder()
+
+
+class SessionNotFoundError(ValueError):
+    """Raised when an API command requires a live notebook session."""
+
+    def __init__(self, notebook_uri: str) -> None:
+        super().__init__(f"No session found for {notebook_uri}")
 
 
 def _get_display_config(config: MarimoConfig) -> DisplayConfig:
@@ -91,12 +194,13 @@ def _get_display_config(config: MarimoConfig) -> DisplayConfig:
     return cast("DisplayConfig", config.get("display", {}))
 
 
+@marimo_api("execute-cells")
 async def run(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: SessionCommand[ExecuteCellsRequest],
-):
+) -> None:
     logger.info(f"run for {args.notebook_uri}")
-    session = sessions.start(args.notebook_uri, args.executable)
+    session = ctx.sessions.start(args.notebook_uri, args.executable)
 
     session.instantiate(
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
@@ -106,42 +210,46 @@ async def run(
     logger.info(f"Execution request sent for {args.notebook_uri}")
 
 
+@marimo_api("update-ui-element")
 async def set_ui_element_value(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: NotebookCommand[UpdateUIElementRequest],
-):
+) -> None:
     logger.info(f"set_ui_element_value for {args.notebook_uri}")
-    session = sessions.get(args.notebook_uri)
+    session = ctx.sessions.get(args.notebook_uri)
     assert session, f"No session in workspace for {args.notebook_uri}"
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
 
 
+@marimo_api("set-model-value")
 async def set_model_value(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: NotebookCommand[ModelRequest],
-):
+) -> None:
     logger.info(f"set_model_value for {args.notebook_uri}")
-    session = sessions.get(args.notebook_uri)
+    session = ctx.sessions.get(args.notebook_uri)
     assert session, f"No session in workspace for {args.notebook_uri}"
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
 
 
+@marimo_api("invoke-function")
 async def function_call_request(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: NotebookCommand[InvokeFunctionCommand],
-):
+) -> None:
     logger.info(f"function_call_request for {args.notebook_uri}")
-    session = sessions.get(args.notebook_uri)
+    session = ctx.sessions.get(args.notebook_uri)
     assert session, f"No session in workspace for {args.notebook_uri}"
     session.put_control_request(args.inner, from_consumer_id=None)
 
 
+@marimo_api("interrupt")
 async def interrupt(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: NotebookCommand[InterruptRequest],
-):
+) -> None:
     logger.info(f"interrupt for {args.notebook_uri}")
-    session = sessions.get(args.notebook_uri)
+    session = ctx.sessions.get(args.notebook_uri)
     if session:
         session.try_interrupt()
         logger.info(f"Interrupt request sent for {args.notebook_uri}")
@@ -149,12 +257,13 @@ async def interrupt(
         logger.warning(f"No session found for {args.notebook_uri}")
 
 
+@marimo_api("delete-cell")
 async def delete_cell(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: NotebookCommand[DeleteCellRequest],
-):
+) -> None:
     logger.info(f"delete_cell for {args.notebook_uri}")
-    session = sessions.get(args.notebook_uri)
+    session = ctx.sessions.get(args.notebook_uri)
     if session:
         session.put_control_request(args.inner.as_command(), from_consumer_id=None)
         logger.info(f"Delete cell request sent for {args.notebook_uri}")
@@ -162,31 +271,33 @@ async def delete_cell(
         logger.warning(f"No session found for {args.notebook_uri}")
 
 
+@marimo_api("send-stdin")
 async def send_stdin(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: NotebookCommand[StdinRequest],
-):
+) -> None:
     logger.info(f"send_stdin for {args.notebook_uri}")
-    session = sessions.get(args.notebook_uri)
+    session = ctx.sessions.get(args.notebook_uri)
     if session:
         session.put_input(args.inner.text)
     else:
         logger.warning(f"No session found for {args.notebook_uri}")
 
 
+@marimo_api("close-session")
 async def close_session(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: NotebookCommand[CloseSessionRequest],
-):
+) -> None:
     logger.info(f"close_session for {args.notebook_uri}")
-    sessions.close(args.notebook_uri)
+    ctx.sessions.close(args.notebook_uri)
 
 
+@marimo_api("execute-scratchpad")
 async def execute_scratch(
-    ls: LanguageServer,
-    sessions: Sessions,
+    ctx: ApiContext,
     args: SessionCommand[ExecuteScratchRequest],
-):
+) -> None:
     """Execute code in the scratchpad (isolated from dependency graph).
 
     Populates the document + output snapshot on the command so that
@@ -198,7 +309,7 @@ async def execute_scratch(
     """
     logger.info(f"execute_scratch for {args.notebook_uri}")
     try:
-        notebook = find_notebook_document(ls.workspace, args.notebook_uri)
+        notebook = find_notebook_document(ctx.ls.workspace, args.notebook_uri)
     except KeyError:
         logger.warning(
             f"No notebook document found for {args.notebook_uri}; "
@@ -206,7 +317,7 @@ async def execute_scratch(
         )
         return
 
-    session = sessions.start(args.notebook_uri, args.executable)
+    session = ctx.sessions.start(args.notebook_uri, args.executable)
 
     session.instantiate(
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
@@ -214,7 +325,7 @@ async def execute_scratch(
     )
 
     notebook_cells, cell_outputs = snapshot_for_scratchpad(
-        workspace=ls.workspace,
+        workspace=ctx.ls.workspace,
         session=session,
         notebook=notebook,
     )
@@ -231,7 +342,9 @@ async def execute_scratch(
     logger.info(f"Scratchpad execution request sent for {args.notebook_uri}")
 
 
+@marimo_api("get-package-list")
 async def get_package_list(
+    _ctx: ApiContext,
     args: PackageCommand[ListPackagesRequest],
 ) -> ListPackagesResponse:
     logger.info(f"get_package_list for {args.notebook_uri}")
@@ -254,7 +367,9 @@ async def get_package_list(
     return ListPackagesResponse(packages=package_manager.list_packages())
 
 
+@marimo_api("get-dependency-tree")
 async def get_dependency_tree(
+    _ctx: ApiContext,
     args: PackageCommand[DependencyTreeRequest],
 ) -> DependencyTreeResponse:
     logger.info(f"get_dependency_tree for {args.notebook_uri}")
@@ -329,12 +444,17 @@ def _package_manager_for(source: VenvSource | ScriptSource) -> LspPackageManager
     )
 
 
-async def serialize(args: SerializeRequest) -> SerializeResponse:
+@marimo_api("serialize")
+async def serialize(_ctx: ApiContext, args: SerializeRequest) -> SerializeResponse:
     ir = parse_raw(args.notebook, cls=NotebookSerialization)
     return SerializeResponse(source=MarimoConvert.from_ir(ir).to_py())
 
 
-async def deserialize(args: DeserializeRequest):
+@marimo_api("deserialize")
+async def deserialize(
+    _ctx: ApiContext,
+    args: DeserializeRequest,
+) -> dict[str, typing.Any]:
     converter = MarimoConvert.from_py(args.source)
     ir = converter.to_ir()
 
@@ -347,12 +467,13 @@ async def deserialize(args: DeserializeRequest):
     return dataclasses.asdict(ir)
 
 
+@marimo_api("get-configuration")
 async def get_configuration(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: NotebookCommand[GetConfigurationRequest],
 ) -> GetConfigurationResponse:
     """Get the current marimo configuration."""
-    session = sessions.get(args.notebook_uri)
+    session = ctx.sessions.get(args.notebook_uri)
     if not session:
         logger.warning(f"No session found for {args.notebook_uri}")
         return GetConfigurationResponse(config=DEFAULT_CONFIG)
@@ -360,33 +481,29 @@ async def get_configuration(
     return GetConfigurationResponse(config=session.get_config())
 
 
+@marimo_api("update-configuration")
 async def update_configuration(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: NotebookCommand[UpdateConfigurationRequest],
-) -> UpdateConfigurationResponse:
+) -> MarimoConfig:
     """Update the marimo user configuration."""
-    session = sessions.get(args.notebook_uri)
+    session = ctx.sessions.get(args.notebook_uri)
     if not session:
         logger.warning(f"No session found for {args.notebook_uri}")
-        return UpdateConfigurationResponse(success=False, error="No session found")
+        raise SessionNotFoundError(args.notebook_uri)
 
-    try:
-        updated_config = session.save_config(
-            cast("PartialMarimoConfig", args.inner.config),
-        )
-
-        return UpdateConfigurationResponse(success=True, config=updated_config)
-    except Exception as e:
-        logger.exception(f"Error updating configuration for {args.notebook_uri}")
-        return UpdateConfigurationResponse(success=False, error=str(e))
+    return session.save_config(
+        cast("PartialMarimoConfig", args.inner.config),
+    )
 
 
+@marimo_api("set-display-theme")
 async def set_display_theme(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: SetDisplayThemeRequest,
 ) -> SetDisplayThemeResponse:
     """Set the display theme in all kernels without persisting to disk."""
-    for session in sessions:
+    for session in ctx.sessions:
         config = session.get_config(hide_secrets=False)
         display = _get_display_config(config)
         updated = cast(
@@ -396,13 +513,14 @@ async def set_display_theme(
     return SetDisplayThemeResponse(success=True)
 
 
+@marimo_api("export-as-html")
 async def export_as_html(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: NotebookCommand[ExportAsHTMLRequest],
-):
+) -> str:
     """Export the notebook as HTML with current outputs."""
     logger.info(f"export_as_html for {args.notebook_uri}")
-    session = sessions.get(args.notebook_uri)
+    session = ctx.sessions.get(args.notebook_uri)
     assert session, f"No session in workspace for {args.notebook_uri}"
 
     # Export the notebook with current outputs using the Exporter
@@ -428,13 +546,14 @@ async def export_as_html(
     return html
 
 
+@marimo_api("export-as-ipynb")
 async def export_as_ipynb(
-    sessions: Sessions,
+    ctx: ApiContext,
     args: NotebookCommand[ExportAsIpynbRequest],
 ) -> str:
     """Export the notebook as ipynb with current outputs."""
     logger.info(f"export_as_ipynb for {args.notebook_uri}")
-    session = sessions.get(args.notebook_uri)
+    session = ctx.sessions.get(args.notebook_uri)
     assert session, f"No session in workspace for {args.notebook_uri}"
 
     ipynb_str = Exporter().export_as_ipynb(
@@ -457,152 +576,7 @@ async def export_as_ipynb(
     return json.dumps(ipynb)
 
 
-@dataclasses.dataclass(frozen=True)
-class ApiContext:
-    """Server-side dependencies a handler can reach for."""
-
-    ls: LanguageServer
-    sessions: Sessions
-
-
-@dataclasses.dataclass(frozen=True)
-class ApiMethod[Req, Res]:
-    """One ``marimo.api`` method: the single source of truth for its wire contract.
-
-    The server dispatches and validates wire values from this table. Genericity
-    ties each entry's handler to its request/response annotations, so a
-    mismatched handler fails type-checking at table construction.
-    """
-
-    name: str
-    """Wire method name (kebab-case)."""
-
-    request: TypeForm[Req]
-    """msgspec annotation the incoming ``params`` must convert to."""
-
-    response: TypeForm[Res] | None
-    """msgspec annotation the handler's return value is validated against.
-
-    ``None`` marks a fire-and-forget method whose response is always ``null``.
-    """
-
-    handler: Callable[[ApiContext, Req], typing.Awaitable[Res]]
-
-
-API_METHODS: tuple[ApiMethod[typing.Any, typing.Any], ...] = (
-    ApiMethod(
-        "execute-cells",
-        SessionCommand[ExecuteCellsRequest],
-        None,
-        lambda ctx, args: run(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "send-stdin",
-        NotebookCommand[StdinRequest],
-        None,
-        lambda ctx, args: send_stdin(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "interrupt",
-        NotebookCommand[InterruptRequest],
-        None,
-        lambda ctx, args: interrupt(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "delete-cell",
-        NotebookCommand[DeleteCellRequest],
-        None,
-        lambda ctx, args: delete_cell(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "update-ui-element",
-        NotebookCommand[UpdateUIElementRequest],
-        None,
-        lambda ctx, args: set_ui_element_value(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "set-model-value",
-        NotebookCommand[ModelRequest],
-        None,
-        lambda ctx, args: set_model_value(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "invoke-function",
-        NotebookCommand[InvokeFunctionCommand],
-        None,
-        lambda ctx, args: function_call_request(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "close-session",
-        NotebookCommand[CloseSessionRequest],
-        None,
-        lambda ctx, args: close_session(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "serialize",
-        SerializeRequest,
-        SerializeResponse,
-        lambda _ctx, args: serialize(args),
-    ),
-    # NOTE: the deserialize payload is marimo's `NotebookSerialization`, which
-    # msgspec cannot introspect (it embeds `ast` nodes), so the response stays
-    # opaque on the wire. The client parses it with its hand-written
-    # `SerializedNotebook` schema (`extension/src/schemas/SerializedNotebook.ts`).
-    ApiMethod(
-        "deserialize",
-        DeserializeRequest,
-        dict[str, typing.Any],
-        lambda _ctx, args: deserialize(args),
-    ),
-    ApiMethod(
-        "get-package-list",
-        PackageCommand[ListPackagesRequest],
-        ListPackagesResponse,
-        lambda _ctx, args: get_package_list(args),
-    ),
-    ApiMethod(
-        "get-dependency-tree",
-        PackageCommand[DependencyTreeRequest],
-        DependencyTreeResponse,
-        lambda _ctx, args: get_dependency_tree(args),
-    ),
-    ApiMethod(
-        "get-configuration",
-        NotebookCommand[GetConfigurationRequest],
-        GetConfigurationResponse,
-        lambda ctx, args: get_configuration(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "update-configuration",
-        NotebookCommand[UpdateConfigurationRequest],
-        UpdateConfigurationResponse,
-        lambda ctx, args: update_configuration(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "set-display-theme",
-        SetDisplayThemeRequest,
-        SetDisplayThemeResponse,
-        lambda ctx, args: set_display_theme(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "export-as-html",
-        NotebookCommand[ExportAsHTMLRequest],
-        str,
-        lambda ctx, args: export_as_html(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "export-as-ipynb",
-        NotebookCommand[ExportAsIpynbRequest],
-        str,
-        lambda ctx, args: export_as_ipynb(ctx.sessions, args),
-    ),
-    ApiMethod(
-        "execute-scratchpad",
-        SessionCommand[ExecuteScratchRequest],
-        None,
-        lambda ctx, args: execute_scratch(ctx.ls, ctx.sessions, args),
-    ),
-)
+API_METHODS = marimo_api.build()
 
 _API_BY_NAME = {method.name: method for method in API_METHODS}
 
@@ -623,9 +597,6 @@ async def handle_api_command(
 
     request = msgspec.convert(params, type=spec.request)
     result = await spec.handler(ApiContext(ls=ls, sessions=sessions), request)
-
-    if spec.response is None:
-        return None
 
     payload = msgspec.to_builtins(result)
     validated = msgspec.convert(payload, type=spec.response)
