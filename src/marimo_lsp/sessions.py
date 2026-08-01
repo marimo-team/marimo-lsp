@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     )
     from marimo._config.manager import MarimoConfigManager
     from marimo._messaging.types import KernelMessage
-    from marimo._server.models.models import InstantiateNotebookRequest
+    from marimo._session.requests import InstantiateNotebookRequest
     from marimo._session.types import QueueManager
     from marimo._types.ids import ConsumerId
     from pygls.lsp.server import LanguageServer
