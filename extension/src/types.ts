@@ -5,7 +5,7 @@ import type {
   NotebookCellId,
   NotebookId,
 } from "./schemas/MarimoNotebookDocument.ts";
-import type { SerializedNotebook } from "./schemas/SerializedNotebook.ts";
+import type * as Gen from "./schemas/Models.gen.ts";
 
 export type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 
@@ -65,12 +65,6 @@ type ModelRequest = Schemas["ModelRequest"];
 type InvokeFunctionRequest = Schemas["InvokeFunctionRequest"];
 type DeleteCellRequest = Schemas["DeleteCellRequest"];
 type ExportAsHtmlRequest = Schemas["ExportAsHTMLRequest"];
-interface DeserializeRequest {
-  source: string;
-}
-interface SerializeRequest {
-  notebook: typeof SerializedNotebook.Type;
-}
 type InterruptRequest = {};
 type ListPackagesRequest = {};
 type DependencyTreeRequest = {};
@@ -113,8 +107,8 @@ type MarimoApiMethodMap = {
   interrupt: NotebookScoped<InterruptRequest>;
   "send-stdin": NotebookScoped<SendStdinRequest>;
   // marimo-lsp API
-  serialize: SerializeRequest;
-  deserialize: DeserializeRequest;
+  serialize: typeof Gen.SerializePayload.Encoded;
+  deserialize: typeof Gen.DeserializePayload.Encoded;
   "set-display-theme": SetDisplayThemeRequest;
 };
 

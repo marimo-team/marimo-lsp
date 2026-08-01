@@ -31,6 +31,16 @@ export const PackageSource = Schema.Union(VenvSource, ScriptSource).annotations(
 export type PackageSource = typeof PackageSource.Type;
 
 /**
+ * Configuration for a notebook cell
+ */
+export const NotebookCellConfig = Schema.Struct({
+  column: Schema.optional(Schema.NullOr(Schema.Int)),
+  disabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  hide_code: Schema.optional(Schema.NullOr(Schema.Boolean)),
+}).annotations({ identifier: "NotebookCellConfig" });
+export type NotebookCellConfig = typeof NotebookCellConfig.Type;
+
+/**
  * Smart-cell metadata for a markdown cell (mirrors the frontend shape).
  */
 export const MarkdownCellMetadata = Schema.Struct({
@@ -74,10 +84,7 @@ export const CellMetadata = Schema.Struct({
     default: () => null,
   }),
   name: Schema.optionalWith(Schema.String, { default: () => "_" }),
-  options: Schema.optionalWith(
-    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-    { default: () => ({}) },
-  ),
+  options: Schema.optionalWith(NotebookCellConfig, { default: () => ({}) }),
   languageMetadata: Schema.optionalWith(Schema.NullOr(CellLanguageMetadata), {
     default: () => null,
   }),
@@ -85,14 +92,80 @@ export const CellMetadata = Schema.Struct({
 export type CellMetadata = typeof CellMetadata.Type;
 
 /**
- * A request to serialize a notebook to Python source.
- *
- * Contains the notebook data to be serialized.
+ * Code cell specific structure
  */
-export const SerializeRequest = Schema.Struct({
-  notebook: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-}).annotations({ identifier: "SerializeRequest" });
-export type SerializeRequest = typeof SerializeRequest.Type;
+export const NotebookCell = Schema.Struct({
+  code: Schema.NullOr(Schema.String),
+  code_hash: Schema.NullOr(Schema.String),
+  config: NotebookCellConfig,
+  id: Schema.NullOr(Schema.String),
+  name: Schema.NullOr(Schema.String),
+}).annotations({ identifier: "NotebookCell" });
+export type NotebookCell = typeof NotebookCell.Type;
+
+/**
+ * Metadata about the notebook
+ */
+export const NotebookMetadata = Schema.Struct({
+  marimo_version: Schema.optional(Schema.NullOr(Schema.String)),
+}).annotations({ identifier: "NotebookMetadata" });
+export type NotebookMetadata = typeof NotebookMetadata.Type;
+
+/**
+ * Main notebook structure
+ */
+export const NotebookV1 = Schema.Struct({
+  cells: Schema.Array(NotebookCell),
+  metadata: NotebookMetadata,
+  version: Schema.Literal("1"),
+}).annotations({ identifier: "NotebookV1" });
+export type NotebookV1 = typeof NotebookV1.Type;
+
+/**
+ * Program-specific configuration.
+ *
+ * Configuration for frontends or runtimes that is specific to
+ * a single marimo program.
+ */
+export const _AppConfig = Schema.Struct({
+  width: Schema.optionalWith(
+    Schema.Literal("columns", "compact", "full", "medium", "normal"),
+    { default: () => "compact" },
+  ),
+  app_title: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
+  layout_file: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
+  css_file: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
+  html_head_file: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
+  auto_download: Schema.optionalWith(
+    Schema.Array(Schema.Literal("html", "ipynb", "markdown")),
+    { default: () => [] },
+  ),
+  sql_output: Schema.optionalWith(
+    Schema.Literal("auto", "lazy-polars", "native", "pandas", "polars"),
+    { default: () => "auto" },
+  ),
+}).annotations({ identifier: "_AppConfig" });
+export type _AppConfig = typeof _AppConfig.Type;
+
+/**
+ * Strict JSON notebook data plus source-level application metadata.
+ */
+export const NotebookDocument = Schema.Struct({
+  notebook: NotebookV1,
+  appConfig: Schema.optional(_AppConfig),
+  header: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
+}).annotations({ identifier: "NotebookDocument" });
+export type NotebookDocument = typeof NotebookDocument.Type;
 
 /**
  * A request to deserialize Python source to notebook format.
@@ -183,7 +256,7 @@ export type UpdateConfigurationRequest = typeof UpdateConfigurationRequest.Type;
  * A request to set the display theme without persisting to disk.
  */
 export const SetDisplayThemeRequest = Schema.Struct({
-  theme: Schema.String,
+  theme: Schema.Literal("dark", "light"),
 }).annotations({ identifier: "SetDisplayThemeRequest" });
 export type SetDisplayThemeRequest = typeof SetDisplayThemeRequest.Type;
 
@@ -270,61 +343,6 @@ export const ExecuteCellsPayload = Schema.Struct({
   executable: Schema.String,
 });
 
-export class ExecuteCells extends Schema.TaggedRequest<ExecuteCells>()(
-  "execute-cells",
-  {
-    failure: Schema.Never,
-    success: Schema.Union(Schema.Null, Schema.Undefined),
-    payload: ExecuteCellsPayload.fields,
-  },
-) {}
-
-export const StdinRequest = Schema.Struct({
-  text: Schema.String,
-}).annotations({ identifier: "StdinRequest" });
-export type StdinRequest = typeof StdinRequest.Type;
-
-export const SendStdinPayload = Schema.Struct({
-  notebookUri: Schema.String,
-  inner: StdinRequest,
-});
-
-export class SendStdin extends Schema.TaggedRequest<SendStdin>()("send-stdin", {
-  failure: Schema.Never,
-  success: Schema.Union(Schema.Null, Schema.Undefined),
-  payload: SendStdinPayload.fields,
-}) {}
-
-export const InterruptPayload = Schema.Struct({
-  notebookUri: Schema.String,
-  inner: InterruptRequest,
-});
-
-export class Interrupt extends Schema.TaggedRequest<Interrupt>()("interrupt", {
-  failure: Schema.Never,
-  success: Schema.Union(Schema.Null, Schema.Undefined),
-  payload: InterruptPayload.fields,
-}) {}
-
-export const DeleteCellRequest = Schema.Struct({
-  cellId: Schema.String,
-}).annotations({ identifier: "DeleteCellRequest" });
-export type DeleteCellRequest = typeof DeleteCellRequest.Type;
-
-export const DeleteCellPayload = Schema.Struct({
-  notebookUri: Schema.String,
-  inner: DeleteCellRequest,
-});
-
-export class DeleteCell extends Schema.TaggedRequest<DeleteCell>()(
-  "delete-cell",
-  {
-    failure: Schema.Never,
-    success: Schema.Union(Schema.Null, Schema.Undefined),
-    payload: DeleteCellPayload.fields,
-  },
-) {}
-
 export const UpdateUIElementRequest = Schema.Struct({
   objectIds: Schema.Array(Schema.String),
   values: Schema.Array(Schema.Unknown),
@@ -340,15 +358,6 @@ export const UpdateUiElementPayload = Schema.Struct({
   inner: UpdateUIElementRequest,
 });
 
-export class UpdateUiElement extends Schema.TaggedRequest<UpdateUiElement>()(
-  "update-ui-element",
-  {
-    failure: Schema.Never,
-    success: Schema.Union(Schema.Null, Schema.Undefined),
-    payload: UpdateUiElementPayload.fields,
-  },
-) {}
-
 /**
  * Widget model state update message.
  *
@@ -357,9 +366,7 @@ export class UpdateUiElement extends Schema.TaggedRequest<UpdateUiElement>()(
  *     buffer_paths: Paths within state dict pointing to binary buffers.
  */
 export const ModelUpdateMessage = Schema.Struct({
-  method: Schema.optionalWith(Schema.Literal("update"), {
-    default: () => "update",
-  }),
+  method: Schema.Literal("update"),
   state: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
   bufferPaths: Schema.Array(
     Schema.Array(Schema.Union(Schema.String, Schema.Int)),
@@ -374,9 +381,7 @@ export type ModelUpdateMessage = typeof ModelUpdateMessage.Type;
  *     content: Arbitrary content for the custom message.
  */
 export const ModelCustomMessage = Schema.Struct({
-  method: Schema.optionalWith(Schema.Literal("custom"), {
-    default: () => "custom",
-  }),
+  method: Schema.Literal("custom"),
   content: Schema.Unknown,
 }).annotations({ identifier: "ModelCustomMessage" });
 export type ModelCustomMessage = typeof ModelCustomMessage.Type;
@@ -404,15 +409,6 @@ export const SetModelValuePayload = Schema.Struct({
   inner: ModelRequest,
 });
 
-export class SetModelValue extends Schema.TaggedRequest<SetModelValue>()(
-  "set-model-value",
-  {
-    failure: Schema.Never,
-    success: Schema.Union(Schema.Null, Schema.Undefined),
-    payload: SetModelValuePayload.fields,
-  },
-) {}
-
 /**
  * Invoke a function from a UI element.
  *
@@ -425,9 +421,7 @@ export class SetModelValue extends Schema.TaggedRequest<SetModelValue>()(
  *     args: Keyword arguments for the function.
  */
 export const InvokeFunctionCommand = Schema.Struct({
-  type: Schema.optionalWith(Schema.Literal("invoke-function"), {
-    default: () => "invoke-function",
-  }),
+  type: Schema.Literal("invoke-function"),
   functionCallId: Schema.String,
   namespace: Schema.String,
   functionName: Schema.String,
@@ -440,59 +434,41 @@ export const InvokeFunctionPayload = Schema.Struct({
   inner: InvokeFunctionCommand,
 });
 
-export class InvokeFunction extends Schema.TaggedRequest<InvokeFunction>()(
-  "invoke-function",
-  {
-    failure: Schema.Never,
-    success: Schema.Union(Schema.Null, Schema.Undefined),
-    payload: InvokeFunctionPayload.fields,
-  },
-) {}
+export const InterruptPayload = Schema.Struct({
+  notebookUri: Schema.String,
+  inner: InterruptRequest,
+});
+
+export const DeleteCellRequest = Schema.Struct({
+  cellId: Schema.String,
+}).annotations({ identifier: "DeleteCellRequest" });
+export type DeleteCellRequest = typeof DeleteCellRequest.Type;
+
+export const DeleteCellPayload = Schema.Struct({
+  notebookUri: Schema.String,
+  inner: DeleteCellRequest,
+});
+
+export const StdinRequest = Schema.Struct({
+  text: Schema.String,
+}).annotations({ identifier: "StdinRequest" });
+export type StdinRequest = typeof StdinRequest.Type;
+
+export const SendStdinPayload = Schema.Struct({
+  notebookUri: Schema.String,
+  inner: StdinRequest,
+});
 
 export const CloseSessionPayload = Schema.Struct({
   notebookUri: Schema.String,
   inner: CloseSessionRequest,
 });
 
-export class CloseSession extends Schema.TaggedRequest<CloseSession>()(
-  "close-session",
-  {
-    failure: Schema.Never,
-    success: Schema.Union(Schema.Null, Schema.Undefined),
-    payload: CloseSessionPayload.fields,
-  },
-) {}
-
-/**
- * Response for ``serialize``.
- */
-export const SerializeResponse = Schema.Struct({
-  source: Schema.String,
-}).annotations({ identifier: "SerializeResponse" });
-export type SerializeResponse = typeof SerializeResponse.Type;
-
-export const SerializePayload = Schema.Struct({
-  notebook: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+export const ExecuteScratchpadPayload = Schema.Struct({
+  notebookUri: Schema.String,
+  inner: ExecuteScratchRequest,
+  executable: Schema.String,
 });
-
-export class Serialize extends Schema.TaggedRequest<Serialize>()("serialize", {
-  failure: Schema.Never,
-  success: SerializeResponse,
-  payload: SerializePayload.fields,
-}) {}
-
-export const DeserializePayload = Schema.Struct({
-  source: Schema.String,
-});
-
-export class Deserialize extends Schema.TaggedRequest<Deserialize>()(
-  "deserialize",
-  {
-    failure: Schema.Never,
-    success: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-    payload: DeserializePayload.fields,
-  },
-) {}
 
 export const PackageDescription = Schema.Struct({
   name: Schema.String,
@@ -513,15 +489,6 @@ export const GetPackageListPayload = Schema.Struct({
   inner: ListPackagesRequest,
   source: PackageSource,
 });
-
-export class GetPackageList extends Schema.TaggedRequest<GetPackageList>()(
-  "get-package-list",
-  {
-    failure: Schema.Never,
-    success: ListPackagesResponse,
-    payload: GetPackageListPayload.fields,
-  },
-) {}
 
 export const DependencyTag = Schema.Struct({
   kind: Schema.String,
@@ -563,14 +530,25 @@ export const GetDependencyTreePayload = Schema.Struct({
   source: PackageSource,
 });
 
-export class GetDependencyTree extends Schema.TaggedRequest<GetDependencyTree>()(
-  "get-dependency-tree",
-  {
-    failure: Schema.Never,
-    success: DependencyTreeResponse,
-    payload: GetDependencyTreePayload.fields,
-  },
-) {}
+/**
+ * Response for ``serialize``.
+ */
+export const SerializeResponse = Schema.Struct({
+  source: Schema.String,
+}).annotations({ identifier: "SerializeResponse" });
+export type SerializeResponse = typeof SerializeResponse.Type;
+
+export const SerializePayload = Schema.Struct({
+  notebook: NotebookV1,
+  appConfig: Schema.optional(_AppConfig),
+  header: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
+});
+
+export const DeserializePayload = Schema.Struct({
+  source: Schema.String,
+});
 
 /**
  * Configuration options for Anthropic.
@@ -1182,26 +1160,11 @@ export const GetConfigurationPayload = Schema.Struct({
   inner: GetConfigurationRequest,
 });
 
-export class GetConfiguration extends Schema.TaggedRequest<GetConfiguration>()(
-  "get-configuration",
-  {
-    failure: Schema.Never,
-    success: GetConfigurationResponse,
-    payload: GetConfigurationPayload.fields,
-  },
-) {}
-
 /**
  * Response for ``update-configuration``.
  */
 export const UpdateConfigurationResponse = Schema.Struct({
-  success: Schema.Boolean,
-  config: Schema.optionalWith(Schema.NullOr(MarimoConfig), {
-    default: () => null,
-  }),
-  error: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
+  config: MarimoConfig,
 }).annotations({ identifier: "UpdateConfigurationResponse" });
 export type UpdateConfigurationResponse =
   typeof UpdateConfigurationResponse.Type;
@@ -1210,15 +1173,6 @@ export const UpdateConfigurationPayload = Schema.Struct({
   notebookUri: Schema.String,
   inner: UpdateConfigurationRequest,
 });
-
-export class UpdateConfiguration extends Schema.TaggedRequest<UpdateConfiguration>()(
-  "update-configuration",
-  {
-    failure: Schema.Never,
-    success: UpdateConfigurationResponse,
-    payload: UpdateConfigurationPayload.fields,
-  },
-) {}
 
 /**
  * Response for ``set-display-theme``.
@@ -1229,17 +1183,8 @@ export const SetDisplayThemeResponse = Schema.Struct({
 export type SetDisplayThemeResponse = typeof SetDisplayThemeResponse.Type;
 
 export const SetDisplayThemePayload = Schema.Struct({
-  theme: Schema.String,
+  theme: Schema.Literal("dark", "light"),
 });
-
-export class SetDisplayTheme extends Schema.TaggedRequest<SetDisplayTheme>()(
-  "set-display-theme",
-  {
-    failure: Schema.Never,
-    success: SetDisplayThemeResponse,
-    payload: SetDisplayThemePayload.fields,
-  },
-) {}
 
 export const ExportAsHTMLRequest = Schema.Struct({
   download: Schema.Boolean,
@@ -1256,76 +1201,92 @@ export const ExportAsHtmlPayload = Schema.Struct({
   inner: ExportAsHTMLRequest,
 });
 
-export class ExportAsHtml extends Schema.TaggedRequest<ExportAsHtml>()(
-  "export-as-html",
-  {
-    failure: Schema.Never,
-    success: Schema.String,
-    payload: ExportAsHtmlPayload.fields,
-  },
-) {}
-
 export const ExportAsIpynbPayload = Schema.Struct({
   notebookUri: Schema.String,
   inner: ExportAsIpynbRequest,
 });
 
-export class ExportAsIpynb extends Schema.TaggedRequest<ExportAsIpynb>()(
-  "export-as-ipynb",
-  {
-    failure: Schema.Never,
-    success: Schema.String,
-    payload: ExportAsIpynbPayload.fields,
-  },
-) {}
-
-export const ExecuteScratchpadPayload = Schema.Struct({
-  notebookUri: Schema.String,
-  inner: ExecuteScratchRequest,
-  executable: Schema.String,
-});
-
-export class ExecuteScratchpad extends Schema.TaggedRequest<ExecuteScratchpad>()(
-  "execute-scratchpad",
-  {
-    failure: Schema.Never,
-    success: Schema.Union(Schema.Null, Schema.Undefined),
-    payload: ExecuteScratchpadPayload.fields,
-  },
-) {}
-
 /**
- * Every `marimo.api` request; `_tag` is the wire method name.
+ * Every command accepted by the `marimo.api` transport.
  *
  * Generated from the `API_METHODS` registry in `src/marimo_lsp/api.py`,
  * which is also what the server dispatches and validates against.
  */
-export const ApiRequest = Schema.Union(
-  ExecuteCells,
-  SendStdin,
-  Interrupt,
-  DeleteCell,
-  UpdateUiElement,
-  SetModelValue,
-  InvokeFunction,
-  CloseSession,
-  Serialize,
-  Deserialize,
-  GetPackageList,
-  GetDependencyTree,
-  GetConfiguration,
-  UpdateConfiguration,
-  SetDisplayTheme,
-  ExportAsHtml,
-  ExportAsIpynb,
-  ExecuteScratchpad,
-);
-export type ApiRequest = typeof ApiRequest.Type;
+export type MarimoApiCall =
+  | {
+      readonly method: "execute-cells";
+      readonly params: typeof ExecuteCellsPayload.Encoded;
+    }
+  | {
+      readonly method: "update-ui-element";
+      readonly params: typeof UpdateUiElementPayload.Encoded;
+    }
+  | {
+      readonly method: "set-model-value";
+      readonly params: typeof SetModelValuePayload.Encoded;
+    }
+  | {
+      readonly method: "invoke-function";
+      readonly params: typeof InvokeFunctionPayload.Encoded;
+    }
+  | {
+      readonly method: "interrupt";
+      readonly params: typeof InterruptPayload.Encoded;
+    }
+  | {
+      readonly method: "delete-cell";
+      readonly params: typeof DeleteCellPayload.Encoded;
+    }
+  | {
+      readonly method: "send-stdin";
+      readonly params: typeof SendStdinPayload.Encoded;
+    }
+  | {
+      readonly method: "close-session";
+      readonly params: typeof CloseSessionPayload.Encoded;
+    }
+  | {
+      readonly method: "execute-scratchpad";
+      readonly params: typeof ExecuteScratchpadPayload.Encoded;
+    }
+  | {
+      readonly method: "get-package-list";
+      readonly params: typeof GetPackageListPayload.Encoded;
+    }
+  | {
+      readonly method: "get-dependency-tree";
+      readonly params: typeof GetDependencyTreePayload.Encoded;
+    }
+  | {
+      readonly method: "serialize";
+      readonly params: typeof SerializePayload.Encoded;
+    }
+  | {
+      readonly method: "deserialize";
+      readonly params: typeof DeserializePayload.Encoded;
+    }
+  | {
+      readonly method: "get-configuration";
+      readonly params: typeof GetConfigurationPayload.Encoded;
+    }
+  | {
+      readonly method: "update-configuration";
+      readonly params: typeof UpdateConfigurationPayload.Encoded;
+    }
+  | {
+      readonly method: "set-display-theme";
+      readonly params: typeof SetDisplayThemePayload.Encoded;
+    }
+  | {
+      readonly method: "export-as-html";
+      readonly params: typeof ExportAsHtmlPayload.Encoded;
+    }
+  | {
+      readonly method: "export-as-ipynb";
+      readonly params: typeof ExportAsIpynbPayload.Encoded;
+    };
 
-type Execute<E, R> = (call: {
-  readonly method: string;
-  readonly params: unknown;
-}) => Effect.Effect<unknown, E, R>;
+type Execute<E, R> = (call: MarimoApiCall) => Effect.Effect<unknown, E, R>;
 
 /**
  * Validate the outgoing params against the payload schema (the wire/Encoded
@@ -1334,14 +1295,13 @@ type Execute<E, R> = (call: {
  */
 const dispatch = <PA, PI, PR, A, I, R2, E, R>(
   execute: Execute<E, R>,
-  method: string,
+  call: MarimoApiCall & { readonly params: PI },
   payload: Schema.Schema<PA, PI, PR>,
   success: Schema.Schema<A, I, R2>,
-  params: PI,
 ): Effect.Effect<A, E | ParseResult.ParseError, R | PR | R2> =>
   Effect.zipRight(
-    Schema.decode(payload)(params),
-    Effect.flatMap(execute({ method, params }), Schema.decodeUnknown(success)),
+    Schema.decode(payload)(call.params),
+    Effect.flatMap(execute(call), Schema.decodeUnknown(success)),
   );
 
 /**
@@ -1355,139 +1315,127 @@ export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({
   executeCells: (params: typeof ExecuteCellsPayload.Encoded) =>
     dispatch(
       execute,
-      "execute-cells",
+      { method: "execute-cells", params },
       ExecuteCellsPayload,
-      Schema.Union(Schema.Null, Schema.Undefined),
-      params,
-    ),
-  sendStdin: (params: typeof SendStdinPayload.Encoded) =>
-    dispatch(
-      execute,
-      "send-stdin",
-      SendStdinPayload,
-      Schema.Union(Schema.Null, Schema.Undefined),
-      params,
-    ),
-  interrupt: (params: typeof InterruptPayload.Encoded) =>
-    dispatch(
-      execute,
-      "interrupt",
-      InterruptPayload,
-      Schema.Union(Schema.Null, Schema.Undefined),
-      params,
-    ),
-  deleteCell: (params: typeof DeleteCellPayload.Encoded) =>
-    dispatch(
-      execute,
-      "delete-cell",
-      DeleteCellPayload,
-      Schema.Union(Schema.Null, Schema.Undefined),
-      params,
+      Schema.Null,
     ),
   updateUiElement: (params: typeof UpdateUiElementPayload.Encoded) =>
     dispatch(
       execute,
-      "update-ui-element",
+      { method: "update-ui-element", params },
       UpdateUiElementPayload,
-      Schema.Union(Schema.Null, Schema.Undefined),
-      params,
+      Schema.Null,
     ),
   setModelValue: (params: typeof SetModelValuePayload.Encoded) =>
     dispatch(
       execute,
-      "set-model-value",
+      { method: "set-model-value", params },
       SetModelValuePayload,
-      Schema.Union(Schema.Null, Schema.Undefined),
-      params,
+      Schema.Null,
     ),
   invokeFunction: (params: typeof InvokeFunctionPayload.Encoded) =>
     dispatch(
       execute,
-      "invoke-function",
+      { method: "invoke-function", params },
       InvokeFunctionPayload,
-      Schema.Union(Schema.Null, Schema.Undefined),
-      params,
+      Schema.Null,
+    ),
+  interrupt: (params: typeof InterruptPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "interrupt", params },
+      InterruptPayload,
+      Schema.Null,
+    ),
+  deleteCell: (params: typeof DeleteCellPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "delete-cell", params },
+      DeleteCellPayload,
+      Schema.Null,
+    ),
+  sendStdin: (params: typeof SendStdinPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "send-stdin", params },
+      SendStdinPayload,
+      Schema.Null,
     ),
   closeSession: (params: typeof CloseSessionPayload.Encoded) =>
     dispatch(
       execute,
-      "close-session",
+      { method: "close-session", params },
       CloseSessionPayload,
-      Schema.Union(Schema.Null, Schema.Undefined),
-      params,
-    ),
-  serialize: (params: typeof SerializePayload.Encoded) =>
-    dispatch(execute, "serialize", SerializePayload, SerializeResponse, params),
-  deserialize: (params: typeof DeserializePayload.Encoded) =>
-    dispatch(
-      execute,
-      "deserialize",
-      DeserializePayload,
-      Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-      params,
-    ),
-  getPackageList: (params: typeof GetPackageListPayload.Encoded) =>
-    dispatch(
-      execute,
-      "get-package-list",
-      GetPackageListPayload,
-      ListPackagesResponse,
-      params,
-    ),
-  getDependencyTree: (params: typeof GetDependencyTreePayload.Encoded) =>
-    dispatch(
-      execute,
-      "get-dependency-tree",
-      GetDependencyTreePayload,
-      DependencyTreeResponse,
-      params,
-    ),
-  getConfiguration: (params: typeof GetConfigurationPayload.Encoded) =>
-    dispatch(
-      execute,
-      "get-configuration",
-      GetConfigurationPayload,
-      GetConfigurationResponse,
-      params,
-    ),
-  updateConfiguration: (params: typeof UpdateConfigurationPayload.Encoded) =>
-    dispatch(
-      execute,
-      "update-configuration",
-      UpdateConfigurationPayload,
-      UpdateConfigurationResponse,
-      params,
-    ),
-  setDisplayTheme: (params: typeof SetDisplayThemePayload.Encoded) =>
-    dispatch(
-      execute,
-      "set-display-theme",
-      SetDisplayThemePayload,
-      SetDisplayThemeResponse,
-      params,
-    ),
-  exportAsHtml: (params: typeof ExportAsHtmlPayload.Encoded) =>
-    dispatch(
-      execute,
-      "export-as-html",
-      ExportAsHtmlPayload,
-      Schema.String,
-      params,
-    ),
-  exportAsIpynb: (params: typeof ExportAsIpynbPayload.Encoded) =>
-    dispatch(
-      execute,
-      "export-as-ipynb",
-      ExportAsIpynbPayload,
-      Schema.String,
-      params,
+      Schema.Null,
     ),
   executeScratchpad: (params: typeof ExecuteScratchpadPayload.Encoded) =>
     dispatch(
       execute,
-      "execute-scratchpad",
+      { method: "execute-scratchpad", params },
       ExecuteScratchpadPayload,
-      Schema.Union(Schema.Null, Schema.Undefined),
-      params,
+      Schema.Null,
+    ),
+  getPackageList: (params: typeof GetPackageListPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "get-package-list", params },
+      GetPackageListPayload,
+      ListPackagesResponse,
+    ),
+  getDependencyTree: (params: typeof GetDependencyTreePayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "get-dependency-tree", params },
+      GetDependencyTreePayload,
+      DependencyTreeResponse,
+    ),
+  serialize: (params: typeof SerializePayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "serialize", params },
+      SerializePayload,
+      SerializeResponse,
+    ),
+  deserialize: (params: typeof DeserializePayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "deserialize", params },
+      DeserializePayload,
+      NotebookDocument,
+    ),
+  getConfiguration: (params: typeof GetConfigurationPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "get-configuration", params },
+      GetConfigurationPayload,
+      GetConfigurationResponse,
+    ),
+  updateConfiguration: (params: typeof UpdateConfigurationPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "update-configuration", params },
+      UpdateConfigurationPayload,
+      UpdateConfigurationResponse,
+    ),
+  setDisplayTheme: (params: typeof SetDisplayThemePayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "set-display-theme", params },
+      SetDisplayThemePayload,
+      SetDisplayThemeResponse,
+    ),
+  exportAsHtml: (params: typeof ExportAsHtmlPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "export-as-html", params },
+      ExportAsHtmlPayload,
+      Schema.String,
+    ),
+  exportAsIpynb: (params: typeof ExportAsIpynbPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "export-as-ipynb", params },
+      ExportAsIpynbPayload,
+      Schema.String,
     ),
 });

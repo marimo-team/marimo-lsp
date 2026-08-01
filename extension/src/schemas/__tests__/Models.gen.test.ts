@@ -1,9 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Either, Schema } from "effect";
+import { Effect, Either, Schema } from "effect";
 
 import {
   CellMetadata,
   ExecuteScratchRequest,
+  makeApiClient,
+  NotebookDocument,
   PackageCommand,
   PackageSource,
   VenvSource,
@@ -84,4 +86,37 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
       }
     `);
   });
+
+  it("models the notebook wire document without an opaque record", () => {
+    const decoded = Schema.decodeUnknownSync(NotebookDocument)({
+      notebook: {
+        version: "1",
+        metadata: { marimo_version: "0.23.15" },
+        cells: [
+          {
+            id: "cell-id",
+            code: "x = 1",
+            code_hash: null,
+            name: "cell",
+            config: { hide_code: true },
+          },
+        ],
+      },
+      appConfig: { width: "full" },
+      header: null,
+    });
+
+    expect(decoded.notebook.cells[0]?.config.hide_code).toBe(true);
+    expect(decoded.appConfig?.width).toBe("full");
+  });
+
+  it.effect("requires JSON null for fire-and-forget responses", () =>
+    Effect.gen(function* () {
+      const api = makeApiClient(() => Effect.succeed(undefined));
+      const result = yield* Effect.either(
+        api.interrupt({ notebookUri: "file:///nb.py", inner: {} }),
+      );
+      expect(Either.isLeft(result)).toBe(true);
+    }),
+  );
 });

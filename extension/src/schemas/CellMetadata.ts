@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 
 import { CellState } from "./CellState.ts";
+import { NotebookCellConfig } from "./Models.gen.ts";
 
 /**
  * Cell language
@@ -35,7 +36,6 @@ export const LanguageMetadata = Schema.partial(
 );
 export type LanguageMetadata = typeof LanguageMetadata.Type;
 
-// TODO: passthrough unknown fields
 /**
  * VS Code notebook cell metadata (runtime state)
  */
@@ -48,10 +48,7 @@ export const CellMetadata = Schema.partial(
     name: Schema.String,
 
     // Cell configuration options
-    options: Schema.Record({
-      key: Schema.String,
-      value: Schema.Unknown,
-    }),
+    options: NotebookCellConfig,
 
     // Language-specific metadata (e.g., SQL engine, output flag)
     languageMetadata: LanguageMetadata,

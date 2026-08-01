@@ -62,7 +62,7 @@ class _Inner(msgspec.Struct):
 CONCRETE: list[tuple[str, type | object]] = [
     ("PackageSource", models.PackageSource),
     ("CellMetadata", models.CellMetadata),
-    ("SerializeRequest", models.SerializeRequest),
+    ("NotebookDocument", models.NotebookDocument),
     ("DeserializeRequest", models.DeserializeRequest),
     ("ConvertRequest", models.ConvertRequest),
     ("InterruptRequest", models.InterruptRequest),
@@ -151,6 +151,8 @@ class Emitter:
         """Render a msgspec IR node as an Effect Schema expression."""
         match t:
             case mi.AnyType() | mi.RawType():
+                return "Schema.Unknown"
+            case mi.CustomType(cls=cls) if cls is object:
                 return "Schema.Unknown"
             case mi.NoneType():
                 return "Schema.Null"
@@ -355,7 +357,9 @@ class Emitter:
         if field.default is not msgspec.NODEFAULT:
             return _ts_literal(field.default)
         if field.default_factory is not msgspec.NODEFAULT:
-            if field.default_factory is dict:
+            if field.default_factory is dict or isinstance(
+                field.type, mi.TypedDictType
+            ):
                 return "({})"
             if field.default_factory is list:
                 return "[]"
@@ -389,9 +393,9 @@ class Emitter:
         )
 
     def emit_api_method(self, method: ApiMethod) -> tuple[str, str]:
-        """Emit a `Schema.TaggedRequest` class for one registry entry.
+        """Emit the payload schema for one registry entry.
 
-        Returns the emitted class name and its success schema expression (the
+        Returns the method's PascalCase name and success schema expression (the
         client factory references the success schema statically per method).
         """
         class_name = _pascal(method.name)
@@ -400,34 +404,15 @@ class Emitter:
             msg = f"api method {method.name!r} request must be struct-like"
             raise TypeError(msg)
         payload = self.fields_src(info, indent="  ")
-        # Fire-and-forget methods respond `null` over JSON-RPC, but in-memory
-        # test transports naturally produce `undefined`; accept both while
-        # still rejecting any substantive payload (contract drift).
-        success = (
-            "Schema.Union(Schema.Null, Schema.Undefined)"
-            if method.response is None
-            else self.type_expr(mi.type_info(method.response))
-        )
+        success = self.type_expr(mi.type_info(method.response))
         self.definitions.append(
             f"export const {class_name}Payload = Schema.Struct({{\n{payload}}});\n"
-            "\n"
-            f"export class {class_name} extends Schema.TaggedRequest<{class_name}>()(\n"
-            f"  {_ts_string(method.name)},\n"
-            "  {\n"
-            "    failure: Schema.Never,\n"
-            f"    success: {success},\n"
-            f"    payload: {class_name}Payload.fields,\n"
-            "  },\n"
-            ") {}\n"
         )
         return class_name, success
 
 
 _DISPATCH_HELPER = """\
-type Execute<E, R> = (call: {
-  readonly method: string;
-  readonly params: unknown;
-}) => Effect.Effect<unknown, E, R>;
+type Execute<E, R> = (call: MarimoApiCall) => Effect.Effect<unknown, E, R>;
 
 /**
  * Validate the outgoing params against the payload schema (the wire/Encoded
@@ -436,15 +421,14 @@ type Execute<E, R> = (call: {
  */
 const dispatch = <PA, PI, PR, A, I, R2, E, R>(
   execute: Execute<E, R>,
-  method: string,
+  call: MarimoApiCall & { readonly params: PI },
   payload: Schema.Schema<PA, PI, PR>,
   success: Schema.Schema<A, I, R2>,
-  params: PI,
 ): Effect.Effect<A, E | ParseResult.ParseError, R | PR | R2> =>
   Effect.zipRight(
-    Schema.decode(payload)(params),
+    Schema.decode(payload)(call.params),
     Effect.flatMap(
-      execute({ method, params }),
+      execute(call),
       Schema.decodeUnknown(success),
     ),
   );
@@ -458,16 +442,19 @@ def generate() -> str:
     for cls, parameterized in GENERIC:
         emitter.emit_generic(cls, parameterized)
     api = [emitter.emit_api_method(method) for method in API_METHODS]
-    members = ",\n  ".join(class_name for class_name, _ in api)
+    members = "\n".join(
+        f"  | {{ readonly method: {_ts_string(method.name)}; "
+        f"readonly params: typeof {class_name}Payload.Encoded }}"
+        for (class_name, _), method in zip(api, API_METHODS, strict=True)
+    )
     emitter.definitions.append(
         "/**\n"
-        " * Every `marimo.api` request; `_tag` is the wire method name.\n"
+        " * Every command accepted by the `marimo.api` transport.\n"
         " *\n"
         " * Generated from the `API_METHODS` registry in `src/marimo_lsp/api.py`,\n"
         " * which is also what the server dispatches and validates against.\n"
         " */\n"
-        f"export const ApiRequest = Schema.Union(\n  {members},\n);\n"
-        "export type ApiRequest = typeof ApiRequest.Type;\n"
+        f"export type MarimoApiCall =\n{members};\n"
     )
     emitter.definitions.append(_DISPATCH_HELPER)
     methods = "\n".join(
@@ -476,10 +463,9 @@ def generate() -> str:
         f"  ) =>\n"
         f"    dispatch(\n"
         f"      execute,\n"
-        f"      {_ts_string(method.name)},\n"
+        f"      {{ method: {_ts_string(method.name)}, params }},\n"
         f"      {class_name}Payload,\n"
         f"      {success},\n"
-        f"      params,\n"
         f"    ),"
         for (class_name, success), method in zip(api, API_METHODS, strict=True)
     )
