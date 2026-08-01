@@ -131,7 +131,7 @@ describe("computeDesiredCells", () => {
       // NotebookCellKind.Markup
       kind: 1,
     });
-    expect(desired[0].languageMetadata?.markdown).toBeDefined();
+    expect(desired[0].sourceProjections?.markdown).toBeDefined();
   });
 
   it("classifies a created mo.sql cell as a sql code cell", () => {
@@ -146,7 +146,7 @@ describe("computeDesiredCells", () => {
       // NotebookCellKind.Code
       kind: 2,
     });
-    expect(desired[0].languageMetadata?.sql).toMatchObject({
+    expect(desired[0].sourceProjections?.sql).toMatchObject({
       dataframeName: "_df",
     });
   });
@@ -154,7 +154,28 @@ describe("computeDesiredCells", () => {
   it("keeps f-string mo.md as a Python cell (can't round-trip interpolation)", () => {
     const desired = compute([], [createCell("m", 'mo.md(f"""# {title}""")')]);
     expect(desired[0]).toMatchObject({ languageId: "mo-python", kind: 2 });
-    expect(desired[0].languageMetadata).toBeUndefined();
+    expect(desired[0].sourceProjections).toBeUndefined();
+  });
+
+  it("retains inactive projections when a cell changes language", () => {
+    const sql = {
+      dataframeName: "results",
+      quotePrefix: "f" as const,
+      commentLines: ["-- keep me"],
+      showOutput: false,
+      engine: "warehouse",
+    };
+    const current = [
+      pc("a", "SELECT 1", {
+        languageId: "sql",
+        sourceProjections: { markdown: null, sql },
+      }),
+    ];
+
+    const markdown = compute(current, [setCode("a", 'mo.md(r"""# Hi""")')]);
+
+    expect(markdown[0].sourceProjections?.markdown).toBeDefined();
+    expect(markdown[0].sourceProjections?.sql).toEqual(sql);
   });
 
   it("promotes a python cell to markdown when set-code makes it mo.md", () => {
@@ -166,7 +187,7 @@ describe("computeDesiredCells", () => {
       languageId: "markdown",
       kind: 1,
     });
-    expect(desired[0].languageMetadata?.markdown).toBeDefined();
+    expect(desired[0].sourceProjections?.markdown).toBeDefined();
   });
 
   it("demotes a markdown cell back to python when set-code makes it python", () => {
@@ -174,7 +195,7 @@ describe("computeDesiredCells", () => {
       pc("a", "# Hi", {
         languageId: "markdown",
         kind: 1,
-        languageMetadata: { markdown: { quotePrefix: "r" } },
+        sourceProjections: { markdown: { quotePrefix: "r" }, sql: null },
       }),
     ];
     const desired = compute(current, [setCode("a", "x = 1")]);
@@ -184,7 +205,9 @@ describe("computeDesiredCells", () => {
       languageId: "mo-python",
       kind: 2,
     });
-    expect(desired[0].languageMetadata).toBeUndefined();
+    expect(desired[0].sourceProjections?.markdown).toEqual({
+      quotePrefix: "r",
+    });
   });
 });
 

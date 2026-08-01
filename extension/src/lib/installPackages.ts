@@ -125,15 +125,16 @@ export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
     );
     assert(doc, "no notebook");
 
-    // apply new header as edit in our workspace...
-    const edit = new code.WorkspaceEdit();
-    edit.set(doc.uri, [
-      code.NotebookEdit.updateNotebookMetadata({
-        ...doc.metadata,
-        header: newHeader,
-      }),
-    ]);
-    yield* code.workspace.applyEdit(edit);
+    const nextMetadata = notebook.buildMetadataUpdate({
+      header: newHeader,
+    });
+    if (nextMetadata !== doc.metadata) {
+      const edit = new code.WorkspaceEdit();
+      edit.set(doc.uri, [
+        code.NotebookEdit.updateNotebookMetadata(nextMetadata),
+      ]);
+      yield* code.workspace.applyEdit(edit);
+    }
   }
 
   {

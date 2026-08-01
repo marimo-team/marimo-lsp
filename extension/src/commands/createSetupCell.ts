@@ -2,8 +2,10 @@ import { Effect, Option } from "effect";
 
 import { SETUP_CELL_NAME } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { encodeCellMetadata } from "../schemas/CellMetadata.ts";
-import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import {
+  MarimoNotebookCell,
+  MarimoNotebookDocument,
+} from "../schemas/MarimoNotebookDocument.ts";
 
 export const createSetupCell = Effect.fn(function* () {
   const code = yield* VsCode;
@@ -47,7 +49,9 @@ export const createSetupCell = Effect.fn(function* () {
       "# Initialization code that runs before all other cells",
       "python",
     );
-    cell.metadata = encodeCellMetadata({ name: SETUP_CELL_NAME });
+    cell.metadata = MarimoNotebookCell.createMetadata({
+      marimo: { name: SETUP_CELL_NAME },
+    });
     edit.set(notebook.value.uri, [code.NotebookEdit.insertCells(0, [cell])]);
     yield* code.workspace.applyEdit(edit);
   }

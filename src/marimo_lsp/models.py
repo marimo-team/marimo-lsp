@@ -16,7 +16,11 @@ from marimo._ast.app_config import _AppConfig
 from marimo._config.config import MarimoConfig  # noqa: TC002
 from marimo._convert.common.format import DEFAULT_MARKDOWN_PREFIX
 from marimo._runtime.packages.package_manager import PackageDescription  # noqa: TC002
-from marimo._schemas.notebook import NotebookCellConfig, NotebookV1
+from marimo._schemas.notebook import (
+    NotebookCellConfig,
+    NotebookMetadata,
+    NotebookV1,
+)
 from marimo._server.models.packages import DependencyTreeNode  # noqa: TC002
 
 # NOTE: the generic structs below use the legacy TypeVar spelling (noqa: UP046)
@@ -25,7 +29,7 @@ from marimo._server.models.packages import DependencyTreeNode  # noqa: TC002
 T = typing.TypeVar("T", bound=msgspec.Struct)
 
 # Sentinel the frontend `@marimo-team/smart-cells` SQL parser writes into
-# `languageMetadata.sql.engine` for the implicit default engine. We must not
+# `sourceProjections.sql.engine` for the implicit default engine. We must not
 # emit `engine=__marimo_duckdb` when round-tripping these cells.
 DEFAULT_SQL_ENGINE = "__marimo_duckdb"
 
@@ -83,44 +87,51 @@ class PackageCommand(NotebookCommand[T]):
     """How to resolve the notebook's python environment."""
 
 
-# TODO: hand-mirrored from `extension/src/schemas/CellMetadata.ts`; nothing keeps
-# them in sync. Drive both from one source of truth (codegen / shared schema).
-class MarkdownCellMetadata(msgspec.Struct, rename="camel"):
-    """Smart-cell metadata for a markdown cell (mirrors the frontend shape)."""
+type SmartCellQuotePrefix = typing.Literal["", "f", "r", "fr", "rf"]
 
-    quote_prefix: str = DEFAULT_MARKDOWN_PREFIX
+
+class MarkdownCellProjection(
+    msgspec.Struct, rename="camel", forbid_unknown_fields=True
+):
+    """Projection state for displaying a Python markdown cell."""
+
+    quote_prefix: SmartCellQuotePrefix = DEFAULT_MARKDOWN_PREFIX
     """The string-literal prefix used to wrap the markdown (e.g. ``r``)."""
 
 
-class SqlCellMetadata(msgspec.Struct, rename="camel"):
-    """Smart-cell metadata for a SQL cell (mirrors the frontend shape)."""
+class SqlCellProjection(msgspec.Struct, rename="camel", forbid_unknown_fields=True):
+    """Projection state for displaying a Python SQL cell."""
 
     dataframe_name: str = "_df"
     """The variable the query result is bound to (``_df = mo.sql(...)``)."""
 
+    quote_prefix: SmartCellQuotePrefix = ""
+    """The string-literal prefix used by the smart-cell projection."""
+
+    comment_lines: list[str] = msgspec.field(default_factory=list)
+    """Comments retained by the smart-cell projection when wrapping SQL."""
+
     show_output: bool = True
     """Whether the query result is displayed (``output=False`` when ``False``)."""
 
-    engine: str | None = None
-    """The SQL engine variable, or ``None`` for the implicit default."""
+    engine: str = DEFAULT_SQL_ENGINE
+    """The SQL engine variable, or the implicit-default sentinel."""
 
 
-class CellLanguageMetadata(msgspec.Struct, rename="camel"):
-    """Language-specific smart-cell metadata needed to re-wrap display source.
+class CellSourceProjections(msgspec.Struct, rename="camel", forbid_unknown_fields=True):
+    """Retained source projections for reversible cell-language changes.
 
-    Only one of these is set, matching the cell's language. Absent when the
-    client didn't sync it, in which case the per-language defaults apply.
+    Both projections may coexist. The cell's current language selects which
+    projection is active; retaining the other restores its settings if the
+    user switches the cell back later.
     """
 
-    markdown: MarkdownCellMetadata | None = None
-    sql: SqlCellMetadata | None = None
+    markdown: MarkdownCellProjection | None = None
+    sql: SqlCellProjection | None = None
 
 
-class CellMetadata(msgspec.Struct, rename="camel"):
-    """marimo-specific fields synced on a VS Code notebook cell's metadata."""
-
-    stable_id: str | None = None
-    """Ephemeral per-open cell identifier; the marimo `CellId_t`."""
+class MarimoCellMetadata(msgspec.Struct, rename="camel", forbid_unknown_fields=True):
+    """Persisted marimo cell metadata used to serialize Python source."""
 
     name: str = "_"
     """The marimo cell name."""
@@ -136,8 +147,80 @@ class CellMetadata(msgspec.Struct, rename="camel"):
     (``CellConfig``, ``with_data(configs=...)``).
     """
 
-    language_metadata: CellLanguageMetadata | None = None
-    """Smart-cell metadata for markdown/SQL cells; absent for Python cells."""
+    source_projections: CellSourceProjections = msgspec.field(
+        default_factory=CellSourceProjections
+    )
+    """Projection history retained across markdown, SQL, and Python views."""
+
+
+type CellRuntimeState = typing.Literal["idle", "queued", "running", "stale"]
+
+
+class MarimoCellRuntimeMetadata(
+    msgspec.Struct, rename="camel", forbid_unknown_fields=True
+):
+    """Transient per-open cell metadata shared with the LSP server."""
+
+    stable_id: str | None = None
+    """Ephemeral per-open cell identifier; the marimo `CellId_t`."""
+
+    state: CellRuntimeState | None = None
+    """Transient execution state projected by the TypeScript client."""
+
+
+class CellMetadata(msgspec.Struct, rename="camel", forbid_unknown_fields=True):
+    """Namespaced metadata synchronized on an LSP notebook cell."""
+
+    __preserve_unknown_fields__: typing.ClassVar[bool] = True
+
+    marimo: MarimoCellMetadata = msgspec.field(default_factory=MarimoCellMetadata)
+    marimo_runtime: MarimoCellRuntimeMetadata = msgspec.field(
+        default_factory=MarimoCellRuntimeMetadata
+    )
+
+
+class LegacyCellMetadata(msgspec.Struct, rename="camel"):
+    """Pre-namespace cell metadata accepted only at the LSP input boundary."""
+
+    stable_id: str | None = None
+    state: CellRuntimeState | None = None
+    name: str = "_"
+    config: NotebookCellConfig = msgspec.field(
+        default_factory=NotebookCellConfig,
+        name="options",
+    )
+    source_projections: CellSourceProjections | None = msgspec.field(
+        default=None,
+        name="languageMetadata",
+    )
+
+
+class MarimoNotebookMetadata(
+    msgspec.Struct, rename="camel", forbid_unknown_fields=True
+):
+    """Persisted marimo-owned metadata on an LSP notebook document."""
+
+    app_config: _AppConfig = msgspec.field(default_factory=_AppConfig)
+    header: str | None = None
+    notebook_metadata: NotebookMetadata = msgspec.field(default_factory=dict)
+
+
+class LegacyNotebookDocumentMetadata(msgspec.Struct, rename="camel"):
+    """Pre-namespace notebook metadata accepted only at the LSP input boundary."""
+
+    app_config: _AppConfig = msgspec.field(default_factory=_AppConfig)
+    header: str | None = None
+    notebook_metadata: NotebookMetadata = msgspec.field(default_factory=dict)
+
+
+class NotebookDocumentMetadata(
+    msgspec.Struct, rename="camel", forbid_unknown_fields=True
+):
+    """Canonical metadata envelope on an LSP notebook document."""
+
+    __preserve_unknown_fields__: typing.ClassVar[bool] = True
+
+    marimo: MarimoNotebookMetadata
 
 
 class NotebookDocument(msgspec.Struct, rename="camel"):

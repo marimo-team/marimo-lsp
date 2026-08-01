@@ -1,6 +1,8 @@
 import { Option } from "effect";
 import type * as vscode from "vscode";
 
+import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
+
 /**
  * Enrich freshly-deserialized notebook data with outputs and stable IDs
  * sourced from the live `NotebookDocument` that `incoming` corresponds to.
@@ -30,12 +32,28 @@ export function enrichNotebookFromLive(
 
     if (Option.isSome(liveIdx)) {
       const liveCell = live.cells[liveIdx.value];
-      incomingCell.metadata = {
-        ...incomingCell.metadata,
-        stale: liveCell.metadata?.stale ?? incomingCell.metadata?.stale,
-        stableId:
-          liveCell.metadata?.stableId ?? incomingCell.metadata?.stableId,
-      };
+      const liveMetadata = MarimoNotebookCell.decodeMetadata(liveCell.metadata);
+      const incomingMetadata = MarimoNotebookCell.decodeMetadata(
+        incomingCell.metadata,
+      );
+      incomingCell.metadata = MarimoNotebookCell.retainSourceProjections(
+        incomingCell.metadata,
+        Option.getOrUndefined(liveMetadata)?.marimo.sourceProjections ?? {
+          markdown: null,
+          sql: null,
+        },
+      );
+      incomingCell.metadata = MarimoNotebookCell.materializeRuntimeMetadata(
+        incomingCell.metadata,
+        {
+          state:
+            Option.getOrUndefined(liveMetadata)?.marimoRuntime.state ??
+            Option.getOrUndefined(incomingMetadata)?.marimoRuntime.state,
+          stableId:
+            Option.getOrUndefined(liveMetadata)?.marimoRuntime.stableId ??
+            Option.getOrUndefined(incomingMetadata)?.marimoRuntime.stableId,
+        },
+      );
       incomingCell.outputs = liveCell.outputs ?? incomingCell.outputs;
     }
 

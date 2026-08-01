@@ -8,7 +8,8 @@ import {
   createTestNotebookDocument,
 } from "../../__mocks__/TestVsCode.ts";
 import { Constants } from "../../platform/Constants.ts";
-import type { CellMetadata } from "../../schemas/CellMetadata.ts";
+import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
+import type * as Api from "../../schemas/Models.gen.ts";
 import { extractExecuteCodeRequest } from "../extractExecuteCodeRequest.ts";
 
 const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
@@ -17,7 +18,7 @@ const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
 // consumes raw cells, not MarimoNotebookCell)
 function createRawCell(
   value: string,
-  metadata: Partial<CellMetadata>,
+  metadata: typeof Api.CellMetadata.Encoded,
   index: number,
 ): vscode.NotebookCell {
   return createNotebookCell(
@@ -26,7 +27,7 @@ function createRawCell(
       kind: 2, // Code
       value,
       languageId: "python",
-      metadata,
+      metadata: MarimoNotebookCell.createMetadata(metadata),
     },
     index,
   );
@@ -37,8 +38,16 @@ describe("extractExecuteCodeRequest", () => {
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants;
 
-      const cellA = createRawCell("x = 1", { stableId: "cell-a" }, 0);
-      const cellB = createRawCell("y = x + 1", { stableId: "cell-b" }, 1);
+      const cellA = createRawCell(
+        "x = 1",
+        { marimoRuntime: { stableId: "cell-a" } },
+        0,
+      );
+      const cellB = createRawCell(
+        "y = x + 1",
+        { marimoRuntime: { stableId: "cell-b" } },
+        1,
+      );
 
       const request = extractExecuteCodeRequest([cellA, cellB], LanguageId);
 
@@ -53,7 +62,11 @@ describe("extractExecuteCodeRequest", () => {
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants;
 
-      const withId = createRawCell("x = 1", { stableId: "cell-a" }, 0);
+      const withId = createRawCell(
+        "x = 1",
+        { marimoRuntime: { stableId: "cell-a" } },
+        0,
+      );
       const withoutId = createRawCell("y = 2", {}, 1);
 
       const request = extractExecuteCodeRequest(
@@ -77,10 +90,17 @@ describe("extractExecuteCodeRequest", () => {
       Effect.gen(function* () {
         const { LanguageId } = yield* Constants;
 
-        const enabled = createRawCell("x = 1", { stableId: "cell-enabled" }, 0);
+        const enabled = createRawCell(
+          "x = 1",
+          { marimoRuntime: { stableId: "cell-enabled" } },
+          0,
+        );
         const disabled = createRawCell(
           'print("RAN")',
-          { stableId: "cell-disabled", options: { disabled: true } },
+          {
+            marimo: { options: { disabled: true } },
+            marimoRuntime: { stableId: "cell-disabled" },
+          },
           1,
         );
 
@@ -106,7 +126,10 @@ describe("extractExecuteCodeRequest", () => {
 
       const disabled = createRawCell(
         'print("RAN")',
-        { stableId: "cell-disabled", options: { disabled: true } },
+        {
+          marimo: { options: { disabled: true } },
+          marimoRuntime: { stableId: "cell-disabled" },
+        },
         0,
       );
 

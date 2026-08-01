@@ -31,7 +31,10 @@ class NotebookCell(lsp.NotebookCell):
         super().__init__(
             kind=kind,
             document=document,
-            metadata=cast("lsp.LSPObject", {"stableId": document.split("#")[1]}),
+            metadata=cast(
+                "lsp.LSPObject",
+                {"marimoRuntime": {"stableId": document.split("#")[1]}},
+            ),
         )
 
 

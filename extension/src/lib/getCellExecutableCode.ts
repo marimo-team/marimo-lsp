@@ -28,7 +28,9 @@ export function getCellExecutableCode(
       cell.document.getText(),
       // Either stored on the cell, or we fallback to default ...
       meta.pipe(
-        Option.flatMap((x) => Option.fromNullable(x.languageMetadata?.sql)),
+        Option.flatMap((x) =>
+          Option.fromNullable(x.marimo.sourceProjections?.sql),
+        ),
         Option.getOrElse(() => sqlParser.defaultMetadata),
       ),
     );

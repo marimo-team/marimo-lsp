@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
+import { Option } from "effect";
 import type * as vscode from "vscode";
 
+import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import { enrichNotebookFromLive } from "../enrichNotebookFromLive.ts";
 
 // Helper to create a cell with minimal required fields
@@ -17,7 +19,11 @@ function cell(
     kind: options?.kind ?? 2, // Code cell
     languageId: options?.languageId ?? "python",
     value,
-    metadata: options?.stableId ? { stableId: options.stableId } : undefined,
+    metadata: options?.stableId
+      ? MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: options.stableId },
+        })
+      : undefined,
     outputs: options?.outputs,
   };
 }
@@ -29,13 +35,22 @@ function notebook(cells: vscode.NotebookCellData[]): vscode.NotebookData {
 
 // Helper to extract stableIds from notebook
 function getStableIds(nb: vscode.NotebookData): (string | undefined)[] {
-  return nb.cells.map((c) => c.metadata?.stableId);
+  return nb.cells.map(
+    (c) =>
+      Option.getOrUndefined(MarimoNotebookCell.decodeMetadata(c.metadata))
+        ?.marimoRuntime.stableId ?? undefined,
+  );
 }
 
 // Helper to create a compact view for snapshots: "[stableId]: code"
 function snapshotView(nb: vscode.NotebookData): string {
   return nb.cells
-    .map((c) => `[${c.metadata?.stableId ?? "?"}]: ${c.value}`)
+    .map((c) => {
+      const metadata = Option.getOrUndefined(
+        MarimoNotebookCell.decodeMetadata(c.metadata),
+      );
+      return `[${metadata?.marimoRuntime.stableId ?? "?"}]: ${c.value}`;
+    })
     .join("\n");
 }
 

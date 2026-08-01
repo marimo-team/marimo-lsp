@@ -19,15 +19,37 @@ from marimo_lsp.diagnostics import (
     _snapshot_variables,
 )
 from marimo_lsp.models import (
-    CellLanguageMetadata,
-    MarkdownCellMetadata,
-    SqlCellMetadata,
+    CellSourceProjections,
+    MarkdownCellProjection,
+    SqlCellProjection,
 )
 from marimo_lsp.utils import (
     decode_cell_metadata,
     get_stable_id,
     normalize_cell_code,
 )
+
+
+def _lsp_object(value: dict[str, object]) -> lsp.LSPObject:
+    """Bridge lsprotocol's empty marker type to its actual JSON dict value."""
+    return cast("lsp.LSPObject", value)
+
+
+def _cell_metadata(
+    *,
+    stable_id: str | None = None,
+    marimo: dict[str, object] | None = None,
+    runtime: dict[str, object] | None = None,
+) -> lsp.LSPObject:
+    value: dict[str, object] = {}
+    if marimo is not None:
+        value["marimo"] = marimo
+    runtime_value = dict(runtime or {})
+    if stable_id is not None:
+        runtime_value["stableId"] = stable_id
+    if runtime_value:
+        value["marimoRuntime"] = runtime_value
+    return _lsp_object(value)
 
 
 def _make_server(
@@ -54,7 +76,7 @@ def _make_server(
             lsp.NotebookCell(
                 kind=lsp.NotebookCellKind.Code,
                 document=cell_uri,
-                metadata=cast("lsp.LSPObject", {"stableId": stable_id}),
+                metadata=_cell_metadata(stable_id=stable_id),
             )
         )
         doc_mock = MagicMock()
@@ -176,12 +198,12 @@ class TestNotebookGraphUpdater:
         cell_with_id = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell-1",
-            metadata=cast("lsp.LSPObject", {"stableId": "cell1"}),
+            metadata=_cell_metadata(stable_id="cell1"),
         )
         cell_without_id = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell-2",
-            metadata=cast("lsp.LSPObject", {}),
+            metadata=_cell_metadata(),
         )
 
         notebook = lsp.NotebookDocument(
@@ -346,7 +368,7 @@ class TestCellMetadataHelpers:
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata=cast("lsp.LSPObject", {"stableId": "abc-123"}),
+            metadata=_cell_metadata(stable_id="abc-123"),
         )
 
         stable_id = get_stable_id(cell)
@@ -357,7 +379,7 @@ class TestCellMetadataHelpers:
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata=cast("lsp.LSPObject", {}),
+            metadata=_cell_metadata(),
         )
 
         stable_id = get_stable_id(cell)
@@ -378,75 +400,120 @@ class TestCellMetadataHelpers:
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata=cast(
-                "lsp.LSPObject",
-                {
-                    "stableId": "abc-123",
+            metadata=_cell_metadata(
+                stable_id="abc-123",
+                marimo={
                     "options": {"disabled": True},
                     "name": "my_cell",
-                    "languageMetadata": {"markdown": {"quotePrefix": "rf"}},
+                    "sourceProjections": {"markdown": {"quotePrefix": "rf"}},
                 },
             ),
         )
 
         meta = decode_cell_metadata(cell)
-        assert meta.stable_id == "abc-123"
-        assert meta.config == {"disabled": True}
-        assert meta.name == "my_cell"
-        assert meta.language_metadata is not None
-        assert meta.language_metadata.markdown is not None
-        assert meta.language_metadata.markdown.quote_prefix == "rf"
+        assert meta.marimo_runtime.stable_id == "abc-123"
+        assert meta.marimo.config == {"disabled": True}
+        assert meta.marimo.name == "my_cell"
+        assert meta.marimo.source_projections.markdown is not None
+        assert meta.marimo.source_projections.markdown.quote_prefix == "rf"
 
     def test_decode_cell_metadata_defaults(self) -> None:
         """Test decode_cell_metadata with missing fields."""
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata=cast("lsp.LSPObject", {}),
+            metadata=_cell_metadata(),
         )
 
         meta = decode_cell_metadata(cell)
-        assert meta.stable_id is None
-        assert meta.config == {}
-        assert meta.name == "_"
-        assert meta.language_metadata is None
+        assert meta.marimo_runtime.stable_id is None
+        assert meta.marimo.config == {}
+        assert meta.marimo.name == "_"
+        assert meta.marimo.source_projections == CellSourceProjections()
+
+    def test_decode_cell_metadata_migrates_legacy_flat_shape(self) -> None:
+        cell = lsp.NotebookCell(
+            kind=lsp.NotebookCellKind.Code,
+            document="file:///test.py#cell1",
+            metadata=_lsp_object(
+                {
+                    "stableId": "abc-123",
+                    "state": "stale",
+                    "name": "legacy_cell",
+                    "options": {"disabled": True},
+                    "languageMetadata": {
+                        "markdown": {"quotePrefix": "rf"},
+                    },
+                    "foreign": {"anything": True},
+                },
+            ),
+        )
+
+        meta = decode_cell_metadata(cell)
+        assert meta.marimo_runtime.stable_id == "abc-123"
+        assert meta.marimo_runtime.state == "stale"
+        assert meta.marimo.name == "legacy_cell"
+        assert meta.marimo.config == {"disabled": True}
+        assert meta.marimo.source_projections.markdown is not None
+        assert meta.marimo.source_projections.markdown.quote_prefix == "rf"
 
     def test_decode_cell_metadata_maps_options_to_config(self) -> None:
         """The wire sends per-cell config as ``options``; we expose ``config``."""
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata=cast(
-                "lsp.LSPObject",
-                {"stableId": "abc-123", "options": {"hide_code": True}},
+            metadata=_cell_metadata(
+                stable_id="abc-123",
+                marimo={"options": {"hide_code": True}},
             ),
         )
 
         meta = decode_cell_metadata(cell)
-        assert meta.config == {"hide_code": True}
+        assert meta.marimo.config == {"hide_code": True}
 
-    def test_decode_cell_metadata_ignores_unknown_fields(self) -> None:
-        """VS Code's own cell metadata (e.g. ``state``) is ignored, not fatal."""
+    def test_decode_cell_metadata_decodes_runtime_state(self) -> None:
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata=cast(
-                "lsp.LSPObject",
-                {"stableId": "abc-123", "state": "idle"},
+            metadata=_cell_metadata(
+                stable_id="abc-123",
+                runtime={"state": "idle"},
             ),
         )
 
         meta = decode_cell_metadata(cell)
-        assert meta.stable_id == "abc-123"
+        assert meta.marimo_runtime.stable_id == "abc-123"
+        assert meta.marimo_runtime.state == "idle"
+
+    def test_decode_cell_metadata_ignores_foreign_top_level_fields(self) -> None:
+        cell = lsp.NotebookCell(
+            kind=lsp.NotebookCellKind.Code,
+            document="file:///test.py#cell1",
+            metadata=_lsp_object(
+                {
+                    "foreign": {"anything": True},
+                    "marimo": {"name": "cell"},
+                },
+            ),
+        )
+
+        assert decode_cell_metadata(cell).marimo.name == "cell"
+
+    def test_decode_cell_metadata_rejects_unknown_owned_fields(self) -> None:
+        cell = lsp.NotebookCell(
+            kind=lsp.NotebookCellKind.Code,
+            document="file:///test.py#cell1",
+            metadata=_cell_metadata(marimo={"misspelled": True}),
+        )
+
+        with pytest.raises(msgspec.ValidationError):
+            decode_cell_metadata(cell)
 
     def test_decode_cell_metadata_rejects_invalid_config(self) -> None:
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
-            metadata=cast(
-                "lsp.LSPObject",
-                {"options": {"disabled": "yes"}},
-            ),
+            metadata=_cell_metadata(marimo={"options": {"disabled": "yes"}}),
         )
 
         with pytest.raises(msgspec.ValidationError):
@@ -458,15 +525,18 @@ class TestNormalizeCellCode:
 
     def test_python_passthrough(self) -> None:
         for language_id in ("python", "mo-python"):
-            assert normalize_cell_code(language_id, "x = 1", None) == "x = 1"
+            assert (
+                normalize_cell_code(language_id, "x = 1", CellSourceProjections())
+                == "x = 1"
+            )
 
     def test_markdown_default_prefix(self) -> None:
-        assert normalize_cell_code("markdown", "# Header", None) == snapshot(
-            'mo.md(r"""\n# Header\n""")'
-        )
+        assert normalize_cell_code(
+            "markdown", "# Header", CellSourceProjections()
+        ) == snapshot('mo.md(r"""\n# Header\n""")')
 
     def test_markdown_respects_quote_prefix(self) -> None:
-        meta = CellLanguageMetadata(markdown=MarkdownCellMetadata(quote_prefix="rf"))
+        meta = CellSourceProjections(markdown=MarkdownCellProjection(quote_prefix="rf"))
         assert normalize_cell_code("markdown", "{x}", meta) == snapshot(
             'mo.md(rf"""\n{x}\n""")'
         )
@@ -474,13 +544,13 @@ class TestNormalizeCellCode:
     def test_sql_defaults(self) -> None:
         # No metadata → default dataframe name, output shown, default engine
         # (which must NOT be emitted as engine=__marimo_duckdb).
-        assert normalize_cell_code("sql", "SELECT 1", None) == snapshot(
-            '_df = mo.sql(\n    f"""\n    SELECT 1\n    """\n)'
-        )
+        assert normalize_cell_code(
+            "sql", "SELECT 1", CellSourceProjections()
+        ) == snapshot('_df = mo.sql(\n    f"""\n    SELECT 1\n    """\n)')
 
     def test_sql_respects_metadata(self) -> None:
-        meta = CellLanguageMetadata(
-            sql=SqlCellMetadata(
+        meta = CellSourceProjections(
+            sql=SqlCellProjection(
                 dataframe_name="df2", show_output=False, engine="my_engine"
             )
         )

@@ -10,6 +10,7 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import { Api } from "../Api.ts";
 import { VsCode } from "../VsCode.ts";
 
@@ -79,7 +80,9 @@ describe("Api", () => {
                 kind: 1,
                 value: "x = 42",
                 languageId: "python",
-                metadata: { stableId: "cell-1" },
+                metadata: MarimoNotebookCell.createMetadata({
+                  marimoRuntime: { stableId: "cell-1" },
+                }),
               },
             ],
           },

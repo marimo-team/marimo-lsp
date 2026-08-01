@@ -133,18 +133,20 @@ class NotebookGraphUpdater:
         current_ids: set[CellId_t] = set()
         for idx, cell in enumerate(notebook.cells):
             meta = decode_cell_metadata(cell)
-            if meta.stable_id is None:
+            if meta.marimo_runtime.stable_id is None:
                 continue
-            cell_id = CellId_t(meta.stable_id)
+            cell_id = CellId_t(meta.marimo_runtime.stable_id)
             current_ids.add(cell_id)
             cell_id_to_uri[cell_id] = cell.document
-            cell_names[cell_id] = meta.name
+            cell_names[cell_id] = meta.marimo.name
             cell_index[cell_id] = idx
 
             doc = find_text_document(self._server.workspace, cell.document)
             language_id = (doc.language_id if doc else None) or "python"
             source = normalize_cell_code(
-                language_id, doc.source if doc else "", meta.language_metadata
+                language_id,
+                doc.source if doc else "",
+                meta.marimo.source_projections,
             )
 
             # Skip unchanged cells

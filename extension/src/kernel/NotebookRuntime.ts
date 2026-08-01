@@ -889,8 +889,8 @@ function syncCellIdentity(
           edits.push(
             options.code.NotebookEdit.updateCellMetadata(
               cell.index,
-              cell.buildEncodedMetadata({
-                overrides: { stableId: crypto.randomUUID() },
+              cell.buildRuntimeMetadataForInsertion({
+                stableId: crypto.randomUUID(),
               }),
             ),
           );

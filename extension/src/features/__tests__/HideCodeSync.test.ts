@@ -21,10 +21,10 @@ const cell = (index: number, hideCode: boolean) =>
         kind: 2,
         value: "",
         languageId: "python",
-        metadata: {
-          stableId: `cell-${index}`,
-          options: { hide_code: hideCode },
-        },
+        metadata: MarimoNotebookCell.createMetadata({
+          marimo: { options: { hide_code: hideCode } },
+          marimoRuntime: { stableId: `cell-${index}` },
+        }),
       },
       index,
     ),
@@ -81,7 +81,10 @@ const withTestCtx = Effect.fn(function* (hideCode: ReadonlyArray<boolean>) {
         kind: 2,
         value: "",
         languageId: "python",
-        metadata: { stableId: `cell-${index}`, options: { hide_code } },
+        metadata: MarimoNotebookCell.createMetadata({
+          marimo: { options: { hide_code } },
+          marimoRuntime: { stableId: `cell-${index}` },
+        }),
       })),
     },
   });

@@ -41,85 +41,106 @@ export const NotebookCellConfig = Schema.Struct({
 export type NotebookCellConfig = typeof NotebookCellConfig.Type;
 
 /**
- * Smart-cell metadata for a markdown cell (mirrors the frontend shape).
+ * Projection state for displaying a Python markdown cell.
  */
-export const MarkdownCellMetadata = Schema.Struct({
-  quotePrefix: Schema.optionalWith(Schema.String, { default: () => "r" }),
-}).annotations({ identifier: "MarkdownCellMetadata" });
-export type MarkdownCellMetadata = typeof MarkdownCellMetadata.Type;
+export const MarkdownCellProjection = Schema.Struct({
+  quotePrefix: Schema.optionalWith(Schema.Literal("", "f", "fr", "r", "rf"), {
+    default: () => "r",
+  }),
+}).annotations({
+  identifier: "MarkdownCellProjection",
+  parseOptions: { onExcessProperty: "error" as const },
+});
+export type MarkdownCellProjection = typeof MarkdownCellProjection.Type;
 
 /**
- * Smart-cell metadata for a SQL cell (mirrors the frontend shape).
+ * Projection state for displaying a Python SQL cell.
  */
-export const SqlCellMetadata = Schema.Struct({
+export const SqlCellProjection = Schema.Struct({
   dataframeName: Schema.optionalWith(Schema.String, { default: () => "_df" }),
+  quotePrefix: Schema.optionalWith(Schema.Literal("", "f", "fr", "r", "rf"), {
+    default: () => "",
+  }),
+  commentLines: Schema.optionalWith(Schema.Array(Schema.String), {
+    default: () => [],
+  }),
   showOutput: Schema.optionalWith(Schema.Boolean, { default: () => true }),
-  engine: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
+  engine: Schema.optionalWith(Schema.String, {
+    default: () => "__marimo_duckdb",
   }),
-}).annotations({ identifier: "SqlCellMetadata" });
-export type SqlCellMetadata = typeof SqlCellMetadata.Type;
+}).annotations({
+  identifier: "SqlCellProjection",
+  parseOptions: { onExcessProperty: "error" as const },
+});
+export type SqlCellProjection = typeof SqlCellProjection.Type;
 
 /**
- * Language-specific smart-cell metadata needed to re-wrap display source.
+ * Retained source projections for reversible cell-language changes.
  *
- * Only one of these is set, matching the cell's language. Absent when the
- * client didn't sync it, in which case the per-language defaults apply.
+ * Both projections may coexist. The cell's current language selects which
+ * projection is active; retaining the other restores its settings if the
+ * user switches the cell back later.
  */
-export const CellLanguageMetadata = Schema.Struct({
-  markdown: Schema.optionalWith(Schema.NullOr(MarkdownCellMetadata), {
+export const CellSourceProjections = Schema.Struct({
+  markdown: Schema.optionalWith(Schema.NullOr(MarkdownCellProjection), {
     default: () => null,
   }),
-  sql: Schema.optionalWith(Schema.NullOr(SqlCellMetadata), {
+  sql: Schema.optionalWith(Schema.NullOr(SqlCellProjection), {
     default: () => null,
   }),
-}).annotations({ identifier: "CellLanguageMetadata" });
-export type CellLanguageMetadata = typeof CellLanguageMetadata.Type;
+}).annotations({
+  identifier: "CellSourceProjections",
+  parseOptions: { onExcessProperty: "error" as const },
+});
+export type CellSourceProjections = typeof CellSourceProjections.Type;
 
 /**
- * marimo-specific fields synced on a VS Code notebook cell's metadata.
+ * Persisted marimo cell metadata used to serialize Python source.
  */
-export const CellMetadata = Schema.Struct({
+export const MarimoCellMetadata = Schema.Struct({
+  name: Schema.optionalWith(Schema.String, { default: () => "_" }),
+  options: Schema.optionalWith(NotebookCellConfig, { default: () => ({}) }),
+  sourceProjections: Schema.optionalWith(CellSourceProjections, {
+    default: () => CellSourceProjections.make(),
+  }),
+}).annotations({
+  identifier: "MarimoCellMetadata",
+  parseOptions: { onExcessProperty: "error" as const },
+});
+export type MarimoCellMetadata = typeof MarimoCellMetadata.Type;
+
+/**
+ * Transient per-open cell metadata shared with the LSP server.
+ */
+export const MarimoCellRuntimeMetadata = Schema.Struct({
   stableId: Schema.optionalWith(Schema.NullOr(Schema.String), {
     default: () => null,
   }),
-  name: Schema.optionalWith(Schema.String, { default: () => "_" }),
-  options: Schema.optionalWith(NotebookCellConfig, { default: () => ({}) }),
-  languageMetadata: Schema.optionalWith(Schema.NullOr(CellLanguageMetadata), {
-    default: () => null,
+  state: Schema.optionalWith(
+    Schema.NullOr(Schema.Literal("idle", "queued", "running", "stale")),
+    { default: () => null },
+  ),
+}).annotations({
+  identifier: "MarimoCellRuntimeMetadata",
+  parseOptions: { onExcessProperty: "error" as const },
+});
+export type MarimoCellRuntimeMetadata = typeof MarimoCellRuntimeMetadata.Type;
+
+/**
+ * Namespaced metadata synchronized on an LSP notebook cell.
+ */
+export const CellMetadata = Schema.Struct({
+  marimo: Schema.optionalWith(MarimoCellMetadata, {
+    default: () => MarimoCellMetadata.make(),
   }),
-}).annotations({ identifier: "CellMetadata" });
+  marimoRuntime: Schema.optionalWith(MarimoCellRuntimeMetadata, {
+    default: () => MarimoCellRuntimeMetadata.make(),
+  }),
+}).annotations({
+  identifier: "CellMetadata",
+  parseOptions: { onExcessProperty: "preserve" as const },
+});
 export type CellMetadata = typeof CellMetadata.Type;
-
-/**
- * Code cell specific structure
- */
-export const NotebookCell = Schema.Struct({
-  code: Schema.NullOr(Schema.String),
-  code_hash: Schema.NullOr(Schema.String),
-  config: NotebookCellConfig,
-  id: Schema.NullOr(Schema.String),
-  name: Schema.NullOr(Schema.String),
-}).annotations({ identifier: "NotebookCell" });
-export type NotebookCell = typeof NotebookCell.Type;
-
-/**
- * Metadata about the notebook
- */
-export const NotebookMetadata = Schema.Struct({
-  marimo_version: Schema.optional(Schema.NullOr(Schema.String)),
-}).annotations({ identifier: "NotebookMetadata" });
-export type NotebookMetadata = typeof NotebookMetadata.Type;
-
-/**
- * Main notebook structure
- */
-export const NotebookV1 = Schema.Struct({
-  cells: Schema.Array(NotebookCell),
-  metadata: NotebookMetadata,
-  version: Schema.Literal("1"),
-}).annotations({ identifier: "NotebookV1" });
-export type NotebookV1 = typeof NotebookV1.Type;
 
 /**
  * Program-specific configuration.
@@ -156,11 +177,73 @@ export const _AppConfig = Schema.Struct({
 export type _AppConfig = typeof _AppConfig.Type;
 
 /**
+ * Metadata about the notebook
+ */
+export const NotebookMetadata = Schema.Struct({
+  marimo_version: Schema.optional(Schema.NullOr(Schema.String)),
+}).annotations({ identifier: "NotebookMetadata" });
+export type NotebookMetadata = typeof NotebookMetadata.Type;
+
+/**
+ * Persisted marimo-owned metadata on an LSP notebook document.
+ */
+export const MarimoNotebookMetadata = Schema.Struct({
+  appConfig: Schema.optionalWith(_AppConfig, {
+    default: () => _AppConfig.make(),
+  }),
+  header: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
+  notebookMetadata: Schema.optionalWith(NotebookMetadata, {
+    default: () => ({}),
+  }),
+}).annotations({
+  identifier: "MarimoNotebookMetadata",
+  parseOptions: { onExcessProperty: "error" as const },
+});
+export type MarimoNotebookMetadata = typeof MarimoNotebookMetadata.Type;
+
+/**
+ * Canonical metadata envelope on an LSP notebook document.
+ */
+export const NotebookDocumentMetadata = Schema.Struct({
+  marimo: MarimoNotebookMetadata,
+}).annotations({
+  identifier: "NotebookDocumentMetadata",
+  parseOptions: { onExcessProperty: "preserve" as const },
+});
+export type NotebookDocumentMetadata = typeof NotebookDocumentMetadata.Type;
+
+/**
+ * Code cell specific structure
+ */
+export const NotebookCell = Schema.Struct({
+  code: Schema.NullOr(Schema.String),
+  code_hash: Schema.NullOr(Schema.String),
+  config: NotebookCellConfig,
+  id: Schema.NullOr(Schema.String),
+  name: Schema.NullOr(Schema.String),
+}).annotations({ identifier: "NotebookCell" });
+export type NotebookCell = typeof NotebookCell.Type;
+
+/**
+ * Main notebook structure
+ */
+export const NotebookV1 = Schema.Struct({
+  cells: Schema.Array(NotebookCell),
+  metadata: NotebookMetadata,
+  version: Schema.Literal("1"),
+}).annotations({ identifier: "NotebookV1" });
+export type NotebookV1 = typeof NotebookV1.Type;
+
+/**
  * Strict JSON notebook data plus source-level application metadata.
  */
 export const NotebookDocument = Schema.Struct({
   notebook: NotebookV1,
-  appConfig: Schema.optional(_AppConfig),
+  appConfig: Schema.optionalWith(_AppConfig, {
+    default: () => _AppConfig.make(),
+  }),
   header: Schema.optionalWith(Schema.NullOr(Schema.String), {
     default: () => null,
   }),
@@ -540,7 +623,9 @@ export type SerializeResponse = typeof SerializeResponse.Type;
 
 export const SerializePayload = Schema.Struct({
   notebook: NotebookV1,
-  appConfig: Schema.optional(_AppConfig),
+  appConfig: Schema.optionalWith(_AppConfig, {
+    default: () => _AppConfig.make(),
+  }),
   header: Schema.optionalWith(Schema.NullOr(Schema.String), {
     default: () => null,
   }),

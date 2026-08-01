@@ -15,7 +15,7 @@
 
 import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 
-import type { CellMetadata } from "../schemas/CellMetadata.ts";
+import type { CellSourceProjections } from "../schemas/Models.gen.ts";
 
 /** Matches `vscode.NotebookCellKind`: 1 = Markup, 2 = Code. Kept as literals so this module stays vscode-free. */
 const MARKUP_KIND = 1;
@@ -44,7 +44,7 @@ export interface ClassifiedCell {
   /** Display code: raw markdown/SQL for smart cells, the original Python otherwise. */
   readonly code: string;
   /** Smart-cell metadata needed to wrap the display code back to Python; undefined for plain Python. */
-  readonly languageMetadata: CellMetadata["languageMetadata"];
+  readonly sourceProjections: CellSourceProjections | undefined;
 }
 
 /**
@@ -64,7 +64,7 @@ export function classifyCellCode(
           kind: MARKUP_KIND,
           languageId: languageIds.Markdown,
           code: result.code,
-          languageMetadata: { markdown: result.metadata },
+          sourceProjections: { markdown: result.metadata, sql: null },
         };
       }
     }
@@ -74,7 +74,7 @@ export function classifyCellCode(
         kind: CODE_KIND,
         languageId: languageIds.Sql,
         code: result.code,
-        languageMetadata: { sql: result.metadata },
+        sourceProjections: { markdown: null, sql: result.metadata },
       };
     }
   }
@@ -82,6 +82,6 @@ export function classifyCellCode(
     kind: CODE_KIND,
     languageId: languageIds.Python,
     code,
-    languageMetadata: undefined,
+    sourceProjections: undefined,
   };
 }

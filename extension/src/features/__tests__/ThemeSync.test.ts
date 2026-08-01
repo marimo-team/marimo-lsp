@@ -6,6 +6,7 @@ import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
+import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type { MarimoApiCall } from "../../types.ts";
 import { ThemeSyncLive } from "../ThemeSync.ts";
 
@@ -22,7 +23,9 @@ const withTestCtx = Effect.fn(function* (
           kind: 1,
           value: "",
           languageId: "python",
-          metadata: { stableId: "cell-1" },
+          metadata: MarimoNotebookCell.createMetadata({
+            marimoRuntime: { stableId: "cell-1" },
+          }),
         },
       ],
     },

@@ -62,6 +62,7 @@ class _Inner(msgspec.Struct):
 CONCRETE: list[tuple[str, type | object]] = [
     ("PackageSource", models.PackageSource),
     ("CellMetadata", models.CellMetadata),
+    ("NotebookDocumentMetadata", models.NotebookDocumentMetadata),
     ("NotebookDocument", models.NotebookDocument),
     ("DeserializeRequest", models.DeserializeRequest),
     ("ConvertRequest", models.ConvertRequest),
@@ -130,8 +131,22 @@ def _jsdoc(doc: str | None, indent: str = "") -> str:
     return f"{indent}/**\n{body}\n{indent} */\n"
 
 
+def _annotations(cls: type, name: str) -> str:
+    """Emit identity and excess-property policy for an owned wire struct."""
+    annotations = [f"identifier: {_ts_string(name)}"]
+    if getattr(cls, "__preserve_unknown_fields__", False):
+        annotations.append('parseOptions: { onExcessProperty: "preserve" as const }')
+    elif (
+        isinstance(cls, type)
+        and issubclass(cls, msgspec.Struct)
+        and cls.__struct_config__.forbid_unknown_fields
+    ):
+        annotations.append('parseOptions: { onExcessProperty: "error" as const }')
+    return f".annotations({{ {', '.join(annotations)} }})"
+
+
 def _identifier(name: str) -> str:
-    """Annotate a schema with its name so parse errors read `Expected <name>`."""
+    """Annotate a non-struct schema with its generated name."""
     return f".annotations({{ identifier: {_ts_string(name)} }})"
 
 
@@ -249,19 +264,19 @@ class Emitter:
         finally:
             self.in_flight.discard(cls)
         struct = f"Schema.Struct({{\n{fields}}})" if fields else "Schema.Struct({})"
-        identifier = _identifier(name)
+        annotations = _annotations(cls, name)
         if cls in self.recursive:
             # Recursive schemas need an explicit type: `typeof X.Type` cannot
             # refer to itself, so emit a structural interface alongside.
             self.definitions.append(
                 f"{_jsdoc(cls.__doc__)}"
                 f"export interface {name} {{\n{self.interface_fields(t)}}}\n"
-                f"export const {name}: Schema.Schema<{name}> = {struct}{identifier};\n"
+                f"export const {name}: Schema.Schema<{name}> = {struct}{annotations};\n"
             )
         else:
             self.definitions.append(
                 f"{_jsdoc(cls.__doc__)}"
-                f"export const {name} = {struct}{identifier};\n"
+                f"export const {name} = {struct}{annotations};\n"
                 f"export type {name} = typeof {name}.Type;\n"
             )
         return name
@@ -363,6 +378,11 @@ class Emitter:
                 return "({})"
             if field.default_factory is list:
                 return "[]"
+            if (
+                isinstance(field.type, _StructLike)
+                and field.default_factory is field.type.cls
+            ):
+                return f"{self.struct_ref(field.type)}.make()"
         return None
 
     def emit_named(self, name: str, t: type | object) -> None:

@@ -10,8 +10,8 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { CellExecutions } from "../../kernel/CellExecutions.ts";
-import type { CellMetadata } from "../../schemas/CellMetadata.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
+import type * as Api from "../../schemas/Models.gen.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
 
 const withTestCtx = Effect.fn(function* () {
@@ -30,11 +30,16 @@ const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
 
 function createMockCell(
   uri: ReturnType<typeof createNotebookUri>,
-  metadata: Partial<CellMetadata> = {},
+  metadata: typeof Api.CellMetadata.Encoded = {},
 ) {
   return createNotebookCell(
     createTestNotebookDocument(uri),
-    { kind: 1, value: "", languageId: "python", metadata },
+    {
+      kind: 1,
+      value: "",
+      languageId: "python",
+      metadata: MarimoNotebookCell.createMetadata(metadata),
+    },
     0,
   );
 }
@@ -57,8 +62,8 @@ it.effect(
     yield* Effect.gen(function* () {
       // Cell with stableId but never executed → not stale (no kernel yet)
       const cell = createMockCell(notebookUri, {
-        name: "test_cell",
-        stableId: "cell-1",
+        marimo: { name: "test_cell" },
+        marimoRuntime: { stableId: "cell-1" },
       });
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[0].provideCellStatusBarItems(cell);
@@ -74,8 +79,8 @@ it.effect(
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
       const cell = createMockCell(notebookUri, {
-        name: "test_cell",
-        stableId: "cell-1",
+        marimo: { name: "test_cell" },
+        marimoRuntime: { stableId: "cell-1" },
       });
 
       // Record execution — clears stale
@@ -95,8 +100,8 @@ it.effect(
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
       const cell = createMockCell(notebookUri, {
-        name: "test_cell",
-        stableId: "cell-1",
+        marimo: { name: "test_cell" },
+        marimoRuntime: { stableId: "cell-1" },
       });
 
       // Execute then invalidate (simulates staleInputs from kernel)
@@ -119,7 +124,7 @@ it.effect(
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
-      const cell = createMockCell(notebookUri, { name: "_" });
+      const cell = createMockCell(notebookUri, { marimo: { name: "_" } });
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[1].provideCellStatusBarItems(cell);
       expect(items.length).toBe(0);
@@ -132,7 +137,9 @@ it.effect(
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
-      const cell = createMockCell(notebookUri, { name: "my_custom_cell" });
+      const cell = createMockCell(notebookUri, {
+        marimo: { name: "my_custom_cell" },
+      });
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[1].provideCellStatusBarItems(cell);
 
@@ -148,7 +155,9 @@ it.effect(
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
-      const cell = createMockCell(notebookUri, { name: "setup" });
+      const cell = createMockCell(notebookUri, {
+        marimo: { name: "setup" },
+      });
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[1].provideCellStatusBarItems(cell);
 
@@ -181,8 +190,8 @@ it.effect(
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
       const cell = createMockCell(notebookUri, {
-        name: "my_cell",
-        stableId: "cell-2",
+        marimo: { name: "my_cell" },
+        marimoRuntime: { stableId: "cell-2" },
       });
 
       // Execute then invalidate → stale + shows name

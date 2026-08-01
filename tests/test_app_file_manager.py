@@ -8,6 +8,7 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import lsprotocol.types as lsp
+import msgspec
 import pytest
 
 from marimo_lsp.app_file_manager import find_notebook_document, sync_app_with_workspace
@@ -90,19 +91,60 @@ def _make_workspace_with_metadata(
 
 class TestSyncAppWithWorkspace:
     def test_extracts_app_options_from_metadata(self) -> None:
-        """App config should come from metadata.app.options, not the top-level metadata."""
+        """App config should come from namespaced notebook metadata."""
         uri = "file:///test/notebook.py"
         ws = _make_workspace_with_metadata(
             uri,
             metadata={
-                "app": {"options": {"width": "medium", "sql_output": "polars"}},
-                "header": {"value": ""},
-                "version": "0.19.0",
+                "marimo": {
+                    "appConfig": {"width": "medium", "sql_output": "polars"},
+                    "header": "",
+                    "notebookMetadata": {"marimo_version": "0.23.16"},
+                }
             },
         )
         app = sync_app_with_workspace(workspace=ws, notebook_uri=uri, app=None)
         assert app.config.width == "medium"
         assert app.config.sql_output == "polars"
+
+    def test_ignores_foreign_top_level_metadata(self) -> None:
+        uri = "file:///test/notebook.py"
+        ws = _make_workspace_with_metadata(
+            uri,
+            metadata={
+                "foreign": {"anything": True},
+                "marimo": {"appConfig": {"width": "full"}},
+            },
+        )
+
+        app = sync_app_with_workspace(workspace=ws, notebook_uri=uri, app=None)
+        assert app.config.width == "full"
+
+    def test_migrates_legacy_flat_notebook_metadata(self) -> None:
+        uri = "file:///test/notebook.py"
+        ws = _make_workspace_with_metadata(
+            uri,
+            metadata={
+                "appConfig": {"width": "medium", "sql_output": "polars"},
+                "header": "# legacy",
+                "notebookMetadata": {"marimo_version": "0.23.16"},
+                "foreign": {"anything": True},
+            },
+        )
+
+        app = sync_app_with_workspace(workspace=ws, notebook_uri=uri, app=None)
+        assert app.config.width == "medium"
+        assert app.config.sql_output == "polars"
+
+    def test_rejects_unknown_owned_metadata(self) -> None:
+        uri = "file:///test/notebook.py"
+        ws = _make_workspace_with_metadata(
+            uri,
+            metadata={"marimo": {"misspelled": True}},
+        )
+
+        with pytest.raises(msgspec.ValidationError):
+            sync_app_with_workspace(workspace=ws, notebook_uri=uri, app=None)
 
     def test_defaults_when_no_app_options(self) -> None:
         """Missing metadata should produce default config."""
