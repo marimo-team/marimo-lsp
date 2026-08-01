@@ -53,12 +53,10 @@ export const openAsMarimoNotebook = defineCommand(
     // Locate the open text document for this URI when we were not handed one
     // directly (string or explicit URI invocations).
     if (Option.isNone(document)) {
-      const editors = yield* code.window.getVisibleTextEditors();
+      const docs = yield* code.workspace.getTextDocuments();
       document = Option.fromNullable(
-        editors.find(
-          (editor) => editor.document.uri.toString() === uri.toString(),
-        ),
-      ).pipe(Option.map((editor) => editor.document));
+        docs.find((doc) => doc.uri.toString() === uri.toString()),
+      );
     }
 
     // Persist unsaved edits before opening the file as a notebook. The notebook
@@ -69,7 +67,13 @@ export const openAsMarimoNotebook = defineCommand(
     // https://github.com/marimo-team/marimo-lsp/issues/531.
     if (Option.isSome(document) && document.value.isDirty) {
       const doc = document.value;
-      yield* Effect.promise(() => doc.save());
+      const saved = yield* Effect.promise(() => doc.save());
+      if (!saved) {
+        yield* code.window.showInformationMessage(
+          "Failed to save changes before opening as a notebook",
+        );
+        return;
+      }
     }
 
     // We open first before closing to handle multi-window scenarios correctly:

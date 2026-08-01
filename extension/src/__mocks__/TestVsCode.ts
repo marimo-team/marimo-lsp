@@ -915,9 +915,6 @@ class TextDocument implements vscode.TextDocument {
 
   #text: string;
   #isDirty: boolean;
-  // Number of times save() has been called. Lets tests assert that a dirty
-  // buffer was persisted before being opened as a notebook (see #531).
-  saveCalls = 0;
 
   constructor(
     uri: Uri,
@@ -944,7 +941,6 @@ class TextDocument implements vscode.TextDocument {
   }
 
   save(): Thenable<boolean> {
-    this.saveCalls += 1;
     this.#isDirty = false;
     return Promise.resolve(true);
   }
@@ -1025,7 +1021,7 @@ export function createTestTextDocument(
   languageId: string,
   text: string,
   options: { isDirty?: boolean } = {},
-): vscode.TextDocument & { readonly saveCalls: number } {
+): vscode.TextDocument {
   if (typeof uri === "string") {
     uri = Uri.file(uri);
   }
@@ -1917,6 +1913,12 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           },
           getNotebookDocuments() {
             return Effect.map(Ref.get(notebookDocuments), HashSet.toValues);
+          },
+          getTextDocuments() {
+            return Effect.map(
+              SubscriptionRef.get(visibleTextEditors),
+              (editors) => editors.map((editor) => editor.document),
+            );
           },
           configurationChanges() {
             return Stream.never;
