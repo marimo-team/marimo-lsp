@@ -266,25 +266,28 @@ async def test_file_notebook_did_close_detaches_session() -> None:
 async def test_marimo_serialize_command(client: LanguageClient) -> None:
     """Test the marimo.serialize command."""
     notebook = {
-        "app": {
-            "options": {},
-        },
-        "header": {"value": "marimo app"},
+        "version": "1",
+        "metadata": {},
         "cells": [
             {
+                "id": None,
                 "code": "import marimo as mo",
+                "code_hash": None,
                 "name": "cell1",
-                "options": {},
+                "config": {},
             }
         ],
-        "violations": [],
-        "valid": True,
     }
 
     result = await client.workspace_execute_command_async(
         lsp.ExecuteCommandParams(
             command="marimo.api",
-            arguments=[{"method": "serialize", "params": {"notebook": notebook}}],
+            arguments=[
+                {
+                    "method": "serialize",
+                    "params": {"notebook": notebook, "header": "marimo app"},
+                }
+            ],
         )
     )
 
@@ -337,36 +340,33 @@ if __name__ == "__main__":
 
     assert result == snapshot(
         {
-            "app": {
-                "lineno": 0,
-                "col_offset": 0,
-                "end_lineno": 0,
-                "end_col_offset": 0,
-                "options": {},
+            "notebook": {
+                "version": "1",
+                "cells": [
+                    {
+                        "id": "Hbol",
+                        "code": "import marimo as mo",
+                        "code_hash": "1d0db38904205bec4d6f6f6a1f6cec3e",
+                        "name": "__",
+                        "config": {
+                            "column": None,
+                            "disabled": False,
+                            "hide_code": False,
+                        },
+                    }
+                ],
+                "metadata": {"marimo_version": "0.23.16"},
             },
-            "header": {
-                "lineno": 0,
-                "col_offset": 0,
-                "end_lineno": 0,
-                "end_col_offset": 0,
-                "value": "",
+            "appConfig": {
+                "width": "compact",
+                "app_title": None,
+                "layout_file": None,
+                "css_file": None,
+                "html_head_file": None,
+                "auto_download": [],
+                "sql_output": "auto",
             },
-            "version": "0.14.17",
-            "cells": [
-                {
-                    "lineno": 7,
-                    "col_offset": 0,
-                    "end_lineno": 17,
-                    "end_col_offset": 38,
-                    "code": "import marimo as mo",
-                    "name": "__",
-                    "options": {},
-                    "_ast": None,
-                }
-            ],
-            "violations": [],
-            "valid": True,
-            "filename": "notebook.py",
+            "header": "",
         }
     )
 

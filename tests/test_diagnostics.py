@@ -8,6 +8,8 @@ from typing import cast
 from unittest.mock import MagicMock, patch
 
 import lsprotocol.types as lsp
+import msgspec
+import pytest
 from inline_snapshot import snapshot
 from marimo._types.ids import CellId_t
 
@@ -436,6 +438,19 @@ class TestCellMetadataHelpers:
 
         meta = decode_cell_metadata(cell)
         assert meta.stable_id == "abc-123"
+
+    def test_decode_cell_metadata_rejects_invalid_config(self) -> None:
+        cell = lsp.NotebookCell(
+            kind=lsp.NotebookCellKind.Code,
+            document="file:///test.py#cell1",
+            metadata=cast(
+                "lsp.LSPObject",
+                {"options": {"disabled": "yes"}},
+            ),
+        )
+
+        with pytest.raises(msgspec.ValidationError):
+            decode_cell_metadata(cell)
 
 
 class TestNormalizeCellCode:

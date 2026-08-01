@@ -12,9 +12,11 @@ import msgspec
 # These stay runtime imports (noqa: TC002) even though they only appear in
 # annotations: msgspec resolves the stringified annotations when the structs
 # are first encoded/inspected, which fails under TYPE_CHECKING-only imports.
+from marimo._ast.app_config import _AppConfig
 from marimo._config.config import MarimoConfig  # noqa: TC002
 from marimo._convert.common.format import DEFAULT_MARKDOWN_PREFIX
 from marimo._runtime.packages.package_manager import PackageDescription  # noqa: TC002
+from marimo._schemas.notebook import NotebookCellConfig, NotebookV1
 from marimo._server.models.packages import DependencyTreeNode  # noqa: TC002
 
 # NOTE: the generic structs below use the legacy TypeVar spelling (noqa: UP046)
@@ -123,8 +125,11 @@ class CellMetadata(msgspec.Struct, rename="camel"):
     name: str = "_"
     """The marimo cell name."""
 
-    config: dict[str, typing.Any] = msgspec.field(default_factory=dict, name="options")
-    """The marimo `CellConfig` as a plain dict.
+    config: NotebookCellConfig = msgspec.field(
+        default_factory=NotebookCellConfig,
+        name="options",
+    )
+    """The marimo `NotebookCellConfig`.
 
     Synced on the wire as ``options`` (VS Code's notebook cell config key); we
     expose it as ``config`` to match marimo's downstream vocabulary
@@ -135,15 +140,12 @@ class CellMetadata(msgspec.Struct, rename="camel"):
     """Smart-cell metadata for markdown/SQL cells; absent for Python cells."""
 
 
-class SerializeRequest(msgspec.Struct, rename="camel"):
-    """
-    A request to serialize a notebook to Python source.
+class NotebookDocument(msgspec.Struct, rename="camel"):
+    """Strict JSON notebook data plus source-level application metadata."""
 
-    Contains the notebook data to be serialized.
-    """
-
-    notebook: dict[str, typing.Any]
-    """The notebook data in marimo's internal format."""
+    notebook: NotebookV1
+    app_config: _AppConfig = msgspec.field(default_factory=_AppConfig)
+    header: str | None = None
 
 
 class DeserializeRequest(msgspec.Struct, rename="camel"):
@@ -206,14 +208,14 @@ class ExecuteScratchRequest(msgspec.Struct, rename="camel"):
 class UpdateConfigurationRequest(msgspec.Struct, rename="camel"):
     """A request to update the user configuration."""
 
-    config: dict[str, typing.Any]
+    config: dict[str, object]
     """The partial configuration to merge with the current config."""
 
 
 class SetDisplayThemeRequest(msgspec.Struct, rename="camel"):
     """A request to set the display theme without persisting to disk."""
 
-    theme: str
+    theme: typing.Literal["light", "dark"]
     """The theme to set ('light' or 'dark')."""
 
 
@@ -223,7 +225,7 @@ class ApiRequest(msgspec.Struct, rename="camel"):
     method: str
     """The API method to call (e.g., 'run', 'interrupt', 'serialize')."""
 
-    params: dict[str, typing.Any]
+    params: dict[str, object]
     """The parameters for the method."""
 
 
@@ -253,6 +255,13 @@ class GetConfigurationResponse(msgspec.Struct, rename="camel"):
 
     config: MarimoConfig
     """The resolved marimo configuration (defaults when no session exists)."""
+
+
+class UpdateConfigurationResponse(msgspec.Struct, rename="camel"):
+    """Response for ``update-configuration``."""
+
+    config: MarimoConfig
+    """The resolved configuration after the update."""
 
 
 class SetDisplayThemeResponse(msgspec.Struct, rename="camel"):

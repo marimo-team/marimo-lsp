@@ -11,6 +11,7 @@ import typing
 from typing import TYPE_CHECKING, cast
 
 import msgspec
+from marimo._ast.app_config import _AppConfig
 from marimo._config.config import DEFAULT_CONFIG, MarimoConfig
 from marimo._convert.converters import MarimoConvert
 from marimo._export.exporter import Exporter
@@ -24,10 +25,12 @@ from marimo._runtime.packages.package_manager import PackageDescription
 from marimo._runtime.packages.package_managers import create_package_manager
 from marimo._schemas.export import ExportAsHTMLRequest, to_html_export_options
 from marimo._schemas.export_options import IPYNBExportOptions
-from marimo._schemas.serialization import NotebookSerialization
+from marimo._schemas.serialization import (
+    AppInstantiation,
+    Header,
+)
 from marimo._session.requests import InstantiateNotebookRequest
 from marimo._session.state.serialize import serialize_session_view
-from marimo._utils.parse_dataclass import parse_raw
 from pygls.uris import to_fs_path
 from typing_extensions import TypeForm
 
@@ -49,15 +52,16 @@ from marimo_lsp.models import (
     ListPackagesResponse,
     ModelRequest,
     NotebookCommand,
+    NotebookDocument,
     PackageCommand,
     ScriptSource,
-    SerializeRequest,
     SerializeResponse,
     SessionCommand,
     SetDisplayThemeRequest,
     SetDisplayThemeResponse,
     StdinRequest,
     UpdateConfigurationRequest,
+    UpdateConfigurationResponse,
     UpdateUIElementRequest,
     VenvSource,
 )
@@ -445,8 +449,13 @@ def _package_manager_for(source: VenvSource | ScriptSource) -> LspPackageManager
 
 
 @marimo_api("serialize")
-async def serialize(_ctx: ApiContext, args: SerializeRequest) -> SerializeResponse:
-    ir = parse_raw(args.notebook, cls=NotebookSerialization)
+async def serialize(_ctx: ApiContext, args: NotebookDocument) -> SerializeResponse:
+    ir = MarimoConvert.from_notebook_v1(args.notebook).to_ir()
+    ir = dataclasses.replace(
+        ir,
+        app=AppInstantiation(options=args.app_config.asdict()),
+        header=Header(value=args.header) if args.header is not None else None,
+    )
     return SerializeResponse(source=MarimoConvert.from_ir(ir).to_py())
 
 
@@ -454,17 +463,14 @@ async def serialize(_ctx: ApiContext, args: SerializeRequest) -> SerializeRespon
 async def deserialize(
     _ctx: ApiContext,
     args: DeserializeRequest,
-) -> dict[str, typing.Any]:
+) -> NotebookDocument:
     converter = MarimoConvert.from_py(args.source)
     ir = converter.to_ir()
-
-    # The `_ast` field on each `CellDef` holds a parsed Python AST, which isn't
-    # serializable. Since the AST isn't used on the other side of the wire,
-    # we can safely drop it before serialization.
-    for cell in ir.cells:
-        cell._ast = None  # noqa: SLF001
-
-    return dataclasses.asdict(ir)
+    return NotebookDocument(
+        notebook=converter.to_notebook_v1(),
+        app_config=_AppConfig.from_untrusted_dict(ir.app.options),
+        header=ir.header.value if ir.header is not None else None,
+    )
 
 
 @marimo_api("get-configuration")
@@ -485,15 +491,17 @@ async def get_configuration(
 async def update_configuration(
     ctx: ApiContext,
     args: NotebookCommand[UpdateConfigurationRequest],
-) -> MarimoConfig:
+) -> UpdateConfigurationResponse:
     """Update the marimo user configuration."""
     session = ctx.sessions.get(args.notebook_uri)
     if not session:
         logger.warning(f"No session found for {args.notebook_uri}")
         raise SessionNotFoundError(args.notebook_uri)
 
-    return session.save_config(
-        cast("PartialMarimoConfig", args.inner.config),
+    # PartialMarimoConfig is only shallow-partial, while config updates are
+    # intentionally deep patches (for example, just runtime.on_cell_change).
+    return UpdateConfigurationResponse(
+        config=session.save_config(cast("PartialMarimoConfig", args.inner.config))
     )
 
 
@@ -582,7 +590,10 @@ _API_BY_NAME = {method.name: method for method in API_METHODS}
 
 
 async def handle_api_command(
-    ls: LanguageServer, sessions: Sessions, method: str, params: dict
+    ls: LanguageServer,
+    sessions: Sessions,
+    method: str,
+    params: dict[str, object],
 ) -> object:
     """Unified API endpoint for all marimo internal methods.
 
