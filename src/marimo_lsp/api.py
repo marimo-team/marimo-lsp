@@ -10,15 +10,18 @@ from typing import TYPE_CHECKING, cast
 
 import msgspec
 from marimo._convert.converters import MarimoConvert
+from marimo._export.exporter import Exporter
+from marimo._export.requests import HTMLExportRequest, IPYNBExportRequest
+from marimo._export.serialization import serialize_notebook_snapshot
 from marimo._runtime.commands import (
     ExecuteScratchpadCommand,
     InvokeFunctionCommand,
 )
 from marimo._runtime.packages.package_managers import create_package_manager
+from marimo._schemas.export import ExportAsHTMLRequest, to_html_export_options
+from marimo._schemas.export_options import IPYNBExportOptions
 from marimo._schemas.serialization import NotebookSerialization
-from marimo._server.export.exporter import Exporter
-from marimo._server.models.export import ExportAsHTMLRequest
-from marimo._server.models.models import InstantiateNotebookRequest
+from marimo._session.requests import InstantiateNotebookRequest
 from marimo._session.state.serialize import serialize_session_view
 from marimo._utils.parse_dataclass import parse_raw
 from pygls.uris import to_fs_path
@@ -51,7 +54,12 @@ from marimo_lsp.models import (
 from marimo_lsp.package_manager import LspPackageManager
 
 if TYPE_CHECKING:
-    from marimo._config.config import DisplayConfig, MarimoConfig, PartialMarimoConfig
+    from marimo._config.config import (
+        DisplayConfig,
+        MarimoConfig,
+        PartialMarimoConfig,
+        SharingConfig,
+    )
     from pygls.lsp.server import LanguageServer
 
     from marimo_lsp.sessions import Sessions
@@ -387,12 +395,23 @@ async def export_as_html(
     assert session, f"No session in workspace for {args.notebook_uri}"
 
     # Export the notebook with current outputs using the Exporter
+    app = session.app
+    config = session.get_config()
     html, _filename = Exporter().export_as_html(
-        app=session.app,
-        filename=session.filename,
-        session_view=session.session_view,
-        display_config=_get_display_config(session.get_config()),
-        request=args.inner,
+        HTMLExportRequest(
+            filename=session.filename,
+            app_code=app.to_py(),
+            app_config=app.config,
+            snapshot=serialize_notebook_snapshot(
+                app,
+                session.session_view,
+                drop_virtual_file_outputs=False,
+                include_model_notifications=True,
+            ),
+            display_config=_get_display_config(config),
+            options=to_html_export_options(args.inner),
+            sharing_config=cast("SharingConfig | None", config.get("sharing")),
+        )
     )
 
     return html
@@ -408,9 +427,11 @@ async def export_as_ipynb(
     assert session, f"No session in workspace for {args.notebook_uri}"
 
     ipynb_str = Exporter().export_as_ipynb(
-        app=session.app,
-        sort_mode="top-down",
-        session_view=session.session_view,
+        IPYNBExportRequest(
+            app=session.app,
+            options=IPYNBExportOptions(sort_mode="top-down"),
+            session_view=session.session_view,
+        )
     )
 
     # inject 'session.json' under top-level notebook metadata

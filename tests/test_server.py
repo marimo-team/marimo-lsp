@@ -366,7 +366,7 @@ if __name__ == "__main__":
             ],
             "violations": [],
             "valid": True,
-            "filename": "<marimo>",
+            "filename": "notebook.py",
         }
     )
 
