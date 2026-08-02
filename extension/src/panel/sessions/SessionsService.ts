@@ -1,15 +1,12 @@
-import {
-  Effect,
-  Option,
-  Schedule,
-  Schema,
-  Stream,
-  SubscriptionRef,
-} from "effect";
+import { Data, Effect, Option, Schema, Stream, SubscriptionRef } from "effect";
 
 import { MarimoClient } from "../../lsp/MarimoClient.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import { type SessionInfo, SessionsSnapshot } from "./schemas.ts";
+
+export class SessionNotFoundError extends Data.TaggedError(
+  "SessionNotFoundError",
+)<{ readonly notebookUri: NotebookId }> {}
 
 export type SessionViewStatus = SessionInfo["status"] | "restarting";
 export type SessionViewItem = Omit<SessionInfo, "status"> & {
@@ -54,6 +51,16 @@ export class SessionsService extends Effect.Service<SessionsService>()(
           ),
       );
 
+      // Subscribe before pulling the initial snapshot so a concurrent server
+      // mutation cannot be lost between the list request and registration.
+      yield* refresh().pipe(
+        Effect.catchAllCause((cause) =>
+          Effect.logWarning("Failed to load initial live sessions").pipe(
+            Effect.annotateLogs({ cause }),
+          ),
+        ),
+      );
+
       const find = (notebookUri: NotebookId) =>
         Effect.map(SubscriptionRef.get(sessions), (items) =>
           Option.fromNullable(
@@ -65,7 +72,9 @@ export class SessionsService extends Effect.Service<SessionsService>()(
         notebookUri: NotebookId,
       ) {
         const current = yield* find(notebookUri);
-        if (Option.isNone(current)) return;
+        if (Option.isNone(current)) {
+          return yield* new SessionNotFoundError({ notebookUri });
+        }
         yield* SubscriptionRef.update(sessions, (items) =>
           items.map((item) =>
             item.notebookUri === notebookUri
@@ -81,8 +90,30 @@ export class SessionsService extends Effect.Service<SessionsService>()(
               workingDirectory: current.value.workingDirectory,
             },
           })
-          .pipe(Effect.tapError(() => refresh()));
-        yield* refresh();
+          .pipe(
+            Effect.tapError(() =>
+              SubscriptionRef.update(sessions, (items) =>
+                items.map((item) =>
+                  item.notebookUri === notebookUri ? current.value : item,
+                ),
+              ),
+            ),
+          );
+        yield* SubscriptionRef.update(sessions, (items) =>
+          items.map((item) =>
+            item.notebookUri === notebookUri
+              ? { ...item, status: "idle" as const }
+              : item,
+          ),
+        );
+        yield* refresh().pipe(
+          Effect.catchAllCause((cause) =>
+            Effect.logWarning(
+              "Failed to reconcile live sessions after restart",
+            ).pipe(Effect.annotateLogs({ cause, notebookUri })),
+          ),
+        );
+        return undefined;
       });
 
       const shutdown = Effect.fn("SessionsService.shutdown")(function* (
@@ -115,29 +146,19 @@ export class SessionsService extends Effect.Service<SessionsService>()(
           executable: string,
           workingDirectory: string,
         ) {
-          yield* marimo
-            .restartSession({
-              notebookUri,
-              inner: { executable, workingDirectory },
-            })
-            .pipe(
-              Effect.retry(
-                Schedule.spaced("100 millis").pipe(
-                  Schedule.intersect(Schedule.recurs(10)),
-                ),
-              ),
-            );
+          yield* marimo.restartSession({
+            notebookUri,
+            inner: {
+              executable,
+              workingDirectory,
+              createIfMissing: true,
+            },
+          });
           yield* refresh();
         }),
         shutdownAll: Effect.fn("SessionsService.shutdownAll")(function* () {
-          const live = yield* SubscriptionRef.get(sessions);
-          yield* Effect.forEach(
-            live,
-            (session) => shutdown(session.notebookUri),
-            {
-              discard: true,
-            },
-          );
+          yield* marimo.shutdownAllSessions({});
+          yield* refresh();
         }),
         move,
       };

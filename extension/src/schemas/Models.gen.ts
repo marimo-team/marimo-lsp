@@ -555,6 +555,9 @@ export const CloseSessionPayload = Schema.Struct({
 export const RestartSessionRequest = Schema.Struct({
   executable: Schema.String,
   workingDirectory: Schema.String,
+  createIfMissing: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
+  }),
 }).annotations({ identifier: "RestartSessionRequest" });
 export type RestartSessionRequest = typeof RestartSessionRequest.Type;
 
@@ -600,6 +603,8 @@ export const ListSessionsResponse = Schema.Struct({
 export type ListSessionsResponse = typeof ListSessionsResponse.Type;
 
 export const ListSessionsPayload = Schema.Struct({});
+
+export const ShutdownAllSessionsPayload = Schema.Struct({});
 
 export const ExecuteScratchpadPayload = Schema.Struct({
   notebookUri: Schema.String,
@@ -1389,6 +1394,10 @@ export type MarimoApiCall =
       readonly params: typeof ListSessionsPayload.Encoded;
     }
   | {
+      readonly method: "shutdown-all-sessions";
+      readonly params: typeof ShutdownAllSessionsPayload.Encoded;
+    }
+  | {
       readonly method: "execute-scratchpad";
       readonly params: typeof ExecuteScratchpadPayload.Encoded;
     }
@@ -1531,6 +1540,13 @@ export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({
       { method: "list-sessions", params },
       ListSessionsPayload,
       ListSessionsResponse,
+    ),
+  shutdownAllSessions: (params: typeof ShutdownAllSessionsPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "shutdown-all-sessions", params },
+      ShutdownAllSessionsPayload,
+      Schema.Null,
     ),
   executeScratchpad: (params: typeof ExecuteScratchpadPayload.Encoded) =>
     dispatch(

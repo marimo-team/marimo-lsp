@@ -39,3 +39,19 @@ it.effect(
     expect(executions[0]?.args[1]).toBe(NOTEBOOK_TYPE);
   }),
 );
+
+it.effect(
+  "matches an already-open notebook using its unescaped URI",
+  Effect.fn(function* () {
+    const vscode = yield* TestVsCode.make();
+    const rawUri = notebookId("file:///workspace/notebook with spaces.py");
+    const document = createTestNotebookDocument(
+      Uri.file("/workspace/notebook with spaces.py"),
+    );
+    yield* vscode.addNotebookDocument(document);
+
+    yield* openSessionNotebook(rawUri).pipe(Effect.provide(vscode.layer));
+
+    expect(yield* Ref.get(vscode.executions)).toEqual([]);
+  }),
+);

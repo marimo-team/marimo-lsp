@@ -30,7 +30,7 @@ from marimo._session.state.session_view import SessionView
 from marimo_lsp.app_file_manager import LspAppFileManager, sync_app_with_workspace
 from marimo_lsp.kernel_manager import LspKernelManager
 from marimo_lsp.loggers import get_logger
-from marimo_lsp.models import SessionInfo
+from marimo_lsp.models import ListSessionsResponse, SessionInfo
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -127,6 +127,7 @@ class Session:
         self.started_at = started_at if started_at is not None else time.time()
         self._status: typing.Literal["idle", "running"] = "idle"
         self._on_change = on_change or (lambda: None)
+        self._state_lock = threading.RLock()
 
         try:
             self._kernel_manager.start_kernel()
@@ -235,9 +236,10 @@ class Session:
             self._set_status("running")
 
     def _set_status(self, status: typing.Literal["idle", "running"]) -> None:
-        if self._status == status:
-            return
-        self._status = status
+        with self._state_lock:
+            if self._status == status:
+                return
+            self._status = status
         self._on_change()
 
     def mark_running(self) -> None:
@@ -246,16 +248,22 @@ class Session:
 
     def describe(self) -> SessionInfo:
         """Return the public snapshot for this live session."""
-        return SessionInfo(
-            session_id=self.initialization_id,
-            notebook_uri=self._notebook_uri,
-            filename=self.filename,
-            executable=self.executable,
-            working_directory=self.working_directory,
-            started_at=self.started_at,
-            status=self._status,
-            attached=self.attached,
-        )
+        with self._state_lock:
+            return SessionInfo(
+                session_id=self.initialization_id,
+                notebook_uri=self._notebook_uri,
+                filename=self.filename,
+                executable=self.executable,
+                working_directory=self.working_directory,
+                started_at=self.started_at,
+                status=self._status,
+                attached=self.attached,
+            )
+
+    def set_on_change(self, on_change: typing.Callable[[], None]) -> None:
+        """Install the callback after the session joins its owning collection."""
+        with self._state_lock:
+            self._on_change = on_change
 
     def put_input(self, text: str) -> None:
         """Send user input to the kernel's stdin."""
@@ -304,21 +312,24 @@ class Session:
         if notify:
             self._on_change()
 
-    def attach(self) -> None:
+    def attach(self, *, notify: bool = True) -> None:
         """Reattach the client and restore the configured auto-reload mode."""
         if self.attached:
             return
 
         self._operation_sink.attach()
         self.update_runtime_config(self._runtime_config)
-        self._on_change()
+        if notify:
+            self._on_change()
 
-    def move(self, notebook_uri: str) -> None:
+    def move(self, notebook_uri: str, *, notify: bool = True) -> None:
         """Move this session to a renamed notebook URI."""
-        self._notebook_uri = notebook_uri
-        self._operation_sink.move(notebook_uri)
-        self._app_file_manager.move(notebook_uri)
-        self._on_change()
+        with self._state_lock:
+            self._notebook_uri = notebook_uri
+            self._operation_sink.move(notebook_uri)
+            self._app_file_manager.move(notebook_uri)
+        if notify:
+            self._on_change()
 
     def instantiate(
         self,
@@ -365,12 +376,12 @@ class Sessions:
     def __init__(self, server: LanguageServer) -> None:
         self._server = server
         self._sessions: dict[str, Session] = {}
+        self._lock = threading.RLock()
 
     def __iter__(self) -> Iterator[Session]:
         """Iterate over the live sessions."""
-        # Status updates arrive on kernel listener threads. Snapshot values so
-        # a concurrent lifecycle action cannot resize the dict mid-iteration.
-        return iter(tuple(self._sessions.values()))
+        with self._lock:
+            return iter(tuple(self._sessions.values()))
 
     def describe(self) -> list[SessionInfo]:
         """Return newest-first public descriptions of all live sessions."""
@@ -381,14 +392,19 @@ class Sessions:
         )
 
     def _notify_changed(self) -> None:
-        self._server.protocol.notify(
-            "marimo/sessionsChanged",
-            {"sessions": msgspec.to_builtins(self.describe())},
-        )
+        # Kernel listener threads can report status concurrently with LSP
+        # lifecycle requests. Serialize snapshot construction and delivery so
+        # notifications never observe a partially mutated collection.
+        with self._lock:
+            self._server.protocol.notify(
+                "marimo/sessionsChanged",
+                msgspec.to_builtins(ListSessionsResponse(sessions=self.describe())),
+            )
 
     def get(self, notebook_uri: str) -> Session | None:
         """Return the live session for a notebook, if one exists."""
-        return self._sessions.get(notebook_uri)
+        with self._lock:
+            return self._sessions.get(notebook_uri)
 
     def start(
         self,
@@ -407,7 +423,9 @@ class Sessions:
             return current
 
         replacement = self._create(notebook_uri, executable, working_directory)
-        self._sessions[notebook_uri] = replacement
+        with self._lock:
+            self._sessions[notebook_uri] = replacement
+            replacement.set_on_change(self._notify_changed)
         if current is not None:
             self._close(current, notebook_uri)
         self._notify_changed()
@@ -452,7 +470,6 @@ class Sessions:
             kernel_manager=kernel_manager,
             app_file_manager=app_file_manager,
             config_manager=config_manager,
-            on_change=self._notify_changed,
             session_view=previous.session_view if previous else None,
             started_at=previous.started_at if previous else None,
         )
@@ -463,12 +480,17 @@ class Sessions:
         *,
         executable: str,
         working_directory: str,
+        create_if_missing: bool = False,
     ) -> Session | None:
         """Atomically replace a live session's kernel."""
         current = self.get(notebook_uri)
         if current is None:
+            if not create_if_missing:
+                return None
             replacement = self._create(notebook_uri, executable, working_directory)
-            self._sessions[notebook_uri] = replacement
+            with self._lock:
+                self._sessions[notebook_uri] = replacement
+                replacement.set_on_change(self._notify_changed)
             self._notify_changed()
             return replacement
 
@@ -480,27 +502,30 @@ class Sessions:
         )
         if not current.attached:
             replacement.detach(notify=False)
-        self._sessions[notebook_uri] = replacement
+        with self._lock:
+            self._sessions[notebook_uri] = replacement
+            replacement.set_on_change(self._notify_changed)
         self._close(current, notebook_uri)
         self._notify_changed()
         return replacement
 
     def move(self, notebook_uri: str, new_notebook_uri: str) -> None:
         """Move a live session to a renamed notebook URI."""
-        session = self._sessions.pop(notebook_uri, None)
-        if session is None:
-            return
-        replaced = self._sessions.pop(new_notebook_uri, None)
+        with self._lock:
+            session = self._sessions.pop(notebook_uri, None)
+            if session is None:
+                return
+            replaced = self._sessions.pop(new_notebook_uri, None)
+            self._sessions[new_notebook_uri] = session
         if replaced is not None:
             self._close(replaced, new_notebook_uri)
-        self._sessions[new_notebook_uri] = session
-        session.move(new_notebook_uri)
+        session.move(new_notebook_uri, notify=False)
         try:
             session.sync(self._server.workspace)
         except KeyError:
             pass
         else:
-            session.attach()
+            session.attach(notify=False)
         self._notify_changed()
 
     def attach(self, notebook_uri: str, workspace: Workspace) -> None:
@@ -525,7 +550,8 @@ class Sessions:
 
     def close(self, notebook_uri: str) -> None:
         """Close and forget a notebook's session."""
-        session = self._sessions.pop(notebook_uri, None)
+        with self._lock:
+            session = self._sessions.pop(notebook_uri, None)
         if session is None:
             return
 
@@ -544,7 +570,10 @@ class Sessions:
     def close_all(self) -> None:
         """Close all live sessions."""
         logger.info("Closing all sessions")
-        live = self._sessions
-        self._sessions = {}
+        with self._lock:
+            live = self._sessions
+            self._sessions = {}
         for notebook_uri, session in live.items():
             self._close(session, notebook_uri)
+        if live:
+            self._notify_changed()

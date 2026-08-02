@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import copy
+import threading
 from typing import cast
 from unittest.mock import Mock
 
@@ -32,6 +33,7 @@ def _make_session() -> tuple[Session, Mock]:
     session.session_view = SessionView()
     session._on_change = Mock()
     session._status = "idle"
+    session._state_lock = threading.RLock()
     return session, ipc_queue_manager
 
 
@@ -340,12 +342,27 @@ def test_restore_uses_requested_working_directory() -> None:
         "file:///test.py",
         executable="/usr/bin/python",
         working_directory="/workspace",
+        create_if_missing=True,
     )
 
     assert result is replacement
     sessions._create.assert_called_once_with(
         "file:///test.py", "/usr/bin/python", "/workspace"
     )
+
+
+def test_restart_does_not_restore_a_missing_session() -> None:
+    sessions = Sessions(Mock())
+    sessions._create = Mock()
+
+    result = sessions.restart(
+        "file:///test.py",
+        executable="/usr/bin/python",
+        working_directory="/workspace",
+    )
+
+    assert result is None
+    sessions._create.assert_not_called()
 
 
 def test_move_preserves_live_session() -> None:
@@ -360,5 +377,23 @@ def test_move_preserves_live_session() -> None:
 
     assert sessions.get("file:///old.py") is None
     assert sessions.get("file:///new.py") is current
-    current.move.assert_called_once_with("file:///new.py")
+    current.move.assert_called_once_with("file:///new.py", notify=False)
+    sessions._notify_changed.assert_called_once_with()
+
+
+def test_close_all_clears_collection_and_notifies_once() -> None:
+    sessions = Sessions(Mock())
+    first = Mock(spec=Session)
+    second = Mock(spec=Session)
+    sessions._sessions = {
+        "file:///first.py": first,
+        "file:///second.py": second,
+    }
+    sessions._notify_changed = Mock()
+
+    sessions.close_all()
+
+    assert list(sessions) == []
+    first.close.assert_called_once_with()
+    second.close.assert_called_once_with()
     sessions._notify_changed.assert_called_once_with()

@@ -64,6 +64,7 @@ from marimo_lsp.models import (
     SessionCommand,
     SetDisplayThemeRequest,
     SetDisplayThemeResponse,
+    ShutdownAllSessionsRequest,
     StdinRequest,
     UpdateConfigurationRequest,
     UpdateUIElementRequest,
@@ -198,6 +199,13 @@ class ApiBuilder:
 marimo_api = ApiBuilder()
 
 
+class SessionNotFoundError(ValueError):
+    """Raised when an API command requires a live notebook session."""
+
+    def __init__(self, notebook_uri: str) -> None:
+        super().__init__(f"No session found for {notebook_uri}")
+
+
 def _get_display_config(config: MarimoConfig) -> DisplayConfig:
     """Extract the display config from a MarimoConfig.
 
@@ -314,11 +322,14 @@ async def restart_session(
     args: NotebookCommand[RestartSessionRequest],
 ) -> None:
     logger.info(f"restart_session for {args.notebook_uri}")
-    ctx.sessions.restart(
+    restarted = ctx.sessions.restart(
         args.notebook_uri,
         executable=args.inner.executable,
         working_directory=args.inner.working_directory,
+        create_if_missing=args.inner.create_if_missing,
     )
+    if restarted is None:
+        raise SessionNotFoundError(args.notebook_uri)
 
 
 @marimo_api("move-session")
@@ -338,6 +349,15 @@ async def list_sessions(
     _args: ListSessionsRequest,
 ) -> ListSessionsResponse:
     return ListSessionsResponse(sessions=ctx.sessions.describe())
+
+
+@marimo_api("shutdown-all-sessions")
+async def shutdown_all_sessions(
+    ctx: ApiContext,
+    _args: ShutdownAllSessionsRequest,
+) -> None:
+    """Close every live kernel session with one collection mutation."""
+    ctx.sessions.close_all()
 
 
 @marimo_api("execute-scratchpad")
@@ -653,6 +673,5 @@ async def handle_api_command(
     request = msgspec.convert(params, type=spec.request)
     result = await spec.handler(ApiContext(ls=ls, sessions=sessions), request)
 
-    payload = msgspec.to_builtins(result)
-    validated = msgspec.convert(payload, type=spec.response)
+    validated = msgspec.convert(result, type=spec.response)
     return msgspec.to_builtins(validated)

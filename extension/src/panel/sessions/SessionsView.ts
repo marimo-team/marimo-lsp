@@ -21,7 +21,7 @@ export const openSessionNotebook = Effect.fn("SessionsView.openNotebook")(
     const existing = openNotebooks.find(
       (document) =>
         document.notebookType === NOTEBOOK_TYPE &&
-        document.uri.toString() === notebookUri,
+        document.uri.toString(true) === notebookUri,
     );
 
     if (existing) {
@@ -180,9 +180,7 @@ export const SessionsViewLive = Layer.scopedDiscard(
         );
         if (!Option.contains(choice, "Restart")) return;
 
-        const uri = code.Uri.parse(notebookUri);
-        const document = yield* code.workspace.openNotebookDocument(uri);
-        yield* code.window.showNotebookDocument(document);
+        yield* openSessionNotebook(notebookUri);
         yield* sessions.restore(
           notebookUri,
           session.value.executable,

@@ -1,10 +1,10 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Either, Layer } from "effect";
 
 import { makeTestMarimoClient } from "../../../__tests__/__utils__/TestMarimoClient.ts";
 import { notebookId } from "../../../lib/__tests__/branded.ts";
 import type { MarimoApiCall } from "../../../types.ts";
-import { SessionsService } from "../SessionsService.ts";
+import { SessionNotFoundError, SessionsService } from "../SessionsService.ts";
 
 const NOTEBOOK_URI = notebookId("file:///workspace/notebook.py");
 const SNAPSHOT = {
@@ -22,14 +22,14 @@ const SNAPSHOT = {
   ],
 } as const;
 
-function makeLayer(recorded: MarimoApiCall[]) {
+function makeLayer(recorded: MarimoApiCall[], snapshot: unknown = SNAPSHOT) {
   return SessionsService.Default.pipe(
     Layer.provide(
       makeTestMarimoClient({
         execute: (request) =>
           Effect.sync(() => {
             recorded.push(request);
-            return request.method === "list-sessions" ? SNAPSHOT : null;
+            return request.method === "list-sessions" ? snapshot : null;
           }),
       }),
     ),
@@ -43,11 +43,59 @@ it.effect(
 
     const live = yield* Effect.gen(function* () {
       const sessions = yield* SessionsService;
-      yield* sessions.refresh();
       return yield* sessions.get();
     }).pipe(Effect.provide(makeLayer(recorded)));
 
     expect(live).toEqual(SNAPSHOT.sessions);
+    expect(recorded).toEqual([{ method: "list-sessions", params: {} }]);
+  }),
+);
+
+it.effect(
+  "shuts down every session and reconciles once",
+  Effect.fn(function* () {
+    const recorded: MarimoApiCall[] = [];
+    const secondNotebook = notebookId("file:///workspace/second.py");
+    const snapshot = {
+      sessions: [
+        ...SNAPSHOT.sessions,
+        {
+          ...SNAPSHOT.sessions[0],
+          sessionId: "session-2",
+          notebookUri: secondNotebook,
+          filename: "second.py",
+        },
+      ],
+    };
+
+    yield* Effect.gen(function* () {
+      const sessions = yield* SessionsService;
+      yield* sessions.shutdownAll();
+    }).pipe(Effect.provide(makeLayer(recorded, snapshot)));
+
+    expect(recorded).toEqual([
+      { method: "list-sessions", params: {} },
+      { method: "shutdown-all-sessions", params: {} },
+      { method: "list-sessions", params: {} },
+    ]);
+  }),
+);
+
+it.effect(
+  "fails when a session disappears before restart",
+  Effect.fn(function* () {
+    const recorded: MarimoApiCall[] = [];
+    const result = yield* Effect.gen(function* () {
+      const sessions = yield* SessionsService;
+      return yield* Effect.either(sessions.restart(NOTEBOOK_URI));
+    }).pipe(Effect.provide(makeLayer(recorded, { sessions: [] })));
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toEqual(
+        new SessionNotFoundError({ notebookUri: NOTEBOOK_URI }),
+      );
+    }
     expect(recorded).toEqual([{ method: "list-sessions", params: {} }]);
   }),
 );
@@ -59,7 +107,6 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const sessions = yield* SessionsService;
-      yield* sessions.refresh();
       yield* sessions.restart(NOTEBOOK_URI);
     }).pipe(Effect.provide(makeLayer(recorded)));
 

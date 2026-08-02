@@ -1,21 +1,20 @@
 import { Schema } from "effect";
 
 import { NotebookIdFromString } from "../../schemas/MarimoNotebookDocument.ts";
+import {
+  ListSessionsResponse as GeneratedSessionsSnapshot,
+  SessionInfo as GeneratedSessionInfo,
+} from "../../schemas/Models.gen.ts";
 
 export const SessionInfo = Schema.Struct({
-  sessionId: Schema.String,
+  ...GeneratedSessionInfo.fields,
   notebookUri: NotebookIdFromString,
-  filename: Schema.NullOr(Schema.String),
-  executable: Schema.String,
-  workingDirectory: Schema.String,
-  startedAt: Schema.Number,
-  status: Schema.Literal("idle", "running"),
-  attached: Schema.Boolean,
 });
 
 export type SessionInfo = typeof SessionInfo.Type;
 
 export const SessionsSnapshot = Schema.Struct({
+  ...GeneratedSessionsSnapshot.fields,
   sessions: Schema.Array(SessionInfo),
 });
 

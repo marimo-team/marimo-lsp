@@ -257,6 +257,9 @@ class RestartSessionRequest(msgspec.Struct, rename="camel"):
     working_directory: str
     """Working directory used to restart or restore the session."""
 
+    create_if_missing: bool = False
+    """Create a replacement only for an explicit restore operation."""
+
 
 class MoveSessionRequest(msgspec.Struct, rename="camel"):
     """A request to move a live session to a renamed notebook URI."""
@@ -267,6 +270,10 @@ class MoveSessionRequest(msgspec.Struct, rename="camel"):
 
 class ListSessionsRequest(msgspec.Struct, rename="camel"):
     """A request for all live sessions owned by this language server."""
+
+
+class ShutdownAllSessionsRequest(msgspec.Struct, rename="camel"):
+    """A request to close every live session owned by this language server."""
 
 
 class SessionInfo(msgspec.Struct, rename="camel", frozen=True):

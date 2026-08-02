@@ -65,6 +65,10 @@ it.scoped(
 
       assert.deepStrictEqual(yield* Ref.get(requests), [
         {
+          method: "list-sessions",
+          params: {},
+        },
+        {
           method: "execute-cells",
           params: {
             notebookUri: id,
