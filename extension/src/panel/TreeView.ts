@@ -40,12 +40,11 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
         viewId: MarimoView;
         getChildren: (element?: T) => Effect.Effect<T[]>;
         getTreeItem: (element: T) => Effect.Effect<TreeItem>;
-        getParent?: (element: T) => Effect.Effect<T | undefined>;
       }) {
         // Create event emitter for refresh events
         const eventEmitter = new code.EventEmitter<T | undefined | null>();
 
-        const treeView = yield* code.window.createTreeView(options.viewId, {
+        yield* code.window.createTreeView(options.viewId, {
           treeDataProvider: {
             onDidChangeTreeData: eventEmitter.event,
 
@@ -60,20 +59,6 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
             getChildren: (element?: T): vscode.ProviderResult<T[]> => {
               return Effect.runPromise(options.getChildren(element));
             },
-
-            getParent: options.getParent
-              ? (element: T): vscode.ProviderResult<T> => {
-                  const getParentFn = options.getParent;
-                  if (!getParentFn) {
-                    return null;
-                  }
-                  return Effect.runPromise(
-                    getParentFn(element).pipe(
-                      Effect.map((parent) => parent ?? null),
-                    ),
-                  );
-                }
-              : undefined,
           },
           showCollapseAll: true,
         });
@@ -84,16 +69,6 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
            */
           refresh(element?: T) {
             return Effect.sync(() => eventEmitter.fire(element ?? null));
-          },
-
-          /**
-           * Reveals an element in the tree view.
-           */
-          reveal(
-            element: T,
-            opts?: { select?: boolean; focus?: boolean; expand?: boolean },
-          ) {
-            return Effect.promise(() => treeView.reveal(element, opts));
           },
         };
       }),

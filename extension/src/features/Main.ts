@@ -11,7 +11,7 @@ import {
 import type * as vscode from "vscode";
 
 import { Config } from "../config/Config.ts";
-import { ConfigContextManager } from "../config/ConfigContextManager.ts";
+import { ConfigContextManagerLive } from "../config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
@@ -76,6 +76,7 @@ const MainLive = Layer.empty
     Layer.merge(CellStatusBarProviderLive),
     Layer.merge(CellMetadataBindingsLive),
     Layer.merge(ReloadOnConfigChangeLive),
+    Layer.merge(ConfigContextManagerLive),
     Layer.merge(ThemeSyncLive),
     Layer.merge(HideCodeSyncLive),
     Layer.merge(DebugLayerLive),
@@ -96,7 +97,6 @@ const MainLive = Layer.empty
   )
   .pipe(
     Layer.provide(MarimoConfigurationService.Default),
-    Layer.provide(ConfigContextManager.Default),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(Uv.Default),
     Layer.provide(TreeView.Default),

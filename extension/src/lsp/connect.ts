@@ -189,10 +189,6 @@ export const connectMarimoNotebookLspClient = Effect.fn(
   };
 });
 
-export type MarimoNotebookLspClient = Effect.Effect.Success<
-  ReturnType<typeof connectMarimoNotebookLspClient>
->;
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

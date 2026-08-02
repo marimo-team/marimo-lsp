@@ -10,7 +10,6 @@ import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts"
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type {
   DependencyTreeNode,
-  PackageDescription,
   PackageSource,
 } from "../../schemas/Models.gen.ts";
 
@@ -26,12 +25,6 @@ function controllerSource(controller: NotebookController): PackageSource {
     : { kind: "script" };
 }
 
-interface PackageListState {
-  packages: PackageDescription[];
-  loading: boolean;
-  error: string | null;
-}
-
 interface DependencyTreeState {
   tree: DependencyTreeNode | null;
   loading: boolean;
@@ -39,13 +32,10 @@ interface DependencyTreeState {
 }
 
 /**
- * Manages package lists and dependency trees for notebooks.
+ * Manages dependency trees for notebooks.
  *
- * Stores:
- * 1. Package lists (NotebookUri -> PackageListState)
- * 2. Dependency trees (NotebookUri -> DependencyTreeState)
- *
- * Uses SubscriptionRef for reactive state management.
+ * Stores dependency trees (NotebookUri -> DependencyTreeState) in a
+ * SubscriptionRef for reactive state management.
  */
 export class PackagesService extends Effect.Service<PackagesService>()(
   "PackagesService",
@@ -55,98 +45,12 @@ export class PackagesService extends Effect.Service<PackagesService>()(
       const notebooks = yield* NotebookRuntime;
       const editors = yield* NotebookEditorRegistry;
 
-      // Track package lists: NotebookUri -> PackageListState
-      const packageListsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, PackageListState>(),
-      );
-
       // Track dependency trees: NotebookUri -> DependencyTreeState
       const dependencyTreesRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, DependencyTreeState>(),
       );
 
       return {
-        /**
-         * Update package list for a notebook
-         */
-        updatePackageList(
-          notebookUri: NotebookId,
-          packages: PackageDescription[],
-        ) {
-          return Effect.gen(function* () {
-            yield* SubscriptionRef.update(packageListsRef, (map) =>
-              HashMap.set(map, notebookUri, {
-                packages,
-                loading: false,
-                error: null,
-              }),
-            );
-
-            yield* Effect.logTrace("Updated package list").pipe(
-              Effect.annotateLogs({ notebookUri, count: packages.length }),
-            );
-          });
-        },
-
-        /**
-         * Set package list loading state
-         */
-        setPackageListLoading(notebookUri: NotebookId, loading: boolean) {
-          return SubscriptionRef.update(packageListsRef, (map) =>
-            HashMap.set(
-              map,
-              notebookUri,
-              Option.match(HashMap.get(map, notebookUri), {
-                onSome: (value) => ({ ...value, loading }),
-                onNone: () => ({ packages: [], loading, error: null }),
-              }),
-            ),
-          );
-        },
-
-        /**
-         * Set package list error state
-         */
-        setPackageListError(notebookUri: NotebookId, error: string) {
-          return Effect.gen(function* () {
-            yield* SubscriptionRef.update(packageListsRef, (map) =>
-              HashMap.set(
-                map,
-                notebookUri,
-                Option.match(HashMap.get(map, notebookUri), {
-                  onSome: (value) => ({ ...value, loading: false, error }),
-                  onNone: () => ({ packages: [], loading: false, error }),
-                }),
-              ),
-            );
-            yield* Effect.logError("Package list error").pipe(
-              Effect.annotateLogs({ notebookUri, error }),
-            );
-          });
-        },
-
-        /**
-         * Update dependency tree for a notebook
-         */
-        updateDependencyTree(
-          notebookUri: NotebookId,
-          tree: DependencyTreeNode | null,
-        ) {
-          return Effect.gen(function* () {
-            yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
-              HashMap.set(map, notebookUri, {
-                tree,
-                loading: false,
-                error: null,
-              }),
-            );
-
-            yield* Effect.logTrace("Updated dependency tree").pipe(
-              Effect.annotateLogs({ notebookUri, hasTree: tree !== null }),
-            );
-          });
-        },
-
         /**
          * Set dependency tree loading state
          */
@@ -183,16 +87,6 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               Effect.annotateLogs({ notebookUri, error }),
             );
           });
-        },
-
-        /**
-         * Get package list state for a notebook
-         */
-        getPackageList(notebookUri: NotebookId) {
-          return Effect.map(
-            SubscriptionRef.get(packageListsRef),
-            HashMap.get(notebookUri),
-          );
         },
 
         /**
@@ -388,10 +282,6 @@ export class PackagesService extends Effect.Service<PackagesService>()(
         clearNotebook(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(
-              packageListsRef,
-              HashMap.remove(notebookUri),
-            );
-            yield* SubscriptionRef.update(
               dependencyTreesRef,
               HashMap.remove(notebookUri),
             );
@@ -399,15 +289,6 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               Effect.annotateLogs({ notebookUri }),
             );
           });
-        },
-
-        /**
-         * Stream of package list changes.
-         *
-         * Emits the current value on subscription, then all subsequent changes.
-         */
-        streamPackageListChanges() {
-          return packageListsRef.changes;
         },
 
         /**

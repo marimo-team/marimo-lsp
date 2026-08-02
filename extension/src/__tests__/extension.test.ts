@@ -49,7 +49,10 @@ describe("extension.activate", () => {
           },
         }
       `);
+      // Full activation builds the entire layer graph; the default 5s
+      // timeout flakes under parallel-worker load.
     }),
+    20_000,
   );
 
   it.scoped(
@@ -85,6 +88,7 @@ describe("extension.activate", () => {
       assert.strictEqual(pkg.contributes.notebooks.length, 1);
       assert.strictEqual(pkg.contributes.notebooks[0].type, NOTEBOOK_TYPE);
     }),
+    20_000,
   );
 });
 

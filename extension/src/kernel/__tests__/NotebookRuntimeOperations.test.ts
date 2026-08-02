@@ -26,7 +26,13 @@ import {
   processRuntimeOperations,
 } from "../../kernel/NotebookRuntime.ts";
 import { PythonController } from "../../kernel/PythonController.ts";
-import { cellId, notebookId } from "../../lib/__tests__/branded.ts";
+import {
+  cellId,
+  notebookId,
+  variableName,
+} from "../../lib/__tests__/branded.ts";
+import { DatasourcesService } from "../../panel/datasources/DatasourcesService.ts";
+import { VariablesService } from "../../panel/variables/VariablesService.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -93,6 +99,10 @@ const withTestCtx = Effect.fn(function* () {
 
   const layer = Layer.empty.pipe(
     Layer.provideMerge(NotebookRuntime.Default),
+    // Merged out (not just provided) so tests can observe the same service
+    // instances NotebookRuntime writes to.
+    Layer.provideMerge(VariablesService.Default),
+    Layer.provideMerge(DatasourcesService.Default),
     Layer.provide(
       makeTestMarimoClient({
         execute(request) {
@@ -831,6 +841,57 @@ describe("NotebookRuntime scratch stream", () => {
           (c) => c.method === "interrupt",
         );
         expect(interruptCmd).toBeUndefined();
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+});
+
+describe("NotebookRuntime state eviction", () => {
+  it.scoped(
+    "evicts variables and datasource state when a notebook closes",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        yield* NotebookRuntime;
+        const variables = yield* VariablesService;
+        const datasources = yield* DatasourcesService;
+
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          operation: {
+            op: "variables",
+            variables: [
+              {
+                name: variableName("x"),
+                declared_by: [cellId("cell-1")],
+                used_by: [],
+              },
+            ],
+          },
+        });
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          operation: { op: "datasets", tables: [] },
+        });
+        yield* TestClock.adjust("10 millis");
+
+        expect(
+          Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
+        ).toBe(true);
+        expect(
+          Option.isSome(yield* datasources.getDatasets(ctx.notebookUri)),
+        ).toBe(true);
+
+        yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
+        yield* TestClock.adjust("10 millis");
+
+        expect(
+          Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
+        ).toBe(false);
+        expect(
+          Option.isSome(yield* datasources.getDatasets(ctx.notebookUri)),
+        ).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

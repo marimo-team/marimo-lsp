@@ -408,6 +408,12 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
               const notebook = MarimoNotebookDocument.tryFrom(document);
               if (Option.isNone(notebook)) return;
               notebooks.delete(notebook.value.id);
+              // Evict per-notebook kernel state so closed notebooks don't
+              // accumulate in the panel services for the session's lifetime.
+              const variables = yield* VariablesService;
+              const datasources = yield* DatasourcesService;
+              yield* variables.clearNotebook(notebook.value.id);
+              yield* datasources.clearNotebook(notebook.value.id);
               yield* updateKernelContext();
             }),
           ),
@@ -777,15 +783,6 @@ function processOperation(
       case "datasets":
         yield* datasources.updateDatasets(notebookUri, operation);
         break;
-      case "sql-table-preview":
-        yield* datasources.updateTablePreview(notebookUri, operation);
-        break;
-      case "sql-table-list-preview":
-        yield* datasources.updateTableListPreview(notebookUri, operation);
-        break;
-      case "data-column-preview":
-        yield* datasources.updateColumnPreview(notebookUri, operation);
-        break;
       case "notebook-document-transaction":
         yield* applyTransactionToEditor(notebookUri, operation);
         break;
@@ -806,6 +803,7 @@ function processOperation(
       case "completed-run":
       case "completion-result":
       case "consumer-capabilities":
+      case "data-column-preview":
       case "data-source-discovery-result":
       case "focus-cell":
       case "installing-package-alert":
@@ -819,6 +817,8 @@ function processOperation(
       case "reload":
       case "secret-keys-result":
       case "sql-schema-list-preview":
+      case "sql-table-list-preview":
+      case "sql-table-preview":
       case "startup-logs":
       case "storage-download-ready":
       case "storage-entries":
