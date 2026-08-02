@@ -22,7 +22,11 @@ export function marimoCommand(id: string): MarimoCommand<[], void> {
     [MarimoCommandTypeId]: {
       id,
       decodeArguments: (args) =>
-        Schema.decodeUnknown(Schema.Tuple())(args).pipe(Effect.as([])),
+        Schema.decodeUnknown(
+          Schema.Array(Schema.Unknown).pipe(
+            Schema.filter((args) => args.length === 0),
+          ),
+        )(args).pipe(Effect.as([])),
       decodeResult: Schema.decodeUnknown(Schema.Void),
     },
   };

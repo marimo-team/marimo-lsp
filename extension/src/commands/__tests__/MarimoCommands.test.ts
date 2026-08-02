@@ -24,6 +24,16 @@ describe("MarimoCommands", () => {
     }),
   );
 
+  it.effect("accepts an empty argument list for a no-argument command", () =>
+    Effect.gen(function* () {
+      const args = yield* decodeCommandArguments(
+        MarimoCommands.restartKernel,
+        [],
+      );
+      expect(args).toEqual([]);
+    }),
+  );
+
   it.effect("decodes the first external argument for open-as-notebook", () =>
     Effect.gen(function* () {
       const args = yield* decodeCommandArguments(
