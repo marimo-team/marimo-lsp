@@ -67,44 +67,6 @@ export class PackagesService extends Effect.Service<PackagesService>()(
 
       return {
         /**
-         * Set dependency tree loading state
-         */
-        setDependencyTreeLoading(notebookUri: NotebookId, loading: boolean) {
-          return SubscriptionRef.update(dependencyTreesRef, (map) =>
-            HashMap.set(
-              map,
-              notebookUri,
-              Option.match(HashMap.get(map, notebookUri), {
-                onNone: () => ({ tree: null, loading, error: null }),
-                onSome: (value) => ({ ...value, loading }),
-              }),
-            ),
-          );
-        },
-
-        /**
-         * Set dependency tree error state
-         */
-        setDependencyTreeError(notebookUri: NotebookId, error: string) {
-          return Effect.gen(function* () {
-            yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
-              HashMap.set(
-                map,
-                notebookUri,
-                Option.match(HashMap.get(map, notebookUri), {
-                  onSome: (value) => ({ ...value, loading: false, error }),
-                  onNone: () => ({ tree: null, loading: false, error }),
-                }),
-              ),
-            );
-
-            yield* Effect.logError("Dependency tree error").pipe(
-              Effect.annotateLogs({ notebookUri, error }),
-            );
-          });
-        },
-
-        /**
          * Get dependency tree state for a notebook
          */
         getDependencyTree(notebookUri: NotebookId) {
@@ -175,14 +137,16 @@ export class PackagesService extends Effect.Service<PackagesService>()(
             }
 
             const source = controllerSource(activeController.value);
-
-            // Set loading state
             yield* updateIfCurrent((map) =>
               HashMap.set(
                 map,
                 notebookUri,
                 Option.match(HashMap.get(map, notebookUri), {
-                  onNone: () => ({ tree: null, loading: true, error: null }),
+                  onNone: () => ({
+                    tree: null,
+                    loading: true,
+                    error: null,
+                  }),
                   onSome: (value) => ({ ...value, loading: true }),
                 }),
               ),

@@ -227,6 +227,118 @@ describe("PackagesService", () => {
     }),
   );
 
+  it.effect(
+    "invalidating bypasses the cached dependency tree",
+    Effect.fn(function* () {
+      let request = 0;
+      const firstTree = {
+        name: "<root>",
+        version: null,
+        tags: [],
+        dependencies: [
+          { name: "first", version: "1.0.0", tags: [], dependencies: [] },
+        ],
+      };
+      const refreshedTree = {
+        name: "<root>",
+        version: null,
+        tags: [],
+        dependencies: [
+          { name: "second", version: "2.0.0", tags: [], dependencies: [] },
+        ],
+      };
+      const { layer, recorded } = yield* makeContext({
+        controller: Option.some(makeNonPythonController()),
+        treeEffect: Effect.sync(() => ({
+          tree: request++ === 0 ? firstTree : refreshedTree,
+        })),
+      });
+
+      yield* Effect.gen(function* () {
+        const svc = yield* PackagesService;
+
+        expect(yield* svc.fetchDependencyTree(NOTEBOOK_URI)).toEqual(firstTree);
+        expect(yield* svc.fetchDependencyTree(NOTEBOOK_URI)).toEqual(firstTree);
+        expect(recorded).toHaveLength(1);
+
+        yield* svc.clearNotebook(NOTEBOOK_URI);
+        expect(yield* svc.fetchDependencyTree(NOTEBOOK_URI)).toEqual(
+          refreshedTree,
+        );
+        expect(recorded).toHaveLength(2);
+
+        const state = Option.getOrThrow(
+          yield* svc.getDependencyTree(NOTEBOOK_URI),
+        );
+        expect(state).toEqual({
+          tree: refreshedTree,
+          loading: false,
+          error: null,
+        });
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.scoped(
+    "does not let an invalidated request overwrite a newer fetch",
+    Effect.fn(function* () {
+      const firstRequestStarted = yield* Deferred.make<void>();
+      const releaseFirstRequest = yield* Deferred.make<void>();
+      let request = 0;
+      const olderTree = {
+        name: "<root>",
+        version: null,
+        tags: [],
+        dependencies: [
+          { name: "older", version: "1.0.0", tags: [], dependencies: [] },
+        ],
+      };
+      const newerTree = {
+        name: "<root>",
+        version: null,
+        tags: [],
+        dependencies: [
+          { name: "newer", version: "2.0.0", tags: [], dependencies: [] },
+        ],
+      };
+      const { layer } = yield* makeContext({
+        controller: Option.some(makeNonPythonController()),
+        treeEffect: Effect.suspend(() => {
+          const currentRequest = request++;
+          if (currentRequest === 0) {
+            return Deferred.succeed(firstRequestStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseFirstRequest)),
+              Effect.as({ tree: olderTree }),
+            );
+          }
+          return Effect.succeed({ tree: newerTree });
+        }),
+      });
+
+      yield* Effect.gen(function* () {
+        const svc = yield* PackagesService;
+        const olderFetch = yield* Effect.fork(
+          svc.fetchDependencyTree(NOTEBOOK_URI),
+        );
+        yield* Deferred.await(firstRequestStarted);
+
+        yield* svc.clearNotebook(NOTEBOOK_URI);
+        expect(yield* svc.fetchDependencyTree(NOTEBOOK_URI)).toEqual(newerTree);
+
+        yield* Deferred.succeed(releaseFirstRequest, undefined);
+        expect(yield* Fiber.join(olderFetch)).toEqual(olderTree);
+
+        expect(
+          Option.getOrThrow(yield* svc.getDependencyTree(NOTEBOOK_URI)),
+        ).toEqual({
+          tree: newerTree,
+          loading: false,
+          error: null,
+        });
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
   it.scoped(
     "evicts the dependency tree when its notebook closes",
     Effect.fn(function* () {
