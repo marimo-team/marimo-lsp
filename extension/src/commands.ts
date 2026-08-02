@@ -1,4 +1,5 @@
 import { Effect, ParseResult, Schema } from "effect";
+import type * as vscode from "vscode";
 
 const MarimoCommandTypeId: unique symbol = Symbol("MarimoCommand");
 
@@ -29,6 +30,27 @@ export function marimoCommand(id: string): MarimoCommand<[], void> {
   };
 }
 
+export const VscodeUriSchema = Schema.declare<vscode.Uri>(
+  (value): value is vscode.Uri =>
+    typeof value === "object" &&
+    value !== null &&
+    "scheme" in value &&
+    typeof value.scheme === "string" &&
+    "path" in value &&
+    typeof value.path === "string" &&
+    "with" in value &&
+    typeof value.with === "function" &&
+    "toString" in value &&
+    typeof value.toString === "function",
+  { identifier: "vscode.Uri" },
+);
+
+const NotebookCommandContextSchema = Schema.Struct({
+  notebookEditor: Schema.Struct({ notebookUri: VscodeUriSchema }),
+});
+
+export type NotebookCommandContext = typeof NotebookCommandContextSchema.Type;
+
 export function withFirstArgument<A>(
   command: MarimoCommand,
   schema: Schema.Schema<A>,
@@ -39,6 +61,25 @@ export function withFirstArgument<A>(
       decodeArguments: (args) =>
         Schema.decodeUnknown(schema)(args[0]).pipe(
           Effect.map((argument) => [argument]),
+        ),
+      decodeResult: Schema.decodeUnknown(Schema.Void),
+    },
+  };
+}
+
+export function withOptionalNotebookContext(
+  command: MarimoCommand,
+): MarimoCommand<[context?: NotebookCommandContext], void> {
+  return {
+    [MarimoCommandTypeId]: {
+      id: commandId(command),
+      decodeArguments: (args) =>
+        Schema.decodeUnknown(Schema.UndefinedOr(NotebookCommandContextSchema))(
+          args[0],
+        ).pipe(
+          Effect.map((context): [context?: NotebookCommandContext] =>
+            context === undefined ? [] : [context],
+          ),
         ),
       decodeResult: Schema.decodeUnknown(Schema.Void),
     },

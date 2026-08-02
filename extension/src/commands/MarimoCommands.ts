@@ -1,23 +1,36 @@
 import { Schema } from "effect";
-import type * as vscode from "vscode";
 
-import { withFirstArgument } from "../commands.ts";
+import {
+  withFirstArgument,
+  withOptionalNotebookContext,
+  VscodeUriSchema,
+} from "../commands.ts";
 import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 
-const UriSchema = Schema.declare<vscode.Uri>(
-  (value): value is vscode.Uri =>
-    typeof value === "object" &&
-    value !== null &&
-    "scheme" in value &&
-    typeof value.scheme === "string" &&
-    "path" in value &&
-    typeof value.path === "string" &&
-    "with" in value &&
-    typeof value.with === "function" &&
-    "toString" in value &&
-    typeof value.toString === "function",
-  { identifier: "vscode.Uri" },
-);
+const notebookCommands = {
+  configToggleAutoReloadAutorun: withOptionalNotebookContext(
+    GeneratedMarimoCommands.configToggleAutoReloadAutorun,
+  ),
+  configToggleAutoReloadLazy: withOptionalNotebookContext(
+    GeneratedMarimoCommands.configToggleAutoReloadLazy,
+  ),
+  configToggleAutoReloadOff: withOptionalNotebookContext(
+    GeneratedMarimoCommands.configToggleAutoReloadOff,
+  ),
+  configToggleOnCellChangeAutoRun: withOptionalNotebookContext(
+    GeneratedMarimoCommands.configToggleOnCellChangeAutoRun,
+  ),
+  configToggleOnCellChangeLazy: withOptionalNotebookContext(
+    GeneratedMarimoCommands.configToggleOnCellChangeLazy,
+  ),
+  configureAutoExport: withOptionalNotebookContext(
+    GeneratedMarimoCommands.configureAutoExport,
+  ),
+  restartKernel: withOptionalNotebookContext(
+    GeneratedMarimoCommands.restartKernel,
+  ),
+  runStale: withOptionalNotebookContext(GeneratedMarimoCommands.runStale),
+};
 
 /**
  * Commands contributed by this extension, with exceptional contracts refined
@@ -25,8 +38,9 @@ const UriSchema = Schema.declare<vscode.Uri>(
  */
 export const MarimoCommands = {
   ...GeneratedMarimoCommands,
+  ...notebookCommands,
   openAsMarimoNotebook: withFirstArgument(
     GeneratedMarimoCommands.openAsMarimoNotebook,
-    Schema.UndefinedOr(Schema.Union(Schema.String, UriSchema)),
+    Schema.UndefinedOr(Schema.Union(Schema.String, VscodeUriSchema)),
   ),
 } as const;

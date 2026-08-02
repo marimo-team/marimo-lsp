@@ -15,9 +15,9 @@ describe("MarimoCommands", () => {
     );
   });
 
-  it.effect("ignores VS Code context for a no-argument command", () =>
+  it.effect("ignores VS Code context for a context-free command", () =>
     Effect.gen(function* () {
-      const args = yield* decodeCommandArguments(MarimoCommands.restartKernel, [
+      const args = yield* decodeCommandArguments(MarimoCommands.restartLsp, [
         {
           ui: true,
           notebookEditor: { notebookUri: "file:///notebook.py" },
@@ -29,6 +29,36 @@ describe("MarimoCommands", () => {
   );
 
   it.effect("accepts an empty argument list for a no-argument command", () =>
+    Effect.gen(function* () {
+      const args = yield* decodeCommandArguments(MarimoCommands.restartLsp, []);
+      expect(args).toEqual([]);
+    }),
+  );
+
+  it.effect("decodes optional notebook toolbar context", () =>
+    Effect.gen(function* () {
+      const notebookUri = {
+        scheme: "file",
+        path: "/notebook.py",
+        with() {
+          return this;
+        },
+        toString() {
+          return "file:///notebook.py";
+        },
+      };
+      const args = yield* decodeCommandArguments(MarimoCommands.restartKernel, [
+        {
+          ui: true,
+          notebookEditor: { notebookUri },
+          source: "notebookToolbar",
+        },
+      ]);
+      expect(args).toEqual([{ notebookEditor: { notebookUri } }]);
+    }),
+  );
+
+  it.effect("accepts no context for a notebook command", () =>
     Effect.gen(function* () {
       const args = yield* decodeCommandArguments(
         MarimoCommands.restartKernel,

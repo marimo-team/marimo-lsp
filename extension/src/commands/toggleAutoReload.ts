@@ -1,7 +1,9 @@
+import type { NotebookCommandContext } from "../commands.ts";
 import { createConfigToggle } from "../lib/createConfigToggle.ts";
 
-export const toggleAutoReload = () =>
+export const toggleAutoReload = (context?: NotebookCommandContext) =>
   createConfigToggle({
+    context,
     configPath: "runtime.auto_reload",
     settingName: "Module changes",
     pickerTitle: "Module changes",

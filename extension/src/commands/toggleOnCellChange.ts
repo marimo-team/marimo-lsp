@@ -1,7 +1,9 @@
+import type { NotebookCommandContext } from "../commands.ts";
 import { createConfigToggle } from "../lib/createConfigToggle.ts";
 
-export const toggleOnCellChange = () =>
+export const toggleOnCellChange = (context?: NotebookCommandContext) =>
   createConfigToggle({
+    context,
     configPath: "runtime.on_cell_change",
     settingName: "Cell changes",
     pickerTitle: "Cell changes",
