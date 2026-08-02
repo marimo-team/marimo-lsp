@@ -1,3 +1,5 @@
+import * as NodePath from "node:path";
+
 import { assert, describe, expect, it } from "@effect/vitest";
 import {
   Chunk,
@@ -10,6 +12,7 @@ import {
   Ref,
   Schema,
   Stream,
+  SubscriptionRef,
   TestClock,
 } from "effect";
 
@@ -43,26 +46,31 @@ const withTestCtx = Effect.fn(function* () {
   const inputQueue = yield* Queue.unbounded<Option.Option<string>>();
 
   // Capture executeCommand calls
-  const executions = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+  const executions = yield* SubscriptionRef.make<ReadonlyArray<MarimoApiCall>>(
+    [],
+  );
 
   // PubSub to push operations into NotebookRuntime
   const operationsPubSub =
     yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
 
-  const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
-    data: {
-      cells: [
-        {
-          kind: 1, // Code
-          value: "name = input('Enter name: ')",
-          languageId: "python",
-          metadata: MarimoNotebookCell.createMetadata({
-            marimoRuntime: { stableId: "cell-1" },
-          }),
-        },
-      ],
+  const editor = TestVsCode.makeNotebookEditor(
+    NodePath.join(process.cwd(), "notebook_mo.py"),
+    {
+      data: {
+        cells: [
+          {
+            kind: 1, // Code
+            value: "name = input('Enter name: ')",
+            languageId: "python",
+            metadata: MarimoNotebookCell.createMetadata({
+              marimoRuntime: { stableId: "cell-1" },
+            }),
+          },
+        ],
+      },
     },
-  });
+  );
 
   const notebook = MarimoNotebookDocument.from(editor.notebook);
   const notebookUri = notebook.id;
@@ -576,7 +584,7 @@ describe("NotebookRuntime scratch stream", () => {
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const otherEditor = TestVsCode.makeNotebookEditor(
-        "/test/other_notebook_mo.py",
+        NodePath.join(process.cwd(), "other_notebook_mo.py"),
       );
       const otherNotebook = MarimoNotebookDocument.from(otherEditor.notebook);
 
@@ -598,13 +606,21 @@ describe("NotebookRuntime scratch stream", () => {
             .pipe(Stream.runDrain),
         );
 
-        yield* TestClock.adjust("1 millis");
+        const executions = yield* ctx.executions.changes.pipe(
+          Stream.filter(
+            (calls) =>
+              calls.filter((call) => call.method === "execute-scratchpad")
+                .length === 2,
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
 
         const commands: Array<{
           notebookUri: NotebookId;
           runId: string;
         }> = [];
-        for (const command of yield* Ref.get(ctx.executions)) {
+        for (const command of executions) {
           if (command.method === "execute-scratchpad") {
             const params = Schema.decodeUnknownSync(
               Api.ExecuteScratchpadPayload,
@@ -769,15 +785,10 @@ describe("NotebookRuntime scratch stream", () => {
         // The finalizer should have sent an interrupt to the kernel.
         const interruptCmd = executions.find((c) => c.method === "interrupt");
 
-        expect(interruptCmd).toMatchInlineSnapshot(`
-        	{
-        	  "method": "interrupt",
-        	  "params": {
-        	    "inner": {},
-        	    "notebookUri": "file:///test/notebook_mo.py",
-        	  },
-        	}
-        `);
+        expect(interruptCmd).toMatchObject({
+          method: "interrupt",
+          params: { inner: {}, notebookUri: ctx.notebookUri },
+        });
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

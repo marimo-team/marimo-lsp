@@ -5,6 +5,7 @@ import { Effect, Option } from "effect";
 
 import { Config } from "../config/Config.ts";
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
+import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import {
@@ -30,6 +31,7 @@ export class HealthService extends Effect.Service<HealthService>()(
       const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
+      const notebooks = yield* NotebookRuntime;
       const pyExt = yield* PythonExtension;
       const tyLsp = yield* TyLanguageServer;
       const ruffLsp = yield* RuffLanguageServer;
@@ -179,6 +181,22 @@ export class HealthService extends Effect.Service<HealthService>()(
             `\tVersion: ${Option.getOrElse(extVersion, () => "unknown")} `,
           );
           lines.push(`\tUV integration disabled: ${uvDisabled} `);
+          const activeEditor = yield* code.window.getActiveNotebookEditor();
+          const configuredRoot = yield* config.notebookFileRoot(
+            Option.isSome(activeEditor)
+              ? activeEditor.value.notebook.uri
+              : undefined,
+          );
+          const runtimeSession = yield* notebooks.activeRuntimeSession();
+          lines.push(
+            ...formatNotebookFileRootDiagnostics(
+              configuredRoot,
+              Option.map(
+                runtimeSession,
+                ({ workingDirectory }) => workingDirectory,
+              ),
+            ),
+          );
 
           lines.push("");
 
@@ -271,4 +289,14 @@ function formatBinarySource(source: BinarySource): string {
       `CompanionExtension/${kind} (${extensionId}, ${path})`,
     UvInstalled: ({ path }) => `UvInstalled (${path})`,
   });
+}
+
+function formatNotebookFileRootDiagnostics(
+  configuredRoot: string,
+  workingDirectory: Option.Option<string>,
+): readonly string[] {
+  return [
+    `\tNotebook file root: ${configuredRoot}`,
+    `\tResolved kernel working directory: ${Option.getOrElse(workingDirectory, () => "No active kernel")}`,
+  ];
 }

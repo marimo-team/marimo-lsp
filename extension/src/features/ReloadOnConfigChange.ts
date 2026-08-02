@@ -1,36 +1,99 @@
-import { Effect, Layer, Option, Stream } from "effect";
+import { Effect, Either, Layer, Option, Stream } from "effect";
 
+import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
-/**
- * Watches for changes to `marimo.disableManagedLanguageFeatures` and prompts
- * the user to reload the window, since this setting is read at startup and
- * baked into service initialization.
- */
-export const ReloadOnConfigChangeLive = Layer.scopedDiscard(
-  Effect.gen(function* () {
-    const code = yield* VsCode;
+export const promptToRestartKernelForFileRootChange = Effect.fn(function* () {
+  const code = yield* VsCode;
 
-    yield* Effect.forkScoped(
-      code.workspace.configurationChanges().pipe(
-        Stream.filter((event) =>
-          event.affectsConfiguration("marimo.disableManagedLanguageFeatures"),
-        ),
-        Stream.runForEach(() =>
-          Effect.gen(function* () {
-            const reload = yield* code.window.showInformationMessage(
-              "Changing managed language features requires reloading the window to take effect.",
-              { items: ["Reload Window"] },
-            );
+  const restart = yield* code.window.showInformationMessage(
+    "The notebook file root changed. Restart the marimo kernel to apply it.",
+    { items: ["Restart Kernel"] },
+  );
+  if (Option.isSome(restart) && restart.value === "Restart Kernel") {
+    yield* code.commands.executeCommand("marimo.restartKernel");
+  }
+});
 
-            if (Option.isSome(reload) && reload.value === "Reload Window") {
-              yield* code.commands.executeCommand(
-                "workbench.action.reloadWindow",
-              );
-            }
-          }),
-        ),
-      ),
+/** Watches configuration changes that require an explicit reload or restart. */
+export const watchForConfigurationChanges = Effect.fn(function* () {
+  const code = yield* VsCode;
+  const notebooks = yield* NotebookRuntime;
+  const pendingFileRootChanges = new Set<string>();
+
+  const promptForActiveAffectedSession = Effect.fn(function* () {
+    const activeNotebook = Option.filterMap(
+      yield* code.window.getActiveNotebookEditor(),
+      (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
     );
-  }),
+    if (
+      Option.isNone(activeNotebook) ||
+      !pendingFileRootChanges.has(activeNotebook.value.id)
+    ) {
+      return;
+    }
+
+    pendingFileRootChanges.delete(activeNotebook.value.id);
+    if (
+      Option.isNone(yield* notebooks.getRuntimeSession(activeNotebook.value.id))
+    ) {
+      return;
+    }
+    yield* promptToRestartKernelForFileRootChange();
+  });
+
+  yield* Effect.forkScoped(
+    code.workspace.configurationChanges().pipe(
+      Stream.filter((event) =>
+        event.affectsConfiguration("marimo.disableManagedLanguageFeatures"),
+      ),
+      Stream.runForEach(() =>
+        Effect.gen(function* () {
+          const reload = yield* code.window.showInformationMessage(
+            "Changing managed language features requires reloading the window to take effect.",
+            { items: ["Reload Window"] },
+          );
+
+          if (Option.isSome(reload) && reload.value === "Reload Window") {
+            yield* code.commands.executeCommand(
+              "workbench.action.reloadWindow",
+            );
+          }
+        }),
+      ),
+    ),
+  );
+
+  yield* Effect.forkScoped(
+    code.workspace.configurationChanges().pipe(
+      Stream.filter((event) =>
+        event.affectsConfiguration("marimo.notebookFileRoot"),
+      ),
+      Stream.runForEach((event) =>
+        Effect.gen(function* () {
+          for (const { notebookId } of yield* notebooks.getRuntimeSessions()) {
+            const uri = code.utils.parseUri(notebookId);
+            if (
+              Either.isRight(uri) &&
+              event.affectsConfiguration("marimo.notebookFileRoot", uri.right)
+            ) {
+              pendingFileRootChanges.add(notebookId);
+            }
+          }
+          yield* promptForActiveAffectedSession();
+        }),
+      ),
+    ),
+  );
+
+  yield* Effect.forkScoped(
+    code.window
+      .activeNotebookEditorChanges()
+      .pipe(Stream.runForEach(promptForActiveAffectedSession)),
+  );
+});
+
+export const ReloadOnConfigChangeLive = Layer.scopedDiscard(
+  watchForConfigurationChanges(),
 );

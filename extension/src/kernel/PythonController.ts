@@ -87,6 +87,20 @@ export const createPythonController = Effect.fn("createPythonController")(
           }),
           // Known exceptions
           Effect.catchTags({
+            NotebookFileRootError: Effect.fn(function* (error) {
+              yield* Effect.logError(error.message).pipe(
+                Effect.annotateLogs({ configuredValue: error.configuredValue }),
+              );
+              yield* code.window.showErrorMessage(error.message, {
+                modal: true,
+              });
+            }),
+            NoActiveKernelError: Effect.fn(function* () {
+              yield* code.window.showErrorMessage(
+                "The notebook was closed before its kernel could start.",
+                { modal: true },
+              );
+            }),
             MarimoCommandError: Effect.fn(function* (error) {
               yield* Effect.logError("Failed to execute command").pipe(
                 Effect.annotateLogs({

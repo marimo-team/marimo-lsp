@@ -1,3 +1,7 @@
+import * as NodeFs from "node:fs";
+import * as NodeOs from "node:os";
+import * as NodePath from "node:path";
+
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, Schedule, Stream } from "effect";
 
@@ -17,8 +21,9 @@ const notebook = notebookId("notebook-a");
 
 const makeTestLayer = Effect.fn(function* (
   options: Parameters<typeof makeTestMarimoClient>[0] = {},
+  vscodeOptions: Parameters<typeof TestVsCode.make>[0] = {},
 ) {
-  const vscode = yield* TestVsCode.make();
+  const vscode = yield* TestVsCode.make(vscodeOptions);
   return {
     vscode,
     layer: Layer.empty.pipe(
@@ -36,7 +41,7 @@ it.scoped(
   "returns a stable handle that binds the notebook ID",
   Effect.fn(function* () {
     const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
-    const { layer } = yield* makeTestLayer({
+    const { layer, vscode } = yield* makeTestLayer({
       execute: (request) =>
         Ref.update(requests, (current) => [...current, request]).pipe(
           Effect.as(null),
@@ -45,8 +50,13 @@ it.scoped(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime;
-      const first = notebooks.forNotebook(notebook);
-      const second = notebooks.forNotebook(notebook);
+      const editor = TestVsCode.makeNotebookEditor(
+        NodePath.join(process.cwd(), "notebook.py"),
+      );
+      const id = notebookId(editor.notebook.uri.toString());
+      yield* vscode.addNotebookDocument(editor.notebook);
+      const first = notebooks.forNotebook(id);
+      const second = notebooks.forNotebook(id);
 
       expect(first).toBe(second);
 
@@ -59,21 +69,119 @@ it.scoped(
         {
           method: "execute-cells",
           params: {
-            notebookUri: notebook,
+            notebookUri: id,
             executable: "/usr/bin/python",
+            workingDirectory: process.cwd(),
             inner: { cellIds: [], codes: [] },
           },
         },
         {
           method: "interrupt",
           params: {
-            notebookUri: notebook,
+            notebookUri: id,
             inner: {},
           },
         },
       ]);
     }).pipe(Effect.provide(layer));
   }),
+);
+
+it.scoped("tracks RuntimeSession until a successful kernel close", () =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      NodeFs.mkdtempDisposableSync(
+        NodePath.join(NodeOs.tmpdir(), "marimo-runtime-session-"),
+      ),
+    ),
+    (temporary) =>
+      Effect.gen(function* () {
+        const firstRoot = NodePath.join(temporary.path, "first");
+        const secondRoot = NodePath.join(temporary.path, "second");
+        NodeFs.mkdirSync(firstRoot);
+        NodeFs.mkdirSync(secondRoot);
+        let configuredRoot = firstRoot;
+        const editor = TestVsCode.makeNotebookEditor(
+          NodePath.join(temporary.path, "notebook.py"),
+        );
+        const id = notebookId(editor.notebook.uri.toString());
+        const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+        const { layer, vscode } = yield* makeTestLayer(
+          {
+            execute: (request) =>
+              Ref.update(requests, (current) => [...current, request]).pipe(
+                Effect.as(null),
+              ),
+          },
+          {
+            initialDocuments: [editor.notebook],
+            workspace: {
+              getConfiguration: (section) =>
+                Effect.succeed({
+                  // oxlint-disable-next-line typescript/no-unnecessary-type-parameters
+                  get: <T>(key: string) => {
+                    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+                    return (
+                      section === "marimo" && key === "notebookFileRoot"
+                        ? configuredRoot
+                        : undefined
+                    ) as T;
+                  },
+                  has: (key: string) =>
+                    section === "marimo" && key === "notebookFileRoot",
+                  inspect: () => undefined,
+                  async update() {},
+                }),
+            },
+          },
+        );
+
+        yield* Effect.gen(function* () {
+          const runtime = yield* NotebookRuntime;
+          const handle = runtime.forNotebook(id);
+          yield* handle.executeCells({ cellIds: [], codes: [] }, "/python-one");
+
+          configuredRoot = secondRoot;
+          yield* handle.executeCells({ cellIds: [], codes: [] }, "/python-one");
+          expect(yield* runtime.getRuntimeSession(id)).toEqual(
+            Option.some({
+              executable: "/python-one",
+              workingDirectory: firstRoot,
+            }),
+          );
+
+          yield* vscode.closeNotebook(editor.notebook);
+          yield* Effect.yieldNow();
+          expect(yield* runtime.getRuntimeSession(id)).toEqual(
+            Option.some({
+              executable: "/python-one",
+              workingDirectory: firstRoot,
+            }),
+          );
+
+          yield* runtime
+            .forNotebook(id)
+            .executeCells({ cellIds: [], codes: [] }, "/python-two");
+          yield* runtime.forNotebook(id).close();
+          expect(Option.isNone(yield* runtime.getRuntimeSession(id))).toBe(
+            true,
+          );
+
+          configuredRoot = firstRoot;
+          yield* runtime
+            .forNotebook(id)
+            .executeCells({ cellIds: [], codes: [] }, "/python-two");
+
+          const launches = (yield* Ref.get(requests)).filter(
+            (request) => request.method === "execute-cells",
+          );
+          expect(
+            launches.map((request) => request.params.workingDirectory),
+          ).toEqual([firstRoot, firstRoot, secondRoot, firstRoot]);
+        }).pipe(Effect.provide(layer));
+      }),
+    (temporary) => Effect.sync(() => temporary.remove()),
+  ),
 );
 
 it.scoped(

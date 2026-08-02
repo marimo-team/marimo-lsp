@@ -203,7 +203,9 @@ async def run(
     args: SessionCommand[ExecuteCellsRequest],
 ) -> None:
     logger.info(f"run for {args.notebook_uri}")
-    session = ctx.sessions.start(args.notebook_uri, args.executable)
+    session = ctx.sessions.start(
+        args.notebook_uri, args.executable, args.working_directory
+    )
 
     session.instantiate(
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
@@ -320,7 +322,9 @@ async def execute_scratch(
         )
         return
 
-    session = ctx.sessions.start(args.notebook_uri, args.executable)
+    session = ctx.sessions.start(
+        args.notebook_uri, args.executable, args.working_directory
+    )
 
     session.instantiate(
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),

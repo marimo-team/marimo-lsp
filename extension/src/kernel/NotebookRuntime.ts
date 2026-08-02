@@ -49,6 +49,10 @@ import type {
 } from "../types.ts";
 import { CellExecutions } from "./CellExecutions.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
+import {
+  NotebookFileRootError,
+  resolveNotebookFileRoot,
+} from "./NotebookFileRoot.ts";
 import { handleMissingPackageAlert } from "./operations.ts";
 
 type InnerRequest<K extends keyof MarimoClient> = MarimoClient[K] extends (
@@ -104,7 +108,14 @@ export interface NotebookHandle {
   readonly executeCells: (
     request: InnerRequest<"executeCells">,
     executable: string,
-  ) => ReturnType<MarimoClient["executeCells"]>;
+  ) => Effect.Effect<
+    null,
+    | MarimoClientStartError
+    | MarimoCommandError
+    | NoActiveKernelError
+    | NotebookFileRootError
+    | ParseResult.ParseError
+  >;
   readonly executeScratchpad: (
     code: string,
   ) => Stream.Stream<
@@ -113,6 +124,7 @@ export interface NotebookHandle {
     | MarimoClientStartError
     | MarimoCommandError
     | NoActiveKernelError
+    | NotebookFileRootError
     | ParseResult.ParseError
     | UnsavedNotebookError
   >;
@@ -138,6 +150,16 @@ export interface NotebookHandle {
 interface NotebookState {
   readonly handle: NotebookHandle;
   readonly controller: Ref.Ref<Option.Option<NotebookController>>;
+}
+
+export interface RuntimeSession {
+  readonly executable: string;
+  readonly workingDirectory: string;
+}
+
+export interface RuntimeSessionEntry {
+  readonly notebookId: NotebookId;
+  readonly session: RuntimeSession;
 }
 
 function hasRunId<T extends { run_id?: string | null }>(
@@ -196,11 +218,13 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
     ],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
+      const config = yield* Config;
       const marimo = yield* MarimoClient;
       const renderer = yield* NotebookRenderer;
       const executions = yield* CellExecutions;
       const operations = yield* PubSub.unbounded<MarimoOperation>();
       const notebooks = new Map<NotebookId, NotebookState>();
+      const runtimeSessions = new Map<NotebookId, RuntimeSession>();
       const controllerSelections =
         yield* PubSub.unbounded<NotebookControllerSelection>();
 
@@ -219,10 +243,22 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
         id: notebookId,
         getController: () => Ref.get(controller),
         executeCells: (request, executable) =>
-          marimo.executeCells({
-            notebookUri: notebookId,
-            executable,
-            inner: request,
+          Effect.gen(function* () {
+            const workingDirectory = yield* resolveWorkingDirectory(
+              notebookId,
+              executable,
+            );
+            const result = yield* marimo.executeCells({
+              notebookUri: notebookId,
+              executable,
+              workingDirectory,
+              inner: request,
+            });
+            runtimeSessions.set(notebookId, {
+              executable,
+              workingDirectory,
+            });
+            return result;
           }),
         executeScratchpad: (sourceCode) =>
           Stream.unwrapScoped(
@@ -239,13 +275,22 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
               const notebook = yield* findOpenNotebook(notebookId);
               const executable =
                 yield* selectedController.value.resolveExecutable(notebook);
+              const workingDirectory = yield* resolveWorkingDirectory(
+                notebookId,
+                executable,
+              );
               const subscription = yield* PubSub.subscribe(operations);
               const runId = crypto.randomUUID();
 
               yield* marimo.executeScratchpad({
                 notebookUri: notebookId,
                 executable,
+                workingDirectory,
                 inner: { code: sourceCode, runId },
+              });
+              runtimeSessions.set(notebookId, {
+                executable,
+                workingDirectory,
               });
 
               yield* Effect.addFinalizer((exit) =>
@@ -303,7 +348,13 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
         interrupt: () =>
           marimo.interrupt({ notebookUri: notebookId, inner: {} }),
         close: () =>
-          marimo.closeSession({ notebookUri: notebookId, inner: {} }),
+          marimo
+            .closeSession({ notebookUri: notebookId, inner: {} })
+            .pipe(
+              Effect.tap(() =>
+                Effect.sync(() => runtimeSessions.delete(notebookId)),
+              ),
+            ),
       });
 
       const makeState = (notebookId: NotebookId): NotebookState => {
@@ -518,6 +569,33 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
         controllerChanges() {
           return Stream.fromPubSub(controllerSelections);
         },
+        getRuntimeSession(notebookId: NotebookId) {
+          return Effect.sync(() =>
+            Option.fromNullable(runtimeSessions.get(notebookId)),
+          );
+        },
+        getRuntimeSessions() {
+          return Effect.sync(() =>
+            Array.from(runtimeSessions, ([notebookId, session]) => ({
+              notebookId,
+              session,
+            })),
+          );
+        },
+        activeRuntimeSession() {
+          return Effect.gen(function* () {
+            const activeNotebook = Option.filterMap(
+              yield* code.window.getActiveNotebookEditor(),
+              (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
+            );
+            if (Option.isNone(activeNotebook)) {
+              return Option.none<RuntimeSession>();
+            }
+            return Option.fromNullable(
+              runtimeSessions.get(activeNotebook.value.id),
+            );
+          });
+        },
         forNotebook,
       };
 
@@ -534,6 +612,32 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
             return yield* new NoActiveKernelError({ notebookUri: notebookId });
           }
           return notebook.value;
+        });
+      }
+
+      function resolveWorkingDirectory(
+        notebookId: NotebookId,
+        executable: string,
+      ) {
+        return Effect.gen(function* () {
+          const session = runtimeSessions.get(notebookId);
+          if (session?.executable === executable) {
+            return session.workingDirectory;
+          }
+
+          const notebook = yield* findOpenNotebook(notebookId);
+          const configuredValue = yield* config.notebookFileRoot(notebook.uri);
+          const resolution = yield* resolveNotebookFileRoot({
+            configuredValue,
+            notebookUri: notebook.uri,
+            workspaceFolders: yield* code.workspace.getWorkspaceFolders(),
+          });
+          if (resolution.usedFirstWorkspaceFallback) {
+            yield* Effect.logInfo(
+              "Untitled notebook has multiple workspace folders; using the first for ${fileDirname}",
+            ).pipe(Effect.annotateLogs({ workingDirectory: resolution.path }));
+          }
+          return resolution.path;
         });
       }
     }),
