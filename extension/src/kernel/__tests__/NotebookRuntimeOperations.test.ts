@@ -734,10 +734,15 @@ describe("NotebookRuntime scratch stream", () => {
             .pipe(Stream.runCollect),
         );
 
-        // Let executeScratchpad enqueue marimo.api with its generated runId.
-        yield* TestClock.adjust("1 millis");
-
-        const executions = yield* Ref.get(ctx.executions);
+        // Wait for executeScratchpad to enqueue marimo.api with its generated
+        // runId instead of relying on a scheduler tick.
+        const executions = yield* ctx.executions.changes.pipe(
+          Stream.filter((calls) =>
+            calls.some((call) => call.method === "execute-scratchpad"),
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
         const executeCmd = executions.find(
           (c) => c.method === "execute-scratchpad",
         );
@@ -829,9 +834,15 @@ describe("NotebookRuntime scratch stream", () => {
             .pipe(Stream.runCollect),
         );
 
-        // Let executeScratchpad send the command and arm the
-        // interrupt-on-abandon finalizer.
-        yield* TestClock.adjust("1 millis");
+        // Wait until executeScratchpad sends the command and arms the
+        // interrupt-on-abandon finalizer instead of relying on a scheduler
+        // tick.
+        yield* ctx.executions.changes.pipe(
+          Stream.filter((calls) =>
+            calls.some((call) => call.method === "execute-scratchpad"),
+          ),
+          Stream.runHead,
+        );
 
         // Abandon the stream before any completed-run arrives (mirrors a
         // cancelled tool invocation interrupting the fiber).
