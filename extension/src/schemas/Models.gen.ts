@@ -1,8 +1,8 @@
 // AUTO-GENERATED FILE — DO NOT EDIT.
 //
 // Generated from `src/marimo_lsp/models.py` and the `marimo.api` registry
-// (`API_METHODS` in `src/marimo_lsp/api.py`) by `scripts/generate_effect_schemas.py`.
-// Regenerate with `just generate-schemas`.
+// (`API_METHODS` in `src/marimo_lsp/api.py`) by `scripts.codegen`.
+// Regenerate with `just codegen`.
 import { Effect, ParseResult, Schema } from "effect";
 
 /**

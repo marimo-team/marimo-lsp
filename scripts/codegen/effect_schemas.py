@@ -9,40 +9,30 @@ side *parses* our own wire types instead of assuming them.
 Only types owned by marimo-lsp are emitted. Types re-exported from marimo core
 (`ExecuteCellsRequest`, ...) stay on the `@marimo-team/openapi` path.
 
-Usage:
-    uv run scripts/generate_effect_schemas.py          # write the file
-    uv run scripts/generate_effect_schemas.py --check  # exit 1 on drift
+Run through the repository codegen entry point: ``just codegen``.
 """
 
 from __future__ import annotations
 
 import inspect as pyinspect
 import json
-import pathlib
-import subprocess
-import sys
-import tempfile
 
 import msgspec
 import msgspec.inspect as mi
 
 from marimo_lsp import models
 from marimo_lsp.api import API_METHODS, ApiMethod
+from scripts.codegen.output import EXTENSION
 
-OUTPUT = (
-    pathlib.Path(__file__).parent.parent
-    / "extension"
-    / "src"
-    / "schemas"
-    / "Models.gen.ts"
-)
+OUTPUT = EXTENSION / "src" / "schemas" / "Models.gen.ts"
+LABEL = "Effect schemas"
 
 HEADER = """\
 // AUTO-GENERATED FILE — DO NOT EDIT.
 //
 // Generated from `src/marimo_lsp/models.py` and the `marimo.api` registry
-// (`API_METHODS` in `src/marimo_lsp/api.py`) by `scripts/generate_effect_schemas.py`.
-// Regenerate with `just generate-schemas`.
+// (`API_METHODS` in `src/marimo_lsp/api.py`) by `scripts.codegen`.
+// Regenerate with `just codegen`.
 import { Effect, ParseResult, Schema } from "effect";
 """
 
@@ -502,45 +492,3 @@ def generate() -> str:
         "});\n"
     )
     return HEADER + "\n" + "\n".join(emitter.definitions)
-
-
-def _format(path: pathlib.Path) -> None:
-    """Run the extension's formatter so output is byte-stable under `just fix-ts`."""
-    extension = OUTPUT.parents[2]
-    subprocess.run(  # noqa: S603
-        ["pnpm", "exec", "vp", "fmt", str(path.relative_to(extension))],  # noqa: S607
-        cwd=extension,
-        check=True,
-        capture_output=True,
-    )
-
-
-def main() -> int:
-    source = generate()
-    if "--check" in sys.argv[1:]:
-        # Format a sibling temp copy (same dir, so formatter config applies)
-        # and compare against the checked-in file.
-        with tempfile.NamedTemporaryFile(
-            mode="w", dir=OUTPUT.parent, suffix=".check.gen.ts", delete=False
-        ) as f:
-            tmp = pathlib.Path(f.name)
-            f.write(source)
-        try:
-            _format(tmp)
-            drifted = OUTPUT.read_text() != tmp.read_text()
-        finally:
-            tmp.unlink()
-        if drifted:
-            print(
-                f"{OUTPUT} is out of date; run `just generate-schemas`", file=sys.stderr
-            )
-            return 1
-        return 0
-    OUTPUT.write_text(source)
-    _format(OUTPUT)
-    print(f"wrote {OUTPUT}")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
