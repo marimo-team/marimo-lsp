@@ -12,11 +12,15 @@ import type { MarimoConfig } from "../types.ts";
  */
 export const createConfigToggle = <T extends string>({
   configPath,
+  settingName,
+  pickerTitle,
   getCurrentValue,
   choices,
   getDisplayName,
 }: {
   configPath: string;
+  settingName: string;
+  pickerTitle: string;
   getCurrentValue: (config: MarimoConfig) => T;
   choices: ReadonlyArray<{
     label: string;
@@ -37,7 +41,7 @@ export const createConfigToggle = <T extends string>({
 
     if (Option.isNone(notebook)) {
       yield* showErrorAndPromptLogs(
-        `Must have an open marimo notebook to toggle ${configPath}.`,
+        `Open a marimo notebook to configure ${settingName.toLowerCase()}.`,
       );
       return;
     }
@@ -54,6 +58,7 @@ export const createConfigToggle = <T extends string>({
         detail: c.detail,
         value: c.value,
       })),
+      { title: pickerTitle },
     );
 
     if (Option.isNone(choice)) {
@@ -88,11 +93,11 @@ export const createConfigToggle = <T extends string>({
     yield* configService.updateConfig(notebook.value.id, partialConfig);
 
     yield* code.window.showInformationMessage(
-      `${configPath} updated to: ${getDisplayName(newValue)}`,
+      `${settingName} set to ${getDisplayName(newValue)}.`,
     );
   }).pipe(
     Effect.tapErrorCause(Effect.logError),
     Effect.catchAllCause(() =>
-      showErrorAndPromptLogs(`Failed to toggle ${configPath}.`),
+      showErrorAndPromptLogs(`Could not update ${settingName.toLowerCase()}.`),
     ),
   );

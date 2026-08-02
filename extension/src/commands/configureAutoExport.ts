@@ -35,7 +35,7 @@ export const configureAutoExport = Effect.fn("command.configureAutoExport")(
 
     if (Option.isNone(notebook)) {
       yield* code.window.showWarningMessage(
-        "Must have an open marimo notebook to configure automatic exports.",
+        "Open a marimo notebook to configure export formats.",
       );
       return;
     }
@@ -58,8 +58,8 @@ export const configureAutoExport = Effect.fn("command.configureAutoExport")(
         },
       ],
       {
-        placeHolder: "Select formats to save under __marimo__",
-        title: "Automatic exports",
+        placeHolder: "Choose formats; saved under __marimo__",
+        title: "Save copies automatically",
       },
     );
     if (Option.isNone(selected)) return;
@@ -88,9 +88,7 @@ export const configureAutoExport = Effect.fn("command.configureAutoExport")(
     ]);
     const applied = yield* code.workspace.applyEdit(edit);
     if (!applied) {
-      yield* code.window.showErrorMessage(
-        "Could not update automatic export settings.",
-      );
+      yield* code.window.showErrorMessage("Could not update export formats.");
       return;
     }
 
@@ -106,7 +104,7 @@ export const configureAutoExport = Effect.fn("command.configureAutoExport")(
       );
     if (!saved) {
       yield* code.window.showErrorMessage(
-        "Automatic export settings could not be saved.",
+        "Export formats changed but the notebook could not be saved.",
       );
       return;
     }

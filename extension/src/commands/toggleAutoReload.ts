@@ -3,21 +3,23 @@ import { createConfigToggle } from "../lib/createConfigToggle.ts";
 export const toggleAutoReload = () =>
   createConfigToggle({
     configPath: "runtime.auto_reload",
+    settingName: "Module changes",
+    pickerTitle: "Module changes",
     getCurrentValue: (config) => config.runtime?.auto_reload ?? "off",
     choices: [
       {
-        label: "Off",
-        detail: "Don't reload modules automatically",
+        label: "Ignore module changes",
+        detail: "Keep the notebook unchanged when imported modules are edited",
         value: "off" as const,
       },
       {
-        label: "Lazy",
-        detail: "Mark cells stale when modules change, don't autorun",
+        label: "Mark affected cells stale",
+        detail: "Wait to run affected cells until they are needed",
         value: "lazy" as const,
       },
       {
-        label: "Auto-Run",
-        detail: "Reload modules and automatically run affected cells",
+        label: "Reload and run affected cells",
+        detail: "Keep affected cells up to date automatically",
         value: "autorun" as const,
       },
     ],
@@ -26,9 +28,9 @@ export const toggleAutoReload = () =>
         case "off":
           return "Off";
         case "lazy":
-          return "Lazy";
+          return "Mark stale";
         case "autorun":
-          return "Auto-Run";
+          return "Automatic";
         default:
           return value;
       }

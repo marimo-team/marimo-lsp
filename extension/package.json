@@ -304,8 +304,8 @@
       },
       {
         "command": "marimo.configureAutoExport",
-        "title": "Configure automatic exports",
-        "shortTitle": "Automatic exports",
+        "title": "Configure export formats",
+        "shortTitle": "Export formats…",
         "category": "marimo",
         "icon": "$(save-all)",
         "enablement": "notebookType == 'marimo-notebook'"
@@ -354,40 +354,40 @@
       },
       {
         "command": "marimo.config.toggleOnCellChangeAutoRun",
-        "title": "Toggle on-cell-change mode",
-        "shortTitle": "On cell change: Auto-Run",
+        "title": "Configure behavior after cell changes",
+        "shortTitle": "Cell changes: Automatic",
         "category": "marimo",
         "icon": "$(zap)",
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
         "command": "marimo.config.toggleOnCellChangeLazy",
-        "title": "Toggle on-cell-change mode",
-        "shortTitle": "On cell change: Lazy",
+        "title": "Configure behavior after cell changes",
+        "shortTitle": "Cell changes: Mark stale",
         "category": "marimo",
-        "icon": "$(symbol-interface)",
+        "icon": "$(history)",
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
         "command": "marimo.config.toggleAutoReloadOff",
-        "title": "Toggle auto-reload mode",
-        "shortTitle": "Auto-reload: Off",
+        "title": "Configure behavior after module changes",
+        "shortTitle": "Module changes: Off",
         "category": "marimo",
-        "icon": "$(sync-ignored)",
+        "icon": "$(circle-slash)",
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
         "command": "marimo.config.toggleAutoReloadLazy",
-        "title": "Toggle auto-reload mode",
-        "shortTitle": "Auto-reload: Lazy",
+        "title": "Configure behavior after module changes",
+        "shortTitle": "Module changes: Mark stale",
         "category": "marimo",
-        "icon": "$(symbol-interface)",
+        "icon": "$(history)",
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
         "command": "marimo.config.toggleAutoReloadAutorun",
-        "title": "Toggle auto-reload mode",
-        "shortTitle": "Auto-reload: Auto-Run",
+        "title": "Configure behavior after module changes",
+        "shortTitle": "Module changes: Automatic",
         "category": "marimo",
         "icon": "$(zap)",
         "enablement": "notebookType == 'marimo-notebook'"
@@ -445,7 +445,7 @@
       },
       {
         "id": "marimo.runtimeActions",
-        "label": "Runtime",
+        "label": "Reactivity",
         "icon": "$(zap)"
       }
     ],
