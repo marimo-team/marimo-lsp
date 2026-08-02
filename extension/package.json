@@ -434,6 +434,18 @@
         "enablement": "notebookType == 'marimo-notebook'"
       }
     ],
+    "submenus": [
+      {
+        "id": "marimo.notebookActions",
+        "label": "marimo",
+        "icon": "images/small-icon.png"
+      },
+      {
+        "id": "marimo.runtimeActions",
+        "label": "Runtime",
+        "icon": "$(zap)"
+      }
+    ],
     "viewsContainers": {
       "panel": [
         {
@@ -502,6 +514,44 @@
           "command": "marimo.refreshPackages",
           "when": "view == marimo-explorer-packages",
           "group": "navigation"
+        }
+      ],
+      "marimo.notebookActions": [
+        {
+          "submenu": "marimo.runtimeActions",
+          "group": "navigation@1"
+        }
+      ],
+      "marimo.runtimeActions": [
+        {
+          "command": "marimo.runStale",
+          "when": "marimo.notebook.hasStaleCells",
+          "group": "navigation@1"
+        },
+        {
+          "command": "marimo.config.toggleOnCellChangeAutoRun",
+          "when": "marimo.notebook.hasKernel && marimo.config.runtime.on_cell_change != 'lazy'",
+          "group": "runtime@1"
+        },
+        {
+          "command": "marimo.config.toggleOnCellChangeLazy",
+          "when": "marimo.notebook.hasKernel && marimo.config.runtime.on_cell_change == 'lazy'",
+          "group": "runtime@1"
+        },
+        {
+          "command": "marimo.config.toggleAutoReloadOff",
+          "when": "marimo.notebook.hasKernel && marimo.config.runtime.auto_reload == 'off'",
+          "group": "runtime@2"
+        },
+        {
+          "command": "marimo.config.toggleAutoReloadLazy",
+          "when": "marimo.notebook.hasKernel && marimo.config.runtime.auto_reload == 'lazy'",
+          "group": "runtime@2"
+        },
+        {
+          "command": "marimo.config.toggleAutoReloadAutorun",
+          "when": "marimo.notebook.hasKernel && marimo.config.runtime.auto_reload == 'autorun'",
+          "group": "runtime@2"
         }
       ],
       "notebook/toolbar": [
