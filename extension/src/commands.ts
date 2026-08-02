@@ -225,6 +225,8 @@ export type VscodeBuiltinCommand =
   | "notebook.cell.toggleOutputs"
   // Collapse a cell's input (code) editor
   | "notebook.cell.collapseCellInput"
+  // Expand a cell's input (code) editor
+  | "notebook.cell.expandCellInput"
   // Fold Cell
   | "notebook.fold"
   // Unfold Cell
