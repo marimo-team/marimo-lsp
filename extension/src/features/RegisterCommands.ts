@@ -5,6 +5,7 @@ import { debugCell } from "../commands/debugCell.ts";
 import { exportNotebookAsHtml } from "../commands/exportNotebookAsHtml.ts";
 import { newMarimoNotebook } from "../commands/newMarimoNotebook.ts";
 import { openAsMarimoNotebook } from "../commands/openAsMarimoNotebook.ts";
+import { openOutlineView } from "../commands/openOutlineView.ts";
 import { publishMarimoNotebook } from "../commands/publishMarimoNotebook.ts";
 import { publishMarimoNotebookGist } from "../commands/publishMarimoNotebookGist.ts";
 import { reportIssue } from "../commands/reportIssue.ts";
@@ -40,6 +41,11 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     yield* code.commands.registerCommand(
       "marimo.openAsMarimoNotebook",
       openAsMarimoNotebook,
+    );
+
+    yield* code.commands.registerCommand(
+      "marimo.openOutlineView",
+      openOutlineView,
     );
 
     yield* code.commands.registerCommand(
