@@ -58,6 +58,14 @@ const setCode = (cellId: string, code: string): DocumentChange => ({
   code,
 });
 
+const setConfig = (cellId: string, hideCode: boolean): DocumentChange => ({
+  type: "set-config",
+  cellId: cid(cellId),
+  column: null,
+  disabled: false,
+  hideCode,
+});
+
 const deleteCell = (cellId: string): DocumentChange => ({
   type: "delete-cell",
   cellId: cid(cellId),
@@ -102,6 +110,28 @@ describe("computeDesiredCells", () => {
     const desired = compute(current, [setCode("b", "y = 99")]);
     expect(desired[1]).toMatchObject({ stableId: "b", code: "y = 99" });
   });
+
+  it.each([
+    { previous: false, next: true },
+    { previous: true, next: false },
+  ])(
+    "applies a code-mode hide_code transition from $previous to $next",
+    ({ previous, next }) => {
+      const current = [
+        pc("a", "x = 1", {
+          config: { column: null, disabled: false, hide_code: previous },
+        }),
+      ];
+
+      const desired = compute(current, [setConfig("a", next)]);
+
+      expect(desired).toEqual([
+        pc("a", "x = 1", {
+          config: { column: null, disabled: false, hide_code: next },
+        }),
+      ]);
+    },
+  );
 
   it("deletes a cell", () => {
     const current = [pc("a", "x = 1"), pc("b", "y = 2")];
