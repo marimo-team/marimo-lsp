@@ -9,14 +9,36 @@ export type MarimoError = ExtendsArray<CellOutput["data"]>;
 
 export type CellIdMapper = (cellId: NotebookCellId) => string | undefined;
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+/**
+ * Maps a raw cell id to a human-readable cell number (or clickable HTML link)
+ * when a mapper is available, falling back to the raw id otherwise. `isHtml`
+ * tells the caller whether the resulting message will be rendered as HTML, so
+ * user-controlled text interpolated alongside it can be escaped accordingly.
+ */
+function resolveCellRef(
+  cellId: NotebookCellId,
+  cellIdMapper?: CellIdMapper,
+): { text: string; isHtml: boolean } {
+  const mapped = cellIdMapper?.(cellId);
+  if (mapped === undefined) {
+    return { text: cellId, isHtml: false };
+  }
+  return { text: mapped, isHtml: mapped.includes("<a href=") };
+}
+
 export function prettyErrorMessage(
   error: MarimoError,
   cellIdMapper?: CellIdMapper,
 ): string {
-  // Map a raw cell id to a human-readable cell number (or clickable link) when
-  // a mapper is available, falling back to the raw id otherwise.
-  const cellRef = (cellId: NotebookCellId) => cellIdMapper?.(cellId) ?? cellId;
-
   switch (error.type) {
     case "setup-refs":
       return formatSetupRootError(error);
@@ -26,14 +48,36 @@ export function prettyErrorMessage(
       return formatMultipleDefinitionError(error, cellIdMapper);
     case "import-star":
       return error.msg;
-    case "ancestor-stopped":
-      return `Execution stopped because cell ${cellRef(error.raising_cell)} was stopped. ${error.msg}`;
-    case "ancestor-prevented":
-      return `Execution prevented: ${error.msg}${error.blamed_cell ? ` (cell: ${cellRef(error.blamed_cell)})` : ""}`;
-    case "exception":
-      return `${error.exception_type}: ${error.msg}${error.raising_cell ? ` (raised in cell: ${cellRef(error.raising_cell)})` : ""}`;
-    case "strict-exception":
-      return `Strict execution error: ${error.msg} (ref: ${error.ref}${error.blamed_cell ? `, cell: ${cellRef(error.blamed_cell)}` : ""})`;
+    case "ancestor-stopped": {
+      const cellRef = resolveCellRef(error.raising_cell, cellIdMapper);
+      const msg = cellRef.isHtml ? escapeHtml(error.msg) : error.msg;
+      return `Execution stopped because cell ${cellRef.text} was stopped. ${msg}`;
+    }
+    case "ancestor-prevented": {
+      const cellRef = error.blamed_cell
+        ? resolveCellRef(error.blamed_cell, cellIdMapper)
+        : undefined;
+      const msg = cellRef?.isHtml ? escapeHtml(error.msg) : error.msg;
+      return `Execution prevented: ${msg}${cellRef ? ` (cell: ${cellRef.text})` : ""}`;
+    }
+    case "exception": {
+      const cellRef = error.raising_cell
+        ? resolveCellRef(error.raising_cell, cellIdMapper)
+        : undefined;
+      const msg = cellRef?.isHtml ? escapeHtml(error.msg) : error.msg;
+      const exceptionType = cellRef?.isHtml
+        ? escapeHtml(error.exception_type)
+        : error.exception_type;
+      return `${exceptionType}: ${msg}${cellRef ? ` (raised in cell: ${cellRef.text})` : ""}`;
+    }
+    case "strict-exception": {
+      const cellRef = error.blamed_cell
+        ? resolveCellRef(error.blamed_cell, cellIdMapper)
+        : undefined;
+      const msg = cellRef?.isHtml ? escapeHtml(error.msg) : error.msg;
+      const ref = cellRef?.isHtml ? escapeHtml(error.ref) : error.ref;
+      return `Strict execution error: ${msg} (ref: ${ref}${cellRef ? `, cell: ${cellRef.text}` : ""})`;
+    }
     case "interruption":
       return "Execution interrupted";
     case "syntax":

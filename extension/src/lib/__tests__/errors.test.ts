@@ -200,6 +200,57 @@ describe("prettyErrorMessage", () => {
     expect(result).toContain("cell-1</a>");
   });
 
+  it("escapes HTML-like content in an exception message when a cell ID mapper produces a link", () => {
+    const error: MarimoError = {
+      type: "exception",
+      msg: "<b>bad</b> value",
+      exception_type: "<script>Evil</script>",
+      raising_cell: cellId("918d2406-014b-4a20-9c9a-ba8cb7ab2ba2"),
+    };
+    const cellIdMapper = (id: string) =>
+      id === "918d2406-014b-4a20-9c9a-ba8cb7ab2ba2"
+        ? '<a href="#" data-message="...">cell-1</a>'
+        : undefined;
+    const result = prettyErrorMessage(error, cellIdMapper);
+    expect(result).not.toContain("<b>bad</b>");
+    expect(result).not.toContain("<script>Evil</script>");
+    expect(result).toContain("&lt;b&gt;bad&lt;/b&gt;");
+    expect(result).toContain("&lt;script&gt;Evil&lt;/script&gt;");
+    expect(result).toContain("<a href=");
+    expect(result).toContain("cell-1</a>");
+  });
+
+  it("does not escape HTML-like content in an exception message without a cell ID mapper link", () => {
+    const error: MarimoError = {
+      type: "exception",
+      msg: "<b>bad</b> value",
+      exception_type: "ValueError",
+      raising_cell: cellId("cell_5"),
+    };
+    expect(prettyErrorMessage(error)).toMatchInlineSnapshot(
+      `"ValueError: <b>bad</b> value (raised in cell: cell_5)"`,
+    );
+  });
+
+  it("escapes HTML-like content in a strict-exception message when a cell ID mapper produces a link", () => {
+    const error: MarimoError = {
+      type: "strict-exception",
+      msg: "<b>bad</b> access",
+      ref: "<img src=x>",
+      blamed_cell: cellId("918d2406-014b-4a20-9c9a-ba8cb7ab2ba2"),
+    };
+    const cellIdMapper = (id: string) =>
+      id === "918d2406-014b-4a20-9c9a-ba8cb7ab2ba2"
+        ? '<a href="#" data-message="...">cell-1</a>'
+        : undefined;
+    const result = prettyErrorMessage(error, cellIdMapper);
+    expect(result).not.toContain("<b>bad</b>");
+    expect(result).not.toContain("<img src=x>");
+    expect(result).toContain("&lt;b&gt;bad&lt;/b&gt;");
+    expect(result).toContain("&lt;img src=x&gt;");
+    expect(result).toContain("<a href=");
+  });
+
   it("handles ancestor-stopped error with cell ID mapper", () => {
     const error: MarimoError = {
       type: "ancestor-stopped",
