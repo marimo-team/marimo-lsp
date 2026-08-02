@@ -454,6 +454,7 @@ dependencies = [
     { name = "lsprotocol" },
     { name = "marimo" },
     { name = "pygls" },
+    { name = "typing-extensions" },
 ]
 
 [package.dev-dependencies]
@@ -473,6 +474,7 @@ requires-dist = [
     { name = "lsprotocol", specifier = "==2025.0.0" },
     { name = "marimo", specifier = "==0.23.16" },
     { name = "pygls", specifier = "==2.1.1" },
+    { name = "typing-extensions", specifier = ">=4.15.0" },
 ]
 
 [package.metadata.requires-dev]
