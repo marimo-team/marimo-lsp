@@ -18,6 +18,7 @@ from marimo._runtime.commands import (
     UpdateUserConfigCommand,
 )
 from marimo._session.managers import IPCQueueManagerImpl
+from marimo._session.state.session_view import SessionView
 from marimo._types.ids import CellId_t, RequestId, UIElementId
 
 from marimo_lsp.sessions import Session, Sessions, _OperationSink
@@ -27,6 +28,7 @@ def _make_session() -> tuple[Session, Mock]:
     session = Session.__new__(Session)
     ipc_queue_manager = Mock()
     session._queue_manager = IPCQueueManagerImpl.from_ipc(ipc_queue_manager)
+    session.session_view = SessionView()
     return session, ipc_queue_manager
 
 
@@ -39,6 +41,17 @@ def test_ui_element_updates_use_marimo_ipc_batching_route() -> None:
     queue_manager.control_queue.put.assert_called_once_with(command)
     queue_manager.set_ui_element_queue.put.assert_called_once_with(command)
     queue_manager.completion_queue.put.assert_not_called()
+
+
+def test_control_requests_update_live_session_snapshot() -> None:
+    session, _queue_manager = _make_session()
+    session.session_view.mark_auto_export_html()
+    command = UpdateUIElementCommand(object_ids=[UIElementId("slider")], values=[1])
+
+    session.put_control_request(command, from_consumer_id=None)
+
+    assert session.session_view.ui_values == {UIElementId("slider"): 1}
+    assert session.session_view.needs_export("html")
 
 
 def test_regular_commands_are_routed_to_control_queue_only() -> None:
