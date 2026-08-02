@@ -227,6 +227,57 @@ describe("PackagesService", () => {
     }),
   );
 
+  it.effect(
+    "forced fetch bypasses the cached dependency tree",
+    Effect.fn(function* () {
+      let request = 0;
+      const firstTree = {
+        name: "<root>",
+        version: null,
+        tags: [],
+        dependencies: [
+          { name: "first", version: "1.0.0", tags: [], dependencies: [] },
+        ],
+      };
+      const refreshedTree = {
+        name: "<root>",
+        version: null,
+        tags: [],
+        dependencies: [
+          { name: "second", version: "2.0.0", tags: [], dependencies: [] },
+        ],
+      };
+      const { layer, recorded } = yield* makeContext({
+        controller: Option.some(makeNonPythonController()),
+        treeEffect: Effect.sync(() => ({
+          tree: request++ === 0 ? firstTree : refreshedTree,
+        })),
+      });
+
+      yield* Effect.gen(function* () {
+        const svc = yield* PackagesService;
+
+        expect(yield* svc.fetchDependencyTree(NOTEBOOK_URI)).toEqual(firstTree);
+        expect(yield* svc.fetchDependencyTree(NOTEBOOK_URI)).toEqual(firstTree);
+        expect(recorded).toHaveLength(1);
+
+        expect(
+          yield* svc.fetchDependencyTree(NOTEBOOK_URI, { force: true }),
+        ).toEqual(refreshedTree);
+        expect(recorded).toHaveLength(2);
+
+        const state = Option.getOrThrow(
+          yield* svc.getDependencyTree(NOTEBOOK_URI),
+        );
+        expect(state).toEqual({
+          tree: refreshedTree,
+          loading: false,
+          error: null,
+        });
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
   it.scoped(
     "evicts the dependency tree when its notebook closes",
     Effect.fn(function* () {

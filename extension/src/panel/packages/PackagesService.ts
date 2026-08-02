@@ -118,7 +118,10 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          * Fetch dependency tree from the language server
          * Caches the result in dependencyTreesRef and re-uses if already cached
          */
-        fetchDependencyTree(notebookUri: NotebookId) {
+        fetchDependencyTree(
+          notebookUri: NotebookId,
+          options: { readonly force?: boolean } = {},
+        ) {
           return Effect.gen(function* () {
             const session = yield* sessions.sessionFor(notebookUri);
             const updateIfCurrent = (
@@ -136,6 +139,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
 
             // If we have a tree and it's not in error state, re-use it
             if (
+              !options.force &&
               Option.isSome(existing) &&
               existing.value.tree &&
               !existing.value.error
