@@ -364,6 +364,9 @@ export const SessionCommand = <S extends Schema.Schema.Any>(inner: S) =>
     notebookUri: Schema.String,
     inner,
     executable: Schema.String,
+    workingDirectory: Schema.optionalWith(Schema.NullOr(Schema.String), {
+      default: () => null,
+    }),
   });
 
 /**
@@ -424,6 +427,9 @@ export const ExecuteCellsPayload = Schema.Struct({
   notebookUri: Schema.String,
   inner: ExecuteCellsRequest,
   executable: Schema.String,
+  workingDirectory: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
 });
 
 export const UpdateUIElementRequest = Schema.Struct({
@@ -551,6 +557,9 @@ export const ExecuteScratchpadPayload = Schema.Struct({
   notebookUri: Schema.String,
   inner: ExecuteScratchRequest,
   executable: Schema.String,
+  workingDirectory: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
 });
 
 export const PackageDescription = Schema.Struct({

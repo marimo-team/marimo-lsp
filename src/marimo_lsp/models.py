@@ -55,6 +55,9 @@ class SessionCommand(NotebookCommand[T]):
     executable: str
     """The target environment Python executable."""
 
+    working_directory: str | None = None
+    """Optional absolute working directory for a newly launched kernel."""
+
 
 class VenvSource(msgspec.Struct, tag="venv", tag_field="kind", rename="camel"):
     """The notebook's environment is a concrete venv with a known python executable."""

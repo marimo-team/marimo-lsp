@@ -1617,6 +1617,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       version?: string;
       fileSystem?: Map<string, Uint8Array | Error>;
       window?: Partial<Window>;
+      workspace?: Partial<Workspace>;
     } = {},
   ) {
     const activeTextEditor = yield* SubscriptionRef.make(
@@ -1869,6 +1870,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           withProgress() {
             return Effect.void;
           },
+          ...options.window,
         }),
         commands: Commands.make({
           subscribeToCommands() {
@@ -2000,6 +2002,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               ),
             );
           },
+          ...options.workspace,
         }),
         env: Env.make({
           appName: "Marimo Test",

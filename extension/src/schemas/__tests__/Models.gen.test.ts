@@ -9,6 +9,7 @@ import {
   NotebookDocumentMetadata,
   PackageCommand,
   PackageSource,
+  SessionCommand,
   VenvSource,
 } from "../Models.gen.ts";
 
@@ -92,6 +93,17 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
     });
     expect(decoded.inner.query).toBe("polars");
     expect(decoded.source).toEqual({ kind: "script" });
+  });
+
+  it("keeps workingDirectory optional for older session clients", () => {
+    const command = SessionCommand(Schema.Struct({ code: Schema.String }));
+    expect(
+      Schema.decodeUnknownSync(command)({
+        notebookUri: "file:///nb.py",
+        executable: "/usr/bin/python",
+        inner: { code: "print(1)" },
+      }),
+    ).toMatchObject({ workingDirectory: null });
   });
 
   it("names structs in parse errors via identifier annotations", () => {

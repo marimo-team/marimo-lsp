@@ -12,6 +12,8 @@ import {
   type NotebookControllerSelection,
   type NotebookHandle,
   NotebookRuntime,
+  type RuntimeSession,
+  type RuntimeSessionEntry,
 } from "../../kernel/NotebookRuntime.ts";
 import { makeMarimoCommands, MarimoClient } from "../../lsp/MarimoClient.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -23,6 +25,8 @@ interface Options {
   ) => Effect.Effect<unknown, ParseResult.ParseError>;
   readonly operations?: () => Stream.Stream<MarimoOperation>;
   readonly initialControllers?: ReadonlyArray<NotebookControllerSelection>;
+  readonly runtimeSession?: RuntimeSession;
+  readonly runtimeSessions?: ReadonlyArray<RuntimeSessionEntry>;
 }
 
 export function makeTestMarimoClient(options: Options = {}) {
@@ -60,6 +64,8 @@ export function makeTestNotebookRuntime(options: Options = {}) {
               client.executeCells({
                 notebookUri: notebookId,
                 executable,
+                workingDirectory:
+                  options.runtimeSession?.workingDirectory ?? process.cwd(),
                 inner,
               }),
             executeScratchpad: () => Stream.empty,
@@ -92,6 +98,12 @@ export function makeTestNotebookRuntime(options: Options = {}) {
               });
             }),
           controllerChanges: () => Stream.fromPubSub(selections),
+          getRuntimeSession: () =>
+            Effect.succeed(Option.fromNullable(options.runtimeSession)),
+          getRuntimeSessions: () =>
+            Effect.succeed([...(options.runtimeSessions ?? [])]),
+          activeRuntimeSession: () =>
+            Effect.succeed(Option.fromNullable(options.runtimeSession)),
           forNotebook,
         });
       }),

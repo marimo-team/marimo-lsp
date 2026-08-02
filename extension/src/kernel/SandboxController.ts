@@ -129,6 +129,15 @@ export const createSandboxController = Effect.fn("createSandboxController")(
               }
             }),
           ),
+          Effect.catchTag("NotebookFileRootError", (error) =>
+            code.window.showErrorMessage(error.message, { modal: true }),
+          ),
+          Effect.catchTag("NoActiveKernelError", () =>
+            code.window.showErrorMessage(
+              "The notebook was closed before its kernel could start.",
+              { modal: true },
+            ),
+          ),
           // Log everything else
           Effect.tapErrorCause(Effect.logError),
           Effect.catchTag("UvExecutionError", () =>

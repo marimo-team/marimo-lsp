@@ -293,7 +293,12 @@ class Sessions:
         """Return the live session for a notebook, if one exists."""
         return self._sessions.get(notebook_uri)
 
-    def start(self, notebook_uri: str, executable: str) -> Session:
+    def start(
+        self,
+        notebook_uri: str,
+        executable: str,
+        working_directory: str | None = None,
+    ) -> Session:
         """Start or reuse the notebook's session.
 
         A different executable replaces the existing session only after the
@@ -304,13 +309,18 @@ class Sessions:
             current.attach()
             return current
 
-        replacement = self._create(notebook_uri, executable)
+        replacement = self._create(notebook_uri, executable, working_directory)
         self._sessions[notebook_uri] = replacement
         if current is not None:
             self._close(current, notebook_uri)
         return replacement
 
-    def _create(self, notebook_uri: str, executable: str) -> Session:
+    def _create(
+        self,
+        notebook_uri: str,
+        executable: str,
+        working_directory: str | None = None,
+    ) -> Session:
         ipc_queues, connection_info = IpcQueues.create()
         queue_manager = IpcQueueManager.from_ipc(ipc_queues)
         app_file_manager = LspAppFileManager(
@@ -324,6 +334,7 @@ class Sessions:
             app_file_manager=app_file_manager,
             config_manager=config_manager,
             connection_info=connection_info,
+            working_directory=working_directory,
         )
 
         logger.info(f"Starting session for {notebook_uri}")

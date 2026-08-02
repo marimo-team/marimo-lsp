@@ -185,6 +185,22 @@ def test_start_reuses_session_with_same_executable() -> None:
     sessions._create.assert_not_called()
 
 
+def test_start_reuses_same_executable_despite_new_working_directory() -> None:
+    sessions = Sessions(Mock())
+    current = Mock(spec=Session)
+    current.executable = "/usr/bin/python"
+    sessions._sessions["file:///test.py"] = current
+    sessions._create = Mock()
+
+    result = sessions.start(
+        "file:///test.py", "/usr/bin/python", "/new/working/directory"
+    )
+
+    assert result is current
+    current.attach.assert_called_once_with()
+    sessions._create.assert_not_called()
+
+
 def test_start_replaces_session_after_replacement_starts() -> None:
     sessions = Sessions(Mock())
     current = Mock(spec=Session)

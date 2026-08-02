@@ -28,6 +28,23 @@ if typing.TYPE_CHECKING:
 logger = get_logger()
 
 
+class InvalidWorkingDirectoryError(ValueError):
+    """The requested kernel working directory is unsafe or unavailable."""
+
+    def __init__(self, path: Path, reason: str) -> None:
+        message = f"Kernel working directory {reason}: {path}"
+        super().__init__(message)
+
+
+def _validate_working_directory(path: Path) -> None:
+    if not path.is_absolute():
+        raise InvalidWorkingDirectoryError(path, "must be absolute")
+    if not path.exists():
+        raise InvalidWorkingDirectoryError(path, "does not exist")
+    if not path.is_dir():
+        raise InvalidWorkingDirectoryError(path, "is not a directory")
+
+
 def launch_kernel(
     executable: str,
     args: ipc.KernelArgs,
@@ -85,7 +102,7 @@ def launch_kernel(
 class LspKernelManager(KernelManagerImpl):
     """Kernel manager for marimo-lsp."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         executable: str,
@@ -93,6 +110,7 @@ class LspKernelManager(KernelManagerImpl):
         app_file_manager: LspAppFileManager,
         config_manager: MarimoConfigManager,
         connection_info: ConnectionInfo,
+        working_directory: str | None = None,
     ) -> None:
         super().__init__(
             # NB: Leaky abstraction. Mode affects internal behavior of
@@ -120,15 +138,23 @@ class LspKernelManager(KernelManagerImpl):
         )
         self.executable = executable
         self.connection_info = connection_info
+        self.working_directory = working_directory
 
     def start_kernel(self) -> None:
         """Start an instance of the marimo kernel using ZeroMQ IPC."""
-        # Set the working directory to the notebook's directory
         notebook_dir = (
             Path(self.app_metadata.filename).parent
             if self.app_metadata.filename
             else None
         )
+        working_directory = (
+            Path(self.working_directory)
+            if self.working_directory is not None
+            else notebook_dir
+        )
+        if working_directory is not None:
+            _validate_working_directory(working_directory)
+        logger.info(f"Kernel working directory: {working_directory}")
         self.kernel_task = launch_kernel(
             executable=self.executable,
             args=ipc.KernelArgs(
@@ -139,7 +165,7 @@ class LspKernelManager(KernelManagerImpl):
                 log_level=GLOBAL_SETTINGS.LOG_LEVEL,
                 profile_path=self.profile_path,
             ),
-            cwd=str(notebook_dir) if notebook_dir else None,
+            cwd=str(working_directory) if working_directory else None,
         )
 
 

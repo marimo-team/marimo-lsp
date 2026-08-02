@@ -114,6 +114,12 @@
           "default": false,
           "markdownDescription": "Disable marimo's managed Python language features (completions, diagnostics, formatting). When enabled, notebook cells use the standard `python` language ID and rely on external language servers.",
           "scope": "resource"
+        },
+        "marimo.notebookFileRoot": {
+          "type": "string",
+          "default": "${fileDirname}",
+          "markdownDescription": "Controls the initial working directory of locally launched marimo kernels. Supports `${fileDirname}`, `${workspaceFolder}`, `~/some/path`, absolute paths, and paths relative to the notebook's containing workspace folder. Requires a kernel restart to take effect.",
+          "scope": "resource"
         }
       }
     },

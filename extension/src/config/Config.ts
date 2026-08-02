@@ -1,5 +1,7 @@
 import { Effect, Option } from "effect";
+import type * as vscode from "vscode";
 
+import { DEFAULT_NOTEBOOK_FILE_ROOT } from "../kernel/NotebookFileRoot.ts";
 import { VsCode } from "../platform/VsCode.ts";
 
 /**
@@ -26,6 +28,9 @@ export class Config extends Effect.Service<Config>()("Config", {
         },
         lsp: {
           executable: Effect.succeed(Option.none()),
+        },
+        notebookFileRoot() {
+          return Effect.succeed(DEFAULT_NOTEBOOK_FILE_ROOT);
         },
         getManagedLanguageFeaturesEnabled() {
           return Effect.succeed(false);
@@ -87,6 +92,14 @@ export class Config extends Effect.Service<Config>()("Config", {
             );
           });
         },
+      },
+      notebookFileRoot(scope?: vscode.ConfigurationScope) {
+        return Effect.map(
+          code.value.workspace.getConfiguration("marimo", scope),
+          (config) =>
+            config.get<string>("notebookFileRoot") ??
+            DEFAULT_NOTEBOOK_FILE_ROOT,
+        );
       },
       getManagedLanguageFeaturesEnabled() {
         return Effect.andThen(
