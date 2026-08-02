@@ -18,7 +18,7 @@ import type * as vscode from "vscode";
 
 import { unreachable } from "../assert.ts";
 import { Config } from "../config/Config.ts";
-import { SCRATCH_CELL_ID } from "../constants.ts";
+import { SCRATCH_CELL_ID, SETUP_CELL_NAME } from "../constants.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import {
   MarimoClient,
@@ -990,11 +990,16 @@ function syncCellIdentity(
         if (Option.isSome(cell.id)) {
           addedCellIds.add(cell.id.value);
         } else {
+          // marimo reserves the cell id "setup" for the setup cell: the
+          // kernel keys its setup-cell semantics on that exact id, and file
+          // deserialization assigns it. Any other cell gets a fresh UUID.
+          const isSetupCell =
+            Option.isSome(cell.name) && cell.name.value === SETUP_CELL_NAME;
           edits.push(
             options.code.NotebookEdit.updateCellMetadata(
               cell.index,
               cell.buildRuntimeMetadataForInsertion({
-                stableId: crypto.randomUUID(),
+                stableId: isSetupCell ? SETUP_CELL_NAME : crypto.randomUUID(),
               }),
             ),
           );
