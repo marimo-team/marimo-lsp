@@ -46,7 +46,8 @@ const withTestCtx = Effect.fn(function* (
   // value, which carries no brand.
   options: {
     configStore?: Map<string, MarimoConfig>;
-    beforeGet?: (notebookUri: string) => Effect.Effect<void>;
+    // Pauses a response after its configuration snapshot is captured.
+    beforeGetResponse?: (notebookUri: string) => Effect.Effect<void>;
   } = {},
 ) {
   const vscode = yield* TestVsCode.make();
@@ -67,8 +68,8 @@ const withTestCtx = Effect.fn(function* (
                 `Config not found for ${params.notebookUri}`,
               );
             }
-            if (options.beforeGet) {
-              yield* options.beforeGet(params.notebookUri);
+            if (options.beforeGetResponse) {
+              yield* options.beforeGetResponse(params.notebookUri);
             }
             return { config };
           }
@@ -252,7 +253,7 @@ describe("MarimoConfigurationService", () => {
       const releaseRequest = yield* Deferred.make<void>();
       const ctx = yield* withTestCtx({
         configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
-        beforeGet: () =>
+        beforeGetResponse: () =>
           Deferred.succeed(requestStarted, undefined).pipe(
             Effect.andThen(Deferred.await(releaseRequest)),
           ),
