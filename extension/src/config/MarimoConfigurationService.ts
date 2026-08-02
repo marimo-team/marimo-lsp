@@ -2,9 +2,9 @@ import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
 
 import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
+import { makeNotebookSessions } from "../notebook/NotebookSessions.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
-import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { MarimoConfig } from "../types.ts";
 
 /**
@@ -26,19 +26,8 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
       const configRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, MarimoConfig>(),
       );
-      const sessionTokens = new Map<NotebookId, object>();
-
-      const tokenFor = (notebookUri: NotebookId) => {
-        const existing = sessionTokens.get(notebookUri);
-        if (existing) return existing;
-        const token = {};
-        sessionTokens.set(notebookUri, token);
-        return token;
-      };
-
-      const clearNotebook = (notebookUri: NotebookId) =>
+      const clearCache = (notebookUri: NotebookId) =>
         Effect.gen(function* () {
-          sessionTokens.delete(notebookUri);
           yield* SubscriptionRef.update(configRef, (map) =>
             HashMap.remove(map, notebookUri),
           );
@@ -48,18 +37,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
           );
         });
 
-      // The kernel re-reads its config when a notebook session restarts, so a
-      // closed notebook's cache entry would be stale if it were reopened.
-      yield* Effect.forkScoped(
-        code.workspace.notebookDocumentClosed().pipe(
-          Stream.runForEach((document) =>
-            Option.match(MarimoNotebookDocument.tryFrom(document), {
-              onNone: () => Effect.void,
-              onSome: (notebook) => clearNotebook(notebook.id),
-            }),
-          ),
-        ),
-      );
+      const sessions = yield* makeNotebookSessions(code, clearCache);
 
       /**
        * Stream of configuration changes for the active notebook.
@@ -87,7 +65,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
          */
         getConfig(notebookUri: NotebookId) {
           return Effect.gen(function* () {
-            const sessionToken = tokenFor(notebookUri);
+            const session = yield* sessions.sessionFor(notebookUri);
             // First check if we have it cached
             const map = yield* SubscriptionRef.get(configRef);
             const cached = HashMap.get(map, notebookUri);
@@ -109,8 +87,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
             // A close may have invalidated this request while it was in
             // flight. Return its result to the original caller, but never
             // repopulate a cache belonging to a newer notebook session.
-            const cacheIsCurrent =
-              sessionTokens.get(notebookUri) === sessionToken;
+            const cacheIsCurrent = sessions.current(notebookUri) === session;
             if (cacheIsCurrent) {
               yield* SubscriptionRef.update(configRef, (map) =>
                 HashMap.set(map, notebookUri, result.config),
@@ -133,7 +110,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
           partialConfig: Record<string, unknown>,
         ) {
           return Effect.gen(function* () {
-            const sessionToken = tokenFor(notebookUri);
+            const session = yield* sessions.sessionFor(notebookUri);
             yield* Effect.logTrace("Updating configuration").pipe(
               Effect.annotateLogs({ notebookUri, config: partialConfig }),
             );
@@ -146,7 +123,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
               },
             });
 
-            if (sessionTokens.get(notebookUri) === sessionToken) {
+            if (sessions.current(notebookUri) === session) {
               yield* SubscriptionRef.update(configRef, (map) =>
                 HashMap.set(map, notebookUri, result),
               );
@@ -163,7 +140,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
         /**
          * Clear configuration for a notebook
          */
-        clearNotebook,
+        clearNotebook: sessions.invalidate,
 
         /**
          * Stream of mapped configuration values for the active notebook.

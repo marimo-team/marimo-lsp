@@ -1,4 +1,4 @@
-import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
+import { Effect, HashMap, Option, SubscriptionRef } from "effect";
 
 import {
   type NotebookController,
@@ -6,6 +6,7 @@ import {
 } from "../../kernel/NotebookRuntime.ts";
 import { MarimoClient } from "../../lsp/MarimoClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
+import { makeNotebookSessions } from "../../notebook/NotebookSessions.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -51,19 +52,8 @@ export class PackagesService extends Effect.Service<PackagesService>()(
       const dependencyTreesRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, DependencyTreeState>(),
       );
-      const sessionTokens = new Map<NotebookId, object>();
-
-      const tokenFor = (notebookUri: NotebookId) => {
-        const existing = sessionTokens.get(notebookUri);
-        if (existing) return existing;
-        const token = {};
-        sessionTokens.set(notebookUri, token);
-        return token;
-      };
-
-      const clearNotebook = (notebookUri: NotebookId) =>
+      const clearCache = (notebookUri: NotebookId) =>
         Effect.gen(function* () {
-          sessionTokens.delete(notebookUri);
           yield* SubscriptionRef.update(
             dependencyTreesRef,
             HashMap.remove(notebookUri),
@@ -73,16 +63,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
           );
         });
 
-      yield* Effect.forkScoped(
-        code.workspace.notebookDocumentClosed().pipe(
-          Stream.runForEach((document) =>
-            Option.match(MarimoNotebookDocument.tryFrom(document), {
-              onNone: () => Effect.void,
-              onSome: (notebook) => clearNotebook(notebook.id),
-            }),
-          ),
-        ),
-      );
+      const sessions = yield* makeNotebookSessions(code, clearCache);
 
       return {
         /**
@@ -139,13 +120,13 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          */
         fetchDependencyTree(notebookUri: NotebookId) {
           return Effect.gen(function* () {
-            const sessionToken = tokenFor(notebookUri);
+            const session = yield* sessions.sessionFor(notebookUri);
             const updateIfCurrent = (
               update: (
                 map: HashMap.HashMap<NotebookId, DependencyTreeState>,
               ) => HashMap.HashMap<NotebookId, DependencyTreeState>,
             ) =>
-              sessionTokens.get(notebookUri) === sessionToken
+              sessions.current(notebookUri) === session
                 ? SubscriptionRef.update(dependencyTreesRef, update)
                 : Effect.void;
 
@@ -298,7 +279,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                 ),
               );
 
-            if (sessionTokens.get(notebookUri) === sessionToken) {
+            if (sessions.current(notebookUri) === session) {
               yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
                 HashMap.set(map, notebookUri, {
                   tree: rawResult.tree,
@@ -321,7 +302,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
         /**
          * Clear all package data for a notebook
          */
-        clearNotebook,
+        clearNotebook: sessions.invalidate,
 
         /**
          * Stream of dependency tree changes.

@@ -247,7 +247,7 @@ describe("MarimoConfigurationService", () => {
   );
 
   it.scoped(
-    "does not restore cache entries from requests invalidated by close",
+    "does not restore cache entries from requests invalidated while in flight",
     Effect.fn(function* () {
       const requestStarted = yield* Deferred.make<void>();
       const releaseRequest = yield* Deferred.make<void>();
@@ -273,6 +273,47 @@ describe("MarimoConfigurationService", () => {
           "autorun",
         );
         // The invalid response was not cached; this fetch reaches the server.
+        expect(
+          (yield* service.getConfig(NOTEBOOK_URI)).runtime?.on_cell_change,
+        ).toBe("lazy");
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.scoped(
+    "ignores a delayed close from a replaced document at the same URI",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx({
+        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
+      });
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const service = yield* MarimoConfigurationService;
+        const first = createTestNotebookDocument(
+          code.Uri.parse(NOTEBOOK_URI, true),
+        );
+        const replacement = createTestNotebookDocument(
+          code.Uri.parse(NOTEBOOK_URI, true),
+        );
+
+        yield* ctx.vscode.openNotebook(first);
+        yield* TestClock.adjust("1 millis");
+        expect(
+          (yield* service.getConfig(NOTEBOOK_URI)).runtime?.on_cell_change,
+        ).toBe("autorun");
+
+        yield* ctx.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
+        yield* ctx.vscode.openNotebook(replacement);
+        yield* TestClock.adjust("1 millis");
+        expect(
+          (yield* service.getConfig(NOTEBOOK_URI)).runtime?.on_cell_change,
+        ).toBe("lazy");
+
+        // The old close must not evict the replacement session's cache.
+        yield* ctx.setConfig(NOTEBOOK_URI, AUTORUN_CONFIG);
+        yield* ctx.vscode.closeNotebook(first);
+        yield* TestClock.adjust("1 millis");
         expect(
           (yield* service.getConfig(NOTEBOOK_URI)).runtime?.on_cell_change,
         ).toBe("lazy");

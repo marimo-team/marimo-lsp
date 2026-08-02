@@ -295,4 +295,41 @@ describe("PackagesService", () => {
       }).pipe(Effect.provide(layer));
     }),
   );
+
+  it.scoped(
+    "ignores a delayed close from a replaced document at the same URI",
+    Effect.fn(function* () {
+      const { layer, recorded, vscode } = yield* makeContext({
+        controller: Option.some(makeNonPythonController()),
+        treeResponse: {
+          tree: { name: "<root>", version: null, tags: [], dependencies: [] },
+        },
+      });
+      const first = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+        notebookType: "marimo-notebook",
+      });
+      const replacement = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+        notebookType: "marimo-notebook",
+      });
+
+      yield* Effect.gen(function* () {
+        const svc = yield* PackagesService;
+
+        yield* vscode.openNotebook(first);
+        yield* TestClock.adjust("1 millis");
+        yield* svc.fetchDependencyTree(NOTEBOOK_URI);
+        expect(recorded).toHaveLength(1);
+
+        yield* vscode.openNotebook(replacement);
+        yield* TestClock.adjust("1 millis");
+        yield* svc.fetchDependencyTree(NOTEBOOK_URI);
+        expect(recorded).toHaveLength(2);
+
+        yield* vscode.closeNotebook(first);
+        yield* TestClock.adjust("1 millis");
+        yield* svc.fetchDependencyTree(NOTEBOOK_URI);
+        expect(recorded).toHaveLength(2);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
 });

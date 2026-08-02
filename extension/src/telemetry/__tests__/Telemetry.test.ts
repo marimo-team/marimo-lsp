@@ -151,12 +151,18 @@ it.scoped("capture is a no-op without consent, live with it", () =>
 it.scoped("contains synchronous capture failures", () =>
   Effect.gen(function* () {
     const ctx = yield* withTestCtx();
+    posthog.capture.mockClear();
     posthog.capture.mockImplementationOnce(() => {
       throw new Error("posthog exploded");
     });
 
     // Reporting failures must not escape into the product effect.
     yield* ctx.telemetry.capture("new_notebook_created");
+    expect(posthog.capture).toHaveBeenCalledTimes(1);
+
+    // A failed capture does not disable later telemetry.
+    yield* ctx.telemetry.capture("new_notebook_created");
+    expect(posthog.capture).toHaveBeenCalledTimes(2);
   }),
 );
 

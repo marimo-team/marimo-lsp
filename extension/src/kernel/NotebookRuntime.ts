@@ -1,6 +1,7 @@
 import {
   Chunk,
   Data,
+  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -9,7 +10,6 @@ import {
   PubSub,
   Queue,
   Ref,
-  Runtime,
   Stream,
   TSemaphore,
   Array as EffectArray,
@@ -28,6 +28,11 @@ import {
 import { applyDocumentTransaction } from "../notebook/applyDocumentTransaction.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
+import {
+  isOpenNotebookSession,
+  makeNotebookSessions,
+  type OpenNotebookSession,
+} from "../notebook/NotebookSessions.ts";
 import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
 import { VariablesService } from "../panel/variables/VariablesService.ts";
 import { Constants } from "../platform/Constants.ts";
@@ -152,7 +157,9 @@ interface NotebookState {
   readonly controller: Ref.Ref<Option.Option<NotebookController>>;
 }
 
-type SessionOperation = MarimoOperation & { readonly sessionToken: object };
+type SessionOperation = MarimoOperation & {
+  readonly session: OpenNotebookSession;
+};
 
 export interface RuntimeSession {
   readonly executable: string;
@@ -229,34 +236,8 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       const operations = yield* PubSub.unbounded<MarimoOperation>();
       const notebooks = new Map<NotebookId, NotebookState>();
       const runtimeSessions = new Map<NotebookId, RuntimeSession>();
-      const notebookSessionTokens = new Map<NotebookId, object>();
       const controllerSelections =
         yield* PubSub.unbounded<NotebookControllerSelection>();
-
-      const markNotebookOpen = (document: vscode.NotebookDocument) => {
-        const notebook = MarimoNotebookDocument.tryFrom(document);
-        if (
-          Option.isSome(notebook) &&
-          !notebookSessionTokens.has(notebook.value.id)
-        ) {
-          notebookSessionTokens.set(notebook.value.id, {});
-        }
-      };
-
-      // Subscribe before taking the initial snapshot so a document opened
-      // during construction cannot fall through the gap between the two.
-      yield* Effect.forkScoped(
-        code.workspace
-          .notebookDocumentOpened()
-          .pipe(
-            Stream.runForEach((document) =>
-              Effect.sync(() => markNotebookOpen(document)),
-            ),
-          ),
-      );
-      for (const document of yield* code.workspace.getNotebookDocuments()) {
-        markNotebookOpen(document);
-      }
 
       yield* Effect.addFinalizer(() =>
         Effect.all(
@@ -431,22 +412,14 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
           .activeNotebookEditorChanges()
           .pipe(Stream.runForEach(updateKernelContext)),
       );
-      yield* Effect.forkScoped(
-        code.workspace.notebookDocumentClosed().pipe(
-          Stream.runForEach(
-            Effect.fn("NotebookRuntime.releaseNotebook")(function* (document) {
-              const notebook = MarimoNotebookDocument.tryFrom(document);
-              if (Option.isNone(notebook)) return;
-              notebookSessionTokens.delete(notebook.value.id);
-              notebooks.delete(notebook.value.id);
-              // Evict per-notebook kernel state so closed notebooks don't
-              // accumulate in the panel services for the session's lifetime.
-              yield* variables.clearNotebook(notebook.value.id);
-              yield* datasources.clearNotebook(notebook.value.id);
-              yield* updateKernelContext();
-            }),
-          ),
-        ),
+      const notebookSessions = yield* makeNotebookSessions(
+        code,
+        Effect.fn("NotebookRuntime.releaseNotebook")(function* (notebookId) {
+          notebooks.delete(notebookId);
+          yield* variables.clearNotebook(notebookId);
+          yield* datasources.clearNotebook(notebookId);
+          yield* updateKernelContext();
+        }),
       );
       yield* Effect.forkScoped(
         processRuntimeOperations(
@@ -454,11 +427,9 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
             .operations()
             .pipe(
               Stream.filterMap((message) => {
-                const sessionToken = notebookSessionTokens.get(
-                  message.notebookUri,
-                );
-                return sessionToken
-                  ? Option.some<SessionOperation>({ ...message, sessionToken })
+                const session = notebookSessions.current(message.notebookUri);
+                return isOpenNotebookSession(session)
+                  ? Option.some<SessionOperation>({ ...message, session })
                   : Option.none();
               }),
             )
@@ -467,49 +438,42 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
             ),
           Effect.fn("NotebookRuntime.processOperation")(
             function* (message, options) {
-              // The token is captured when the operation enters the runtime,
+              // The session is captured when the operation enters the runtime,
               // not when its per-notebook worker eventually processes it.
               // This keeps queued operations from an old session out of a
               // rapidly reopened notebook with the same URI.
               if (
-                notebookSessionTokens.get(message.notebookUri) !==
-                message.sessionToken
+                notebookSessions.current(message.notebookUri) !==
+                message.session
               ) {
                 return;
               }
-              yield* processOperation(message, {
-                forNotebook,
-                ...options,
-              }).pipe(
-                Effect.annotateLogs({
-                  notebookUri: message.notebookUri,
-                  operation: message.operation.op,
-                }),
-                Effect.withSpan("process-operation"),
-                Effect.catchAllCause(
-                  Effect.fn(function* (cause) {
-                    yield* Effect.logError(
-                      "Failed to process marimo operation",
-                    ).pipe(Effect.annotateLogs({ cause }));
-                    yield* Effect.fork(
-                      showErrorAndPromptLogs(
-                        "Failed to process marimo operation.",
-                      ),
-                    );
+              yield* Effect.raceFirst(
+                processOperation(message, {
+                  forNotebook,
+                  session: message.session,
+                  ...options,
+                }).pipe(
+                  Effect.annotateLogs({
+                    notebookUri: message.notebookUri,
+                    operation: message.operation.op,
                   }),
+                  Effect.withSpan("process-operation"),
+                  Effect.catchAllCause(
+                    Effect.fn(function* (cause) {
+                      yield* Effect.logError(
+                        "Failed to process marimo operation",
+                      ).pipe(Effect.annotateLogs({ cause }));
+                      yield* Effect.fork(
+                        showErrorAndPromptLogs(
+                          "Failed to process marimo operation.",
+                        ),
+                      );
+                    }),
+                  ),
                 ),
+                Deferred.await(message.session.invalidated),
               );
-
-              // If close raced an already-running operation, the close
-              // handler may have cleared state before the operation wrote its
-              // final update. Clear once more after it completes.
-              if (
-                notebookSessionTokens.get(message.notebookUri) !==
-                message.sessionToken
-              ) {
-                yield* variables.clearNotebook(message.notebookUri);
-                yield* datasources.clearNotebook(message.notebookUri);
-              }
             },
           ),
         ),
@@ -827,6 +791,7 @@ function processOperation(
   { notebookUri, operation }: MarimoOperation,
   options: {
     forNotebook: (notebookId: NotebookId) => NotebookHandle;
+    readonly session: OpenNotebookSession;
     readonly renderCellOutput: boolean;
   },
 ) {
@@ -848,7 +813,11 @@ function processOperation(
         yield* datasources.updateDatasets(notebookUri, operation);
         break;
       case "notebook-document-transaction":
-        yield* applyTransactionToEditor(notebookUri, operation);
+        yield* applyTransactionToEditor(
+          notebookUri,
+          operation,
+          options.session.document,
+        );
         break;
       case "cell-op":
       case "interrupted":
@@ -899,6 +868,7 @@ function processOperation(
 function applyTransactionToEditor(
   notebookUri: NotebookId,
   operation: NotificationOf<"notebook-document-transaction">,
+  sessionDocument: vscode.NotebookDocument,
 ) {
   return Effect.gen(function* () {
     const editors = yield* NotebookEditorRegistry;
@@ -909,6 +879,7 @@ function applyTransactionToEditor(
       );
       return;
     }
+    if (editor.value.notebook !== sessionDocument) return;
 
     const notebook = MarimoNotebookDocument.from(editor.value.notebook);
     yield* applyDocumentTransaction(notebook, operation.transaction);
@@ -927,24 +898,29 @@ function processNotebookOperation(
     | NotificationOf<"model-lifecycle">,
   options: {
     forNotebook: (notebookId: NotebookId) => NotebookHandle;
+    readonly session: OpenNotebookSession;
     readonly renderCellOutput: boolean;
   },
 ) {
   return Effect.gen(function* () {
-    const uv = yield* Uv;
-    const code = yield* VsCode;
-    const config = yield* Config;
     const editors = yield* NotebookEditorRegistry;
     const renderer = yield* NotebookRenderer;
     const executions = yield* CellExecutions;
-    const envInvalidation = yield* PythonEnvInvalidation;
-    const runPromise = Runtime.runPromise(yield* Effect.runtime());
+
+    const forkForSession = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      Effect.forkDaemon(
+        Effect.raceFirst(
+          effect,
+          Deferred.await(options.session.invalidated),
+        ).pipe(Effect.asVoid),
+      );
 
     const editor = yield* editors.getLastNotebookEditor(notebookUri);
     if (Option.isNone(editor)) {
       yield* Effect.logWarning("No active notebook editor, skipping operation");
       return;
     }
+    if (editor.value.notebook !== options.session.document) return;
 
     const controller = yield* options.forNotebook(notebookUri).getController();
     if (Option.isNone(controller)) {
@@ -964,7 +940,7 @@ function processNotebookOperation(
           controller: controller.value,
           renderOutput: options.renderCellOutput,
         });
-        yield* Effect.fork(
+        yield* forkForSession(
           handleStdinPrompt(operation, options.forNotebook(notebookUri)),
         );
         break;
@@ -973,23 +949,18 @@ function processNotebookOperation(
         yield* executions.handleInterrupt(editor.value);
         break;
       case "missing-package-alert":
-        void runPromise(
-          handleMissingPackageAlert(operation, notebook, controller.value).pipe(
-            Effect.provideService(Uv, uv),
-            Effect.provideService(VsCode, code),
-            Effect.provideService(Config, config),
-            Effect.provideService(PythonEnvInvalidation, envInvalidation),
-          ),
+        yield* forkForSession(
+          handleMissingPackageAlert(operation, notebook, controller.value),
         );
         break;
       case "remove-ui-elements":
       case "function-call-result":
       case "model-lifecycle":
-        void runPromise(renderer.postMessage(operation, editor.value));
+        yield* renderer.postMessage(operation, editor.value);
         break;
       case "send-ui-element-message":
         if (!isValueUpdateEcho(operation)) {
-          void runPromise(renderer.postMessage(operation, editor.value));
+          yield* renderer.postMessage(operation, editor.value);
         }
         break;
       default:
