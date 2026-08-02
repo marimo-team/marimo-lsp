@@ -1921,6 +1921,12 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           getNotebookDocuments() {
             return Effect.map(Ref.get(notebookDocuments), HashSet.toValues);
           },
+          getTextDocuments() {
+            return Effect.map(
+              SubscriptionRef.get(visibleTextEditors),
+              (editors) => editors.map((editor) => editor.document),
+            );
+          },
           configurationChanges() {
             return Stream.never;
           },

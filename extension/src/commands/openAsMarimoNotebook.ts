@@ -48,6 +48,20 @@ export const openAsMarimoNotebook = defineCommand(
       uri = resource;
     }
 
+    const documents = yield* code.workspace.getTextDocuments();
+    const document = documents.find(
+      (document) => document.uri.toString() === uri.toString(),
+    );
+
+    // `vscode.openWith` deserializes the notebook from disk, so persist any
+    // in-memory edits before switching editors.
+    if (document?.isDirty) {
+      const saved = yield* Effect.promise(() => document.save());
+      if (!saved) {
+        return;
+      }
+    }
+
     // We open first before closing to handle multi-window scenarios correctly:
     // if we close first and it's the only editor in the window, the window
     // closes before we can open the notebook in it.
