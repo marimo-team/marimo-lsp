@@ -534,6 +534,37 @@ export const DeleteCellPayload = Schema.Struct({
   inner: DeleteCellRequest,
 });
 
+export const ListSQLSchemasRequest = Schema.Struct({
+  requestId: Schema.String,
+  engine: Schema.String,
+  database: Schema.String,
+  schemaPath: Schema.optionalWith(Schema.Array(Schema.String), {
+    default: () => [],
+  }),
+}).annotations({ identifier: "ListSQLSchemasRequest" });
+export type ListSQLSchemasRequest = typeof ListSQLSchemasRequest.Type;
+
+export const ListSqlSchemasPayload = Schema.Struct({
+  notebookUri: Schema.String,
+  inner: ListSQLSchemasRequest,
+});
+
+export const ListSQLTablesRequest = Schema.Struct({
+  requestId: Schema.String,
+  engine: Schema.String,
+  database: Schema.String,
+  schema: Schema.String,
+  schemaPath: Schema.optionalWith(Schema.Array(Schema.String), {
+    default: () => [],
+  }),
+}).annotations({ identifier: "ListSQLTablesRequest" });
+export type ListSQLTablesRequest = typeof ListSQLTablesRequest.Type;
+
+export const ListSqlTablesPayload = Schema.Struct({
+  notebookUri: Schema.String,
+  inner: ListSQLTablesRequest,
+});
+
 export const StdinRequest = Schema.Struct({
   text: Schema.String,
 }).annotations({ identifier: "StdinRequest" });
@@ -1374,6 +1405,14 @@ export type MarimoApiCall =
       readonly params: typeof DeleteCellPayload.Encoded;
     }
   | {
+      readonly method: "list-sql-schemas";
+      readonly params: typeof ListSqlSchemasPayload.Encoded;
+    }
+  | {
+      readonly method: "list-sql-tables";
+      readonly params: typeof ListSqlTablesPayload.Encoded;
+    }
+  | {
       readonly method: "send-stdin";
       readonly params: typeof SendStdinPayload.Encoded;
     }
@@ -1504,6 +1543,20 @@ export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({
       execute,
       { method: "delete-cell", params },
       DeleteCellPayload,
+      Schema.Null,
+    ),
+  listSqlSchemas: (params: typeof ListSqlSchemasPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "list-sql-schemas", params },
+      ListSqlSchemasPayload,
+      Schema.Null,
+    ),
+  listSqlTables: (params: typeof ListSqlTablesPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "list-sql-tables", params },
+      ListSqlTablesPayload,
       Schema.Null,
     ),
   sendStdin: (params: typeof SendStdinPayload.Encoded) =>

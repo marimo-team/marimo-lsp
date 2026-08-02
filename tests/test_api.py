@@ -7,15 +7,20 @@ from unittest.mock import MagicMock, patch
 import msgspec
 import pytest
 from marimo._config.config import DEFAULT_CONFIG
+from marimo._types.ids import RequestId
 
 from marimo_lsp.api import (
     ApiBuilder,
     ApiContext,
     get_configuration,
+    list_sql_schemas,
+    list_sql_tables,
     update_configuration,
 )
 from marimo_lsp.models import (
     GetConfigurationRequest,
+    ListSQLSchemasRequest,
+    ListSQLTablesRequest,
     NotebookCommand,
     SetDisplayThemeRequest,
     UpdateConfigurationRequest,
@@ -146,3 +151,54 @@ async def test_update_configuration_propagates_save_errors() -> None:
 def test_display_theme_rejects_unresolved_theme() -> None:
     with pytest.raises(msgspec.ValidationError):
         msgspec.convert({"theme": "system"}, type=SetDisplayThemeRequest)
+
+
+@pytest.mark.asyncio
+async def test_list_sql_schemas_is_forwarded_to_the_kernel() -> None:
+    request = ListSQLSchemasRequest(
+        request_id=RequestId("schemas"),
+        engine="warehouse",
+        database="analytics",
+        schema_path=["catalog"],
+    )
+    session = MagicMock()
+    sessions = MagicMock()
+    sessions.get.return_value = session
+
+    await list_sql_schemas(
+        _context(sessions),
+        NotebookCommand(
+            notebook_uri="file:///notebook.py",
+            inner=request,
+        ),
+    )
+
+    session.put_control_request.assert_called_once_with(
+        request.as_command(), from_consumer_id=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_sql_tables_is_forwarded_to_the_kernel() -> None:
+    request = ListSQLTablesRequest(
+        request_id=RequestId("tables"),
+        engine="warehouse",
+        database="analytics",
+        schema="events",
+        schema_path=["catalog", "events"],
+    )
+    session = MagicMock()
+    sessions = MagicMock()
+    sessions.get.return_value = session
+
+    await list_sql_tables(
+        _context(sessions),
+        NotebookCommand(
+            notebook_uri="file:///notebook.py",
+            inner=request,
+        ),
+    )
+
+    session.put_control_request.assert_called_once_with(
+        request.as_command(), from_consumer_id=None
+    )

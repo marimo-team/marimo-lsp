@@ -53,6 +53,8 @@ from marimo_lsp.models import (
     ListPackagesResponse,
     ListSessionsRequest,
     ListSessionsResponse,
+    ListSQLSchemasRequest,
+    ListSQLTablesRequest,
     ModelRequest,
     MoveSessionRequest,
     NotebookCommand,
@@ -292,6 +294,28 @@ async def delete_cell(
         logger.info(f"Delete cell request sent for {args.notebook_uri}")
     else:
         logger.warning(f"No session found for {args.notebook_uri}")
+
+
+@marimo_api("list-sql-schemas")
+async def list_sql_schemas(
+    ctx: ApiContext,
+    args: NotebookCommand[ListSQLSchemasRequest],
+) -> None:
+    """Request the immediate child schemas at a database path."""
+    session = ctx.sessions.get(args.notebook_uri)
+    assert session, f"No session in workspace for {args.notebook_uri}"
+    session.put_control_request(args.inner.as_command(), from_consumer_id=None)
+
+
+@marimo_api("list-sql-tables")
+async def list_sql_tables(
+    ctx: ApiContext,
+    args: NotebookCommand[ListSQLTablesRequest],
+) -> None:
+    """Request the tables belonging to a schema path."""
+    session = ctx.sessions.get(args.notebook_uri)
+    assert session, f"No session in workspace for {args.notebook_uri}"
+    session.put_control_request(args.inner.as_command(), from_consumer_id=None)
 
 
 @marimo_api("send-stdin")
