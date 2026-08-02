@@ -1,4 +1,4 @@
-import { Effect, HashMap, Option, SubscriptionRef } from "effect";
+import { Effect, HashMap, Option, Ref, SubscriptionRef } from "effect";
 
 import {
   type NotebookController,
@@ -52,36 +52,28 @@ export class PackagesService extends Effect.Service<PackagesService>()(
       const dependencyTreesRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, DependencyTreeState>(),
       );
+      const nextRequestIdRef = yield* Ref.make(0);
+      const latestRequestIdsRef = yield* Ref.make(
+        HashMap.empty<NotebookId, number>(),
+      );
+      const requestStateLock = yield* Effect.makeSemaphore(1);
       const clearCache = (notebookUri: NotebookId) =>
-        Effect.gen(function* () {
-          yield* SubscriptionRef.update(
-            dependencyTreesRef,
-            HashMap.remove(notebookUri),
-          );
-          yield* Effect.logTrace("Cleared package data").pipe(
-            Effect.annotateLogs({ notebookUri }),
-          );
-        });
+        requestStateLock.withPermits(1)(
+          Effect.gen(function* () {
+            yield* SubscriptionRef.update(
+              dependencyTreesRef,
+              HashMap.remove(notebookUri),
+            );
+            yield* Ref.update(latestRequestIdsRef, HashMap.remove(notebookUri));
+            yield* Effect.logTrace("Cleared package data").pipe(
+              Effect.annotateLogs({ notebookUri }),
+            );
+          }),
+        );
 
       const sessions = yield* makeNotebookSessions(code, clearCache);
 
       return {
-        /**
-         * Set dependency tree loading state
-         */
-        setDependencyTreeLoading(notebookUri: NotebookId, loading: boolean) {
-          return SubscriptionRef.update(dependencyTreesRef, (map) =>
-            HashMap.set(
-              map,
-              notebookUri,
-              Option.match(HashMap.get(map, notebookUri), {
-                onNone: () => ({ tree: null, loading, error: null }),
-                onSome: (value) => ({ ...value, loading }),
-              }),
-            ),
-          );
-        },
-
         /**
          * Set dependency tree error state
          */
@@ -123,8 +115,12 @@ export class PackagesService extends Effect.Service<PackagesService>()(
           options: { readonly force?: boolean } = {},
         ) {
           return Effect.gen(function* () {
+            const requestId = yield* Ref.updateAndGet(
+              nextRequestIdRef,
+              (current) => current + 1,
+            );
             const session = yield* sessions.sessionFor(notebookUri);
-            const updateIfCurrent = (
+            const updateIfCurrentSession = (
               update: (
                 map: HashMap.HashMap<NotebookId, DependencyTreeState>,
               ) => HashMap.HashMap<NotebookId, DependencyTreeState>,
@@ -165,7 +161,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               .forNotebook(activeNotebook.value.id)
               .getController();
             if (Option.isNone(activeController)) {
-              yield* updateIfCurrent((map) =>
+              yield* updateIfCurrentSession((map) =>
                 HashMap.set(map, notebookUri, {
                   tree: null,
                   loading: false,
@@ -179,17 +175,66 @@ export class PackagesService extends Effect.Service<PackagesService>()(
             }
 
             const source = controllerSource(activeController.value);
-
-            // Set loading state
-            yield* updateIfCurrent((map) =>
-              HashMap.set(
-                map,
-                notebookUri,
-                Option.match(HashMap.get(map, notebookUri), {
-                  onNone: () => ({ tree: null, loading: true, error: null }),
-                  onSome: (value) => ({ ...value, loading: true }),
+            const updateIfCurrentRequest = (
+              update: (
+                map: HashMap.HashMap<NotebookId, DependencyTreeState>,
+              ) => HashMap.HashMap<NotebookId, DependencyTreeState>,
+            ) =>
+              requestStateLock.withPermits(1)(
+                Effect.gen(function* () {
+                  const latestRequestId = HashMap.get(
+                    yield* Ref.get(latestRequestIdsRef),
+                    notebookUri,
+                  );
+                  if (
+                    sessions.current(notebookUri) === session &&
+                    Option.contains(latestRequestId, requestId)
+                  ) {
+                    yield* SubscriptionRef.update(dependencyTreesRef, update);
+                    return true;
+                  }
+                  return false;
                 }),
-              ),
+              );
+
+            // Register this request and set loading as one atomic state change.
+            yield* requestStateLock.withPermits(1)(
+              Effect.gen(function* () {
+                yield* Ref.update(latestRequestIdsRef, (requestIds) =>
+                  HashMap.set(
+                    requestIds,
+                    notebookUri,
+                    Option.match(HashMap.get(requestIds, notebookUri), {
+                      onNone: () => requestId,
+                      onSome: (latestRequestId) =>
+                        Math.max(latestRequestId, requestId),
+                    }),
+                  ),
+                );
+                const latestRequestId = HashMap.get(
+                  yield* Ref.get(latestRequestIdsRef),
+                  notebookUri,
+                );
+                if (
+                  sessions.current(notebookUri) === session &&
+                  Option.contains(latestRequestId, requestId)
+                ) {
+                  yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
+                    HashMap.set(
+                      map,
+                      notebookUri,
+                      Option.match(HashMap.get(map, notebookUri), {
+                        onNone: () => ({
+                          tree: null,
+                          loading: true,
+                          error: null,
+                        }),
+                        onSome: (value) => ({ ...value, loading: true }),
+                      }),
+                    ),
+                  );
+                }
+              }),
             );
 
             // Fetch from language server
@@ -212,7 +257,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                     // Script mode has no useful fallback — `uv tree --script`
                     // is the only path that resolves PEP 723 metadata.
                     if (source.kind === "script") {
-                      yield* updateIfCurrent((map) =>
+                      yield* updateIfCurrentRequest((map) =>
                         HashMap.set(map, notebookUri, {
                           tree: null,
                           loading: false,
@@ -246,7 +291,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                         Effect.catchAll((fallbackError) =>
                           Effect.gen(function* () {
                             const fallbackErrorMsg = String(fallbackError);
-                            yield* updateIfCurrent((map) =>
+                            yield* updateIfCurrentRequest((map) =>
                               HashMap.set(map, notebookUri, {
                                 tree: null,
                                 loading: false,
@@ -283,14 +328,14 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                 ),
               );
 
-            if (sessions.current(notebookUri) === session) {
-              yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
-                HashMap.set(map, notebookUri, {
-                  tree: rawResult.tree,
-                  loading: false,
-                  error: null,
-                }),
-              );
+            const cachedResult = yield* updateIfCurrentRequest((map) =>
+              HashMap.set(map, notebookUri, {
+                tree: rawResult.tree,
+                loading: false,
+                error: null,
+              }),
+            );
+            if (cachedResult) {
               yield* Effect.logTrace("Cached dependency tree").pipe(
                 Effect.annotateLogs({
                   notebookUri,

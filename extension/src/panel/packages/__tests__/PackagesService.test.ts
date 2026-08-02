@@ -279,6 +279,67 @@ describe("PackagesService", () => {
   );
 
   it.scoped(
+    "does not let an older request overwrite a newer forced fetch",
+    Effect.fn(function* () {
+      const firstRequestStarted = yield* Deferred.make<void>();
+      const releaseFirstRequest = yield* Deferred.make<void>();
+      let request = 0;
+      const olderTree = {
+        name: "<root>",
+        version: null,
+        tags: [],
+        dependencies: [
+          { name: "older", version: "1.0.0", tags: [], dependencies: [] },
+        ],
+      };
+      const newerTree = {
+        name: "<root>",
+        version: null,
+        tags: [],
+        dependencies: [
+          { name: "newer", version: "2.0.0", tags: [], dependencies: [] },
+        ],
+      };
+      const { layer } = yield* makeContext({
+        controller: Option.some(makeNonPythonController()),
+        treeEffect: Effect.suspend(() => {
+          const currentRequest = request++;
+          if (currentRequest === 0) {
+            return Deferred.succeed(firstRequestStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseFirstRequest)),
+              Effect.as({ tree: olderTree }),
+            );
+          }
+          return Effect.succeed({ tree: newerTree });
+        }),
+      });
+
+      yield* Effect.gen(function* () {
+        const svc = yield* PackagesService;
+        const olderFetch = yield* Effect.fork(
+          svc.fetchDependencyTree(NOTEBOOK_URI, { force: true }),
+        );
+        yield* Deferred.await(firstRequestStarted);
+
+        expect(
+          yield* svc.fetchDependencyTree(NOTEBOOK_URI, { force: true }),
+        ).toEqual(newerTree);
+
+        yield* Deferred.succeed(releaseFirstRequest, undefined);
+        expect(yield* Fiber.join(olderFetch)).toEqual(olderTree);
+
+        expect(
+          Option.getOrThrow(yield* svc.getDependencyTree(NOTEBOOK_URI)),
+        ).toEqual({
+          tree: newerTree,
+          loading: false,
+          error: null,
+        });
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.scoped(
     "evicts the dependency tree when its notebook closes",
     Effect.fn(function* () {
       const { layer, recorded, vscode } = yield* makeContext({
