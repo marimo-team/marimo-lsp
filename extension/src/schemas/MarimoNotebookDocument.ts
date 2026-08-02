@@ -296,6 +296,13 @@ export class MarimoNotebookCell {
   }
 
   /**
+   * The cell's most recent VS Code execution summary.
+   */
+  get executionSummary() {
+    return this.#raw.executionSummary;
+  }
+
+  /**
    * A handle to the underlying untyped cell
    *
    * This should _only_ be accessed when using VS Code APIs that require the underlying type.

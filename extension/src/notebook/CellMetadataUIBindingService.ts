@@ -11,6 +11,7 @@ import {
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
 import * as Api from "../schemas/Models.gen.ts";
+import { updateMarimoCellMetadata } from "./updateMarimoCellMetadata.ts";
 
 /**
  * Configuration for a metadata binding
@@ -255,30 +256,9 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
 
           assert(newValue !== undefined, "newValue should not be undefined");
 
-          // Update the cell metadata
-          const currentMetadata = Option.isSome(activeCell.metadata)
-            ? activeCell.metadata.value.marimo
-            : Api.MarimoCellMetadata.make();
-          const updatedMetadata = binding.setValue(currentMetadata, newValue);
-
-          const edit = new code.WorkspaceEdit();
-          const cellData = new code.NotebookCellData(
-            activeCell.kind,
-            activeCell.document.getText(),
-            activeCell.document.languageId,
-          );
-          cellData.metadata =
-            activeCell.buildMarimoMetadataUpdate(updatedMetadata);
-          cellData.outputs = Array.from(activeCell.outputs);
-
-          edit.set(editor.value.notebook.uri, [
-            code.NotebookEdit.replaceCells(
-              new code.NotebookRange(activeCell.index, activeCell.index + 1),
-              [cellData],
-            ),
-          ]);
-
-          yield* code.workspace.applyEdit(edit);
+          yield* updateMarimoCellMetadata(activeCell, (current) =>
+            binding.setValue(current, newValue),
+          ).pipe(Effect.provideService(VsCode, code));
 
           // Re-execute the cell to apply the metadata changes
           yield* code.commands.executeVSCode("notebook.cell.execute", {
