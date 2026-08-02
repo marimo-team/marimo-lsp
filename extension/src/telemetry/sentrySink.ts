@@ -6,6 +6,7 @@ import {
   Inspectable,
   Logger,
   LogLevel,
+  MutableRef,
   Array as ReadonlyArray,
 } from "effect";
 
@@ -23,14 +24,18 @@ export interface SentrySinkOptions {
 /**
  * Sentry sink: error reporting for the Telemetry facade.
  *
- * Acquiring initializes the SDK; releasing flushes and closes it. While the
- * SDK is closed the module-level `SentrySDK` calls made by `sentryErrorLogger`
- * and `setSentryTag` are no-ops, so callers never need to check consent.
+ * Acquiring initializes the SDK; releasing first disables this sink, then
+ * flushes and closes it. Annotation and logger calls check the sink's active
+ * state, so callers never need to check consent.
  */
-export const acquireSentrySink = Effect.fn("telemetry.acquireSentrySink")(
-  function* (options: SentrySinkOptions) {
+export function makeSentrySink() {
+  const active = MutableRef.make(false);
+
+  const acquire = Effect.fn("telemetry.acquireSentrySink")(function* (
+    options: SentrySinkOptions,
+  ) {
     yield* Effect.acquireRelease(
-      Effect.sync(() => {
+      Effect.sync(() =>
         SentrySDK.init({
           dsn: SENTRY_DSN,
           release: `vscode-marimo@${options.extensionVersion}`,
@@ -66,107 +71,123 @@ export const acquireSentrySink = Effect.fn("telemetry.acquireSentrySink")(
 
             return event;
           },
-        });
-
-        // Set global context
-        SentrySDK.setTag("editor.appHost", options.appHost);
-        SentrySDK.setTag("editor.appName", options.appName);
-        SentrySDK.setTag("extension.version", options.extensionVersion);
-        SentrySDK.setUser({ id: options.machineId });
-      }),
+        }),
+      ),
       () =>
-        Effect.promise(async () => {
-          await SentrySDK.close(2000);
+        Effect.gen(function* () {
+          MutableRef.set(active, false);
+          yield* Effect.promise(async () => {
+            await SentrySDK.close(2000);
+          });
         }),
     );
-  },
-);
 
-/**
- * Attach ambient context (Sentry tags) to future error reports. A no-op
- * while the sink is released.
- */
-export function annotateSentryErrors(
-  annotations: Record<string, string>,
-): Effect.Effect<void> {
-  return Effect.sync(() => {
-    for (const [key, value] of Object.entries(annotations)) {
-      SentrySDK.setTag(key, value);
+    // Set global context only after the close finalizer has been installed.
+    // If any SDK call throws, acquiring the surrounding scope still releases
+    // the partially initialized client.
+    SentrySDK.setTag("editor.appHost", options.appHost);
+    SentrySDK.setTag("editor.appName", options.appName);
+    SentrySDK.setTag("extension.version", options.extensionVersion);
+    SentrySDK.setUser({ id: options.machineId });
+    MutableRef.set(active, true);
+  });
+
+  /**
+   * Attach ambient context (Sentry tags) to future error reports. A no-op
+   * while the sink is released.
+   */
+  const annotateErrors = (annotations: Record<string, string>) =>
+    Effect.sync(() => {
+      if (!MutableRef.get(active)) return;
+      try {
+        for (const [key, value] of Object.entries(annotations)) {
+          SentrySDK.setTag(key, value);
+        }
+      } catch {
+        // Telemetry must never affect product behavior.
+      }
+    });
+
+  /**
+   * Error logger forwarding Effect log output to Sentry. A no-op while the
+   * sink is released.
+   */
+  const errorLogger = Logger.make((opts) => {
+    if (!MutableRef.get(active)) return;
+
+    try {
+      const messages = ReadonlyArray.ensure(opts.message);
+      const messageStr = messages.map(formatValue).join("\n");
+
+      if (shouldFilterMessage(messageStr)) {
+        return;
+      }
+
+      // Build extra context with annotations
+      const extra: Record<string, unknown> = {};
+      let errorTag: string | undefined;
+      for (const [key, value] of HashMap.toEntries(opts.annotations)) {
+        extra[key] = structuredMessage(value);
+        if (key === "error.tag" && typeof value === "string") {
+          errorTag = value;
+        }
+        if (Cause.isCause(value) && !Cause.isEmpty(value)) {
+          extra[`${key}.pretty`] = Cause.pretty(value, {
+            renderErrorCause: true,
+          });
+        }
+      }
+
+      // Include cause if present
+      if (!Cause.isEmpty(opts.cause)) {
+        extra["logger.cause"] = Cause.pretty(opts.cause, {
+          renderErrorCause: true,
+        });
+      }
+
+      // Splitting the Sentry group by inner failure tag turns coarse
+      // "Notebook deserialize failed" buckets into one group per root
+      // cause (MarimoClientStartError vs MarimoCommandError vs ...).
+      const tags = {
+        marimo: "true",
+        ...(errorTag ? { "error.tag": errorTag } : {}),
+      };
+      const fingerprint = errorTag ? [messageStr, errorTag] : undefined;
+
+      if (opts.logLevel === LogLevel.Error) {
+        SentrySDK.captureMessage(messageStr, {
+          extra,
+          level: "error",
+          tags,
+          fingerprint,
+        });
+      } else if (opts.logLevel === LogLevel.Fatal) {
+        SentrySDK.captureMessage(messageStr, {
+          extra,
+          level: "fatal",
+          tags,
+          fingerprint,
+        });
+      } else if (opts.logLevel === LogLevel.Warning) {
+        SentrySDK.addBreadcrumb({
+          message: messageStr,
+          level: "warning",
+          data: extra,
+        });
+      } else if (opts.logLevel === LogLevel.Info) {
+        SentrySDK.addBreadcrumb({
+          message: messageStr,
+          level: "info",
+          data: extra,
+        });
+      }
+    } catch {
+      // A reporting SDK failure must not break logging or application fibers.
     }
   });
+
+  return { acquire, annotateErrors, errorLogger } as const;
 }
-
-/**
- * Error logger forwarding Effect log output to Sentry. A no-op while the
- * sink is released.
- */
-export const sentryErrorLogger = Logger.make((opts) => {
-  const messages = ReadonlyArray.ensure(opts.message);
-  const messageStr = messages.map(formatValue).join("\n");
-
-  if (shouldFilterMessage(messageStr)) {
-    return;
-  }
-
-  // Build extra context with annotations
-  const extra: Record<string, unknown> = {};
-  let errorTag: string | undefined;
-  for (const [key, value] of HashMap.toEntries(opts.annotations)) {
-    extra[key] = structuredMessage(value);
-    if (key === "error.tag" && typeof value === "string") {
-      errorTag = value;
-    }
-    if (Cause.isCause(value) && !Cause.isEmpty(value)) {
-      extra[`${key}.pretty`] = Cause.pretty(value, {
-        renderErrorCause: true,
-      });
-    }
-  }
-
-  // Include cause if present
-  if (!Cause.isEmpty(opts.cause)) {
-    extra["logger.cause"] = Cause.pretty(opts.cause, {
-      renderErrorCause: true,
-    });
-  }
-
-  // Splitting the Sentry group by inner failure tag turns coarse
-  // "Notebook deserialize failed" buckets into one group per root
-  // cause (MarimoClientStartError vs MarimoCommandError vs ...).
-  const tags = {
-    marimo: "true",
-    ...(errorTag ? { "error.tag": errorTag } : {}),
-  };
-  const fingerprint = errorTag ? [messageStr, errorTag] : undefined;
-
-  if (opts.logLevel === LogLevel.Error) {
-    SentrySDK.captureMessage(messageStr, {
-      extra,
-      level: "error",
-      tags,
-      fingerprint,
-    });
-  } else if (opts.logLevel === LogLevel.Fatal) {
-    SentrySDK.captureMessage(messageStr, {
-      extra,
-      level: "fatal",
-      tags,
-      fingerprint,
-    });
-  } else if (opts.logLevel === LogLevel.Warning) {
-    SentrySDK.addBreadcrumb({
-      message: messageStr,
-      level: "warning",
-      data: extra,
-    });
-  } else if (opts.logLevel === LogLevel.Info) {
-    SentrySDK.addBreadcrumb({
-      message: messageStr,
-      level: "info",
-      data: extra,
-    });
-  }
-});
 
 function shouldFilterMessage(message: string) {
   const lowerMessage = message.toLowerCase();
@@ -210,7 +231,7 @@ function structuredMessage(u: unknown): unknown {
         try {
           return Inspectable.format(json);
         } catch {
-          // oxlint-disable-next-line typescrip/no-base-to-string
+          // oxlint-disable-next-line typescript/no-base-to-string
           return String(u);
         }
       }
@@ -232,7 +253,7 @@ function formatValue(value: unknown) {
   try {
     return JSON.stringify(structuredMessage(value));
   } catch {
-    // oxlint-disable-next-line typescrip/no-base-to-string
+    // oxlint-disable-next-line typescript/no-base-to-string
     return String(value);
   }
 }

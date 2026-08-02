@@ -152,6 +152,8 @@ interface NotebookState {
   readonly controller: Ref.Ref<Option.Option<NotebookController>>;
 }
 
+type SessionOperation = MarimoOperation & { readonly sessionToken: object };
+
 export interface RuntimeSession {
   readonly executable: string;
   readonly workingDirectory: string;
@@ -222,11 +224,39 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       const marimo = yield* MarimoClient;
       const renderer = yield* NotebookRenderer;
       const executions = yield* CellExecutions;
+      const variables = yield* VariablesService;
+      const datasources = yield* DatasourcesService;
       const operations = yield* PubSub.unbounded<MarimoOperation>();
       const notebooks = new Map<NotebookId, NotebookState>();
       const runtimeSessions = new Map<NotebookId, RuntimeSession>();
+      const notebookSessionTokens = new Map<NotebookId, object>();
       const controllerSelections =
         yield* PubSub.unbounded<NotebookControllerSelection>();
+
+      const markNotebookOpen = (document: vscode.NotebookDocument) => {
+        const notebook = MarimoNotebookDocument.tryFrom(document);
+        if (
+          Option.isSome(notebook) &&
+          !notebookSessionTokens.has(notebook.value.id)
+        ) {
+          notebookSessionTokens.set(notebook.value.id, {});
+        }
+      };
+
+      // Subscribe before taking the initial snapshot so a document opened
+      // during construction cannot fall through the gap between the two.
+      yield* Effect.forkScoped(
+        code.workspace
+          .notebookDocumentOpened()
+          .pipe(
+            Stream.runForEach((document) =>
+              Effect.sync(() => markNotebookOpen(document)),
+            ),
+          ),
+      );
+      for (const document of yield* code.workspace.getNotebookDocuments()) {
+        markNotebookOpen(document);
+      }
 
       yield* Effect.addFinalizer(() =>
         Effect.all(
@@ -407,11 +437,10 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
             Effect.fn("NotebookRuntime.releaseNotebook")(function* (document) {
               const notebook = MarimoNotebookDocument.tryFrom(document);
               if (Option.isNone(notebook)) return;
+              notebookSessionTokens.delete(notebook.value.id);
               notebooks.delete(notebook.value.id);
               // Evict per-notebook kernel state so closed notebooks don't
               // accumulate in the panel services for the session's lifetime.
-              const variables = yield* VariablesService;
-              const datasources = yield* DatasourcesService;
               yield* variables.clearNotebook(notebook.value.id);
               yield* datasources.clearNotebook(notebook.value.id);
               yield* updateKernelContext();
@@ -424,10 +453,30 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
           marimo
             .operations()
             .pipe(
+              Stream.filterMap((message) => {
+                const sessionToken = notebookSessionTokens.get(
+                  message.notebookUri,
+                );
+                return sessionToken
+                  ? Option.some<SessionOperation>({ ...message, sessionToken })
+                  : Option.none();
+              }),
+            )
+            .pipe(
               Stream.tap((operation) => PubSub.publish(operations, operation)),
             ),
           Effect.fn("NotebookRuntime.processOperation")(
             function* (message, options) {
+              // The token is captured when the operation enters the runtime,
+              // not when its per-notebook worker eventually processes it.
+              // This keeps queued operations from an old session out of a
+              // rapidly reopened notebook with the same URI.
+              if (
+                notebookSessionTokens.get(message.notebookUri) !==
+                message.sessionToken
+              ) {
+                return;
+              }
               yield* processOperation(message, {
                 forNotebook,
                 ...options,
@@ -450,6 +499,17 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
                   }),
                 ),
               );
+
+              // If close raced an already-running operation, the close
+              // handler may have cleared state before the operation wrote its
+              // final update. Clear once more after it completes.
+              if (
+                notebookSessionTokens.get(message.notebookUri) !==
+                message.sessionToken
+              ) {
+                yield* variables.clearNotebook(message.notebookUri);
+                yield* datasources.clearNotebook(message.notebookUri);
+              }
             },
           ),
         ),
@@ -657,20 +717,24 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
  * operation updates runtime state, but only the newest renderable output for
  * each cell in that batch is projected into VS Code.
  */
-export function processRuntimeOperations<E, R>(
-  operations: Stream.Stream<MarimoOperation>,
+export function processRuntimeOperations<
+  Operation extends MarimoOperation,
+  E,
+  R,
+>(
+  operations: Stream.Stream<Operation>,
   process: (
-    operation: MarimoOperation,
+    operation: Operation,
     options: { readonly renderCellOutput: boolean },
   ) => Effect.Effect<void, E, R>,
 ): Effect.Effect<void, E, R> {
   return Effect.scoped(
     Effect.gen(function* () {
-      type Work = Option.Option<MarimoOperation>;
+      type Work = Option.Option<Operation>;
       const queues = new Map<NotebookId, Queue.Queue<Work>>();
       const workers: Array<Fiber.RuntimeFiber<void, E>> = [];
 
-      const processBatch = (batch: ReadonlyArray<MarimoOperation>) => {
+      const processBatch = (batch: ReadonlyArray<Operation>) => {
         // The newest op for a cell may carry no payload at all — marimo sends
         // state-only cell-ops (`stale_inputs`, `serialization`) that trail the
         // terminal `idle` op. Project the newest op that can actually render,

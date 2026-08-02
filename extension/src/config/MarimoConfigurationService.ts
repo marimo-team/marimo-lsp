@@ -26,9 +26,19 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
       const configRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, MarimoConfig>(),
       );
+      const sessionTokens = new Map<NotebookId, object>();
+
+      const tokenFor = (notebookUri: NotebookId) => {
+        const existing = sessionTokens.get(notebookUri);
+        if (existing) return existing;
+        const token = {};
+        sessionTokens.set(notebookUri, token);
+        return token;
+      };
 
       const clearNotebook = (notebookUri: NotebookId) =>
         Effect.gen(function* () {
+          sessionTokens.delete(notebookUri);
           yield* SubscriptionRef.update(configRef, (map) =>
             HashMap.remove(map, notebookUri),
           );
@@ -77,6 +87,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
          */
         getConfig(notebookUri: NotebookId) {
           return Effect.gen(function* () {
+            const sessionToken = tokenFor(notebookUri);
             // First check if we have it cached
             const map = yield* SubscriptionRef.get(configRef);
             const cached = HashMap.get(map, notebookUri);
@@ -95,13 +106,19 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
               inner: {},
             });
 
-            // Cache the result
-            yield* SubscriptionRef.update(configRef, (map) =>
-              HashMap.set(map, notebookUri, result.config),
-            );
+            // A close may have invalidated this request while it was in
+            // flight. Return its result to the original caller, but never
+            // repopulate a cache belonging to a newer notebook session.
+            const cacheIsCurrent =
+              sessionTokens.get(notebookUri) === sessionToken;
+            if (cacheIsCurrent) {
+              yield* SubscriptionRef.update(configRef, (map) =>
+                HashMap.set(map, notebookUri, result.config),
+              );
+            }
 
-            yield* Effect.logTrace("Configuration fetched and cached").pipe(
-              Effect.annotateLogs({ notebookUri }),
+            yield* Effect.logTrace("Configuration fetched").pipe(
+              Effect.annotateLogs({ notebookUri, cached: cacheIsCurrent }),
             );
 
             return result.config;
@@ -116,6 +133,7 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
           partialConfig: Record<string, unknown>,
         ) {
           return Effect.gen(function* () {
+            const sessionToken = tokenFor(notebookUri);
             yield* Effect.logTrace("Updating configuration").pipe(
               Effect.annotateLogs({ notebookUri, config: partialConfig }),
             );
@@ -128,10 +146,11 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
               },
             });
 
-            // Update cached config
-            yield* SubscriptionRef.update(configRef, (map) =>
-              HashMap.set(map, notebookUri, result),
-            );
+            if (sessionTokens.get(notebookUri) === sessionToken) {
+              yield* SubscriptionRef.update(configRef, (map) =>
+                HashMap.set(map, notebookUri, result),
+              );
+            }
 
             yield* Effect.logTrace("Configuration updated successfully").pipe(
               Effect.annotateLogs({ notebookUri }),

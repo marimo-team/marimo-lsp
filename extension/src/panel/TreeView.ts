@@ -42,7 +42,10 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
         getTreeItem: (element: T) => Effect.Effect<TreeItem>;
       }) {
         // Create event emitter for refresh events
-        const eventEmitter = new code.EventEmitter<T | undefined | null>();
+        const eventEmitter = yield* Effect.acquireRelease(
+          Effect.sync(() => new code.EventEmitter<T | undefined | null>()),
+          (emitter) => Effect.sync(() => emitter.dispose()),
+        );
 
         yield* code.window.createTreeView(options.viewId, {
           treeDataProvider: {

@@ -6,11 +6,7 @@ import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import { createStorageKey, Storage } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { acquirePostHogSink } from "./posthogSink.ts";
-import {
-  acquireSentrySink,
-  annotateSentryErrors,
-  sentryErrorLogger,
-} from "./sentrySink.ts";
+import { makeSentrySink } from "./sentrySink.ts";
 
 // Create a storage key for the anonymous ID
 const ANONYMOUS_ID_KEY = createStorageKey(
@@ -82,6 +78,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       () => "unknown",
     );
     const distinctId = yield* anonymousId(storage);
+    const sentry = makeSentrySink();
 
     // Consent: the only reader of the marimo.telemetry setting.
     const readConsent = Effect.map(
@@ -97,7 +94,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
     );
 
     const acquireSinks = Effect.gen(function* () {
-      yield* acquireSentrySink({
+      yield* sentry.acquire({
         appHost: code.env.appHost,
         appName: code.env.appName,
         machineId: code.env.machineId,
@@ -159,21 +156,26 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       event: K,
       ...args: EventMap[K] extends undefined ? [] : [properties: EventMap[K]]
     ): Effect.Effect<void> =>
-      Effect.gen(function* () {
-        const sinks = yield* Ref.get(sinksRef);
-        if (Option.isNone(sinks)) {
-          return;
-        }
+      Ref.modify(sinksRef, (sinks) => {
+        if (Option.isNone(sinks)) return [undefined, sinks] as const;
         const properties = args[0];
 
-        sinks.value.posthog.capture({
-          distinctId,
-          event,
-          properties: {
-            ...properties,
-            extension_version: extensionVersion,
-          },
-        });
+        try {
+          // Invoke capture inside the atomic Ref modification so consent loss
+          // and capture have a single ordering: an event is either accepted
+          // before opt-out, or sees the empty sink afterward.
+          sinks.value.posthog.capture({
+            distinctId,
+            event,
+            properties: {
+              ...properties,
+              extension_version: extensionVersion,
+            },
+          });
+        } catch {
+          // Telemetry must never affect product behavior.
+        }
+        return [undefined, sinks] as const;
       });
 
     return {
@@ -203,12 +205,12 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
        */
       annotateErrors: (
         annotations: Record<string, string>,
-      ): Effect.Effect<void> => annotateSentryErrors(annotations),
+      ): Effect.Effect<void> => sentry.annotateErrors(annotations),
 
       /**
        * Error logger forwarding Effect log output to the error sink.
        */
-      errorLogger: sentryErrorLogger,
+      errorLogger: sentry.errorLogger,
     };
   }),
 }) {}

@@ -599,6 +599,8 @@ describe("NotebookRuntime scratch stream", () => {
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime;
         yield* ctx.vscode.addNotebookDocument(otherEditor.notebook);
+        yield* ctx.vscode.openNotebook(otherEditor.notebook);
+        yield* TestClock.adjust("1 millis");
         yield* runtime.attachController(otherNotebook.id, ctx.mockController);
 
         const first = yield* Effect.fork(
@@ -892,6 +894,38 @@ describe("NotebookRuntime state eviction", () => {
         expect(
           Option.isSome(yield* datasources.getDatasets(ctx.notebookUri)),
         ).toBe(false);
+
+        // Notifications already queued, or delivered late by the old kernel
+        // session, must not recreate state after eviction.
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          operation: {
+            op: "variables",
+            variables: [
+              {
+                name: variableName("late"),
+                declared_by: [cellId("cell-1")],
+                used_by: [],
+              },
+            ],
+          },
+        });
+        yield* TestClock.adjust("10 millis");
+        expect(
+          Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
+        ).toBe(false);
+
+        // Reopening establishes a fresh session token and accepts new events.
+        yield* ctx.vscode.openNotebook(ctx.editor.notebook);
+        yield* TestClock.adjust("10 millis");
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          operation: { op: "variables", variables: [] },
+        });
+        yield* TestClock.adjust("10 millis");
+        expect(
+          Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
+        ).toBe(true);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

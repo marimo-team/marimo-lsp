@@ -1,5 +1,14 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Schema, Stream, TestClock } from "effect";
+import {
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+  Option,
+  Schema,
+  Stream,
+  TestClock,
+} from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -35,7 +44,10 @@ const LAZY_CONFIG = marimoConfigFixture({
 const withTestCtx = Effect.fn(function* (
   // Keyed by plain string: the fake server looks up by the decoded wire
   // value, which carries no brand.
-  options: { configStore?: Map<string, MarimoConfig> } = {},
+  options: {
+    configStore?: Map<string, MarimoConfig>;
+    beforeGet?: (notebookUri: string) => Effect.Effect<void>;
+  } = {},
 ) {
   const vscode = yield* TestVsCode.make();
   const { configStore = new Map<string, MarimoConfig>() } = options;
@@ -54,6 +66,9 @@ const withTestCtx = Effect.fn(function* (
               return yield* Effect.die(
                 `Config not found for ${params.notebookUri}`,
               );
+            }
+            if (options.beforeGet) {
+              yield* options.beforeGet(params.notebookUri);
             }
             return { config };
           }
@@ -226,6 +241,40 @@ describe("MarimoConfigurationService", () => {
 
         const config2 = yield* service.getConfig(notebookUri);
         expect(config2.runtime?.on_cell_change).toBe("lazy");
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.scoped(
+    "does not restore cache entries from requests invalidated by close",
+    Effect.fn(function* () {
+      const requestStarted = yield* Deferred.make<void>();
+      const releaseRequest = yield* Deferred.make<void>();
+      const ctx = yield* withTestCtx({
+        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
+        beforeGet: () =>
+          Deferred.succeed(requestStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseRequest)),
+          ),
+      });
+
+      yield* Effect.gen(function* () {
+        const service = yield* MarimoConfigurationService;
+        const pending = yield* Effect.fork(service.getConfig(NOTEBOOK_URI));
+        yield* Deferred.await(requestStarted);
+
+        yield* service.clearNotebook(NOTEBOOK_URI);
+        yield* ctx.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
+        yield* Deferred.succeed(releaseRequest, undefined);
+
+        // The original caller still receives its completed response.
+        expect((yield* Fiber.join(pending)).runtime?.on_cell_change).toBe(
+          "autorun",
+        );
+        // The invalid response was not cached; this fetch reaches the server.
+        expect(
+          (yield* service.getConfig(NOTEBOOK_URI)).runtime?.on_cell_change,
+        ).toBe("lazy");
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
