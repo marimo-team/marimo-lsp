@@ -134,16 +134,14 @@ jobs:
         run: |
           cd marimo-lsp/extension
           pnpm install --frozen-lockfile
-          # make sure our types are up to date
-          node scripts/codegen.mjs
           pnpm turbo typecheck-ci
 
       - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
 
-      - name: Check generated Effect Schemas are up to date
+      - name: Check generated sources are up to date
         run: |
           cd marimo-lsp
-          uv run scripts/generate_effect_schemas.py --check
+          uv run python -m scripts.codegen --check
 
       - name: Validate marimo CSS variable overrides
         run: node marimo-lsp/extension/scripts/check-css-variables.mjs
@@ -215,8 +213,6 @@ jobs:
           TURBO_TOKEN: ${{ steps.secrets.outputs.TURBO_TOKEN }}
         run: |
           pnpm install --frozen-lockfile
-          # make sure our types are up to date
-          node scripts/codegen.mjs
           pnpm build
           pnpm embed-sdist
 
