@@ -1,6 +1,5 @@
 import { Effect, Either, Layer, Stream } from "effect";
 
-import { configureAutoExport } from "../commands/configureAutoExport.ts";
 import { createSetupCell } from "../commands/createSetupCell.ts";
 import { debugCell } from "../commands/debugCell.ts";
 import { exportNotebookAsHtml } from "../commands/exportNotebookAsHtml.ts";
@@ -9,15 +8,12 @@ import { newMarimoNotebook } from "../commands/newMarimoNotebook.ts";
 import { openAsMarimoNotebook } from "../commands/openAsMarimoNotebook.ts";
 import { openOutlineView } from "../commands/openOutlineView.ts";
 import { publishMarimoNotebook } from "../commands/publishMarimoNotebook.ts";
-import { publishMarimoNotebookGist } from "../commands/publishMarimoNotebookGist.ts";
 import { reportIssue } from "../commands/reportIssue.ts";
 import { restartKernel } from "../commands/restartKernel.ts";
 import { restartLsp } from "../commands/restartLsp.ts";
 import { runStale } from "../commands/runStale.ts";
 import { showDiagnostics } from "../commands/showDiagnostics.ts";
-import { showNotebookActions } from "../commands/showNotebookActions.ts";
-import { toggleAutoReload } from "../commands/toggleAutoReload.ts";
-import { toggleOnCellChange } from "../commands/toggleOnCellChange.ts";
+import { showNotebookMenu } from "../commands/showNotebookMenu.ts";
 import { updateActivePythonEnvironment } from "../commands/updateActivePythonEnvironment.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
@@ -41,11 +37,6 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     );
 
     yield* code.commands.register(
-      MarimoCommands.configureAutoExport,
-      configureAutoExport,
-    );
-
-    yield* code.commands.register(
       MarimoCommands.openAsMarimoNotebook,
       openAsMarimoNotebook,
     );
@@ -56,36 +47,16 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     );
 
     yield* code.commands.register(
-      MarimoCommands.publishMarimoNotebookGist,
-      publishMarimoNotebookGist,
-    );
-
-    yield* code.commands.register(
       MarimoCommands.publishMarimoNotebook,
       publishMarimoNotebook,
     );
 
     yield* code.commands.register(MarimoCommands.runStale, runStale);
     yield* code.commands.register(
-      MarimoCommands.showNotebookActions,
-      showNotebookActions,
+      MarimoCommands.showNotebookMenu,
+      showNotebookMenu,
     );
     yield* code.commands.register(MarimoCommands.debugCell, debugCell);
-
-    for (const command of [
-      MarimoCommands.configToggleOnCellChangeAutoRun,
-      MarimoCommands.configToggleOnCellChangeLazy,
-    ]) {
-      yield* code.commands.register(command, toggleOnCellChange);
-    }
-
-    for (const command of [
-      MarimoCommands.configToggleAutoReloadOff,
-      MarimoCommands.configToggleAutoReloadLazy,
-      MarimoCommands.configToggleAutoReloadAutorun,
-    ]) {
-      yield* code.commands.register(command, toggleAutoReload);
-    }
 
     yield* code.commands.register(MarimoCommands.restartKernel, restartKernel);
 

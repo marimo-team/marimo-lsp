@@ -33,7 +33,6 @@ import {
   commandId,
   decodeCommandArguments,
   decodeCommandResult,
-  type EphemeralCommand,
   type MarimoCommand,
   type VscodeBuiltinCommand,
 } from "../commands.ts";
@@ -390,13 +389,6 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
       );
     }
 
-    function registerEphemeral<A, E, R>(
-      command: EphemeralCommand,
-      fn: (...args: unknown[]) => Effect.Effect<A, E, R>,
-    ) {
-      return registerImplementation(command, (args) => fn(...args));
-    }
-
     return {
       subscribeToCommands() {
         return PubSub.subscribe(commandPubSub);
@@ -409,7 +401,6 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
         );
       },
       register,
-      registerEphemeral,
     };
   }),
 }) {}

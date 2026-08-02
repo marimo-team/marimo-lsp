@@ -2,6 +2,8 @@ import * as NodePath from "node:path";
 
 import { Cause, Chunk, Effect, Either, flow, Schema, Option } from "effect";
 
+import type { NotebookCommandContext } from "../commands.ts";
+import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
@@ -12,14 +14,14 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 export const publishMarimoNotebookGist = Effect.fn(
   "command.publishMarimoNotebookGist",
 )(
-  function* () {
+  function* (context?: NotebookCommandContext) {
     const code = yield* VsCode;
     const gh = yield* GitHubClient;
     const marimo = yield* MarimoClient;
     const serializer = yield* NotebookSerializer;
 
     const notebook = Option.filterMap(
-      yield* code.window.getActiveNotebookEditor(),
+      yield* getNotebookCommandEditor(context),
       (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
     );
 

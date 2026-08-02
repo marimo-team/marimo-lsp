@@ -103,12 +103,6 @@ export function decodeCommandResult<Result>(
   return command[MarimoCommandTypeId].decodeResult(result);
 }
 
-export type EphemeralCommand = `marimo.dynamic.${string}`;
-
-export function ephemeralCommand(command: string): EphemeralCommand {
-  return `marimo.dynamic.${command}`;
-}
-
 // Pulled from https://code.visualstudio.com/api/references/commands
 export type VscodeBuiltinCommand =
   // Focus the built-in Outline view.

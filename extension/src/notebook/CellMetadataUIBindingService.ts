@@ -2,7 +2,8 @@ import { Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
-import { ephemeralCommand } from "../commands.ts";
+import { commandId } from "../commands.ts";
+import { MarimoCommands } from "../commands/MarimoCommands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -126,13 +127,6 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
         Effect.gen(function* () {
           bindings.set(binding.id, binding);
 
-          // Create command for handling clicks
-          const commandId = ephemeralCommand(`cell.metadata.${binding.id}`);
-          yield* code.commands.registerEphemeral(
-            commandId,
-            createBindingCommandFor(binding),
-          );
-
           // Register the provider
           yield* code.notebooks.registerNotebookCellStatusBarItemProvider(
             NOTEBOOK_TYPE,
@@ -153,7 +147,11 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
                   binding.alignment,
                 );
                 item.tooltip = binding.getTooltip(value);
-                item.command = commandId;
+                item.command = {
+                  command: commandId(MarimoCommands.updateCellMetadata),
+                  title: "Update cell metadata",
+                  arguments: [binding.id],
+                };
 
                 return Effect.succeed([item]);
               },
@@ -302,6 +300,20 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
           );
         });
       }
+
+      yield* code.commands.register(
+        MarimoCommands.updateCellMetadata,
+        Effect.fn(function* (bindingId) {
+          const binding = bindings.get(bindingId);
+          if (binding === undefined) {
+            yield* Effect.logWarning("Unknown cell metadata binding").pipe(
+              Effect.annotateLogs({ bindingId }),
+            );
+            return;
+          }
+          yield* createBindingCommandFor(binding)();
+        }),
+      );
 
       return { registerBinding } as const;
     }),

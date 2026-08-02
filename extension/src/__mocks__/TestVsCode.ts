@@ -1912,14 +1912,6 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               );
             });
           },
-          registerEphemeral(name) {
-            return Effect.gen(function* () {
-              yield* Ref.update(commands, HashSet.add<string>(name));
-              yield* Effect.addFinalizer(() =>
-                Ref.update(commands, HashSet.remove<string>(name)),
-              );
-            });
-          },
         }),
         workspace: Workspace.make({
           fs: {
