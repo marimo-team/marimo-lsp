@@ -1,6 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
+import {
+  createNotebookCell,
+  createTestNotebookDocument,
+} from "../../__mocks__/TestVsCode.ts";
 import { commandId, decodeCommandArguments } from "../../commands.ts";
 import { GeneratedMarimoCommands } from "../MarimoCommands.gen.ts";
 import { MarimoCommands } from "../MarimoCommands.ts";
@@ -85,6 +89,22 @@ describe("MarimoCommands", () => {
         [{ notebookEditor: { notebookUri } }],
       );
       expect(args).toEqual([{ notebookEditor: { notebookUri } }]);
+    }),
+  );
+
+  it.effect("decodes the target cell supplied by a notebook cell menu", () =>
+    Effect.gen(function* () {
+      const cell = createNotebookCell(
+        createTestNotebookDocument("/test/notebook_mo.py"),
+        { kind: 2, value: "x = 1", languageId: "python" },
+        0,
+      );
+
+      const args = yield* decodeCommandArguments(MarimoCommands.hideCellCode, [
+        cell,
+      ]);
+
+      expect(args).toEqual([cell]);
     }),
   );
 
