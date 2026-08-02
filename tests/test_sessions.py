@@ -67,6 +67,7 @@ def test_regular_commands_are_routed_to_control_queue_only() -> None:
 
 def test_out_of_band_commands_are_routed_to_completion_queue() -> None:
     session, queue_manager = _make_session()
+    session.session_view.mark_auto_export_html()
     command = CodeCompletionCommand(
         id=RequestId("request"), document="mo.", cell_id=CellId_t("cell")
     )
@@ -76,6 +77,7 @@ def test_out_of_band_commands_are_routed_to_completion_queue() -> None:
     queue_manager.completion_queue.put.assert_called_once_with(command)
     queue_manager.control_queue.put.assert_not_called()
     queue_manager.set_ui_element_queue.put.assert_not_called()
+    assert not session.session_view.needs_export("html")
 
 
 def test_detach_only_overrides_auto_reload() -> None:

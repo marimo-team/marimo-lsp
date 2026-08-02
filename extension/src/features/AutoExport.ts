@@ -168,10 +168,8 @@ export const AutoExportLive = Layer.scopedDiscard(
         );
         if (formats.length === 0) return;
 
-        const controller = yield* runtime
-          .forNotebook(notebook.id)
-          .getController();
-        if (Option.isNone(controller)) return;
+        const session = yield* runtime.getRuntimeSession(notebook.id);
+        if (Option.isNone(session)) return;
 
         const state = yield* getOrCreateState(notebook.id);
         const pendingFormats = formats.filter((format) => {

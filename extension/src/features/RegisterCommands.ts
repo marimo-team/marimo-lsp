@@ -1,5 +1,6 @@
 import { Effect, Either, Layer, Stream } from "effect";
 
+import { configureAutoExport } from "../commands/configureAutoExport.ts";
 import { createSetupCell } from "../commands/createSetupCell.ts";
 import { debugCell } from "../commands/debugCell.ts";
 import { exportNotebookAsHtml } from "../commands/exportNotebookAsHtml.ts";
@@ -36,6 +37,11 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     yield* code.commands.register(
       MarimoCommands.createSetupCell,
       createSetupCell,
+    );
+
+    yield* code.commands.register(
+      MarimoCommands.configureAutoExport,
+      configureAutoExport,
     );
 
     yield* code.commands.register(

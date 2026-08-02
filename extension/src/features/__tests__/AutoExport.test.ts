@@ -38,6 +38,7 @@ const withTestCtx = Effect.fn(function* (
   options: {
     readonly execute?: (request: MarimoApiCall) => Effect.Effect<string>;
     readonly hasOutputs?: boolean;
+    readonly hasRuntimeSession?: boolean;
   } = {},
 ) {
   const calls = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
@@ -98,6 +99,10 @@ const withTestCtx = Effect.fn(function* (
 
   const runtime = makeTestNotebookRuntime({
     initialControllers: [{ notebookUri: notebook.id, controller }],
+    runtimeSession:
+      options.hasRuntimeSession === false
+        ? undefined
+        : { executable: "/usr/bin/python", workingDirectory: "/test" },
     operations: () => Stream.fromPubSub(operations),
     execute: (request) =>
       Ref.update(calls, (current) => [...current, request]).pipe(
@@ -146,6 +151,22 @@ describe("autoExportUri", () => {
 });
 
 describe("AutoExport", () => {
+  it.scoped(
+    "waits for a live runtime session before creating exports",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx({ hasRuntimeSession: false });
+
+      yield* Effect.gen(function* () {
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
+
+        expect(yield* ctx.calls).toEqual([]);
+        expect(yield* ctx.directories).toEqual([]);
+        expect(yield* ctx.writes).toEqual(new Map());
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
   it.scoped(
     "exports enabled formats once per live-session generation",
     Effect.fn(function* () {

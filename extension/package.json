@@ -303,6 +303,14 @@
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
+        "command": "marimo.configureAutoExport",
+        "title": "Configure automatic exports",
+        "shortTitle": "Automatic exports",
+        "category": "marimo",
+        "icon": "$(save-all)",
+        "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
         "command": "marimo.publishMarimoNotebookGist",
         "title": "Publish notebook as Gist",
         "shortTitle": "Publish Gist",
@@ -536,6 +544,11 @@
           "command": "marimo.openOutlineView",
           "when": "notebookType == 'marimo-notebook'",
           "group": "navigation@5"
+        },
+        {
+          "command": "marimo.configureAutoExport",
+          "when": "notebookType == 'marimo-notebook'",
+          "group": "navigation@6"
         }
       ],
       "editor/title": [

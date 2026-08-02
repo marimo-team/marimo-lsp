@@ -746,6 +746,10 @@ class WorkspaceEdit implements vscode.WorkspaceEdit {
     const edits = this.#edits.get(uri.toString()) || [];
     return edits.filter((e) => e instanceof TextEdit);
   }
+  getNotebookEdits(uri: Uri): readonly NotebookEdit[] {
+    const edits = this.#edits.get(uri.toString()) || [];
+    return edits.filter((edit) => edit instanceof NotebookEdit);
+  }
   createFile(_uri: Uri): void {
     this.#fileOperationCount += 1;
   }
@@ -763,6 +767,13 @@ class WorkspaceEdit implements vscode.WorkspaceEdit {
     }
     return result;
   }
+}
+
+export function getNotebookEdits(edit: vscode.WorkspaceEdit, uri: vscode.Uri) {
+  if (!(edit instanceof WorkspaceEdit)) {
+    throw new Error("Expected test WorkspaceEdit");
+  }
+  return edit.getNotebookEdits(uri);
 }
 
 class EventEmitter<T> implements vscode.EventEmitter<T> {
@@ -1712,6 +1723,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             return Effect.succeed(Option.none());
           },
           showQuickPickItems() {
+            return Effect.succeed(Option.none());
+          },
+          showQuickPickItemsMany() {
             return Effect.succeed(Option.none());
           },
           createOutputChannel(name) {

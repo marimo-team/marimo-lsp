@@ -154,6 +154,21 @@ export class Window extends Effect.Service<Window>()("Window", {
           Option.fromNullable,
         );
       },
+      showQuickPickItemsMany<T extends vscode.QuickPickItem>(
+        items: readonly T[],
+        options: Omit<vscode.QuickPickOptions, "canPickMany"> = {},
+      ) {
+        return Effect.map(
+          Effect.promise((signal) =>
+            api.showQuickPick(
+              items,
+              { ...options, canPickMany: true },
+              tokenFromSignal(signal),
+            ),
+          ),
+          Option.fromNullable,
+        );
+      },
       createOutputChannel(name: string) {
         return acquireDisposable(() => api.createOutputChannel(name));
       },
