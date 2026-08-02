@@ -1,6 +1,8 @@
 import { Effect, Option } from "effect";
 
+import type { NotebookCommandContext } from "../commands.ts";
 import { SETUP_CELL_NAME } from "../constants.ts";
+import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -8,11 +10,13 @@ import {
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
 
-export const createSetupCell = Effect.fn(function* () {
+export const createSetupCell = Effect.fn("command.createSetupCell")(function* (
+  context?: NotebookCommandContext,
+) {
   const code = yield* VsCode;
   const { LanguageId } = yield* Constants;
   const notebook = Option.filterMap(
-    yield* code.window.getActiveNotebookEditor(),
+    yield* getNotebookCommandEditor(context),
     (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
   );
 

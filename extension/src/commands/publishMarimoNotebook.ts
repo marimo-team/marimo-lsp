@@ -1,20 +1,10 @@
-import { Effect, Option } from "effect";
+import { Effect } from "effect";
 
-import { VsCode } from "../platform/VsCode.ts";
-import { MarimoCommands } from "./MarimoCommands.ts";
+import type { NotebookCommandContext } from "../commands.ts";
+import { publishMarimoNotebookGist } from "./publishMarimoNotebookGist.ts";
 
-export const publishMarimoNotebook = Effect.fn(function* () {
-  const code = yield* VsCode;
-  const choice = yield* code.window.showQuickPickItems([
-    {
-      label: "GitHub Gist",
-      detail: "Publish marimo notebook as a GitHub Gist",
-    },
-  ]);
-  if (Option.isNone(choice)) {
-    return;
-  }
-  if (choice.value.label === "GitHub Gist") {
-    yield* code.commands.execute(MarimoCommands.publishMarimoNotebookGist);
-  }
-});
+export const publishMarimoNotebook = Effect.fn("command.publishMarimoNotebook")(
+  function* (context?: NotebookCommandContext) {
+    yield* publishMarimoNotebookGist(context);
+  },
+);

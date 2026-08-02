@@ -68,6 +68,26 @@ describe("MarimoCommands", () => {
     }),
   );
 
+  it.effect("preserves notebook context for interpreter synchronization", () =>
+    Effect.gen(function* () {
+      const notebookUri = {
+        scheme: "file",
+        path: "/notebook.py",
+        with() {
+          return this;
+        },
+        toString() {
+          return "file:///notebook.py";
+        },
+      };
+      const args = yield* decodeCommandArguments(
+        MarimoCommands.updateActivePythonEnvironment,
+        [{ notebookEditor: { notebookUri } }],
+      );
+      expect(args).toEqual([{ notebookEditor: { notebookUri } }]);
+    }),
+  );
+
   it.effect("decodes the first external argument for open-as-notebook", () =>
     Effect.gen(function* () {
       const args = yield* decodeCommandArguments(

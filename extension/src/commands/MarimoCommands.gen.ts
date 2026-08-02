@@ -5,20 +5,6 @@
 import { marimoCommand } from "../commands.ts";
 
 export const GeneratedMarimoCommands = {
-  configToggleAutoReloadAutorun: marimoCommand(
-    "marimo.config.toggleAutoReloadAutorun",
-  ),
-  configToggleAutoReloadLazy: marimoCommand(
-    "marimo.config.toggleAutoReloadLazy",
-  ),
-  configToggleAutoReloadOff: marimoCommand("marimo.config.toggleAutoReloadOff"),
-  configToggleOnCellChangeAutoRun: marimoCommand(
-    "marimo.config.toggleOnCellChangeAutoRun",
-  ),
-  configToggleOnCellChangeLazy: marimoCommand(
-    "marimo.config.toggleOnCellChangeLazy",
-  ),
-  configureAutoExport: marimoCommand("marimo.configureAutoExport"),
   createSetupCell: marimoCommand("marimo.createSetupCell"),
   debugCell: marimoCommand("marimo.debugCell"),
   exportStaticHTML: marimoCommand("marimo.exportStaticHTML"),
@@ -28,7 +14,6 @@ export const GeneratedMarimoCommands = {
   openSession: marimoCommand("marimo.openSession"),
   openTutorial: marimoCommand("marimo.openTutorial"),
   publishMarimoNotebook: marimoCommand("marimo.publishMarimoNotebook"),
-  publishMarimoNotebookGist: marimoCommand("marimo.publishMarimoNotebookGist"),
   refreshPackages: marimoCommand("marimo.refreshPackages"),
   reportIssue: marimoCommand("marimo.reportIssue"),
   restartKernel: marimoCommand("marimo.restartKernel"),
@@ -37,10 +22,11 @@ export const GeneratedMarimoCommands = {
   runStale: marimoCommand("marimo.runStale"),
   showDiagnostics: marimoCommand("marimo.showDiagnostics"),
   showMarimoMenu: marimoCommand("marimo.showMarimoMenu"),
-  showNotebookActions: marimoCommand("marimo.showNotebookActions"),
+  showNotebookMenu: marimoCommand("marimo.showNotebookMenu"),
   shutdownAllSessions: marimoCommand("marimo.shutdownAllSessions"),
   shutdownSession: marimoCommand("marimo.shutdownSession"),
   updateActivePythonEnvironment: marimoCommand(
     "marimo.updateActivePythonEnvironment",
   ),
+  updateCellMetadata: marimoCommand("marimo.updateCellMetadata"),
 } as const;

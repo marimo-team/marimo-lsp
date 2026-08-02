@@ -278,8 +278,8 @@
         "category": "marimo"
       },
       {
-        "command": "marimo.showNotebookActions",
-        "title": "Show notebook actions",
+        "command": "marimo.showNotebookMenu",
+        "title": "Show notebook menu",
         "shortTitle": "marimo",
         "category": "marimo",
         "icon": "images/small-icon.png",
@@ -311,23 +311,8 @@
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
-        "command": "marimo.configureAutoExport",
-        "title": "Configure export formats",
-        "shortTitle": "Export formats…",
-        "category": "marimo",
-        "icon": "$(save-all)",
-        "enablement": "notebookType == 'marimo-notebook'"
-      },
-      {
-        "command": "marimo.publishMarimoNotebookGist",
-        "title": "Publish notebook as Gist",
-        "shortTitle": "Publish Gist",
-        "category": "marimo",
-        "enablement": "notebookType == 'marimo-notebook'"
-      },
-      {
         "command": "marimo.publishMarimoNotebook",
-        "title": "Publish notebook as ...",
+        "title": "Publish notebook…",
         "shortTitle": "Publish notebook",
         "category": "marimo",
         "enablement": "notebookType == 'marimo-notebook'"
@@ -379,46 +364,6 @@
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
-        "command": "marimo.config.toggleOnCellChangeAutoRun",
-        "title": "Configure behavior after cell changes",
-        "shortTitle": "Cell changes: Auto-run",
-        "category": "marimo",
-        "icon": "$(zap)",
-        "enablement": "notebookType == 'marimo-notebook'"
-      },
-      {
-        "command": "marimo.config.toggleOnCellChangeLazy",
-        "title": "Configure behavior after cell changes",
-        "shortTitle": "Cell changes: Lazy",
-        "category": "marimo",
-        "icon": "$(history)",
-        "enablement": "notebookType == 'marimo-notebook'"
-      },
-      {
-        "command": "marimo.config.toggleAutoReloadOff",
-        "title": "Configure behavior after module changes",
-        "shortTitle": "Module changes: Off",
-        "category": "marimo",
-        "icon": "$(circle-slash)",
-        "enablement": "notebookType == 'marimo-notebook'"
-      },
-      {
-        "command": "marimo.config.toggleAutoReloadLazy",
-        "title": "Configure behavior after module changes",
-        "shortTitle": "Module changes: Lazy",
-        "category": "marimo",
-        "icon": "$(history)",
-        "enablement": "notebookType == 'marimo-notebook'"
-      },
-      {
-        "command": "marimo.config.toggleAutoReloadAutorun",
-        "title": "Configure behavior after module changes",
-        "shortTitle": "Module changes: Auto-run",
-        "category": "marimo",
-        "icon": "$(zap)",
-        "enablement": "notebookType == 'marimo-notebook'"
-      },
-      {
         "command": "marimo.restartKernel",
         "title": "Restart notebook kernel",
         "shortTitle": "Restart Kernel",
@@ -452,6 +397,11 @@
         "shortTitle": "Export static HTML",
         "category": "marimo",
         "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
+        "command": "marimo.updateCellMetadata",
+        "title": "Update cell metadata",
+        "category": "marimo"
       },
       {
         "command": "marimo.updateActivePythonEnvironment",
@@ -492,6 +442,10 @@
     "menus": {
       "commandPalette": [
         {
+          "command": "marimo.showMarimoMenu",
+          "when": "never"
+        },
+        {
           "command": "marimo.openSession",
           "when": "never"
         },
@@ -504,23 +458,15 @@
           "when": "never"
         },
         {
-          "command": "marimo.config.toggleOnCellChangeAutoRun",
+          "command": "marimo.shutdownAllSessions",
           "when": "never"
         },
         {
-          "command": "marimo.config.toggleOnCellChangeLazy",
+          "command": "marimo.refreshPackages",
           "when": "never"
         },
         {
-          "command": "marimo.config.toggleAutoReloadOff",
-          "when": "never"
-        },
-        {
-          "command": "marimo.config.toggleAutoReloadLazy",
-          "when": "never"
-        },
-        {
-          "command": "marimo.config.toggleAutoReloadAutorun",
+          "command": "marimo.updateCellMetadata",
           "when": "never"
         }
       ],
@@ -581,7 +527,7 @@
           "group": "navigation@3"
         },
         {
-          "command": "marimo.showNotebookActions",
+          "command": "marimo.showNotebookMenu",
           "when": "notebookType == 'marimo-notebook'",
           "group": "navigation@4"
         }

@@ -9,30 +9,21 @@ import { NotebookIdFromString } from "../schemas/MarimoNotebookDocument.ts";
 import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 
 const notebookCommands = {
-  configToggleAutoReloadAutorun: withOptionalNotebookContext(
-    GeneratedMarimoCommands.configToggleAutoReloadAutorun,
+  createSetupCell: withOptionalNotebookContext(
+    GeneratedMarimoCommands.createSetupCell,
   ),
-  configToggleAutoReloadLazy: withOptionalNotebookContext(
-    GeneratedMarimoCommands.configToggleAutoReloadLazy,
-  ),
-  configToggleAutoReloadOff: withOptionalNotebookContext(
-    GeneratedMarimoCommands.configToggleAutoReloadOff,
-  ),
-  configToggleOnCellChangeAutoRun: withOptionalNotebookContext(
-    GeneratedMarimoCommands.configToggleOnCellChangeAutoRun,
-  ),
-  configToggleOnCellChangeLazy: withOptionalNotebookContext(
-    GeneratedMarimoCommands.configToggleOnCellChangeLazy,
-  ),
-  configureAutoExport: withOptionalNotebookContext(
-    GeneratedMarimoCommands.configureAutoExport,
+  publishMarimoNotebook: withOptionalNotebookContext(
+    GeneratedMarimoCommands.publishMarimoNotebook,
   ),
   restartKernel: withOptionalNotebookContext(
     GeneratedMarimoCommands.restartKernel,
   ),
   runStale: withOptionalNotebookContext(GeneratedMarimoCommands.runStale),
-  showNotebookActions: withOptionalNotebookContext(
-    GeneratedMarimoCommands.showNotebookActions,
+  showNotebookMenu: withOptionalNotebookContext(
+    GeneratedMarimoCommands.showNotebookMenu,
+  ),
+  updateActivePythonEnvironment: withOptionalNotebookContext(
+    GeneratedMarimoCommands.updateActivePythonEnvironment,
   ),
 };
 
@@ -62,5 +53,9 @@ export const MarimoCommands = {
   shutdownSession: withFirstArgument(
     GeneratedMarimoCommands.shutdownSession,
     SessionAction,
+  ),
+  updateCellMetadata: withFirstArgument(
+    GeneratedMarimoCommands.updateCellMetadata,
+    Schema.String,
   ),
 } as const;

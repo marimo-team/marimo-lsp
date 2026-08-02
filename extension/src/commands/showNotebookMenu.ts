@@ -6,32 +6,65 @@ import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { configureAutoExport } from "./configureAutoExport.ts";
+import { MarimoCommands } from "./MarimoCommands.ts";
 import { toggleAutoReload } from "./toggleAutoReload.ts";
 import { toggleOnCellChange } from "./toggleOnCellChange.ts";
 
-export const showNotebookActions = Effect.fn("command.showNotebookActions")(
+const NOTEBOOK_MENU_ITEMS = [
+  {
+    label: "$(zap) Reactivity",
+    detail: "Choose when dependent code runs",
+    value: "reactivity" as const,
+  },
+  {
+    label: "$(save-all) Automatic exports",
+    detail: "Keep HTML or IPYNB copies up to date",
+    value: "automatic-exports" as const,
+  },
+  {
+    label: "$(gear) Create setup cell",
+    detail: "Add an initialization cell at the top of the notebook",
+    value: "create-setup-cell" as const,
+  },
+  {
+    label: "$(cloud-upload) Publish notebook",
+    detail: "Share this notebook as a GitHub Gist",
+    value: "publish-notebook" as const,
+  },
+] as const;
+
+export const showNotebookMenu = Effect.fn("command.showNotebookMenu")(
   function* (context?: NotebookCommandContext) {
     const code = yield* VsCode;
     const selection = yield* code.window.showQuickPickItems(
-      [
-        {
-          label: "$(zap) Reactivity",
-          detail: "Choose when dependent code runs",
-          value: "reactivity" as const,
-        },
-        {
-          label: "$(save-all) Exports",
-          detail: "Keep HTML or IPYNB copies up to date",
-          value: "exports" as const,
-        },
-      ],
-      { title: "marimo notebook" },
+      NOTEBOOK_MENU_ITEMS,
+      {
+        placeHolder: "Choose a notebook action",
+        title: "marimo notebook",
+      },
     );
 
     if (Option.isNone(selection)) return;
-    if (selection.value.value === "exports") {
-      yield* configureAutoExport(context);
-      return;
+
+    switch (selection.value.value) {
+      case "automatic-exports":
+        yield* configureAutoExport(context);
+        return;
+      case "create-setup-cell":
+        yield* context === undefined
+          ? code.commands.execute(MarimoCommands.createSetupCell)
+          : code.commands.execute(MarimoCommands.createSetupCell, context);
+        return;
+      case "publish-notebook":
+        yield* context === undefined
+          ? code.commands.execute(MarimoCommands.publishMarimoNotebook)
+          : code.commands.execute(
+              MarimoCommands.publishMarimoNotebook,
+              context,
+            );
+        return;
+      case "reactivity":
+        break;
     }
 
     const configService = yield* MarimoConfigurationService;

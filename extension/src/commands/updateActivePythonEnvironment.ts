@@ -1,6 +1,8 @@
 import { Effect, Either, Option } from "effect";
 
+import type { NotebookCommandContext } from "../commands.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
@@ -10,17 +12,17 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const updateActivePythonEnvironment = Effect.fn(
   "command.updateActivePythonEnvironment",
-)(function* () {
+)(function* (context?: NotebookCommandContext) {
   const uv = yield* Uv;
   const code = yield* VsCode;
   const py = yield* PythonExtension;
   const notebooks = yield* NotebookRuntime;
 
-  const editor = yield* code.window.getActiveNotebookEditor();
+  const editor = yield* getNotebookCommandEditor(context);
 
   if (Option.isNone(editor)) {
     yield* code.window.showInformationMessage(
-      "No marimo notebook is currently open",
+      "No marimo notebook is currently open.",
     );
     return;
   }
