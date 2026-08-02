@@ -120,7 +120,7 @@ class TestSyncAppWithWorkspace:
         app = sync_app_with_workspace(workspace=ws, notebook_uri=uri, app=None)
         assert app.config.width == "full"
 
-    def test_migrates_legacy_flat_notebook_metadata(self) -> None:
+    def test_ignores_unowned_flat_notebook_metadata(self) -> None:
         uri = "file:///test/notebook.py"
         ws = _make_workspace_with_metadata(
             uri,
@@ -133,8 +133,7 @@ class TestSyncAppWithWorkspace:
         )
 
         app = sync_app_with_workspace(workspace=ws, notebook_uri=uri, app=None)
-        assert app.config.width == "medium"
-        assert app.config.sql_output == "polars"
+        assert app.config.width == "compact"
 
     def test_rejects_unknown_owned_metadata(self) -> None:
         uri = "file:///test/notebook.py"

@@ -179,34 +179,10 @@ class CellMetadata(msgspec.Struct, rename="camel", forbid_unknown_fields=True):
     )
 
 
-class LegacyCellMetadata(msgspec.Struct, rename="camel"):
-    """Pre-namespace cell metadata accepted only at the LSP input boundary."""
-
-    stable_id: str | None = None
-    state: CellRuntimeState | None = None
-    name: str = "_"
-    config: NotebookCellConfig = msgspec.field(
-        default_factory=NotebookCellConfig,
-        name="options",
-    )
-    source_projections: CellSourceProjections | None = msgspec.field(
-        default=None,
-        name="languageMetadata",
-    )
-
-
 class MarimoNotebookMetadata(
     msgspec.Struct, rename="camel", forbid_unknown_fields=True
 ):
     """Persisted marimo-owned metadata on an LSP notebook document."""
-
-    app_config: _AppConfig = msgspec.field(default_factory=_AppConfig)
-    header: str | None = None
-    notebook_metadata: NotebookMetadata = msgspec.field(default_factory=dict)
-
-
-class LegacyNotebookDocumentMetadata(msgspec.Struct, rename="camel"):
-    """Pre-namespace notebook metadata accepted only at the LSP input boundary."""
 
     app_config: _AppConfig = msgspec.field(default_factory=_AppConfig)
     header: str | None = None

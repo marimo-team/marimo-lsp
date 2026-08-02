@@ -20,10 +20,6 @@ from marimo_lsp.models import (
     DEFAULT_SQL_ENGINE,
     CellMetadata,
     CellSourceProjections,
-    LegacyCellMetadata,
-    LegacyNotebookDocumentMetadata,
-    MarimoCellMetadata,
-    MarimoCellRuntimeMetadata,
     MarimoNotebookMetadata,
     NotebookDocumentMetadata,
     SqlCellProjection,
@@ -74,21 +70,6 @@ def decode_cell_metadata(cell: lsp.NotebookCell) -> CellMetadata:
     """
     raw = cell.metadata or {}
     raw_dict = cast("dict[str, object]", raw) if isinstance(raw, dict) else {}
-    if "marimo" not in raw_dict and "marimoRuntime" not in raw_dict:
-        legacy = msgspec.convert(raw_dict, LegacyCellMetadata)
-        return CellMetadata(
-            marimo=MarimoCellMetadata(
-                name=legacy.name,
-                config=legacy.config,
-                source_projections=(
-                    legacy.source_projections or CellSourceProjections()
-                ),
-            ),
-            marimo_runtime=MarimoCellRuntimeMetadata(
-                stable_id=legacy.stable_id,
-                state=legacy.state,
-            ),
-        )
     owned = {
         key: raw_dict[key] for key in ("marimo", "marimoRuntime") if key in raw_dict
     }
@@ -106,12 +87,7 @@ def decode_notebook_document_metadata(
     raw = notebook.metadata or {}
     raw_dict = cast("dict[str, object]", raw) if isinstance(raw, dict) else {}
     if "marimo" not in raw_dict:
-        legacy = msgspec.convert(raw_dict, LegacyNotebookDocumentMetadata)
-        return MarimoNotebookMetadata(
-            app_config=legacy.app_config,
-            header=legacy.header,
-            notebook_metadata=legacy.notebook_metadata,
-        )
+        return MarimoNotebookMetadata()
     envelope = msgspec.convert({"marimo": raw_dict["marimo"]}, NotebookDocumentMetadata)
     return envelope.marimo
 

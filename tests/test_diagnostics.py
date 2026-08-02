@@ -431,7 +431,7 @@ class TestCellMetadataHelpers:
         assert meta.marimo.name == "_"
         assert meta.marimo.source_projections == CellSourceProjections()
 
-    def test_decode_cell_metadata_migrates_legacy_flat_shape(self) -> None:
+    def test_decode_cell_metadata_ignores_unowned_flat_shape(self) -> None:
         cell = lsp.NotebookCell(
             kind=lsp.NotebookCellKind.Code,
             document="file:///test.py#cell1",
@@ -450,12 +450,11 @@ class TestCellMetadataHelpers:
         )
 
         meta = decode_cell_metadata(cell)
-        assert meta.marimo_runtime.stable_id == "abc-123"
-        assert meta.marimo_runtime.state == "stale"
-        assert meta.marimo.name == "legacy_cell"
-        assert meta.marimo.config == {"disabled": True}
-        assert meta.marimo.source_projections.markdown is not None
-        assert meta.marimo.source_projections.markdown.quote_prefix == "rf"
+        assert meta.marimo_runtime.stable_id is None
+        assert meta.marimo_runtime.state is None
+        assert meta.marimo.name == "_"
+        assert meta.marimo.config == {}
+        assert meta.marimo.source_projections == CellSourceProjections()
 
     def test_decode_cell_metadata_maps_options_to_config(self) -> None:
         """The wire sends per-cell config as ``options``; we expose ``config``."""
