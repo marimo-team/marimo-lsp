@@ -1,12 +1,15 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Option } from "effect";
+import { Effect, Either, Option } from "effect";
 
 import {
   createNotebookCell,
   createNotebookUri,
   createTestNotebookDocument,
 } from "../../__mocks__/TestVsCode.ts";
-import { MarimoNotebookCell } from "../MarimoNotebookDocument.ts";
+import {
+  MarimoNotebookCell,
+  MarimoNotebookDocument,
+} from "../MarimoNotebookDocument.ts";
 
 type MarimoUpdate = Parameters<
   MarimoNotebookCell["buildMarimoMetadataUpdate"]
@@ -58,5 +61,19 @@ describe("MarimoNotebookCell metadata updates", () => {
     expect(updated).toMatchObject({
       foreign: { ownedBy: "another-extension" },
     });
+  });
+
+  it("surfaces invalid notebook metadata to persistence operations", () => {
+    const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
+      data: {
+        cells: [],
+        metadata: { marimo: { misspelled: true } },
+      },
+    });
+    const notebook = MarimoNotebookDocument.from(raw);
+
+    expect(
+      Either.isLeft(Effect.runSync(Effect.either(notebook.parseMetadata()))),
+    ).toBe(true);
   });
 });

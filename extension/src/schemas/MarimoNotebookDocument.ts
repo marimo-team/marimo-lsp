@@ -34,6 +34,7 @@ const runtimeMetadataEquivalence = Schema.equivalence(
 const decodeNotebookMetadata = Schema.decodeUnknownOption(
   Api.MarimoNotebookMetadata,
 );
+const parseNotebookMetadata = Schema.decodeUnknown(Api.MarimoNotebookMetadata);
 const decodeNotebookMetadataSync = Schema.decodeUnknownSync(
   Api.MarimoNotebookMetadata,
 );
@@ -370,6 +371,12 @@ export class MarimoNotebookDocument {
       Option.flatMap((meta) => Option.fromNullable(meta.header)),
       Option.getOrElse(() => ""),
     );
+  }
+
+  /** Parse persisted metadata for operations that must not continue on corruption. */
+  parseMetadata() {
+    const raw = asRecord(this.#raw.metadata);
+    return parseNotebookMetadata(raw.marimo ?? {});
   }
 
   get rawMetadata() {

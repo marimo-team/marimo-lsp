@@ -1,7 +1,7 @@
 import * as NodeFs from "node:fs";
 
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Either, Layer } from "effect";
 
 import packageJson from "../../../package.json";
 import { TestMarimoClientLive } from "../../__mocks__/TestMarimoClient.ts";
@@ -25,6 +25,35 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       expect(notebookConfig).toBeDefined();
       assert.strictEqual(notebookConfig?.type, NOTEBOOK_TYPE);
     });
+
+    it.effect(
+      "rejects invalid owned metadata instead of serializing defaults",
+      Effect.fn(function* () {
+        const { LanguageId } = yield* Constants;
+        const serializer = yield* NotebookSerializer;
+        const invalidCell = yield* Effect.either(
+          serializer.serializeEffect({
+            cells: [
+              {
+                kind: 2,
+                value: "x = 1",
+                languageId: LanguageId.Python,
+                metadata: { marimo: { misspelled: true } },
+              },
+            ],
+          }),
+        );
+        const invalidNotebook = yield* Effect.either(
+          serializer.serializeEffect({
+            cells: [],
+            metadata: { marimo: { misspelled: true } },
+          }),
+        );
+
+        expect(Either.isLeft(invalidCell)).toBe(true);
+        expect(Either.isLeft(invalidNotebook)).toBe(true);
+      }),
+    );
 
     it.effect(
       "serializes notebook cells to marimo format",

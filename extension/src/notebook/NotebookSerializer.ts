@@ -261,22 +261,25 @@ function notebookDataToNotebookDocument(
   const markdownParser = new MarkdownParser();
   return Effect.gen(function* () {
     const documentMetadata = yield* parseNotebookDocumentMetadata(metadata);
+    const decodedCells = yield* Effect.forEach(cells, (cell) => {
+      const metadataWasAbsent = cell.metadata === undefined;
+      return Schema.decodeUnknown(Api.CellMetadata)(cell.metadata ?? {}).pipe(
+        Effect.map((cellMetadata) => ({
+          cell,
+          cellMetadata,
+          metadataWasAbsent,
+        })),
+      );
+    });
 
     return {
       notebook: {
         version: "1",
         metadata: documentMetadata.notebookMetadata ?? {},
-        cells: cells.map((cell) => {
-          const cellMeta = MarimoNotebookCell.decodeMetadata(cell.metadata);
-          const name = cellMeta.pipe(
-            Option.map((value) => value.marimo.name),
-            Option.getOrElse(() => DEFAULT_CELL_NAME),
-          );
+        cells: decodedCells.map(({ cell, cellMetadata, metadataWasAbsent }) => {
+          const name = cellMetadata.marimo.name;
           const config = (fallback: typeof Api.NotebookCellConfig.Type) =>
-            cellMeta.pipe(
-              Option.map((value) => value.marimo.options),
-              Option.getOrElse(() => fallback),
-            );
+            metadataWasAbsent ? fallback : cellMetadata.marimo.options;
 
           // oxlint-disable-next-line typescript/no-unsafe-enum-comparison
           if (cell.kind === NotebookCellKind.Markup) {
@@ -284,12 +287,8 @@ function notebookDataToNotebookDocument(
             if (cell.languageId === LanguageId.Markdown) {
               const result = markdownParser.transformOut(
                 cell.value,
-                cellMeta.pipe(
-                  Option.flatMap((x) =>
-                    Option.fromNullable(x.marimo.sourceProjections?.markdown),
-                  ),
-                  Option.getOrElse(() => markdownParser.defaultMetadata),
-                ),
+                cellMetadata.marimo.sourceProjections.markdown ??
+                  markdownParser.defaultMetadata,
               );
               return {
                 id: null,
@@ -313,12 +312,8 @@ function notebookDataToNotebookDocument(
           if (cell.languageId === LanguageId.Sql) {
             const result = sqlParser.transformOut(
               cell.value,
-              cellMeta.pipe(
-                Option.flatMap((x) =>
-                  Option.fromNullable(x.marimo.sourceProjections?.sql),
-                ),
-                Option.getOrElse(() => sqlParser.defaultMetadata),
-              ),
+              cellMetadata.marimo.sourceProjections.sql ??
+                sqlParser.defaultMetadata,
             );
             return {
               id: null,

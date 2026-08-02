@@ -105,8 +105,9 @@ export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
   const uv = yield* Uv;
   const code = yield* VsCode;
   const tmpFile = `${notebook.uri.fsPath}.tmp`;
+  const metadata = yield* notebook.parseMetadata();
   yield* Effect.promise(() =>
-    NodeFs.promises.writeFile(tmpFile, notebook.header),
+    NodeFs.promises.writeFile(tmpFile, metadata.header ?? ""),
   );
 
   yield* uv.addScript({ script: tmpFile, packages, noSync: true });
