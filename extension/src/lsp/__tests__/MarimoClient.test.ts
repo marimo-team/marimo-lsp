@@ -3,13 +3,14 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Effect, Exit, Ref, Stream } from "effect";
+import { Effect, Exit, Option, Ref, Stream } from "effect";
 
 import { notebookId } from "../../lib/__tests__/branded.ts";
-import type { MarimoApiCall } from "../../types.ts";
+import type { MarimoApiCall, MarimoOperation } from "../../types.ts";
 import {
   findMarimoLspExecutable,
   makeMarimoCommands,
+  makeMarimoOperationStream,
 } from "../MarimoClient.ts";
 
 const notebook = notebookId("notebook-a");
@@ -194,5 +195,39 @@ it.scoped(
     yield* marimo.operations().pipe(Stream.runDrain);
 
     assert.strictEqual(requestedNotification, "marimo/operation");
+  }),
+);
+
+it.scoped(
+  "broadcasts marimo operations without replacing the transport handler",
+  Effect.fn(function* () {
+    let registrations = 0;
+    let notify: ((message: MarimoOperation) => void) | undefined;
+    const operations = yield* makeMarimoOperationStream((handler) => {
+      registrations += 1;
+      notify = handler;
+      return { dispose() {} };
+    });
+
+    const message = {
+      notebookUri: notebook,
+      operation: { op: "completed-run", run_id: null },
+    } as const;
+    const [first, second] = yield* Effect.all(
+      [
+        operations().pipe(Stream.take(1), Stream.runHead),
+        operations().pipe(Stream.take(1), Stream.runHead),
+        Effect.gen(function* () {
+          yield* Effect.yieldNow();
+          assert.ok(notify);
+          notify(message);
+        }),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    assert.strictEqual(registrations, 1);
+    assert.deepStrictEqual(first, Option.some(message));
+    assert.deepStrictEqual(second, Option.some(message));
   }),
 );

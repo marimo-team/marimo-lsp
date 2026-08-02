@@ -403,6 +403,12 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
     const api = vscode.workspace;
     return {
       fs: {
+        createDirectory(uri: vscode.Uri) {
+          return Effect.tryPromise({
+            try: () => api.fs.createDirectory(uri),
+            catch: (cause) => new FileSystemError({ cause }),
+          });
+        },
         readFile(uri: vscode.Uri) {
           return Effect.tryPromise({
             try: () => api.fs.readFile(uri),

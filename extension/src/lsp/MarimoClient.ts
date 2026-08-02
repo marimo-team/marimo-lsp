@@ -2,7 +2,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 
-import { Cause, Data, Effect, Option, Stream } from "effect";
+import { Cause, Data, Effect, Option, PubSub, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
 
 import { Config } from "../config/Config.ts";
@@ -58,6 +58,25 @@ export function makeMarimoCommands<Error>(transport: MarimoTransport<Error>) {
     ...Api.makeApiClient(transport.execute),
   };
 }
+
+export const makeMarimoOperationStream = Effect.fn(function* (
+  register: (handler: (message: MarimoOperation) => void) => {
+    readonly dispose: () => void;
+  },
+) {
+  const operationPubSub = yield* PubSub.unbounded<MarimoOperation>();
+  yield* Effect.addFinalizer(() => PubSub.shutdown(operationPubSub));
+
+  // vscode-languageclient stores one notification handler per method, so
+  // register once and fan out to every operations() consumer.
+  yield* acquireDisposable(() =>
+    register((message) => {
+      Effect.runSync(PubSub.publish(operationPubSub, message));
+    }),
+  );
+
+  return () => Stream.fromPubSub(operationPubSub);
+});
 
 /**
  * Communication with marimo-lsp.
@@ -191,6 +210,12 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
 
       yield* Effect.addFinalizer(() => Effect.promise(() => client.dispose()));
 
+      const operations = yield* makeMarimoOperationStream((handler) =>
+        client.onNotification("marimo/operation", (message) => {
+          handler(message);
+        }),
+      );
+
       const restart = () =>
         code.window.withProgress(
           {
@@ -250,14 +275,7 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
             }),
           );
         }),
-        operations: () =>
-          Stream.asyncPush<MarimoOperation>((emit) =>
-            acquireDisposable(() =>
-              client.onNotification("marimo/operation", (message) => {
-                emit.single(message);
-              }),
-            ),
-          ),
+        operations,
       };
 
       return {
