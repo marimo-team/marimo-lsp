@@ -159,6 +159,9 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
             );
       };
 
+      const isPendingExpansion = (notebookUri: NotebookId, requestId: string) =>
+        pendingByRequest.get(requestId)?.notebookUri === notebookUri;
+
       const convertTablesToMap = (tables: readonly DataTable[]) =>
         new Map(tables.map((table) => [table.name, table]));
 
@@ -313,6 +316,18 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
           operation: SqlSchemaListPreviewNotification,
         ) {
           return Effect.gen(function* () {
+            if (!isPendingExpansion(notebookUri, operation.request_id)) {
+              yield* Effect.logTrace(
+                "Ignored uncorrelated datasource schema response",
+              ).pipe(
+                Effect.annotateLogs({
+                  notebookUri,
+                  requestId: operation.request_id,
+                }),
+              );
+              return;
+            }
+
             if (operation.error != null) {
               yield* completeExpansion(operation.request_id, operation.error);
               yield* Effect.logWarning(
@@ -366,6 +381,18 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
           operation: SqlTableListPreviewNotification,
         ) {
           return Effect.gen(function* () {
+            if (!isPendingExpansion(notebookUri, operation.request_id)) {
+              yield* Effect.logTrace(
+                "Ignored uncorrelated datasource table response",
+              ).pipe(
+                Effect.annotateLogs({
+                  notebookUri,
+                  requestId: operation.request_id,
+                }),
+              );
+              return;
+            }
+
             if (operation.error != null) {
               yield* completeExpansion(operation.request_id, operation.error);
               yield* Effect.logWarning("Failed to list datasource tables").pipe(

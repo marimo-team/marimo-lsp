@@ -24,6 +24,17 @@ const makeLayer = (
     Layer.provide(makeTestMarimoClient({ execute })),
   );
 
+const makeRecordingLayer = () => {
+  const calls: MarimoApiCall[] = [];
+  return {
+    calls,
+    layer: makeLayer((request) => {
+      calls.push(request);
+      return Effect.succeed(null);
+    }),
+  };
+};
+
 const table = (name: string): DataTable => ({
   name,
   source: "warehouse",
@@ -104,8 +115,9 @@ it.effect("preserves recursive schemas and deferred discovery", () =>
   }).pipe(Effect.provide(makeLayer())),
 );
 
-it.effect("merges child schemas at their parent path", () =>
-  Effect.gen(function* () {
+it.scoped("merges child schemas at their parent path", () => {
+  const { calls, layer } = makeRecordingLayer();
+  return Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
       NOTEBOOK_URI,
@@ -117,9 +129,16 @@ it.effect("merges child schemas at their parent path", () =>
       ]),
     );
 
+    const load = yield* Effect.fork(
+      service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", ["catalog"]),
+    );
+    yield* Effect.yieldNow();
+    const call = calls[0];
+    assert(call?.method === "list-sql-schemas");
+
     const operation: SqlSchemaListPreviewNotification = {
       op: "sql-schema-list-preview",
-      request_id: requestId("schemas"),
+      request_id: requestId(call.params.inner.requestId),
       metadata: {
         connection: "warehouse",
         database: "analytics",
@@ -128,17 +147,19 @@ it.effect("merges child schemas at their parent path", () =>
       schemas: [schema("events", { tables_resolved: false })],
     };
     yield* service.updateSchemaList(NOTEBOOK_URI, operation);
+    yield* Fiber.join(load);
 
     const catalog = (yield* getDatabase()).schemas.get("catalog");
     assert(catalog !== undefined);
     expect(catalog.childSchemasResolved).toBe(true);
     expect(catalog.childSchemas.get("events")?.tablesResolved).toBe(false);
     expect(catalog.tables.has("existing")).toBe(true);
-  }).pipe(Effect.provide(makeLayer())),
-);
+  }).pipe(Effect.provide(layer));
+});
 
-it.effect("merges tables at a nested schema path", () =>
-  Effect.gen(function* () {
+it.scoped("merges tables at a nested schema path", () => {
+  const { calls, layer } = makeRecordingLayer();
+  return Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
       NOTEBOOK_URI,
@@ -149,9 +170,19 @@ it.effect("merges tables at a nested schema path", () =>
       ]),
     );
 
+    const load = yield* Effect.fork(
+      service.loadTables(NOTEBOOK_URI, "warehouse", "analytics", "events", [
+        "catalog",
+        "events",
+      ]),
+    );
+    yield* Effect.yieldNow();
+    const call = calls[0];
+    assert(call?.method === "list-sql-tables");
+
     const operation: SqlTableListPreviewNotification = {
       op: "sql-table-list-preview",
-      request_id: requestId("tables"),
+      request_id: requestId(call.params.inner.requestId),
       metadata: {
         type: "sql-metadata",
         connection: "warehouse",
@@ -162,25 +193,39 @@ it.effect("merges tables at a nested schema path", () =>
       tables: [table("clicks")],
     };
     yield* service.updateTableList(NOTEBOOK_URI, operation);
+    yield* Fiber.join(load);
 
     const events = (yield* getDatabase()).schemas
       .get("catalog")
       ?.childSchemas.get("events");
     expect(events?.tablesResolved).toBe(true);
     expect(events?.tables.has("clicks")).toBe(true);
-  }).pipe(Effect.provide(makeLayer())),
-);
+  }).pipe(Effect.provide(layer));
+});
 
-it.effect("does not resolve deferred state after an error", () =>
-  Effect.gen(function* () {
+it.scoped("does not resolve deferred state after an error", () => {
+  const { calls, layer } = makeRecordingLayer();
+  return Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
       NOTEBOOK_URI,
       connections([schema("public", { tables_resolved: false })]),
     );
+
+    const load = yield* Effect.fork(
+      Effect.either(
+        service.loadTables(NOTEBOOK_URI, "warehouse", "analytics", "public", [
+          "public",
+        ]),
+      ),
+    );
+    yield* Effect.yieldNow();
+    const call = calls[0];
+    assert(call?.method === "list-sql-tables");
+
     yield* service.updateTableList(NOTEBOOK_URI, {
       op: "sql-table-list-preview",
-      request_id: requestId("tables"),
+      request_id: requestId(call.params.inner.requestId),
       metadata: {
         type: "sql-metadata",
         connection: "warehouse",
@@ -190,10 +235,45 @@ it.effect("does not resolve deferred state after an error", () =>
       tables: [],
       error: "connection lost",
     });
+    expect((yield* Fiber.join(load))._tag).toBe("Left");
 
     expect((yield* getDatabase()).schemas.get("public")?.tablesResolved).toBe(
       false,
     );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("ignores uncorrelated expansion responses", () =>
+  Effect.gen(function* () {
+    const service = yield* DatasourcesService;
+    yield* service.updateConnections(
+      NOTEBOOK_URI,
+      connections([schema("public", { tables_resolved: false })], false),
+    );
+
+    yield* service.updateSchemaList(NOTEBOOK_URI, {
+      op: "sql-schema-list-preview",
+      request_id: requestId("stale-schemas"),
+      metadata: { connection: "warehouse", database: "analytics" },
+      schemas: [schema("stale")],
+    });
+    yield* service.updateTableList(NOTEBOOK_URI, {
+      op: "sql-table-list-preview",
+      request_id: requestId("stale-tables"),
+      metadata: {
+        type: "sql-metadata",
+        connection: "warehouse",
+        database: "analytics",
+        schema: "public",
+      },
+      tables: [table("stale")],
+    });
+
+    const database = yield* getDatabase();
+    expect(database.schemasResolved).toBe(false);
+    expect(database.schemas.has("stale")).toBe(false);
+    expect(database.schemas.get("public")?.tablesResolved).toBe(false);
+    expect(database.schemas.get("public")?.tables.has("stale")).toBe(false);
   }).pipe(Effect.provide(makeLayer())),
 );
 
