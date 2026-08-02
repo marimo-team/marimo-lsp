@@ -8,6 +8,7 @@ import {
   LogLevel,
   Option,
   Array as ReadonlyArray,
+  Stream,
 } from "effect";
 
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
@@ -36,56 +37,73 @@ export class Sentry extends Effect.Service<Sentry>()("Sentry", {
       () => "unknown",
     );
 
-    SentrySDK.init({
-      dsn: SENTRY_DSN,
-      release: `vscode-marimo@${extensionVersion}`,
-      environment: process.env.NODE_ENV ?? "production",
-      enabled: yield* getTelemetryEnabled(),
-      // Disable automatic capture of unhandled errors
-      integrations: (integrations) => {
-        return integrations.filter((integration) => {
-          // Filter out integrations that automatically capture unhandled errors
-          return (
-            integration.name !== "OnUncaughtException" &&
-            integration.name !== "OnUnhandledRejection"
-          );
-        });
-      },
-      // Only capture errors that originate from this extension
-      beforeSend(event) {
-        // Filter out errors from other extensions by checking stack traces
-        const frames = event.exception?.values?.[0]?.stacktrace?.frames;
-        if (frames && frames.length > 0) {
-          if (!isMarimoStackTrace(frames)) {
+    const initialize = Effect.sync(() => {
+      SentrySDK.init({
+        dsn: SENTRY_DSN,
+        release: `vscode-marimo@${extensionVersion}`,
+        environment: process.env.NODE_ENV ?? "production",
+        enabled: true,
+        // Disable automatic capture of unhandled errors
+        integrations: (integrations) => {
+          return integrations.filter((integration) => {
+            // Filter out integrations that automatically capture unhandled errors
+            return (
+              integration.name !== "OnUncaughtException" &&
+              integration.name !== "OnUnhandledRejection"
+            );
+          });
+        },
+        // Only capture errors that originate from this extension
+        beforeSend(event) {
+          // Filter out errors from other extensions by checking stack traces
+          const frames = event.exception?.values?.[0]?.stacktrace?.frames;
+          if (frames && frames.length > 0) {
+            if (!isMarimoStackTrace(frames)) {
+              return null;
+            }
+          }
+
+          // Filter out errors that contain stack traces from other extensions in the message
+          const message =
+            event.message ||
+            event.exception?.values?.[0]?.value ||
+            event.logentry?.message;
+          if (message && shouldFilterMessage(message)) {
             return null;
           }
-        }
 
-        // Filter out errors that contain stack traces from other extensions in the message
-        const message =
-          event.message ||
-          event.exception?.values?.[0]?.value ||
-          event.logentry?.message;
-        if (message && shouldFilterMessage(message)) {
-          return null;
-        }
+          return event;
+        },
+      });
 
-        return event;
-      },
+      // Set global context
+      SentrySDK.setTag("editor.appHost", code.env.appHost);
+      SentrySDK.setTag("editor.appName", code.env.appName);
+      SentrySDK.setTag("extension.version", extensionVersion);
+      SentrySDK.setUser({ id: code.env.machineId });
     });
 
-    // Set global context
-    SentrySDK.setTag("editor.appHost", code.env.appHost);
-    SentrySDK.setTag("editor.appName", code.env.appName);
-    SentrySDK.setTag("extension.version", extensionVersion);
-    SentrySDK.setUser({ id: code.env.machineId });
+    // `close` flushes pending events and disables the client, so a later
+    // `initialize` is required to turn reporting back on.
+    const shutdown = Effect.promise(async () => {
+      await SentrySDK.close(2000);
+    });
+
+    if (yield* getTelemetryEnabled()) {
+      yield* initialize;
+    }
+
+    // Keep the SDK in sync with the marimo.telemetry setting
+    yield* code.workspace.configurationChanges().pipe(
+      Stream.filter((event) => event.affectsConfiguration("marimo.telemetry")),
+      Stream.mapEffect(() => getTelemetryEnabled()),
+      Stream.changes,
+      Stream.runForEach((enabled) => (enabled ? initialize : shutdown)),
+      Effect.forkScoped,
+    );
 
     // Register finalizer to flush Sentry on shutdown
-    yield* Effect.addFinalizer(() =>
-      Effect.promise(async () => {
-        await SentrySDK.close(2000);
-      }),
-    );
+    yield* Effect.addFinalizer(() => shutdown);
 
     return {
       /**

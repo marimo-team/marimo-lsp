@@ -24,7 +24,8 @@ export const handleMissingPackageAlert = Effect.fn("handleMissingPackageAlert")(
       return;
     }
 
-    if (!config.uv.enabled) {
+    const uvEnabled = yield* config.uv.enabled;
+    if (!uvEnabled) {
       // User has uv disabled
       yield* Effect.logDebug("uv integration disabled. Skipping install.").pipe(
         Effect.annotateLogs({

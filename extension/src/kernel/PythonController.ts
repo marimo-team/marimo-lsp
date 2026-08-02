@@ -167,7 +167,8 @@ export const createPythonController = Effect.fn("createPythonController")(
               // Non-venv environments (pixi, conda, bazel, global) don't have pyvenv.cfg
               // so uv can't install packages there
               const venv = findVenvPath(options.env.path);
-              const canInstallWithUv = config.uv.enabled && Option.isSome(venv);
+              const uvEnabled = yield* config.uv.enabled;
+              const canInstallWithUv = uvEnabled && Option.isSome(venv);
 
               if (canInstallWithUv) {
                 const msg =
