@@ -4,6 +4,7 @@ import {
   Layer,
   Option,
   Queue,
+  Schema,
   Stream,
   SubscriptionRef,
   TestClock,
@@ -12,6 +13,7 @@ import {
 import { partialService } from "../../__tests__/__utils__/partial.ts";
 import {
   marimoConfigFixture,
+  mergeMarimoConfig,
   notebookId,
 } from "../../lib/__tests__/branded.ts";
 import { makeMarimoCommands, MarimoClient } from "../../lsp/MarimoClient.ts";
@@ -19,6 +21,7 @@ import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts
 import type { VsCode } from "../../platform/VsCode.ts";
 import { Commands, VsCode as VsCodeService } from "../../platform/VsCode.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
+import * as Api from "../../schemas/Models.gen.ts";
 import type { MarimoConfig } from "../../types.ts";
 import { ConfigContextManager } from "../ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../MarimoConfigurationService.ts";
@@ -49,7 +52,9 @@ class TestContext extends Effect.Service<TestContext>()("TestContext", {
     const activeNotebookRef = yield* SubscriptionRef.make(
       Option.none<NotebookId>(),
     );
-    const configStore = new Map<NotebookId, MarimoConfig>();
+    // Keyed by plain string: the fake server looks up by the decoded wire
+    // value, which carries no brand.
+    const configStore = new Map<string, MarimoConfig>();
     const contextCalls: Array<{ key: string; value: unknown }> = [];
 
     return {
@@ -129,28 +134,31 @@ const TestMarimoClientLive = Layer.effect(
         execute: (request) =>
           Effect.gen(function* () {
             if (request.method === "get-configuration") {
-              const config = ctx.configStore.get(request.params.notebookUri);
+              const params = yield* Schema.decodeUnknown(
+                Api.GetConfigurationPayload,
+              )(request.params);
+              const config = ctx.configStore.get(params.notebookUri);
               if (!config) {
                 return yield* Effect.die(
-                  `Config not found for ${request.params.notebookUri}`,
+                  `Config not found for ${params.notebookUri}`,
                 );
               }
               return { config };
             }
 
             if (request.method === "update-configuration") {
-              const existing = ctx.configStore.get(request.params.notebookUri);
+              const params = yield* Schema.decodeUnknown(
+                Api.UpdateConfigurationPayload,
+              )(request.params);
+              const existing = ctx.configStore.get(params.notebookUri);
               if (existing === undefined) {
                 return yield* Effect.die(
-                  `Config not found for ${request.params.notebookUri}`,
+                  `Config not found for ${params.notebookUri}`,
                 );
               }
-              const config = {
-                ...existing,
-                ...request.params.inner.config,
-              };
-              ctx.configStore.set(request.params.notebookUri, config);
-              return { config };
+              const config = mergeMarimoConfig(existing, params.inner.config);
+              ctx.configStore.set(params.notebookUri, config);
+              return config;
             }
 
             return yield* Effect.die(
@@ -447,7 +455,7 @@ it.layer(TestLayer)("ConfigContextManager", (it) => {
             {
               "_id": "Option",
               "_tag": "Some",
-              "value": undefined,
+              "value": "off",
             },
             {
               "_id": "Option",

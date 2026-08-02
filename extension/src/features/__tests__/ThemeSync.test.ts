@@ -6,14 +6,14 @@ import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
-import type { MarimoCommand } from "../../types.ts";
+import type { MarimoApiCall } from "../../types.ts";
 import { ThemeSyncLive } from "../ThemeSync.ts";
 
 const withTestCtx = Effect.fn(function* (
   initialTheme: "light" | "dark" = "light",
 ) {
   const themeRef = yield* SubscriptionRef.make<"light" | "dark">(initialTheme);
-  const executions = yield* Ref.make<ReadonlyArray<MarimoCommand>>([]);
+  const executions = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
 
   const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
     data: {
@@ -41,11 +41,10 @@ const withTestCtx = Effect.fn(function* (
     Layer.provide(
       makeTestMarimoClient({
         execute(request) {
-          const command: MarimoCommand = {
-            command: "marimo.api",
-            params: request,
-          };
-          return Ref.update(executions, (current) => [...current, command]);
+          return Ref.update(executions, (current) => [
+            ...current,
+            request,
+          ]).pipe(Effect.as({ success: true }));
         },
       }),
     ),
@@ -79,21 +78,15 @@ describe("ThemeSync", () => {
         expect(yield* ctx.executions).toMatchInlineSnapshot(`
           [
             {
-              "command": "marimo.api",
+              "method": "set-display-theme",
               "params": {
-                "method": "set-display-theme",
-                "params": {
-                  "theme": "light",
-                },
+                "theme": "light",
               },
             },
             {
-              "command": "marimo.api",
+              "method": "set-display-theme",
               "params": {
-                "method": "set-display-theme",
-                "params": {
-                  "theme": "dark",
-                },
+                "theme": "dark",
               },
             },
           ]
@@ -114,12 +107,9 @@ describe("ThemeSync", () => {
         expect(yield* ctx.executions).toMatchInlineSnapshot(`
           [
             {
-              "command": "marimo.api",
+              "method": "set-display-theme",
               "params": {
-                "method": "set-display-theme",
-                "params": {
-                  "theme": "dark",
-                },
+                "theme": "dark",
               },
             },
           ]

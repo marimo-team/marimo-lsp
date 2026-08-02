@@ -4,8 +4,8 @@ import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
+import type { DependencyTreeNode } from "../../schemas/Models.gen.ts";
 import { TreeView } from "../TreeView.ts";
-import type { DependencyTreeNode } from "./PackagesService.ts";
 import { PackagesService } from "./PackagesService.ts";
 
 interface PackageTreeItem {

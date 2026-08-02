@@ -10,7 +10,7 @@ import type {
 } from "../types.ts";
 import type { CellMetadata } from "./CellMetadata.ts";
 import { decodeCellMetadata, encodeCellMetadata } from "./CellMetadata.ts";
-import { SerializedNotebook } from "./SerializedNotebook.ts";
+import { NotebookDocument } from "./Models.gen.ts";
 
 export type NotebookId = Brand.Branded<string, "NotebookId">;
 export type NotebookCellId = CellId;
@@ -208,7 +208,7 @@ export class MarimoNotebookCell {
 export class MarimoNotebookDocument {
   #raw: vscode.NotebookDocument;
   // we parse lazily, just the header for now... could expand when we need it
-  #cachedMeta: undefined | Option.Option<Pick<SerializedNotebook, "header">>;
+  #cachedMeta: undefined | Option.Option<Pick<NotebookDocument, "header">>;
 
   private constructor(raw: vscode.NotebookDocument) {
     this.#raw = raw;
@@ -252,7 +252,7 @@ export class MarimoNotebookDocument {
     if (this.#cachedMeta) {
       return this.#cachedMeta;
     }
-    const meta = Schema.decodeUnknownOption(SerializedNotebook.pick("header"))(
+    const meta = Schema.decodeUnknownOption(NotebookDocument.pick("header"))(
       this.#raw.metadata,
     );
     this.#cachedMeta = meta;
@@ -267,7 +267,7 @@ export class MarimoNotebookDocument {
 
   get header() {
     return this.#meta.pipe(
-      Option.flatMap((meta) => Option.fromNullable(meta.header?.value)),
+      Option.flatMap((meta) => Option.fromNullable(meta.header)),
       Option.getOrElse(() => ""),
     );
   }

@@ -61,7 +61,6 @@ from marimo_lsp.models import (
     SetDisplayThemeResponse,
     StdinRequest,
     UpdateConfigurationRequest,
-    UpdateConfigurationResponse,
     UpdateUIElementRequest,
     VenvSource,
 )
@@ -491,7 +490,7 @@ async def get_configuration(
 async def update_configuration(
     ctx: ApiContext,
     args: NotebookCommand[UpdateConfigurationRequest],
-) -> UpdateConfigurationResponse:
+) -> MarimoConfig:
     """Update the marimo user configuration."""
     session = ctx.sessions.get(args.notebook_uri)
     if not session:
@@ -500,9 +499,7 @@ async def update_configuration(
 
     # PartialMarimoConfig is only shallow-partial, while config updates are
     # intentionally deep patches (for example, just runtime.on_cell_change).
-    return UpdateConfigurationResponse(
-        config=session.save_config(cast("PartialMarimoConfig", args.inner.config))
-    )
+    return session.save_config(cast("PartialMarimoConfig", args.inner.config))
 
 
 @marimo_api("set-display-theme")

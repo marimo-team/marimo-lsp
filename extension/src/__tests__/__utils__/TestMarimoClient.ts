@@ -1,4 +1,11 @@
-import { Effect, Layer, Option, PubSub, Stream } from "effect";
+import {
+  Effect,
+  Layer,
+  Option,
+  type ParseResult,
+  PubSub,
+  Stream,
+} from "effect";
 
 import {
   type NotebookController,
@@ -8,10 +15,12 @@ import {
 } from "../../kernel/NotebookRuntime.ts";
 import { makeMarimoCommands, MarimoClient } from "../../lsp/MarimoClient.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
-import type { MarimoApiRequest, MarimoOperation } from "../../types.ts";
+import type { MarimoApiCall, MarimoOperation } from "../../types.ts";
 
 interface Options {
-  readonly execute?: (request: MarimoApiRequest) => Effect.Effect<unknown>;
+  readonly execute?: (
+    request: MarimoApiCall,
+  ) => Effect.Effect<unknown, ParseResult.ParseError>;
   readonly operations?: () => Stream.Stream<MarimoOperation>;
   readonly initialControllers?: ReadonlyArray<NotebookControllerSelection>;
 }
@@ -55,9 +64,9 @@ export function makeTestNotebookRuntime(options: Options = {}) {
               }),
             executeScratchpad: () => Stream.empty,
             updateUIElements: (inner) =>
-              client.updateUIElements({ notebookUri: notebookId, inner }),
+              client.updateUiElement({ notebookUri: notebookId, inner }),
             updateModel: (inner) =>
-              client.updateModel({ notebookUri: notebookId, inner }),
+              client.setModelValue({ notebookUri: notebookId, inner }),
             invokeFunction: (inner) =>
               client.invokeFunction({ notebookUri: notebookId, inner }),
             deleteCell: (inner) =>
@@ -95,7 +104,7 @@ function makeTestMarimoClientValue(options: Options) {
     channel: { name: "marimo-lsp-test", show() {} },
     restart: () => Effect.void,
     ...makeMarimoCommands({
-      execute: options.execute ?? (() => Effect.void),
+      execute: options.execute ?? (() => Effect.succeed(null)),
       operations: options.operations ?? (() => Stream.never),
     }),
   });

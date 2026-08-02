@@ -1160,15 +1160,6 @@ export const GetConfigurationPayload = Schema.Struct({
   inner: GetConfigurationRequest,
 });
 
-/**
- * Response for ``update-configuration``.
- */
-export const UpdateConfigurationResponse = Schema.Struct({
-  config: MarimoConfig,
-}).annotations({ identifier: "UpdateConfigurationResponse" });
-export type UpdateConfigurationResponse =
-  typeof UpdateConfigurationResponse.Type;
-
 export const UpdateConfigurationPayload = Schema.Struct({
   notebookUri: Schema.String,
   inner: UpdateConfigurationRequest,
@@ -1415,7 +1406,7 @@ export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({
       execute,
       { method: "update-configuration", params },
       UpdateConfigurationPayload,
-      UpdateConfigurationResponse,
+      MarimoConfig,
     ),
   setDisplayTheme: (params: typeof SetDisplayThemePayload.Encoded) =>
     dispatch(

@@ -12,12 +12,8 @@ import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { tokenFromSignal } from "../lib/tokenFromSignal.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Uv } from "../python/Uv.ts";
-import type {
-  MarimoApiParams,
-  MarimoApiRequest,
-  MarimoCommand,
-  MarimoOperation,
-} from "../types.ts";
+import * as Api from "../schemas/Models.gen.ts";
+import type { MarimoApiCall, MarimoOperation } from "../types.ts";
 
 const MAX_STDERR_LINES = 200;
 
@@ -38,7 +34,10 @@ export class MarimoClientStartError extends Data.TaggedError(
 }> {}
 
 export class MarimoCommandError extends Data.TaggedError("MarimoCommandError")<{
-  readonly command: MarimoCommand;
+  readonly command: {
+    readonly command: "marimo.api";
+    readonly params: MarimoApiCall;
+  };
   readonly cause: unknown;
 }> {}
 
@@ -49,51 +48,14 @@ export class MarimoCommandError extends Data.TaggedError("MarimoCommandError")<{
  * transport without reproducing MarimoClient's named methods.
  */
 interface MarimoTransport<Error = never> {
-  readonly execute: (
-    request: MarimoApiRequest,
-  ) => Effect.Effect<unknown, Error>;
+  readonly execute: (request: MarimoApiCall) => Effect.Effect<unknown, Error>;
   readonly operations: () => Stream.Stream<MarimoOperation>;
 }
 
 export function makeMarimoCommands<Error>(transport: MarimoTransport<Error>) {
   return {
     operations: transport.operations,
-    executeCells: (params: MarimoApiParams<"execute-cells">) =>
-      transport.execute({ method: "execute-cells", params }),
-    executeScratchpad: (params: MarimoApiParams<"execute-scratchpad">) =>
-      transport.execute({ method: "execute-scratchpad", params }),
-    updateUIElements: (params: MarimoApiParams<"update-ui-element">) =>
-      transport.execute({ method: "update-ui-element", params }),
-    updateModel: (params: MarimoApiParams<"set-model-value">) =>
-      transport.execute({ method: "set-model-value", params }),
-    invokeFunction: (params: MarimoApiParams<"invoke-function">) =>
-      transport.execute({ method: "invoke-function", params }),
-    deleteCell: (params: MarimoApiParams<"delete-cell">) =>
-      transport.execute({ method: "delete-cell", params }),
-    sendStdin: (params: MarimoApiParams<"send-stdin">) =>
-      transport.execute({ method: "send-stdin", params }),
-    interrupt: (params: MarimoApiParams<"interrupt">) =>
-      transport.execute({ method: "interrupt", params }),
-    closeSession: (params: MarimoApiParams<"close-session">) =>
-      transport.execute({ method: "close-session", params }),
-    getPackageList: (params: MarimoApiParams<"get-package-list">) =>
-      transport.execute({ method: "get-package-list", params }),
-    getDependencyTree: (params: MarimoApiParams<"get-dependency-tree">) =>
-      transport.execute({ method: "get-dependency-tree", params }),
-    getConfiguration: (params: MarimoApiParams<"get-configuration">) =>
-      transport.execute({ method: "get-configuration", params }),
-    updateConfiguration: (params: MarimoApiParams<"update-configuration">) =>
-      transport.execute({ method: "update-configuration", params }),
-    exportAsHtml: (params: MarimoApiParams<"export-as-html">) =>
-      transport.execute({ method: "export-as-html", params }),
-    exportAsIpynb: (params: MarimoApiParams<"export-as-ipynb">) =>
-      transport.execute({ method: "export-as-ipynb", params }),
-    serialize: (params: MarimoApiParams<"serialize">) =>
-      transport.execute({ method: "serialize", params }),
-    deserialize: (params: MarimoApiParams<"deserialize">) =>
-      transport.execute({ method: "deserialize", params }),
-    setDisplayTheme: (params: MarimoApiParams<"set-display-theme">) =>
-      transport.execute({ method: "set-display-theme", params }),
+    ...Api.makeApiClient(transport.execute),
   };
 }
 
@@ -267,10 +229,10 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
           if (!client.isRunning()) {
             yield* startClient();
           }
-          const command: MarimoCommand = {
+          const command = {
             command: "marimo.api",
             params: request,
-          };
+          } as const;
           return yield* Effect.tryPromise({
             try: (signal) =>
               client.sendRequest<unknown>(

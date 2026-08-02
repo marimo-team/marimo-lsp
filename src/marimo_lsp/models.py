@@ -257,13 +257,6 @@ class GetConfigurationResponse(msgspec.Struct, rename="camel"):
     """The resolved marimo configuration (defaults when no session exists)."""
 
 
-class UpdateConfigurationResponse(msgspec.Struct, rename="camel"):
-    """Response for ``update-configuration``."""
-
-    config: MarimoConfig
-    """The resolved configuration after the update."""
-
-
 class SetDisplayThemeResponse(msgspec.Struct, rename="camel"):
     """Response for ``set-display-theme``."""
 

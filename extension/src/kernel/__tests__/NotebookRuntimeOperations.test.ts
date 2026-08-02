@@ -8,6 +8,7 @@ import {
   PubSub,
   Queue,
   Ref,
+  Schema,
   Stream,
   TestClock,
 } from "effect";
@@ -27,9 +28,10 @@ import { cellId, notebookId } from "../../lib/__tests__/branded.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
+import * as Api from "../../schemas/Models.gen.ts";
 import type {
   CellOperationNotification,
-  MarimoCommand,
+  MarimoApiCall,
   MarimoLspNotificationOf,
 } from "../../types.ts";
 
@@ -38,7 +40,7 @@ const withTestCtx = Effect.fn(function* () {
   const inputQueue = yield* Queue.unbounded<Option.Option<string>>();
 
   // Capture executeCommand calls
-  const executions = yield* Ref.make<ReadonlyArray<MarimoCommand>>([]);
+  const executions = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
 
   // PubSub to push operations into NotebookRuntime
   const operationsPubSub =
@@ -82,11 +84,10 @@ const withTestCtx = Effect.fn(function* () {
     Layer.provide(
       makeTestMarimoClient({
         execute(request) {
-          const command: MarimoCommand = {
-            command: "marimo.api",
-            params: request,
-          };
-          return Ref.update(executions, (current) => [...current, command]);
+          return Ref.update(executions, (current) => [
+            ...current,
+            request,
+          ]).pipe(Effect.as(null));
         },
         operations: () => Stream.fromPubSub(operationsPubSub),
       }),
@@ -353,13 +354,10 @@ describe("NotebookRuntime cell identity", () => {
         yield* TestClock.adjust("10 millis");
 
         expect(yield* Ref.get(ctx.executions)).toContainEqual({
-          command: "marimo.api",
+          method: "delete-cell",
           params: {
-            method: "delete-cell",
-            params: {
-              notebookUri: ctx.notebookUri,
-              inner: { cellId: "cell-1" },
-            },
+            notebookUri: ctx.notebookUri,
+            inner: { cellId: "cell-1" },
           },
         });
       }).pipe(Effect.provide(ctx.layer));
@@ -396,11 +394,7 @@ describe("NotebookRuntime cell identity", () => {
 
         const commands = yield* Ref.get(ctx.executions);
         expect(
-          commands.some(
-            (command) =>
-              command.command === "marimo.api" &&
-              command.params.method === "delete-cell",
-          ),
+          commands.some((command) => command.method === "delete-cell"),
         ).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -444,16 +438,12 @@ describe("NotebookRuntime stdin", () => {
 
         // Assert executeCommand was called with send-stdin
         const cmds = yield* Ref.get(ctx.executions);
-        const stdinCmd = cmds.find(
-          (c) => c.command === "marimo.api" && c.params.method === "send-stdin",
-        );
+        const stdinCmd = cmds.find((c) => c.method === "send-stdin");
         expect(stdinCmd).toMatchObject({
+          method: "send-stdin",
           params: {
-            method: "send-stdin",
-            params: {
-              notebookUri: ctx.notebookUri,
-              inner: { text: "foo" },
-            },
+            notebookUri: ctx.notebookUri,
+            inner: { text: "foo" },
           },
         });
       }).pipe(Effect.provide(ctx.layer));
@@ -494,22 +484,16 @@ describe("NotebookRuntime stdin", () => {
 
         // No send-stdin command should have been sent
         const cmds = yield* Ref.get(ctx.executions);
-        const stdinCmd = cmds.find(
-          (c) => c.command === "marimo.api" && c.params.method === "send-stdin",
-        );
+        const stdinCmd = cmds.find((c) => c.method === "send-stdin");
         expect(stdinCmd).toBeUndefined();
 
         // An interrupt should have been sent instead
-        const interruptCmd = cmds.find(
-          (c) => c.command === "marimo.api" && c.params.method === "interrupt",
-        );
+        const interruptCmd = cmds.find((c) => c.method === "interrupt");
         expect(interruptCmd).toMatchObject({
+          method: "interrupt",
           params: {
-            method: "interrupt",
-            params: {
-              notebookUri: ctx.notebookUri,
-              inner: {},
-            },
+            notebookUri: ctx.notebookUri,
+            inner: {},
           },
         });
       }).pipe(Effect.provide(ctx.layer));
@@ -534,53 +518,45 @@ describe("NotebookRuntime scratch stream", () => {
 
         yield* TestClock.adjust("1 millis");
 
-        const firstCommand = (yield* Ref.get(ctx.executions)).find(
-          (command) =>
-            command.command === "marimo.api" &&
-            command.params.method === "execute-scratchpad",
-        );
+        const scratchpadCalls = (calls: ReadonlyArray<MarimoApiCall>) =>
+          calls
+            .filter((call) => call.method === "execute-scratchpad")
+            .map((call) =>
+              Schema.decodeUnknownSync(Api.ExecuteScratchpadPayload)(
+                call.params,
+              ),
+            );
+
+        const first_ = scratchpadCalls(yield* Ref.get(ctx.executions));
+        expect(first_).toHaveLength(1);
+        const firstCommand = first_[0];
         assert(
           firstCommand !== undefined &&
-            firstCommand.command === "marimo.api" &&
-            firstCommand.params.method === "execute-scratchpad" &&
-            typeof firstCommand.params.params.inner.runId === "string",
+            typeof firstCommand.inner.runId === "string",
         );
-        expect(
-          (yield* Ref.get(ctx.executions)).filter(
-            (command) =>
-              command.command === "marimo.api" &&
-              command.params.method === "execute-scratchpad",
-          ),
-        ).toHaveLength(1);
 
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,
           operation: {
             op: "completed-run",
-            run_id: firstCommand.params.params.inner.runId,
+            run_id: firstCommand.inner.runId,
           },
         });
         yield* TestClock.adjust("1 millis");
 
-        const commands = (yield* Ref.get(ctx.executions)).filter(
-          (command) =>
-            command.command === "marimo.api" &&
-            command.params.method === "execute-scratchpad",
-        );
+        const commands = scratchpadCalls(yield* Ref.get(ctx.executions));
         expect(commands).toHaveLength(2);
         const secondCommand = commands[1];
         assert(
           secondCommand !== undefined &&
-            secondCommand.command === "marimo.api" &&
-            secondCommand.params.method === "execute-scratchpad" &&
-            typeof secondCommand.params.params.inner.runId === "string",
+            typeof secondCommand.inner.runId === "string",
         );
 
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,
           operation: {
             op: "completed-run",
-            run_id: secondCommand.params.params.inner.runId,
+            run_id: secondCommand.inner.runId,
           },
         });
 
@@ -624,14 +600,14 @@ describe("NotebookRuntime scratch stream", () => {
           runId: string;
         }> = [];
         for (const command of yield* Ref.get(ctx.executions)) {
-          if (
-            command.command === "marimo.api" &&
-            command.params.method === "execute-scratchpad"
-          ) {
-            assert(typeof command.params.params.inner.runId === "string");
+          if (command.method === "execute-scratchpad") {
+            const params = Schema.decodeUnknownSync(
+              Api.ExecuteScratchpadPayload,
+            )(command.params);
+            assert(typeof params.inner.runId === "string");
             commands.push({
-              notebookUri: command.params.params.notebookUri,
-              runId: command.params.params.inner.runId,
+              notebookUri: notebookId(params.notebookUri),
+              runId: params.inner.runId,
             });
           }
         }
@@ -685,17 +661,13 @@ describe("NotebookRuntime scratch stream", () => {
 
         const executions = yield* Ref.get(ctx.executions);
         const executeCmd = executions.find(
-          (c) =>
-            c.command === "marimo.api" &&
-            c.params.method === "execute-scratchpad",
+          (c) => c.method === "execute-scratchpad",
         );
 
-        assert(
-          executeCmd !== undefined &&
-            executeCmd.command === "marimo.api" &&
-            executeCmd.params.method === "execute-scratchpad",
-        );
-        const runId = executeCmd.params.params.inner.runId;
+        assert(executeCmd !== undefined);
+        const { runId } = Schema.decodeUnknownSync(
+          Api.ExecuteScratchpadPayload,
+        )(executeCmd.params).inner;
         expect(runId).toBeDefined();
 
         const cell = ctx.notebook.cellAt(0);
@@ -790,19 +762,14 @@ describe("NotebookRuntime scratch stream", () => {
         const executions = yield* Ref.get(ctx.executions);
 
         // The finalizer should have sent an interrupt to the kernel.
-        const interruptCmd = executions.find(
-          (c) => c.command === "marimo.api" && c.params.method === "interrupt",
-        );
+        const interruptCmd = executions.find((c) => c.method === "interrupt");
 
         expect(interruptCmd).toMatchInlineSnapshot(`
         	{
-        	  "command": "marimo.api",
+        	  "method": "interrupt",
         	  "params": {
-        	    "method": "interrupt",
-        	    "params": {
-        	      "inner": {},
-        	      "notebookUri": "file:///test/notebook_mo.py",
-        	    },
+        	    "inner": {},
+        	    "notebookUri": "file:///test/notebook_mo.py",
         	  },
         	}
         `);
@@ -831,16 +798,12 @@ describe("NotebookRuntime scratch stream", () => {
         yield* TestClock.adjust("1 millis");
 
         const executeCmd = (yield* Ref.get(ctx.executions)).find(
-          (c) =>
-            c.command === "marimo.api" &&
-            c.params.method === "execute-scratchpad",
+          (c) => c.method === "execute-scratchpad",
         );
-        assert(
-          executeCmd !== undefined &&
-            executeCmd.command === "marimo.api" &&
-            executeCmd.params.method === "execute-scratchpad",
-        );
-        const runId = executeCmd.params.params.inner.runId;
+        assert(executeCmd !== undefined);
+        const { runId } = Schema.decodeUnknownSync(
+          Api.ExecuteScratchpadPayload,
+        )(executeCmd.params).inner;
 
         // Our completed-run ends the stream normally.
         yield* PubSub.publish(ctx.operationsPubSub, {
@@ -851,7 +814,7 @@ describe("NotebookRuntime scratch stream", () => {
         yield* Fiber.join(streamFiber);
 
         const interruptCmd = (yield* Ref.get(ctx.executions)).find(
-          (c) => c.command === "marimo.api" && c.params.method === "interrupt",
+          (c) => c.method === "interrupt",
         );
         expect(interruptCmd).toBeUndefined();
       }).pipe(Effect.provide(ctx.layer));
