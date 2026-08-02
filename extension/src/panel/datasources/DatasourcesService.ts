@@ -1,5 +1,6 @@
-import { Effect, HashMap, SubscriptionRef } from "effect";
+import { Data, Deferred, Effect, HashMap, SubscriptionRef } from "effect";
 
+import { MarimoClient } from "../../lsp/MarimoClient.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type {
   DataSourceConnection,
@@ -50,6 +51,16 @@ interface DatasetsMap {
   clear_channel: ("catalog" | "connection" | "duckdb" | "local") | null;
 }
 
+export class DatasourceExpansionError extends Data.TaggedError(
+  "DatasourceExpansionError",
+)<{ readonly message: string }> {}
+
+interface PendingExpansion {
+  readonly notebookUri: NotebookId;
+  readonly requestId: string;
+  readonly deferred: Deferred.Deferred<void, DatasourceExpansionError>;
+}
+
 /**
  * Manages datasource state across all notebooks.
  *
@@ -64,6 +75,8 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
   "DatasourcesService",
   {
     scoped: Effect.gen(function* () {
+      const marimo = yield* MarimoClient;
+
       // Track data source connections: NotebookUri -> DataSourceConnectionMap
       const connectionsRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, DataSourceConnectionMap>(),
@@ -73,6 +86,63 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
       const datasetsRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, DatasetsMap>(),
       );
+      const pendingByLocation = new Map<string, PendingExpansion>();
+      const pendingByRequest = new Map<string, PendingExpansion>();
+
+      const expansionKey = (
+        notebookUri: NotebookId,
+        connection: string,
+        database: string,
+        kind: "schemas" | "tables",
+        schemaPath: readonly string[],
+      ) =>
+        JSON.stringify([notebookUri, connection, database, kind, schemaPath]);
+
+      const requestExpansion = Effect.fn(function* (
+        notebookUri: NotebookId,
+        location: string,
+        send: (requestId: string) => Effect.Effect<void, unknown>,
+      ) {
+        const current = pendingByLocation.get(location);
+        if (current !== undefined) {
+          return yield* Deferred.await(current.deferred);
+        }
+
+        const requestId = crypto.randomUUID();
+        const deferred = yield* Deferred.make<void, DatasourceExpansionError>();
+        const pending = { notebookUri, requestId, deferred };
+        pendingByLocation.set(location, pending);
+        pendingByRequest.set(requestId, pending);
+
+        yield* send(requestId).pipe(
+          Effect.catchAll((cause) =>
+            Deferred.fail(
+              deferred,
+              new DatasourceExpansionError({ message: String(cause) }),
+            ),
+          ),
+        );
+
+        return yield* Deferred.await(deferred).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              pendingByLocation.delete(location);
+              pendingByRequest.delete(requestId);
+            }),
+          ),
+        );
+      });
+
+      const completeExpansion = (requestId: string, error?: string | null) => {
+        const pending = pendingByRequest.get(requestId);
+        if (pending === undefined) return Effect.void;
+        return error == null
+          ? Deferred.succeed(pending.deferred, undefined)
+          : Deferred.fail(
+              pending.deferred,
+              new DatasourceExpansionError({ message: error }),
+            );
+      };
 
       const convertTablesToMap = (tables: readonly DataTable[]) =>
         new Map(tables.map((table) => [table.name, table]));
@@ -229,6 +299,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         ) {
           return Effect.gen(function* () {
             if (operation.error != null) {
+              yield* completeExpansion(operation.request_id, operation.error);
               yield* Effect.logWarning(
                 "Failed to list datasource schemas",
               ).pipe(
@@ -271,6 +342,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
                 ? notebooks
                 : HashMap.set(notebooks, notebookUri, next);
             });
+            yield* completeExpansion(operation.request_id);
           });
         },
 
@@ -280,6 +352,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         ) {
           return Effect.gen(function* () {
             if (operation.error != null) {
+              yield* completeExpansion(operation.request_id, operation.error);
               yield* Effect.logWarning("Failed to list datasource tables").pipe(
                 Effect.annotateLogs({
                   notebookUri,
@@ -314,7 +387,62 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
                 ? notebooks
                 : HashMap.set(notebooks, notebookUri, next);
             });
+            yield* completeExpansion(operation.request_id);
           });
+        },
+
+        loadSchemas(
+          notebookUri: NotebookId,
+          connection: string,
+          database: string,
+          schemaPath: readonly string[],
+        ) {
+          const location = expansionKey(
+            notebookUri,
+            connection,
+            database,
+            "schemas",
+            schemaPath,
+          );
+          return requestExpansion(notebookUri, location, (requestId) =>
+            marimo.listSqlSchemas({
+              notebookUri,
+              inner: {
+                requestId,
+                engine: connection,
+                database,
+                schemaPath: [...schemaPath],
+              },
+            }),
+          );
+        },
+
+        loadTables(
+          notebookUri: NotebookId,
+          connection: string,
+          database: string,
+          schema: string,
+          schemaPath: readonly string[],
+        ) {
+          const location = expansionKey(
+            notebookUri,
+            connection,
+            database,
+            "tables",
+            schemaPath,
+          );
+          return requestExpansion(notebookUri, location, (requestId) =>
+            marimo.listSqlTables({
+              notebookUri,
+              inner: {
+                requestId,
+                engine: connection,
+                database,
+                schema,
+                schemaPath: [...schemaPath],
+              },
+            }),
+          );
         },
 
         /**
@@ -366,6 +494,16 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
          */
         clearNotebook(notebookUri: NotebookId) {
           return Effect.gen(function* () {
+            for (const pending of pendingByRequest.values()) {
+              if (pending.notebookUri === notebookUri) {
+                yield* Deferred.fail(
+                  pending.deferred,
+                  new DatasourceExpansionError({
+                    message: "Notebook closed",
+                  }),
+                );
+              }
+            }
             yield* SubscriptionRef.update(connectionsRef, (map) =>
               HashMap.remove(map, notebookUri),
             );

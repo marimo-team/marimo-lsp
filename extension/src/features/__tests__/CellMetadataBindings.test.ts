@@ -8,6 +8,7 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { CellMetadataUIBindingService } from "../../notebook/CellMetadataUIBindingService.ts";
 import { DatasourcesService } from "../../panel/datasources/DatasourcesService.ts";
 import { Constants } from "../../platform/Constants.ts";
@@ -24,6 +25,7 @@ const withTestCtx = Effect.gen(function* () {
     Layer.provideMerge(CellMetadataBindingsLive),
     Layer.provide(CellMetadataUIBindingService.Default),
     Layer.provide(DatasourcesService.Default),
+    Layer.provide(makeTestMarimoClient()),
     Layer.provide(Constants.Default),
     Layer.provide(vscode.layer),
   );

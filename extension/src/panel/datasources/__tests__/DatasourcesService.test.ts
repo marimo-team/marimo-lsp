@@ -1,6 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Option } from "effect";
+import { Effect, Fiber, Layer, Option } from "effect";
 
+import { makeTestMarimoClient } from "../../../__tests__/__utils__/TestMarimoClient.ts";
 import { notebookId, requestId } from "../../../lib/__tests__/branded.ts";
 import type {
   DataSourceConnectionsNotification,
@@ -9,9 +10,19 @@ import type {
   SqlSchemaListPreviewNotification,
   SqlTableListPreviewNotification,
 } from "../../../types.ts";
+import type { MarimoApiCall } from "../../../types.ts";
 import { DatasourcesService } from "../DatasourcesService.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
+
+const makeLayer = (
+  execute: (request: MarimoApiCall) => Effect.Effect<unknown> = () =>
+    Effect.succeed(null),
+) =>
+  Layer.empty.pipe(
+    Layer.provideMerge(DatasourcesService.Default),
+    Layer.provide(makeTestMarimoClient({ execute })),
+  );
 
 const table = (name: string): DataTable => ({
   name,
@@ -90,7 +101,7 @@ it.effect("preserves recursive schemas and deferred discovery", () =>
     expect(catalog.tablesResolved).toBe(false);
     expect(catalog.childSchemasResolved).toBe(false);
     expect(catalog.childSchemas.get("loaded")?.tables.has("events")).toBe(true);
-  }).pipe(Effect.provide(DatasourcesService.Default)),
+  }).pipe(Effect.provide(makeLayer())),
 );
 
 it.effect("merges child schemas at their parent path", () =>
@@ -123,7 +134,7 @@ it.effect("merges child schemas at their parent path", () =>
     expect(catalog.childSchemasResolved).toBe(true);
     expect(catalog.childSchemas.get("events")?.tablesResolved).toBe(false);
     expect(catalog.tables.has("existing")).toBe(true);
-  }).pipe(Effect.provide(DatasourcesService.Default)),
+  }).pipe(Effect.provide(makeLayer())),
 );
 
 it.effect("merges tables at a nested schema path", () =>
@@ -157,7 +168,7 @@ it.effect("merges tables at a nested schema path", () =>
       ?.childSchemas.get("events");
     expect(events?.tablesResolved).toBe(true);
     expect(events?.tables.has("clicks")).toBe(true);
-  }).pipe(Effect.provide(DatasourcesService.Default)),
+  }).pipe(Effect.provide(makeLayer())),
 );
 
 it.effect("does not resolve deferred state after an error", () =>
@@ -183,5 +194,108 @@ it.effect("does not resolve deferred state after an error", () =>
     expect((yield* getDatabase()).schemas.get("public")?.tablesResolved).toBe(
       false,
     );
-  }).pipe(Effect.provide(DatasourcesService.Default)),
+  }).pipe(Effect.provide(makeLayer())),
 );
+
+it.scoped("deduplicates concurrent schema expansion requests", () => {
+  const calls: MarimoApiCall[] = [];
+  const layer = makeLayer((request) => {
+    calls.push(request);
+    return Effect.succeed(null);
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* DatasourcesService;
+    yield* service.updateConnections(NOTEBOOK_URI, connections([], false));
+
+    const first = yield* Effect.fork(
+      service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
+    );
+    const second = yield* Effect.fork(
+      service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
+    );
+    yield* Effect.yieldNow();
+
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    assert(call?.method === "list-sql-schemas");
+    yield* service.updateSchemaList(NOTEBOOK_URI, {
+      op: "sql-schema-list-preview",
+      request_id: requestId(call.params.inner.requestId),
+      metadata: {
+        connection: "warehouse",
+        database: "analytics",
+      },
+      schemas: [schema("public")],
+    });
+
+    yield* Fiber.join(first);
+    yield* Fiber.join(second);
+    const database = yield* getDatabase();
+    expect(database.schemasResolved).toBe(true);
+    expect(database.schemas.has("public")).toBe(true);
+  }).pipe(Effect.provide(layer));
+});
+
+it.scoped("retries nested table expansion after an error", () => {
+  const calls: MarimoApiCall[] = [];
+  const layer = makeLayer((request) => {
+    calls.push(request);
+    return Effect.succeed(null);
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* DatasourcesService;
+    yield* service.updateConnections(
+      NOTEBOOK_URI,
+      connections([
+        schema("catalog", {
+          child_schemas: [schema("events", { tables_resolved: false })],
+        }),
+      ]),
+    );
+
+    const first = yield* Effect.fork(
+      Effect.either(
+        service.loadTables(NOTEBOOK_URI, "warehouse", "analytics", "events", [
+          "catalog",
+          "events",
+        ]),
+      ),
+    );
+    yield* Effect.yieldNow();
+
+    const call = calls[0];
+    assert(call?.method === "list-sql-tables");
+    expect(call.params.inner).toMatchObject({
+      engine: "warehouse",
+      database: "analytics",
+      schema: "events",
+      schemaPath: ["catalog", "events"],
+    });
+    yield* service.updateTableList(NOTEBOOK_URI, {
+      op: "sql-table-list-preview",
+      request_id: requestId(call.params.inner.requestId),
+      metadata: {
+        type: "sql-metadata",
+        connection: "warehouse",
+        database: "analytics",
+        schema: "events",
+        schema_path: ["catalog", "events"],
+      },
+      tables: [],
+      error: "connection lost",
+    });
+    expect((yield* Fiber.join(first))._tag).toBe("Left");
+
+    const retry = yield* Effect.fork(
+      service.loadTables(NOTEBOOK_URI, "warehouse", "analytics", "events", [
+        "catalog",
+        "events",
+      ]),
+    );
+    yield* Effect.yieldNow();
+    expect(calls).toHaveLength(2);
+    yield* Fiber.interrupt(retry);
+  }).pipe(Effect.provide(layer));
+});
