@@ -92,6 +92,7 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
  * Configuration for a tree item.
  */
 export interface TreeItem {
+  id?: string;
   label: string;
   description?: string;
   tooltip?: string;
@@ -123,6 +124,10 @@ function toVSCodeTreeItem(vscode: VsCode, item: TreeItem): vscode.TreeItem {
         ? vscode.TreeItemCollapsibleState.Expanded
         : vscode.TreeItemCollapsibleState.None,
   );
+
+  if (item.id) {
+    treeItem.id = item.id;
+  }
 
   if (item.description) {
     treeItem.description = item.description;
