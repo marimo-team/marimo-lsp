@@ -520,6 +520,10 @@
         {
           "submenu": "marimo.runtimeActions",
           "group": "navigation@1"
+        },
+        {
+          "command": "marimo.configureAutoExport",
+          "group": "notebook@1"
         }
       ],
       "marimo.runtimeActions": [
@@ -566,39 +570,14 @@
           "group": "navigation@2"
         },
         {
-          "command": "marimo.config.toggleOnCellChangeAutoRun",
-          "when": "notebookType == 'marimo-notebook' && marimo.notebook.hasKernel && marimo.config.runtime.on_cell_change != 'lazy'",
-          "group": "navigation@3"
-        },
-        {
-          "command": "marimo.config.toggleOnCellChangeLazy",
-          "when": "notebookType == 'marimo-notebook' && marimo.notebook.hasKernel && marimo.config.runtime.on_cell_change == 'lazy'",
-          "group": "navigation@3"
-        },
-        {
-          "command": "marimo.config.toggleAutoReloadOff",
-          "when": "notebookType == 'marimo-notebook' && marimo.notebook.hasKernel && marimo.config.runtime.auto_reload == 'off'",
-          "group": "navigation@4"
-        },
-        {
-          "command": "marimo.config.toggleAutoReloadLazy",
-          "when": "notebookType == 'marimo-notebook' && marimo.notebook.hasKernel && marimo.config.runtime.auto_reload == 'lazy'",
-          "group": "navigation@4"
-        },
-        {
-          "command": "marimo.config.toggleAutoReloadAutorun",
-          "when": "notebookType == 'marimo-notebook' && marimo.notebook.hasKernel && marimo.config.runtime.auto_reload == 'autorun'",
-          "group": "navigation@4"
-        },
-        {
           "command": "marimo.openOutlineView",
           "when": "notebookType == 'marimo-notebook'",
-          "group": "navigation@5"
+          "group": "navigation@3"
         },
         {
-          "command": "marimo.configureAutoExport",
+          "submenu": "marimo.notebookActions",
           "when": "notebookType == 'marimo-notebook'",
-          "group": "navigation@6"
+          "group": "navigation@4"
         }
       ],
       "editor/title": [
