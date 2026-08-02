@@ -1,4 +1,11 @@
-import { Data, Deferred, Effect, HashMap, SubscriptionRef } from "effect";
+import {
+  Data,
+  Deferred,
+  Effect,
+  Fiber,
+  HashMap,
+  SubscriptionRef,
+} from "effect";
 
 import { MarimoClient } from "../../lsp/MarimoClient.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -57,8 +64,8 @@ export class DatasourceExpansionError extends Data.TaggedError(
 
 interface PendingExpansion {
   readonly notebookUri: NotebookId;
-  readonly requestId: string;
   readonly deferred: Deferred.Deferred<void, DatasourceExpansionError>;
+  readonly fiber: Fiber.RuntimeFiber<void, DatasourceExpansionError>;
 }
 
 const EXPANSION_TIMEOUT = "30 seconds";
@@ -78,6 +85,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
   {
     scoped: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
+      const serviceScope = yield* Effect.scope;
 
       // Track data source connections: NotebookUri -> DataSourceConnectionMap
       const connectionsRef = yield* SubscriptionRef.make(
@@ -105,27 +113,38 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         location: string,
         send: (requestId: string) => Effect.Effect<void, unknown>,
       ) {
-        const awaitExpansion = (
-          deferred: Deferred.Deferred<void, DatasourceExpansionError>,
-        ) =>
-          Deferred.await(deferred).pipe(
-            Effect.timeoutFail({
-              duration: EXPANSION_TIMEOUT,
-              onTimeout: () =>
-                new DatasourceExpansionError({
-                  message: "Timed out while loading datasource metadata",
-                }),
-            }),
-          );
-
         const current = pendingByLocation.get(location);
         if (current !== undefined) {
-          return yield* awaitExpansion(current.deferred);
+          return yield* Fiber.join(current.fiber);
         }
 
         const requestId = crypto.randomUUID();
         const deferred = yield* Deferred.make<void, DatasourceExpansionError>();
-        const pending = { notebookUri, requestId, deferred };
+        const fiber = yield* Deferred.await(deferred).pipe(
+          Effect.timeoutFail({
+            duration: EXPANSION_TIMEOUT,
+            onTimeout: () =>
+              new DatasourceExpansionError({
+                message: "Timed out while loading datasource metadata",
+              }),
+          }),
+          Effect.ensuring(
+            Effect.sync(() => {
+              const completed = pendingByRequest.get(requestId);
+              if (completed?.deferred !== deferred) return;
+              pendingByRequest.delete(requestId);
+              if (pendingByLocation.get(location) === completed) {
+                pendingByLocation.delete(location);
+              }
+            }),
+          ),
+          Effect.forkIn(serviceScope),
+        );
+        const pending = {
+          notebookUri,
+          deferred,
+          fiber,
+        };
         pendingByLocation.set(location, pending);
         pendingByRequest.set(requestId, pending);
 
@@ -138,25 +157,21 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
           ),
         );
 
-        return yield* awaitExpansion(deferred).pipe(
-          Effect.ensuring(
-            Effect.sync(() => {
-              pendingByLocation.delete(location);
-              pendingByRequest.delete(requestId);
-            }),
-          ),
-        );
+        return yield* Fiber.join(fiber);
       });
 
       const completeExpansion = (requestId: string, error?: string | null) => {
         const pending = pendingByRequest.get(requestId);
         if (pending === undefined) return Effect.void;
-        return error == null
-          ? Deferred.succeed(pending.deferred, undefined)
-          : Deferred.fail(
-              pending.deferred,
-              new DatasourceExpansionError({ message: error }),
-            );
+        return Effect.gen(function* () {
+          yield* error == null
+            ? Deferred.succeed(pending.deferred, undefined)
+            : Deferred.fail(
+                pending.deferred,
+                new DatasourceExpansionError({ message: error }),
+              );
+          yield* Fiber.await(pending.fiber);
+        });
       };
 
       const isPendingExpansion = (notebookUri: NotebookId, requestId: string) =>
@@ -544,6 +559,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
                     message: "Notebook closed",
                   }),
                 );
+                yield* Fiber.await(pending.fiber);
               }
             }
             yield* SubscriptionRef.update(connectionsRef, (map) =>

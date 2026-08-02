@@ -380,7 +380,7 @@ it.scoped("retries nested table expansion after an error", () => {
   }).pipe(Effect.provide(layer));
 });
 
-it.scoped("retries expansion after a response times out", () => {
+it.scoped("shares one timeout deadline and retries after it expires", () => {
   const calls: MarimoApiCall[] = [];
   const layer = makeLayer((request) => {
     calls.push(request);
@@ -399,8 +399,18 @@ it.scoped("retries expansion after a response times out", () => {
     yield* Effect.yieldNow();
     expect(calls).toHaveLength(1);
 
-    yield* TestClock.adjust("30 seconds");
+    yield* TestClock.adjust("20 seconds");
+    const joined = yield* Effect.fork(
+      Effect.either(
+        service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
+      ),
+    );
+    yield* Effect.yieldNow();
+    expect(calls).toHaveLength(1);
+
+    yield* TestClock.adjust("10 seconds");
     expect((yield* Fiber.join(first))._tag).toBe("Left");
+    expect((yield* Fiber.join(joined))._tag).toBe("Left");
 
     const retry = yield* Effect.fork(
       service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
