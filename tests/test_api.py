@@ -78,11 +78,13 @@ async def test_update_configuration_returns_saved_config() -> None:
 
 
 @pytest.mark.asyncio
-async def test_update_configuration_saves_without_session() -> None:
+async def test_update_configuration_returns_effective_config_without_session() -> None:
     sessions = MagicMock()
     sessions.get.return_value = None
     manager = MagicMock()
-    manager.save_config.return_value = DEFAULT_CONFIG
+    manager.save_config.return_value = MagicMock(name="saved_user_config")
+    manager.get_config.return_value = DEFAULT_CONFIG
+    partial_config: dict[str, object] = {"runtime": {"on_cell_change": "lazy"}}
 
     with patch(
         "marimo_lsp.api.get_default_config_manager", return_value=manager
@@ -91,12 +93,13 @@ async def test_update_configuration_saves_without_session() -> None:
             _context(sessions),
             NotebookCommand(
                 notebook_uri="file:///notebook.py",
-                inner=UpdateConfigurationRequest(config={}),
+                inner=UpdateConfigurationRequest(config=partial_config),
             ),
         )
 
     get_manager.assert_called_once_with(current_path="/notebook.py")
-    manager.save_config.assert_called_once_with({})
+    manager.save_config.assert_called_once_with(partial_config)
+    manager.get_config.assert_called_once_with()
     assert result == DEFAULT_CONFIG
 
 

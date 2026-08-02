@@ -84,6 +84,17 @@ logger = get_logger()
 _API_HANDLER_PARAMETER_COUNT = 2
 
 
+def _as_partial_marimo_config(config: dict[str, object]) -> PartialMarimoConfig:
+    """Adapt a deep configuration patch to marimo's shallow partial type.
+
+    Python cannot derive a recursive partial ``TypedDict`` from
+    ``MarimoConfig``. Marimo accepts deep patches at runtime, even though its
+    ``PartialMarimoConfig`` annotation only describes a shallow partial.
+    Keep that typing assertion isolated at this API boundary.
+    """
+    return cast("PartialMarimoConfig", config)
+
+
 @dataclasses.dataclass(frozen=True)
 class ApiContext:
     """Server-side dependencies available to API handlers."""
@@ -490,14 +501,14 @@ async def update_configuration(
     args: NotebookCommand[UpdateConfigurationRequest],
 ) -> MarimoConfig:
     """Update the marimo user configuration."""
+    config = _as_partial_marimo_config(args.inner.config)
     session = ctx.sessions.get(args.notebook_uri)
     if not session:
         manager = get_default_config_manager(current_path=to_fs_path(args.notebook_uri))
-        return manager.save_config(cast("PartialMarimoConfig", args.inner.config))
+        manager.save_config(config)
+        return manager.get_config()
 
-    # PartialMarimoConfig is only shallow-partial, while config updates are
-    # intentionally deep patches (for example, just runtime.on_cell_change).
-    return session.save_config(cast("PartialMarimoConfig", args.inner.config))
+    return session.save_config(config)
 
 
 @marimo_api("set-display-theme")
