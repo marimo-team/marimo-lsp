@@ -12,7 +12,8 @@ from typing import TYPE_CHECKING, cast
 
 import msgspec
 from marimo._ast.app_config import _AppConfig
-from marimo._config.config import DEFAULT_CONFIG, MarimoConfig
+from marimo._config.config import MarimoConfig  # noqa: TC002 - API introspection
+from marimo._config.manager import get_default_config_manager
 from marimo._convert.converters import MarimoConvert
 from marimo._export.exporter import Exporter
 from marimo._export.requests import HTMLExportRequest, IPYNBExportRequest
@@ -180,13 +181,6 @@ class ApiBuilder:
 
 
 marimo_api = ApiBuilder()
-
-
-class SessionNotFoundError(ValueError):
-    """Raised when an API command requires a live notebook session."""
-
-    def __init__(self, notebook_uri: str) -> None:
-        super().__init__(f"No session found for {notebook_uri}")
 
 
 def _get_display_config(config: MarimoConfig) -> DisplayConfig:
@@ -484,8 +478,8 @@ async def get_configuration(
     """Get the current marimo configuration."""
     session = ctx.sessions.get(args.notebook_uri)
     if not session:
-        logger.warning(f"No session found for {args.notebook_uri}")
-        return GetConfigurationResponse(config=DEFAULT_CONFIG)
+        manager = get_default_config_manager(current_path=to_fs_path(args.notebook_uri))
+        return GetConfigurationResponse(config=manager.get_config())
 
     return GetConfigurationResponse(config=session.get_config())
 
@@ -498,8 +492,8 @@ async def update_configuration(
     """Update the marimo user configuration."""
     session = ctx.sessions.get(args.notebook_uri)
     if not session:
-        logger.warning(f"No session found for {args.notebook_uri}")
-        raise SessionNotFoundError(args.notebook_uri)
+        manager = get_default_config_manager(current_path=to_fs_path(args.notebook_uri))
+        return manager.save_config(cast("PartialMarimoConfig", args.inner.config))
 
     # PartialMarimoConfig is only shallow-partial, while config updates are
     # intentionally deep patches (for example, just runtime.on_cell_change).

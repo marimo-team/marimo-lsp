@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import msgspec
 import pytest
@@ -11,10 +11,11 @@ from marimo._config.config import DEFAULT_CONFIG
 from marimo_lsp.api import (
     ApiBuilder,
     ApiContext,
-    SessionNotFoundError,
+    get_configuration,
     update_configuration,
 )
 from marimo_lsp.models import (
+    GetConfigurationRequest,
     NotebookCommand,
     SetDisplayThemeRequest,
     UpdateConfigurationRequest,
@@ -77,18 +78,49 @@ async def test_update_configuration_returns_saved_config() -> None:
 
 
 @pytest.mark.asyncio
-async def test_update_configuration_raises_without_session() -> None:
+async def test_update_configuration_saves_without_session() -> None:
     sessions = MagicMock()
     sessions.get.return_value = None
+    manager = MagicMock()
+    manager.save_config.return_value = DEFAULT_CONFIG
 
-    with pytest.raises(SessionNotFoundError):
-        await update_configuration(
+    with patch(
+        "marimo_lsp.api.get_default_config_manager", return_value=manager
+    ) as get_manager:
+        result = await update_configuration(
             _context(sessions),
             NotebookCommand(
                 notebook_uri="file:///notebook.py",
                 inner=UpdateConfigurationRequest(config={}),
             ),
         )
+
+    get_manager.assert_called_once_with(current_path="/notebook.py")
+    manager.save_config.assert_called_once_with({})
+    assert result == DEFAULT_CONFIG
+
+
+@pytest.mark.asyncio
+async def test_get_configuration_loads_without_session() -> None:
+    sessions = MagicMock()
+    sessions.get.return_value = None
+    manager = MagicMock()
+    manager.get_config.return_value = DEFAULT_CONFIG
+
+    with patch(
+        "marimo_lsp.api.get_default_config_manager", return_value=manager
+    ) as get_manager:
+        result = await get_configuration(
+            _context(sessions),
+            NotebookCommand(
+                notebook_uri="file:///notebook.py",
+                inner=GetConfigurationRequest(),
+            ),
+        )
+
+    get_manager.assert_called_once_with(current_path="/notebook.py")
+    manager.get_config.assert_called_once_with()
+    assert result.config == DEFAULT_CONFIG
 
 
 @pytest.mark.asyncio
