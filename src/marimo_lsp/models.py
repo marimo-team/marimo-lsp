@@ -376,4 +376,6 @@ ExecuteCellsRequest = core.ExecuteCellsRequest
 UpdateUIElementRequest = core.UpdateUIElementRequest
 ModelRequest = core.ModelRequest
 DeleteCellRequest = core.DeleteCellRequest
+ListSQLSchemasRequest = core.ListSQLSchemasRequest
+ListSQLTablesRequest = core.ListSQLTablesRequest
 StdinRequest = core.StdinRequest

@@ -1,9 +1,19 @@
-import { Effect, Layer, Option, Ref, Stream } from "effect";
+import { Effect, Layer, Option, Stream } from "effect";
 
+import { unreachable } from "../../assert.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
+import type { DataTable } from "../../types.ts";
 import { TreeView } from "../TreeView.ts";
-import { DatasourcesService } from "./DatasourcesService.ts";
+import {
+  type DatasourceDatabase,
+  type DatasourceSchema,
+  DatasourcesService,
+} from "./DatasourcesService.ts";
+
+const IN_MEMORY_CONNECTION = "__in_memory";
+const IN_MEMORY_DATABASE = "default";
+const IN_MEMORY_SCHEMA = "default";
 
 type DatasourceTreeItem =
   | ConnectionItem
@@ -12,184 +22,345 @@ type DatasourceTreeItem =
   | TableItem;
 
 interface ConnectionItem {
-  type: "connection";
-  notebookUri: NotebookId;
-  connectionName: string;
-  displayName: string;
-  dialect: string;
+  readonly type: "connection";
+  readonly notebookUri: NotebookId;
+  readonly connectionName: string;
+  readonly displayName: string;
+  readonly dialect: string;
 }
 
 interface DatabaseItem {
-  type: "database";
-  notebookUri: NotebookId;
-  connectionName: string;
-  databaseName: string;
-  dialect: string;
+  readonly type: "database";
+  readonly notebookUri: NotebookId;
+  readonly connectionName: string;
+  readonly databaseName: string;
+  readonly dialect: string;
 }
 
 interface SchemaItem {
-  type: "schema";
-  notebookUri: NotebookId;
-  connectionName: string;
-  databaseName: string;
-  schemaName: string;
+  readonly type: "schema";
+  readonly notebookUri: NotebookId;
+  readonly connectionName: string;
+  readonly databaseName: string;
+  readonly schemaPath: readonly string[];
+  readonly schemaName: string;
 }
 
 interface TableItem {
-  type: "table";
-  notebookUri: NotebookId;
-  connectionName: string;
-  databaseName: string;
-  schemaName: string;
-  tableName: string;
-  tableType: "table" | "view";
-  numRows: number | null;
-  numColumns: number | null;
+  readonly type: "table";
+  readonly notebookUri: NotebookId;
+  readonly connectionName: string;
+  readonly databaseName: string;
+  readonly schemaPath: readonly string[];
+  readonly tableName: string;
+  readonly tableType: "table" | "view";
+  readonly numRows: number | null;
+  readonly numColumns: number | null;
 }
+
+const findSchema = (
+  database: DatasourceDatabase,
+  path: readonly string[],
+): DatasourceSchema | undefined => {
+  let schemas = database.schemas;
+  let current: DatasourceSchema | undefined;
+  for (const name of path) {
+    current = schemas.get(name);
+    if (current === undefined) return undefined;
+    schemas = current.childSchemas;
+  }
+  return current;
+};
+
+const schemaItem = (
+  parent: DatabaseItem | SchemaItem,
+  schema: DatasourceSchema,
+  path: readonly string[],
+): SchemaItem => ({
+  type: "schema",
+  notebookUri: parent.notebookUri,
+  connectionName: parent.connectionName,
+  databaseName: parent.databaseName,
+  schemaPath: path,
+  schemaName: schema.name,
+});
+
+const tableItem = (
+  parent: DatabaseItem | SchemaItem,
+  table: DataTable,
+  schemaPath: readonly string[],
+): TableItem => ({
+  type: "table",
+  notebookUri: parent.notebookUri,
+  connectionName: parent.connectionName,
+  databaseName: parent.databaseName,
+  schemaPath,
+  tableName: table.name,
+  tableType: table.type ?? "table",
+  numRows: table.num_rows,
+  numColumns: table.num_columns,
+});
+
+const itemId = (item: DatasourceTreeItem): string => {
+  switch (item.type) {
+    case "connection":
+      return JSON.stringify([item.notebookUri, item.type, item.connectionName]);
+    case "database":
+      return JSON.stringify([
+        item.notebookUri,
+        item.type,
+        item.connectionName,
+        item.databaseName,
+      ]);
+    case "schema":
+      return JSON.stringify([
+        item.notebookUri,
+        item.type,
+        item.connectionName,
+        item.databaseName,
+        item.schemaPath,
+      ]);
+    case "table":
+      return JSON.stringify([
+        item.notebookUri,
+        item.type,
+        item.connectionName,
+        item.databaseName,
+        item.schemaPath,
+        item.tableName,
+      ]);
+  }
+
+  return unreachable(item);
+};
 
 /**
  * Manages the datasources tree view for the active notebook.
  *
- * Displays a hierarchical view of data sources:
- * Connection → Database → Schema → Table
- *
- * Subscribes to datasource changes and updates the tree view in real-time.
+ * Displays recursive SQL schemas and loads deferred schemas/tables when their
+ * parent is expanded. In-memory datasets remain an eager synthetic branch.
  */
 export const DatasourcesViewLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const treeView = yield* TreeView;
-    const datasourcesService = yield* DatasourcesService;
-    const editorRegistry = yield* NotebookEditorRegistry;
+    const datasources = yield* DatasourcesService;
+    const editors = yield* NotebookEditorRegistry;
 
-    // Track the current datasource items for the active notebook
-    const datasourceItems = yield* Ref.make<readonly DatasourceTreeItem[]>([]);
+    const getDatabase = Effect.fn(function* (item: DatabaseItem | SchemaItem) {
+      const connections = yield* datasources.getConnections(item.notebookUri);
+      if (Option.isNone(connections)) return undefined;
+      return connections.value.connections
+        .get(item.connectionName)
+        ?.databases.get(item.databaseName);
+    });
 
-    // Create the tree data provider
+    const ignoreExpansionError = <A, E>(effect: Effect.Effect<A, E>) =>
+      effect.pipe(
+        Effect.catchAllCause((cause) =>
+          Effect.logWarning("Failed to expand datasource tree").pipe(
+            Effect.annotateLogs({ cause }),
+          ),
+        ),
+      );
+
+    const loadDatabaseSchemas = Effect.fn(function* (
+      item: DatabaseItem,
+      database: DatasourceDatabase,
+    ) {
+      if (!database.schemasResolved) {
+        yield* ignoreExpansionError(
+          datasources.loadSchemas(
+            item.notebookUri,
+            item.connectionName,
+            item.databaseName,
+            [],
+          ),
+        );
+      }
+
+      let current = yield* getDatabase(item);
+      if (current === undefined) return [];
+
+      const children: DatasourceTreeItem[] = [];
+      for (const schema of current.schemas.values()) {
+        if (schema.name !== "") {
+          children.push(schemaItem(item, schema, [schema.name]));
+          continue;
+        }
+
+        // Schemaless databases expose their tables directly below the database.
+        if (!schema.tablesResolved) {
+          yield* ignoreExpansionError(
+            datasources.loadTables(
+              item.notebookUri,
+              item.connectionName,
+              item.databaseName,
+              schema.name,
+              [],
+            ),
+          );
+          current = yield* getDatabase(item);
+        }
+        const schemaless = current?.schemas.get("");
+        if (schemaless !== undefined) {
+          children.push(
+            ...[...schemaless.tables.values()].map((table) =>
+              tableItem(item, table, []),
+            ),
+          );
+        }
+      }
+      return children;
+    });
+
+    const loadSchemaChildren = Effect.fn(function* (item: SchemaItem) {
+      const database = yield* getDatabase(item);
+      const schema = database && findSchema(database, item.schemaPath);
+      if (schema === undefined) return [];
+
+      const loads: Array<Effect.Effect<unknown>> = [];
+      if (!schema.childSchemasResolved) {
+        loads.push(
+          ignoreExpansionError(
+            datasources.loadSchemas(
+              item.notebookUri,
+              item.connectionName,
+              item.databaseName,
+              item.schemaPath,
+            ),
+          ),
+        );
+      }
+      if (!schema.tablesResolved) {
+        loads.push(
+          ignoreExpansionError(
+            datasources.loadTables(
+              item.notebookUri,
+              item.connectionName,
+              item.databaseName,
+              item.schemaName,
+              item.schemaPath,
+            ),
+          ),
+        );
+      }
+      yield* Effect.all(loads, { concurrency: "unbounded", discard: true });
+
+      const currentDatabase = yield* getDatabase(item);
+      const current =
+        currentDatabase && findSchema(currentDatabase, item.schemaPath);
+      if (current === undefined) return [];
+      return [
+        ...[...current.childSchemas.values()].map((child) =>
+          schemaItem(item, child, [...item.schemaPath, child.name]),
+        ),
+        ...[...current.tables.values()].map((table) =>
+          tableItem(item, table, item.schemaPath),
+        ),
+      ];
+    });
+
     const provider = yield* treeView.createTreeDataProvider({
       viewId: "marimo-explorer-datasources",
       getChildren: (element?: DatasourceTreeItem) =>
         Effect.gen(function* () {
-          if (!element) {
-            // Root level: return connections
-            const items = yield* Ref.get(datasourceItems);
-            return items.filter((item) => item.type === "connection");
-          }
+          if (element === undefined) {
+            const active = yield* editors.getActiveNotebookUri();
+            if (Option.isNone(active)) return [];
+            const notebookUri = active.value;
+            const connections = yield* datasources.getConnections(notebookUri);
+            const datasets = yield* datasources.getDatasets(notebookUri);
+            const items: ConnectionItem[] = [];
 
-          const activeNotebookUri =
-            yield* editorRegistry.getActiveNotebookUri();
-          if (Option.isNone(activeNotebookUri)) {
-            return [];
+            if (Option.isSome(connections)) {
+              for (const connection of connections.value.connections.values()) {
+                items.push({
+                  type: "connection",
+                  notebookUri,
+                  connectionName: connection.name,
+                  displayName: connection.display_name,
+                  dialect: connection.dialect,
+                });
+              }
+            }
+            if (Option.isSome(datasets) && datasets.value.tables.size > 0) {
+              items.push({
+                type: "connection",
+                notebookUri,
+                connectionName: IN_MEMORY_CONNECTION,
+                displayName: "In-memory",
+                dialect: "python",
+              });
+            }
+            return items;
           }
-
-          const notebookUri = activeNotebookUri.value;
-          const items = yield* Ref.get(datasourceItems);
 
           if (element.type === "connection") {
-            // Get databases for this connection
-            // For in-memory connection, just filter from items (no need to query datasourcesService)
-            if (element.connectionName === "__in_memory") {
-              return items.filter(
-                (item) =>
-                  item.type === "database" &&
-                  item.connectionName === element.connectionName,
-              );
+            if (element.connectionName === IN_MEMORY_CONNECTION) {
+              return [
+                {
+                  type: "database" as const,
+                  notebookUri: element.notebookUri,
+                  connectionName: element.connectionName,
+                  databaseName: IN_MEMORY_DATABASE,
+                  dialect: "python",
+                },
+              ];
             }
-
-            // For regular connections, filter from items
-            const connections =
-              yield* datasourcesService.getConnections(notebookUri);
-            if (Option.isNone(connections)) {
-              return [];
-            }
-
-            const connectionsMap = connections.value;
-            const conn = connectionsMap.connections.get(element.connectionName);
-            if (!conn) return [];
-
-            return items.filter(
-              (item) =>
-                item.type === "database" &&
-                item.connectionName === element.connectionName,
+            const connections = yield* datasources.getConnections(
+              element.notebookUri,
             );
+            const connection = Option.isSome(connections)
+              ? connections.value.connections.get(element.connectionName)
+              : undefined;
+            if (connection === undefined) return [];
+            return [...connection.databases.values()].map((database) => ({
+              type: "database" as const,
+              notebookUri: element.notebookUri,
+              connectionName: element.connectionName,
+              databaseName: database.name,
+              dialect: database.dialect,
+            }));
           }
 
           if (element.type === "database") {
-            // Get schemas for this database
-            // For in-memory connection, just filter from items
-            if (element.connectionName === "__in_memory") {
-              return items.filter(
-                (item) =>
-                  item.type === "schema" &&
-                  item.connectionName === element.connectionName &&
-                  item.databaseName === element.databaseName,
-              );
+            if (element.connectionName === IN_MEMORY_CONNECTION) {
+              return [
+                {
+                  type: "schema" as const,
+                  notebookUri: element.notebookUri,
+                  connectionName: element.connectionName,
+                  databaseName: element.databaseName,
+                  schemaPath: [IN_MEMORY_SCHEMA],
+                  schemaName: IN_MEMORY_SCHEMA,
+                },
+              ];
             }
-
-            // For regular connections, check if database exists
-            const connections =
-              yield* datasourcesService.getConnections(notebookUri);
-            if (Option.isNone(connections)) {
-              return [];
-            }
-
-            const connectionsMap = connections.value;
-            const conn = connectionsMap.connections.get(element.connectionName);
-            if (!conn) return [];
-
-            const db = conn.databases.get(element.databaseName);
-            if (!db) return [];
-
-            return items.filter(
-              (item) =>
-                item.type === "schema" &&
-                item.connectionName === element.connectionName &&
-                item.databaseName === element.databaseName,
-            );
+            const database = yield* getDatabase(element);
+            return database === undefined
+              ? []
+              : yield* loadDatabaseSchemas(element, database);
           }
 
           if (element.type === "schema") {
-            // Get tables for this schema
-            // For in-memory connection, just filter from items
-            if (element.connectionName === "__in_memory") {
-              return items.filter(
-                (item) =>
-                  item.type === "table" &&
-                  item.connectionName === element.connectionName &&
-                  item.databaseName === element.databaseName &&
-                  item.schemaName === element.schemaName,
+            if (element.connectionName === IN_MEMORY_CONNECTION) {
+              const datasets = yield* datasources.getDatasets(
+                element.notebookUri,
               );
+              return Option.isSome(datasets)
+                ? [...datasets.value.tables.values()].map((table) =>
+                    tableItem(element, table, element.schemaPath),
+                  )
+                : [];
             }
-
-            // For regular connections, check if schema exists
-            const connections =
-              yield* datasourcesService.getConnections(notebookUri);
-            if (Option.isNone(connections)) {
-              return [];
-            }
-
-            const connectionsMap = connections.value;
-            const conn = connectionsMap.connections.get(element.connectionName);
-            if (!conn) return [];
-
-            const db = conn.databases.get(element.databaseName);
-            if (!db) return [];
-
-            const schema = db.schemas.get(element.schemaName);
-            if (!schema) return [];
-
-            return items.filter(
-              (item) =>
-                item.type === "table" &&
-                item.connectionName === element.connectionName &&
-                item.databaseName === element.databaseName &&
-                item.schemaName === element.schemaName,
-            );
+            return yield* loadSchemaChildren(element);
           }
 
           return [];
         }),
       getTreeItem: (element: DatasourceTreeItem) =>
         Effect.succeed({
+          id: itemId(element),
           label:
             element.type === "connection"
               ? element.displayName
@@ -199,26 +370,19 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
                   ? element.schemaName
                   : element.tableName,
           description:
-            element.type === "connection"
+            element.type === "connection" || element.type === "database"
               ? element.dialect
-              : element.type === "database"
-                ? element.dialect
-                : element.type === "table"
-                  ? element.numRows !== null
-                    ? `${element.numRows} rows`
-                    : undefined
-                  : undefined,
+              : element.type === "table" && element.numRows !== null
+                ? `${element.numRows} rows`
+                : undefined,
           tooltip:
             element.type === "connection"
               ? `${element.displayName} (${element.dialect})`
               : element.type === "database"
                 ? `${element.databaseName} (${element.dialect})`
                 : element.type === "schema"
-                  ? element.schemaName
-                  : element.type === "table"
-                    ? `${element.tableName} (${element.tableType})${element.numRows !== null ? `\n${element.numRows} rows` : ""}${element.numColumns !== null ? `, ${element.numColumns} columns` : ""}`
-                    : undefined,
-          iconPath: undefined,
+                  ? element.schemaPath.join(".")
+                  : `${element.tableName} (${element.tableType})${element.numRows !== null ? `\n${element.numRows} rows` : ""}${element.numColumns !== null ? `, ${element.numColumns} columns` : ""}`,
           contextValue:
             element.type === "connection"
               ? "marimoConnection"
@@ -234,166 +398,20 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
         }),
     });
 
-    // Helper to rebuild the datasources list from current state
-    const refreshDatasources = Effect.fn(function* () {
-      const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
-
-      yield* Effect.logTrace("Refreshing datasources").pipe(
-        Effect.annotateLogs({
-          activeNotebookUri: Option.getOrElse(activeNotebookUri, () => null),
-        }),
-      );
-
-      if (Option.isNone(activeNotebookUri)) {
-        yield* Ref.set(datasourceItems, []);
-        yield* provider.refresh();
-        return;
-      }
-
-      const notebookUri = activeNotebookUri.value;
-      const connections = yield* datasourcesService.getConnections(notebookUri);
-      const datasets = yield* datasourcesService.getDatasets(notebookUri); // in-memory datasources
-
-      const connectionsMap = Option.getOrElse(connections, () => ({
-        connections: new Map(),
-      }));
-      const datasetsMap = Option.getOrElse(datasets, () => ({
-        tables: new Map(),
-        clear_channel: null,
-      }));
-
-      const items: DatasourceTreeItem[] = [];
-
-      // Build hierarchical tree items for connections
-      for (const [connName, conn] of connectionsMap.connections) {
-        items.push({
-          type: "connection",
-          notebookUri,
-          connectionName: connName,
-          displayName: conn.display_name,
-          dialect: conn.dialect,
-        });
-
-        for (const [dbName, db] of conn.databases) {
-          items.push({
-            type: "database",
-            notebookUri,
-            connectionName: connName,
-            databaseName: dbName,
-            dialect: db.dialect,
-          });
-
-          for (const [schemaName, schema] of db.schemas) {
-            items.push({
-              type: "schema",
-              notebookUri,
-              connectionName: connName,
-              databaseName: dbName,
-              schemaName: schemaName,
-            });
-
-            for (const [tableName, table] of schema.tables) {
-              items.push({
-                type: "table",
-                notebookUri,
-                connectionName: connName,
-                databaseName: dbName,
-                schemaName: schemaName,
-                tableName: tableName,
-                tableType: table.type,
-                numRows: table.num_rows,
-                numColumns: table.num_columns,
-              });
-            }
-          }
-        }
-      }
-
-      // Add in-memory datasets as a special connection
-      if (datasetsMap.tables.size > 0) {
-        const inMemoryConnName = "__in_memory";
-        const inMemoryDbName = "default";
-        const inMemorySchemaName = "default";
-
-        items.push({
-          type: "connection",
-          notebookUri,
-          connectionName: inMemoryConnName,
-          displayName: "In-memory",
-          dialect: "python",
-        });
-
-        items.push({
-          type: "database",
-          notebookUri,
-          connectionName: inMemoryConnName,
-          databaseName: inMemoryDbName,
-          dialect: "python",
-        });
-
-        items.push({
-          type: "schema",
-          notebookUri,
-          connectionName: inMemoryConnName,
-          databaseName: inMemoryDbName,
-          schemaName: inMemorySchemaName,
-        });
-
-        for (const [tableName, table] of datasetsMap.tables) {
-          items.push({
-            type: "table",
-            notebookUri,
-            connectionName: inMemoryConnName,
-            databaseName: inMemoryDbName,
-            schemaName: inMemorySchemaName,
-            tableName: tableName,
-            tableType: table.type,
-            numRows: table.num_rows,
-            numColumns: table.num_columns,
-          });
-        }
-      }
-
-      yield* Effect.logTrace("Refreshed datasources").pipe(
-        Effect.annotateLogs({
-          connections: connectionsMap.connections.size,
-          inMemoryTables: datasetsMap.tables.size,
-          totalItems: items.length,
-        }),
-      );
-      yield* Ref.set(datasourceItems, items);
-      yield* provider.refresh();
-    });
-
-    // Subscribe to active notebook changes
     yield* Effect.forkScoped(
-      editorRegistry.streamActiveNotebookChanges().pipe(
-        Stream.runForEach(() => {
-          return refreshDatasources();
-        }),
-      ),
+      editors
+        .streamActiveNotebookChanges()
+        .pipe(Stream.runForEach(() => provider.refresh())),
     );
-
-    // Subscribe to datasource connection changes
     yield* Effect.forkScoped(
-      datasourcesService.streamConnectionsChanges().pipe(
-        Stream.runForEach(
-          Effect.fn(function* (_connectionsMap) {
-            yield* refreshDatasources();
-          }),
-        ),
-      ),
+      datasources
+        .streamConnectionsChanges()
+        .pipe(Stream.runForEach(() => provider.refresh())),
     );
-
-    // Subscribe to dataset changes
     yield* Effect.forkScoped(
-      datasourcesService.streamDatasetsChanges().pipe(
-        Stream.runForEach(
-          Effect.fn(function* (_datasetsMap) {
-            yield* refreshDatasources();
-          }),
-        ),
-      ),
+      datasources
+        .streamDatasetsChanges()
+        .pipe(Stream.runForEach(() => provider.refresh())),
     );
 
     yield* Effect.logDebug("Datasources view initialized");
