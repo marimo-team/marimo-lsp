@@ -4,9 +4,13 @@ import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingS
 import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import type { CellMetadata } from "../schemas/CellMetadata.ts";
+import {
+  type MarimoCellMetadata,
+  SqlCellProjection,
+} from "../schemas/Models.gen.ts";
 
-export const DEFAULT_SQL_ENGINE = "__marimo_duckdb";
+const DEFAULT_SQL_METADATA = SqlCellProjection.make();
+export const DEFAULT_SQL_ENGINE = DEFAULT_SQL_METADATA.engine;
 const DEFAULT_LABEL = "duckdb (In-Memory)";
 
 /**
@@ -21,19 +25,18 @@ const DEFAULT_LABEL = "duckdb (In-Memory)";
  * Helper to update SQL metadata with defaults for all required fields
  */
 function updateSqlMetadata(
-  metadata: CellMetadata,
-  updates: Partial<NonNullable<CellMetadata["languageMetadata"]>["sql"]>,
-): CellMetadata {
+  metadata: MarimoCellMetadata,
+  updates: Partial<
+    NonNullable<NonNullable<MarimoCellMetadata["sourceProjections"]>["sql"]>
+  >,
+): MarimoCellMetadata {
   return {
     ...metadata,
-    languageMetadata: {
-      ...metadata.languageMetadata,
+    sourceProjections: {
+      ...metadata.sourceProjections,
       sql: {
-        dataframeName: metadata.languageMetadata?.sql?.dataframeName ?? "df",
-        quotePrefix: metadata.languageMetadata?.sql?.quotePrefix ?? "",
-        commentLines: metadata.languageMetadata?.sql?.commentLines ?? [],
-        showOutput: metadata.languageMetadata?.sql?.showOutput ?? true,
-        engine: metadata.languageMetadata?.sql?.engine ?? DEFAULT_SQL_ENGINE,
+        ...DEFAULT_SQL_METADATA,
+        ...metadata.sourceProjections.sql,
         ...updates,
       },
     },
@@ -60,11 +63,11 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
         return cell.document.languageId === LanguageId.Sql;
       },
 
-      getValue: (metadata: CellMetadata) => {
-        return metadata.languageMetadata?.sql?.dataframeName;
+      getValue: (metadata: MarimoCellMetadata) => {
+        return metadata.sourceProjections?.sql?.dataframeName;
       },
 
-      setValue: (metadata: CellMetadata, value: string | boolean) => {
+      setValue: (metadata: MarimoCellMetadata, value: string | boolean) => {
         if (typeof value !== "string") {
           return metadata;
         }
@@ -151,11 +154,11 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
         return cell.document.languageId === LanguageId.Sql;
       },
 
-      getValue: (metadata: CellMetadata) => {
-        return metadata.languageMetadata?.sql?.showOutput ?? true;
+      getValue: (metadata: MarimoCellMetadata) => {
+        return metadata.sourceProjections?.sql?.showOutput ?? true;
       },
 
-      setValue: (metadata: CellMetadata, value: string | boolean) => {
+      setValue: (metadata: MarimoCellMetadata, value: string | boolean) => {
         if (typeof value !== "boolean") {
           return metadata;
         }
@@ -188,11 +191,11 @@ export const CellMetadataBindingsLive = Layer.scopedDiscard(
         return cell.document.languageId === LanguageId.Sql;
       },
 
-      getValue: (metadata: CellMetadata) => {
-        return metadata.languageMetadata?.sql?.engine ?? DEFAULT_SQL_ENGINE;
+      getValue: (metadata: MarimoCellMetadata) => {
+        return metadata.sourceProjections?.sql?.engine ?? DEFAULT_SQL_ENGINE;
       },
 
-      setValue: (metadata: CellMetadata, value: string | boolean) => {
+      setValue: (metadata: MarimoCellMetadata, value: string | boolean) => {
         if (typeof value !== "string") {
           return metadata;
         }

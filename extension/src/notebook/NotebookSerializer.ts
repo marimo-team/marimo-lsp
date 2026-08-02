@@ -16,15 +16,34 @@ import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
-  type CellMetadata,
-  decodeCellMetadata,
-} from "../schemas/CellMetadata.ts";
+  MarimoNotebookCell,
+  MarimoNotebookDocument,
+} from "../schemas/MarimoNotebookDocument.ts";
 import * as Api from "../schemas/Models.gen.ts";
 import { classifyCellCode } from "./classifyCellCode.ts";
 import { pickLiveNotebook } from "./pickLiveNotebook.ts";
 
 type BooleanMap<T> = {
   [key in keyof T]: boolean;
+};
+
+type EncodedCellMetadata = typeof Api.CellMetadata.Encoded;
+type EncodedNotebookDocumentMetadata =
+  typeof Api.NotebookDocumentMetadata.Encoded;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+const parseNotebookDocumentMetadata = (value: unknown) => {
+  const root = asRecord(value);
+  return Schema.decodeUnknown(Api.MarimoNotebookMetadata)(
+    Object.hasOwn(root, "marimo") ? root.marimo : {},
+  );
 };
 
 const NotebookCellKind = {
@@ -49,10 +68,9 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
         function* (notebook: vscode.NotebookData) {
           yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
 
-          const resp = yield* marimo.serialize(
+          const result = yield* marimo.serialize(
             yield* notebookDataToNotebookDocument(notebook, constants),
           );
-          const result = yield* decodeSerializeResponse(resp);
           return new TextEncoder().encode(result.source);
         },
       );
@@ -60,21 +78,20 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       const deserializeEffect = Effect.fn("NotebookSerializer.deserialize")(
         function* (bytes: Uint8Array) {
           yield* Effect.annotateCurrentSpan("bytes", bytes.length);
-          const resp = yield* marimo.deserialize({
-            source: new TextDecoder().decode(bytes),
-          });
           const {
             notebook: document,
             appConfig,
             header,
-          } = yield* decodeDeserializeResponse(resp);
+          } = yield* marimo.deserialize({
+            source: new TextDecoder().decode(bytes),
+          });
 
           const notebook = {
-            metadata: {
+            metadata: MarimoNotebookDocument.createMetadata({
               appConfig,
               header,
               notebookMetadata: document.metadata,
-            } satisfies NotebookDocumentMetadata,
+            }),
             cells: document.cells.map((cell) => {
               // Same classification the live transaction path uses, so a file
               // open and a code-mode commit agree on markdown/sql vs python.
@@ -86,14 +103,18 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                 kind: classified.kind,
                 value: classified.code,
                 languageId: classified.languageId,
-                metadata: {
-                  name: cell.name ?? DEFAULT_CELL_NAME,
-                  options: cell.config,
-                  ...(classified.languageMetadata
-                    ? { languageMetadata: classified.languageMetadata }
-                    : {}),
-                  stableId: cell.id ?? crypto.randomUUID(),
-                } satisfies CellMetadata,
+                metadata: MarimoNotebookCell.createMetadata({
+                  marimo: {
+                    name: cell.name ?? DEFAULT_CELL_NAME,
+                    options: cell.config,
+                    ...(classified.sourceProjections
+                      ? { sourceProjections: classified.sourceProjections }
+                      : {}),
+                  },
+                  marimoRuntime: {
+                    stableId: cell.id ?? crypto.randomUUID(),
+                  },
+                }),
               };
             }),
           };
@@ -180,23 +201,15 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
             // notebook, which would block auto-reload of external file changes.
             transientOutputs: true,
             transientCellMetadata: {
-              state: true,
-              name: false,
-              languageMetadata: false,
-              // Stable ID is ephemeral — regenerated on every deserialize
-              // and never written to the .py file. Transient so VS Code
-              // strips it from the serialize payload (we don't use it
-              // there anyway) and changes don't dirty the doc. External
-              // reloads restore it from the live doc via
-              // enrichNotebookFromLive.
-              stableId: true,
-              options: false,
-            } satisfies BooleanMap<CellMetadata>,
+              marimo: false,
+              // Runtime metadata is ephemeral and never written to the .py
+              // file. Marking the whole namespace transient keeps stable-ID
+              // and execution-state changes from dirtying the document.
+              marimoRuntime: true,
+            } satisfies BooleanMap<EncodedCellMetadata>,
             transientDocumentMetadata: {
-              appConfig: false,
-              header: false,
-              notebookMetadata: false,
-            } satisfies BooleanMap<NotebookDocumentMetadata>,
+              marimo: false,
+            } satisfies BooleanMap<EncodedNotebookDocumentMetadata>,
           },
         );
       }
@@ -209,19 +222,6 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
     }),
   },
 ) {}
-
-const decodeSerializeResponse = Schema.decodeUnknown(Api.SerializeResponse);
-const decodeDeserializeResponse = Schema.decodeUnknown(Api.NotebookDocument);
-
-const NotebookDocumentMetadata = Schema.Struct({
-  appConfig: Schema.optional(Api._AppConfig),
-  header: Schema.optional(Schema.NullOr(Schema.String)),
-  notebookMetadata: Schema.optional(Api.NotebookMetadata),
-});
-type NotebookDocumentMetadata = typeof NotebookDocumentMetadata.Type;
-const decodeNotebookDocumentMetadata = Schema.decodeUnknown(
-  NotebookDocumentMetadata,
-);
 
 function hasStringTag(value: unknown): value is { _tag: string } {
   return (
@@ -257,23 +257,30 @@ function notebookDataToNotebookDocument(
   const sqlParser = new SQLParser();
   const markdownParser = new MarkdownParser();
   return Effect.gen(function* () {
-    const documentMetadata = yield* decodeNotebookDocumentMetadata(metadata);
+    const documentMetadata = yield* parseNotebookDocumentMetadata(metadata);
+    const decodedCells = yield* Effect.forEach(cells, (cell) => {
+      const rawMarimoMetadata = asRecord(cell.metadata).marimo;
+      const hasOptions =
+        isRecord(rawMarimoMetadata) &&
+        Object.hasOwn(rawMarimoMetadata, "options") &&
+        rawMarimoMetadata.options !== undefined;
+      return Schema.decodeUnknown(Api.CellMetadata)(cell.metadata ?? {}).pipe(
+        Effect.map((cellMetadata) => ({
+          cell,
+          cellMetadata,
+          hasOptions,
+        })),
+      );
+    });
 
     return {
       notebook: {
         version: "1",
         metadata: documentMetadata.notebookMetadata ?? {},
-        cells: cells.map((cell) => {
-          const cellMeta = decodeCellMetadata(cell.metadata);
-          const name = cellMeta.pipe(
-            Option.flatMap((value) => Option.fromNullable(value.name)),
-            Option.getOrElse(() => DEFAULT_CELL_NAME),
-          );
+        cells: decodedCells.map(({ cell, cellMetadata, hasOptions }) => {
+          const name = cellMetadata.marimo.name;
           const config = (fallback: typeof Api.NotebookCellConfig.Type) =>
-            cellMeta.pipe(
-              Option.flatMap((value) => Option.fromNullable(value.options)),
-              Option.getOrElse(() => fallback),
-            );
+            hasOptions ? cellMetadata.marimo.options : fallback;
 
           // oxlint-disable-next-line typescript/no-unsafe-enum-comparison
           if (cell.kind === NotebookCellKind.Markup) {
@@ -281,12 +288,8 @@ function notebookDataToNotebookDocument(
             if (cell.languageId === LanguageId.Markdown) {
               const result = markdownParser.transformOut(
                 cell.value,
-                cellMeta.pipe(
-                  Option.flatMap((x) =>
-                    Option.fromNullable(x.languageMetadata?.markdown),
-                  ),
-                  Option.getOrElse(() => markdownParser.defaultMetadata),
-                ),
+                cellMetadata.marimo.sourceProjections.markdown ??
+                  markdownParser.defaultMetadata,
               );
               return {
                 id: null,
@@ -310,12 +313,8 @@ function notebookDataToNotebookDocument(
           if (cell.languageId === LanguageId.Sql) {
             const result = sqlParser.transformOut(
               cell.value,
-              cellMeta.pipe(
-                Option.flatMap((x) =>
-                  Option.fromNullable(x.languageMetadata?.sql),
-                ),
-                Option.getOrElse(() => sqlParser.defaultMetadata),
-              ),
+              cellMetadata.marimo.sourceProjections.sql ??
+                sqlParser.defaultMetadata,
             );
             return {
               id: null,

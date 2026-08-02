@@ -11,7 +11,8 @@ import {
 import { CellMetadataUIBindingService } from "../../notebook/CellMetadataUIBindingService.ts";
 import { DatasourcesService } from "../../panel/datasources/DatasourcesService.ts";
 import { Constants } from "../../platform/Constants.ts";
-import type { CellMetadata } from "../../schemas/CellMetadata.ts";
+import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
+import type * as Api from "../../schemas/Models.gen.ts";
 import {
   CellMetadataBindingsLive,
   DEFAULT_SQL_ENGINE,
@@ -35,7 +36,7 @@ const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
 function createMockCell(
   uri: vscode.Uri,
   languageId: string = "python",
-  metadata: Partial<CellMetadata> = {},
+  metadata: typeof Api.CellMetadata.Encoded = {},
 ) {
   return createNotebookCell(
     createTestNotebookDocument(uri),
@@ -43,7 +44,7 @@ function createMockCell(
       kind: 1, // Code
       value: "SELECT * FROM table",
       languageId,
-      metadata,
+      metadata: MarimoNotebookCell.createMetadata(metadata),
     },
     0,
   );
@@ -90,13 +91,16 @@ it.effect("should display dataframeName from SQL metadata", () =>
       const ctx = yield* withTestCtx;
       yield* Effect.gen(function* () {
         const cell = createMockCell(notebookUri, "sql", {
-          languageMetadata: {
-            sql: {
-              dataframeName: "my_results",
-              quotePrefix: "",
-              commentLines: [],
-              showOutput: true,
-              engine: DEFAULT_SQL_ENGINE,
+          marimo: {
+            sourceProjections: {
+              markdown: null,
+              sql: {
+                dataframeName: "my_results",
+                quotePrefix: "",
+                commentLines: [],
+                showOutput: true,
+                engine: DEFAULT_SQL_ENGINE,
+              },
             },
           },
         });

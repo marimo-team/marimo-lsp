@@ -17,7 +17,7 @@
 
 import { Schema } from "effect";
 
-import { LanguageMetadata } from "../schemas/CellMetadata.ts";
+import * as Api from "../schemas/Models.gen.ts";
 import type { CellConfig, DocumentChange } from "../types.ts";
 import { classifyCellCode, type LanguageIds } from "./classifyCellCode.ts";
 
@@ -43,7 +43,7 @@ const PlanCell = Schema.Struct({
    * a promote/demote (`set-code`) changes only its language, and so the applier
    * carries it onto the VS Code cell.
    */
-  languageMetadata: Schema.optional(LanguageMetadata),
+  sourceProjections: Schema.optional(Api.CellSourceProjections),
 });
 export type PlanCell = typeof PlanCell.Type;
 
@@ -66,6 +66,17 @@ const normalizeConfig = (config: CellConfig): typeof PlanCellConfig.Type => ({
   disabled: config.disabled ?? false,
   hide_code: config.hide_code ?? false,
 });
+
+function retainSourceProjections(
+  previous: Api.CellSourceProjections | undefined,
+  active: Api.CellSourceProjections | undefined,
+): Api.CellSourceProjections | undefined {
+  if (active === undefined) return previous;
+  return {
+    markdown: active.markdown ?? previous?.markdown ?? null,
+    sql: active.sql ?? previous?.sql ?? null,
+  };
+}
 
 function indexOfId(cells: readonly PlanCell[], id: string | null | undefined) {
   return id == null ? -1 : cells.findIndex((cell) => cell.stableId === id);
@@ -109,7 +120,7 @@ export function computeDesiredCells(
           kind: classified.kind,
           name: change.name,
           config: normalizeConfig(change.config),
-          languageMetadata: classified.languageMetadata,
+          sourceProjections: classified.sourceProjections,
         };
         cells.splice(
           insertionIndex(cells, change.before, change.after),
@@ -134,7 +145,10 @@ export function computeDesiredCells(
             code: classified.code,
             languageId: classified.languageId,
             kind: classified.kind,
-            languageMetadata: classified.languageMetadata,
+            sourceProjections: retainSourceProjections(
+              cells[idx].sourceProjections,
+              classified.sourceProjections,
+            ),
           };
         }
         break;

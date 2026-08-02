@@ -105,8 +105,9 @@ export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
   const uv = yield* Uv;
   const code = yield* VsCode;
   const tmpFile = `${notebook.uri.fsPath}.tmp`;
+  const metadata = yield* notebook.parseMetadata();
   yield* Effect.promise(() =>
-    NodeFs.promises.writeFile(tmpFile, notebook.header),
+    NodeFs.promises.writeFile(tmpFile, metadata.header ?? ""),
   );
 
   yield* uv.addScript({ script: tmpFile, packages, noSync: true });
@@ -125,15 +126,16 @@ export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
     );
     assert(doc, "no notebook");
 
-    // apply new header as edit in our workspace...
-    const edit = new code.WorkspaceEdit();
-    edit.set(doc.uri, [
-      code.NotebookEdit.updateNotebookMetadata({
-        ...doc.metadata,
-        header: newHeader,
-      }),
-    ]);
-    yield* code.workspace.applyEdit(edit);
+    const nextMetadata = notebook.buildMetadataUpdate({
+      header: newHeader,
+    });
+    if (nextMetadata !== doc.metadata) {
+      const edit = new code.WorkspaceEdit();
+      edit.set(doc.uri, [
+        code.NotebookEdit.updateNotebookMetadata(nextMetadata),
+      ]);
+      yield* code.workspace.applyEdit(edit);
+    }
   }
 
   {

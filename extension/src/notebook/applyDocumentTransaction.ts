@@ -13,12 +13,11 @@ import { Effect, Option } from "effect";
 
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import type { CellMetadata } from "../schemas/CellMetadata.ts";
-import { encodeCellMetadata } from "../schemas/CellMetadata.ts";
-import type {
+import {
   MarimoNotebookCell,
-  MarimoNotebookDocument,
+  type MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
+import * as Api from "../schemas/Models.gen.ts";
 import type { DocumentTransactionNotification } from "../types.ts";
 import {
   computeDesiredCells,
@@ -34,11 +33,11 @@ function toPlanCell(cell: MarimoNotebookCell): Option.Option<PlanCell> {
   }
   const options = Option.match(cell.metadata, {
     onNone: (): Record<string, unknown> => ({}),
-    onSome: (meta) => meta.options ?? {},
+    onSome: (meta) => meta.marimo.options,
   });
-  const languageMetadata = Option.match(cell.metadata, {
+  const sourceProjections = Option.match(cell.metadata, {
     onNone: () => undefined,
-    onSome: (meta) => meta.languageMetadata,
+    onSome: (meta) => meta.marimo.sourceProjections ?? undefined,
   });
   return Option.some({
     stableId,
@@ -51,7 +50,7 @@ function toPlanCell(cell: MarimoNotebookCell): Option.Option<PlanCell> {
       disabled: options.disabled === true,
       hide_code: options.hide_code === true,
     },
-    languageMetadata,
+    sourceProjections,
   });
 }
 
@@ -102,18 +101,22 @@ export const applyDocumentTransaction = Effect.fn(
       : [];
 
     // Preserve a surviving cell's other metadata (e.g. state); override the
-    // fields the transaction owns. `languageMetadata` is owned by the
-    // classification so a promote/demote overwrites (or clears) the prior value.
-    const base = existing
-      ? Option.getOrElse(existing.metadata, (): CellMetadata => ({}))
-      : {};
-    data.metadata = encodeCellMetadata({
-      ...base,
-      stableId: cell.stableId,
-      name: cell.name === "" ? undefined : cell.name,
+    // fields the transaction owns. Source projections retain inactive language
+    // settings so a later promote/demote can restore them.
+    const marimoMetadata = Api.MarimoCellMetadata.make({
+      name: cell.name === "" ? "_" : cell.name,
       options: cell.config,
-      languageMetadata: cell.languageMetadata,
+      sourceProjections:
+        cell.sourceProjections ?? Api.CellSourceProjections.make(),
     });
+    data.metadata = existing
+      ? existing.buildMetadataForReplacement(marimoMetadata, {
+          stableId: cell.stableId,
+        })
+      : MarimoNotebookCell.createMetadata({
+          marimo: marimoMetadata,
+          marimoRuntime: { stableId: cell.stableId },
+        });
 
     return data;
   });

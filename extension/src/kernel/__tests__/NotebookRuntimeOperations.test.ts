@@ -26,8 +26,11 @@ import {
 import { PythonController } from "../../kernel/PythonController.ts";
 import { cellId, notebookId } from "../../lib/__tests__/branded.ts";
 import { VsCode } from "../../platform/VsCode.ts";
-import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
-import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
+import {
+  MarimoNotebookCell,
+  MarimoNotebookDocument,
+  type NotebookId,
+} from "../../schemas/MarimoNotebookDocument.ts";
 import * as Api from "../../schemas/Models.gen.ts";
 import type {
   CellOperationNotification,
@@ -53,7 +56,9 @@ const withTestCtx = Effect.fn(function* () {
           kind: 1, // Code
           value: "name = input('Enter name: ')",
           languageId: "python",
-          metadata: { stableId: "cell-1" },
+          metadata: MarimoNotebookCell.createMetadata({
+            marimoRuntime: { stableId: "cell-1" },
+          }),
         },
       ],
     },

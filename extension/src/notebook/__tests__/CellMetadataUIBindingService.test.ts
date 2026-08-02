@@ -14,7 +14,8 @@ import {
   type MetadataBinding,
 } from "../../notebook/CellMetadataUIBindingService.ts";
 import { Constants } from "../../platform/Constants.ts";
-import type { CellMetadata } from "../../schemas/CellMetadata.ts";
+import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
+import type * as Api from "../../schemas/Models.gen.ts";
 
 const withTestCtx = Effect.gen(function* () {
   const vscode = yield* TestVsCode.make();
@@ -31,7 +32,7 @@ const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
 function createMockCell(
   uri: vscode.Uri,
   languageId: string = "python",
-  metadata: Partial<CellMetadata> = {},
+  metadata: typeof Api.CellMetadata.Encoded = {},
 ) {
   return createNotebookCell(
     createTestNotebookDocument(uri),
@@ -39,7 +40,7 @@ function createMockCell(
       kind: 1, // Code
       value: "print('test')",
       languageId,
-      metadata,
+      metadata: MarimoNotebookCell.createMetadata(metadata),
     },
     0,
   );
@@ -123,7 +124,7 @@ it.effect("should display value from cell metadata", () =>
           alignment: 1,
           shouldShow: () => true,
           getValue: (metadata) =>
-            metadata.languageMetadata?.sql?.dataframeName ?? "unnamed",
+            metadata.sourceProjections?.sql?.dataframeName ?? "unnamed",
           setValue: (metadata) => ({ ...metadata }),
           getLabel: (value) => `$(database) ${value}`,
           getTooltip: () => "Tooltip",
@@ -132,13 +133,16 @@ it.effect("should display value from cell metadata", () =>
         yield* service.registerBinding(binding);
 
         const cell = createMockCell(notebookUri, "sql", {
-          languageMetadata: {
-            sql: {
-              dataframeName: "my_results",
-              quotePrefix: "",
-              commentLines: [],
-              showOutput: true,
-              engine: DEFAULT_SQL_ENGINE,
+          marimo: {
+            sourceProjections: {
+              markdown: null,
+              sql: {
+                dataframeName: "my_results",
+                quotePrefix: "",
+                commentLines: [],
+                showOutput: true,
+                engine: DEFAULT_SQL_ENGINE,
+              },
             },
           },
         });

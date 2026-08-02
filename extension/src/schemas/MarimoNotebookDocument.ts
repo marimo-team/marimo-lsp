@@ -8,9 +8,7 @@ import type {
   CellId,
   VariableName,
 } from "../types.ts";
-import type { CellMetadata } from "./CellMetadata.ts";
-import { decodeCellMetadata, encodeCellMetadata } from "./CellMetadata.ts";
-import { NotebookDocument } from "./Models.gen.ts";
+import * as Api from "./Models.gen.ts";
 
 export type NotebookId = Brand.Branded<string, "NotebookId">;
 export type NotebookCellId = CellId;
@@ -23,6 +21,35 @@ const NotebookId = Brand.nominal<NotebookId>();
 const NotebookCellId = (id: string) => id as CellId;
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion
 const VariableName = (name: string) => name as VariableName;
+
+const decodeCellMetadata = Schema.decodeUnknownOption(Api.CellMetadata);
+const decodeCellMetadataSync = Schema.decodeUnknownSync(Api.CellMetadata);
+const encodeCellMetadata = Schema.encodeSync(Api.CellMetadata);
+const marimoCellMetadataEquivalence = Schema.equivalence(
+  Api.MarimoCellMetadata,
+);
+const runtimeMetadataEquivalence = Schema.equivalence(
+  Api.MarimoCellRuntimeMetadata,
+);
+const decodeNotebookMetadata = Schema.decodeUnknownOption(
+  Api.MarimoNotebookMetadata,
+);
+const parseNotebookMetadata = Schema.decodeUnknown(Api.MarimoNotebookMetadata);
+const decodeNotebookMetadataSync = Schema.decodeUnknownSync(
+  Api.MarimoNotebookMetadata,
+);
+const encodeNotebookMetadata = Schema.encodeSync(Api.MarimoNotebookMetadata);
+const notebookMetadataEquivalence = Schema.equivalence(
+  Api.MarimoNotebookMetadata,
+);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
 
 /**
  * Schema that decodes a string into a branded {@link NotebookId}.
@@ -53,28 +80,97 @@ export function decodeVariablesOperation({ variables }: VariablesNotification) {
 export class MarimoNotebookCell {
   #raw: vscode.NotebookCell;
   // we parse lazily
-  #cachedMeta: undefined | Option.Option<CellMetadata>;
+  #cachedMeta: undefined | Option.Option<Api.CellMetadata>;
 
   private constructor(raw: vscode.NotebookCell) {
     this.#raw = raw;
   }
 
+  /** Build runtime metadata while completing an already-dirty insertion. */
+  buildRuntimeMetadataForInsertion(
+    overrides: Pick<Partial<Api.MarimoCellRuntimeMetadata>, "stableId">,
+  ) {
+    return MarimoNotebookCell.materializeRuntimeMetadata(
+      this.#raw.metadata,
+      overrides,
+    );
+  }
+
+  buildMarimoMetadataUpdate(metadata: Api.MarimoCellMetadata) {
+    const current = decodeCellMetadataSync(this.#raw.metadata);
+    const next = decodeCellMetadataSync({
+      ...current,
+      marimo: metadata,
+    });
+    if (marimoCellMetadataEquivalence(current.marimo, next.marimo)) {
+      return this.#raw.metadata;
+    }
+    return encodeCellMetadata(next);
+  }
+
+  /** Encode complete metadata for a newly-created cell. */
+  static createMetadata(value: typeof Api.CellMetadata.Encoded) {
+    return encodeCellMetadata(decodeCellMetadataSync(value));
+  }
+
+  /** Decode the generated metadata model from an open LSP metadata envelope. */
+  static decodeMetadata(value: unknown) {
+    return decodeCellMetadata(value);
+  }
+
   /**
-   * Builds the encoded metadata object for this cell.
-   *
-   * Applies optional overrides (currently only the `state` property),
-   * then produces the encoded metadata object used by the serialization
-   * layer. This method does not perform string serialization; it only
-   * constructs the encoded metadata representation.
-   *
-   * @param options - Optional metadata override configuration.
-   * @returns The encoded metadata object.
+   * Carry runtime metadata through deserialization, insertion, or replacement.
+   * Never use this to submit a runtime-only edit against a clean existing cell.
    */
-  buildEncodedMetadata(options?: {
-    // TODO: Just shallow. Support deeper / fully recursive overrides when needed
-    overrides?: Pick<Partial<CellMetadata>, "state" | "stableId">;
-  }) {
-    return encodeCellMetadata({ ...this.#raw.metadata, ...options?.overrides });
+  static materializeRuntimeMetadata(
+    raw: unknown,
+    updates: Partial<Api.MarimoCellRuntimeMetadata>,
+  ) {
+    const current = decodeCellMetadataSync(asRecord(raw));
+    const next = decodeCellMetadataSync({
+      ...current,
+      marimoRuntime: { ...current.marimoRuntime, ...updates },
+    });
+    if (runtimeMetadataEquivalence(current.marimoRuntime, next.marimoRuntime)) {
+      return asRecord(raw);
+    }
+    return encodeCellMetadata(next);
+  }
+
+  /** Retain inactive source projections while materializing notebook data. */
+  static retainSourceProjections(
+    raw: unknown,
+    retained: Api.CellSourceProjections,
+  ) {
+    const current = decodeCellMetadataSync(asRecord(raw));
+    return encodeCellMetadata(
+      decodeCellMetadataSync({
+        ...current,
+        marimo: {
+          ...current.marimo,
+          sourceProjections: {
+            markdown:
+              current.marimo.sourceProjections.markdown ?? retained.markdown,
+            sql: current.marimo.sourceProjections.sql ?? retained.sql,
+          },
+        },
+      }),
+    );
+  }
+
+  /** Replace both owned namespaces while an existing cell is being replaced. */
+  buildMetadataForReplacement(
+    marimo: Api.MarimoCellMetadata,
+    runtime: Partial<Api.MarimoCellRuntimeMetadata>,
+  ) {
+    const current = decodeCellMetadataSync(this.#raw.metadata);
+    return encodeCellMetadata(
+      decodeCellMetadataSync({
+        ...current,
+        marimo,
+        marimoRuntime: { ...current.marimoRuntime, ...runtime },
+      }),
+    );
   }
 
   /**
@@ -86,7 +182,9 @@ export class MarimoNotebookCell {
 
   get id() {
     return this.metadata.pipe(
-      Option.flatMap((meta) => Option.fromNullable(meta.stableId)),
+      Option.flatMap((meta) =>
+        Option.fromNullable(meta.marimoRuntime.stableId),
+      ),
       Option.map((stableId) => NotebookCellId(stableId)),
     );
   }
@@ -111,7 +209,7 @@ export class MarimoNotebookCell {
    */
   get isStale() {
     return this.metadata.pipe(
-      Option.map((meta) => meta.state === "stale"),
+      Option.map((meta) => meta.marimoRuntime.state === "stale"),
       Option.getOrElse(() => false),
     );
   }
@@ -125,7 +223,7 @@ export class MarimoNotebookCell {
    */
   get isDisabled() {
     return this.metadata.pipe(
-      Option.map((meta) => meta.options?.disabled === true),
+      Option.map((meta) => meta.marimo.options.disabled === true),
       Option.getOrElse(() => false),
     );
   }
@@ -141,7 +239,7 @@ export class MarimoNotebookCell {
    */
   get isCodeHidden() {
     return this.metadata.pipe(
-      Option.map((meta) => meta.options?.hide_code === true),
+      Option.map((meta) => meta.marimo.options.hide_code === true),
       Option.getOrElse(() => false),
     );
   }
@@ -149,9 +247,11 @@ export class MarimoNotebookCell {
   /**
    * The cell's language metadata, if present.
    */
-  get languageMetadata() {
+  get sourceProjections() {
     return this.metadata.pipe(
-      Option.flatMap((meta) => Option.fromNullable(meta.languageMetadata)),
+      Option.flatMap((meta) =>
+        Option.fromNullable(meta.marimo.sourceProjections),
+      ),
     );
   }
 
@@ -159,14 +259,14 @@ export class MarimoNotebookCell {
    * The cell's name, if present.
    */
   get name() {
-    return this.metadata.pipe(
-      Option.flatMap((meta) => Option.fromNullable(meta.name)),
-    );
+    return this.metadata.pipe(Option.map((meta) => meta.marimo.name));
   }
 
   get stableId() {
     return this.metadata.pipe(
-      Option.flatMap((meta) => Option.fromNullable(meta.stableId)),
+      Option.flatMap((meta) =>
+        Option.fromNullable(meta.marimoRuntime.stableId),
+      ),
     );
   }
 
@@ -207,8 +307,7 @@ export class MarimoNotebookCell {
 
 export class MarimoNotebookDocument {
   #raw: vscode.NotebookDocument;
-  // we parse lazily, just the header for now... could expand when we need it
-  #cachedMeta: undefined | Option.Option<Pick<NotebookDocument, "header">>;
+  #cachedMeta: undefined | Option.Option<Api.MarimoNotebookMetadata>;
 
   private constructor(raw: vscode.NotebookDocument) {
     this.#raw = raw;
@@ -252,9 +351,11 @@ export class MarimoNotebookDocument {
     if (this.#cachedMeta) {
       return this.#cachedMeta;
     }
-    const meta = Schema.decodeUnknownOption(NotebookDocument.pick("header"))(
-      this.#raw.metadata,
-    );
+    const raw = asRecord(this.#raw.metadata);
+    const meta =
+      raw.marimo === undefined
+        ? Option.none<Api.MarimoNotebookMetadata>()
+        : decodeNotebookMetadata(raw.marimo);
     this.#cachedMeta = meta;
     return meta;
   }
@@ -272,8 +373,40 @@ export class MarimoNotebookDocument {
     );
   }
 
+  /** Parse persisted metadata for operations that must not continue on corruption. */
+  parseMetadata() {
+    const raw = asRecord(this.#raw.metadata);
+    return parseNotebookMetadata(
+      Object.hasOwn(raw, "marimo") ? raw.marimo : {},
+    );
+  }
+
   get rawMetadata() {
     return this.#raw.metadata;
+  }
+
+  /** Encode canonical metadata for a newly-created notebook document. */
+  static createMetadata(value: typeof Api.MarimoNotebookMetadata.Encoded) {
+    const marimo = decodeNotebookMetadataSync(value);
+    return Schema.encodeSync(Api.NotebookDocumentMetadata)({ marimo });
+  }
+
+  /** Replace persisted notebook metadata, preserving foreign host properties. */
+  buildMetadataUpdate(
+    updates: Partial<typeof Api.MarimoNotebookMetadata.Encoded>,
+  ) {
+    const root = asRecord(this.#raw.metadata);
+    const current = decodeNotebookMetadataSync(
+      Object.hasOwn(root, "marimo") ? root.marimo : {},
+    );
+    const next = decodeNotebookMetadataSync({ ...current, ...updates });
+    if (
+      root.marimo !== undefined &&
+      notebookMetadataEquivalence(current, next)
+    ) {
+      return this.#raw.metadata;
+    }
+    return { ...root, marimo: encodeNotebookMetadata(next) };
   }
 
   get notebookType() {

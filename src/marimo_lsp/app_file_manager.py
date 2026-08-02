@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import pathlib
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote
 
 from lsprotocol.types import NotebookDocument
@@ -18,6 +18,7 @@ from pygls.uris import to_fs_path
 
 from marimo_lsp.utils import (
     decode_cell_metadata,
+    decode_notebook_document_metadata,
     find_text_document,
     normalize_cell_code,
 )
@@ -153,13 +154,18 @@ def _iter_notebook_cells(
     """Yield (cell_id, code, name, config) for each valid cell in a notebook."""
     for cell in notebook.cells:
         meta = decode_cell_metadata(cell)
-        if meta.stable_id is None:
+        if meta.marimo_runtime.stable_id is None:
             continue
         document = find_text_document(workspace, cell.document)
         source = (document.source or "") if document else ""
         language_id = (document.language_id if document else None) or "python"
-        code = normalize_cell_code(language_id, source, meta.language_metadata)
-        yield CellId_t(meta.stable_id), code, meta.name, meta.config
+        code = normalize_cell_code(language_id, source, meta.marimo.source_projections)
+        yield (
+            CellId_t(meta.marimo_runtime.stable_id),
+            code,
+            meta.marimo.name,
+            meta.marimo.config,
+        )
 
 
 def sync_app_with_workspace(
@@ -168,11 +174,8 @@ def sync_app_with_workspace(
     """Sync workspace with InternalApp."""
     notebook = find_notebook_document(workspace, notebook_uri)
 
-    # lsp.LSPObject at runtime is just a dict...
-    # Notebook metadata has the shape { app: { options: { width: ... } }, header: ..., version: ... }.
-    # App() expects the flat options dict (e.g., { width: "medium" }), not the full metadata.
-    metadata = cast("dict", notebook.metadata or {})
-    app_options = cast("dict", metadata.get("app", {}).get("options", {}))
+    metadata = decode_notebook_document_metadata(notebook)
+    app_options = metadata.app_config.asdict()
     if app is None:
         app = InternalApp(App(**app_options))
 

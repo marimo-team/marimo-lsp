@@ -1088,7 +1088,9 @@ it.scoped(
               kind: 1,
               value: "x = 1",
               languageId: "python",
-              metadata: { stableId: "shared-cell" },
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "shared-cell" },
+              }),
             },
           ],
         },
@@ -1154,7 +1156,9 @@ it.scoped(
               kind: 1,
               value: "x = 1",
               languageId: "python",
-              metadata: { stableId: "cell-1" },
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
             },
           ],
         },
@@ -1253,9 +1257,9 @@ it.scoped(
               kind: 1, // Code
               value: "x = 1",
               languageId: "python",
-              metadata: {
-                stableId: "cell-1",
-              },
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
             },
           ],
         },
@@ -1332,11 +1336,10 @@ it.scoped(
         kind: 1, // Code
         value: "x = 1",
         languageId: "python",
-        metadata: {
-          name: "test_cell",
-          state: "stale",
-          stableId: "cell-1",
-        },
+        metadata: MarimoNotebookCell.createMetadata({
+          marimo: { name: "test_cell" },
+          marimoRuntime: { state: "stale", stableId: "cell-1" },
+        }),
       };
       const notebook = MarimoNotebookDocument.from(
         createTestNotebookDocument("file:///test/notebook_mo.py", {
@@ -1408,11 +1411,10 @@ it.scoped(
         kind: 1, // Code
         value: "x = 1",
         languageId: "python",
-        metadata: {
-          name: "test_cell",
-          state: "stale",
-          stableId: "cell-1",
-        },
+        metadata: MarimoNotebookCell.createMetadata({
+          marimo: { name: "test_cell" },
+          marimoRuntime: { state: "stale", stableId: "cell-1" },
+        }),
       };
       const notebook = MarimoNotebookDocument.from(
         createTestNotebookDocument("file:///test/notebook_mo.py", {
@@ -1502,7 +1504,9 @@ it.scoped(
               kind: 1,
               value: "x = 1",
               languageId: "python",
-              metadata: { stableId: "cell-1" },
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
             },
           ],
         },
@@ -1554,7 +1558,9 @@ it.scoped(
               kind: 1,
               value: "x = 1",
               languageId: "python",
-              metadata: { stableId: "cell-1" },
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
             },
           ],
         },

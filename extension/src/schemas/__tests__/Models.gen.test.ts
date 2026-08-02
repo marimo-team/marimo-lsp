@@ -6,6 +6,7 @@ import {
   ExecuteScratchRequest,
   makeApiClient,
   NotebookDocument,
+  NotebookDocumentMetadata,
   PackageCommand,
   PackageSource,
   VenvSource,
@@ -16,12 +17,45 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
     const decoded = Schema.decodeUnknownSync(CellMetadata)({});
     expect(decoded).toMatchInlineSnapshot(`
       {
-        "languageMetadata": null,
-        "name": "_",
-        "options": {},
-        "stableId": null,
+        "marimo": {
+          "name": "_",
+          "options": {},
+          "sourceProjections": {
+            "markdown": null,
+            "sql": null,
+          },
+        },
+        "marimoRuntime": {
+          "stableId": null,
+          "state": null,
+        },
       }
     `);
+  });
+
+  it("preserves open-envelope fields while rejecting unknown owned fields", () => {
+    const decoded = Schema.decodeUnknownSync(CellMetadata)({
+      foreign: { ownedBy: "another-extension" },
+      marimo: { name: "cell" },
+    });
+    expect(Schema.encodeSync(CellMetadata)(decoded)).toMatchObject({
+      foreign: { ownedBy: "another-extension" },
+      marimo: { name: "cell" },
+    });
+
+    expect(
+      Either.isLeft(
+        Schema.decodeUnknownEither(CellMetadata)({
+          marimo: { name: "cell", misspelled: true },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps the canonical notebook marimo namespace required", () => {
+    expect(
+      Either.isLeft(Schema.decodeUnknownEither(NotebookDocumentMetadata)({})),
+    ).toBe(true);
   });
 
   it("decodes tagged unions by their msgspec tag field", () => {
@@ -70,21 +104,21 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
 
   it("round-trips through encode to the wire shape msgspec expects", () => {
     const encoded = Schema.encodeSync(CellMetadata)({
-      stableId: "abc",
-      name: "my_cell",
-      options: { hide_code: true },
-      languageMetadata: null,
+      marimo: {
+        name: "my_cell",
+        options: { hide_code: true },
+        sourceProjections: { markdown: null, sql: null },
+      },
+      marimoRuntime: { stableId: "abc", state: null },
     });
-    expect(encoded).toMatchInlineSnapshot(`
-      {
-        "languageMetadata": null,
-        "name": "my_cell",
-        "options": {
-          "hide_code": true,
-        },
-        "stableId": "abc",
-      }
-    `);
+    expect(encoded).toEqual({
+      marimo: {
+        name: "my_cell",
+        options: { hide_code: true },
+        sourceProjections: { markdown: null, sql: null },
+      },
+      marimoRuntime: { stableId: "abc", state: null },
+    });
   });
 
   it("models the notebook wire document without an opaque record", () => {

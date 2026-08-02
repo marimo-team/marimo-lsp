@@ -1,10 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option } from "effect";
 
 import { createTestNotebookDocument, Uri } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { VariablesService } from "../../panel/variables/VariablesService.ts";
-import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
+import {
+  MarimoNotebookCell,
+  MarimoNotebookDocument,
+} from "../../schemas/MarimoNotebookDocument.ts";
 import type { VariablesNotification } from "../../types.ts";
 import { getTopologicalCells } from "../getTopologicalCells.ts";
 import { cellId, variableName } from "./branded.ts";
@@ -34,7 +37,9 @@ function makeNotebookWithCells(
     kind: 2 as const, // Code cell
     value: config.code,
     languageId: "mo-python",
-    metadata: { stableId: config.stableId },
+    metadata: MarimoNotebookCell.createMetadata({
+      marimoRuntime: { stableId: config.stableId },
+    }),
   }));
 
   const raw = createTestNotebookDocument(uri, {
@@ -47,6 +52,10 @@ function makeNotebookWithCells(
 
 const withTestLayer = () =>
   Layer.empty.pipe(Layer.provideMerge(VariablesService.Default));
+
+const stableId = (cell: { metadata?: unknown }) =>
+  Option.getOrUndefined(MarimoNotebookCell.decodeMetadata(cell.metadata))
+    ?.marimoRuntime.stableId ?? undefined;
 
 describe("getTopologicalCells", () => {
   it.effect("returns empty array for notebook with no cells", () =>
@@ -73,9 +82,9 @@ describe("getTopologicalCells", () => {
 
         expect(result.length).toBe(3);
         // Document order since no variables registered
-        expect(result[0].metadata.stableId).toBe("cell-a");
-        expect(result[1].metadata.stableId).toBe("cell-b");
-        expect(result[2].metadata.stableId).toBe("cell-c");
+        expect(stableId(result[0])).toBe("cell-a");
+        expect(stableId(result[1])).toBe("cell-b");
+        expect(stableId(result[2])).toBe("cell-c");
       }).pipe(Effect.provide(withTestLayer())),
   );
 
@@ -99,8 +108,8 @@ describe("getTopologicalCells", () => {
 
       expect(result.length).toBe(2);
       // cell-a should come before cell-b because cell-a defines x which cell-b uses
-      expect(result[0].metadata.stableId).toBe("cell-a");
-      expect(result[1].metadata.stableId).toBe("cell-b");
+      expect(stableId(result[0])).toBe("cell-a");
+      expect(stableId(result[1])).toBe("cell-b");
     }).pipe(Effect.provide(withTestLayer())),
   );
 
@@ -128,9 +137,9 @@ describe("getTopologicalCells", () => {
 
       expect(result.length).toBe(3);
       // Should be topologically sorted: A, B, C
-      expect(result[0].metadata.stableId).toBe("cell-a");
-      expect(result[1].metadata.stableId).toBe("cell-b");
-      expect(result[2].metadata.stableId).toBe("cell-c");
+      expect(stableId(result[0])).toBe("cell-a");
+      expect(stableId(result[1])).toBe("cell-b");
+      expect(stableId(result[2])).toBe("cell-c");
     }).pipe(Effect.provide(withTestLayer())),
   );
 
@@ -145,19 +154,23 @@ describe("getTopologicalCells", () => {
               kind: 2,
               value: "y = x",
               languageId: "mo-python",
-              metadata: { stableId: "cell-b" },
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-b" },
+              }),
             },
             {
               kind: 2,
               value: "# no id",
               languageId: "mo-python",
-              metadata: {}, // no stableId
+              metadata: MarimoNotebookCell.createMetadata({}), // no stableId
             },
             {
               kind: 2,
               value: "x = 1",
               languageId: "mo-python",
-              metadata: { stableId: "cell-a" },
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-a" },
+              }),
             },
           ],
           metadata: {},
@@ -178,9 +191,9 @@ describe("getTopologicalCells", () => {
 
       expect(result.length).toBe(3);
       // cell-a first (defines x), cell-b second (uses x), cell without id last
-      expect(result[0].metadata.stableId).toBe("cell-a");
-      expect(result[1].metadata.stableId).toBe("cell-b");
-      expect(result[2].metadata.stableId).toBeUndefined();
+      expect(stableId(result[0])).toBe("cell-a");
+      expect(stableId(result[1])).toBe("cell-b");
+      expect(stableId(result[2])).toBeUndefined();
     }).pipe(Effect.provide(withTestLayer())),
   );
 
@@ -209,7 +222,7 @@ describe("getTopologicalCells", () => {
       // All cells are independent, so they should all be present
       // Order is determined by getTopologicalCellIds (cells with no deps go to end)
       expect(result.length).toBe(3);
-      const stableIds = result.map((c) => c.metadata.stableId);
+      const stableIds = result.map(stableId);
       expect(stableIds).toContain("cell-a");
       expect(stableIds).toContain("cell-b");
       expect(stableIds).toContain("cell-c");
@@ -245,7 +258,7 @@ describe("getTopologicalCells", () => {
 
       expect(result.length).toBe(4);
 
-      const stableIds = result.map((c) => c.metadata.stableId);
+      const stableIds = result.map(stableId);
       const indexA = stableIds.indexOf("cell-a");
       const indexB = stableIds.indexOf("cell-b");
       const indexC = stableIds.indexOf("cell-c");
@@ -271,31 +284,41 @@ describe("getTopologicalCells", () => {
               kind: 2,
               value: "x = 1",
               languageId: "mo-python",
-              metadata: { stableId: "python-1" },
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "python-1" },
+              }),
             },
             {
               kind: 2,
               value: "SELECT * FROM table",
               languageId: "sql",
-              metadata: { stableId: "sql-1" },
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "sql-1" },
+              }),
             },
             {
               kind: 2,
               value: "y = x + 1",
               languageId: "mo-python",
-              metadata: { stableId: "python-2" },
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "python-2" },
+              }),
             },
             {
               kind: 1, // Markup cell
               value: "# Header",
               languageId: "markdown",
-              metadata: { stableId: "markdown-1" },
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "markdown-1" },
+              }),
             },
             {
               kind: 2,
               value: "z = y + 1",
               languageId: "python", // Also accept plain "python"
-              metadata: { stableId: "python-3" },
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "python-3" },
+              }),
             },
           ],
           metadata: {},
@@ -304,7 +327,7 @@ describe("getTopologicalCells", () => {
       const doc = MarimoNotebookDocument.from(raw);
       const result = yield* getTopologicalCells(doc);
 
-      expect(result.map((c) => c.metadata.stableId)).toEqual([
+      expect(result.map(stableId)).toEqual([
         "python-1",
         "python-2",
         "python-3",

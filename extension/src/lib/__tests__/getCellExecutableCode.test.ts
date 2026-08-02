@@ -8,8 +8,8 @@ import {
   createTestNotebookDocument,
 } from "../../__mocks__/TestVsCode.ts";
 import { Constants } from "../../platform/Constants.ts";
-import type { CellMetadata } from "../../schemas/CellMetadata.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
+import type * as Api from "../../schemas/Models.gen.ts";
 import { getCellExecutableCode } from "../getCellExecutableCode.ts";
 
 const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
@@ -19,7 +19,7 @@ function createMockCell(
   uri: vscode.Uri,
   languageId: string,
   value: string,
-  metadata: Partial<CellMetadata> = {},
+  metadata: typeof Api.CellMetadata.Encoded = {},
 ) {
   const rawCell = createNotebookCell(
     createTestNotebookDocument(uri),
@@ -27,7 +27,7 @@ function createMockCell(
       kind: 2, // Code
       value,
       languageId,
-      metadata,
+      metadata: MarimoNotebookCell.createMetadata(metadata),
     },
     0,
   );
@@ -40,16 +40,19 @@ describe("getCellExecutableCode", () => {
       const { LanguageId } = yield* Constants;
 
       const cell = createMockCell(notebookUri, "sql", "SELECT * FROM users", {
-        languageMetadata: {
-          sql: {
-            dataframeName: "my_results",
-            quotePrefix: "f",
-            commentLines: [],
-            showOutput: true,
-            engine: "__marimo_duckdb",
+        marimo: {
+          sourceProjections: {
+            markdown: null,
+            sql: {
+              dataframeName: "my_results",
+              quotePrefix: "f",
+              commentLines: [],
+              showOutput: true,
+              engine: "__marimo_duckdb",
+            },
           },
         },
-        stableId: "test-cell-id",
+        marimoRuntime: { stableId: "test-cell-id" },
       });
 
       const code = getCellExecutableCode(cell, LanguageId);
@@ -66,8 +69,8 @@ describe("getCellExecutableCode", () => {
       const { LanguageId } = yield* Constants;
 
       const cell = createMockCell(notebookUri, "sql", "SELECT * FROM users", {
-        stableId: "test-cell-id",
-        // No languageMetadata.sql
+        marimoRuntime: { stableId: "test-cell-id" },
+        // No sourceProjections.sql
       });
 
       const code = getCellExecutableCode(cell, LanguageId);
@@ -83,7 +86,7 @@ describe("getCellExecutableCode", () => {
 
       const pythonCode = "x = 1 + 2";
       const cell = createMockCell(notebookUri, "python", pythonCode, {
-        stableId: "test-cell-id",
+        marimoRuntime: { stableId: "test-cell-id" },
       });
 
       const code = getCellExecutableCode(cell, LanguageId);
@@ -97,16 +100,19 @@ describe("getCellExecutableCode", () => {
       const { LanguageId } = yield* Constants;
 
       const cell = createMockCell(notebookUri, "sql", "CREATE TABLE test", {
-        languageMetadata: {
-          sql: {
-            dataframeName: "result",
-            quotePrefix: "f",
-            commentLines: [],
-            showOutput: false,
-            engine: "__marimo_duckdb",
+        marimo: {
+          sourceProjections: {
+            markdown: null,
+            sql: {
+              dataframeName: "result",
+              quotePrefix: "f",
+              commentLines: [],
+              showOutput: false,
+              engine: "__marimo_duckdb",
+            },
           },
         },
-        stableId: "test-cell-id",
+        marimoRuntime: { stableId: "test-cell-id" },
       });
 
       const code = getCellExecutableCode(cell, LanguageId);
@@ -121,16 +127,19 @@ describe("getCellExecutableCode", () => {
       const { LanguageId } = yield* Constants;
 
       const cell = createMockCell(notebookUri, "sql", "SELECT 1", {
-        languageMetadata: {
-          sql: {
-            dataframeName: "df",
-            quotePrefix: "f",
-            commentLines: [],
-            showOutput: true,
-            engine: "postgres_conn",
+        marimo: {
+          sourceProjections: {
+            markdown: null,
+            sql: {
+              dataframeName: "df",
+              quotePrefix: "f",
+              commentLines: [],
+              showOutput: true,
+              engine: "postgres_conn",
+            },
           },
         },
-        stableId: "test-cell-id",
+        marimoRuntime: { stableId: "test-cell-id" },
       });
 
       const code = getCellExecutableCode(cell, LanguageId);

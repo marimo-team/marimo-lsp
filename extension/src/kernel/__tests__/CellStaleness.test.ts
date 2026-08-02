@@ -8,7 +8,10 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { CellExecutions } from "../../kernel/CellExecutions.ts";
 import { VsCode } from "../../platform/VsCode.ts";
-import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
+import {
+  MarimoNotebookCell,
+  MarimoNotebookDocument,
+} from "../../schemas/MarimoNotebookDocument.ts";
 
 const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
@@ -34,14 +37,18 @@ describe("CellExecutions staleness", () => {
           "x = 1",
           "python",
         );
-        cellData0.metadata = { stableId: "cell-0" };
+        cellData0.metadata = MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-0" },
+        });
 
         const cellData1 = new code.NotebookCellData(
           code.NotebookCellKind.Code,
           "y = 2",
           "python",
         );
-        cellData1.metadata = { stableId: "cell-1" };
+        cellData1.metadata = MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-1" },
+        });
 
         // Create a test notebook with cells
         const notebook = MarimoNotebookDocument.from(
@@ -83,7 +90,9 @@ describe("CellExecutions staleness", () => {
           "x = 1",
           "python",
         );
-        cellData0.metadata = { stableId: "cell-0" };
+        cellData0.metadata = MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-0" },
+        });
 
         const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
           data: new code.NotebookData([cellData0]),
@@ -132,7 +141,9 @@ describe("CellExecutions staleness", () => {
           "y = x + 1",
           "python",
         );
-        cellDataB.metadata = { stableId: "cell-b" };
+        cellDataB.metadata = MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-b" },
+        });
 
         const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
           data: new code.NotebookData([cellDataB]),
@@ -199,7 +210,9 @@ describe("CellExecutions staleness", () => {
           "x = 1",
           "python",
         );
-        cellData.metadata = { stableId: "cell-0" };
+        cellData.metadata = MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-0" },
+        });
 
         const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
           data: new code.NotebookData([cellData]),
@@ -227,7 +240,9 @@ describe("CellExecutions staleness", () => {
           "x = 1",
           "python",
         );
-        cellData.metadata = { stableId: "cell-0" };
+        cellData.metadata = MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-0" },
+        });
 
         const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
           data: new code.NotebookData([cellData]),
@@ -263,7 +278,9 @@ describe("CellExecutions staleness", () => {
           "x = 1",
           "python",
         );
-        cellData.metadata = { stableId: "cell-0" };
+        cellData.metadata = MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-0" },
+        });
 
         const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
           data: new code.NotebookData([cellData]),
@@ -331,13 +348,17 @@ describe("CellExecutions staleness", () => {
           "a = 1",
           "python",
         );
-        cellDataA.metadata = { stableId: "cell-a" };
+        cellDataA.metadata = MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-a" },
+        });
         const cellDataB = new code.NotebookCellData(
           code.NotebookCellKind.Code,
           "b = 2",
           "python",
         );
-        cellDataB.metadata = { stableId: "cell-b" };
+        cellDataB.metadata = MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-b" },
+        });
 
         const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
           data: new code.NotebookData([cellDataA, cellDataB]),
@@ -410,7 +431,9 @@ describe("CellExecutions staleness", () => {
           "x = 1",
           "python",
         );
-        cellData.metadata = { stableId: "cell-0" };
+        cellData.metadata = MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-0" },
+        });
 
         const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
           data: new code.NotebookData([cellData]),
@@ -461,7 +484,9 @@ describe("CellExecutions staleness", () => {
           "x = 1",
           "python",
         );
-        cellData0.metadata = { stableId: "cell-0" };
+        cellData0.metadata = MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-0" },
+        });
 
         const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
           data: new code.NotebookData([cellData0]),

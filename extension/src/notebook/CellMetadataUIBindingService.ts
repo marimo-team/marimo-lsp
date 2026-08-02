@@ -6,13 +6,10 @@ import { dynamicCommand } from "../commands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
-  type CellMetadata,
-  encodeCellMetadata,
-} from "../schemas/CellMetadata.ts";
-import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
+import * as Api from "../schemas/Models.gen.ts";
 
 /**
  * Configuration for a metadata binding
@@ -37,12 +34,15 @@ export interface MetadataBinding {
   /**
    * Get the current value from cell metadata
    */
-  getValue: (metadata: CellMetadata) => string | boolean | undefined;
+  getValue: (metadata: Api.MarimoCellMetadata) => string | boolean | undefined;
 
   /**
    * Update the cell metadata with a new value
    */
-  setValue: (metadata: CellMetadata, value: string | boolean) => CellMetadata;
+  setValue: (
+    metadata: Api.MarimoCellMetadata,
+    value: string | boolean,
+  ) => Api.MarimoCellMetadata;
 
   /**
    * Create the status bar item label based on the current value
@@ -145,7 +145,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
                 }
 
                 const value = Option.isSome(cell.metadata)
-                  ? binding.getValue(cell.metadata.value)
+                  ? binding.getValue(cell.metadata.value.marimo)
                   : undefined;
 
                 const item = new code.NotebookCellStatusBarItem(
@@ -191,7 +191,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
           }
 
           const currentValue = Option.isSome(activeCell.metadata)
-            ? binding.getValue(activeCell.metadata.value)
+            ? binding.getValue(activeCell.metadata.value.marimo)
             : undefined;
 
           let newValue: string | boolean | undefined;
@@ -259,8 +259,8 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
 
           // Update the cell metadata
           const currentMetadata = Option.isSome(activeCell.metadata)
-            ? activeCell.metadata.value
-            : {};
+            ? activeCell.metadata.value.marimo
+            : Api.MarimoCellMetadata.make();
           const updatedMetadata = binding.setValue(currentMetadata, newValue);
 
           const edit = new code.WorkspaceEdit();
@@ -269,7 +269,8 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
             activeCell.document.getText(),
             activeCell.document.languageId,
           );
-          cellData.metadata = encodeCellMetadata(updatedMetadata);
+          cellData.metadata =
+            activeCell.buildMarimoMetadataUpdate(updatedMetadata);
           cellData.outputs = Array.from(activeCell.outputs);
 
           edit.set(editor.value.notebook.uri, [
