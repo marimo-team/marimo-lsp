@@ -6,6 +6,8 @@ export function dynamicCommand(command: string): DynamicCommand {
 
 // Pulled from https://code.visualstudio.com/api/references/commands
 export type VscodeBuiltinCommand =
+  // Focus the built-in Outline view.
+  | "outline.focus"
   // Invoke notebook serializer
   | "vscode.executeDataToNotebook"
   // Invoke notebook serializer

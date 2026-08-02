@@ -283,6 +283,14 @@
         "category": "marimo"
       },
       {
+        "command": "marimo.openOutlineView",
+        "title": "Show outline",
+        "shortTitle": "Outline",
+        "category": "marimo",
+        "icon": "$(list-unordered)",
+        "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
         "command": "marimo.createSetupCell",
         "title": "Create setup cell",
         "category": "marimo",
@@ -517,6 +525,11 @@
           "command": "marimo.config.toggleAutoReloadAutorun",
           "when": "notebookType == 'marimo-notebook' && marimo.notebook.hasKernel && marimo.config.runtime.auto_reload == 'autorun'",
           "group": "navigation@4"
+        },
+        {
+          "command": "marimo.openOutlineView",
+          "when": "notebookType == 'marimo-notebook'",
+          "group": "navigation@5"
         }
       ],
       "editor/title": [
@@ -524,6 +537,11 @@
           "command": "marimo.openAsMarimoNotebook",
           "when": "resourceLangId == python && !notebookType && marimo.isPythonFileMarimoNotebook",
           "group": "navigation"
+        },
+        {
+          "command": "marimo.openOutlineView",
+          "when": "notebookType == 'marimo-notebook' && config.notebook.globalToolbar != true",
+          "group": "navigation@5"
         }
       ]
     }
