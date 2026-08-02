@@ -8,8 +8,8 @@ import { VsCode } from "../platform/VsCode.ts";
 import { acquirePostHogSink } from "./posthogSink.ts";
 import {
   acquireSentrySink,
+  annotateSentryErrors,
   sentryErrorLogger,
-  setSentryTag,
 } from "./sentrySink.ts";
 
 // Create a storage key for the anonymous ID
@@ -22,7 +22,7 @@ const ANONYMOUS_ID_KEY = createStorageKey(
  * Get or create an anonymous ID for telemetry tracking.
  * The ID is persisted in global storage and generated once per installation.
  */
-export function anonymousId(storage: Storage): Effect.Effect<string> {
+function anonymousId(storage: Storage): Effect.Effect<string> {
   return Effect.gen(function* () {
     // Try to get existing ID
     const maybeId = yield* storage.global.get(ANONYMOUS_ID_KEY);
@@ -55,7 +55,7 @@ type EventMap = {
   uv_install_clicked: undefined;
   lsp_binary_resolved: {
     server: "ruff" | "ty";
-    source: "UserConfigured" | "CompanionExtension" | "UvInstalled";
+    source: BinarySource["_tag"];
     kind?: "configured" | "bundled";
     version: string;
   };
@@ -89,8 +89,12 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       (config) => config.get<boolean>("telemetry") ?? true,
     );
 
-    const posthogRef = yield* Ref.make(Option.none<PostHog>());
-    const sinkScope = yield* Ref.make(Option.none<Scope.CloseableScope>());
+    const sinksRef = yield* Ref.make(
+      Option.none<{
+        readonly scope: Scope.CloseableScope;
+        readonly posthog: PostHog;
+      }>(),
+    );
 
     const acquireSinks = Effect.gen(function* () {
       yield* acquireSentrySink({
@@ -99,33 +103,43 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
         machineId: code.env.machineId,
         extensionVersion,
       });
-      const client = yield* acquirePostHogSink({
+      return yield* acquirePostHogSink({
         distinctId,
         extensionVersion,
         appName: code.env.appName,
         appHost: code.env.appHost,
       });
-      yield* Effect.acquireRelease(
-        Ref.set(posthogRef, Option.some(client)),
-        () => Ref.set(posthogRef, Option.none()),
-      );
     });
 
     // Sinks follow consent: acquired into their own scope when consent turns
     // on, and released (flush + close) when it turns off. Only ever invoked
     // sequentially — from construction below, the single watcher fiber, or
     // the teardown finalizer.
+    //
+    // Telemetry must never be observable outside its dashboards: a sink that
+    // fails to acquire or release is logged and dropped, so a broken SDK can
+    // neither fail activation nor kill the consent watcher.
     const applyConsent = Effect.fn("Telemetry.applyConsent")(function* (
       enabled: boolean,
     ) {
-      const current = yield* Ref.get(sinkScope);
+      const current = yield* Ref.get(sinksRef);
       if (enabled && Option.isNone(current)) {
         const scope = yield* Scope.make();
-        yield* Scope.extend(acquireSinks, scope);
-        yield* Ref.set(sinkScope, Option.some(scope));
+        const acquired = yield* Effect.exit(Scope.extend(acquireSinks, scope));
+        if (Exit.isSuccess(acquired)) {
+          yield* Ref.set(
+            sinksRef,
+            Option.some({ scope, posthog: acquired.value }),
+          );
+        } else {
+          yield* Effect.logWarning("Failed to acquire telemetry sinks").pipe(
+            Effect.annotateLogs({ cause: acquired.cause }),
+          );
+          yield* Effect.ignoreLogged(Scope.close(scope, acquired));
+        }
       } else if (!enabled && Option.isSome(current)) {
-        yield* Ref.set(sinkScope, Option.none());
-        yield* Scope.close(current.value, Exit.void);
+        yield* Ref.set(sinksRef, Option.none());
+        yield* Effect.ignoreLogged(Scope.close(current.value.scope, Exit.void));
       }
     });
 
@@ -141,53 +155,55 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       Effect.forkScoped,
     );
 
+    const capture = <K extends keyof EventMap>(
+      event: K,
+      ...args: EventMap[K] extends undefined ? [] : [properties: EventMap[K]]
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const sinks = yield* Ref.get(sinksRef);
+        if (Option.isNone(sinks)) {
+          return;
+        }
+        const properties = args[0];
+
+        sinks.value.posthog.capture({
+          distinctId,
+          event,
+          properties: {
+            ...properties,
+            extension_version: extensionVersion,
+          },
+        });
+      });
+
     return {
       /**
        * Track an event with optional properties
        */
-      capture<K extends keyof EventMap>(
-        event: K,
-        ...args: EventMap[K] extends undefined ? [] : [properties: EventMap[K]]
-      ): Effect.Effect<void> {
-        return Effect.gen(function* () {
-          const client = yield* Ref.get(posthogRef);
-          if (Option.isNone(client)) {
-            return;
-          }
-          const properties = args[0];
-
-          client.value.capture({
-            distinctId,
-            event,
-            properties: {
-              ...properties,
-              extension_version: extensionVersion,
-            },
-          });
-        });
-      },
+      capture,
 
       /**
        * Report which binary source was resolved for a language server.
        */
-      reportBinaryResolved(
+      reportBinaryResolved: (
         server: "ruff" | "ty",
         source: BinarySource,
         version: string,
-      ): Effect.Effect<void> {
-        return this.capture("lsp_binary_resolved", {
+      ): Effect.Effect<void> =>
+        capture("lsp_binary_resolved", {
           server,
           source: source._tag,
           ...("kind" in source ? { kind: source.kind } : {}),
           version,
-        });
-      },
+        }),
 
       /**
-       * Set a tag for filtering error reports.
+       * Attach ambient context to future error reports, mirroring
+       * `Effect.annotateLogs`.
        */
-      setTag: (key: string, value: string): Effect.Effect<void> =>
-        setSentryTag(key, value),
+      annotateErrors: (
+        annotations: Record<string, string>,
+      ): Effect.Effect<void> => annotateSentryErrors(annotations),
 
       /**
        * Error logger forwarding Effect log output to the error sink.

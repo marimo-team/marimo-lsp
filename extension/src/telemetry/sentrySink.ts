@@ -83,11 +83,16 @@ export const acquireSentrySink = Effect.fn("telemetry.acquireSentrySink")(
 );
 
 /**
- * Set a tag for filtering in Sentry. A no-op while the sink is released.
+ * Attach ambient context (Sentry tags) to future error reports. A no-op
+ * while the sink is released.
  */
-export function setSentryTag(key: string, value: string): Effect.Effect<void> {
+export function annotateSentryErrors(
+  annotations: Record<string, string>,
+): Effect.Effect<void> {
   return Effect.sync(() => {
-    SentrySDK.setTag(key, value);
+    for (const [key, value] of Object.entries(annotations)) {
+      SentrySDK.setTag(key, value);
+    }
   });
 }
 

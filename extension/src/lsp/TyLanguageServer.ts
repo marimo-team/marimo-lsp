@@ -167,7 +167,9 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
             );
 
             if (Option.isSome(telemetry)) {
-              yield* telemetry.value.setTag("ty.version", serverVersion);
+              yield* telemetry.value.annotateErrors({
+                "ty.version": serverVersion,
+              });
               yield* telemetry.value.reportBinaryResolved(
                 "ty",
                 resolved,

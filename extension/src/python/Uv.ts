@@ -200,7 +200,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         onNone: () => "unknown",
       });
 
-      yield* telemetry.setTag("uv.version", version);
+      yield* telemetry.annotateErrors({ "uv.version": version });
       yield* telemetry.capture("uv_init", { binType: uvBinary._tag, version });
     }
 

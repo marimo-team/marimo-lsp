@@ -102,6 +102,33 @@ it.scoped("releases both sinks on consent loss and re-acquires them", () =>
   }),
 );
 
+it.scoped(
+  "a sink that throws neither fails construction nor kills consent tracking",
+  () =>
+    Effect.gen(function* () {
+      sentrySdk.init.mockImplementationOnce(() => {
+        throw new Error("sentry exploded");
+      });
+
+      // Consent is on but acquisition fails: construction must survive
+      // and capture must degrade to a no-op.
+      const ctx = yield* withTestCtx();
+      yield* ctx.telemetry.capture("new_notebook_created");
+      expect(posthog.capture).not.toHaveBeenCalled();
+
+      // The consent watcher must still be alive: toggling off and on
+      // re-acquires the sinks now that the SDK behaves again.
+      yield* ctx.setTelemetry(false);
+      yield* ctx.setTelemetry(true);
+      yield* waitFor(() => expect(sentrySdk.init).toHaveBeenCalledTimes(2));
+
+      yield* ctx.telemetry.capture("new_notebook_created");
+      expect(posthog.capture).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "new_notebook_created" }),
+      );
+    }),
+);
+
 it.scoped("capture is a no-op without consent, live with it", () =>
   Effect.gen(function* () {
     const ctx = yield* withTestCtx({ telemetry: false });

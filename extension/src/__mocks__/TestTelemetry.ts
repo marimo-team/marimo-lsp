@@ -10,7 +10,7 @@ export const TestTelemetryLive = Layer.succeed(
   Telemetry.make({
     capture: () => Effect.void,
     reportBinaryResolved: () => Effect.void,
-    setTag: () => Effect.void,
+    annotateErrors: () => Effect.void,
     errorLogger: Logger.none,
   }),
 );
