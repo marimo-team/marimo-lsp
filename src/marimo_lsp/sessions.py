@@ -204,6 +204,7 @@ class Session:
     ) -> None:
         """Send a command to the kernel."""
         del from_consumer_id
+        self.session_view.add_control_request(request)
         self._queue_manager.put_control_request(request)
 
     def _effective_runtime(self, config: MarimoConfig) -> MarimoConfig:
