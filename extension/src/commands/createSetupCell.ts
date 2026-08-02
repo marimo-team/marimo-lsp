@@ -1,6 +1,7 @@
 import { Effect, Option } from "effect";
 
 import { SETUP_CELL_NAME } from "../constants.ts";
+import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -9,6 +10,7 @@ import {
 
 export const createSetupCell = Effect.fn(function* () {
   const code = yield* VsCode;
+  const { LanguageId } = yield* Constants;
   const notebook = Option.filterMap(
     yield* code.window.getActiveNotebookEditor(),
     (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
@@ -47,10 +49,15 @@ export const createSetupCell = Effect.fn(function* () {
     const cell = new code.NotebookCellData(
       code.NotebookCellKind.Code,
       "# Initialization code that runs before all other cells",
-      "python",
+      LanguageId.Python,
     );
     cell.metadata = MarimoNotebookCell.createMetadata({
       marimo: { name: SETUP_CELL_NAME },
+      // marimo reserves the cell id "setup" for the setup cell: file
+      // deserialization assigns it, and the kernel keys its setup-cell
+      // semantics (auto-run-as-root when stale) on that exact id. A random
+      // UUID here would leave the cell an ordinary cell until reopen.
+      marimoRuntime: { stableId: SETUP_CELL_NAME },
     });
     edit.set(notebook.value.uri, [code.NotebookEdit.insertCells(0, [cell])]);
     yield* code.workspace.applyEdit(edit);
