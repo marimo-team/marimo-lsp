@@ -59,7 +59,7 @@ export type MarkdownCellProjection = typeof MarkdownCellProjection.Type;
 export const SqlCellProjection = Schema.Struct({
   dataframeName: Schema.optionalWith(Schema.String, { default: () => "_df" }),
   quotePrefix: Schema.optionalWith(Schema.Literal("", "f", "fr", "r", "rf"), {
-    default: () => "",
+    default: () => "f",
   }),
   commentLines: Schema.optionalWith(Schema.Array(Schema.String), {
     default: () => [],

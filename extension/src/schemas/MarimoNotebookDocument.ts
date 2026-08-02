@@ -376,7 +376,9 @@ export class MarimoNotebookDocument {
   /** Parse persisted metadata for operations that must not continue on corruption. */
   parseMetadata() {
     const raw = asRecord(this.#raw.metadata);
-    return parseNotebookMetadata(raw.marimo ?? {});
+    return parseNotebookMetadata(
+      Object.hasOwn(raw, "marimo") ? raw.marimo : {},
+    );
   }
 
   get rawMetadata() {
@@ -394,7 +396,9 @@ export class MarimoNotebookDocument {
     updates: Partial<typeof Api.MarimoNotebookMetadata.Encoded>,
   ) {
     const root = asRecord(this.#raw.metadata);
-    const current = decodeNotebookMetadataSync(root.marimo ?? {});
+    const current = decodeNotebookMetadataSync(
+      Object.hasOwn(root, "marimo") ? root.marimo : {},
+    );
     const next = decodeNotebookMetadataSync({ ...current, ...updates });
     if (
       root.marimo !== undefined &&

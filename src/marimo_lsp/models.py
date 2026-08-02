@@ -105,7 +105,7 @@ class SqlCellProjection(msgspec.Struct, rename="camel", forbid_unknown_fields=Tr
     dataframe_name: str = "_df"
     """The variable the query result is bound to (``_df = mo.sql(...)``)."""
 
-    quote_prefix: SmartCellQuotePrefix = ""
+    quote_prefix: SmartCellQuotePrefix = "f"
     """The string-literal prefix used by the smart-cell projection."""
 
     comment_lines: list[str] = msgspec.field(default_factory=list)

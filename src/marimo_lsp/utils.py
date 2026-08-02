@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import textwrap
 from typing import TYPE_CHECKING, cast
 from urllib.parse import unquote
 
@@ -11,7 +12,6 @@ import msgspec
 from marimo._convert.common.format import (
     DEFAULT_MARKDOWN_PREFIX,
     markdown_to_marimo,
-    sql_to_marimo,
 )
 from marimo._types.ids import CellId_t
 
@@ -122,12 +122,22 @@ def normalize_cell_code(
 
     if language_id == "sql":
         sql = source_projections.sql or SqlCellProjection()
-        engine = sql.engine if sql.engine and sql.engine != DEFAULT_SQL_ENGINE else None
-        return sql_to_marimo(
-            source,
-            table=sql.dataframe_name,
-            hide_output=not sql.show_output,
-            engine=engine,
+        escaped_source = source.replace('"""', '\\"""')
+        terminal_options = [textwrap.indent('"""', "    ")]
+        if not sql.show_output:
+            terminal_options.append(textwrap.indent("output=False", "    "))
+        if sql.engine != DEFAULT_SQL_ENGINE:
+            terminal_options.append(textwrap.indent(f"engine={sql.engine}", "    "))
+
+        return "\n".join(
+            [
+                *sql.comment_lines,
+                f"{sql.dataframe_name} = mo.sql(",
+                textwrap.indent(f'{sql.quote_prefix}"""', "    "),
+                textwrap.indent(escaped_source, "    "),
+                ",\n".join(terminal_options),
+                ")",
+            ]
         )
 
     return source

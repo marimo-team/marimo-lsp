@@ -63,17 +63,20 @@ describe("MarimoNotebookCell metadata updates", () => {
     });
   });
 
-  it("surfaces invalid notebook metadata to persistence operations", () => {
-    const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
-      data: {
-        cells: [],
-        metadata: { marimo: { misspelled: true } },
-      },
-    });
-    const notebook = MarimoNotebookDocument.from(raw);
+  it.each([{ misspelled: true }, null])(
+    "surfaces invalid notebook metadata to persistence operations",
+    (marimo) => {
+      const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
+        data: {
+          cells: [],
+          metadata: { marimo },
+        },
+      });
+      const notebook = MarimoNotebookDocument.from(raw);
 
-    expect(
-      Either.isLeft(Effect.runSync(Effect.either(notebook.parseMetadata()))),
-    ).toBe(true);
-  });
+      expect(
+        Either.isLeft(Effect.runSync(Effect.either(notebook.parseMetadata()))),
+      ).toBe(true);
+    },
+  );
 });

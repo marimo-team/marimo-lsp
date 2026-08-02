@@ -556,3 +556,14 @@ class TestNormalizeCellCode:
         assert normalize_cell_code("sql", "SELECT 1", meta) == snapshot(
             'df2 = mo.sql(\n    f"""\n    SELECT 1\n    """,\n    output=False,\n    engine=my_engine\n)'
         )
+
+    def test_sql_preserves_quote_prefix_comments_and_triple_quotes(self) -> None:
+        meta = CellSourceProjections(
+            sql=SqlCellProjection(
+                quote_prefix="r",
+                comment_lines=["# retained"],
+            )
+        )
+        assert normalize_cell_code("sql", 'SELECT \'"""\'', meta) == snapshot(
+            '# retained\n_df = mo.sql(\n    r"""\n    SELECT \'\\"""\'\n    """\n)'
+        )

@@ -41,7 +41,9 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 const parseNotebookDocumentMetadata = (value: unknown) => {
   const root = asRecord(value);
-  return Schema.decodeUnknown(Api.MarimoNotebookMetadata)(root.marimo ?? {});
+  return Schema.decodeUnknown(Api.MarimoNotebookMetadata)(
+    Object.hasOwn(root, "marimo") ? root.marimo : {},
+  );
 };
 
 const NotebookCellKind = {
@@ -257,12 +259,16 @@ function notebookDataToNotebookDocument(
   return Effect.gen(function* () {
     const documentMetadata = yield* parseNotebookDocumentMetadata(metadata);
     const decodedCells = yield* Effect.forEach(cells, (cell) => {
-      const hasMarimoMetadata = asRecord(cell.metadata).marimo !== undefined;
+      const rawMarimoMetadata = asRecord(cell.metadata).marimo;
+      const hasOptions =
+        isRecord(rawMarimoMetadata) &&
+        Object.hasOwn(rawMarimoMetadata, "options") &&
+        rawMarimoMetadata.options !== undefined;
       return Schema.decodeUnknown(Api.CellMetadata)(cell.metadata ?? {}).pipe(
         Effect.map((cellMetadata) => ({
           cell,
           cellMetadata,
-          hasMarimoMetadata,
+          hasOptions,
         })),
       );
     });
@@ -271,10 +277,10 @@ function notebookDataToNotebookDocument(
       notebook: {
         version: "1",
         metadata: documentMetadata.notebookMetadata ?? {},
-        cells: decodedCells.map(({ cell, cellMetadata, hasMarimoMetadata }) => {
+        cells: decodedCells.map(({ cell, cellMetadata, hasOptions }) => {
           const name = cellMetadata.marimo.name;
           const config = (fallback: typeof Api.NotebookCellConfig.Type) =>
-            hasMarimoMetadata ? cellMetadata.marimo.options : fallback;
+            hasOptions ? cellMetadata.marimo.options : fallback;
 
           // oxlint-disable-next-line typescript/no-unsafe-enum-comparison
           if (cell.kind === NotebookCellKind.Markup) {

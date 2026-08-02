@@ -166,6 +166,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
     it.effect.each([
       { name: "empty", metadata: {} },
       { name: "foreign-only", metadata: { foreign: { value: true } } },
+      { name: "empty marimo", metadata: { marimo: {} } },
     ])("uses markdown defaults for a $name metadata envelope", ({ metadata }) =>
       Effect.gen(function* () {
         const { LanguageId } = yield* Constants;
@@ -184,6 +185,21 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
         expect(new TextDecoder().decode(bytes)).toContain(
           "@app.cell(hide_code=True)",
         );
+      }),
+    );
+
+    it.effect(
+      "rejects a present null notebook metadata namespace",
+      Effect.fn(function* () {
+        const serializer = yield* NotebookSerializer;
+        const result = yield* Effect.either(
+          serializer.serializeEffect({
+            cells: [],
+            metadata: { marimo: null },
+          }),
+        );
+
+        expect(Either.isLeft(result)).toBe(true);
       }),
     );
 
