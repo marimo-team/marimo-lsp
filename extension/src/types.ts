@@ -27,9 +27,14 @@ export type DataColumnPreviewNotification =
 export type DataSourceConnectionsNotification =
   NotificationOf<"data-source-connections">;
 export type DatasetsNotification = NotificationOf<"datasets">;
+export type SqlSchemaListPreviewNotification =
+  NotificationOf<"sql-schema-list-preview">;
 export type SqlTablePreviewNotification = NotificationOf<"sql-table-preview">;
 export type SqlTableListPreviewNotification =
   NotificationOf<"sql-table-list-preview">;
+export type DataSourceConnection = Schemas["DataSourceConnection"];
+export type DataTable = Schemas["DataTable"];
+export type DatabaseSchema = Schemas["Schema"];
 export type DocumentTransactionNotification =
   NotificationOf<"notebook-document-transaction">;
 /** A single change within a document transaction (create/edit/move/... a cell). */

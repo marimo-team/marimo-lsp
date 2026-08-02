@@ -816,6 +816,12 @@ function processOperation(
       case "datasets":
         yield* datasources.updateDatasets(notebookUri, operation);
         break;
+      case "sql-schema-list-preview":
+        yield* datasources.updateSchemaList(notebookUri, operation);
+        break;
+      case "sql-table-list-preview":
+        yield* datasources.updateTableList(notebookUri, operation);
+        break;
       case "notebook-document-transaction":
         yield* applyTransactionToEditor(
           notebookUri,
@@ -853,8 +859,6 @@ function processOperation(
       case "reconnected":
       case "reload":
       case "secret-keys-result":
-      case "sql-schema-list-preview":
-      case "sql-table-list-preview":
       case "sql-table-preview":
       case "startup-logs":
       case "storage-download-ready":
