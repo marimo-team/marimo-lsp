@@ -303,7 +303,8 @@ async def list_sql_schemas(
 ) -> None:
     """Request the immediate child schemas at a database path."""
     session = ctx.sessions.get(args.notebook_uri)
-    assert session, f"No session in workspace for {args.notebook_uri}"
+    if session is None:
+        raise SessionNotFoundError(args.notebook_uri)
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
 
 
@@ -314,7 +315,8 @@ async def list_sql_tables(
 ) -> None:
     """Request the tables belonging to a schema path."""
     session = ctx.sessions.get(args.notebook_uri)
-    assert session, f"No session in workspace for {args.notebook_uri}"
+    if session is None:
+        raise SessionNotFoundError(args.notebook_uri)
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
 
 

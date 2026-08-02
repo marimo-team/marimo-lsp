@@ -1,5 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Fiber, Layer, Option } from "effect";
+import { Effect, Fiber, Layer, Option, TestClock } from "effect";
 
 import { makeTestMarimoClient } from "../../../__tests__/__utils__/TestMarimoClient.ts";
 import { notebookId, requestId } from "../../../lib/__tests__/branded.ts";
@@ -293,6 +293,37 @@ it.scoped("retries nested table expansion after an error", () => {
         "catalog",
         "events",
       ]),
+    );
+    yield* Effect.yieldNow();
+    expect(calls).toHaveLength(2);
+    yield* Fiber.interrupt(retry);
+  }).pipe(Effect.provide(layer));
+});
+
+it.scoped("retries expansion after a response times out", () => {
+  const calls: MarimoApiCall[] = [];
+  const layer = makeLayer((request) => {
+    calls.push(request);
+    return Effect.succeed(null);
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* DatasourcesService;
+    yield* service.updateConnections(NOTEBOOK_URI, connections([], false));
+
+    const first = yield* Effect.fork(
+      Effect.either(
+        service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
+      ),
+    );
+    yield* Effect.yieldNow();
+    expect(calls).toHaveLength(1);
+
+    yield* TestClock.adjust("30 seconds");
+    expect((yield* Fiber.join(first))._tag).toBe("Left");
+
+    const retry = yield* Effect.fork(
+      service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
     );
     yield* Effect.yieldNow();
     expect(calls).toHaveLength(2);

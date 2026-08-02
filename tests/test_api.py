@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import msgspec
@@ -25,6 +26,11 @@ from marimo_lsp.models import (
     SetDisplayThemeRequest,
     UpdateConfigurationRequest,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+NOTEBOOK_URI = "file:///notebook.py"
 
 
 def _context(sessions: MagicMock) -> ApiContext:
@@ -202,3 +208,40 @@ async def test_list_sql_tables_is_forwarded_to_the_kernel() -> None:
     session.put_control_request.assert_called_once_with(
         request.as_command(), from_consumer_id=None
     )
+
+
+@pytest.mark.parametrize(
+    ("handler", "sql_request"),
+    [
+        (
+            list_sql_schemas,
+            ListSQLSchemasRequest(
+                request_id=RequestId("schemas"),
+                engine="warehouse",
+                database="analytics",
+            ),
+        ),
+        (
+            list_sql_tables,
+            ListSQLTablesRequest(
+                request_id=RequestId("tables"),
+                engine="warehouse",
+                database="analytics",
+                schema="events",
+            ),
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_list_sql_metadata_rejects_a_missing_session(
+    handler: Callable[..., Awaitable[None]],
+    sql_request: ListSQLSchemasRequest | ListSQLTablesRequest,
+) -> None:
+    sessions = MagicMock()
+    sessions.get.return_value = None
+
+    with pytest.raises(ValueError, match=f"No session found for {NOTEBOOK_URI}"):
+        await handler(
+            _context(sessions),
+            NotebookCommand(notebook_uri=NOTEBOOK_URI, inner=sql_request),
+        )

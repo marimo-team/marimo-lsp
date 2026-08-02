@@ -61,6 +61,8 @@ interface PendingExpansion {
   readonly deferred: Deferred.Deferred<void, DatasourceExpansionError>;
 }
 
+const EXPANSION_TIMEOUT = "30 seconds";
+
 /**
  * Manages datasource state across all notebooks.
  *
@@ -103,9 +105,22 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         location: string,
         send: (requestId: string) => Effect.Effect<void, unknown>,
       ) {
+        const awaitExpansion = (
+          deferred: Deferred.Deferred<void, DatasourceExpansionError>,
+        ) =>
+          Deferred.await(deferred).pipe(
+            Effect.timeoutFail({
+              duration: EXPANSION_TIMEOUT,
+              onTimeout: () =>
+                new DatasourceExpansionError({
+                  message: "Timed out while loading datasource metadata",
+                }),
+            }),
+          );
+
         const current = pendingByLocation.get(location);
         if (current !== undefined) {
-          return yield* Deferred.await(current.deferred);
+          return yield* awaitExpansion(current.deferred);
         }
 
         const requestId = crypto.randomUUID();
@@ -123,7 +138,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
           ),
         );
 
-        return yield* Deferred.await(deferred).pipe(
+        return yield* awaitExpansion(deferred).pipe(
           Effect.ensuring(
             Effect.sync(() => {
               pendingByLocation.delete(location);
