@@ -10,18 +10,18 @@ export const toggleAutoReload = (context?: NotebookCommandContext) =>
     getCurrentValue: (config) => config.runtime?.auto_reload ?? "off",
     choices: [
       {
-        label: "Ignore module changes",
-        detail: "Keep the notebook unchanged when imported modules are edited",
+        label: "Off",
+        detail: "Ignore edits to imported Python modules",
         value: "off" as const,
       },
       {
-        label: "Mark affected cells stale",
-        detail: "Wait to run affected cells until they are needed",
+        label: "Lazy",
+        detail: "Mark affected cells stale and run them only when needed",
         value: "lazy" as const,
       },
       {
-        label: "Reload and run affected cells",
-        detail: "Keep affected cells up to date automatically",
+        label: "Auto-run",
+        detail: "Reload edited modules and run affected cells automatically",
         value: "autorun" as const,
       },
     ],
@@ -30,9 +30,9 @@ export const toggleAutoReload = (context?: NotebookCommandContext) =>
         case "off":
           return "Off";
         case "lazy":
-          return "Mark stale";
+          return "Lazy";
         case "autorun":
-          return "Automatic";
+          return "Auto-run";
         default:
           return value;
       }

@@ -363,7 +363,7 @@
       {
         "command": "marimo.config.toggleOnCellChangeAutoRun",
         "title": "Configure behavior after cell changes",
-        "shortTitle": "Cell changes: Automatic",
+        "shortTitle": "Cell changes: Auto-run",
         "category": "marimo",
         "icon": "$(zap)",
         "enablement": "notebookType == 'marimo-notebook'"
@@ -371,7 +371,7 @@
       {
         "command": "marimo.config.toggleOnCellChangeLazy",
         "title": "Configure behavior after cell changes",
-        "shortTitle": "Cell changes: Mark stale",
+        "shortTitle": "Cell changes: Lazy",
         "category": "marimo",
         "icon": "$(history)",
         "enablement": "notebookType == 'marimo-notebook'"
@@ -387,7 +387,7 @@
       {
         "command": "marimo.config.toggleAutoReloadLazy",
         "title": "Configure behavior after module changes",
-        "shortTitle": "Module changes: Mark stale",
+        "shortTitle": "Module changes: Lazy",
         "category": "marimo",
         "icon": "$(history)",
         "enablement": "notebookType == 'marimo-notebook'"
@@ -395,7 +395,7 @@
       {
         "command": "marimo.config.toggleAutoReloadAutorun",
         "title": "Configure behavior after module changes",
-        "shortTitle": "Module changes: Automatic",
+        "shortTitle": "Module changes: Auto-run",
         "category": "marimo",
         "icon": "$(zap)",
         "enablement": "notebookType == 'marimo-notebook'"

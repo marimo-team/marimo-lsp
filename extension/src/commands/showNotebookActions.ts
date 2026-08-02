@@ -16,12 +16,12 @@ export const showNotebookActions = Effect.fn("command.showNotebookActions")(
       [
         {
           label: "$(zap) Reactivity",
-          detail: "Choose what happens when cells or imported modules change",
+          detail: "Choose when dependent code runs",
           value: "reactivity" as const,
         },
         {
-          label: "$(save-all) Automatic exports",
-          detail: "Save HTML or IPYNB copies when the notebook changes",
+          label: "$(save-all) Exports",
+          detail: "Keep HTML or IPYNB copies up to date",
           value: "exports" as const,
         },
       ],
@@ -53,19 +53,27 @@ export const showNotebookActions = Effect.fn("command.showNotebookActions")(
       [
         {
           label: "Cell changes",
-          description: onCellChange === "autorun" ? "Automatic" : "Mark stale",
-          detail: "Control when dependent cells run",
+          description: onCellChange === "autorun" ? "Auto-run" : "Lazy",
+          detail:
+            onCellChange === "autorun"
+              ? "Run dependent cells after an upstream cell changes"
+              : "Mark dependent cells stale and run them only when needed",
           value: "cells" as const,
         },
         {
           label: "Module changes",
           description:
             autoReload === "autorun"
-              ? "Automatic"
+              ? "Auto-run"
               : autoReload === "lazy"
-                ? "Mark stale"
+                ? "Lazy"
                 : "Off",
-          detail: "Control what happens when imported modules change",
+          detail:
+            autoReload === "autorun"
+              ? "Reload edited modules and run affected cells automatically"
+              : autoReload === "lazy"
+                ? "Mark affected cells stale and run them only when needed"
+                : "Ignore edits to imported Python modules",
           value: "modules" as const,
         },
       ],

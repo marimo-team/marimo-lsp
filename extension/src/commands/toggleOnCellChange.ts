@@ -10,16 +10,16 @@ export const toggleOnCellChange = (context?: NotebookCommandContext) =>
     getCurrentValue: (config) => config.runtime?.on_cell_change ?? "autorun",
     choices: [
       {
-        label: "Run dependent cells",
-        detail: "Keep dependent cells up to date automatically",
+        label: "Auto-run",
+        detail:
+          "Run dependent cells immediately after an upstream cell changes",
         value: "autorun" as const,
       },
       {
-        label: "Mark dependent cells stale",
-        detail: "Wait to run dependent cells until they are needed",
+        label: "Lazy",
+        detail: "Mark dependent cells stale and run them only when needed",
         value: "lazy" as const,
       },
     ],
-    getDisplayName: (value) =>
-      value === "autorun" ? "Automatic" : "Mark stale",
+    getDisplayName: (value) => (value === "autorun" ? "Auto-run" : "Lazy"),
   });
