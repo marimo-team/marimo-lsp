@@ -191,21 +191,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
           Effect.annotateLogs({ notebookUri }),
         );
 
-        yield* packagesService
-          .fetchDependencyTree(notebookUri, { force: true })
-          .pipe(
-            Effect.catchAll((error) =>
-              Effect.gen(function* () {
-                yield* Effect.logError("Failed to refresh packages").pipe(
-                  Effect.annotateLogs({ notebookUri, error: String(error) }),
-                );
-                yield* packagesService.setDependencyTreeError(
-                  notebookUri,
-                  String(error),
-                );
-              }),
-            ),
-          );
+        yield* packagesService.clearNotebook(notebookUri);
       }),
     );
 

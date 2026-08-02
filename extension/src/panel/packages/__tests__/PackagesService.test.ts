@@ -228,7 +228,7 @@ describe("PackagesService", () => {
   );
 
   it.effect(
-    "forced fetch bypasses the cached dependency tree",
+    "invalidating bypasses the cached dependency tree",
     Effect.fn(function* () {
       let request = 0;
       const firstTree = {
@@ -261,9 +261,10 @@ describe("PackagesService", () => {
         expect(yield* svc.fetchDependencyTree(NOTEBOOK_URI)).toEqual(firstTree);
         expect(recorded).toHaveLength(1);
 
-        expect(
-          yield* svc.fetchDependencyTree(NOTEBOOK_URI, { force: true }),
-        ).toEqual(refreshedTree);
+        yield* svc.clearNotebook(NOTEBOOK_URI);
+        expect(yield* svc.fetchDependencyTree(NOTEBOOK_URI)).toEqual(
+          refreshedTree,
+        );
         expect(recorded).toHaveLength(2);
 
         const state = Option.getOrThrow(
@@ -279,7 +280,7 @@ describe("PackagesService", () => {
   );
 
   it.scoped(
-    "does not let an older request overwrite a newer forced fetch",
+    "does not let an invalidated request overwrite a newer fetch",
     Effect.fn(function* () {
       const firstRequestStarted = yield* Deferred.make<void>();
       const releaseFirstRequest = yield* Deferred.make<void>();
@@ -317,13 +318,12 @@ describe("PackagesService", () => {
       yield* Effect.gen(function* () {
         const svc = yield* PackagesService;
         const olderFetch = yield* Effect.fork(
-          svc.fetchDependencyTree(NOTEBOOK_URI, { force: true }),
+          svc.fetchDependencyTree(NOTEBOOK_URI),
         );
         yield* Deferred.await(firstRequestStarted);
 
-        expect(
-          yield* svc.fetchDependencyTree(NOTEBOOK_URI, { force: true }),
-        ).toEqual(newerTree);
+        yield* svc.clearNotebook(NOTEBOOK_URI);
+        expect(yield* svc.fetchDependencyTree(NOTEBOOK_URI)).toEqual(newerTree);
 
         yield* Deferred.succeed(releaseFirstRequest, undefined);
         expect(yield* Fiber.join(olderFetch)).toEqual(olderTree);
