@@ -1,6 +1,7 @@
 import { Effect, Layer, Option, Ref, Schema, Stream } from "effect";
 import type { Uri, WorkspaceFolder } from "vscode";
 
+import { MarimoCommands } from "../commands/MarimoCommands.ts";
 import { createStorageKey, Storage } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
@@ -158,8 +159,8 @@ export const RecentNotebooksLive = Layer.scopedDiscard(
     );
 
     // Register command to clear recent notebooks
-    yield* code.commands.registerCommand(
-      "marimo.clearRecentNotebooks",
+    yield* code.commands.register(
+      MarimoCommands.clearRecentNotebooks,
       Effect.fn(function* () {
         yield* Ref.set(recentNotebooks, []);
         yield* storage.workspace

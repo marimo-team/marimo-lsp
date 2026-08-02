@@ -1,5 +1,6 @@
 import { Effect, Layer, Option, Ref, Stream } from "effect";
 
+import { MarimoCommands } from "../../commands/MarimoCommands.ts";
 import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../../platform/VsCode.ts";
@@ -176,8 +177,8 @@ export const PackagesViewLive = Layer.scopedDiscard(
     );
 
     // Register command to refresh packages
-    yield* code.commands.registerCommand(
-      "marimo.refreshPackages",
+    yield* code.commands.register(
+      MarimoCommands.refreshPackages,
       Effect.fn(function* () {
         const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
         if (Option.isNone(activeNotebookUri)) {

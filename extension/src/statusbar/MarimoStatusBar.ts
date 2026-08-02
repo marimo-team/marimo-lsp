@@ -4,6 +4,8 @@ import * as NodePath from "node:path";
 import { Cause, Effect, Either, Layer, Option } from "effect";
 
 import { unreachable } from "../assert.ts";
+import { commandId } from "../commands.ts";
+import { MarimoCommands } from "../commands/MarimoCommands.ts";
 import { Links } from "../lib/links.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { ExtensionContext } from "../platform/Storage.ts";
@@ -20,8 +22,8 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
     const statusBar = yield* StatusBar;
 
     // Register the command that shows the quick pick menu
-    yield* code.commands.registerCommand(
-      "marimo.showMarimoMenu",
+    yield* code.commands.register(
+      MarimoCommands.showMarimoMenu,
       Effect.fn(function* () {
         const selection = yield* code.window.showQuickPickItems(
           [
@@ -84,7 +86,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
             break;
           }
           case "settings": {
-            yield* code.commands.executeCommand(
+            yield* code.commands.executeVSCode(
               "workbench.action.openSettings",
               "marimo",
             );
@@ -95,7 +97,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
             break;
           }
           case "diagnostics": {
-            yield* code.commands.executeCommand("marimo.showDiagnostics");
+            yield* code.commands.execute(MarimoCommands.showDiagnostics);
             break;
           }
           default: {
@@ -106,7 +108,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
     );
 
     // Register the command that opens tutorials directly
-    yield* code.commands.registerCommand("marimo.openTutorial", () =>
+    yield* code.commands.register(MarimoCommands.openTutorial, () =>
       tutorialCommands().pipe(
         Effect.catchAll((error) =>
           Effect.gen(function* () {
@@ -127,7 +129,7 @@ export const MarimoStatusBarLive = Layer.scopedDiscard(
       text: "$(notebook) marimo",
       // TODO: This could show status info instead (e.g. version, running, etc.)
       tooltip: "Click to view marimo options",
-      command: "marimo.showMarimoMenu",
+      command: commandId(MarimoCommands.showMarimoMenu),
       alignment: "Left",
       priority: 100,
     });

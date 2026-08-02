@@ -82,6 +82,7 @@ export default vite.defineConfig({
       ],
       "marimo/vscode-type-only": "error",
       "marimo/no-at-imports": "error",
+      "marimo/no-marimo-command-id-literals": "error",
       "typescript/no-non-null-assertion": "error",
       "typescript/no-misused-spread": "off",
       "typescript/no-shadow": "off",

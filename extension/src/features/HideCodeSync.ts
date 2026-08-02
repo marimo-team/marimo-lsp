@@ -81,7 +81,7 @@ export const HideCodeSyncLive = Layer.scopedDiscard(
             });
 
             yield* code.commands
-              .executeCommand("notebook.cell.collapseCellInput", {
+              .executeVSCode("notebook.cell.collapseCellInput", {
                 ranges,
                 document: notebook.value.uri,
               })

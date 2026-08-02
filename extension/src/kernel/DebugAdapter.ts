@@ -146,7 +146,7 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
 
           yield* proxy.ready.pipe(
             Effect.andThen(
-              code.commands.executeCommand("notebook.cell.execute", {
+              code.commands.executeVSCode("notebook.cell.execute", {
                 ranges: [{ start: cellIndex, end: cellIndex + 1 }],
               }),
             ),

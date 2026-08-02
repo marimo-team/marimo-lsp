@@ -1,6 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Either, PubSub, Queue } from "effect";
 
+import { commandId } from "../../commands.ts";
+import { MarimoCommands } from "../../commands/MarimoCommands.ts";
+
 describe("Commands pubsub", () => {
   it.effect(
     "should receive command events through subscription",
@@ -16,15 +19,15 @@ describe("Commands pubsub", () => {
           // Publish events
           yield* PubSub.publish(
             commandPubSub,
-            Either.right("marimo.newMarimoNotebook"),
+            Either.right(commandId(MarimoCommands.newMarimoNotebook)),
           );
           yield* PubSub.publish(
             commandPubSub,
-            Either.right("marimo.openTutorial"),
+            Either.right(commandId(MarimoCommands.openTutorial)),
           );
           yield* PubSub.publish(
             commandPubSub,
-            Either.left("marimo.restartKernel"),
+            Either.left(commandId(MarimoCommands.restartKernel)),
           );
 
           // Take 3 events from the subscription
@@ -44,13 +47,15 @@ describe("Commands pubsub", () => {
       expect(Either.isLeft(result[2])).toBe(true);
 
       if (Either.isRight(result[0])) {
-        expect(result[0].right).toBe("marimo.newMarimoNotebook");
+        expect(result[0].right).toBe(
+          commandId(MarimoCommands.newMarimoNotebook),
+        );
       }
       if (Either.isRight(result[1])) {
-        expect(result[1].right).toBe("marimo.openTutorial");
+        expect(result[1].right).toBe(commandId(MarimoCommands.openTutorial));
       }
       if (Either.isLeft(result[2])) {
-        expect(result[2].left).toBe("marimo.restartKernel");
+        expect(result[2].left).toBe(commandId(MarimoCommands.restartKernel));
       }
     }),
   );
@@ -70,11 +75,11 @@ describe("Commands pubsub", () => {
           // Publish events
           yield* PubSub.publish(
             commandPubSub,
-            Either.right("marimo.newMarimoNotebook"),
+            Either.right(commandId(MarimoCommands.newMarimoNotebook)),
           );
           yield* PubSub.publish(
             commandPubSub,
-            Either.right("marimo.openTutorial"),
+            Either.right(commandId(MarimoCommands.openTutorial)),
           );
 
           // Both subscribers should receive both events

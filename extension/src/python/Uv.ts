@@ -678,12 +678,12 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
     );
 
     if (Option.isSome(reload) && reload.value === "Reload Window") {
-      yield* code.commands.executeCommand("workbench.action.reloadWindow");
+      yield* code.commands.executeVSCode("workbench.action.reloadWindow");
     }
   }
 
   if (Option.isSome(choice) && choice.value === "Open Settings") {
-    yield* code.commands.executeCommand(
+    yield* code.commands.executeVSCode(
       "workbench.action.openSettings",
       "marimo.uv.path",
     );

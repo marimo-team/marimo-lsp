@@ -4,6 +4,8 @@ import type * as vscode from "vscode";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import { commandId } from "../../commands.ts";
+import { MarimoCommands } from "../../commands/MarimoCommands.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import {
   promptToRestartKernelForFileRootChange,
@@ -29,7 +31,7 @@ it.scoped("runs the restart command only when selected", () =>
       Effect.provide(vscode.layer),
     );
     expect(yield* Ref.get(vscode.executions)).toContainEqual({
-      command: "marimo.restartKernel",
+      command: commandId(MarimoCommands.restartKernel),
       args: [],
     });
 

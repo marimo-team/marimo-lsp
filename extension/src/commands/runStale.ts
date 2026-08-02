@@ -38,7 +38,7 @@ export const runStale = Effect.fn("command.runStale")(
       }),
     );
 
-    yield* code.commands.executeCommand("notebook.cell.execute", {
+    yield* code.commands.executeVSCode("notebook.cell.execute", {
       ranges: staleCells.map((cell) => ({
         start: cell.index,
         end: cell.index + 1,

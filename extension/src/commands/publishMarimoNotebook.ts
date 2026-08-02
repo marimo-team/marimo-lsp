@@ -1,6 +1,7 @@
 import { Effect, Option } from "effect";
 
 import { VsCode } from "../platform/VsCode.ts";
+import { MarimoCommands } from "./MarimoCommands.ts";
 
 export const publishMarimoNotebook = Effect.fn(function* () {
   const code = yield* VsCode;
@@ -14,6 +15,6 @@ export const publishMarimoNotebook = Effect.fn(function* () {
     return;
   }
   if (choice.value.label === "GitHub Gist") {
-    yield* code.commands.executeCommand("marimo.publishMarimoNotebookGist");
+    yield* code.commands.execute(MarimoCommands.publishMarimoNotebookGist);
   }
 });
