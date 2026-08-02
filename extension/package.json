@@ -438,7 +438,10 @@
       {
         "id": "marimo.notebookActions",
         "label": "marimo",
-        "icon": "images/small-icon.png"
+        "icon": {
+          "light": "icons/marimo-icon-light.svg",
+          "dark": "icons/marimo-icon-dark.svg"
+        }
       },
       {
         "id": "marimo.runtimeActions",
