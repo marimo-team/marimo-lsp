@@ -19,6 +19,7 @@ export const GeneratedMarimoCommands = {
   configToggleOnCellChangeLazy: marimoCommand(
     "marimo.config.toggleOnCellChangeLazy",
   ),
+  configureAutoExport: marimoCommand("marimo.configureAutoExport"),
   createSetupCell: marimoCommand("marimo.createSetupCell"),
   debugCell: marimoCommand("marimo.debugCell"),
   exportStaticHTML: marimoCommand("marimo.exportStaticHTML"),

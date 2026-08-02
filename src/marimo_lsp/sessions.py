@@ -13,6 +13,7 @@ from uuid import uuid4
 from marimo._config.manager import get_default_config_manager
 from marimo._ipc import QueueManager as IpcQueues
 from marimo._runtime.commands import (
+    CodeCompletionCommand,
     CommandMessage,
     CreateNotebookCommand,
     ExecuteCellCommand,
@@ -204,7 +205,8 @@ class Session:
     ) -> None:
         """Send a command to the kernel."""
         del from_consumer_id
-        self.session_view.add_control_request(request)
+        if not isinstance(request, CodeCompletionCommand):
+            self.session_view.add_control_request(request)
         self._queue_manager.put_control_request(request)
 
     def _effective_runtime(self, config: MarimoConfig) -> MarimoConfig:
