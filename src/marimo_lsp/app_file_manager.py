@@ -68,6 +68,10 @@ class LspAppFileManager:
         """
         return to_fs_path(self._notebook_uri)
 
+    def move(self, notebook_uri: str) -> None:
+        """Update the URI after the backing notebook is renamed."""
+        self._notebook_uri = notebook_uri
+
     @property
     def is_notebook_named(self) -> bool:
         """Check if the notebook has a name.

@@ -95,15 +95,15 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
     expect(decoded.source).toEqual({ kind: "script" });
   });
 
-  it("keeps workingDirectory optional for older session clients", () => {
+  it("requires workingDirectory for session commands", () => {
     const command = SessionCommand(Schema.Struct({ code: Schema.String }));
-    expect(
+    expect(() =>
       Schema.decodeUnknownSync(command)({
         notebookUri: "file:///nb.py",
         executable: "/usr/bin/python",
         inner: { code: "print(1)" },
       }),
-    ).toMatchObject({ workingDirectory: null });
+    ).toThrow();
   });
 
   it("names structs in parse errors via identifier annotations", () => {

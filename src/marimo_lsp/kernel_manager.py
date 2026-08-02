@@ -110,7 +110,7 @@ class LspKernelManager(KernelManagerImpl):
         app_file_manager: LspAppFileManager,
         config_manager: MarimoConfigManager,
         connection_info: ConnectionInfo,
-        working_directory: str | None = None,
+        working_directory: str,
     ) -> None:
         super().__init__(
             # NB: Leaky abstraction. Mode affects internal behavior of
@@ -142,18 +142,8 @@ class LspKernelManager(KernelManagerImpl):
 
     def start_kernel(self) -> None:
         """Start an instance of the marimo kernel using ZeroMQ IPC."""
-        notebook_dir = (
-            Path(self.app_metadata.filename).parent
-            if self.app_metadata.filename
-            else None
-        )
-        working_directory = (
-            Path(self.working_directory)
-            if self.working_directory is not None
-            else notebook_dir
-        )
-        if working_directory is not None:
-            _validate_working_directory(working_directory)
+        working_directory = Path(self.working_directory)
+        _validate_working_directory(working_directory)
         logger.info(f"Kernel working directory: {working_directory}")
         self.kernel_task = launch_kernel(
             executable=self.executable,
@@ -165,7 +155,7 @@ class LspKernelManager(KernelManagerImpl):
                 log_level=GLOBAL_SETTINGS.LOG_LEVEL,
                 profile_path=self.profile_path,
             ),
-            cwd=str(working_directory) if working_directory else None,
+            cwd=str(working_directory),
         )
 
 

@@ -51,15 +51,20 @@ from marimo_lsp.models import (
     InterruptRequest,
     ListPackagesRequest,
     ListPackagesResponse,
+    ListSessionsRequest,
+    ListSessionsResponse,
     ModelRequest,
+    MoveSessionRequest,
     NotebookCommand,
     NotebookDocument,
     PackageCommand,
+    RestartSessionRequest,
     ScriptSource,
     SerializeResponse,
     SessionCommand,
     SetDisplayThemeRequest,
     SetDisplayThemeResponse,
+    ShutdownAllSessionsRequest,
     StdinRequest,
     UpdateConfigurationRequest,
     UpdateUIElementRequest,
@@ -194,6 +199,13 @@ class ApiBuilder:
 marimo_api = ApiBuilder()
 
 
+class SessionNotFoundError(ValueError):
+    """Raised when an API command requires a live notebook session."""
+
+    def __init__(self, notebook_uri: str) -> None:
+        super().__init__(f"No session found for {notebook_uri}")
+
+
 def _get_display_config(config: MarimoConfig) -> DisplayConfig:
     """Extract the display config from a MarimoConfig.
 
@@ -211,6 +223,7 @@ async def run(
     session = ctx.sessions.start(
         args.notebook_uri, args.executable, args.working_directory
     )
+    session.mark_running()
 
     session.instantiate(
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
@@ -303,6 +316,50 @@ async def close_session(
     ctx.sessions.close(args.notebook_uri)
 
 
+@marimo_api("restart-session")
+async def restart_session(
+    ctx: ApiContext,
+    args: NotebookCommand[RestartSessionRequest],
+) -> None:
+    logger.info(f"restart_session for {args.notebook_uri}")
+    restarted = ctx.sessions.restart(
+        args.notebook_uri,
+        executable=args.inner.executable,
+        working_directory=args.inner.working_directory,
+        create_if_missing=args.inner.create_if_missing,
+    )
+    if restarted is None:
+        raise SessionNotFoundError(args.notebook_uri)
+
+
+@marimo_api("move-session")
+async def move_session(
+    ctx: ApiContext,
+    args: NotebookCommand[MoveSessionRequest],
+) -> None:
+    logger.info(
+        f"move_session from {args.notebook_uri} to {args.inner.new_notebook_uri}"
+    )
+    ctx.sessions.move(args.notebook_uri, args.inner.new_notebook_uri)
+
+
+@marimo_api("list-sessions")
+async def list_sessions(
+    ctx: ApiContext,
+    _args: ListSessionsRequest,
+) -> ListSessionsResponse:
+    return ListSessionsResponse(sessions=ctx.sessions.describe())
+
+
+@marimo_api("shutdown-all-sessions")
+async def shutdown_all_sessions(
+    ctx: ApiContext,
+    _args: ShutdownAllSessionsRequest,
+) -> None:
+    """Close every live kernel session with one collection mutation."""
+    ctx.sessions.close_all()
+
+
 @marimo_api("execute-scratchpad")
 async def execute_scratch(
     ctx: ApiContext,
@@ -330,6 +387,7 @@ async def execute_scratch(
     session = ctx.sessions.start(
         args.notebook_uri, args.executable, args.working_directory
     )
+    session.mark_running()
 
     session.instantiate(
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
@@ -615,6 +673,5 @@ async def handle_api_command(
     request = msgspec.convert(params, type=spec.request)
     result = await spec.handler(ApiContext(ls=ls, sessions=sessions), request)
 
-    payload = msgspec.to_builtins(result)
-    validated = msgspec.convert(payload, type=spec.response)
+    validated = msgspec.convert(result, type=spec.response)
     return msgspec.to_builtins(validated)

@@ -55,8 +55,8 @@ class SessionCommand(NotebookCommand[T]):
     executable: str
     """The target environment Python executable."""
 
-    working_directory: str | None = None
-    """Optional absolute working directory for a newly launched kernel."""
+    working_directory: str
+    """Absolute working directory for the launched kernel."""
 
 
 class VenvSource(msgspec.Struct, tag="venv", tag_field="kind", rename="camel"):
@@ -246,6 +246,53 @@ class GetConfigurationRequest(msgspec.Struct, rename="camel"):
 
 class CloseSessionRequest(msgspec.Struct, rename="camel"):
     """A request to close the current session."""
+
+
+class RestartSessionRequest(msgspec.Struct, rename="camel"):
+    """A request to restart a live session's kernel."""
+
+    executable: str
+    """Executable used to restart or restore the session."""
+
+    working_directory: str
+    """Working directory used to restart or restore the session."""
+
+    create_if_missing: bool = False
+    """Create a replacement only for an explicit restore operation."""
+
+
+class MoveSessionRequest(msgspec.Struct, rename="camel"):
+    """A request to move a live session to a renamed notebook URI."""
+
+    new_notebook_uri: str
+    """The notebook URI after the rename."""
+
+
+class ListSessionsRequest(msgspec.Struct, rename="camel"):
+    """A request for all live sessions owned by this language server."""
+
+
+class ShutdownAllSessionsRequest(msgspec.Struct, rename="camel"):
+    """A request to close every live session owned by this language server."""
+
+
+class SessionInfo(msgspec.Struct, rename="camel", frozen=True):
+    """User-facing state for one live kernel session."""
+
+    session_id: str
+    notebook_uri: str
+    filename: str | None
+    executable: str
+    working_directory: str
+    started_at: float
+    status: typing.Literal["idle", "running"]
+    attached: bool
+
+
+class ListSessionsResponse(msgspec.Struct, rename="camel"):
+    """Snapshot of all live sessions owned by this language server."""
+
+    sessions: list[SessionInfo]
 
 
 class ExportAsIpynbRequest(msgspec.Struct, rename="camel"):

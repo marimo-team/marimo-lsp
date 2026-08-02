@@ -7,7 +7,7 @@ import type { CellId } from "./types.ts";
 export type MarimoView =
   | "marimo-explorer-datasources"
   | "marimo-explorer-packages"
-  | "marimo-explorer-recents"
+  | "marimo-explorer-sessions"
   | "marimo-explorer-variables";
 
 export const NOTEBOOK_TYPE = "marimo-notebook";
@@ -41,6 +41,7 @@ export const MINIMUM_MARIMO_KERNEL_VERSION = {
 export type MarimoContextKey =
   | "marimo.config.runtime.auto_reload"
   | "marimo.config.runtime.on_cell_change"
+  | "marimo.hasLiveSessions"
   | "marimo.isPythonFileMarimoNotebook"
   | "marimo.notebook.hasKernel"
   | "marimo.notebook.hasStaleCells";

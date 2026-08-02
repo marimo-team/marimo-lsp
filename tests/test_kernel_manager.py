@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _manager(notebook: Path, working_directory: str | None) -> LspKernelManager:
+def _manager(notebook: Path, working_directory: str) -> LspKernelManager:
     manager = LspKernelManager.__new__(LspKernelManager)
     manager.executable = "/usr/bin/python"
     manager.connection_info = Mock()
@@ -38,18 +38,6 @@ def test_supplied_working_directory_reaches_launch_kernel(
     manager.start_kernel()
 
     assert launch.call_args.kwargs["cwd"] == str(selected)
-
-
-def test_omitted_working_directory_uses_notebook_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    launch = Mock(return_value=Mock())
-    monkeypatch.setattr("marimo_lsp.kernel_manager.launch_kernel", launch)
-
-    manager = _manager(tmp_path / "notebook.py", None)
-    manager.start_kernel()
-
-    assert launch.call_args.kwargs["cwd"] == str(tmp_path)
 
 
 @pytest.mark.parametrize("kind", ["relative", "missing", "file"])

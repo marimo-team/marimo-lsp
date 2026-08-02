@@ -5,7 +5,6 @@
 import { marimoCommand } from "../commands.ts";
 
 export const GeneratedMarimoCommands = {
-  clearRecentNotebooks: marimoCommand("marimo.clearRecentNotebooks"),
   configToggleAutoReloadAutorun: marimoCommand(
     "marimo.config.toggleAutoReloadAutorun",
   ),
@@ -26,6 +25,7 @@ export const GeneratedMarimoCommands = {
   newMarimoNotebook: marimoCommand("marimo.newMarimoNotebook"),
   openAsMarimoNotebook: marimoCommand("marimo.openAsMarimoNotebook"),
   openOutlineView: marimoCommand("marimo.openOutlineView"),
+  openSession: marimoCommand("marimo.openSession"),
   openTutorial: marimoCommand("marimo.openTutorial"),
   publishMarimoNotebook: marimoCommand("marimo.publishMarimoNotebook"),
   publishMarimoNotebookGist: marimoCommand("marimo.publishMarimoNotebookGist"),
@@ -33,10 +33,13 @@ export const GeneratedMarimoCommands = {
   reportIssue: marimoCommand("marimo.reportIssue"),
   restartKernel: marimoCommand("marimo.restartKernel"),
   restartLsp: marimoCommand("marimo.restartLsp"),
+  restartSession: marimoCommand("marimo.restartSession"),
   runStale: marimoCommand("marimo.runStale"),
   showDiagnostics: marimoCommand("marimo.showDiagnostics"),
   showMarimoMenu: marimoCommand("marimo.showMarimoMenu"),
   showNotebookActions: marimoCommand("marimo.showNotebookActions"),
+  shutdownAllSessions: marimoCommand("marimo.shutdownAllSessions"),
+  shutdownSession: marimoCommand("marimo.shutdownSession"),
   updateActivePythonEnvironment: marimoCommand(
     "marimo.updateActivePythonEnvironment",
   ),

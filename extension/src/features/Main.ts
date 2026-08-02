@@ -28,7 +28,9 @@ import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
 import { DatasourcesViewLive } from "../panel/datasources/DatasourcesView.ts";
 import { PackagesService } from "../panel/packages/PackagesService.ts";
 import { PackagesViewLive } from "../panel/packages/PackagesView.ts";
-import { RecentNotebooksLive } from "../panel/RecentNotebooks.ts";
+import { SessionFileLifecycleLive } from "../panel/sessions/SessionFileLifecycle.ts";
+import { SessionsService } from "../panel/sessions/SessionsService.ts";
+import { SessionsViewLive } from "../panel/sessions/SessionsView.ts";
 import { TreeView } from "../panel/TreeView.ts";
 import { VariablesService } from "../panel/variables/VariablesService.ts";
 import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
@@ -70,7 +72,8 @@ const MainLive = Layer.empty
     Layer.merge(PythonEnvironmentStatusBarLive),
     Layer.merge(MarimoFileDetectorLive),
     Layer.merge(MarimoCodeLensProviderLive),
-    Layer.merge(RecentNotebooksLive),
+    Layer.merge(SessionsViewLive),
+    Layer.merge(SessionFileLifecycleLive),
     Layer.merge(VariablesViewLive),
     Layer.merge(DatasourcesViewLive),
     Layer.merge(PackagesViewLive),
@@ -94,6 +97,7 @@ const MainLive = Layer.empty
     Layer.provide(VariablesService.Default),
     Layer.provide(DatasourcesService.Default),
     Layer.provide(PackagesService.Default),
+    Layer.provideMerge(SessionsService.Default),
     Layer.provide(HealthService.Default),
     Layer.provide(CellMetadataUIBindingService.Default),
   )

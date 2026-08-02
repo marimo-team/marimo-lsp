@@ -70,6 +70,15 @@ export const TestMarimoClientLive = Layer.scoped(
             ),
           );
         },
+        sessionChanges() {
+          return Stream.asyncPush((emit) =>
+            acquireDisposable(() =>
+              conn.onNotification("marimo/sessionsChanged", (message) => {
+                emit.single(message);
+              }),
+            ),
+          );
+        },
       }),
     });
   }),

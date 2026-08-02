@@ -34,6 +34,7 @@ import {
   type OpenNotebookSession,
 } from "../notebook/NotebookSessions.ts";
 import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
+import { SessionsService } from "../panel/sessions/SessionsService.ts";
 import { VariablesService } from "../panel/variables/VariablesService.ts";
 import { Constants } from "../platform/Constants.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
@@ -224,6 +225,7 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       DatasourcesService.Default,
       NotebookEditorRegistry.Default,
       PythonEnvInvalidation.Default,
+      SessionsService.Default,
     ],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
@@ -233,6 +235,7 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       const executions = yield* CellExecutions;
       const variables = yield* VariablesService;
       const datasources = yield* DatasourcesService;
+      const liveSessions = yield* SessionsService;
       const operations = yield* PubSub.unbounded<MarimoOperation>();
       const notebooks = new Map<NotebookId, NotebookState>();
       const runtimeSessions = new Map<NotebookId, RuntimeSession>();
@@ -397,11 +400,9 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
           yield* code.window.getActiveNotebookEditor(),
           (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
         );
-        const hasKernel =
-          Option.isSome(activeNotebook) &&
-          Option.isSome(
-            yield* forNotebook(activeNotebook.value.id).getController(),
-          );
+        const hasKernel = Option.isSome(activeNotebook)
+          ? Option.isSome(yield* liveSessions.find(activeNotebook.value.id))
+          : false;
 
         yield* code.commands.setContext("marimo.notebook.hasKernel", hasKernel);
       });
@@ -420,6 +421,9 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
           yield* datasources.clearNotebook(notebookId);
           yield* updateKernelContext();
         }),
+      );
+      yield* Effect.forkScoped(
+        liveSessions.changes().pipe(Stream.runForEach(updateKernelContext)),
       );
       yield* Effect.forkScoped(
         processRuntimeOperations(

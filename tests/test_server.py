@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -441,6 +442,7 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
                     "params": {
                         "notebookUri": "file:///package_test.py",
                         "executable": sys.executable,
+                        "workingDirectory": str(Path.cwd()),
                         "inner": {
                             "cellIds": ["cell1"],
                             "codes": ["x = 1"],
@@ -544,6 +546,7 @@ async def test_execute_scratchpad_binds_code_mode_and_emits_transaction(
                     "params": {
                         "notebookUri": uri,
                         "executable": sys.executable,
+                        "workingDirectory": str(Path.cwd()),
                         "inner": {"cellIds": ["cell1"], "codes": ["x = 1"]},
                     },
                 }
@@ -561,6 +564,7 @@ async def test_execute_scratchpad_binds_code_mode_and_emits_transaction(
                     "params": {
                         "notebookUri": uri,
                         "executable": sys.executable,
+                        "workingDirectory": str(Path.cwd()),
                         "inner": {
                             "code": (
                                 "import marimo._code_mode as cm\n"
@@ -654,6 +658,7 @@ async def test_code_mode_edit_cell_config_on_existing_cell(
                     "params": {
                         "notebookUri": uri,
                         "executable": sys.executable,
+                        "workingDirectory": str(Path.cwd()),
                         "inner": {"cellIds": ["cell1"], "codes": ["x = 1"]},
                     },
                 }
@@ -672,6 +677,7 @@ async def test_code_mode_edit_cell_config_on_existing_cell(
                     "params": {
                         "notebookUri": uri,
                         "executable": sys.executable,
+                        "workingDirectory": str(Path.cwd()),
                         "inner": {
                             "code": (
                                 "import marimo._code_mode as cm\n"
@@ -764,6 +770,7 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
                     "params": {
                         "notebookUri": "file:///dep_tree_test.py",
                         "executable": sys.executable,
+                        "workingDirectory": str(Path.cwd()),
                         "inner": {
                             "cellIds": ["cell1"],
                             "codes": ["x = 1"],
@@ -1000,6 +1007,7 @@ x\
                     "params": {
                         "notebookUri": "file:///exec_test.py",
                         "executable": sys.executable,
+                        "workingDirectory": str(Path.cwd()),
                         "inner": {
                             "cellIds": ["cell1"],
                             "codes": [code],
@@ -1264,6 +1272,7 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
                     "params": {
                         "notebookUri": "file:///exec_test.py",
                         "executable": sys.executable,
+                        "workingDirectory": str(Path.cwd()),
                         # Just run cell_y, and cell_x should be run automatically
                         "inner": {
                             "cellIds": ["cell2"],
@@ -1810,6 +1819,7 @@ async def test_scratchpad_execution(client: LanguageClient) -> None:
                     "params": {
                         "notebookUri": "file:///scratch_test.py",
                         "executable": sys.executable,
+                        "workingDirectory": str(Path.cwd()),
                         "inner": {
                             "cellIds": ["cell1"],
                             "codes": [notebook_code],
@@ -1841,6 +1851,7 @@ y\
                     "params": {
                         "notebookUri": "file:///scratch_test.py",
                         "executable": sys.executable,
+                        "workingDirectory": str(Path.cwd()),
                         "inner": {
                             "code": scratchpad_code,
                         },
@@ -1992,6 +2003,7 @@ async def test_scratchpad_creates_session_when_missing(
                     "params": {
                         "notebookUri": uri,
                         "executable": sys.executable,
+                        "workingDirectory": str(Path.cwd()),
                         "inner": {"code": "print('from new session')"},
                     },
                 }

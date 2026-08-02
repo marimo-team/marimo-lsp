@@ -285,7 +285,7 @@ export class Window extends Effect.Service<Window>()("Window", {
       ) {
         return Effect.gen(function* () {
           const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
-          yield* Effect.promise((signal) =>
+          return yield* Effect.promise((signal) =>
             api.withProgress(options, (progress, token) =>
               runPromise(
                 Effect.gen(function* () {
@@ -294,7 +294,7 @@ export class Window extends Effect.Service<Window>()("Window", {
                   yield* acquireDisposable(() =>
                     token.onCancellationRequested(kill),
                   );
-                  yield* Fiber.join(fiber);
+                  return yield* Fiber.join(fiber);
                 }).pipe(Effect.scoped),
                 { signal },
               ),
@@ -307,6 +307,7 @@ export class Window extends Effect.Service<Window>()("Window", {
 }) {}
 
 type ContextMap = {
+  "marimo.hasLiveSessions": boolean;
   "marimo.config.runtime.on_cell_change": "autorun" | "lazy";
   "marimo.config.runtime.auto_reload": "off" | "lazy" | "autorun";
   "marimo.isPythonFileMarimoNotebook": boolean;
@@ -486,6 +487,20 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
         return Stream.asyncPush<vscode.NotebookDocument>((emit) =>
           acquireDisposable(() =>
             api.onDidCloseNotebookDocument((event) => emit.single(event)),
+          ),
+        );
+      },
+      fileRenames() {
+        return Stream.asyncPush<vscode.FileRenameEvent>((emit) =>
+          acquireDisposable(() =>
+            api.onDidRenameFiles((event) => emit.single(event)),
+          ),
+        );
+      },
+      fileDeletes() {
+        return Stream.asyncPush<vscode.FileDeleteEvent>((emit) =>
+          acquireDisposable(() =>
+            api.onDidDeleteFiles((event) => emit.single(event)),
           ),
         );
       },

@@ -77,4 +77,20 @@ describe("MarimoCommands", () => {
       expect(args).toEqual(["file:///notebook.py"]);
     }),
   );
+
+  it.effect("ignores contextual arguments for view-title commands", () =>
+    Effect.gen(function* () {
+      const context = { injectedBy: "view/title" };
+      expect(
+        yield* decodeCommandArguments(MarimoCommands.shutdownAllSessions, [
+          context,
+        ]),
+      ).toEqual([]);
+      expect(
+        yield* decodeCommandArguments(MarimoCommands.refreshPackages, [
+          context,
+        ]),
+      ).toEqual([]);
+    }),
+  );
 });

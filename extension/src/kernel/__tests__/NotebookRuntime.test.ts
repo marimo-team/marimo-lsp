@@ -3,7 +3,7 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, Schedule, Stream } from "effect";
+import { Effect, Layer, Option, PubSub, Ref, Schedule, Stream } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
@@ -64,6 +64,10 @@ it.scoped(
       yield* first.interrupt().pipe(Effect.orDie);
 
       assert.deepStrictEqual(yield* Ref.get(requests), [
+        {
+          method: "list-sessions",
+          params: {},
+        },
         {
           method: "execute-cells",
           params: {
@@ -228,7 +232,7 @@ it.scoped(
 );
 
 it.scoped(
-  "updates the active notebook kernel context when a controller is attached",
+  "does not report a live kernel from controller selection alone",
   Effect.fn(function* () {
     const { layer, vscode } = yield* makeTestLayer();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
@@ -253,7 +257,7 @@ it.scoped(
           execution.command === "setContext" &&
           execution.args[0] === "marimo.notebook.hasKernel",
       );
-      expect(contexts.at(-1)?.args[1]).toBe(true);
+      expect(contexts.at(-1)?.args[1]).toBe(false);
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -303,6 +307,55 @@ it.scoped(
 );
 
 it.scoped(
+  "reports a live kernel from the server session snapshot",
+  Effect.fn(function* () {
+    const changes = yield* PubSub.unbounded<{
+      sessions: ReadonlyArray<{
+        sessionId: string;
+        notebookUri: ReturnType<typeof notebookId>;
+        filename: string;
+        executable: string;
+        workingDirectory: string;
+        startedAt: number;
+        status: "idle";
+        attached: boolean;
+      }>;
+    }>();
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    const id = notebookId(editor.notebook.uri.toString());
+    const { layer, vscode } = yield* makeTestLayer({
+      sessionChanges: () => Stream.fromPubSub(changes),
+    });
+
+    yield* Effect.gen(function* () {
+      yield* NotebookRuntime;
+      yield* vscode.setActiveNotebookEditor(Option.some(editor));
+      yield* Effect.yieldNow();
+      yield* PubSub.publish(changes, {
+        sessions: [
+          {
+            sessionId: "session",
+            notebookUri: id,
+            filename: "notebook_mo.py",
+            executable: "/usr/bin/python",
+            workingDirectory: "/test",
+            startedAt: 1,
+            status: "idle",
+            attached: true,
+          },
+        ],
+      });
+
+      const contexts = yield* eventually(
+        hasKernelContexts(vscode),
+        (values) => values.at(-1) === true,
+      );
+      expect(contexts.at(-1)).toBe(true);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.scoped(
   "releases a notebook's controller when its document closes",
   Effect.fn(function* () {
     const { layer, vscode } = yield* makeTestLayer();
@@ -321,7 +374,7 @@ it.scoped(
       yield* Effect.yieldNow();
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* notebooks.attachController(id, controller);
-      expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(true);
+      expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
 
       yield* Effect.yieldNow();
       yield* vscode.closeNotebook(editor.notebook);
