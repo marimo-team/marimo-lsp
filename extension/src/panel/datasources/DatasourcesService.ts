@@ -2,11 +2,8 @@ import { Effect, HashMap, SubscriptionRef } from "effect";
 
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type {
-  DataColumnPreviewNotification,
   DataSourceConnectionsNotification,
   DatasetsNotification,
-  SqlTableListPreviewNotification,
-  SqlTablePreviewNotification,
 } from "../../types.ts";
 
 /**
@@ -75,9 +72,6 @@ interface DatasetsMap {
  * Tracks:
  * 1. Data source connections (data-source-connections operation)
  * 2. Datasets (datasets operation)
- * 3. SQL table previews (sql-table-preview operation)
- * 4. SQL table list previews (sql-table-list-preview operation)
- * 5. Data column previews (data-column-preview operation)
  *
  * Uses SubscriptionRef for reactive state management.
  * Converts list-based data to Maps for efficient lookups.
@@ -94,21 +88,6 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
       // Track datasets: NotebookUri -> DatasetsMap
       const datasetsRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, DatasetsMap>(),
-      );
-
-      // Track SQL table previews: NotebookUri -> Map<request_id, table>
-      const tablePreviewsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, Map<string, DataTable | null>>(),
-      );
-
-      // Track SQL table list previews: NotebookUri -> Map<request_id, tables[]>
-      const tableListPreviewsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, Map<string, DataTable[]>>(),
-      );
-
-      // Track column previews: NotebookUri -> Map<table_name, ColumnStats>
-      const columnPreviewsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, Map<string, unknown>>(),
       );
 
       /**
@@ -226,91 +205,6 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         },
 
         /**
-         * Update SQL table preview for a notebook
-         */
-        updateTablePreview(
-          notebookUri: NotebookId,
-          operation: SqlTablePreviewNotification,
-        ) {
-          return Effect.gen(function* () {
-            yield* SubscriptionRef.update(tablePreviewsRef, (map) => {
-              const existing = HashMap.get(map, notebookUri);
-              const previewMap =
-                existing._tag === "Some" ? existing.value : new Map();
-
-              previewMap.set(operation.request_id, operation.table);
-
-              return HashMap.set(map, notebookUri, previewMap);
-            });
-
-            yield* Effect.logTrace("Updated table preview").pipe(
-              Effect.annotateLogs({
-                notebookUri,
-                request_id: operation.request_id,
-                has_table: operation.table !== null,
-              }),
-            );
-          });
-        },
-
-        /**
-         * Update SQL table list preview for a notebook
-         */
-        updateTableListPreview(
-          notebookUri: NotebookId,
-          operation: SqlTableListPreviewNotification,
-        ) {
-          return Effect.gen(function* () {
-            yield* SubscriptionRef.update(tableListPreviewsRef, (map) => {
-              const existing = HashMap.get(map, notebookUri);
-              const previewMap =
-                existing._tag === "Some" ? existing.value : new Map();
-
-              previewMap.set(operation.request_id, operation.tables ?? []);
-
-              return HashMap.set(map, notebookUri, previewMap);
-            });
-
-            yield* Effect.logTrace("Updated table list preview").pipe(
-              Effect.annotateLogs({
-                notebookUri,
-                request_id: operation.request_id,
-                count: operation.tables?.length ?? 0,
-              }),
-            );
-          });
-        },
-
-        /**
-         * Update column preview for a notebook
-         */
-        updateColumnPreview(
-          notebookUri: NotebookId,
-          operation: DataColumnPreviewNotification,
-        ) {
-          return Effect.gen(function* () {
-            yield* SubscriptionRef.update(columnPreviewsRef, (map) => {
-              const existing = HashMap.get(map, notebookUri);
-              const previewMap =
-                existing._tag === "Some" ? existing.value : new Map();
-
-              if (operation.table_name) {
-                previewMap.set(operation.table_name, operation.stats);
-              }
-
-              return HashMap.set(map, notebookUri, previewMap);
-            });
-
-            yield* Effect.logTrace("Updated column preview").pipe(
-              Effect.annotateLogs({
-                notebookUri,
-                table_name: operation.table_name,
-              }),
-            );
-          });
-        },
-
-        /**
          * Get data source connections for a notebook
          */
         getConnections(notebookUri: NotebookId) {
@@ -331,48 +225,6 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         },
 
         /**
-         * Get table preview for a notebook and request ID
-         */
-        getTablePreview(notebookUri: NotebookId, requestId: string) {
-          return Effect.gen(function* () {
-            const map = yield* SubscriptionRef.get(tablePreviewsRef);
-            const previewMap = HashMap.get(map, notebookUri);
-            if (previewMap._tag === "Some") {
-              return previewMap.value.get(requestId) ?? null;
-            }
-            return null;
-          });
-        },
-
-        /**
-         * Get table list preview for a notebook and request ID
-         */
-        getTableListPreview(notebookUri: NotebookId, requestId: string) {
-          return Effect.gen(function* () {
-            const map = yield* SubscriptionRef.get(tableListPreviewsRef);
-            const previewMap = HashMap.get(map, notebookUri);
-            if (previewMap._tag === "Some") {
-              return previewMap.value.get(requestId) ?? [];
-            }
-            return [];
-          });
-        },
-
-        /**
-         * Get column preview for a notebook and table name
-         */
-        getColumnPreview(notebookUri: NotebookId, tableName: string) {
-          return Effect.gen(function* () {
-            const map = yield* SubscriptionRef.get(columnPreviewsRef);
-            const previewMap = HashMap.get(map, notebookUri);
-            if (previewMap._tag === "Some") {
-              return previewMap.value.get(tableName) ?? null;
-            }
-            return null;
-          });
-        },
-
-        /**
          * Clear all datasource data for a notebook
          */
         clearNotebook(notebookUri: NotebookId) {
@@ -381,15 +233,6 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
               HashMap.remove(map, notebookUri),
             );
             yield* SubscriptionRef.update(datasetsRef, (map) =>
-              HashMap.remove(map, notebookUri),
-            );
-            yield* SubscriptionRef.update(tablePreviewsRef, (map) =>
-              HashMap.remove(map, notebookUri),
-            );
-            yield* SubscriptionRef.update(tableListPreviewsRef, (map) =>
-              HashMap.remove(map, notebookUri),
-            );
-            yield* SubscriptionRef.update(columnPreviewsRef, (map) =>
               HashMap.remove(map, notebookUri),
             );
 
@@ -415,33 +258,6 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
          */
         streamDatasetsChanges() {
           return datasetsRef.changes;
-        },
-
-        /**
-         * Stream of table preview changes.
-         *
-         * Emits the current value on subscription, then all subsequent changes.
-         */
-        streamTablePreviewsChanges() {
-          return tablePreviewsRef.changes;
-        },
-
-        /**
-         * Stream of table list preview changes.
-         *
-         * Emits the current value on subscription, then all subsequent changes.
-         */
-        streamTableListPreviewsChanges() {
-          return tableListPreviewsRef.changes;
-        },
-
-        /**
-         * Stream of column preview changes.
-         *
-         * Emits the current value on subscription, then all subsequent changes.
-         */
-        streamColumnPreviewsChanges() {
-          return columnPreviewsRef.changes;
         },
       };
     }),

@@ -36,8 +36,6 @@ export class HealthService extends Effect.Service<HealthService>()(
       const tyLsp = yield* TyLanguageServer;
       const ruffLsp = yield* RuffLanguageServer;
 
-      const getLspStatus = () => Effect.succeed({ isAvailable: true });
-
       const formatDiagnostics = () =>
         Effect.gen(function* () {
           const [lspCustomPath, uvDisabled, extVersion] = yield* Effect.all([
@@ -228,26 +226,16 @@ export class HealthService extends Effect.Service<HealthService>()(
           }
 
           // Troubleshooting
-          const lspStatus = yield* getLspStatus();
-          if (!lspStatus.isAvailable) {
-            lines.push("Troubleshooting:");
-            lines.push("\t1. Check the 'marimo-lsp' output channel for errors");
-            lines.push(
-              "\t2. Ensure uv is installed: https://docs.astral.sh/uv/",
-            );
-            lines.push("\t3. Try reloading the VS Code window");
-          } else {
-            lines.push("Common Issues:");
-            lines.push("\t1. If notebooks won't open:");
-            lines.push("\t\t- Check Python interpreter is selected");
-            lines.push("\t\t- Ensure marimo is installed");
-            lines.push("\t\t- Check 'marimo-lsp' output channel for errors");
-            lines.push("\t2. If features are missing:");
-            lines.push(
-              `\t\t - Ensure marimo version is >= ${semver.format(MINIMUM_MARIMO_KERNEL_VERSION)}`,
-            );
-            lines.push("\t\t- Try reloading the window");
-          }
+          lines.push("Common Issues:");
+          lines.push("\t1. If notebooks won't open:");
+          lines.push("\t\t- Check Python interpreter is selected");
+          lines.push("\t\t- Ensure marimo is installed");
+          lines.push("\t\t- Check 'marimo-lsp' output channel for errors");
+          lines.push("\t2. If features are missing:");
+          lines.push(
+            `\t\t - Ensure marimo version is >= ${semver.format(MINIMUM_MARIMO_KERNEL_VERSION)}`,
+          );
+          lines.push("\t\t- Try reloading the window");
 
           return lines.join("\n");
         });

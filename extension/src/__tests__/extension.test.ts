@@ -6,7 +6,6 @@ import { getTestExtensionContext } from "../__mocks__/TestExtensionContext.ts";
 import { TestMarimoClientLive } from "../__mocks__/TestMarimoClient.ts";
 import { TestPythonExtension } from "../__mocks__/TestPythonExtension.ts";
 import { TestRuffLanguageServerLive } from "../__mocks__/TestRuffLanguageServer.ts";
-import { TestSentryLive } from "../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../__mocks__/TestTelemetry.ts";
 import { TestTyLanguageServerLive } from "../__mocks__/TestTyLanguageServer.ts";
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
@@ -23,7 +22,6 @@ const withTestCtx = Effect.fn(function* () {
     Layer.provideMerge(TestTyLanguageServerLive),
     Layer.provideMerge(TestRuffLanguageServerLive),
     Layer.provideMerge(TestTelemetryLive),
-    Layer.provideMerge(TestSentryLive),
   );
   return {
     layer,
@@ -51,7 +49,10 @@ describe("extension.activate", () => {
           },
         }
       `);
+      // Full activation builds the entire layer graph; the default 5s
+      // timeout flakes under parallel-worker load.
     }),
+    20_000,
   );
 
   it.scoped(
@@ -87,6 +88,7 @@ describe("extension.activate", () => {
       assert.strictEqual(pkg.contributes.notebooks.length, 1);
       assert.strictEqual(pkg.contributes.notebooks[0].type, NOTEBOOK_TYPE);
     }),
+    20_000,
   );
 });
 

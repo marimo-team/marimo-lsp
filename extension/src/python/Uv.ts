@@ -12,7 +12,6 @@ import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import { Config } from "../config/Config.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { Sentry } from "../telemetry/Sentry.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 
 export const UvBin = Data.taggedEnum<UvBin>();
@@ -178,7 +177,6 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const config = yield* Config;
-    const sentry = yield* Sentry;
     const telemetry = yield* Telemetry;
     const executor = yield* CommandExecutor.CommandExecutor;
     const channel = yield* code.window.createOutputChannel("marimo (uv)");
@@ -202,7 +200,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         onNone: () => "unknown",
       });
 
-      yield* sentry.setTag("uv.version", version);
+      yield* telemetry.annotateErrors({ "uv.version": version });
       yield* telemetry.capture("uv_init", { binType: uvBinary._tag, version });
     }
 

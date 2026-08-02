@@ -11,11 +11,6 @@ export class NotebookFileRootError extends Data.TaggedError(
   "NotebookFileRootError",
 )<{ readonly configuredValue: string; readonly message: string }> {}
 
-export interface NotebookFileRootResolution {
-  readonly path: string;
-  readonly usedFirstWorkspaceFallback: boolean;
-}
-
 interface ResolveNotebookFileRootOptions {
   readonly configuredValue: string;
   readonly notebookUri: vscode.Uri;

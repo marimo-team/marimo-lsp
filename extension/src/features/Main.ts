@@ -11,7 +11,7 @@ import {
 import type * as vscode from "vscode";
 
 import { Config } from "../config/Config.ts";
-import { ConfigContextManager } from "../config/ConfigContextManager.ts";
+import { ConfigContextManagerLive } from "../config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
@@ -45,7 +45,6 @@ import { MarimoStatusBarLive } from "../statusbar/MarimoStatusBar.ts";
 import { PythonEnvironmentStatusBarLive } from "../statusbar/PythonEnvironmentStatusBar.ts";
 import { StatusBar } from "../statusbar/StatusBar.ts";
 import { HealthService } from "../telemetry/HealthService.ts";
-import type { Sentry } from "../telemetry/Sentry.ts";
 import type { Telemetry } from "../telemetry/Telemetry.ts";
 import { AutoExportLive } from "./AutoExport.ts";
 import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
@@ -79,6 +78,7 @@ const MainLive = Layer.empty
     Layer.merge(CellMetadataBindingsLive),
     Layer.merge(AutoExportLive),
     Layer.merge(ReloadOnConfigChangeLive),
+    Layer.merge(ConfigContextManagerLive),
     Layer.merge(ThemeSyncLive),
     Layer.merge(HideCodeSyncLive),
     Layer.merge(DebugLayerLive),
@@ -99,7 +99,6 @@ const MainLive = Layer.empty
   )
   .pipe(
     Layer.provide(MarimoConfigurationService.Default),
-    Layer.provide(ConfigContextManager.Default),
     Layer.provide(NotebookEditorRegistry.Default),
     Layer.provide(Uv.Default),
     Layer.provide(TreeView.Default),
@@ -118,7 +117,6 @@ export function makeActivate(
     | VsCode
     | PythonExtension
     | Telemetry
-    | Sentry
     | TyLanguageServer
     | RuffLanguageServer,
     never,

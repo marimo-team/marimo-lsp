@@ -18,7 +18,6 @@ import { VsCode } from "../platform/VsCode.ts";
 import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
-import { Sentry } from "../telemetry/Sentry.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
 
@@ -64,7 +63,6 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
     scoped: Effect.gen(function* () {
       const pyExt = yield* PythonExtension;
       const envInvalidation = yield* PythonEnvInvalidation;
-      const sentry = yield* Effect.serviceOption(Sentry);
       const telemetry = yield* Effect.serviceOption(Telemetry);
       const code = yield* VsCode;
 
@@ -168,10 +166,10 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
               }),
             );
 
-            if (Option.isSome(sentry)) {
-              yield* sentry.value.setTag("ty.version", serverVersion);
-            }
             if (Option.isSome(telemetry)) {
+              yield* telemetry.value.annotateErrors({
+                "ty.version": serverVersion,
+              });
               yield* telemetry.value.reportBinaryResolved(
                 "ty",
                 resolved,

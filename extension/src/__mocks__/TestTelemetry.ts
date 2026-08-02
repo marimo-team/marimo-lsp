@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Logger } from "effect";
 
 import { Telemetry } from "../telemetry/Telemetry.ts";
 
@@ -10,6 +10,7 @@ export const TestTelemetryLive = Layer.succeed(
   Telemetry.make({
     capture: () => Effect.void,
     reportBinaryResolved: () => Effect.void,
-    identify: () => Effect.void,
+    annotateErrors: () => Effect.void,
+    errorLogger: Logger.none,
   }),
 );

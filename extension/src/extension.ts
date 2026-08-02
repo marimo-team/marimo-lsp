@@ -8,7 +8,6 @@ import { TyLanguageServer } from "./lsp/TyLanguageServer.ts";
 import { OutputChannel } from "./platform/OutputChannel.ts";
 import { VsCode } from "./platform/VsCode.ts";
 import { PythonExtension } from "./python/PythonExtension.ts";
-import { Sentry } from "./telemetry/Sentry.ts";
 import { Telemetry } from "./telemetry/Telemetry.ts";
 
 export const activate = makeActivate(
@@ -17,10 +16,11 @@ export const activate = makeActivate(
     Layer.provideMerge(RuffLanguageServer.Default),
     Layer.provideMerge(PythonExtension.Default),
     Layer.provideMerge(MarimoClient.Default),
-    Layer.provideMerge(Telemetry.Default),
     Layer.provide(LoggerLive),
     Layer.provide(OutputChannel.Default),
-    Layer.provideMerge(Sentry.Default),
+    // Below LoggerLive so the logger's error sink can come from Telemetry;
+    // Telemetry's own construction therefore logs without it.
+    Layer.provideMerge(Telemetry.Default),
     Layer.provideMerge(VsCode.Default),
   ),
   LogLevel.All,
