@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import msgspec
 import pytest
 from marimo._config.config import DEFAULT_CONFIG
 
@@ -13,7 +14,11 @@ from marimo_lsp.api import (
     SessionNotFoundError,
     update_configuration,
 )
-from marimo_lsp.models import NotebookCommand, UpdateConfigurationRequest
+from marimo_lsp.models import (
+    NotebookCommand,
+    SetDisplayThemeRequest,
+    UpdateConfigurationRequest,
+)
 
 
 def _context(sessions: MagicMock) -> ApiContext:
@@ -68,7 +73,7 @@ async def test_update_configuration_returns_saved_config() -> None:
         ),
     )
 
-    assert result == DEFAULT_CONFIG
+    assert result.config == DEFAULT_CONFIG
 
 
 @pytest.mark.asyncio
@@ -101,3 +106,8 @@ async def test_update_configuration_propagates_save_errors() -> None:
                 inner=UpdateConfigurationRequest(config={}),
             ),
         )
+
+
+def test_display_theme_rejects_unresolved_theme() -> None:
+    with pytest.raises(msgspec.ValidationError):
+        msgspec.convert({"theme": "system"}, type=SetDisplayThemeRequest)

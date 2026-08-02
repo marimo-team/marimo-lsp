@@ -19,7 +19,7 @@ import {
   type CellMetadata,
   decodeCellMetadata,
 } from "../schemas/CellMetadata.ts";
-import { SerializedNotebook } from "../schemas/SerializedNotebook.ts";
+import * as Api from "../schemas/Models.gen.ts";
 import { classifyCellCode } from "./classifyCellCode.ts";
 import { pickLiveNotebook } from "./pickLiveNotebook.ts";
 
@@ -49,12 +49,9 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
         function* (notebook: vscode.NotebookData) {
           yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
 
-          const resp = yield* marimo.serialize({
-            notebook: yield* notebookDataToSerializedNotebook(
-              notebook,
-              constants,
-            ),
-          });
+          const resp = yield* marimo.serialize(
+            yield* notebookDataToNotebookDocument(notebook, constants),
+          );
           const result = yield* decodeSerializeResponse(resp);
           return new TextEncoder().encode(result.source);
         },
@@ -66,15 +63,23 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
           const resp = yield* marimo.deserialize({
             source: new TextDecoder().decode(bytes),
           });
-          const { cells, ...metadata } = yield* decodeDeserializeResponse(resp);
+          const {
+            notebook: document,
+            appConfig,
+            header,
+          } = yield* decodeDeserializeResponse(resp);
 
           const notebook = {
-            metadata: metadata,
-            cells: cells.map((cell) => {
+            metadata: {
+              appConfig,
+              header,
+              notebookMetadata: document.metadata,
+            } satisfies NotebookDocumentMetadata,
+            cells: document.cells.map((cell) => {
               // Same classification the live transaction path uses, so a file
               // open and a code-mode commit agree on markdown/sql vs python.
               const classified = classifyCellCode(
-                cell.code,
+                cell.code ?? "",
                 constants.LanguageId,
               );
               return {
@@ -82,12 +87,12 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                 value: classified.code,
                 languageId: classified.languageId,
                 metadata: {
-                  name: cell.name,
-                  options: cell.options,
+                  name: cell.name ?? DEFAULT_CELL_NAME,
+                  options: cell.config,
                   ...(classified.languageMetadata
                     ? { languageMetadata: classified.languageMetadata }
                     : {}),
-                  stableId: crypto.randomUUID(),
+                  stableId: cell.id ?? crypto.randomUUID(),
                 } satisfies CellMetadata,
               };
             }),
@@ -188,15 +193,10 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
               options: false,
             } satisfies BooleanMap<CellMetadata>,
             transientDocumentMetadata: {
-              app: false,
+              appConfig: false,
               header: false,
-              version: false,
-              cells: true,
-              // Violations and valid are computed during deserialization
-              // and don't affect the serialized .py output.
-              violations: true,
-              valid: true,
-            } satisfies BooleanMap<SerializedNotebook>,
+              notebookMetadata: false,
+            } satisfies BooleanMap<NotebookDocumentMetadata>,
           },
         );
       }
@@ -210,9 +210,17 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   },
 ) {}
 
-const decodeDeserializeResponse = Schema.decodeUnknown(SerializedNotebook);
-const decodeSerializeResponse = Schema.decodeUnknown(
-  Schema.Struct({ source: Schema.String }),
+const decodeSerializeResponse = Schema.decodeUnknown(Api.SerializeResponse);
+const decodeDeserializeResponse = Schema.decodeUnknown(Api.NotebookDocument);
+
+const NotebookDocumentMetadata = Schema.Struct({
+  appConfig: Schema.optional(Api._AppConfig),
+  header: Schema.optional(Schema.NullOr(Schema.String)),
+  notebookMetadata: Schema.optional(Api.NotebookMetadata),
+});
+type NotebookDocumentMetadata = typeof NotebookDocumentMetadata.Type;
+const decodeNotebookDocumentMetadata = Schema.decodeUnknown(
+  NotebookDocumentMetadata,
 );
 
 function hasStringTag(value: unknown): value is { _tag: string } {
@@ -237,78 +245,100 @@ function causeTag(cause: Cause.Cause<unknown>): string {
 
 const DEFAULT_CELL_NAME = "_";
 
-function notebookDataToSerializedNotebook(
+function notebookDataToNotebookDocument(
   notebook: vscode.NotebookData,
   {
     LanguageId,
   }: {
     LanguageId: Constants["LanguageId"];
   },
-): Effect.Effect<typeof SerializedNotebook.Type, ParseResult.ParseError> {
+): Effect.Effect<typeof Api.SerializePayload.Encoded, ParseResult.ParseError> {
   const { cells, metadata = {} } = notebook;
   const sqlParser = new SQLParser();
   const markdownParser = new MarkdownParser();
+  return Effect.gen(function* () {
+    const documentMetadata = yield* decodeNotebookDocumentMetadata(metadata);
 
-  // Deserialize response is just the IR for our notebook
-  return decodeDeserializeResponse({
-    app: metadata.app ?? { options: {} },
-    header: metadata.header ?? null,
-    version: metadata.version ?? null,
-    violations: metadata.violations ?? [],
-    valid: metadata.valid ?? true,
-    cells: cells.map((cell) => {
-      const cellMeta = decodeCellMetadata(cell.metadata);
-
-      // oxlint-disable-next-line typescript/no-unsafe-enum-comparison
-      if (cell.kind === NotebookCellKind.Markup) {
-        // Check if this is a markdown cell with metadata
-        if (cell.languageId === LanguageId.Markdown) {
-          const result = markdownParser.transformOut(
-            cell.value,
-            cellMeta.pipe(
-              Option.flatMap((x) =>
-                Option.fromNullable(x.languageMetadata?.markdown),
-              ),
-              Option.getOrElse(() => markdownParser.defaultMetadata),
-            ),
+    return {
+      notebook: {
+        version: "1",
+        metadata: documentMetadata.notebookMetadata ?? {},
+        cells: cells.map((cell) => {
+          const cellMeta = decodeCellMetadata(cell.metadata);
+          const name = cellMeta.pipe(
+            Option.flatMap((value) => Option.fromNullable(value.name)),
+            Option.getOrElse(() => DEFAULT_CELL_NAME),
           );
+          const config = (fallback: typeof Api.NotebookCellConfig.Type) =>
+            cellMeta.pipe(
+              Option.flatMap((value) => Option.fromNullable(value.options)),
+              Option.getOrElse(() => fallback),
+            );
+
+          // oxlint-disable-next-line typescript/no-unsafe-enum-comparison
+          if (cell.kind === NotebookCellKind.Markup) {
+            // Check if this is a markdown cell with metadata
+            if (cell.languageId === LanguageId.Markdown) {
+              const result = markdownParser.transformOut(
+                cell.value,
+                cellMeta.pipe(
+                  Option.flatMap((x) =>
+                    Option.fromNullable(x.languageMetadata?.markdown),
+                  ),
+                  Option.getOrElse(() => markdownParser.defaultMetadata),
+                ),
+              );
+              return {
+                id: null,
+                code: result.code,
+                code_hash: null,
+                name,
+                config: config({ hide_code: true }),
+              };
+            }
+            // Otherwise use the default wrapInMarkdown
+            return {
+              id: null,
+              code: wrapInMarkdown(cell.value),
+              code_hash: null,
+              name,
+              config: config({ hide_code: true }),
+            };
+          }
+
+          // Handle SQL cells - transform back to Python mo.sql() wrapper
+          if (cell.languageId === LanguageId.Sql) {
+            const result = sqlParser.transformOut(
+              cell.value,
+              cellMeta.pipe(
+                Option.flatMap((x) =>
+                  Option.fromNullable(x.languageMetadata?.sql),
+                ),
+                Option.getOrElse(() => sqlParser.defaultMetadata),
+              ),
+            );
+            return {
+              id: null,
+              code: result.code,
+              code_hash: null,
+              name,
+              config: config({}),
+            };
+          }
+
+          // Default Python cells
           return {
-            code: result.code,
-            name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
-            options: cell.metadata?.options ?? { hide_code: true },
+            id: null,
+            code: cell.value,
+            code_hash: null,
+            name,
+            config: config({}),
           };
-        }
-        // Otherwise use the default wrapInMarkdown
-        return {
-          code: wrapInMarkdown(cell.value),
-          name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
-          options: cell.metadata?.options ?? { hide_code: true },
-        };
-      }
-
-      // Handle SQL cells - transform back to Python mo.sql() wrapper
-      if (cell.languageId === LanguageId.Sql) {
-        const result = sqlParser.transformOut(
-          cell.value,
-          cellMeta.pipe(
-            Option.flatMap((x) => Option.fromNullable(x.languageMetadata?.sql)),
-            Option.getOrElse(() => sqlParser.defaultMetadata),
-          ),
-        );
-        return {
-          code: result.code,
-          name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
-          options: cell.metadata?.options ?? {},
-        };
-      }
-
-      // Default Python cells
-      return {
-        code: cell.value,
-        name: cell.metadata?.name ?? DEFAULT_CELL_NAME,
-        options: cell.metadata?.options ?? {},
-      };
-    }),
+        }),
+      },
+      appConfig: documentMetadata.appConfig,
+      header: documentMetadata.header ?? null,
+    };
   });
 }
 

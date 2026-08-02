@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
     import lsprotocol.types as lsp
     from lsprotocol.types import NotebookDocument
+    from marimo._schemas.notebook import NotebookCellConfig
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace
 
@@ -148,7 +149,7 @@ def find_notebook_document(
 def _iter_notebook_cells(
     workspace: Workspace,
     notebook: NotebookDocument,
-) -> Generator[tuple[CellId_t, str, str, dict[str, Any]]]:
+) -> Generator[tuple[CellId_t, str, str, NotebookCellConfig]]:
     """Yield (cell_id, code, name, config) for each valid cell in a notebook."""
     for cell in notebook.cells:
         meta = decode_cell_metadata(cell)
@@ -187,7 +188,7 @@ def sync_app_with_workspace(
         codes.append(code)
         # Must be a CellConfig, not a dict: code mode reads attributes like
         # `config.column` off these (a dict raises AttributeError).
-        configs.append(CellConfig.from_dict(config))
+        configs.append(CellConfig.from_dict(dict(config)))
         names.append(name)
 
     return app.with_data(
@@ -208,7 +209,7 @@ def _snapshot_notebook_cells(
             id=cell_id,
             code=code,
             name=name,
-            config=CellConfig.from_dict(config),
+            config=CellConfig.from_dict(dict(config)),
         )
         for cell_id, code, name, config in _iter_notebook_cells(workspace, notebook)
     )
