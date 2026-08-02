@@ -17,6 +17,7 @@ import {
   MarimoNotebookCell,
   type MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
+import * as Api from "../schemas/Models.gen.ts";
 import type { DocumentTransactionNotification } from "../types.ts";
 import {
   computeDesiredCells,
@@ -102,11 +103,12 @@ export const applyDocumentTransaction = Effect.fn(
     // Preserve a surviving cell's other metadata (e.g. state); override the
     // fields the transaction owns. Source projections retain inactive language
     // settings so a later promote/demote can restore them.
-    const marimoMetadata = {
+    const marimoMetadata = Api.MarimoCellMetadata.make({
       name: cell.name === "" ? "_" : cell.name,
       options: cell.config,
-      sourceProjections: cell.sourceProjections,
-    };
+      sourceProjections:
+        cell.sourceProjections ?? Api.CellSourceProjections.make(),
+    });
     data.metadata = existing
       ? existing.buildMetadataForReplacement(marimoMetadata, {
           stableId: cell.stableId,

@@ -95,7 +95,7 @@ export class MarimoNotebookCell {
     );
   }
 
-  buildMarimoMetadataUpdate(metadata: typeof Api.MarimoCellMetadata.Encoded) {
+  buildMarimoMetadataUpdate(metadata: Api.MarimoCellMetadata) {
     const current = decodeCellMetadataSync(this.#raw.metadata);
     const next = decodeCellMetadataSync({
       ...current,
@@ -159,7 +159,7 @@ export class MarimoNotebookCell {
 
   /** Replace both owned namespaces while an existing cell is being replaced. */
   buildMetadataForReplacement(
-    marimo: typeof Api.MarimoCellMetadata.Encoded,
+    marimo: Api.MarimoCellMetadata,
     runtime: Partial<Api.MarimoCellRuntimeMetadata>,
   ) {
     const current = decodeCellMetadataSync(this.#raw.metadata);
