@@ -3,7 +3,6 @@ import { Effect, Layer } from "effect";
 
 import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
-import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
   createTestNotebookDocument,
@@ -24,7 +23,6 @@ const withTestCtx = Effect.fn(function* (
       Layer.merge(Api.Default),
       Layer.provide(makeTestNotebookRuntime()),
       Layer.provide(TestTelemetryLive),
-      Layer.provide(TestSentryLive),
       Layer.provide(TestPythonExtension.Default),
       Layer.provide(TestExtensionContextLive),
       Layer.provideMerge(testVsCode.layer),

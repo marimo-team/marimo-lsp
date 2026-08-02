@@ -7,7 +7,6 @@ import * as NodeProcess from "node:process";
 import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Either, Layer, Option } from "effect";
 
-import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Uv } from "../../python/Uv.ts";
@@ -35,7 +34,6 @@ class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
 const UvLive = Layer.empty.pipe(
   Layer.merge(Uv.Default),
   Layer.merge(TmpDir.Default),
-  Layer.provide(TestSentryLive),
   Layer.provide(TestTelemetryLive),
   Layer.provide(TestVsCode.Default),
 );

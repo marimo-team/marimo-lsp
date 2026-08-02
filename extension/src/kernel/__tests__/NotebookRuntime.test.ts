@@ -6,7 +6,6 @@ import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, Schedule, Stream } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
-import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
@@ -30,7 +29,6 @@ const makeTestLayer = Effect.fn(function* (
       Layer.provideMerge(NotebookRuntime.Default),
       Layer.provide(makeTestMarimoClient(options)),
       Layer.provide(TestTelemetryLive),
-      Layer.provide(TestSentryLive),
       Layer.provide(TestPythonExtension.Default),
       Layer.provideMerge(vscode.layer),
     ),

@@ -17,7 +17,6 @@ import {
 } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
-import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { NotebookRange, TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
@@ -106,7 +105,6 @@ const withTestCtx = Effect.fn(function* () {
       }),
     ),
     Layer.provide(TestTelemetryLive),
-    Layer.provide(TestSentryLive),
     Layer.provide(TestPythonExtension.Default),
     Layer.provideMerge(vscode.layer),
   );

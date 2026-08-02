@@ -11,7 +11,7 @@ import {
 } from "effect";
 
 import { OutputChannel } from "../platform/OutputChannel.ts";
-import { Sentry } from "../telemetry/Sentry.ts";
+import { Telemetry } from "../telemetry/Telemetry.ts";
 
 const structuredMessage = (u: unknown): unknown => {
   switch (typeof u) {
@@ -112,16 +112,20 @@ const makeVsCodeLogger = (channel: OutputChannel) => {
 };
 
 /**
- * Configures logging for the extension's VS Code output channel and Sentry.
+ * Configures logging for the extension's VS Code output channel and the
+ * telemetry error sink.
  */
 export const LoggerLive = Layer.unwrapEffect(
   Effect.gen(function* () {
     const outputChannel = yield* OutputChannel;
     const vscodeLogger = makeVsCodeLogger(outputChannel);
-    const sentry = yield* Sentry;
+    const telemetry = yield* Telemetry;
     return Logger.replace(
       Logger.defaultLogger,
-      Logger.zip(vscodeLogger, Logger.withSpanAnnotations(sentry.errorLogger)),
+      Logger.zip(
+        vscodeLogger,
+        Logger.withSpanAnnotations(telemetry.errorLogger),
+      ),
     );
   }),
 );

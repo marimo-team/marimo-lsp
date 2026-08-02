@@ -3,7 +3,6 @@ import type * as py from "@vscode/python-extension";
 import { Effect, Layer, Option, TestClock } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
-import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
@@ -25,7 +24,6 @@ const withTestCtx = Effect.fn(function* (
   const layer = Layer.merge(runtime, controllers).pipe(
     Layer.provide(Constants.Default),
     Layer.provide(TestTelemetryLive),
-    Layer.provide(TestSentryLive),
     Layer.provideMerge(vscode.layer),
     Layer.provideMerge(python.layer),
   );

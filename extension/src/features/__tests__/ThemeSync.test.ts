@@ -1,7 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, SubscriptionRef, TestClock } from "effect";
 
-import { TestSentryLive } from "../../__mocks__/TestSentry.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
@@ -52,7 +51,6 @@ const withTestCtx = Effect.fn(function* (
       }),
     ),
     Layer.provide(TestTelemetryLive),
-    Layer.provide(TestSentryLive),
     Layer.provide(vscode.layer),
   );
 

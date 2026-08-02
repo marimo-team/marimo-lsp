@@ -17,7 +17,6 @@ import { OutputChannel } from "../platform/OutputChannel.ts";
 import { ExtensionContext } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Uv } from "../python/Uv.ts";
-import { Sentry } from "../telemetry/Sentry.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
 
@@ -60,7 +59,6 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
     ],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
-      const sentry = yield* Effect.serviceOption(Sentry);
       const telemetry = yield* Effect.serviceOption(Telemetry);
 
       const statusRef = yield* Ref.make<RuffLanguageServerStatus>(
@@ -141,10 +139,8 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
             }),
           );
 
-          if (Option.isSome(sentry)) {
-            yield* sentry.value.setTag("ruff.version", serverVersion);
-          }
           if (Option.isSome(telemetry)) {
+            yield* telemetry.value.setTag("ruff.version", serverVersion);
             yield* telemetry.value.reportBinaryResolved(
               "ruff",
               resolved,

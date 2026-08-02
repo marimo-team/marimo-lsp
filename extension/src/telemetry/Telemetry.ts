@@ -1,13 +1,16 @@
-import { Effect, Option, Ref, Schema, Stream } from "effect";
-import { PostHog } from "posthog-node";
+import { Effect, Exit, Option, Ref, Schema, Scope, Stream } from "effect";
+import type { PostHog } from "posthog-node";
 
 import { type BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import { createStorageKey, Storage } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
-
-// Public API key (not a secret)
-const API_KEY = "phc_wT21gBodGcVJINBFaEQEtRjZjvn1rChAg8hDvCopAFe";
+import { acquirePostHogSink } from "./posthogSink.ts";
+import {
+  acquireSentrySink,
+  sentryErrorLogger,
+  setSentryTag,
+} from "./sentrySink.ts";
 
 // Create a storage key for the anonymous ID
 const ANONYMOUS_ID_KEY = createStorageKey(
@@ -59,88 +62,83 @@ type EventMap = {
 };
 
 /**
- * Telemetry service that respects marimo's telemetry setting and uses PostHog for analytics.
- * Only tracks events when: marimo.telemetry is enabled
+ * The single module through which the extension reports product events and
+ * errors. Callers invoke its methods unconditionally; whether anything is
+ * actually sent is this module's own concern.
+ *
+ * Consent (the `marimo.telemetry` setting) is read here and nowhere else.
+ * The two sinks — PostHog for product events, Sentry for errors — are scoped
+ * resources: acquired when consent turns on, flushed and released when it
+ * turns off.
  */
 export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
   dependencies: [Storage.Default],
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const storage = yield* Storage;
-    let client: PostHog | undefined;
 
-    // Get initial telemetry setting
-    const marimoConfig = yield* code.workspace.getConfiguration("marimo");
-    const initialTelemetryEnabled =
-      marimoConfig.get<boolean>("telemetry") ?? true;
-
-    // Track telemetry state and client initialization
-    const telemetryEnabledRef = yield* Ref.make(initialTelemetryEnabled);
-    const clientInitializedRef = yield* Ref.make(false);
-
-    const extVersion = yield* getExtensionVersion();
+    const extensionVersion = Option.getOrElse(
+      yield* getExtensionVersion(),
+      () => "unknown",
+    );
     const distinctId = yield* anonymousId(storage);
 
-    // Initialize PostHog client (only once when telemetry is enabled)
-    const initializeClient = Effect.gen(function* () {
-      const telemetryEnabled = yield* Ref.get(telemetryEnabledRef);
-      const clientInitialized = yield* Ref.get(clientInitializedRef);
-
-      if (!telemetryEnabled || clientInitialized) {
-        return;
-      }
-
-      client = new PostHog(API_KEY, {
-        host: "https://us.i.posthog.com",
-      });
-      yield* Ref.set(clientInitializedRef, true);
-
-      // Track extension activation
-      client.capture({
-        distinctId,
-        event: "extension_activated",
-        properties: {
-          extension_version: Option.getOrElse(extVersion, () => "unknown"),
-          app_name: code.env.appName,
-          app_host: code.env.appHost,
-        },
-      });
-      yield* Effect.logDebug("Anonymous telemetry enabled");
-    });
-
-    // Initialize on startup if enabled
-    yield* initializeClient;
-
-    // Subscribe to configuration changes
-    yield* code.workspace.configurationChanges().pipe(
-      Stream.filter((event) => event.affectsConfiguration("marimo.telemetry")),
-      Stream.runForEach(() =>
-        Effect.gen(function* () {
-          const config = yield* code.workspace.getConfiguration("marimo");
-          const newValue = config.get<boolean>("telemetry") ?? true;
-          const oldValue = yield* Ref.get(telemetryEnabledRef);
-
-          yield* Ref.set(telemetryEnabledRef, newValue);
-
-          // If telemetry was just enabled, initialize client
-          if (!oldValue && newValue) {
-            yield* initializeClient;
-          }
-
-          // If telemetry was just disabled, shutdown PostHog
-          if (oldValue && !newValue && client) {
-            yield* Effect.promise(async () => client?.shutdown());
-            client = undefined;
-            yield* Ref.set(clientInitializedRef, false);
-          }
-        }),
-      ),
-      Effect.forkScoped,
+    // Consent: the only reader of the marimo.telemetry setting.
+    const readConsent = Effect.map(
+      code.workspace.getConfiguration("marimo"),
+      (config) => config.get<boolean>("telemetry") ?? true,
     );
 
-    // Register finalizer to shutdown PostHog when scope closes
-    yield* Effect.addFinalizer(() =>
-      Effect.promise(async () => client?.shutdown()),
+    const posthogRef = yield* Ref.make(Option.none<PostHog>());
+    const sinkScope = yield* Ref.make(Option.none<Scope.CloseableScope>());
+
+    const acquireSinks = Effect.gen(function* () {
+      yield* acquireSentrySink({
+        appHost: code.env.appHost,
+        appName: code.env.appName,
+        machineId: code.env.machineId,
+        extensionVersion,
+      });
+      const client = yield* acquirePostHogSink({
+        distinctId,
+        extensionVersion,
+        appName: code.env.appName,
+        appHost: code.env.appHost,
+      });
+      yield* Effect.acquireRelease(
+        Ref.set(posthogRef, Option.some(client)),
+        () => Ref.set(posthogRef, Option.none()),
+      );
+    });
+
+    // Sinks follow consent: acquired into their own scope when consent turns
+    // on, and released (flush + close) when it turns off. Only ever invoked
+    // sequentially — from construction below, the single watcher fiber, or
+    // the teardown finalizer.
+    const applyConsent = Effect.fn("Telemetry.applyConsent")(function* (
+      enabled: boolean,
+    ) {
+      const current = yield* Ref.get(sinkScope);
+      if (enabled && Option.isNone(current)) {
+        const scope = yield* Scope.make();
+        yield* Scope.extend(acquireSinks, scope);
+        yield* Ref.set(sinkScope, Option.some(scope));
+      } else if (!enabled && Option.isSome(current)) {
+        yield* Ref.set(sinkScope, Option.none());
+        yield* Scope.close(current.value, Exit.void);
+      }
+    });
+
+    yield* Effect.addFinalizer(() => applyConsent(false));
+
+    yield* applyConsent(yield* readConsent);
+
+    yield* code.workspace.configurationChanges().pipe(
+      Stream.filter((event) => event.affectsConfiguration("marimo.telemetry")),
+      Stream.mapEffect(() => readConsent),
+      Stream.changes,
+      Stream.runForEach(applyConsent),
+      Effect.forkScoped,
     );
 
     return {
@@ -152,21 +150,18 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
         ...args: EventMap[K] extends undefined ? [] : [properties: EventMap[K]]
       ): Effect.Effect<void> {
         return Effect.gen(function* () {
-          const telemetryEnabled = yield* Ref.get(telemetryEnabledRef);
-          if (!telemetryEnabled || !client) {
+          const client = yield* Ref.get(posthogRef);
+          if (Option.isNone(client)) {
             return;
           }
           const properties = args[0];
 
-          client.capture({
+          client.value.capture({
             distinctId,
             event,
             properties: {
               ...properties,
-              extension_version: Option.match(extVersion, {
-                onSome: (v) => v,
-                onNone: () => "unknown",
-              }),
+              extension_version: extensionVersion,
             },
           });
         });
@@ -188,18 +183,16 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
         });
       },
 
-      identify: (properties?: Record<string, unknown>): Effect.Effect<void> =>
-        Effect.gen(function* () {
-          const telemetryEnabled = yield* Ref.get(telemetryEnabledRef);
-          if (!telemetryEnabled || !client) {
-            return;
-          }
+      /**
+       * Set a tag for filtering error reports.
+       */
+      setTag: (key: string, value: string): Effect.Effect<void> =>
+        setSentryTag(key, value),
 
-          client.identify({
-            distinctId,
-            properties,
-          });
-        }),
+      /**
+       * Error logger forwarding Effect log output to the error sink.
+       */
+      errorLogger: sentryErrorLogger,
     };
   }),
 }) {}

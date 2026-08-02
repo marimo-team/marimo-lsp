@@ -45,7 +45,6 @@ import { MarimoStatusBarLive } from "../statusbar/MarimoStatusBar.ts";
 import { PythonEnvironmentStatusBarLive } from "../statusbar/PythonEnvironmentStatusBar.ts";
 import { StatusBar } from "../statusbar/StatusBar.ts";
 import { HealthService } from "../telemetry/HealthService.ts";
-import type { Sentry } from "../telemetry/Sentry.ts";
 import type { Telemetry } from "../telemetry/Telemetry.ts";
 import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
@@ -116,7 +115,6 @@ export function makeActivate(
     | VsCode
     | PythonExtension
     | Telemetry
-    | Sentry
     | TyLanguageServer
     | RuffLanguageServer,
     never,
