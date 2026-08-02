@@ -3,6 +3,7 @@ import { Schema } from "effect";
 import {
   withFirstArgument,
   withOptionalNotebookContext,
+  VscodeNotebookCellSchema,
   VscodeUriSchema,
 } from "../commands.ts";
 import { NotebookIdFromString } from "../schemas/MarimoNotebookDocument.ts";
@@ -27,6 +28,17 @@ const notebookCommands = {
   ),
 };
 
+const cellCommands = {
+  hideCellCode: withFirstArgument(
+    GeneratedMarimoCommands.hideCellCode,
+    VscodeNotebookCellSchema,
+  ),
+  showCellCode: withFirstArgument(
+    GeneratedMarimoCommands.showCellCode,
+    VscodeNotebookCellSchema,
+  ),
+};
+
 const SessionAction = Schema.Struct({
   notebookUri: NotebookIdFromString,
 });
@@ -38,6 +50,7 @@ const SessionAction = Schema.Struct({
 export const MarimoCommands = {
   ...GeneratedMarimoCommands,
   ...notebookCommands,
+  ...cellCommands,
   openAsMarimoNotebook: withFirstArgument(
     GeneratedMarimoCommands.openAsMarimoNotebook,
     Schema.UndefinedOr(Schema.Union(Schema.String, VscodeUriSchema)),

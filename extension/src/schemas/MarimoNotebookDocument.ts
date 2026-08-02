@@ -234,8 +234,8 @@ export class MarimoNotebookCell {
    * marimo stores the decorator's `hide_code` flag in the cell's config; the
    * LSP deserialize path surfaces it as `metadata.options.hide_code`. VS Code
    * has no API to read or set the input-collapsed state, so this is the source
-   * of truth the {@link HideCodeSyncLive} feature uses to one-way sync the
-   * editor's collapse state (issue #326).
+   * of truth for the one-way synchronization performed by
+   * {@link CellInputVisibilitySyncLive} (issue #326).
    */
   get isCodeHidden() {
     return this.metadata.pipe(
@@ -293,6 +293,13 @@ export class MarimoNotebookCell {
    */
   get outputs() {
     return this.#raw.outputs;
+  }
+
+  /**
+   * The cell's most recent VS Code execution summary.
+   */
+  get executionSummary() {
+    return this.#raw.executionSummary;
   }
 
   /**

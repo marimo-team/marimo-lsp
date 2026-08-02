@@ -45,6 +45,21 @@ export const VscodeUriSchema = Schema.declare<vscode.Uri>(
   { identifier: "vscode.Uri" },
 );
 
+export const VscodeNotebookCellSchema = Schema.declare<vscode.NotebookCell>(
+  (value): value is vscode.NotebookCell =>
+    typeof value === "object" &&
+    value !== null &&
+    "index" in value &&
+    typeof value.index === "number" &&
+    "notebook" in value &&
+    typeof value.notebook === "object" &&
+    value.notebook !== null &&
+    "document" in value &&
+    typeof value.document === "object" &&
+    value.document !== null,
+  { identifier: "vscode.NotebookCell" },
+);
+
 const NotebookCommandContextSchema = Schema.Struct({
   notebookEditor: Schema.Struct({ notebookUri: VscodeUriSchema }),
 });
@@ -225,6 +240,8 @@ export type VscodeBuiltinCommand =
   | "notebook.cell.toggleOutputs"
   // Collapse a cell's input (code) editor
   | "notebook.cell.collapseCellInput"
+  // Expand a cell's input (code) editor
+  | "notebook.cell.expandCellInput"
   // Fold Cell
   | "notebook.fold"
   // Unfold Cell

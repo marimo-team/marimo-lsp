@@ -9,6 +9,8 @@ import { TestRuffLanguageServerLive } from "../__mocks__/TestRuffLanguageServer.
 import { TestTelemetryLive } from "../__mocks__/TestTelemetry.ts";
 import { TestTyLanguageServerLive } from "../__mocks__/TestTyLanguageServer.ts";
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
+import { commandId } from "../commands.ts";
+import { MarimoCommands } from "../commands/MarimoCommands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { makeActivate } from "../features/Main.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
@@ -99,5 +101,20 @@ describe("package.json validation", () => {
         `Command "${commandId}" in menus.commandPalette does not exist in contributes.commands`,
       ).toBe(true);
     }
+  });
+
+  it("shows the cell visibility action matching the target cell state", () => {
+    expect(pkg.contributes.menus["notebook/cell/title"]).toEqual([
+      {
+        command: commandId(MarimoCommands.hideCellCode),
+        when: "notebookType == 'marimo-notebook' && !notebookCellInputIsCollapsed",
+        group: "3_edit@1",
+      },
+      {
+        command: commandId(MarimoCommands.showCellCode),
+        when: "notebookType == 'marimo-notebook' && notebookCellInputIsCollapsed",
+        group: "3_edit@1",
+      },
+    ]);
   });
 });

@@ -12,6 +12,7 @@ import { reportIssue } from "../commands/reportIssue.ts";
 import { restartKernel } from "../commands/restartKernel.ts";
 import { restartLsp } from "../commands/restartLsp.ts";
 import { runStale } from "../commands/runStale.ts";
+import { setCellCodeVisibility } from "../commands/setCellCodeVisibility.ts";
 import { showDiagnostics } from "../commands/showDiagnostics.ts";
 import { showNotebookMenu } from "../commands/showNotebookMenu.ts";
 import { updateActivePythonEnvironment } from "../commands/updateActivePythonEnvironment.ts";
@@ -57,6 +58,12 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
       showNotebookMenu,
     );
     yield* code.commands.register(MarimoCommands.debugCell, debugCell);
+    yield* code.commands.register(MarimoCommands.hideCellCode, (cell) =>
+      setCellCodeVisibility(cell, true),
+    );
+    yield* code.commands.register(MarimoCommands.showCellCode, (cell) =>
+      setCellCodeVisibility(cell, false),
+    );
 
     yield* code.commands.register(MarimoCommands.restartKernel, restartKernel);
 

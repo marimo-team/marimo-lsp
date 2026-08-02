@@ -12,6 +12,7 @@ function cell(
     kind?: vscode.NotebookCellKind;
     languageId?: string;
     stableId?: string;
+    hideCode?: boolean;
     outputs?: vscode.NotebookCellOutput[];
   },
 ): vscode.NotebookCellData {
@@ -21,6 +22,9 @@ function cell(
     value,
     metadata: options?.stableId
       ? MarimoNotebookCell.createMetadata({
+          ...(options.hideCode === undefined
+            ? {}
+            : { marimo: { options: { hide_code: options.hideCode } } }),
           marimoRuntime: { stableId: options.stableId },
         })
       : undefined,
@@ -39,6 +43,14 @@ function getStableIds(nb: vscode.NotebookData): (string | undefined)[] {
     (c) =>
       Option.getOrUndefined(MarimoNotebookCell.decodeMetadata(c.metadata))
         ?.marimoRuntime.stableId ?? undefined,
+  );
+}
+
+function getHideCode(nb: vscode.NotebookData): (boolean | undefined)[] {
+  return nb.cells.map(
+    (c) =>
+      Option.getOrUndefined(MarimoNotebookCell.decodeMetadata(c.metadata))
+        ?.marimo.options.hide_code ?? undefined,
   );
 }
 
@@ -72,6 +84,26 @@ describe("enrichNotebookFromLive", () => {
 
       expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
+
+    it.each([
+      { live: false, incoming: true },
+      { live: true, incoming: false },
+    ])(
+      "keeps live identity while accepting an external hide_code change from $live to $incoming",
+      ({ live, incoming }) => {
+        const cached = notebook([
+          cell("x = 1", { stableId: "id-1", hideCode: live }),
+        ]);
+        const reloaded = notebook([
+          cell("x = 1", { stableId: "fresh-1", hideCode: incoming }),
+        ]);
+
+        const result = enrichNotebookFromLive(reloaded, cached);
+
+        expect(getStableIds(result)).toEqual(["id-1"]);
+        expect(getHideCode(result)).toEqual([incoming]);
+      },
+    );
 
     it("preserves outputs when cells are identical", () => {
       // SAFETY: test fixture — the enrich logic under test only reads `.items`,

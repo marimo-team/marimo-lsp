@@ -1628,6 +1628,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       version?: string;
       fileSystem?: Map<string, Uint8Array | Error>;
       window?: Partial<Window>;
+      commands?: Partial<Commands>;
       workspace?: Partial<Workspace>;
     } = {},
   ) {
@@ -1912,6 +1913,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               );
             });
           },
+          ...options.commands,
         }),
         workspace: Workspace.make({
           fs: {

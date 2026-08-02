@@ -326,6 +326,20 @@
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
+        "command": "marimo.hideCellCode",
+        "title": "Hide Code",
+        "category": "marimo",
+        "icon": "$(eye-closed)",
+        "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
+        "command": "marimo.showCellCode",
+        "title": "Show Code",
+        "category": "marimo",
+        "icon": "$(eye)",
+        "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
         "command": "marimo.openSession",
         "title": "Open Notebook",
         "category": "marimo",
@@ -468,6 +482,14 @@
         {
           "command": "marimo.updateCellMetadata",
           "when": "never"
+        },
+        {
+          "command": "marimo.hideCellCode",
+          "when": "never"
+        },
+        {
+          "command": "marimo.showCellCode",
+          "when": "never"
         }
       ],
       "file/newFile": [
@@ -530,6 +552,18 @@
           "command": "marimo.showNotebookMenu",
           "when": "notebookType == 'marimo-notebook'",
           "group": "navigation@4"
+        }
+      ],
+      "notebook/cell/title": [
+        {
+          "command": "marimo.hideCellCode",
+          "when": "notebookType == 'marimo-notebook' && !notebookCellInputIsCollapsed",
+          "group": "3_edit@1"
+        },
+        {
+          "command": "marimo.showCellCode",
+          "when": "notebookType == 'marimo-notebook' && notebookCellInputIsCollapsed",
+          "group": "3_edit@1"
         }
       ],
       "editor/title": [

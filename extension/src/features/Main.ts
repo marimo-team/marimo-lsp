@@ -49,10 +49,10 @@ import { StatusBar } from "../statusbar/StatusBar.ts";
 import { HealthService } from "../telemetry/HealthService.ts";
 import type { Telemetry } from "../telemetry/Telemetry.ts";
 import { AutoExportLive } from "./AutoExport.ts";
+import { CellInputVisibilitySyncLive } from "./CellInputVisibilitySync.ts";
 import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { DebugLayerLive } from "./DebugLayer.ts";
-import { HideCodeSyncLive } from "./HideCodeSync.ts";
 import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
@@ -83,7 +83,7 @@ const MainLive = Layer.empty
     Layer.merge(ReloadOnConfigChangeLive),
     Layer.merge(ConfigContextManagerLive),
     Layer.merge(ThemeSyncLive),
-    Layer.merge(HideCodeSyncLive),
+    Layer.merge(CellInputVisibilitySyncLive),
     Layer.merge(DebugLayerLive),
     Layer.merge(NotebookControllersLive),
   )
