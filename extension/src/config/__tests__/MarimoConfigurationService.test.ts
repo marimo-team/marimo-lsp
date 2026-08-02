@@ -1,5 +1,14 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Schema, Stream, TestClock } from "effect";
+import {
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+  Option,
+  Schema,
+  Stream,
+  TestClock,
+} from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -35,7 +44,11 @@ const LAZY_CONFIG = marimoConfigFixture({
 const withTestCtx = Effect.fn(function* (
   // Keyed by plain string: the fake server looks up by the decoded wire
   // value, which carries no brand.
-  options: { configStore?: Map<string, MarimoConfig> } = {},
+  options: {
+    configStore?: Map<string, MarimoConfig>;
+    // Pauses a response after its configuration snapshot is captured.
+    beforeGetResponse?: (notebookUri: string) => Effect.Effect<void>;
+  } = {},
 ) {
   const vscode = yield* TestVsCode.make();
   const { configStore = new Map<string, MarimoConfig>() } = options;
@@ -54,6 +67,9 @@ const withTestCtx = Effect.fn(function* (
               return yield* Effect.die(
                 `Config not found for ${params.notebookUri}`,
               );
+            }
+            if (options.beforeGetResponse) {
+              yield* options.beforeGetResponse(params.notebookUri);
             }
             return { config };
           }
@@ -226,6 +242,81 @@ describe("MarimoConfigurationService", () => {
 
         const config2 = yield* service.getConfig(notebookUri);
         expect(config2.runtime?.on_cell_change).toBe("lazy");
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.scoped(
+    "does not restore cache entries from requests invalidated while in flight",
+    Effect.fn(function* () {
+      const requestStarted = yield* Deferred.make<void>();
+      const releaseRequest = yield* Deferred.make<void>();
+      const ctx = yield* withTestCtx({
+        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
+        beforeGetResponse: () =>
+          Deferred.succeed(requestStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseRequest)),
+          ),
+      });
+
+      yield* Effect.gen(function* () {
+        const service = yield* MarimoConfigurationService;
+        const pending = yield* Effect.fork(service.getConfig(NOTEBOOK_URI));
+        yield* Deferred.await(requestStarted);
+
+        yield* service.clearNotebook(NOTEBOOK_URI);
+        yield* ctx.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
+        yield* Deferred.succeed(releaseRequest, undefined);
+
+        // The original caller still receives its completed response.
+        expect((yield* Fiber.join(pending)).runtime?.on_cell_change).toBe(
+          "autorun",
+        );
+        // The invalid response was not cached; this fetch reaches the server.
+        expect(
+          (yield* service.getConfig(NOTEBOOK_URI)).runtime?.on_cell_change,
+        ).toBe("lazy");
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.scoped(
+    "ignores a delayed close from a replaced document at the same URI",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx({
+        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
+      });
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+        const service = yield* MarimoConfigurationService;
+        const first = createTestNotebookDocument(
+          code.Uri.parse(NOTEBOOK_URI, true),
+        );
+        const replacement = createTestNotebookDocument(
+          code.Uri.parse(NOTEBOOK_URI, true),
+        );
+
+        yield* ctx.vscode.openNotebook(first);
+        yield* TestClock.adjust("1 millis");
+        expect(
+          (yield* service.getConfig(NOTEBOOK_URI)).runtime?.on_cell_change,
+        ).toBe("autorun");
+
+        yield* ctx.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
+        yield* ctx.vscode.openNotebook(replacement);
+        yield* TestClock.adjust("1 millis");
+        expect(
+          (yield* service.getConfig(NOTEBOOK_URI)).runtime?.on_cell_change,
+        ).toBe("lazy");
+
+        // The old close must not evict the replacement session's cache.
+        yield* ctx.setConfig(NOTEBOOK_URI, AUTORUN_CONFIG);
+        yield* ctx.vscode.closeNotebook(first);
+        yield* TestClock.adjust("1 millis");
+        expect(
+          (yield* service.getConfig(NOTEBOOK_URI)).runtime?.on_cell_change,
+        ).toBe("lazy");
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

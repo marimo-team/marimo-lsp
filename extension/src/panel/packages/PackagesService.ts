@@ -6,6 +6,8 @@ import {
 } from "../../kernel/NotebookRuntime.ts";
 import { MarimoClient } from "../../lsp/MarimoClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
+import { makeNotebookSessions } from "../../notebook/NotebookSessions.ts";
+import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type {
@@ -44,11 +46,24 @@ export class PackagesService extends Effect.Service<PackagesService>()(
       const marimo = yield* MarimoClient;
       const notebooks = yield* NotebookRuntime;
       const editors = yield* NotebookEditorRegistry;
+      const code = yield* VsCode;
 
       // Track dependency trees: NotebookUri -> DependencyTreeState
       const dependencyTreesRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, DependencyTreeState>(),
       );
+      const clearCache = (notebookUri: NotebookId) =>
+        Effect.gen(function* () {
+          yield* SubscriptionRef.update(
+            dependencyTreesRef,
+            HashMap.remove(notebookUri),
+          );
+          yield* Effect.logTrace("Cleared package data").pipe(
+            Effect.annotateLogs({ notebookUri }),
+          );
+        });
+
+      const sessions = yield* makeNotebookSessions(code, clearCache);
 
       return {
         /**
@@ -105,6 +120,16 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          */
         fetchDependencyTree(notebookUri: NotebookId) {
           return Effect.gen(function* () {
+            const session = yield* sessions.sessionFor(notebookUri);
+            const updateIfCurrent = (
+              update: (
+                map: HashMap.HashMap<NotebookId, DependencyTreeState>,
+              ) => HashMap.HashMap<NotebookId, DependencyTreeState>,
+            ) =>
+              sessions.current(notebookUri) === session
+                ? SubscriptionRef.update(dependencyTreesRef, update)
+                : Effect.void;
+
             // Check if we already have a cached tree
             const cached = yield* SubscriptionRef.get(dependencyTreesRef);
             const existing = HashMap.get(cached, notebookUri);
@@ -136,7 +161,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               .forNotebook(activeNotebook.value.id)
               .getController();
             if (Option.isNone(activeController)) {
-              yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
+              yield* updateIfCurrent((map) =>
                 HashMap.set(map, notebookUri, {
                   tree: null,
                   loading: false,
@@ -152,7 +177,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
             const source = controllerSource(activeController.value);
 
             // Set loading state
-            yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
+            yield* updateIfCurrent((map) =>
               HashMap.set(
                 map,
                 notebookUri,
@@ -183,7 +208,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                     // Script mode has no useful fallback — `uv tree --script`
                     // is the only path that resolves PEP 723 metadata.
                     if (source.kind === "script") {
-                      yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
+                      yield* updateIfCurrent((map) =>
                         HashMap.set(map, notebookUri, {
                           tree: null,
                           loading: false,
@@ -217,14 +242,12 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                         Effect.catchAll((fallbackError) =>
                           Effect.gen(function* () {
                             const fallbackErrorMsg = String(fallbackError);
-                            yield* SubscriptionRef.update(
-                              dependencyTreesRef,
-                              (map) =>
-                                HashMap.set(map, notebookUri, {
-                                  tree: null,
-                                  loading: false,
-                                  error: `${errorMsg}; fallback also failed: ${fallbackErrorMsg}`,
-                                }),
+                            yield* updateIfCurrent((map) =>
+                              HashMap.set(map, notebookUri, {
+                                tree: null,
+                                loading: false,
+                                error: `${errorMsg}; fallback also failed: ${fallbackErrorMsg}`,
+                              }),
                             );
                             yield* Effect.logError(
                               "Package list fallback also failed",
@@ -256,21 +279,21 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                 ),
               );
 
-            // Update cache with result
-            yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
-              HashMap.set(map, notebookUri, {
-                tree: rawResult.tree,
-                loading: false,
-                error: null,
-              }),
-            );
-
-            yield* Effect.logTrace("Fetched and cached dependency tree").pipe(
-              Effect.annotateLogs({
-                notebookUri,
-                hasTree: rawResult.tree !== null,
-              }),
-            );
+            if (sessions.current(notebookUri) === session) {
+              yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
+                HashMap.set(map, notebookUri, {
+                  tree: rawResult.tree,
+                  loading: false,
+                  error: null,
+                }),
+              );
+              yield* Effect.logTrace("Cached dependency tree").pipe(
+                Effect.annotateLogs({
+                  notebookUri,
+                  hasTree: rawResult.tree !== null,
+                }),
+              );
+            }
 
             return rawResult.tree;
           });
@@ -279,17 +302,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
         /**
          * Clear all package data for a notebook
          */
-        clearNotebook(notebookUri: NotebookId) {
-          return Effect.gen(function* () {
-            yield* SubscriptionRef.update(
-              dependencyTreesRef,
-              HashMap.remove(notebookUri),
-            );
-            yield* Effect.logTrace("Cleared package data").pipe(
-              Effect.annotateLogs({ notebookUri }),
-            );
-          });
-        },
+        clearNotebook: sessions.invalidate,
 
         /**
          * Stream of dependency tree changes.

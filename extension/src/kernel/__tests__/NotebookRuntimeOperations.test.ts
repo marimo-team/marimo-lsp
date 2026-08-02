@@ -18,7 +18,11 @@ import {
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import { NotebookRange, TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import {
+  createTestNotebookDocument,
+  NotebookRange,
+  TestVsCode,
+} from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
 import {
@@ -49,6 +53,7 @@ import type {
 const withTestCtx = Effect.fn(function* () {
   // Controllable showInputBox via Queue
   const inputQueue = yield* Queue.unbounded<Option.Option<string>>();
+  const inputRequested = yield* Effect.makeLatch();
 
   // Capture executeCommand calls
   const executions = yield* SubscriptionRef.make<ReadonlyArray<MarimoApiCall>>(
@@ -83,7 +88,8 @@ const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make({
     initialDocuments: [editor.notebook],
     window: {
-      showInputBox: () => Queue.take(inputQueue),
+      showInputBox: () =>
+        inputRequested.open.pipe(Effect.andThen(Queue.take(inputQueue))),
     },
   });
 
@@ -136,6 +142,7 @@ const withTestCtx = Effect.fn(function* () {
     mockController,
     executions,
     inputQueue,
+    inputRequested,
     operationsPubSub,
   };
 });
@@ -520,6 +527,46 @@ describe("NotebookRuntime stdin", () => {
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
+
+  it.scoped(
+    "cancels an in-flight prompt when its notebook session closes",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const cellId = Option.getOrThrow(ctx.notebook.cellAt(0).id);
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* TestClock.adjust("1 millis");
+
+        yield* PubSub.publish(
+          ctx.operationsPubSub,
+          makeIdleCellOperation(ctx.notebookUri, cellId, {
+            status: "running",
+            console: [
+              {
+                channel: "stdin",
+                data: "Enter name: ",
+                mimetype: "text/plain",
+                timestamp: 0,
+              },
+            ],
+          }),
+        );
+        yield* ctx.inputRequested.await;
+
+        yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
+        yield* TestClock.adjust("1 millis");
+        yield* Queue.offer(ctx.inputQueue, Option.some("stale response"));
+        yield* TestClock.adjust("1 millis");
+
+        expect(
+          (yield* Ref.get(ctx.executions)).some(
+            (command) => command.method === "send-stdin",
+          ),
+        ).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
 });
 
 describe("NotebookRuntime scratch stream", () => {
@@ -599,6 +646,8 @@ describe("NotebookRuntime scratch stream", () => {
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime;
         yield* ctx.vscode.addNotebookDocument(otherEditor.notebook);
+        yield* ctx.vscode.openNotebook(otherEditor.notebook);
+        yield* TestClock.adjust("1 millis");
         yield* runtime.attachController(otherNotebook.id, ctx.mockController);
 
         const first = yield* Effect.fork(
@@ -892,6 +941,50 @@ describe("NotebookRuntime state eviction", () => {
         expect(
           Option.isSome(yield* datasources.getDatasets(ctx.notebookUri)),
         ).toBe(false);
+
+        // Notifications already queued, or delivered late by the old kernel
+        // session, must not recreate state after eviction.
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          operation: {
+            op: "variables",
+            variables: [
+              {
+                name: variableName("late"),
+                declared_by: [cellId("cell-1")],
+                used_by: [],
+              },
+            ],
+          },
+        });
+        yield* TestClock.adjust("10 millis");
+        expect(
+          Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
+        ).toBe(false);
+
+        // Reopening creates a distinct document session at the same URI.
+        const replacement = createTestNotebookDocument(
+          ctx.editor.notebook.uri,
+          { notebookType: ctx.editor.notebook.notebookType },
+        );
+        yield* ctx.vscode.openNotebook(replacement);
+        yield* TestClock.adjust("10 millis");
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          operation: { op: "variables", variables: [] },
+        });
+        yield* TestClock.adjust("10 millis");
+        expect(
+          Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
+        ).toBe(true);
+
+        // A delayed close from the old document must not clear replacement
+        // session state.
+        yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
+        yield* TestClock.adjust("10 millis");
+        expect(
+          Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
+        ).toBe(true);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

@@ -36,6 +36,7 @@ const telemetryChange: vscode.ConfigurationChangeEvent = {
 const withTestCtx = Effect.fn(function* (options?: { telemetry?: boolean }) {
   sentrySdk.init.mockClear();
   sentrySdk.close.mockClear();
+  sentrySdk.setTag.mockClear();
   posthog.capture.mockClear();
   posthog.shutdown.mockClear();
 
@@ -144,5 +145,44 @@ it.scoped("capture is a no-op without consent, live with it", () =>
     expect(posthog.capture).toHaveBeenCalledWith(
       expect.objectContaining({ event: "new_notebook_created" }),
     );
+  }),
+);
+
+it.scoped("contains synchronous capture failures", () =>
+  Effect.gen(function* () {
+    const ctx = yield* withTestCtx();
+    posthog.capture.mockClear();
+    posthog.capture.mockImplementationOnce(() => {
+      throw new Error("posthog exploded");
+    });
+
+    // Reporting failures must not escape into the product effect.
+    yield* ctx.telemetry.capture("new_notebook_created");
+    expect(posthog.capture).toHaveBeenCalledTimes(1);
+
+    // A failed capture does not disable later telemetry.
+    yield* ctx.telemetry.capture("new_notebook_created");
+    expect(posthog.capture).toHaveBeenCalledTimes(2);
+  }),
+);
+
+it.scoped("does not retain error annotations created without consent", () =>
+  Effect.gen(function* () {
+    const ctx = yield* withTestCtx({ telemetry: false });
+
+    yield* ctx.telemetry.annotateErrors({ "uv.version": "off" });
+    expect(sentrySdk.setTag).not.toHaveBeenCalled();
+
+    yield* ctx.setTelemetry(true);
+    yield* waitFor(() => expect(sentrySdk.init).toHaveBeenCalledTimes(1));
+    sentrySdk.setTag.mockClear();
+    yield* ctx.telemetry.annotateErrors({ "uv.version": "on" });
+    expect(sentrySdk.setTag).toHaveBeenCalledWith("uv.version", "on");
+
+    yield* ctx.setTelemetry(false);
+    yield* waitFor(() => expect(sentrySdk.close).toHaveBeenCalledTimes(1));
+    sentrySdk.setTag.mockClear();
+    yield* ctx.telemetry.annotateErrors({ "uv.version": "off-again" });
+    expect(sentrySdk.setTag).not.toHaveBeenCalled();
   }),
 );

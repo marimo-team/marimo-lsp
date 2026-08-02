@@ -1,5 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Stream } from "effect";
+import {
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+  Option,
+  Stream,
+  TestClock,
+} from "effect";
 
 import {
   createTestNotebookDocument,
@@ -23,16 +31,21 @@ interface ExecutedCommand {
   readonly params: unknown;
 }
 
-function makeContext(options: {
+const makeContext = Effect.fn(function* (options: {
   controller: Option.Option<NotebookController>;
   treeResponse?: unknown;
+  treeEffect?: Effect.Effect<unknown>;
 }) {
+  const vscode = yield* TestVsCode.make();
   const recorded: ExecutedCommand[] = [];
 
   const runtime = makeTestNotebookRuntime({
     execute(request) {
       recorded.push({ command: "marimo.api", params: request });
-      return Effect.succeed(options.treeResponse ?? { tree: null });
+      return (
+        options.treeEffect ??
+        Effect.succeed(options.treeResponse ?? { tree: null })
+      );
     },
     initialControllers: Option.match(options.controller, {
       onNone: () => [],
@@ -65,10 +78,11 @@ function makeContext(options: {
     Layer.provideMerge(PackagesService.Default),
     Layer.provide(runtime),
     Layer.provide(editorMock),
+    Layer.provideMerge(vscode.layer),
   );
 
-  return { layer, recorded };
-}
+  return { layer, recorded, vscode };
+});
 
 const makePythonController = Effect.fn(function* (executable: string) {
   const code = yield* VsCode;
@@ -94,7 +108,7 @@ describe("PackagesService", () => {
   it.effect(
     "fetchDependencyTree sends `source: script` when the active controller is sandbox",
     Effect.fn(function* () {
-      const { layer, recorded } = makeContext({
+      const { layer, recorded } = yield* makeContext({
         controller: Option.some(makeNonPythonController()),
         treeResponse: {
           tree: { name: "<root>", version: null, tags: [], dependencies: [] },
@@ -134,7 +148,7 @@ describe("PackagesService", () => {
         "/home/user/.venv/bin/python",
       ).pipe(Effect.scoped, Effect.provide(vscode.layer));
 
-      const { layer, recorded } = makeContext({
+      const { layer, recorded } = yield* makeContext({
         controller: Option.some(controller),
         treeResponse: {
           tree: { name: "<root>", version: null, tags: [], dependencies: [] },
@@ -168,7 +182,7 @@ describe("PackagesService", () => {
   it.effect(
     "fetchDependencyTree returns null and skips the LSP call when no controller is active",
     Effect.fn(function* () {
-      const { layer, recorded } = makeContext({
+      const { layer, recorded } = yield* makeContext({
         controller: Option.none(),
       });
 
@@ -185,7 +199,7 @@ describe("PackagesService", () => {
   it.effect(
     "clearNotebook drops the cached tree so the next fetch re-issues the request",
     Effect.fn(function* () {
-      const { layer, recorded } = makeContext({
+      const { layer, recorded } = yield* makeContext({
         controller: Option.some(makeNonPythonController()),
         treeResponse: {
           tree: { name: "<root>", version: null, tags: [], dependencies: [] },
@@ -207,6 +221,112 @@ describe("PackagesService", () => {
         // PackagesView performs this invalidation when the runtime reports a
         // controller change.
         yield* svc.clearNotebook(NOTEBOOK_URI);
+        yield* svc.fetchDependencyTree(NOTEBOOK_URI);
+        expect(recorded).toHaveLength(2);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.scoped(
+    "evicts the dependency tree when its notebook closes",
+    Effect.fn(function* () {
+      const { layer, recorded, vscode } = yield* makeContext({
+        controller: Option.some(makeNonPythonController()),
+        treeResponse: {
+          tree: { name: "<root>", version: null, tags: [], dependencies: [] },
+        },
+      });
+      const document = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+        notebookType: "marimo-notebook",
+      });
+
+      yield* Effect.gen(function* () {
+        const svc = yield* PackagesService;
+        yield* TestClock.adjust("1 millis");
+        yield* svc.fetchDependencyTree(NOTEBOOK_URI);
+        yield* svc.fetchDependencyTree(NOTEBOOK_URI);
+        expect(recorded).toHaveLength(1);
+
+        yield* vscode.closeNotebook(document);
+        yield* TestClock.adjust("1 millis");
+        yield* svc.fetchDependencyTree(NOTEBOOK_URI);
+        expect(recorded).toHaveLength(2);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.scoped(
+    "does not restore package state from a request invalidated by close",
+    Effect.fn(function* () {
+      const requestStarted = yield* Deferred.make<void>();
+      const releaseRequest = yield* Deferred.make<void>();
+      const { layer, vscode } = yield* makeContext({
+        controller: Option.some(makeNonPythonController()),
+        treeEffect: Deferred.succeed(requestStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseRequest)),
+          Effect.as({
+            tree: {
+              name: "<root>",
+              version: null,
+              tags: [],
+              dependencies: [],
+            },
+          }),
+        ),
+      });
+      const document = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+        notebookType: "marimo-notebook",
+      });
+
+      yield* Effect.gen(function* () {
+        const svc = yield* PackagesService;
+        const pending = yield* Effect.fork(
+          svc.fetchDependencyTree(NOTEBOOK_URI),
+        );
+        yield* Deferred.await(requestStarted);
+        yield* vscode.closeNotebook(document);
+        yield* TestClock.adjust("1 millis");
+        yield* Deferred.succeed(releaseRequest, undefined);
+        yield* Fiber.join(pending);
+
+        expect(Option.isNone(yield* svc.getDependencyTree(NOTEBOOK_URI))).toBe(
+          true,
+        );
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.scoped(
+    "ignores a delayed close from a replaced document at the same URI",
+    Effect.fn(function* () {
+      const { layer, recorded, vscode } = yield* makeContext({
+        controller: Option.some(makeNonPythonController()),
+        treeResponse: {
+          tree: { name: "<root>", version: null, tags: [], dependencies: [] },
+        },
+      });
+      const first = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+        notebookType: "marimo-notebook",
+      });
+      const replacement = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+        notebookType: "marimo-notebook",
+      });
+
+      yield* Effect.gen(function* () {
+        const svc = yield* PackagesService;
+
+        yield* vscode.openNotebook(first);
+        yield* TestClock.adjust("1 millis");
+        yield* svc.fetchDependencyTree(NOTEBOOK_URI);
+        expect(recorded).toHaveLength(1);
+
+        yield* vscode.openNotebook(replacement);
+        yield* TestClock.adjust("1 millis");
+        yield* svc.fetchDependencyTree(NOTEBOOK_URI);
+        expect(recorded).toHaveLength(2);
+
+        yield* vscode.closeNotebook(first);
+        yield* TestClock.adjust("1 millis");
         yield* svc.fetchDependencyTree(NOTEBOOK_URI);
         expect(recorded).toHaveLength(2);
       }).pipe(Effect.provide(layer));
