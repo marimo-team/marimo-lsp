@@ -122,6 +122,15 @@ def normalize_cell_code(
 
     if language_id == "sql":
         sql = source_projections.sql or SqlCellProjection()
+        quote_prefix = sql.quote_prefix
+        if '"""' in source and "r" in quote_prefix:
+            # Backslashes cannot escape a triple-quote delimiter in a raw
+            # string without becoming part of the resulting query. Convert
+            # to the equivalent non-raw literal and protect the source's
+            # existing backslashes instead. Keep ``f`` so interpolation
+            # semantics remain unchanged for ``rf`` / ``fr`` cells.
+            quote_prefix = quote_prefix.replace("r", "")
+            source = source.replace("\\", "\\\\")
         escaped_source = source.replace('"""', '\\"""')
         terminal_options = [textwrap.indent('"""', "    ")]
         if not sql.show_output:
@@ -133,7 +142,7 @@ def normalize_cell_code(
             [
                 *sql.comment_lines,
                 f"{sql.dataframe_name} = mo.sql(",
-                textwrap.indent(f'{sql.quote_prefix}"""', "    "),
+                textwrap.indent(f'{quote_prefix}"""', "    "),
                 textwrap.indent(escaped_source, "    "),
                 ",\n".join(terminal_options),
                 ")",

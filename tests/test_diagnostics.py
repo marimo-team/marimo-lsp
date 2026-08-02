@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import ast
+import textwrap
 from typing import cast
 from unittest.mock import MagicMock, patch
 
@@ -564,6 +566,15 @@ class TestNormalizeCellCode:
                 comment_lines=["# retained"],
             )
         )
-        assert normalize_cell_code("sql", 'SELECT \'"""\'', meta) == snapshot(
-            '# retained\n_df = mo.sql(\n    r"""\n    SELECT \'\\"""\'\n    """\n)'
+        source = 'SELECT \'C:\\\\data\\\\"""\''
+        normalized = normalize_cell_code("sql", source, meta)
+
+        assert normalized == snapshot(
+            '# retained\n_df = mo.sql(\n    """\n    SELECT \'C:\\\\\\\\data\\\\\\\\\\"""\'\n    """\n)'
+        )
+        expression = ast.parse(normalized).body[-1]
+        assert isinstance(expression, ast.Assign)
+        assert isinstance(expression.value, ast.Call)
+        assert ast.literal_eval(expression.value.args[0]) == (
+            f"\n{textwrap.indent(source, '    ')}\n    "
         )
