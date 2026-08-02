@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Either } from "effect";
+import { Effect } from "effect";
 
 import { commandId, decodeCommandArguments } from "../../commands.ts";
 import { GeneratedMarimoCommands } from "../MarimoCommands.gen.ts";
@@ -15,12 +15,16 @@ describe("MarimoCommands", () => {
     );
   });
 
-  it.effect("rejects arguments for a no-argument command", () =>
+  it.effect("ignores VS Code context for a no-argument command", () =>
     Effect.gen(function* () {
-      const result = yield* Effect.either(
-        decodeCommandArguments(MarimoCommands.restartKernel, ["unexpected"]),
-      );
-      expect(Either.isLeft(result)).toBe(true);
+      const args = yield* decodeCommandArguments(MarimoCommands.restartKernel, [
+        {
+          ui: true,
+          notebookEditor: { notebookUri: "file:///notebook.py" },
+          source: "notebookToolbar",
+        },
+      ]);
+      expect(args).toEqual([]);
     }),
   );
 

@@ -21,12 +21,9 @@ export function marimoCommand(id: string): MarimoCommand<[], void> {
   return {
     [MarimoCommandTypeId]: {
       id,
-      decodeArguments: (args) =>
-        Schema.decodeUnknown(
-          Schema.Array(Schema.Unknown).pipe(
-            Schema.filter((args) => args.length === 0),
-          ),
-        )(args).pipe(Effect.as([])),
+      // VS Code adds invocation context for commands launched from menus and
+      // toolbars. It is platform metadata, not part of the command contract.
+      decodeArguments: () => Effect.succeed([]),
       decodeResult: Schema.decodeUnknown(Schema.Void),
     },
   };
