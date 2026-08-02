@@ -163,6 +163,30 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       }),
     );
 
+    it.effect.each([
+      { name: "empty", metadata: {} },
+      { name: "foreign-only", metadata: { foreign: { value: true } } },
+    ])("uses markdown defaults for a $name metadata envelope", ({ metadata }) =>
+      Effect.gen(function* () {
+        const { LanguageId } = yield* Constants;
+        const serializer = yield* NotebookSerializer;
+        const bytes = yield* serializer.serializeEffect({
+          cells: [
+            {
+              kind: 1,
+              value: "# markdown",
+              languageId: LanguageId.Markdown,
+              metadata,
+            },
+          ],
+        });
+
+        expect(new TextDecoder().decode(bytes)).toContain(
+          "@app.cell(hide_code=True)",
+        );
+      }),
+    );
+
     it.effect(
       "deserializes mo.md() without f-strings to markdown cells",
       Effect.fn(function* () {

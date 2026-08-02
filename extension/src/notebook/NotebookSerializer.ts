@@ -66,10 +66,9 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
         function* (notebook: vscode.NotebookData) {
           yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
 
-          const resp = yield* marimo.serialize(
+          const result = yield* marimo.serialize(
             yield* notebookDataToNotebookDocument(notebook, constants),
           );
-          const result = yield* decodeSerializeResponse(resp);
           return new TextEncoder().encode(result.source);
         },
       );
@@ -77,14 +76,13 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       const deserializeEffect = Effect.fn("NotebookSerializer.deserialize")(
         function* (bytes: Uint8Array) {
           yield* Effect.annotateCurrentSpan("bytes", bytes.length);
-          const resp = yield* marimo.deserialize({
-            source: new TextDecoder().decode(bytes),
-          });
           const {
             notebook: document,
             appConfig,
             header,
-          } = yield* decodeDeserializeResponse(resp);
+          } = yield* marimo.deserialize({
+            source: new TextDecoder().decode(bytes),
+          });
 
           const notebook = {
             metadata: MarimoNotebookDocument.createMetadata({
@@ -223,9 +221,6 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   },
 ) {}
 
-const decodeSerializeResponse = Schema.decodeUnknown(Api.SerializeResponse);
-const decodeDeserializeResponse = Schema.decodeUnknown(Api.NotebookDocument);
-
 function hasStringTag(value: unknown): value is { _tag: string } {
   return (
     typeof value === "object" &&
@@ -262,12 +257,12 @@ function notebookDataToNotebookDocument(
   return Effect.gen(function* () {
     const documentMetadata = yield* parseNotebookDocumentMetadata(metadata);
     const decodedCells = yield* Effect.forEach(cells, (cell) => {
-      const metadataWasAbsent = cell.metadata === undefined;
+      const hasMarimoMetadata = asRecord(cell.metadata).marimo !== undefined;
       return Schema.decodeUnknown(Api.CellMetadata)(cell.metadata ?? {}).pipe(
         Effect.map((cellMetadata) => ({
           cell,
           cellMetadata,
-          metadataWasAbsent,
+          hasMarimoMetadata,
         })),
       );
     });
@@ -276,10 +271,10 @@ function notebookDataToNotebookDocument(
       notebook: {
         version: "1",
         metadata: documentMetadata.notebookMetadata ?? {},
-        cells: decodedCells.map(({ cell, cellMetadata, metadataWasAbsent }) => {
+        cells: decodedCells.map(({ cell, cellMetadata, hasMarimoMetadata }) => {
           const name = cellMetadata.marimo.name;
           const config = (fallback: typeof Api.NotebookCellConfig.Type) =>
-            metadataWasAbsent ? fallback : cellMetadata.marimo.options;
+            hasMarimoMetadata ? cellMetadata.marimo.options : fallback;
 
           // oxlint-disable-next-line typescript/no-unsafe-enum-comparison
           if (cell.kind === NotebookCellKind.Markup) {

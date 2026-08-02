@@ -702,7 +702,6 @@ function processOperation(
       case "completed-run":
       case "completion-result":
       case "consumer-capabilities":
-      case "data-source-discovery-result":
       case "focus-cell":
       case "installing-package-alert":
       case "kernel-ready":

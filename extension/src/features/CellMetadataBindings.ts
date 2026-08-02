@@ -4,9 +4,13 @@ import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingS
 import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import type { MarimoCellMetadata } from "../schemas/Models.gen.ts";
+import {
+  type MarimoCellMetadata,
+  SqlCellProjection,
+} from "../schemas/Models.gen.ts";
 
-export const DEFAULT_SQL_ENGINE = "__marimo_duckdb";
+const DEFAULT_SQL_METADATA = SqlCellProjection.make();
+export const DEFAULT_SQL_ENGINE = DEFAULT_SQL_METADATA.engine;
 const DEFAULT_LABEL = "duckdb (In-Memory)";
 
 /**
@@ -29,13 +33,10 @@ function updateSqlMetadata(
   return {
     ...metadata,
     sourceProjections: {
-      markdown: metadata.sourceProjections?.markdown ?? null,
+      ...metadata.sourceProjections,
       sql: {
-        dataframeName: metadata.sourceProjections?.sql?.dataframeName ?? "df",
-        quotePrefix: metadata.sourceProjections?.sql?.quotePrefix ?? "",
-        commentLines: metadata.sourceProjections?.sql?.commentLines ?? [],
-        showOutput: metadata.sourceProjections?.sql?.showOutput ?? true,
-        engine: metadata.sourceProjections?.sql?.engine ?? DEFAULT_SQL_ENGINE,
+        ...DEFAULT_SQL_METADATA,
+        ...metadata.sourceProjections.sql,
         ...updates,
       },
     },
