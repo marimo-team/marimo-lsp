@@ -47,6 +47,7 @@ import { StatusBar } from "../statusbar/StatusBar.ts";
 import { HealthService } from "../telemetry/HealthService.ts";
 import type { Sentry } from "../telemetry/Sentry.ts";
 import type { Telemetry } from "../telemetry/Telemetry.ts";
+import { AutoExportLive } from "./AutoExport.ts";
 import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { DebugLayerLive } from "./DebugLayer.ts";
@@ -76,6 +77,7 @@ const MainLive = Layer.empty
     Layer.merge(PackagesViewLive),
     Layer.merge(CellStatusBarProviderLive),
     Layer.merge(CellMetadataBindingsLive),
+    Layer.merge(AutoExportLive),
     Layer.merge(ReloadOnConfigChangeLive),
     Layer.merge(ThemeSyncLive),
     Layer.merge(HideCodeSyncLive),

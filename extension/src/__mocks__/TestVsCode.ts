@@ -1909,6 +1909,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         }),
         workspace: Workspace.make({
           fs: {
+            createDirectory() {
+              return Effect.void;
+            },
             readFile(uri: vscode.Uri) {
               const fileSystem: Map<string, Uint8Array | Error> =
                 options.fileSystem ?? new Map();
