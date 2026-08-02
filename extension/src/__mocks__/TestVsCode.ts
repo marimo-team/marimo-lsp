@@ -908,40 +908,29 @@ class TextDocument implements vscode.TextDocument {
   readonly isUntitled: boolean;
   readonly languageId: string;
   readonly version: number;
+  readonly isDirty: boolean;
   readonly isClosed: boolean;
   readonly eol: vscode.EndOfLine;
   readonly lineCount: number;
   readonly encoding: string;
 
   #text: string;
-  #isDirty: boolean;
 
-  constructor(
-    uri: Uri,
-    languageId: string,
-    version: number,
-    text: string,
-    isDirty = false,
-  ) {
+  constructor(uri: Uri, languageId: string, version: number, text: string) {
     this.uri = uri;
     this.fileName = uri.fsPath;
     this.languageId = languageId;
     this.version = version;
     this.#text = text;
     this.isUntitled = false;
-    this.#isDirty = isDirty;
+    this.isDirty = false;
     this.isClosed = false;
     this.eol = 1; // LF
     this.lineCount = text.split("\n").length;
     this.encoding = "utf-8";
   }
 
-  get isDirty(): boolean {
-    return this.#isDirty;
-  }
-
   save(): Thenable<boolean> {
-    this.#isDirty = false;
     return Promise.resolve(true);
   }
 
@@ -1020,12 +1009,11 @@ export function createTestTextDocument(
   uri: Uri | string,
   languageId: string,
   text: string,
-  options: { isDirty?: boolean } = {},
 ): vscode.TextDocument {
   if (typeof uri === "string") {
     uri = Uri.file(uri);
   }
-  return new TextDocument(uri, languageId, 1, text, options.isDirty ?? false);
+  return new TextDocument(uri, languageId, 1, text);
 }
 
 export function createTestTextEditor(

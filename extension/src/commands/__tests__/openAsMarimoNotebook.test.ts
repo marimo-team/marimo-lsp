@@ -69,26 +69,25 @@ it.effect(
 );
 
 it.effect(
-  "saves an unsaved active buffer before opening it as a notebook (#531)",
+  "saves an unsaved buffer before opening it from a URI string (#531)",
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
     const document = createTestTextDocument(
       "/test/notebook.py",
       "python",
       "app = marimo.App()\nx = 1",
-      { isDirty: true },
     );
-    const saveSpy = vi.spyOn(document, "save");
+    Object.defineProperty(document, "isDirty", { value: true });
+    const save = vi.spyOn(document, "save").mockResolvedValue(true);
     yield* vscode.setActiveTextEditor(
       Option.some(createTestTextEditor(document)),
     );
 
-    yield* openAsMarimoNotebook().pipe(Effect.provide(vscode.layer));
+    yield* openAsMarimoNotebook(document.uri.toString()).pipe(
+      Effect.provide(vscode.layer),
+    );
 
-    // The dirty buffer must be persisted so its content is not discarded when
-    // the text editor is closed and the notebook is read from disk.
-    expect(saveSpy).toHaveBeenCalledTimes(1);
-    expect(document.isDirty).toBe(false);
+    expect(save).toHaveBeenCalledOnce();
     expect(yield* vscode.executions).toEqual([
       {
         command: "vscode.openWith",
@@ -107,14 +106,14 @@ it.effect(
       "python",
       "app = marimo.App()",
     );
-    const saveSpy = vi.spyOn(document, "save");
+    const save = vi.spyOn(document, "save");
     yield* vscode.setActiveTextEditor(
       Option.some(createTestTextEditor(document)),
     );
 
     yield* openAsMarimoNotebook().pipe(Effect.provide(vscode.layer));
 
-    expect(saveSpy).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
   }),
 );
 
@@ -126,15 +125,16 @@ it.effect(
       "/test/notebook.py",
       "python",
       "app = marimo.App()\nx = 1",
-      { isDirty: true },
     );
-    vi.spyOn(document, "save").mockResolvedValue(false);
+    Object.defineProperty(document, "isDirty", { value: true });
+    const save = vi.spyOn(document, "save").mockResolvedValue(false);
     yield* vscode.setActiveTextEditor(
       Option.some(createTestTextEditor(document)),
     );
 
     yield* openAsMarimoNotebook().pipe(Effect.provide(vscode.layer));
 
+    expect(save).toHaveBeenCalledOnce();
     expect(yield* vscode.executions).toEqual([]);
   }),
 );

@@ -26,7 +26,6 @@ export const openAsMarimoNotebook = defineCommand(
     const code = yield* VsCode;
 
     let uri: vscode.Uri;
-    let document: Option.Option<vscode.TextDocument> = Option.none();
     if (typeof resource === "string") {
       const result = code.utils.parseUri(resource);
       if (Either.isLeft(result)) {
@@ -45,33 +44,20 @@ export const openAsMarimoNotebook = defineCommand(
         return;
       }
       uri = editor.value.document.uri;
-      document = Option.some(editor.value.document);
     } else {
       uri = resource;
     }
 
-    // Locate the open text document for this URI when we were not handed one
-    // directly (string or explicit URI invocations).
-    if (Option.isNone(document)) {
-      const docs = yield* code.workspace.getTextDocuments();
-      document = Option.fromNullable(
-        docs.find((doc) => doc.uri.toString() === uri.toString()),
-      );
-    }
+    const documents = yield* code.workspace.getTextDocuments();
+    const document = documents.find(
+      (document) => document.uri.toString() === uri.toString(),
+    );
 
-    // Persist unsaved edits before opening the file as a notebook. The notebook
-    // is deserialized from the file on disk, and opening it closes the original
-    // text editor. If the buffer is dirty and we do not save first, VS Code
-    // prompts to save on close; declining discards the unsaved content and the
-    // notebook opens with no cells. Saving first guarantees no data loss. See
-    // https://github.com/marimo-team/marimo-lsp/issues/531.
-    if (Option.isSome(document) && document.value.isDirty) {
-      const doc = document.value;
-      const saved = yield* Effect.promise(() => doc.save());
+    // `vscode.openWith` deserializes the notebook from disk, so persist any
+    // in-memory edits before switching editors.
+    if (document?.isDirty) {
+      const saved = yield* Effect.promise(() => document.save());
       if (!saved) {
-        yield* code.window.showInformationMessage(
-          "Failed to save changes before opening as a notebook",
-        );
         return;
       }
     }
