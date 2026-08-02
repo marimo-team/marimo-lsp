@@ -14,6 +14,37 @@ export class CellMetadataEditRejected extends Data.TaggedError(
   readonly cell: number;
 }> {}
 
+export class CellMetadataTargetNotFound extends Data.TaggedError(
+  "CellMetadataTargetNotFound",
+)<{
+  readonly cell: number;
+}> {}
+
+function resolveCurrentCell(cell: MarimoNotebookCell) {
+  const cells = cell.notebook.getCells();
+  const identityIndex = cells.findIndex(
+    (candidate) => candidate.rawNotebookCell === cell.rawNotebookCell,
+  );
+  if (identityIndex >= 0) {
+    return { cell: cells[identityIndex], index: identityIndex } as const;
+  }
+
+  const matches = Option.match(cell.id, {
+    onNone: () => [],
+    onSome: (id) =>
+      cells
+        .map((candidate, index) => ({ candidate, index }))
+        .filter(({ candidate }) =>
+          Option.exists(candidate.id, (candidateId) => candidateId === id),
+        ),
+  });
+  if (matches.length === 1) {
+    return { cell: matches[0].candidate, index: matches[0].index } as const;
+  }
+
+  return new CellMetadataTargetNotFound({ cell: cell.index });
+}
+
 /**
  * Persist a marimo metadata change by replacing the cell while preserving its
  * text, language, outputs, runtime metadata, and foreign metadata.
@@ -25,18 +56,23 @@ export const updateMarimoCellMetadata = Effect.fn(
   "notebook.updateMarimoCellMetadata",
 )(function* (cell: MarimoNotebookCell, transform: MarimoCellMetadataTransform) {
   const code = yield* VsCode;
-  const current = Option.match(cell.metadata, {
+  const resolved = resolveCurrentCell(cell);
+  if (resolved instanceof CellMetadataTargetNotFound) {
+    return yield* resolved;
+  }
+  const currentCell = resolved.cell;
+  const current = Option.match(currentCell.metadata, {
     onNone: () => Api.MarimoCellMetadata.make(),
     onSome: (metadata) => metadata.marimo,
   });
 
   const data = new code.NotebookCellData(
-    cell.kind,
-    cell.document.getText(),
-    cell.document.languageId,
+    currentCell.kind,
+    currentCell.document.getText(),
+    currentCell.document.languageId,
   );
-  data.metadata = cell.buildMarimoMetadataUpdate(transform(current));
-  data.outputs = cell.outputs.map(
+  data.metadata = currentCell.buildMarimoMetadataUpdate(transform(current));
+  data.outputs = currentCell.outputs.map(
     (output) =>
       new code.NotebookCellOutput(
         output.items.map(
@@ -45,19 +81,19 @@ export const updateMarimoCellMetadata = Effect.fn(
         output.metadata,
       ),
   );
-  data.executionSummary = cell.executionSummary;
+  data.executionSummary = currentCell.executionSummary;
 
   const edit = new code.WorkspaceEdit();
-  edit.set(cell.notebook.uri, [
+  edit.set(currentCell.notebook.uri, [
     code.NotebookEdit.replaceCells(
-      new code.NotebookRange(cell.index, cell.index + 1),
+      new code.NotebookRange(resolved.index, resolved.index + 1),
       [data],
     ),
   ]);
 
   const applied = yield* code.workspace.applyEdit(edit);
   if (!applied) {
-    return yield* new CellMetadataEditRejected({ cell: cell.index });
+    return yield* new CellMetadataEditRejected({ cell: resolved.index });
   }
-  return undefined;
+  return resolved.index;
 });

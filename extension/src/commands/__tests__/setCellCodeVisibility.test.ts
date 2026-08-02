@@ -3,7 +3,6 @@ import { Effect, Option, Ref } from "effect";
 import type * as vscode from "vscode";
 
 import {
-  createNotebookCell,
   createNotebookUri,
   createTestNotebookDocument,
   getNotebookEdits,
@@ -31,19 +30,23 @@ it.effect.each([
       },
     });
     const uri = createNotebookUri("file:///test/notebook_mo.py");
-    const rawCell = createNotebookCell(
-      createTestNotebookDocument(uri),
-      {
-        kind: 2,
-        value: "x = 1",
-        languageId: "mo-python",
-        metadata: MarimoNotebookCell.createMetadata({
-          marimo: { options: { hide_code: !hidden } },
-          marimoRuntime: { stableId: "cell-1" },
-        }),
+    const document = createTestNotebookDocument(uri, {
+      data: {
+        cells: [
+          { kind: 2, value: "other = 0", languageId: "mo-python" },
+          {
+            kind: 2,
+            value: "x = 1",
+            languageId: "mo-python",
+            metadata: MarimoNotebookCell.createMetadata({
+              marimo: { options: { hide_code: !hidden } },
+              marimoRuntime: { stableId: "cell-1" },
+            }),
+          },
+        ],
       },
-      1,
-    );
+    });
+    const rawCell = document.cellAt(1);
 
     yield* setCellCodeVisibility(rawCell, hidden).pipe(
       Effect.provide(vscode.layer),

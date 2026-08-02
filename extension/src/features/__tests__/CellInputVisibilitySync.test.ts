@@ -257,4 +257,39 @@ describe("CellInputVisibilitySync", () => {
       }).pipe(Effect.provide(layer));
     }),
   );
+
+  it.scoped(
+    "continues synchronizing after a visibility command defects",
+    Effect.fn(function* () {
+      const attempts = yield* Ref.make(0);
+      const editor = makeEditor(states([false]));
+      const vscode = yield* TestVsCode.make({
+        initialDocuments: [editor.notebook],
+        commands: {
+          executeVSCode: () =>
+            Ref.updateAndGet(attempts, (count) => count + 1).pipe(
+              Effect.flatMap((count) =>
+                count === 1
+                  ? Effect.die(new Error("VS Code command rejected"))
+                  : Effect.void,
+              ),
+            ),
+        },
+      });
+      const layer = CellInputVisibilitySyncLive.pipe(
+        Layer.provide(vscode.layer),
+      );
+
+      yield* Effect.gen(function* () {
+        yield* vscode.setActiveNotebookEditor(Option.some(editor));
+        yield* TestClock.adjust("1 millis");
+        yield* changeNotebook(vscode, states([false]), states([true]));
+        yield* TestClock.adjust("1 millis");
+        yield* changeNotebook(vscode, states([true]), states([true]));
+        yield* TestClock.adjust("1 millis");
+
+        expect(yield* Ref.get(attempts)).toBe(2);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
 });

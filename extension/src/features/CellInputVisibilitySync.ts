@@ -1,4 +1,13 @@
-import { Data, Effect, HashMap, Layer, Option, Ref, Stream } from "effect";
+import {
+  Cause,
+  Data,
+  Effect,
+  HashMap,
+  Layer,
+  Option,
+  Ref,
+  Stream,
+} from "effect";
 
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -143,10 +152,12 @@ export const CellInputVisibilitySyncLive = Layer.scopedDiscard(
       initialize: boolean,
     ) =>
       synchronize(notebook, initialize).pipe(
-        Effect.catchAll((error) =>
-          Effect.logWarning("Failed to synchronize hidden cell inputs").pipe(
-            Effect.annotateLogs({ error, notebook: notebook.id }),
-          ),
+        Effect.catchAllCause((cause) =>
+          Cause.isInterruptedOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.logWarning(
+                "Failed to synchronize hidden cell inputs",
+              ).pipe(Effect.annotateLogs({ cause, notebook: notebook.id })),
         ),
       );
 

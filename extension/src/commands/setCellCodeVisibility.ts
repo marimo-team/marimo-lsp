@@ -11,7 +11,7 @@ export const setCellCodeVisibility = Effect.fn("command.setCellCodeVisibility")(
     const code = yield* VsCode;
     const cell = MarimoNotebookCell.from(rawCell);
 
-    yield* updateMarimoCellMetadata(cell, (metadata) => ({
+    const index = yield* updateMarimoCellMetadata(cell, (metadata) => ({
       ...metadata,
       options: { ...metadata.options, hide_code: hidden },
     }));
@@ -23,7 +23,7 @@ export const setCellCodeVisibility = Effect.fn("command.setCellCodeVisibility")(
         ? "notebook.cell.collapseCellInput"
         : "notebook.cell.expandCellInput",
       {
-        ranges: [{ start: cell.index, end: cell.index + 1 }],
+        ranges: [{ start: index, end: index + 1 }],
         document: cell.notebook.uri,
       },
     );
