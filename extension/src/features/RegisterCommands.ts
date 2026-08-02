@@ -15,6 +15,7 @@ import { restartKernel } from "../commands/restartKernel.ts";
 import { restartLsp } from "../commands/restartLsp.ts";
 import { runStale } from "../commands/runStale.ts";
 import { showDiagnostics } from "../commands/showDiagnostics.ts";
+import { showNotebookActions } from "../commands/showNotebookActions.ts";
 import { toggleAutoReload } from "../commands/toggleAutoReload.ts";
 import { toggleOnCellChange } from "../commands/toggleOnCellChange.ts";
 import { updateActivePythonEnvironment } from "../commands/updateActivePythonEnvironment.ts";
@@ -65,6 +66,10 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     );
 
     yield* code.commands.register(MarimoCommands.runStale, runStale);
+    yield* code.commands.register(
+      MarimoCommands.showNotebookActions,
+      showNotebookActions,
+    );
     yield* code.commands.register(MarimoCommands.debugCell, debugCell);
 
     for (const command of [

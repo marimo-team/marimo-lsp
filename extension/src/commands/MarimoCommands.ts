@@ -30,6 +30,9 @@ const notebookCommands = {
     GeneratedMarimoCommands.restartKernel,
   ),
   runStale: withOptionalNotebookContext(GeneratedMarimoCommands.runStale),
+  showNotebookActions: withOptionalNotebookContext(
+    GeneratedMarimoCommands.showNotebookActions,
+  ),
 };
 
 /**
