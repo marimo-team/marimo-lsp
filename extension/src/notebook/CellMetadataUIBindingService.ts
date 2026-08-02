@@ -2,7 +2,7 @@ import { Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
-import { dynamicCommand } from "../commands.ts";
+import { ephemeralCommand } from "../commands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -127,8 +127,8 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
           bindings.set(binding.id, binding);
 
           // Create command for handling clicks
-          const commandId = dynamicCommand(`cell.metadata.${binding.id}`);
-          yield* code.commands.registerCommand(
+          const commandId = ephemeralCommand(`cell.metadata.${binding.id}`);
+          yield* code.commands.registerEphemeral(
             commandId,
             createBindingCommandFor(binding),
           );
@@ -283,7 +283,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
           yield* code.workspace.applyEdit(edit);
 
           // Re-execute the cell to apply the metadata changes
-          yield* code.commands.executeCommand("notebook.cell.execute", {
+          yield* code.commands.executeVSCode("notebook.cell.execute", {
             ranges: [
               {
                 start: activeCell.index,

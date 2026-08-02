@@ -13,10 +13,6 @@ OUTPUT = EXTENSION / "src" / "constants.ts"
 LABEL = "extension constants"
 
 
-class Command(msgspec.Struct):
-    command: str
-
-
 class View(msgspec.Struct):
     id: str
 
@@ -26,7 +22,6 @@ class Notebook(msgspec.Struct):
 
 
 class Contributes(msgspec.Struct):
-    commands: list[Command]
     views: dict[str, list[View]]
     notebooks: tuple[Notebook]
 
@@ -53,7 +48,6 @@ def generate() -> str:
         msg = f"expected one view contribution, found {list(contributes.views)}"
         raise ValueError(msg)
 
-    commands = [entry.command for entry in contributes.commands]
     view_ids = [entry.id for entries in contributes.views.values() for entry in entries]
     notebook_type = contributes.notebooks[0].type
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
@@ -71,8 +65,6 @@ def generate() -> str:
 // Generated from `extension/package.json` and `pyproject.toml` by `scripts.codegen`.
 // Regenerate with `just codegen`.
 import type {{ CellId }} from "./types.ts";
-
-export type MarimoCommand = {_union(commands)};
 
 export type MarimoView = {_union(view_ids)};
 

@@ -1,6 +1,70 @@
-export type DynamicCommand = `marimo.dynamic.${string}`;
+import { Effect, ParseResult, Schema } from "effect";
 
-export function dynamicCommand(command: string): DynamicCommand {
+const MarimoCommandTypeId: unique symbol = Symbol("MarimoCommand");
+
+export interface MarimoCommand<
+  Args extends ReadonlyArray<unknown> = ReadonlyArray<unknown>,
+  Result = unknown,
+> {
+  readonly [MarimoCommandTypeId]: {
+    readonly id: string;
+    readonly decodeArguments: (
+      args: ReadonlyArray<unknown>,
+    ) => Effect.Effect<Args, ParseResult.ParseError>;
+    readonly decodeResult: (
+      result: unknown,
+    ) => Effect.Effect<Result, ParseResult.ParseError>;
+  };
+}
+
+export function marimoCommand(id: string): MarimoCommand<[], void> {
+  return {
+    [MarimoCommandTypeId]: {
+      id,
+      decodeArguments: (args) =>
+        Schema.decodeUnknown(Schema.Tuple())(args).pipe(Effect.as([])),
+      decodeResult: Schema.decodeUnknown(Schema.Void),
+    },
+  };
+}
+
+export function withFirstArgument<A>(
+  command: MarimoCommand,
+  schema: Schema.Schema<A>,
+): MarimoCommand<[A], void> {
+  return {
+    [MarimoCommandTypeId]: {
+      id: commandId(command),
+      decodeArguments: (args) =>
+        Schema.decodeUnknown(schema)(args[0]).pipe(
+          Effect.map((argument) => [argument]),
+        ),
+      decodeResult: Schema.decodeUnknown(Schema.Void),
+    },
+  };
+}
+
+export function commandId(command: MarimoCommand): string {
+  return command[MarimoCommandTypeId].id;
+}
+
+export function decodeCommandArguments<Args extends ReadonlyArray<unknown>>(
+  command: MarimoCommand<Args>,
+  args: ReadonlyArray<unknown>,
+): Effect.Effect<Args, ParseResult.ParseError> {
+  return command[MarimoCommandTypeId].decodeArguments(args);
+}
+
+export function decodeCommandResult<Result>(
+  command: MarimoCommand<ReadonlyArray<unknown>, Result>,
+  result: unknown,
+): Effect.Effect<Result, ParseResult.ParseError> {
+  return command[MarimoCommandTypeId].decodeResult(result);
+}
+
+export type EphemeralCommand = `marimo.dynamic.${string}`;
+
+export function ephemeralCommand(command: string): EphemeralCommand {
   return `marimo.dynamic.${command}`;
 }
 

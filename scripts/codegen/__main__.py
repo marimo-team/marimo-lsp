@@ -6,7 +6,7 @@ import argparse
 import pathlib
 from collections.abc import Callable
 
-from scripts.codegen import effect_schemas, extension_constants
+from scripts.codegen import effect_schemas, extension_commands, extension_constants
 from scripts.codegen.output import write_typescript
 
 Generator = tuple[str, pathlib.Path, Callable[[], str]]
@@ -16,6 +16,11 @@ GENERATORS: tuple[Generator, ...] = (
         extension_constants.LABEL,
         extension_constants.OUTPUT,
         extension_constants.generate,
+    ),
+    (
+        extension_commands.LABEL,
+        extension_commands.OUTPUT,
+        extension_commands.generate,
     ),
     (effect_schemas.LABEL, effect_schemas.OUTPUT, effect_schemas.generate),
 )

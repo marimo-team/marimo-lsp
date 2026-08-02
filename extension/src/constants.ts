@@ -4,31 +4,6 @@
 // Regenerate with `just codegen`.
 import type { CellId } from "./types.ts";
 
-export type MarimoCommand =
-  | "marimo.clearRecentNotebooks"
-  | "marimo.config.toggleAutoReloadAutorun"
-  | "marimo.config.toggleAutoReloadLazy"
-  | "marimo.config.toggleAutoReloadOff"
-  | "marimo.config.toggleOnCellChangeAutoRun"
-  | "marimo.config.toggleOnCellChangeLazy"
-  | "marimo.createSetupCell"
-  | "marimo.debugCell"
-  | "marimo.exportStaticHTML"
-  | "marimo.newMarimoNotebook"
-  | "marimo.openAsMarimoNotebook"
-  | "marimo.openOutlineView"
-  | "marimo.openTutorial"
-  | "marimo.publishMarimoNotebook"
-  | "marimo.publishMarimoNotebookGist"
-  | "marimo.refreshPackages"
-  | "marimo.reportIssue"
-  | "marimo.restartKernel"
-  | "marimo.restartLsp"
-  | "marimo.runStale"
-  | "marimo.showDiagnostics"
-  | "marimo.showMarimoMenu"
-  | "marimo.updateActivePythonEnvironment";
-
 export type MarimoView =
   | "marimo-explorer-datasources"
   | "marimo-explorer-packages"

@@ -17,8 +17,8 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import type { DynamicCommand } from "../commands.ts";
-import { type MarimoCommand, NOTEBOOK_TYPE } from "../constants.ts";
+import { commandId, decodeCommandResult } from "../commands.ts";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import {
   Auth,
@@ -1503,7 +1503,7 @@ export function createTestNotebookEditor(
 export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly layer: Layer.Layer<VsCode>;
   readonly views: Ref.Ref<HashSet.HashSet<string>>;
-  readonly commands: Ref.Ref<HashSet.HashSet<MarimoCommand | DynamicCommand>>;
+  readonly commands: Ref.Ref<HashSet.HashSet<string>>;
   readonly controllers: Ref.Ref<HashSet.HashSet<vscode.NotebookController>>;
   readonly executions: Ref.Ref<
     ReadonlyArray<{ command: string; args: ReadonlyArray<unknown> }>
@@ -1646,9 +1646,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
 
     const documentClosed = yield* PubSub.unbounded<vscode.NotebookDocument>();
 
-    const commands = yield* Ref.make(
-      HashSet.empty<MarimoCommand | DynamicCommand>(),
-    );
+    const commands = yield* Ref.make(HashSet.empty<string>());
     const controllers = yield* Ref.make(
       HashSet.empty<vscode.NotebookController>(),
     );
@@ -1882,14 +1880,29 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
               { command: "setContext", args: [key, value] },
             ]);
           },
-          executeCommand(command, ...args) {
+          execute(command, ...args) {
+            return Ref.update(executions, (arr) => [
+              ...arr,
+              { command: commandId(command), args },
+            ]).pipe(Effect.zipRight(decodeCommandResult(command, undefined)));
+          },
+          executeVSCode(command, ...args) {
             return Ref.update(executions, (arr) => [...arr, { command, args }]);
           },
-          registerCommand(name) {
+          register(command) {
+            const name = commandId(command);
             return Effect.gen(function* () {
-              yield* Ref.update(commands, HashSet.add(name));
+              yield* Ref.update(commands, HashSet.add<string>(name));
               yield* Effect.addFinalizer(() =>
-                Ref.update(commands, HashSet.remove(name)),
+                Ref.update(commands, HashSet.remove<string>(name)),
+              );
+            });
+          },
+          registerEphemeral(name) {
+            return Effect.gen(function* () {
+              yield* Ref.update(commands, HashSet.add<string>(name));
+              yield* Effect.addFinalizer(() =>
+                Ref.update(commands, HashSet.remove<string>(name)),
               );
             });
           },

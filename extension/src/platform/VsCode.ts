@@ -6,6 +6,7 @@ import {
   Exit,
   Fiber,
   Option,
+  ParseResult,
   PubSub,
   Runtime,
   Scope,
@@ -28,8 +29,15 @@ declare global {
 // oxlint-disable-next-line marimo/vscode-type-only
 import * as vscode from "vscode";
 
-import type { DynamicCommand, VscodeBuiltinCommand } from "../commands.ts";
-import type { MarimoCommand, MarimoContextKey } from "../constants.ts";
+import {
+  commandId,
+  decodeCommandArguments,
+  decodeCommandResult,
+  type EphemeralCommand,
+  type MarimoCommand,
+  type VscodeBuiltinCommand,
+} from "../commands.ts";
+import type { MarimoContextKey } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
 import { tokenFromSignal } from "../lib/tokenFromSignal.ts";
@@ -283,8 +291,6 @@ export class Window extends Effect.Service<Window>()("Window", {
   }),
 }) {}
 
-type ExecutableCommand = VscodeBuiltinCommand | MarimoCommand | DynamicCommand;
-
 type ContextMap = {
   "marimo.config.runtime.on_cell_change": "autorun" | "lazy";
   "marimo.config.runtime.auto_reload": "off" | "lazy" | "autorun";
@@ -303,59 +309,91 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
     const commandPubSub =
       yield* PubSub.unbounded<Either.Either<string, string>>();
 
+    function execute<Args extends ReadonlyArray<unknown>, Result>(
+      command: MarimoCommand<Args, Result>,
+      ...args: Args
+    ): Effect.Effect<Result, ParseResult.ParseError> {
+      return Effect.promise(() =>
+        api.executeCommand(commandId(command), ...args),
+      ).pipe(Effect.flatMap((result) => decodeCommandResult(command, result)));
+    }
+
+    function executeVSCode(command: VscodeBuiltinCommand, ...args: unknown[]) {
+      return Effect.promise(() => api.executeCommand(command, ...args));
+    }
+
+    function registerImplementation<A, E, R>(
+      wireId: string,
+      invoke: (args: ReadonlyArray<unknown>) => Effect.Effect<A, E, R>,
+    ) {
+      return Effect.gen(function* () {
+        const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
+        const callback = (...args: unknown[]) =>
+          invoke(args).pipe(
+            Effect.tap(() =>
+              PubSub.publish(commandPubSub, Either.right(wireId)),
+            ),
+            Effect.catchAllCause(
+              Effect.fn(function* (cause) {
+                // Skip logging for interruptions/cancellations (e.g., user
+                // cancels a progress dialog, VS Code disposes resources
+                // during kernel restart). These are expected and not errors.
+                if (
+                  Cause.isInterruptedOnly(cause) ||
+                  [...Cause.defects(cause)].some(
+                    (defect: unknown) =>
+                      defect instanceof Error && defect.name === "Canceled",
+                  )
+                ) {
+                  yield* PubSub.publish(commandPubSub, Either.left(wireId));
+                  return;
+                }
+                yield* Effect.logError(cause);
+                yield* PubSub.publish(commandPubSub, Either.left(wireId));
+                yield* win.showWarningMessage(
+                  `Something went wrong in ${JSON.stringify(wireId)}. See marimo logs for more info.`,
+                );
+              }),
+            ),
+            runPromise,
+          );
+
+        yield* acquireDisposable(() => api.registerCommand(wireId, callback));
+      });
+    }
+
+    function register<Args extends ReadonlyArray<unknown>, A, E, R>(
+      command: MarimoCommand<Args, A>,
+      fn: (...args: Args) => Effect.Effect<A, E, R>,
+    ) {
+      return registerImplementation(commandId(command), (args) =>
+        decodeCommandArguments(command, args).pipe(
+          Effect.flatMap((decoded) => fn(...decoded)),
+          Effect.flatMap((result) => decodeCommandResult(command, result)),
+        ),
+      );
+    }
+
+    function registerEphemeral<A, E, R>(
+      command: EphemeralCommand,
+      fn: (...args: unknown[]) => Effect.Effect<A, E, R>,
+    ) {
+      return registerImplementation(command, (args) => fn(...args));
+    }
+
     return {
       subscribeToCommands() {
         return PubSub.subscribe(commandPubSub);
       },
-      executeCommand(command: ExecutableCommand, ...args: unknown[]) {
-        return Effect.promise(() => api.executeCommand(command, ...args));
-      },
+      execute,
+      executeVSCode,
       setContext<K extends MarimoContextKey>(key: K, value: ContextMap[K]) {
         return Effect.promise(() =>
           api.executeCommand("setContext", key, value),
         );
       },
-      registerCommand<A, E, R>(
-        command: MarimoCommand | DynamicCommand,
-        fn: (...args: unknown[]) => Effect.Effect<A, E, R>,
-      ) {
-        return Effect.gen(function* () {
-          const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
-          const callback = (...args: unknown[]) =>
-            fn(...args).pipe(
-              Effect.tap(() =>
-                PubSub.publish(commandPubSub, Either.right(command)),
-              ),
-              Effect.catchAllCause(
-                Effect.fn(function* (cause) {
-                  // Skip logging for interruptions/cancellations (e.g., user
-                  // cancels a progress dialog, VS Code disposes resources
-                  // during kernel restart). These are expected and not errors.
-                  if (
-                    Cause.isInterruptedOnly(cause) ||
-                    [...Cause.defects(cause)].some(
-                      (defect: unknown) =>
-                        defect instanceof Error && defect.name === "Canceled",
-                    )
-                  ) {
-                    yield* PubSub.publish(commandPubSub, Either.left(command));
-                    return;
-                  }
-                  yield* Effect.logError(cause);
-                  yield* PubSub.publish(commandPubSub, Either.left(command));
-                  yield* win.showWarningMessage(
-                    `Something went wrong in ${JSON.stringify(command)}. See marimo logs for more info.`,
-                  );
-                }),
-              ),
-              runPromise,
-            );
-
-          yield* acquireDisposable(() =>
-            api.registerCommand(command, callback),
-          );
-        });
-      },
+      register,
+      registerEphemeral,
     };
   }),
 }) {}

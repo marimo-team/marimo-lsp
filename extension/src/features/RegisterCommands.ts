@@ -3,6 +3,7 @@ import { Effect, Either, Layer, Stream } from "effect";
 import { createSetupCell } from "../commands/createSetupCell.ts";
 import { debugCell } from "../commands/debugCell.ts";
 import { exportNotebookAsHtml } from "../commands/exportNotebookAsHtml.ts";
+import { MarimoCommands } from "../commands/MarimoCommands.ts";
 import { newMarimoNotebook } from "../commands/newMarimoNotebook.ts";
 import { openAsMarimoNotebook } from "../commands/openAsMarimoNotebook.ts";
 import { openOutlineView } from "../commands/openOutlineView.ts";
@@ -16,7 +17,6 @@ import { showDiagnostics } from "../commands/showDiagnostics.ts";
 import { toggleAutoReload } from "../commands/toggleAutoReload.ts";
 import { toggleOnCellChange } from "../commands/toggleOnCellChange.ts";
 import { updateActivePythonEnvironment } from "../commands/updateActivePythonEnvironment.ts";
-import type { MarimoCommand } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 
@@ -28,72 +28,72 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     const code = yield* VsCode;
     const telemetry = yield* Telemetry;
 
-    yield* code.commands.registerCommand(
-      "marimo.newMarimoNotebook",
+    yield* code.commands.register(
+      MarimoCommands.newMarimoNotebook,
       newMarimoNotebook,
     );
 
-    yield* code.commands.registerCommand(
-      "marimo.createSetupCell",
+    yield* code.commands.register(
+      MarimoCommands.createSetupCell,
       createSetupCell,
     );
 
-    yield* code.commands.registerCommand(
-      "marimo.openAsMarimoNotebook",
+    yield* code.commands.register(
+      MarimoCommands.openAsMarimoNotebook,
       openAsMarimoNotebook,
     );
 
-    yield* code.commands.registerCommand(
-      "marimo.openOutlineView",
+    yield* code.commands.register(
+      MarimoCommands.openOutlineView,
       openOutlineView,
     );
 
-    yield* code.commands.registerCommand(
-      "marimo.publishMarimoNotebookGist",
+    yield* code.commands.register(
+      MarimoCommands.publishMarimoNotebookGist,
       publishMarimoNotebookGist,
     );
 
-    yield* code.commands.registerCommand(
-      "marimo.publishMarimoNotebook",
+    yield* code.commands.register(
+      MarimoCommands.publishMarimoNotebook,
       publishMarimoNotebook,
     );
 
-    yield* code.commands.registerCommand("marimo.runStale", runStale);
-    yield* code.commands.registerCommand("marimo.debugCell", debugCell);
+    yield* code.commands.register(MarimoCommands.runStale, runStale);
+    yield* code.commands.register(MarimoCommands.debugCell, debugCell);
 
     for (const command of [
-      "marimo.config.toggleOnCellChangeAutoRun",
-      "marimo.config.toggleOnCellChangeLazy",
-    ] satisfies ReadonlyArray<MarimoCommand>) {
-      yield* code.commands.registerCommand(command, toggleOnCellChange);
+      MarimoCommands.configToggleOnCellChangeAutoRun,
+      MarimoCommands.configToggleOnCellChangeLazy,
+    ]) {
+      yield* code.commands.register(command, toggleOnCellChange);
     }
 
     for (const command of [
-      "marimo.config.toggleAutoReloadOff",
-      "marimo.config.toggleAutoReloadLazy",
-      "marimo.config.toggleAutoReloadAutorun",
-    ] satisfies ReadonlyArray<MarimoCommand>) {
-      yield* code.commands.registerCommand(command, toggleAutoReload);
+      MarimoCommands.configToggleAutoReloadOff,
+      MarimoCommands.configToggleAutoReloadLazy,
+      MarimoCommands.configToggleAutoReloadAutorun,
+    ]) {
+      yield* code.commands.register(command, toggleAutoReload);
     }
 
-    yield* code.commands.registerCommand("marimo.restartKernel", restartKernel);
+    yield* code.commands.register(MarimoCommands.restartKernel, restartKernel);
 
-    yield* code.commands.registerCommand("marimo.restartLsp", restartLsp);
+    yield* code.commands.register(MarimoCommands.restartLsp, restartLsp);
 
-    yield* code.commands.registerCommand(
-      "marimo.showDiagnostics",
+    yield* code.commands.register(
+      MarimoCommands.showDiagnostics,
       showDiagnostics,
     );
 
-    yield* code.commands.registerCommand("marimo.reportIssue", reportIssue);
+    yield* code.commands.register(MarimoCommands.reportIssue, reportIssue);
 
-    yield* code.commands.registerCommand(
-      "marimo.exportStaticHTML",
+    yield* code.commands.register(
+      MarimoCommands.exportStaticHTML,
       exportNotebookAsHtml,
     );
 
-    yield* code.commands.registerCommand(
-      "marimo.updateActivePythonEnvironment",
+    yield* code.commands.register(
+      MarimoCommands.updateActivePythonEnvironment,
       updateActivePythonEnvironment,
     );
 

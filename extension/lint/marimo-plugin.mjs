@@ -1,6 +1,12 @@
 // @ts-check
 import { definePlugin, defineRule } from "@oxlint/plugins";
 
+import pkg from "../package.json" with { type: "json" };
+
+const marimoCommandIds = new Set(
+  pkg.contributes.commands.map(({ command }) => command),
+);
+
 const vscodeTypeOnly = defineRule({
   meta: {
     type: "problem",
@@ -133,6 +139,49 @@ const noAtImports = defineRule({
   },
 });
 
+const noMarimoCommandIdLiterals = defineRule({
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Require typed command tokens instead of contributed command wire IDs",
+    },
+    messages: {
+      useToken:
+        "Use the matching MarimoCommands token; raw contributed command IDs belong only in generated commands.",
+    },
+  },
+  create(context) {
+    if (
+      context.filename
+        .replaceAll("\\", "/")
+        .endsWith("/src/commands/MarimoCommands.gen.ts")
+    ) {
+      return {};
+    }
+    return {
+      Literal(node) {
+        if (
+          typeof node.value === "string" &&
+          marimoCommandIds.has(node.value)
+        ) {
+          context.report({ node, messageId: "useToken" });
+        }
+      },
+      TemplateLiteral(node) {
+        const value = node.quasis[0]?.value.cooked;
+        if (
+          node.expressions.length === 0 &&
+          typeof value === "string" &&
+          marimoCommandIds.has(value)
+        ) {
+          context.report({ node, messageId: "useToken" });
+        }
+      },
+    };
+  },
+});
+
 export default definePlugin({
   meta: {
     name: "marimo",
@@ -140,5 +189,6 @@ export default definePlugin({
   rules: {
     "vscode-type-only": vscodeTypeOnly,
     "no-at-imports": noAtImports,
+    "no-marimo-command-id-literals": noMarimoCommandIdLiterals,
   },
 });

@@ -1,28 +1,10 @@
-import { Effect, Either, Option, Schema } from "effect";
+import { Effect, Either, Option } from "effect";
 import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { defineCommand } from "./defineCommand.ts";
-
-const UriSchema = Schema.declare<vscode.Uri>(
-  (value): value is vscode.Uri =>
-    typeof value === "object" &&
-    value !== null &&
-    "scheme" in value &&
-    typeof value.scheme === "string" &&
-    "path" in value &&
-    typeof value.path === "string" &&
-    "with" in value &&
-    typeof value.with === "function" &&
-    "toString" in value &&
-    typeof value.toString === "function",
-  { identifier: "vscode.Uri" },
-);
-
-export const openAsMarimoNotebook = defineCommand(
-  Schema.UndefinedOr(Schema.Union(Schema.String, UriSchema)),
-  Effect.fn("command.openAsMarimoNotebook")(function* (resource) {
+export const openAsMarimoNotebook = Effect.fn("command.openAsMarimoNotebook")(
+  function* (resource?: string | vscode.Uri) {
     const code = yield* VsCode;
 
     let uri: vscode.Uri;
@@ -65,7 +47,7 @@ export const openAsMarimoNotebook = defineCommand(
     // We open first before closing to handle multi-window scenarios correctly:
     // if we close first and it's the only editor in the window, the window
     // closes before we can open the notebook in it.
-    yield* code.commands.executeCommand("vscode.openWith", uri, NOTEBOOK_TYPE);
+    yield* code.commands.executeVSCode("vscode.openWith", uri, NOTEBOOK_TYPE);
 
     // Find and close the original text editor tab (not the notebook we just opened).
     // We find the tab after opening the notebook because tab references can become
@@ -75,5 +57,5 @@ export const openAsMarimoNotebook = defineCommand(
     yield* Effect.logDebug("Opened Python file as marimo notebook").pipe(
       Effect.annotateLogs({ uri: uri.toString() }),
     );
-  }),
+  },
 );

@@ -100,8 +100,10 @@ const TestVsCodeLive = Layer.effect(
         subscribeToCommands() {
           return Queue.unbounded();
         },
-        executeCommand: () => Effect.void,
-        registerCommand: () => Effect.void,
+        execute: () => Effect.die("Unexpected command execution"),
+        executeVSCode: () => Effect.void,
+        register: () => Effect.void,
+        registerEphemeral: () => Effect.void,
       }),
     });
   }),

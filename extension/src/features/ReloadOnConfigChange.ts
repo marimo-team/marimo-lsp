@@ -1,5 +1,6 @@
 import { Effect, Either, Layer, Option, Stream } from "effect";
 
+import { MarimoCommands } from "../commands/MarimoCommands.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
@@ -12,7 +13,7 @@ export const promptToRestartKernelForFileRootChange = Effect.fn(function* () {
     { items: ["Restart Kernel"] },
   );
   if (Option.isSome(restart) && restart.value === "Restart Kernel") {
-    yield* code.commands.executeCommand("marimo.restartKernel");
+    yield* code.commands.execute(MarimoCommands.restartKernel);
   }
 });
 
@@ -56,9 +57,7 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
           );
 
           if (Option.isSome(reload) && reload.value === "Reload Window") {
-            yield* code.commands.executeCommand(
-              "workbench.action.reloadWindow",
-            );
+            yield* code.commands.executeVSCode("workbench.action.reloadWindow");
           }
         }),
       ),

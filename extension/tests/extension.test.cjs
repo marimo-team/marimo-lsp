@@ -141,6 +141,7 @@ suite("marimo Extension Hello World Tests", () => {
     );
 
     try {
+      // oxlint-disable-next-line marimo/no-marimo-command-id-literals -- exercises the external VS Code seam
       await vscode.commands.executeCommand("marimo.newMarimoNotebook");
 
       const finalDocCount = vscode.workspace.textDocuments.length;
