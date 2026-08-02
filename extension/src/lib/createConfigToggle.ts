@@ -1,6 +1,8 @@
 import { Effect, Option } from "effect";
 
+import type { NotebookCommandContext } from "../commands.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
+import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
@@ -11,12 +13,18 @@ import type { MarimoConfig } from "../types.ts";
  * Creates a handler that shows a quick pick dialog with all available options.
  */
 export const createConfigToggle = <T extends string>({
+  context,
   configPath,
+  settingName,
+  pickerTitle,
   getCurrentValue,
   choices,
   getDisplayName,
 }: {
+  context: NotebookCommandContext | undefined;
   configPath: string;
+  settingName: string;
+  pickerTitle: string;
   getCurrentValue: (config: MarimoConfig) => T;
   choices: ReadonlyArray<{
     label: string;
@@ -29,15 +37,15 @@ export const createConfigToggle = <T extends string>({
     const code = yield* VsCode;
     const configService = yield* MarimoConfigurationService;
 
-    // Validate active notebook
+    // Validate the notebook that originated the command.
     const notebook = Option.filterMap(
-      yield* code.window.getActiveNotebookEditor(),
+      yield* getNotebookCommandEditor(context),
       (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
     );
 
     if (Option.isNone(notebook)) {
       yield* showErrorAndPromptLogs(
-        `Must have an open marimo notebook to toggle ${configPath}.`,
+        `Open a marimo notebook to configure ${settingName.toLowerCase()}.`,
       );
       return;
     }
@@ -54,6 +62,7 @@ export const createConfigToggle = <T extends string>({
         detail: c.detail,
         value: c.value,
       })),
+      { title: pickerTitle },
     );
 
     if (Option.isNone(choice)) {
@@ -88,11 +97,11 @@ export const createConfigToggle = <T extends string>({
     yield* configService.updateConfig(notebook.value.id, partialConfig);
 
     yield* code.window.showInformationMessage(
-      `${configPath} updated to: ${getDisplayName(newValue)}`,
+      `${settingName} set to ${getDisplayName(newValue)}.`,
     );
   }).pipe(
     Effect.tapErrorCause(Effect.logError),
     Effect.catchAllCause(() =>
-      showErrorAndPromptLogs(`Failed to toggle ${configPath}.`),
+      showErrorAndPromptLogs(`Could not update ${settingName.toLowerCase()}.`),
     ),
   );

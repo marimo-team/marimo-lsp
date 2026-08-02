@@ -12,7 +12,8 @@ from typing import TYPE_CHECKING, cast
 
 import msgspec
 from marimo._ast.app_config import _AppConfig
-from marimo._config.config import DEFAULT_CONFIG, MarimoConfig
+from marimo._config.config import MarimoConfig  # noqa: TC002 - API introspection
+from marimo._config.manager import get_default_config_manager
 from marimo._convert.converters import MarimoConvert
 from marimo._export.exporter import Exporter
 from marimo._export.requests import HTMLExportRequest, IPYNBExportRequest
@@ -81,6 +82,17 @@ __all__ = ["API_METHODS", "ApiBuilder", "ApiMethod", "handle_api_command"]
 
 logger = get_logger()
 _API_HANDLER_PARAMETER_COUNT = 2
+
+
+def _as_partial_marimo_config(config: dict[str, object]) -> PartialMarimoConfig:
+    """Adapt a deep configuration patch to marimo's shallow partial type.
+
+    Python cannot derive a recursive partial ``TypedDict`` from
+    ``MarimoConfig``. Marimo accepts deep patches at runtime, even though its
+    ``PartialMarimoConfig`` annotation only describes a shallow partial.
+    Keep that typing assertion isolated at this API boundary.
+    """
+    return cast("PartialMarimoConfig", config)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -180,13 +192,6 @@ class ApiBuilder:
 
 
 marimo_api = ApiBuilder()
-
-
-class SessionNotFoundError(ValueError):
-    """Raised when an API command requires a live notebook session."""
-
-    def __init__(self, notebook_uri: str) -> None:
-        super().__init__(f"No session found for {notebook_uri}")
 
 
 def _get_display_config(config: MarimoConfig) -> DisplayConfig:
@@ -484,8 +489,8 @@ async def get_configuration(
     """Get the current marimo configuration."""
     session = ctx.sessions.get(args.notebook_uri)
     if not session:
-        logger.warning(f"No session found for {args.notebook_uri}")
-        return GetConfigurationResponse(config=DEFAULT_CONFIG)
+        manager = get_default_config_manager(current_path=to_fs_path(args.notebook_uri))
+        return GetConfigurationResponse(config=manager.get_config())
 
     return GetConfigurationResponse(config=session.get_config())
 
@@ -496,14 +501,14 @@ async def update_configuration(
     args: NotebookCommand[UpdateConfigurationRequest],
 ) -> MarimoConfig:
     """Update the marimo user configuration."""
+    config = _as_partial_marimo_config(args.inner.config)
     session = ctx.sessions.get(args.notebook_uri)
     if not session:
-        logger.warning(f"No session found for {args.notebook_uri}")
-        raise SessionNotFoundError(args.notebook_uri)
+        manager = get_default_config_manager(current_path=to_fs_path(args.notebook_uri))
+        manager.save_config(config)
+        return manager.get_config()
 
-    # PartialMarimoConfig is only shallow-partial, while config updates are
-    # intentionally deep patches (for example, just runtime.on_cell_change).
-    return session.save_config(cast("PartialMarimoConfig", args.inner.config))
+    return session.save_config(config)
 
 
 @marimo_api("set-display-theme")

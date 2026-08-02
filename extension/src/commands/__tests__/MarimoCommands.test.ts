@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Either } from "effect";
+import { Effect } from "effect";
 
 import { commandId, decodeCommandArguments } from "../../commands.ts";
 import { GeneratedMarimoCommands } from "../MarimoCommands.gen.ts";
@@ -15,12 +15,56 @@ describe("MarimoCommands", () => {
     );
   });
 
-  it.effect("rejects arguments for a no-argument command", () =>
+  it.effect("ignores VS Code context for a context-free command", () =>
     Effect.gen(function* () {
-      const result = yield* Effect.either(
-        decodeCommandArguments(MarimoCommands.restartKernel, ["unexpected"]),
+      const args = yield* decodeCommandArguments(MarimoCommands.restartLsp, [
+        {
+          ui: true,
+          notebookEditor: { notebookUri: "file:///notebook.py" },
+          source: "notebookToolbar",
+        },
+      ]);
+      expect(args).toEqual([]);
+    }),
+  );
+
+  it.effect("accepts an empty argument list for a no-argument command", () =>
+    Effect.gen(function* () {
+      const args = yield* decodeCommandArguments(MarimoCommands.restartLsp, []);
+      expect(args).toEqual([]);
+    }),
+  );
+
+  it.effect("decodes optional notebook toolbar context", () =>
+    Effect.gen(function* () {
+      const notebookUri = {
+        scheme: "file",
+        path: "/notebook.py",
+        with() {
+          return this;
+        },
+        toString() {
+          return "file:///notebook.py";
+        },
+      };
+      const args = yield* decodeCommandArguments(MarimoCommands.restartKernel, [
+        {
+          ui: true,
+          notebookEditor: { notebookUri },
+          source: "notebookToolbar",
+        },
+      ]);
+      expect(args).toEqual([{ notebookEditor: { notebookUri } }]);
+    }),
+  );
+
+  it.effect("accepts no context for a notebook command", () =>
+    Effect.gen(function* () {
+      const args = yield* decodeCommandArguments(
+        MarimoCommands.restartKernel,
+        [],
       );
-      expect(Either.isLeft(result)).toBe(true);
+      expect(args).toEqual([]);
     }),
   );
 

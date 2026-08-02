@@ -1,17 +1,21 @@
 import { Effect, Either, Option } from "effect";
 
+import type { NotebookCommandContext } from "../commands.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
-export const restartKernel = Effect.fn("command.restartKernel")(function* () {
+export const restartKernel = Effect.fn("command.restartKernel")(function* (
+  context?: NotebookCommandContext,
+) {
   const code = yield* VsCode;
   const notebooks = yield* NotebookRuntime;
   const executions = yield* CellExecutions;
 
-  const editor = yield* code.window.getActiveNotebookEditor();
+  const editor = yield* getNotebookCommandEditor(context);
   if (Option.isNone(editor)) {
     yield* code.window.showInformationMessage(
       "No notebook editor is currently open",

@@ -219,7 +219,9 @@ it.effect(
 
     expect(yield* information).toEqual(Option.none());
     expect(yield* error).toEqual(
-      Option.some("Automatic export settings could not be saved."),
+      Option.some(
+        "Export formats changed but the notebook could not be saved.",
+      ),
     );
   }),
 );
@@ -264,7 +266,9 @@ it.effect(
 
     expect(yield* information).toEqual(Option.none());
     expect(yield* error).toEqual(
-      Option.some("Automatic export settings could not be saved."),
+      Option.some(
+        "Export formats changed but the notebook could not be saved.",
+      ),
     );
   }),
 );

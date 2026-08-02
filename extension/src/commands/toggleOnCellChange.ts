@@ -1,20 +1,25 @@
+import type { NotebookCommandContext } from "../commands.ts";
 import { createConfigToggle } from "../lib/createConfigToggle.ts";
 
-export const toggleOnCellChange = () =>
+export const toggleOnCellChange = (context?: NotebookCommandContext) =>
   createConfigToggle({
+    context,
     configPath: "runtime.on_cell_change",
+    settingName: "Cell changes",
+    pickerTitle: "Cell changes",
     getCurrentValue: (config) => config.runtime?.on_cell_change ?? "autorun",
     choices: [
       {
-        label: "Auto-Run",
-        detail: "Automatically run cells when their ancestors change",
+        label: "Auto-run",
+        detail:
+          "Run dependent cells immediately after an upstream cell changes",
         value: "autorun" as const,
       },
       {
         label: "Lazy",
-        detail: "Mark cells stale when ancestors change, don't autorun",
+        detail: "Mark dependent cells stale and run them only when needed",
         value: "lazy" as const,
       },
     ],
-    getDisplayName: (value) => (value === "autorun" ? "Auto-Run" : "Lazy"),
+    getDisplayName: (value) => (value === "autorun" ? "Auto-run" : "Lazy"),
   });

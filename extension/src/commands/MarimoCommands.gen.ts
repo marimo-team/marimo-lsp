@@ -36,6 +36,7 @@ export const GeneratedMarimoCommands = {
   runStale: marimoCommand("marimo.runStale"),
   showDiagnostics: marimoCommand("marimo.showDiagnostics"),
   showMarimoMenu: marimoCommand("marimo.showMarimoMenu"),
+  showNotebookActions: marimoCommand("marimo.showNotebookActions"),
   updateActivePythonEnvironment: marimoCommand(
     "marimo.updateActivePythonEnvironment",
   ),
