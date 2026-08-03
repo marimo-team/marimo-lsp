@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Redacted } from "effect";
+import { Cause, Redacted } from "effect";
 
 import {
   MarimoClientStartError,
@@ -52,6 +52,17 @@ it("separates LSP startup failures", () => {
     domain: "notebook.deserialize",
     kind: "transport.lsp-start",
     safeContext: { "error.exception_class": "MarimoClientStartError" },
+  });
+});
+
+it("separates deserialize timeouts from internal RPC failures", () => {
+  const result = classifyNotebookDeserializeError(new Cause.TimeoutException());
+
+  expect(result).toEqual({
+    report: true,
+    domain: "notebook.deserialize",
+    kind: "transport.timeout",
+    safeContext: { "error.exception_class": "TimeoutException" },
   });
 });
 

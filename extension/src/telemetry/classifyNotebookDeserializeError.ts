@@ -1,4 +1,4 @@
-import { Redacted } from "effect";
+import { Cause, Redacted } from "effect";
 
 import {
   MarimoClientStartError,
@@ -11,6 +11,7 @@ export type NotebookDeserializeErrorKind =
   | "source.convertible"
   | "transport.lsp-start"
   | "transport.client-not-running"
+  | "transport.timeout"
   | "rpc.internal";
 
 export interface ErrorClassification {
@@ -39,6 +40,15 @@ export function classifyNotebookDeserializeError(
       domain: "notebook.deserialize",
       kind: "transport.lsp-start",
       safeContext: { "error.exception_class": error._tag },
+    };
+  }
+
+  if (Cause.isTimeoutException(error)) {
+    return {
+      report: true,
+      domain: "notebook.deserialize",
+      kind: "transport.timeout",
+      safeContext: { "error.exception_class": "TimeoutException" },
     };
   }
 

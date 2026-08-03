@@ -2,6 +2,7 @@ import * as NodeFs from "node:fs";
 
 import { assert, expect, it } from "@effect/vitest";
 import {
+  Cause,
   Duration,
   Effect,
   Either,
@@ -51,7 +52,51 @@ it.scoped(
     }).pipe(Effect.provide(layer));
 
     assert(Exit.isFailure(exit));
-    expect(String(exit)).toContain("TimeoutException");
+    const failure = Cause.failureOption(exit.cause);
+    assert(failure._tag === "Some");
+    assert(Cause.isTimeoutException(failure.value));
+  }),
+);
+
+it.scoped(
+  "registered serializer explains deserialize timeouts",
+  Effect.fn(function* () {
+    const vscode = yield* TestVsCode.make();
+    const layer = Layer.empty.pipe(
+      Layer.provideMerge(NotebookSerializer.Default),
+      Layer.provideMerge(makeTestMarimoClient({ execute: () => Effect.never })),
+      Layer.provideMerge(Constants.Default),
+      Layer.provideMerge(vscode.layer),
+    );
+
+    yield* Effect.gen(function* () {
+      yield* NotebookSerializer;
+      const registrations = HashSet.toValues(
+        yield* Ref.get(vscode.serializers),
+      );
+      const registration = registrations[0];
+      assert.isDefined(registration);
+
+      const pending = registration.serializer.deserializeNotebook(
+        new TextEncoder().encode("app = marimo.App()"),
+        {
+          isCancellationRequested: false,
+          onCancellationRequested: () => ({ dispose() {} }),
+        },
+      );
+      const settled = Promise.resolve(pending).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      yield* Effect.yieldNow();
+      yield* TestClock.adjust(Duration.seconds(30));
+      const error = yield* Effect.promise(() => settled);
+
+      assert(error instanceof Error);
+      expect(error.message).toBe(
+        "Timed out after 30 seconds while opening the notebook. See marimo logs for details.",
+      );
+    }).pipe(Effect.provide(layer));
   }),
 );
 

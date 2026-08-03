@@ -191,9 +191,13 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                   Effect.mapError((error) =>
                     error instanceof NotebookSourceError
                       ? new Error(notebookSourceFailureMessage(error.failure))
-                      : new Error(
-                          `Failed to deserialize notebook. See marimo logs for details.`,
-                        ),
+                      : Cause.isTimeoutException(error)
+                        ? new Error(
+                            `Timed out after ${Duration.toSeconds(DESERIALIZE_TIMEOUT)} seconds while opening the notebook. See marimo logs for details.`,
+                          )
+                        : new Error(
+                            `Failed to deserialize notebook. See marimo logs for details.`,
+                          ),
                   ),
                 ),
               );
