@@ -108,6 +108,7 @@ const withTestCtx = Effect.fn(function* (options?: {
   posthog.shutdown.mockResolvedValue(undefined);
 
   const loggerCreated = vi.fn();
+  const loggerOptionsSeen = vi.fn();
   const vscodeMock = yield* TestVsCode.make({
     env: {
       createTelemetryLogger(sender, loggerOptions) {
@@ -117,6 +118,7 @@ const withTestCtx = Effect.fn(function* (options?: {
         return Effect.acquireRelease(
           Effect.sync(() => {
             loggerCreated();
+            loggerOptionsSeen(loggerOptions);
             const common = {
               "common.vscodeversion": "1.100.0",
               ...loggerOptions?.additionalCommonProperties,
@@ -188,6 +190,7 @@ const withTestCtx = Effect.fn(function* (options?: {
   return {
     telemetry: yield* Telemetry.pipe(Effect.provide(context)),
     loggerCreated,
+    loggerOptionsSeen,
   };
 });
 
@@ -214,6 +217,17 @@ it.scoped(
     expect(sentrySdk.captureException).not.toHaveBeenCalled();
     expect(sentrySdk.init).not.toHaveBeenCalled();
     expect(posthog.constructed).not.toHaveBeenCalled();
+  }),
+);
+
+it.scoped(
+  "does not subscribe the private adapters to unhandled extension-host errors",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx();
+
+    expect(ctx.loggerOptionsSeen).toHaveBeenCalledWith(
+      expect.objectContaining({ ignoreUnhandledErrors: true }),
+    );
   }),
 );
 

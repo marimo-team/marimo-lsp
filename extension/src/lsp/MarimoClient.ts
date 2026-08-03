@@ -178,6 +178,9 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
       );
 
       const stopClient = Effect.fn(function* () {
+        // LanguageClient.needsStop() also returns true while Starting, but
+        // stop() rejects unless the client has an active Running connection.
+        if (!client.isRunning()) return;
         yield* Effect.tryPromise(() => client.stop()).pipe(
           Effect.timeout("5 seconds"),
           Effect.ignore,
@@ -187,12 +190,8 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
 
       const startClient = () =>
         Effect.gen(function* () {
-          if (!client.isRunning() && client.needsStop()) {
-            yield* Effect.logDebug(
-              "Client is still stopping, waiting before start",
-            );
-            yield* stopClient();
-          }
+          // start() is single-flight while the client is Starting, so there is
+          // no need to stop an in-progress start before awaiting it.
           yield* Effect.tryPromise({
             try: () => client.start(),
             catch: (cause) => {
@@ -214,7 +213,7 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
           yield* Effect.logInfo("marimo-lsp client started");
         }).pipe(Effect.withSpan("lsp.start"));
 
-      yield* Effect.addFinalizer(() => Effect.promise(() => client.dispose()));
+      yield* Effect.addFinalizer(() => disposeLanguageClient(client));
 
       const operations = yield* makeMarimoOperationStream((handler) =>
         client.onNotification("marimo/operation", (message) => {
@@ -309,6 +308,20 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
     }),
   },
 ) {}
+
+/**
+ * Dispose the language client without allowing dependency cleanup failures to
+ * fail the owning Effect scope. NodeLanguageClient still runs its process-kill
+ * cleanup in a `finally`, even when graceful protocol shutdown rejects.
+ */
+export function disposeLanguageClient(
+  client: Pick<lsp.LanguageClient, "dispose">,
+): Effect.Effect<void> {
+  return Effect.tryPromise(() => client.dispose()).pipe(
+    Effect.timeout("5 seconds"),
+    Effect.ignore,
+  );
+}
 
 export const findMarimoLspExecutable = Effect.fn("findMarimoLspExecutable")(
   function* (uvBinary: string, searchDirectory = __dirname) {

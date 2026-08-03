@@ -4,16 +4,31 @@ import * as NodePath from "node:path";
 
 import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Option, Ref, Stream } from "effect";
+import { vi } from "vite-plus/test";
 
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { MarimoApiCall, MarimoOperation } from "../../types.ts";
 import {
+  disposeLanguageClient,
   findMarimoLspExecutable,
   makeMarimoCommands,
   makeMarimoOperationStream,
 } from "../MarimoClient.ts";
 
 const notebook = notebookId("notebook-a");
+
+it.scoped(
+  "does not fail scope cleanup when language-client disposal rejects",
+  Effect.fn(function* () {
+    const dispose = vi.fn(() =>
+      Promise.reject(new Error("client is startFailed")),
+    );
+
+    yield* disposeLanguageClient({ dispose });
+
+    expect(dispose).toHaveBeenCalledOnce();
+  }),
+);
 
 it.scoped(
   "constructs marimo.api commands through named methods",
