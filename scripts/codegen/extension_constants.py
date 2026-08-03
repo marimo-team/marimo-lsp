@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Generate extension constants from package.json and pyproject.toml."""
 
 from __future__ import annotations

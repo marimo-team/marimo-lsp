@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Run every repository code generator through one command."""
 
 from __future__ import annotations
