@@ -36,7 +36,7 @@ type BooleanMap<T> = {
 type EncodedCellMetadata = typeof Api.CellMetadata.Encoded;
 type EncodedNotebookDocumentMetadata =
   typeof Api.NotebookDocumentMetadata.Encoded;
-const DESERIALIZE_TIMEOUT = Duration.seconds(30);
+const DESERIALIZE_TIMEOUT = Duration.seconds(120);
 export { NotebookSourceError } from "./NotebookSourceError.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {

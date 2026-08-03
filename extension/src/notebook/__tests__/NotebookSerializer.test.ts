@@ -47,7 +47,7 @@ it.scoped(
           .deserializeEffect(new TextEncoder().encode("app = marimo.App()"))
           .pipe(Effect.exit),
       );
-      yield* TestClock.adjust(Duration.seconds(30));
+      yield* TestClock.adjust(Duration.seconds(120));
       return yield* Fiber.join(deserialize);
     }).pipe(Effect.provide(layer));
 
@@ -89,12 +89,12 @@ it.scoped(
         (error: unknown) => error,
       );
       yield* Effect.yieldNow();
-      yield* TestClock.adjust(Duration.seconds(30));
+      yield* TestClock.adjust(Duration.seconds(120));
       const error = yield* Effect.promise(() => settled);
 
       assert(error instanceof Error);
       expect(error.message).toBe(
-        "Timed out after 30 seconds while opening the notebook. See marimo logs for details.",
+        "Timed out after 120 seconds while opening the notebook. See marimo logs for details.",
       );
     }).pipe(Effect.provide(layer));
   }),
