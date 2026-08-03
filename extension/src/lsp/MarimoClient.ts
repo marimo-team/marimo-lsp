@@ -236,6 +236,9 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
             }
             progress.report({ message: "Starting..." });
             yield* startClient().pipe(
+              Effect.tap(() =>
+                Effect.sync(() => progress.report({ message: "Done." })),
+              ),
               Effect.catchTag(
                 "MarimoClientStartError",
                 Effect.fn(function* (error) {
@@ -249,7 +252,6 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
                 }),
               ),
             );
-            progress.report({ message: "Done." });
           }),
         );
 
