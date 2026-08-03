@@ -74,6 +74,11 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
     const sender = makeTelemetrySender(adapters, distinctId);
     const maybeLogger = yield* code.env
       .createTelemetryLogger(sender, {
+        // Effect errors are reported deliberately through errorLogger below.
+        // Letting VS Code forward unhandled extension-host errors as well
+        // duplicates those reports and captures unactionable cleanup failures
+        // from dependencies such as vscode-languageclient.
+        ignoreUnhandledErrors: true,
         additionalCommonProperties: {
           extension_version: extensionVersion,
           app_name: code.env.appName,
