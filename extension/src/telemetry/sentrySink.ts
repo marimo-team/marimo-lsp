@@ -3,16 +3,17 @@ import {
   Cause,
   Effect,
   HashMap,
-  Inspectable,
   Logger,
   LogLevel,
   MutableRef,
+  Redacted,
   Array as ReadonlyArray,
 } from "effect";
 
 // This is a public DSN
 const SENTRY_DSN =
   "https://717e07e6f9831ef39f872ab4a7a63dc2@o4505919839862784.ingest.us.sentry.io/4510382050770944";
+const SENTRY_MESSAGE = "marimo extension error";
 
 export interface SentrySinkOptions {
   readonly appHost: string;
@@ -69,7 +70,15 @@ export function makeSentrySink() {
               return null;
             }
 
-            return event;
+            return sanitizeSentryEvent(event);
+          },
+          beforeBreadcrumb(breadcrumb) {
+            if (breadcrumb.category === "marimo") return breadcrumb;
+            return {
+              category: breadcrumb.category,
+              level: breadcrumb.level,
+              message: "external breadcrumb",
+            };
           },
         }),
       ),
@@ -101,7 +110,9 @@ export function makeSentrySink() {
       if (!MutableRef.get(active)) return;
       try {
         for (const [key, value] of Object.entries(annotations)) {
-          SentrySDK.setTag(key, value);
+          if (["ruff.version", "ty.version", "uv.version"].includes(key)) {
+            SentrySDK.setTag(key, safeToken(value));
+          }
         }
       } catch {
         // Telemetry must never affect product behavior.
@@ -117,7 +128,9 @@ export function makeSentrySink() {
 
     try {
       const messages = ReadonlyArray.ensure(opts.message);
-      const messageStr = messages.map(formatValue).join("\n");
+      const messageStr = messages
+        .filter((message): message is string => typeof message === "string")
+        .join("\n");
 
       if (shouldFilterMessage(messageStr)) {
         return;
@@ -127,22 +140,16 @@ export function makeSentrySink() {
       const extra: Record<string, unknown> = {};
       let errorTag: string | undefined;
       for (const [key, value] of HashMap.toEntries(opts.annotations)) {
-        extra[key] = structuredMessage(value);
+        const safeValue = safeAnnotation(key, value);
+        if (safeValue !== undefined) extra[key] = safeValue;
         if (key === "error.tag" && typeof value === "string") {
-          errorTag = value;
-        }
-        if (Cause.isCause(value) && !Cause.isEmpty(value)) {
-          extra[`${key}.pretty`] = Cause.pretty(value, {
-            renderErrorCause: true,
-          });
+          errorTag = safeToken(value);
         }
       }
 
       // Include cause if present
       if (!Cause.isEmpty(opts.cause)) {
-        extra["logger.cause"] = Cause.pretty(opts.cause, {
-          renderErrorCause: true,
-        });
+        extra["logger.cause"] = summarizeCause(opts.cause);
       }
 
       // Splitting the Sentry group by inner failure tag turns coarse
@@ -152,17 +159,17 @@ export function makeSentrySink() {
         marimo: "true",
         ...(errorTag ? { "error.tag": errorTag } : {}),
       };
-      const fingerprint = errorTag ? [messageStr, errorTag] : undefined;
+      const fingerprint = errorTag ? [SENTRY_MESSAGE, errorTag] : undefined;
 
       if (opts.logLevel === LogLevel.Error) {
-        SentrySDK.captureMessage(messageStr, {
+        SentrySDK.captureMessage(SENTRY_MESSAGE, {
           extra,
           level: "error",
           tags,
           fingerprint,
         });
       } else if (opts.logLevel === LogLevel.Fatal) {
-        SentrySDK.captureMessage(messageStr, {
+        SentrySDK.captureMessage(SENTRY_MESSAGE, {
           extra,
           level: "fatal",
           tags,
@@ -170,13 +177,15 @@ export function makeSentrySink() {
         });
       } else if (opts.logLevel === LogLevel.Warning) {
         SentrySDK.addBreadcrumb({
-          message: messageStr,
+          category: "marimo",
+          message: "marimo extension warning",
           level: "warning",
           data: extra,
         });
       } else if (opts.logLevel === LogLevel.Info) {
         SentrySDK.addBreadcrumb({
-          message: messageStr,
+          category: "marimo",
+          message: "marimo extension info",
           level: "info",
           data: extra,
         });
@@ -211,49 +220,209 @@ function isMarimoStackTrace(frames: SentrySDK.StackFrame[]) {
   return frames.some((frame) => frame.filename?.includes("marimo"));
 }
 
-/**
- * Convert a value to a JSON-serializable form suitable for Sentry's extra data.
- *
- * Sentry truncates nested objects at ~3 levels deep, so complex Effect types
- * (Cause, TaggedErrors with nested fields) get rendered as `[Array]`/`[Object]`.
- * We flatten these to strings to ensure full visibility in Sentry.
- */
-function structuredMessage(u: unknown): unknown {
-  switch (typeof u) {
-    case "bigint":
-    case "function":
-    case "symbol":
-      return String(u);
-    default: {
-      const json = Inspectable.toJSON(u);
-      // If toJSON produced an object, stringify it to avoid Sentry depth truncation
-      if (json !== null && typeof json === "object") {
-        try {
-          return Inspectable.format(json);
-        } catch {
-          // oxlint-disable-next-line typescript/no-base-to-string
-          return String(u);
-        }
-      }
-      return json;
-    }
+const SAFE_ANNOTATIONS = new Set([
+  "byteCount",
+  "cached",
+  "cellCount",
+  "code",
+  "count",
+  "error.tag",
+  "fileType",
+  "kind",
+  "method",
+  "mode",
+  "server",
+  "service",
+  "status",
+  "version",
+]);
+
+function safeAnnotation(key: string, value: unknown): unknown {
+  if (Cause.isCause(value)) {
+    return Cause.isEmpty(value) ? undefined : summarizeCause(value);
   }
+  if (!SAFE_ANNOTATIONS.has(key)) return undefined;
+  if (key === "code") return typeof value === "number" ? value : undefined;
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  return typeof value === "string" ? safeToken(value) : undefined;
 }
 
-/**
- * Format a value as a string for Sentry
- */
-function formatValue(value: unknown) {
+function summarizeCause(cause: Cause.Cause<unknown>): unknown {
+  return {
+    failures: [...Cause.failures(cause)]
+      .slice(0, 3)
+      .map((failure) => summarizeError(failure)),
+    defects: [...Cause.defects(cause)]
+      .slice(0, 3)
+      .map((defect) => summarizeError(defect)),
+  };
+}
+
+function summarizeError(
+  value: unknown,
+  seen = new Set<object>(),
+  depth = 0,
+): Record<string, unknown> {
+  if (!isRecord(value)) return { exceptionClass: typeof value };
+  if (seen.has(value) || depth >= 4) return { exceptionClass: "NestedError" };
+  seen.add(value);
+
+  const summary: Record<string, unknown> = {
+    exceptionClass:
+      safeClassName(value._tag) ??
+      safeClassName(value.name) ??
+      safeClassName(value.constructor?.name) ??
+      "Error",
+  };
+  if (typeof value.code === "number") summary.rpcCode = value.code;
+  if (typeof value.line === "number") summary.line = value.line;
+  if (typeof value.column === "number") summary.column = value.column;
+
+  if (value._tag === "MarimoCommandError") {
+    const command = Redacted.isRedacted(value.command)
+      ? Redacted.value(value.command)
+      : value.command;
+    if (isRecord(command) && isRecord(command.params)) {
+      const rpc = command.params;
+      if (typeof rpc.method === "string")
+        summary.method = safeToken(rpc.method);
+      Object.assign(summary, rpcMetadata(rpc.params));
+    }
+  }
+
+  const traceback = [
+    ...sanitizeTraceback(value.stack),
+    ...(isRecord(value.data) ? sanitizeTraceback(value.data.traceback) : []),
+  ].slice(0, 12);
+  if (traceback.length > 0) summary.traceback = traceback;
+  if (isRecord(value.cause)) {
+    summary.cause = summarizeError(value.cause, seen, depth + 1);
+  }
+  return summary;
+}
+
+function rpcMetadata(value: unknown): Record<string, unknown> {
+  let byteCount = 0;
+  let cellCount: number | undefined;
+  let fileType: string | undefined;
+  const seen = new Set<object>();
+
+  const visit = (current: unknown, key = ""): void => {
+    if (typeof current === "string") {
+      if (/^(?:code|contents?|source)$/i.test(key)) {
+        byteCount += Buffer.byteLength(current);
+      } else if (/^(?:filename|notebookUri|path|uri)$/i.test(key)) {
+        fileType = /\.([A-Za-z0-9]{1,10})(?:[?#].*)?$/.exec(current)?.[1];
+      }
+      return;
+    }
+    if (!current || typeof current !== "object" || seen.has(current)) return;
+    seen.add(current);
+    if (Array.isArray(current)) {
+      if (/^(?:cells|codes)$/i.test(key)) cellCount = current.length;
+      for (const item of current) visit(item, key === "codes" ? "code" : key);
+      return;
+    }
+    for (const [childKey, child] of Object.entries(current))
+      visit(child, childKey);
+  };
+  visit(value);
+  return {
+    ...(byteCount > 0 ? { byteCount } : {}),
+    ...(cellCount === undefined ? {} : { cellCount }),
+    ...(fileType ? { fileType: fileType.toLowerCase() } : {}),
+  };
+}
+
+function sanitizeSentryEvent<Event extends SentrySDK.Event>(
+  event: Event,
+): Event {
+  delete event.request;
+  delete event.contexts;
+  delete event.server_name;
+  for (const exception of event.exception?.values ?? []) {
+    exception.value = safeClassName(exception.type) ?? "marimo extension error";
+    for (const frame of exception.stacktrace?.frames ?? []) {
+      delete frame.pre_context;
+      delete frame.context_line;
+      delete frame.post_context;
+      delete frame.vars;
+      frame.filename = frame.filename?.split(/[\\/]/).at(-1);
+      if (frame.abs_path) frame.abs_path = "redacted";
+    }
+  }
+  return event;
+}
+
+interface SafeTracebackFrame {
+  readonly function?: string;
+  readonly file?: string;
+  readonly line?: number;
+  readonly column?: number;
+}
+
+function sanitizeTraceback(value: unknown): SafeTracebackFrame[] {
   if (typeof value === "string") {
-    return value;
+    const frames: SafeTracebackFrame[] = [];
+    for (const line of value.split("\n")) {
+      const js = /^\s*at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?$/.exec(line);
+      if (js) {
+        frames.push({
+          ...(js[1] ? { function: safeToken(js[1]) } : {}),
+          file: basename(js[2]),
+          line: Number(js[3]),
+          column: Number(js[4]),
+        });
+        continue;
+      }
+      const python = /^\s*File "(.+)", line (\d+), in (.+)$/.exec(line);
+      if (python) {
+        frames.push({
+          function: safeToken(python[3]),
+          file: basename(python[1]),
+          line: Number(python[2]),
+        });
+      }
+    }
+    return frames;
   }
-  if (value === null || value === undefined) {
-    return String(value);
-  }
-  try {
-    return JSON.stringify(structuredMessage(value));
-  } catch {
-    // oxlint-disable-next-line typescript/no-base-to-string
-    return String(value);
-  }
+  if (Array.isArray(value)) return value.flatMap(sanitizeTraceback);
+  if (!isRecord(value)) return [];
+
+  const path = [value.filename, value.file, value.path].find(
+    (item): item is string => typeof item === "string",
+  );
+  const fn = [value.function, value.functionName, value.name].find(
+    (item): item is string => typeof item === "string",
+  );
+  const line = typeof value.line === "number" ? value.line : undefined;
+  const column = typeof value.column === "number" ? value.column : undefined;
+  if (!path && !fn && line === undefined && column === undefined) return [];
+  return [
+    {
+      ...(fn ? { function: safeToken(fn) } : {}),
+      ...(path ? { file: basename(path) } : {}),
+      ...(line === undefined ? {} : { line }),
+      ...(column === undefined ? {} : { column }),
+    },
+  ];
+}
+
+function basename(path: string): string {
+  return path.split(/[\\/]/).at(-1) ?? "unknown";
+}
+
+function safeToken(value: string): string {
+  return /^[A-Za-z0-9_.$<>: -]{1,100}$/.test(value) ? value : "redacted";
+}
+
+function safeClassName(value: unknown): string | undefined {
+  return typeof value === "string" &&
+    /^[A-Za-z][A-Za-z0-9_.-]{0,79}$/.test(value)
+    ? value
+    : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
 }

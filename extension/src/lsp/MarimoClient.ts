@@ -2,7 +2,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 
-import { Cause, Data, Effect, Option, PubSub, Stream } from "effect";
+import { Cause, Data, Effect, Option, PubSub, Redacted, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
 
 import { Config } from "../config/Config.ts";
@@ -38,10 +38,10 @@ export class MarimoClientStartError extends Data.TaggedError(
 }> {}
 
 export class MarimoCommandError extends Data.TaggedError("MarimoCommandError")<{
-  readonly command: {
+  readonly command: Redacted.Redacted<{
     readonly command: "marimo.api";
     readonly params: MarimoApiCall;
-  };
+  }>;
   readonly cause: unknown;
 }> {}
 
@@ -271,7 +271,11 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
                 { command: command.command, arguments: [command.params] },
                 tokenFromSignal(signal),
               ),
-            catch: (cause) => new MarimoCommandError({ command, cause }),
+            catch: (cause) =>
+              new MarimoCommandError({
+                command: Redacted.make(command),
+                cause,
+              }),
           }).pipe(
             Effect.withSpan("lsp.executeCommand", {
               attributes: {

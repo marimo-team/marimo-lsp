@@ -1,6 +1,6 @@
 import * as NodeChildProcess from "node:child_process";
 
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Redacted, Stream } from "effect";
 import * as rpc from "vscode-jsonrpc/node";
 
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
@@ -58,7 +58,11 @@ export const TestMarimoClientLive = Layer.scoped(
                 command: command.command,
                 arguments: [command.params],
               }),
-            catch: (cause) => new MarimoCommandError({ command, cause }),
+            catch: (cause) =>
+              new MarimoCommandError({
+                command: Redacted.make(command),
+                cause,
+              }),
           });
         },
         operations() {

@@ -1,6 +1,14 @@
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Brand, Cause, Effect, Option, Runtime, Stream } from "effect";
+import {
+  Brand,
+  Cause,
+  Effect,
+  Option,
+  Redacted,
+  Runtime,
+  Stream,
+} from "effect";
 import type * as vscode from "vscode";
 
 import { unreachable } from "../assert.ts";
@@ -105,7 +113,7 @@ export const createPythonController = Effect.fn("createPythonController")(
               yield* Effect.logError("Failed to execute command").pipe(
                 Effect.annotateLogs({
                   cause: Cause.fail(error),
-                  command: error.command.command,
+                  command: Redacted.value(error.command).command,
                 }),
               );
               const detail = extractPythonError(error.cause);
