@@ -8,9 +8,13 @@ import { Telemetry } from "../telemetry/Telemetry.ts";
 export const TestTelemetryLive = Layer.succeed(
   Telemetry,
   Telemetry.make({
-    capture: () => Effect.void,
-    reportBinaryResolved: () => Effect.void,
-    annotateErrors: () => Effect.void,
+    commandExecuted: () => Effect.void,
+    notebookCreated: () => Effect.void,
+    notebookOpened: () => Effect.void,
+    tutorialOpened: () => Effect.void,
+    uvMissing: () => Effect.void,
+    uvInstallClicked: () => Effect.void,
+    binaryResolved: () => Effect.void,
     errorLogger: Logger.none,
   }),
 );

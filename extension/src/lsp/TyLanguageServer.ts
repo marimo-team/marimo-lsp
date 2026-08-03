@@ -1,6 +1,6 @@
 import * as NodePath from "node:path";
 
-import { type Cause, Data, Effect, Option, Ref, Stream } from "effect";
+import { Cause, Data, Effect, Option, Ref, Stream } from "effect";
 
 import { Config } from "../config/Config.ts";
 import {
@@ -167,14 +167,11 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
             );
 
             if (Option.isSome(telemetry)) {
-              yield* telemetry.value.annotateErrors({
-                "ty.version": serverVersion,
-              });
-              yield* telemetry.value.reportBinaryResolved(
-                "ty",
+              yield* telemetry.value.binaryResolved({
+                server: "ty",
                 resolved,
-                serverVersion,
-              );
+                version: serverVersion,
+              });
             }
 
             // Update running status with current Python environment
@@ -209,6 +206,7 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
           yield* Effect.forever(serverCycle).pipe(
             Effect.catchAllCause((cause) =>
               Effect.gen(function* () {
+                if (Cause.isInterruptedOnly(cause)) return;
                 const message = "Failed to start language server";
                 yield* Ref.set(
                   statusRef,

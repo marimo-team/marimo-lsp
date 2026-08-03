@@ -23,6 +23,29 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
   const notebooks = yield* NotebookRuntime;
   const pendingFileRootChanges = new Set<string>();
 
+  const watchForWindowReload = Effect.fn(function* (
+    section: string,
+    message: string,
+  ) {
+    yield* Effect.forkScoped(
+      code.workspace.configurationChanges().pipe(
+        Stream.filter((event) => event.affectsConfiguration(section)),
+        Stream.runForEach(
+          Effect.fn(function* () {
+            const reload = yield* code.window.showInformationMessage(message, {
+              items: ["Reload Window"],
+            });
+            if (Option.isSome(reload) && reload.value === "Reload Window") {
+              yield* code.commands.executeVSCode(
+                "workbench.action.reloadWindow",
+              );
+            }
+          }),
+        ),
+      ),
+    );
+  });
+
   const promptForActiveAffectedSession = Effect.fn(function* () {
     const activeNotebook = Option.filterMap(
       yield* code.window.getActiveNotebookEditor(),
@@ -44,24 +67,13 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
     yield* promptToRestartKernelForFileRootChange();
   });
 
-  yield* Effect.forkScoped(
-    code.workspace.configurationChanges().pipe(
-      Stream.filter((event) =>
-        event.affectsConfiguration("marimo.disableManagedLanguageFeatures"),
-      ),
-      Stream.runForEach(() =>
-        Effect.gen(function* () {
-          const reload = yield* code.window.showInformationMessage(
-            "Changing managed language features requires reloading the window to take effect.",
-            { items: ["Reload Window"] },
-          );
-
-          if (Option.isSome(reload) && reload.value === "Reload Window") {
-            yield* code.commands.executeVSCode("workbench.action.reloadWindow");
-          }
-        }),
-      ),
-    ),
+  yield* watchForWindowReload(
+    "marimo.telemetry",
+    "Changing telemetry requires reloading the window to take effect.",
+  );
+  yield* watchForWindowReload(
+    "marimo.disableManagedLanguageFeatures",
+    "Changing managed language features requires reloading the window to take effect.",
   );
 
   yield* Effect.forkScoped(
@@ -69,8 +81,8 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
       Stream.filter((event) =>
         event.affectsConfiguration("marimo.notebookFileRoot"),
       ),
-      Stream.runForEach((event) =>
-        Effect.gen(function* () {
+      Stream.runForEach(
+        Effect.fn(function* (event) {
           for (const { notebookId } of yield* notebooks.getRuntimeSessions()) {
             const uri = code.utils.parseUri(notebookId);
             if (

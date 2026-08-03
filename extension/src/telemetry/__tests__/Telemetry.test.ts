@@ -1,37 +1,61 @@
 import { expect, it } from "@effect/vitest";
-import {
-  Cause,
-  Effect,
-  Layer,
-  Logger,
-  Option,
-  Queue,
-  Redacted,
-  Stream,
-} from "effect";
+import { Cause, Effect, Layer, Logger } from "effect";
 import { vi } from "vite-plus/test";
 import type * as vscode from "vscode";
 
 import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { MarimoCommandError } from "../../lsp/MarimoClient.ts";
+import { BinarySource } from "../../lib/binaryResolution.ts";
 import { Telemetry } from "../Telemetry.ts";
 
-interface TestSentryOptions {
-  readonly beforeSend: (event: Record<string, unknown>) => unknown;
-}
+const sentrySdk = vi.hoisted(() => {
+  const init = vi.fn();
+  const close = vi.fn(async () => true);
+  const setClient = vi.fn();
+  const setTags = vi.fn();
+  const setTag = vi.fn();
+  const setUser = vi.fn();
+  const addBreadcrumb = vi.fn();
+  const captureException = vi.fn();
+  const linkedErrorsIntegration = vi.fn(() => ({ name: "LinkedErrors" }));
+  const extraErrorDataIntegration = vi.fn(() => ({ name: "ExtraErrorData" }));
+  const globalClient = { name: "existing Sentry client" };
+  const globalSetClient = vi.fn();
+  const globalScope = {
+    getClient: vi.fn(() => globalClient),
+    setClient: globalSetClient,
+  };
 
-const sentrySdk = vi.hoisted(() => ({
-  init: vi.fn<(options: TestSentryOptions) => void>(),
-  setTag: vi.fn(),
-  setUser: vi.fn(),
-  close: vi.fn(async () => true),
-  captureMessage: vi.fn(),
-  addBreadcrumb: vi.fn(),
-}));
+  class Scope {
+    setClient = setClient;
+    setTags = setTags;
+    setTag = setTag;
+    setUser = setUser;
+    addBreadcrumb = addBreadcrumb;
+    captureException = captureException;
+  }
+
+  return {
+    Scope,
+    initWithoutDefaultIntegrations: init,
+    init,
+    close,
+    setClient,
+    setTags,
+    setTag,
+    setUser,
+    addBreadcrumb,
+    captureException,
+    linkedErrorsIntegration,
+    extraErrorDataIntegration,
+    getCurrentScope: vi.fn(() => globalScope),
+    globalClient,
+    globalSetClient,
+  };
+});
 
 const posthog = vi.hoisted(() => ({
-  instances: [] as Array<{ capture: ReturnType<typeof vi.fn> }>,
+  constructed: vi.fn(),
   capture: vi.fn(),
   shutdown: vi.fn(async () => undefined),
 }));
@@ -40,31 +64,102 @@ vi.mock("@sentry/node", () => sentrySdk);
 
 vi.mock("posthog-node", () => ({
   PostHog: class {
+    constructor() {
+      posthog.constructed();
+    }
     capture = posthog.capture;
     shutdown = posthog.shutdown;
   },
 }));
 
-const telemetryChange: vscode.ConfigurationChangeEvent = {
-  affectsConfiguration: (section) => section === "marimo.telemetry",
-};
+const withTestCtx = Effect.fn(function* (options?: {
+  telemetry?: boolean;
+  usageEnabled?: boolean;
+  errorsEnabled?: boolean;
+  sentryFailure?: boolean;
+  loggerFailure?: boolean;
+}) {
+  for (const mock of [
+    sentrySdk.close,
+    sentrySdk.setClient,
+    sentrySdk.setTags,
+    sentrySdk.setTag,
+    sentrySdk.setUser,
+    sentrySdk.addBreadcrumb,
+    sentrySdk.captureException,
+    sentrySdk.linkedErrorsIntegration,
+    sentrySdk.extraErrorDataIntegration,
+    sentrySdk.globalSetClient,
+    posthog.constructed,
+    posthog.capture,
+    posthog.shutdown,
+  ]) {
+    mock.mockReset();
+  }
+  sentrySdk.init.mockReset();
+  if (options?.sentryFailure) {
+    sentrySdk.init.mockImplementationOnce(() => {
+      throw new Error("sentry exploded");
+    });
+  } else {
+    sentrySdk.init.mockReturnValue({ close: sentrySdk.close });
+  }
+  sentrySdk.close.mockResolvedValue(true);
+  posthog.shutdown.mockResolvedValue(undefined);
 
-const withTestCtx = Effect.fn(function* (options?: { telemetry?: boolean }) {
-  sentrySdk.init.mockClear();
-  sentrySdk.close.mockClear();
-  sentrySdk.setTag.mockClear();
-  sentrySdk.captureMessage.mockClear();
-  sentrySdk.addBreadcrumb.mockClear();
-  posthog.capture.mockClear();
-  posthog.shutdown.mockClear();
-
-  let telemetry = options?.telemetry ?? true;
-  // A Queue (not a PubSub) so events published before the service's forked
-  // fiber subscribes are buffered instead of dropped.
-  const changes = yield* Queue.unbounded<vscode.ConfigurationChangeEvent>();
+  const loggerCreated = vi.fn();
   const vscodeMock = yield* TestVsCode.make({
+    env: {
+      createTelemetryLogger(sender, loggerOptions) {
+        if (options?.loggerFailure) {
+          return Effect.die(new Error("VS Code telemetry exploded"));
+        }
+        return Effect.acquireRelease(
+          Effect.sync(() => {
+            loggerCreated();
+            const common = {
+              "common.vscodeversion": "1.100.0",
+              ...loggerOptions?.additionalCommonProperties,
+            };
+            const withCommon = (data: Record<string, unknown> = {}) => ({
+              ...data,
+              ...common,
+            });
+            const prefix = (event: string) =>
+              `marimo-team.vscode-marimo/${event}`;
+
+            return {
+              isUsageEnabled: options?.usageEnabled ?? true,
+              isErrorsEnabled: options?.errorsEnabled ?? true,
+              onDidChangeEnableStates: () => ({ dispose() {} }),
+              logUsage(event, data) {
+                if (options?.usageEnabled === false) return;
+                sender.sendEventData(prefix(event), withCommon(data));
+              },
+              logError(eventOrError, data) {
+                if (options?.errorsEnabled === false) return;
+                if (typeof eventOrError === "string") {
+                  sender.sendEventData(prefix(eventOrError), withCommon(data));
+                  return;
+                }
+                const cleanedError = new Error(eventOrError.message, {
+                  cause:
+                    eventOrError.cause instanceof Error
+                      ? {}
+                      : eventOrError.cause,
+                });
+                cleanedError.name = eventOrError.name;
+                cleanedError.stack = eventOrError.stack;
+                sender.sendErrorData(cleanedError, withCommon(data));
+              },
+              dispose() {},
+            } satisfies vscode.TelemetryLogger;
+          }),
+          (logger) => Effect.sync(() => logger.dispose()),
+        );
+      },
+    },
     workspace: {
-      configurationChanges: () => Stream.fromQueue(changes),
       getConfiguration: (section) =>
         Effect.succeed({
           // oxlint-disable-next-line typescript/no-unnecessary-type-parameters
@@ -72,7 +167,7 @@ const withTestCtx = Effect.fn(function* (options?: { telemetry?: boolean }) {
             // oxlint-disable-next-line typescript/no-unsafe-type-assertion
             return (
               section === "marimo" && key === "telemetry"
-                ? telemetry
+                ? (options?.telemetry ?? true)
                 : defaultValue
             ) as T;
           },
@@ -92,296 +187,85 @@ const withTestCtx = Effect.fn(function* (options?: { telemetry?: boolean }) {
 
   return {
     telemetry: yield* Telemetry.pipe(Effect.provide(context)),
-    setTelemetry: (value: boolean) =>
-      Effect.suspend(() => {
-        telemetry = value;
-        return Queue.offer(changes, telemetryChange);
-      }),
+    loggerCreated,
   };
 });
 
-const waitFor = (assertion: () => void) =>
-  Effect.promise(() => vi.waitFor(assertion));
+it.scoped(
+  "does not acquire telemetry resources when disabled",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx({ telemetry: false });
 
-it.scoped("releases both sinks on consent loss and re-acquires them", () =>
-  Effect.gen(function* () {
-    const ctx = yield* withTestCtx();
-    expect(sentrySdk.init).toHaveBeenCalledTimes(1);
-    // Activation event goes to PostHog on acquire
-    expect(posthog.capture).toHaveBeenCalledWith(
-      expect.objectContaining({ event: "extension_activated" }),
-    );
-
-    yield* ctx.setTelemetry(false);
-    yield* waitFor(() => expect(sentrySdk.close).toHaveBeenCalledTimes(1));
-    expect(posthog.shutdown).toHaveBeenCalledTimes(1);
-
-    yield* ctx.setTelemetry(true);
-    yield* waitFor(() => expect(sentrySdk.init).toHaveBeenCalledTimes(2));
+    expect(ctx.loggerCreated).not.toHaveBeenCalled();
+    expect(sentrySdk.init).not.toHaveBeenCalled();
+    expect(posthog.constructed).not.toHaveBeenCalled();
+    yield* ctx.telemetry.notebookCreated();
+    expect(posthog.capture).not.toHaveBeenCalled();
   }),
 );
 
 it.scoped(
-  "a sink that throws neither fails construction nor kills consent tracking",
-  () =>
-    Effect.gen(function* () {
-      sentrySdk.init.mockImplementationOnce(() => {
-        throw new Error("sentry exploded");
-      });
+  "does not fail activation when VS Code telemetry fails",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx({ loggerFailure: true });
 
-      // Consent is on but acquisition fails: construction must survive
-      // and capture must degrade to a no-op.
-      const ctx = yield* withTestCtx();
-      yield* ctx.telemetry.capture("new_notebook_created");
-      expect(posthog.capture).not.toHaveBeenCalled();
-
-      // The consent watcher must still be alive: toggling off and on
-      // re-acquires the sinks now that the SDK behaves again.
-      yield* ctx.setTelemetry(false);
-      yield* ctx.setTelemetry(true);
-      yield* waitFor(() => expect(sentrySdk.init).toHaveBeenCalledTimes(2));
-
-      yield* ctx.telemetry.capture("new_notebook_created");
-      expect(posthog.capture).toHaveBeenCalledWith(
-        expect.objectContaining({ event: "new_notebook_created" }),
-      );
-    }),
+    yield* ctx.telemetry.notebookCreated();
+    expect(posthog.capture).not.toHaveBeenCalled();
+    expect(sentrySdk.captureException).not.toHaveBeenCalled();
+    expect(sentrySdk.init).not.toHaveBeenCalled();
+    expect(posthog.constructed).not.toHaveBeenCalled();
+  }),
 );
 
-it.scoped("capture is a no-op without consent, live with it", () =>
-  Effect.gen(function* () {
-    const ctx = yield* withTestCtx({ telemetry: false });
-    expect(sentrySdk.init).not.toHaveBeenCalled();
+it.scoped(
+  "routes stable product events through VS Code",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx();
 
-    yield* ctx.telemetry.capture("new_notebook_created");
-    expect(posthog.capture).not.toHaveBeenCalled();
+    expect(posthog.capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "extension_activated",
+        properties: expect.objectContaining({
+          extension_version: expect.any(String),
+          "common.vscodeversion": "1.100.0",
+        }),
+      }),
+    );
 
-    yield* ctx.setTelemetry(true);
-    yield* waitFor(() => expect(sentrySdk.init).toHaveBeenCalledTimes(1));
-
-    yield* ctx.telemetry.capture("new_notebook_created");
+    yield* ctx.telemetry.notebookCreated();
     expect(posthog.capture).toHaveBeenCalledWith(
       expect.objectContaining({ event: "new_notebook_created" }),
     );
-  }),
-);
-
-it.scoped("contains synchronous capture failures", () =>
-  Effect.gen(function* () {
-    const ctx = yield* withTestCtx();
-    posthog.capture.mockClear();
-    posthog.capture.mockImplementationOnce(() => {
-      throw new Error("posthog exploded");
-    });
-
-    // Reporting failures must not escape into the product effect.
-    yield* ctx.telemetry.capture("new_notebook_created");
-    expect(posthog.capture).toHaveBeenCalledTimes(1);
-
-    // A failed capture does not disable later telemetry.
-    yield* ctx.telemetry.capture("new_notebook_created");
-    expect(posthog.capture).toHaveBeenCalledTimes(2);
-  }),
-);
-
-it.scoped("redacts user data from classified and unexpected errors", () =>
-  Effect.gen(function* () {
-    const ctx = yield* withTestCtx();
-    const source = "DO_NOT_UPLOAD_123 = 'notebook source'";
-    const secondCell = "print('DO_NOT_UPLOAD_SECOND_CELL')";
-    const localPath = "/Users/alice/private/customer-notebook.py";
-    const environmentSecret = "DO_NOT_UPLOAD_API_TOKEN";
-    const commandError = new MarimoCommandError({
-      command: Redacted.make({
-        command: "marimo.api",
-        params: {
-          method: "execute-cells",
-          params: {
-            notebookUri: `file://${localPath}`,
-            executable: "/private/venv/bin/python",
-            workingDirectory: "/Users/alice/private",
-            inner: { cellIds: ["one", "two"], codes: [source, secondCell] },
-          },
-        },
+    expect(sentrySdk.init).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skipOpenTelemetrySetup: true,
+        normalizeDepth: 8,
       }),
-      cause: {
-        name: "ResponseError",
-        code: -32603,
-        message: source,
-        stack: `ResponseError: ${source}\n    at rpcDispatch (${localPath}:1:1)`,
-      },
-    });
-    commandError.stack = `MarimoCommandError: ${source}\n    at deserialize (${localPath}:1:1)`;
-    const unexpected = {
-      name: "UnexpectedConverterError",
-      message: source,
-      data: { source, environment: { API_TOKEN: environmentSecret } },
-      stack: `UnexpectedConverterError: ${source}\n    at convert (${localPath}:1:1)`,
-    };
-    const cause = Cause.parallel(
-      Cause.fail(commandError),
-      Cause.die(unexpected),
     );
-
-    yield* Effect.logError(source).pipe(
-      Effect.annotateLogs({
-        cause,
-        "error.tag": "MarimoCommandError",
-        rawCells: [source, secondCell],
-        environment: { API_TOKEN: environmentSecret },
-        notebookUri: localPath,
-      }),
-      Effect.provide(
-        Logger.replace(Logger.defaultLogger, ctx.telemetry.errorLogger),
-      ),
+    expect(sentrySdk.globalSetClient).toHaveBeenCalledWith(
+      sentrySdk.globalClient,
     );
-    yield* Effect.logWarning(source).pipe(
-      Effect.annotateLogs({ rawCells: [source], notebookUri: localPath }),
-      Effect.provide(
-        Logger.replace(Logger.defaultLogger, ctx.telemetry.errorLogger),
-      ),
-    );
-
-    const payload = JSON.stringify({
-      events: sentrySdk.captureMessage.mock.calls,
-      breadcrumbs: sentrySdk.addBreadcrumb.mock.calls,
-    });
-    expect(payload).not.toContain(source);
-    expect(payload).not.toContain(secondCell);
-    expect(payload).not.toContain(localPath);
-    expect(payload).not.toContain(environmentSecret);
-    expect(sentrySdk.captureMessage.mock.calls).toMatchInlineSnapshot(`
-      [
-        [
-          "marimo extension error",
-          {
-            "extra": {
-              "cause": {
-                "defects": [
-                  {
-                    "exceptionClass": "UnexpectedConverterError",
-                  },
-                ],
-                "failures": [
-                  {
-                    "exceptionClass": "MarimoCommandError",
-                  },
-                ],
-              },
-              "error.tag": "MarimoCommandError",
-            },
-            "fingerprint": [
-              "marimo extension error",
-              "MarimoCommandError",
-            ],
-            "level": "error",
-            "tags": {
-              "error.tag": "MarimoCommandError",
-              "marimo": "true",
-            },
-          },
-        ],
-      ]
-    `);
   }),
 );
 
-it.scoped("retains safe diagnostics from Cause log messages", () =>
-  Effect.gen(function* () {
+it.scoped(
+  "preserves Error type, trace, cause, and structured diagnostics",
+  Effect.fn(function* () {
     const ctx = yield* withTestCtx();
-    const secret = "DO_NOT_UPLOAD_CAUSE_MESSAGE";
-
-    yield* Effect.logError(
-      Cause.fail({ name: "ResponseError", code: -32603, message: secret }),
-    ).pipe(
-      Effect.provide(
-        Logger.replace(Logger.defaultLogger, ctx.telemetry.errorLogger),
-      ),
+    const inner = new Error("invalid wire type");
+    const error = Object.assign(
+      new Error("Failed to decode notebook response", { cause: inner }),
+      { stderr: "converter exited with code 2" },
     );
-
-    const payload = sentrySdk.captureMessage.mock.calls[0]?.[1];
-    expect(payload?.extra).toEqual({
-      "logger.cause": {
-        failures: [{ exceptionClass: "ResponseError", rpcCode: -32603 }],
-        defects: [],
-      },
-    });
-    expect(JSON.stringify(payload)).not.toContain(secret);
-  }),
-);
-
-it.scoped("sanitizes SDK events at the final Sentry boundary", () =>
-  Effect.gen(function* () {
-    yield* withTestCtx();
-    const secret = "DO_NOT_UPLOAD_BEFORE_SEND";
-    const localPath = "/Users/alice/private/customer-notebook.py";
-    const initOptions = Option.getOrThrow(
-      Option.fromNullable(sentrySdk.init.mock.calls[0]?.[0]),
-    );
-
-    const result = initOptions.beforeSend({
-      message: secret,
-      request: { data: secret },
-      contexts: { private: { secret } },
-      server_name: secret,
-      extra: {
-        "error.domain": "notebook.deserialize",
-        private: secret,
-      },
-      logentry: { message: secret },
-      exception: {
-        values: [
-          {
-            type: "ResponseError",
-            value: secret,
-            stacktrace: {
-              frames: [
-                {
-                  filename: `/marimo${localPath}`,
-                  abs_path: localPath,
-                  function: "customerFunction",
-                  module: "customerModule",
-                  context_line: secret,
-                  vars: { secret },
-                  lineno: 7,
-                },
-              ],
-            },
-          },
-        ],
-      },
-    });
-
-    const payload = JSON.stringify(result);
-    expect(payload).not.toContain(secret);
-    expect(payload).not.toContain("customer-notebook.py");
-    expect(payload).not.toContain("customerFunction");
-    expect(result).toMatchObject({
-      message: "marimo extension error",
-      extra: { "error.domain": "notebook.deserialize" },
-      exception: {
-        values: [
-          {
-            type: "ResponseError",
-            value: "marimo extension error",
-            stacktrace: { frames: [{ lineno: 7 }] },
-          },
-        ],
-      },
-    });
-  }),
-);
-
-it.scoped("groups notebook deserialize failures by safe classification", () =>
-  Effect.gen(function* () {
-    const ctx = yield* withTestCtx();
+    error.name = "UnexpectedConverterError";
+    error.stack = `${error.name}: ${error.message}\n    at convert (extension.js:7:3)`;
 
     yield* Effect.logError("Notebook deserialize failed").pipe(
       Effect.annotateLogs({
+        cause: Cause.fail(error),
         "error.domain": "notebook.deserialize",
         "error.kind": "rpc.internal",
-        "error.exception_class": "ResponseError",
-        "rpc.method": "deserialize",
+        "error.exception_class": "UnexpectedConverterError",
         "rpc.code": -32603,
       }),
       Effect.provide(
@@ -389,43 +273,284 @@ it.scoped("groups notebook deserialize failures by safe classification", () =>
       ),
     );
 
-    expect(sentrySdk.captureMessage).toHaveBeenCalledWith(
-      "marimo extension error",
+    const [captured, hint] = sentrySdk.captureException.mock.calls[0];
+    expect(captured).not.toBe(error);
+    expect(captured.cause).not.toBe(inner);
+    expect(captured).toMatchObject({
+      name: "UnexpectedConverterError",
+      message: "Failed to decode notebook response",
+      stderr: "converter exited with code 2",
+      cause: {
+        name: "Error",
+        message: "invalid wire type",
+      },
+    });
+    expect(captured.stack).toContain("at convert");
+    expect(hint.captureContext).toMatchObject({
+      fingerprint: [
+        "notebook.deserialize",
+        "rpc.internal",
+        "-32603",
+        "UnexpectedConverterError",
+      ],
+      tags: {
+        "error.domain": "notebook.deserialize",
+        "error.kind": "rpc.internal",
+        "error.exception_class": "UnexpectedConverterError",
+        "rpc.code": "-32603",
+      },
+      extra: {
+        cause: {
+          failures: [
+            {
+              name: "UnexpectedConverterError",
+              message: "Failed to decode notebook response",
+              stack: expect.stringContaining("at convert"),
+              stderr: "converter exited with code 2",
+              cause: {
+                name: "Error",
+                message: "invalid wire type",
+              },
+            },
+          ],
+        },
+      },
+    });
+  }),
+);
+
+it.scoped(
+  "retains non-Error Effect failures",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx();
+
+    yield* Effect.logError(Cause.fail("uv exited with code 2")).pipe(
+      Effect.provide(
+        Logger.replace(Logger.defaultLogger, ctx.telemetry.errorLogger),
+      ),
+    );
+
+    const [error, hint] = sentrySdk.captureException.mock.calls[0];
+    expect(error).toMatchObject({
+      name: "UnknownFailure",
+      message: "uv exited with code 2",
+    });
+    expect(hint.captureContext.extra.cause.failures).toEqual([
+      "uv exited with code 2",
+    ]);
+  }),
+);
+
+it.scoped(
+  "uses log context when the native Error message is not diagnostic",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx();
+    const timeout = new Cause.TimeoutException();
+
+    yield* Effect.logError("Notebook deserialize failed").pipe(
+      Effect.annotateLogs({ cause: Cause.fail(timeout) }),
+      Effect.provide(
+        Logger.replace(Logger.defaultLogger, ctx.telemetry.errorLogger),
+      ),
+    );
+
+    const [captured] = sentrySdk.captureException.mock.calls[0];
+    expect(captured).toMatchObject({
+      name: "TimeoutException",
+      message: "Notebook deserialize failed",
+    });
+    expect(captured.stack).toContain(
+      "TimeoutException: Notebook deserialize failed",
+    );
+
+    sentrySdk.captureException.mockClear();
+    const generic = new Error("An error has occurred");
+    generic.name = "UvExecutionError";
+    yield* Effect.logError("uv command failed").pipe(
+      Effect.annotateLogs({ cause: Cause.fail(generic) }),
+      Effect.provide(
+        Logger.replace(Logger.defaultLogger, ctx.telemetry.errorLogger),
+      ),
+    );
+
+    expect(sentrySdk.captureException.mock.calls[0]?.[0]).toMatchObject({
+      name: "UvExecutionError",
+      message: "uv command failed",
+    });
+  }),
+);
+
+it.scoped(
+  "keeps error-tag fingerprint grouping",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx();
+
+    yield* Effect.logError("Notebook serialization failed").pipe(
+      Effect.annotateLogs({ "error.tag": "NotebookSerializeError" }),
+      Effect.provide(
+        Logger.replace(Logger.defaultLogger, ctx.telemetry.errorLogger),
+      ),
+    );
+
+    expect(
+      sentrySdk.captureException.mock.calls[0]?.[1].captureContext.fingerprint,
+    ).toEqual(["marimo extension error", "NotebookSerializeError"]);
+  }),
+);
+
+it.scoped(
+  "keeps message-only breadcrumbs in VS Code error-only mode",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx({
+      usageEnabled: false,
+      errorsEnabled: true,
+    });
+    expect(posthog.capture).not.toHaveBeenCalled();
+
+    yield* Effect.logWarning("language server retrying").pipe(
+      Effect.annotateLogs({ server: "ty", attempt: 2 }),
+      Effect.provide(
+        Logger.replace(Logger.defaultLogger, ctx.telemetry.errorLogger),
+      ),
+    );
+
+    expect(sentrySdk.addBreadcrumb).toHaveBeenCalledWith(
       expect.objectContaining({
-        fingerprint: [
-          "notebook.deserialize",
-          "rpc.internal",
-          "-32603",
-          "ResponseError",
-        ],
-        tags: expect.objectContaining({
-          "error.domain": "notebook.deserialize",
-          "error.kind": "rpc.internal",
-          "rpc.method": "deserialize",
-          "rpc.code": "-32603",
+        category: "marimo",
+        message: "language server retrying",
+        level: "warning",
+        data: undefined,
+      }),
+      100,
+    );
+  }),
+);
+
+it.scoped(
+  "respects VS Code error gating independently",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx({
+      usageEnabled: true,
+      errorsEnabled: false,
+    });
+
+    yield* Effect.logError("language server failed").pipe(
+      Effect.provide(
+        Logger.replace(Logger.defaultLogger, ctx.telemetry.errorLogger),
+      ),
+    );
+
+    expect(posthog.capture).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "extension_activated" }),
+    );
+    expect(sentrySdk.captureException).not.toHaveBeenCalled();
+  }),
+);
+
+it.scoped(
+  "reports each resolved binary once with exact version context",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx();
+    posthog.capture.mockClear();
+
+    yield* ctx.telemetry.binaryResolved({
+      server: "uv",
+      source: "Bundled",
+      version: "0.8.3 (abc123 2026-08-03)",
+    });
+    expect(sentrySdk.setTag).toHaveBeenCalledWith(
+      "uv.version",
+      "0.8.3 (abc123 2026-08-03)",
+    );
+    expect(posthog.capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "uv_init",
+        properties: expect.objectContaining({
+          binType: "Bundled",
+          version: "0.8.3 (abc123 2026-08-03)",
+        }),
+      }),
+    );
+
+    yield* ctx.telemetry.binaryResolved({
+      server: "ruff",
+      resolved: BinarySource.CompanionExtension({
+        extensionId: "charliermarsh.ruff",
+        path: "/ruff",
+        kind: "bundled",
+      }),
+      version: "0.15.0",
+    });
+    expect(sentrySdk.setTag).toHaveBeenCalledWith("ruff.version", "0.15.0");
+    expect(posthog.capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "lsp_binary_resolved",
+        properties: expect.objectContaining({
+          server: "ruff",
+          source: "CompanionExtension",
+          kind: "bundled",
+          version: "0.15.0",
         }),
       }),
     );
   }),
 );
 
-it.scoped("does not retain error annotations created without consent", () =>
-  Effect.gen(function* () {
-    const ctx = yield* withTestCtx({ telemetry: false });
+it.scoped(
+  "gates binary Sentry context independently from usage events",
+  Effect.fn(function* () {
+    const errorsOnly = yield* withTestCtx({
+      usageEnabled: false,
+      errorsEnabled: true,
+    });
+    yield* errorsOnly.telemetry.binaryResolved({
+      server: "ty",
+      resolved: BinarySource.UserConfigured({ path: "/ty" }),
+      version: "0.0.63",
+    });
+    expect(sentrySdk.setTag).toHaveBeenCalledWith("ty.version", "0.0.63");
+    expect(posthog.capture).not.toHaveBeenCalled();
 
-    yield* ctx.telemetry.annotateErrors({ "uv.version": "off" });
+    const usageOnly = yield* withTestCtx({
+      usageEnabled: true,
+      errorsEnabled: false,
+    });
+    yield* usageOnly.telemetry.binaryResolved({
+      server: "ty",
+      resolved: BinarySource.UserConfigured({ path: "/ty" }),
+      version: "0.0.63",
+    });
     expect(sentrySdk.setTag).not.toHaveBeenCalled();
+    expect(posthog.capture).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "lsp_binary_resolved" }),
+    );
+  }),
+);
 
-    yield* ctx.setTelemetry(true);
-    yield* waitFor(() => expect(sentrySdk.init).toHaveBeenCalledTimes(1));
-    sentrySdk.setTag.mockClear();
-    yield* ctx.telemetry.annotateErrors({ "uv.version": "on" });
-    expect(sentrySdk.setTag).toHaveBeenCalledWith("uv.version", "on");
+it.scoped(
+  "contains independent vendor failures",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx({ sentryFailure: true });
 
-    yield* ctx.setTelemetry(false);
-    yield* waitFor(() => expect(sentrySdk.close).toHaveBeenCalledTimes(1));
-    sentrySdk.setTag.mockClear();
-    yield* ctx.telemetry.annotateErrors({ "uv.version": "off-again" });
-    expect(sentrySdk.setTag).not.toHaveBeenCalled();
+    yield* ctx.telemetry.notebookCreated();
+    expect(posthog.capture).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "new_notebook_created" }),
+    );
+
+    posthog.capture.mockImplementationOnce(() => {
+      throw new Error("posthog exploded");
+    });
+    yield* ctx.telemetry.notebookCreated();
+    yield* ctx.telemetry.notebookCreated();
+    expect(posthog.capture).toHaveBeenCalledTimes(4);
+  }),
+);
+
+it.effect(
+  "closes both private adapters with the extension scope",
+  Effect.fn(function* () {
+    yield* Effect.scoped(withTestCtx());
+    expect(sentrySdk.close).toHaveBeenCalledTimes(1);
+    expect(posthog.shutdown).toHaveBeenCalledTimes(1);
   }),
 );

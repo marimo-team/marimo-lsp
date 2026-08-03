@@ -196,12 +196,15 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
 
     {
       const version = Option.match(uvBinary.version, {
-        onSome: (v) => v.format(),
+        onSome: (v) => v.version,
         onNone: () => "unknown",
       });
 
-      yield* telemetry.annotateErrors({ "uv.version": version });
-      yield* telemetry.capture("uv_init", { binType: uvBinary._tag, version });
+      yield* telemetry.binaryResolved({
+        server: "uv",
+        source: uvBinary._tag,
+        version,
+      });
     }
 
     const uv = createUv(uvBinary, executor, channel);
@@ -628,7 +631,7 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   code: VsCode,
   telemetry: Telemetry,
 ) {
-  yield* telemetry.capture("uv_missing", { binType: error.bin._tag });
+  yield* telemetry.uvMissing(error.bin._tag);
 
   const errorMessage = UvBin.$match(error.bin, {
     Bundled: (bin) =>
@@ -650,7 +653,7 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   });
 
   if (Option.isSome(choice) && choice.value === "Install uv") {
-    yield* telemetry.capture("uv_install_clicked");
+    yield* telemetry.uvInstallClicked();
 
     // Create hidden terminal so Python extension doesn't auto-activate environments
     const terminal = yield* code.window.createTerminal({

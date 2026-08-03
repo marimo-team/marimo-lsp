@@ -545,6 +545,14 @@ export class Env extends Effect.Service<Env>()("Env", {
       appRoot: api.appRoot,
       appHost: api.appHost,
       machineId: api.machineId,
+      createTelemetryLogger(
+        sender: vscode.TelemetrySender,
+        options?: vscode.TelemetryLoggerOptions,
+      ) {
+        return acquireDisposable(() =>
+          api.createTelemetryLogger(sender, options),
+        );
+      },
       openExternal(target: vscode.Uri): Effect.Effect<boolean> {
         return Effect.promise(() => api.openExternal(target));
       },
