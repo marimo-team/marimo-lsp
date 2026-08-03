@@ -8,8 +8,7 @@ import { NotebookSourceError } from "../notebook/NotebookSourceError.ts";
 
 export type NotebookDeserializeErrorKind =
   | "source.invalid-syntax"
-  | "source.not-marimo"
-  | "source.unsupported-format"
+  | "source.convertible"
   | "transport.lsp-start"
   | "transport.client-not-running"
   | "rpc.internal";
@@ -18,7 +17,6 @@ export interface ErrorClassification {
   readonly report: boolean;
   readonly domain: "notebook.deserialize";
   readonly kind: NotebookDeserializeErrorKind;
-  readonly fingerprint: readonly string[];
   readonly safeContext: Readonly<Record<string, string | number>>;
 }
 
@@ -31,12 +29,7 @@ export function classifyNotebookDeserializeError(
       report: false,
       domain: "notebook.deserialize",
       kind,
-      fingerprint: ["notebook.deserialize", kind],
-      safeContext: {
-        ...(error.failure.kind === "unsupported-format"
-          ? { "source.format": error.failure.format }
-          : {}),
-      },
+      safeContext: {},
     };
   }
 
@@ -45,7 +38,6 @@ export function classifyNotebookDeserializeError(
       report: true,
       domain: "notebook.deserialize",
       kind: "transport.lsp-start",
-      fingerprint: ["notebook.deserialize", "transport.lsp-start", error._tag],
       safeContext: { "error.exception_class": error._tag },
     };
   }
@@ -61,12 +53,6 @@ export function classifyNotebookDeserializeError(
       report: true,
       domain: "notebook.deserialize",
       kind,
-      fingerprint: [
-        "notebook.deserialize",
-        kind,
-        ...(code === undefined ? [] : [String(code)]),
-        exceptionClass,
-      ],
       safeContext: {
         ...(method ? { "rpc.method": method } : {}),
         ...(code === undefined ? {} : { "rpc.code": code }),
@@ -80,7 +66,6 @@ export function classifyNotebookDeserializeError(
     report: true,
     domain: "notebook.deserialize",
     kind: "rpc.internal",
-    fingerprint: ["notebook.deserialize", "rpc.internal", exceptionClass],
     safeContext: { "error.exception_class": exceptionClass },
   };
 }

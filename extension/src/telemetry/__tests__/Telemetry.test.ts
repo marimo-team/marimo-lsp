@@ -1,5 +1,14 @@
 import { expect, it } from "@effect/vitest";
-import { Cause, Effect, Layer, Logger, Queue, Redacted, Stream } from "effect";
+import {
+  Cause,
+  Effect,
+  Layer,
+  Logger,
+  Option,
+  Queue,
+  Redacted,
+  Stream,
+} from "effect";
 import { vi } from "vite-plus/test";
 import type * as vscode from "vscode";
 
@@ -8,8 +17,12 @@ import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { MarimoCommandError } from "../../lsp/MarimoClient.ts";
 import { Telemetry } from "../Telemetry.ts";
 
+interface TestSentryOptions {
+  readonly beforeSend: (event: Record<string, unknown>) => unknown;
+}
+
 const sentrySdk = vi.hoisted(() => ({
-  init: vi.fn(),
+  init: vi.fn<(options: TestSentryOptions) => void>(),
   setTag: vi.fn(),
   setUser: vi.fn(),
   close: vi.fn(async () => true),
@@ -247,43 +260,11 @@ it.scoped("redacts user data from classified and unexpected errors", () =>
                 "defects": [
                   {
                     "exceptionClass": "UnexpectedConverterError",
-                    "traceback": [
-                      {
-                        "column": 1,
-                        "file": "customer-notebook.py",
-                        "function": "convert",
-                        "line": 1,
-                      },
-                    ],
                   },
                 ],
                 "failures": [
                   {
-                    "byteCount": 71,
-                    "cause": {
-                      "exceptionClass": "ResponseError",
-                      "rpcCode": -32603,
-                      "traceback": [
-                        {
-                          "column": 1,
-                          "file": "customer-notebook.py",
-                          "function": "rpcDispatch",
-                          "line": 1,
-                        },
-                      ],
-                    },
-                    "cellCount": 2,
                     "exceptionClass": "MarimoCommandError",
-                    "fileType": "py",
-                    "method": "execute-cells",
-                    "traceback": [
-                      {
-                        "column": 1,
-                        "file": "customer-notebook.py",
-                        "function": "deserialize",
-                        "line": 1,
-                      },
-                    ],
                   },
                 ],
               },
@@ -302,6 +283,92 @@ it.scoped("redacts user data from classified and unexpected errors", () =>
         ],
       ]
     `);
+  }),
+);
+
+it.scoped("retains safe diagnostics from Cause log messages", () =>
+  Effect.gen(function* () {
+    const ctx = yield* withTestCtx();
+    const secret = "DO_NOT_UPLOAD_CAUSE_MESSAGE";
+
+    yield* Effect.logError(
+      Cause.fail({ name: "ResponseError", code: -32603, message: secret }),
+    ).pipe(
+      Effect.provide(
+        Logger.replace(Logger.defaultLogger, ctx.telemetry.errorLogger),
+      ),
+    );
+
+    const payload = sentrySdk.captureMessage.mock.calls[0]?.[1];
+    expect(payload?.extra).toEqual({
+      "logger.cause": {
+        failures: [{ exceptionClass: "ResponseError", rpcCode: -32603 }],
+        defects: [],
+      },
+    });
+    expect(JSON.stringify(payload)).not.toContain(secret);
+  }),
+);
+
+it.scoped("sanitizes SDK events at the final Sentry boundary", () =>
+  Effect.gen(function* () {
+    yield* withTestCtx();
+    const secret = "DO_NOT_UPLOAD_BEFORE_SEND";
+    const localPath = "/Users/alice/private/customer-notebook.py";
+    const initOptions = Option.getOrThrow(
+      Option.fromNullable(sentrySdk.init.mock.calls[0]?.[0]),
+    );
+
+    const result = initOptions.beforeSend({
+      message: secret,
+      request: { data: secret },
+      contexts: { private: { secret } },
+      server_name: secret,
+      extra: {
+        "error.domain": "notebook.deserialize",
+        private: secret,
+      },
+      logentry: { message: secret },
+      exception: {
+        values: [
+          {
+            type: "ResponseError",
+            value: secret,
+            stacktrace: {
+              frames: [
+                {
+                  filename: `/marimo${localPath}`,
+                  abs_path: localPath,
+                  function: "customerFunction",
+                  module: "customerModule",
+                  context_line: secret,
+                  vars: { secret },
+                  lineno: 7,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const payload = JSON.stringify(result);
+    expect(payload).not.toContain(secret);
+    expect(payload).not.toContain("customer-notebook.py");
+    expect(payload).not.toContain("customerFunction");
+    expect(result).toMatchObject({
+      message: "marimo extension error",
+      extra: { "error.domain": "notebook.deserialize" },
+      exception: {
+        values: [
+          {
+            type: "ResponseError",
+            value: "marimo extension error",
+            stacktrace: { frames: [{ lineno: 7 }] },
+          },
+        ],
+      },
+    });
   }),
 );
 

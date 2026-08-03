@@ -13,18 +13,15 @@ it("does not report known notebook source failures", () => {
     new NotebookSourceError({
       failure: {
         kind: "invalid-syntax",
-        message: "safe message",
         line: 7,
         column: 3,
       },
     }),
   );
-  const jupytext = classifyNotebookDeserializeError(
+  const convertible = classifyNotebookDeserializeError(
     new NotebookSourceError({
       failure: {
-        kind: "unsupported-format",
-        format: "jupytext-percent",
-        message: "safe message",
+        kind: "convertible",
       },
     }),
   );
@@ -35,10 +32,10 @@ it("does not report known notebook source failures", () => {
     kind: "source.invalid-syntax",
     safeContext: {},
   });
-  expect(jupytext).toMatchObject({
+  expect(convertible).toMatchObject({
     report: false,
-    kind: "source.unsupported-format",
-    safeContext: { "source.format": "jupytext-percent" },
+    kind: "source.convertible",
+    safeContext: {},
   });
 });
 
@@ -54,11 +51,6 @@ it("separates LSP startup failures", () => {
     report: true,
     domain: "notebook.deserialize",
     kind: "transport.lsp-start",
-    fingerprint: [
-      "notebook.deserialize",
-      "transport.lsp-start",
-      "MarimoClientStartError",
-    ],
     safeContext: { "error.exception_class": "MarimoClientStartError" },
   });
 });
@@ -77,12 +69,6 @@ it("groups internal RPC failures by method, code, and exception class", () => {
     report: true,
     domain: "notebook.deserialize",
     kind: "rpc.internal",
-    fingerprint: [
-      "notebook.deserialize",
-      "rpc.internal",
-      "-32603",
-      "ResponseError",
-    ],
     safeContext: {
       "rpc.method": "deserialize",
       "rpc.code": -32603,
@@ -101,11 +87,10 @@ it("separates client lifecycle failures from internal RPC errors", () => {
   );
 
   expect(result.kind).toBe("transport.client-not-running");
-  expect(result.fingerprint).toEqual([
-    "notebook.deserialize",
-    "transport.client-not-running",
-    "Error",
-  ]);
+  expect(result.safeContext).toEqual({
+    "rpc.method": "deserialize",
+    "error.exception_class": "Error",
+  });
 });
 
 function commandError(cause: unknown) {

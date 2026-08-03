@@ -6,7 +6,6 @@ import {
   Logger,
   LogLevel,
   MutableRef,
-  Redacted,
   Array as ReadonlyArray,
 } from "effect";
 
@@ -73,7 +72,14 @@ export function makeSentrySink() {
             return sanitizeSentryEvent(event);
           },
           beforeBreadcrumb(breadcrumb) {
-            if (breadcrumb.category === "marimo") return breadcrumb;
+            if (breadcrumb.category === "marimo") {
+              return {
+                category: breadcrumb.category,
+                level: breadcrumb.level,
+                message: breadcrumb.message,
+                data: sanitizeTelemetryExtra(breadcrumb.data),
+              };
+            }
             return {
               category: breadcrumb.category,
               level: breadcrumb.level,
@@ -176,9 +182,6 @@ export function makeSentrySink() {
           ? { "rpc.method": extra["rpc.method"] }
           : {}),
         ...(rpcCode === undefined ? {} : { "rpc.code": String(rpcCode) }),
-        ...(typeof extra["source.format"] === "string"
-          ? { "source.format": extra["source.format"] }
-          : {}),
       };
       const fingerprint =
         errorDomain && errorKind
@@ -269,13 +272,12 @@ const SAFE_ANNOTATIONS = new Set([
   "rpc.method",
   "server",
   "service",
-  "source.format",
   "status",
   "version",
 ]);
 
 function safeAnnotation(key: string, value: unknown): unknown {
-  if (Cause.isCause(value)) {
+  if (key === "cause" && Cause.isCause(value)) {
     return Cause.isEmpty(value) ? undefined : summarizeCause(value);
   }
   if (!SAFE_ANNOTATIONS.has(key)) return undefined;
@@ -296,14 +298,8 @@ function summarizeCause(cause: Cause.Cause<unknown>): unknown {
   };
 }
 
-function summarizeError(
-  value: unknown,
-  seen = new Set<object>(),
-  depth = 0,
-): Record<string, unknown> {
+function summarizeError(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) return { exceptionClass: typeof value };
-  if (seen.has(value) || depth >= 4) return { exceptionClass: "NestedError" };
-  seen.add(value);
 
   const summary: Record<string, unknown> = {
     exceptionClass:
@@ -315,61 +311,7 @@ function summarizeError(
   if (typeof value.code === "number") summary.rpcCode = value.code;
   if (typeof value.line === "number") summary.line = value.line;
   if (typeof value.column === "number") summary.column = value.column;
-
-  if (value._tag === "MarimoCommandError") {
-    const command = Redacted.isRedacted(value.command)
-      ? Redacted.value(value.command)
-      : value.command;
-    if (isRecord(command) && isRecord(command.params)) {
-      const rpc = command.params;
-      if (typeof rpc.method === "string")
-        summary.method = safeToken(rpc.method);
-      Object.assign(summary, rpcMetadata(rpc.params));
-    }
-  }
-
-  const traceback = [
-    ...sanitizeTraceback(value.stack),
-    ...(isRecord(value.data) ? sanitizeTraceback(value.data.traceback) : []),
-  ].slice(0, 12);
-  if (traceback.length > 0) summary.traceback = traceback;
-  if (isRecord(value.cause)) {
-    summary.cause = summarizeError(value.cause, seen, depth + 1);
-  }
   return summary;
-}
-
-function rpcMetadata(value: unknown): Record<string, unknown> {
-  let byteCount = 0;
-  let cellCount: number | undefined;
-  let fileType: string | undefined;
-  const seen = new Set<object>();
-
-  const visit = (current: unknown, key = ""): void => {
-    if (typeof current === "string") {
-      if (/^(?:code|contents?|source)$/i.test(key)) {
-        byteCount += Buffer.byteLength(current);
-      } else if (/^(?:filename|notebookUri|path|uri)$/i.test(key)) {
-        fileType = /\.([A-Za-z0-9]{1,10})(?:[?#].*)?$/.exec(current)?.[1];
-      }
-      return;
-    }
-    if (!current || typeof current !== "object" || seen.has(current)) return;
-    seen.add(current);
-    if (Array.isArray(current)) {
-      if (/^(?:cells|codes)$/i.test(key)) cellCount = current.length;
-      for (const item of current) visit(item, key === "codes" ? "code" : key);
-      return;
-    }
-    for (const [childKey, child] of Object.entries(current))
-      visit(child, childKey);
-  };
-  visit(value);
-  return {
-    ...(byteCount > 0 ? { byteCount } : {}),
-    ...(cellCount === undefined ? {} : { cellCount }),
-    ...(fileType ? { fileType: fileType.toLowerCase() } : {}),
-  };
 }
 
 function sanitizeSentryEvent<Event extends SentrySDK.Event>(
@@ -378,76 +320,71 @@ function sanitizeSentryEvent<Event extends SentrySDK.Event>(
   delete event.request;
   delete event.contexts;
   delete event.server_name;
+  event.extra = sanitizeTelemetryExtra(event.extra);
+  if (event.message !== undefined) event.message = SENTRY_MESSAGE;
+  if (event.logentry?.message !== undefined) {
+    event.logentry.message = SENTRY_MESSAGE;
+  }
   for (const exception of event.exception?.values ?? []) {
-    exception.value = safeClassName(exception.type) ?? "marimo extension error";
+    exception.value = SENTRY_MESSAGE;
+    exception.type = safeClassName(exception.type) ?? "Error";
     for (const frame of exception.stacktrace?.frames ?? []) {
       delete frame.pre_context;
       delete frame.context_line;
       delete frame.post_context;
       delete frame.vars;
-      frame.filename = frame.filename?.split(/[\\/]/).at(-1);
-      if (frame.abs_path) frame.abs_path = "redacted";
+      delete frame.filename;
+      delete frame.abs_path;
+      delete frame.function;
+      delete frame.module;
     }
   }
   return event;
 }
 
-interface SafeTracebackFrame {
-  readonly function?: string;
-  readonly file?: string;
-  readonly line?: number;
-  readonly column?: number;
-}
-
-function sanitizeTraceback(value: unknown): SafeTracebackFrame[] {
-  if (typeof value === "string") {
-    const frames: SafeTracebackFrame[] = [];
-    for (const line of value.split("\n")) {
-      const js = /^\s*at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?$/.exec(line);
-      if (js) {
-        frames.push({
-          ...(js[1] ? { function: safeToken(js[1]) } : {}),
-          file: basename(js[2]),
-          line: Number(js[3]),
-          column: Number(js[4]),
-        });
-        continue;
-      }
-      const python = /^\s*File "(.+)", line (\d+), in (.+)$/.exec(line);
-      if (python) {
-        frames.push({
-          function: safeToken(python[3]),
-          file: basename(python[1]),
-          line: Number(python[2]),
-        });
-      }
+function sanitizeTelemetryExtra(
+  extra: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!extra) return undefined;
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extra)) {
+    if (key === "cause" || key === "logger.cause") {
+      const cause = sanitizeCauseSummary(value);
+      if (cause) sanitized[key] = cause;
+      continue;
     }
-    return frames;
+    const safeValue = safeAnnotation(key, value);
+    if (safeValue !== undefined) sanitized[key] = safeValue;
   }
-  if (Array.isArray(value)) return value.flatMap(sanitizeTraceback);
-  if (!isRecord(value)) return [];
-
-  const path = [value.filename, value.file, value.path].find(
-    (item): item is string => typeof item === "string",
-  );
-  const fn = [value.function, value.functionName, value.name].find(
-    (item): item is string => typeof item === "string",
-  );
-  const line = typeof value.line === "number" ? value.line : undefined;
-  const column = typeof value.column === "number" ? value.column : undefined;
-  if (!path && !fn && line === undefined && column === undefined) return [];
-  return [
-    {
-      ...(fn ? { function: safeToken(fn) } : {}),
-      ...(path ? { file: basename(path) } : {}),
-      ...(line === undefined ? {} : { line }),
-      ...(column === undefined ? {} : { column }),
-    },
-  ];
+  return Object.keys(sanitized).length === 0 ? undefined : sanitized;
 }
 
-function basename(path: string): string {
-  return path.split(/[\\/]/).at(-1) ?? "unknown";
+function sanitizeCauseSummary(value: unknown): unknown {
+  if (!isRecord(value)) return undefined;
+  const sanitizeItems = (items: unknown) =>
+    Array.isArray(items)
+      ? items.slice(0, 3).flatMap((item) => {
+          if (!isRecord(item)) return [];
+          const exceptionClass = safeClassName(item.exceptionClass);
+          if (!exceptionClass) return [];
+          return [
+            {
+              exceptionClass,
+              ...(typeof item.rpcCode === "number"
+                ? { rpcCode: item.rpcCode }
+                : {}),
+              ...(typeof item.line === "number" ? { line: item.line } : {}),
+              ...(typeof item.column === "number"
+                ? { column: item.column }
+                : {}),
+            },
+          ];
+        })
+      : [];
+  return {
+    failures: sanitizeItems(value.failures),
+    defects: sanitizeItems(value.defects),
+  };
 }
 
 function safeToken(value: string): string {
