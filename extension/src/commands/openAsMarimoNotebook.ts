@@ -4,6 +4,7 @@ import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { MarimoClient, MarimoClientStartError } from "../lsp/MarimoClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { classifyNotebookDeserializeError } from "../telemetry/classifyNotebookDeserializeError.ts";
 
 const CONVERT_COPY = "Convert a copy";
 const KEEP_TEXT = "Keep open as text";
@@ -48,12 +49,15 @@ export const openAsMarimoNotebook = Effect.fn("command.openAsMarimoNotebook")(
 
     if (Either.isLeft(inspection)) {
       const error = inspection.left;
+      const classification = classifyNotebookDeserializeError(error);
       yield* Effect.logError(
         "Failed to inspect file before notebook open",
       ).pipe(
         Effect.annotateLogs({
           cause: Cause.fail(error),
-          "rpc.method": "deserialize",
+          "error.domain": classification.domain,
+          "error.kind": classification.kind,
+          ...classification.safeContext,
         }),
       );
       const message =

@@ -1,7 +1,6 @@
 import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import {
   Cause,
-  Data,
   Effect,
   Fiber,
   Option,
@@ -21,7 +20,12 @@ import {
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
 import * as Api from "../schemas/Models.gen.ts";
+import { classifyNotebookDeserializeError } from "../telemetry/classifyNotebookDeserializeError.ts";
 import { classifyCellCode } from "./classifyCellCode.ts";
+import {
+  NotebookSourceError,
+  notebookSourceFailureMessage,
+} from "./NotebookSourceError.ts";
 import { pickLiveNotebook } from "./pickLiveNotebook.ts";
 
 type BooleanMap<T> = {
@@ -31,16 +35,7 @@ type BooleanMap<T> = {
 type EncodedCellMetadata = typeof Api.CellMetadata.Encoded;
 type EncodedNotebookDocumentMetadata =
   typeof Api.NotebookDocumentMetadata.Encoded;
-type NotebookSourceFailure = Exclude<
-  Api.DeserializeResult,
-  { readonly kind: "success" }
->;
-
-export class NotebookSourceError extends Data.TaggedError(
-  "NotebookSourceError",
-)<{
-  readonly failure: NotebookSourceFailure;
-}> {}
+export { NotebookSourceError } from "./NotebookSourceError.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -191,7 +186,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                   Effect.tapErrorCause(logDeserializeFailure),
                   Effect.mapError((error) =>
                     error instanceof NotebookSourceError
-                      ? new Error(sourceFailureMessage(error.failure))
+                      ? new Error(notebookSourceFailureMessage(error.failure))
                       : new Error(
                           `Failed to deserialize notebook. See marimo logs for details.`,
                         ),
@@ -230,37 +225,23 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   },
 ) {}
 
-function sourceFailureMessage(failure: NotebookSourceFailure): string {
-  switch (failure.kind) {
-    case "invalid-syntax": {
-      const location = failure.line === null ? "" : ` at line ${failure.line}`;
-      return `This file can't be opened as a marimo notebook because it has a Python syntax error${location}.`;
-    }
-    case "not-marimo":
-      return "This is a Python script, not a native marimo notebook.";
-    case "unsupported-format":
-      return "This file uses an unsupported notebook format and must be converted first.";
-    default: {
-      const exhaustive: never = failure;
-      return exhaustive;
-    }
-  }
-}
-
 function logDeserializeFailure(cause: Cause.Cause<unknown>) {
   const failure = Option.getOrUndefined(Cause.failureOption(cause));
-  if (failure instanceof NotebookSourceError) {
+  const classification = classifyNotebookDeserializeError(failure);
+  const annotations = {
+    "error.domain": classification.domain,
+    "error.kind": classification.kind,
+    ...classification.safeContext,
+  };
+  if (!classification.report) {
     return Effect.logWarning("Notebook source could not be deserialized").pipe(
-      Effect.annotateLogs({
-        "error.tag": failure._tag,
-        "source.kind": failure.failure.kind,
-      }),
+      Effect.annotateLogs(annotations),
     );
   }
   return Effect.logError(`Notebook deserialize failed`).pipe(
     Effect.annotateLogs({
       cause,
-      "error.tag": causeTag(cause),
+      ...annotations,
     }),
   );
 }

@@ -305,6 +305,43 @@ it.scoped("redacts user data from classified and unexpected errors", () =>
   }),
 );
 
+it.scoped("groups notebook deserialize failures by safe classification", () =>
+  Effect.gen(function* () {
+    const ctx = yield* withTestCtx();
+
+    yield* Effect.logError("Notebook deserialize failed").pipe(
+      Effect.annotateLogs({
+        "error.domain": "notebook.deserialize",
+        "error.kind": "rpc.internal",
+        "error.exception_class": "ResponseError",
+        "rpc.method": "deserialize",
+        "rpc.code": -32603,
+      }),
+      Effect.provide(
+        Logger.replace(Logger.defaultLogger, ctx.telemetry.errorLogger),
+      ),
+    );
+
+    expect(sentrySdk.captureMessage).toHaveBeenCalledWith(
+      "marimo extension error",
+      expect.objectContaining({
+        fingerprint: [
+          "notebook.deserialize",
+          "rpc.internal",
+          "-32603",
+          "ResponseError",
+        ],
+        tags: expect.objectContaining({
+          "error.domain": "notebook.deserialize",
+          "error.kind": "rpc.internal",
+          "rpc.method": "deserialize",
+          "rpc.code": "-32603",
+        }),
+      }),
+    );
+  }),
+);
+
 it.scoped("does not retain error annotations created without consent", () =>
   Effect.gen(function* () {
     const ctx = yield* withTestCtx({ telemetry: false });

@@ -139,12 +139,24 @@ export function makeSentrySink() {
       // Build extra context with annotations
       const extra: Record<string, unknown> = {};
       let errorTag: string | undefined;
+      let errorDomain: string | undefined;
+      let errorKind: string | undefined;
+      let rpcCode: number | undefined;
+      let exceptionClass: string | undefined;
       for (const [key, value] of HashMap.toEntries(opts.annotations)) {
         const safeValue = safeAnnotation(key, value);
         if (safeValue !== undefined) extra[key] = safeValue;
         if (key === "error.tag" && typeof value === "string") {
           errorTag = safeToken(value);
         }
+        if (key === "error.domain" && typeof safeValue === "string")
+          errorDomain = safeValue;
+        if (key === "error.kind" && typeof safeValue === "string")
+          errorKind = safeValue;
+        if (key === "rpc.code" && typeof safeValue === "number")
+          rpcCode = safeValue;
+        if (key === "error.exception_class" && typeof safeValue === "string")
+          exceptionClass = safeValue;
       }
 
       // Include cause if present
@@ -158,8 +170,27 @@ export function makeSentrySink() {
       const tags = {
         marimo: "true",
         ...(errorTag ? { "error.tag": errorTag } : {}),
+        ...(errorDomain ? { "error.domain": errorDomain } : {}),
+        ...(errorKind ? { "error.kind": errorKind } : {}),
+        ...(typeof extra["rpc.method"] === "string"
+          ? { "rpc.method": extra["rpc.method"] }
+          : {}),
+        ...(rpcCode === undefined ? {} : { "rpc.code": String(rpcCode) }),
+        ...(typeof extra["source.format"] === "string"
+          ? { "source.format": extra["source.format"] }
+          : {}),
       };
-      const fingerprint = errorTag ? [SENTRY_MESSAGE, errorTag] : undefined;
+      const fingerprint =
+        errorDomain && errorKind
+          ? [
+              errorDomain,
+              errorKind,
+              ...(rpcCode === undefined ? [] : [String(rpcCode)]),
+              ...(exceptionClass ? [exceptionClass] : []),
+            ]
+          : errorTag
+            ? [SENTRY_MESSAGE, errorTag]
+            : undefined;
 
       if (opts.logLevel === LogLevel.Error) {
         SentrySDK.captureMessage(SENTRY_MESSAGE, {
@@ -226,13 +257,19 @@ const SAFE_ANNOTATIONS = new Set([
   "cellCount",
   "code",
   "count",
+  "error.domain",
+  "error.exception_class",
+  "error.kind",
   "error.tag",
   "fileType",
   "kind",
   "method",
   "mode",
+  "rpc.code",
+  "rpc.method",
   "server",
   "service",
+  "source.format",
   "status",
   "version",
 ]);
@@ -242,7 +279,8 @@ function safeAnnotation(key: string, value: unknown): unknown {
     return Cause.isEmpty(value) ? undefined : summarizeCause(value);
   }
   if (!SAFE_ANNOTATIONS.has(key)) return undefined;
-  if (key === "code") return typeof value === "number" ? value : undefined;
+  if (key === "code" || key === "rpc.code")
+    return typeof value === "number" ? value : undefined;
   if (typeof value === "number" || typeof value === "boolean") return value;
   return typeof value === "string" ? safeToken(value) : undefined;
 }
