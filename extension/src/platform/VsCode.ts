@@ -314,6 +314,30 @@ type ContextMap = {
   "marimo.notebook.hasKernel": boolean;
 };
 
+const isExpectedCancellation = (cause: Cause.Cause<unknown>) =>
+  Cause.isInterruptedOnly(cause) ||
+  [...Cause.defects(cause)].some(
+    (defect: unknown) => defect instanceof Error && defect.name === "Canceled",
+  );
+
+export const withCommandContext = (command: MarimoCommand) => {
+  const wireId = commandId(command);
+  return <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.tapErrorCause((cause) =>
+        isExpectedCancellation(cause) ? Effect.void : Effect.logError(cause),
+      ),
+      Effect.withSpan("command", {
+        attributes: {
+          "command.id": wireId,
+        },
+      }),
+      Effect.annotateLogs({
+        "command.id": wireId,
+      }),
+    );
+};
+
 export class Commands extends Effect.Service<Commands>()("Commands", {
   dependencies: [Window.Default],
   scoped: Effect.gen(function* () {
@@ -353,17 +377,10 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
                 // Skip logging for interruptions/cancellations (e.g., user
                 // cancels a progress dialog, VS Code disposes resources
                 // during kernel restart). These are expected and not errors.
-                if (
-                  Cause.isInterruptedOnly(cause) ||
-                  [...Cause.defects(cause)].some(
-                    (defect: unknown) =>
-                      defect instanceof Error && defect.name === "Canceled",
-                  )
-                ) {
+                if (isExpectedCancellation(cause)) {
                   yield* PubSub.publish(commandPubSub, Either.left(wireId));
                   return;
                 }
-                yield* Effect.logError(cause);
                 yield* PubSub.publish(commandPubSub, Either.left(wireId));
                 yield* win.showWarningMessage(
                   `Something went wrong in ${JSON.stringify(wireId)}. See marimo logs for more info.`,
@@ -381,10 +398,12 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
       command: MarimoCommand<Args, A>,
       fn: (...args: Args) => Effect.Effect<A, E, R>,
     ) {
-      return registerImplementation(commandId(command), (args) =>
+      const wireId = commandId(command);
+      return registerImplementation(wireId, (args) =>
         decodeCommandArguments(command, args).pipe(
           Effect.flatMap((decoded) => fn(...decoded)),
           Effect.flatMap((result) => decodeCommandResult(command, result)),
+          withCommandContext(command),
         ),
       );
     }
