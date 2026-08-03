@@ -21,10 +21,8 @@ export function notebookSourceFailureMessage(
       const location = failure.line === null ? "" : ` at line ${failure.line}`;
       return `This file can't be opened as a marimo notebook because it has a Python syntax error${location}.`;
     }
-    case "not-marimo":
-      return "This is a Python script, not a native marimo notebook.";
-    case "unsupported-format":
-      return "This file uses an unsupported notebook format and must be converted first.";
+    case "convertible":
+      return "This is not a native marimo notebook and must be converted first.";
     default: {
       const exhaustive: never = failure;
       return exhaustive;

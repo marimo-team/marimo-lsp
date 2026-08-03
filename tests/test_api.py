@@ -20,11 +20,10 @@ from marimo_lsp.api import (
     update_configuration,
 )
 from marimo_lsp.models import (
+    DeserializeConvertible,
     DeserializeInvalidSyntax,
-    DeserializeNotMarimo,
     DeserializeRequest,
     DeserializeSuccess,
-    DeserializeUnsupportedFormat,
     GetConfigurationRequest,
     ListSQLSchemasRequest,
     ListSQLTablesRequest,
@@ -71,6 +70,7 @@ def _():
     result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
 
     assert isinstance(result, DeserializeSuccess)
+    assert [cell["code"] for cell in result.notebook.notebook["cells"]] == ["value = ("]
 
 
 @pytest.mark.asyncio
@@ -93,7 +93,6 @@ def _():
     assert isinstance(result, DeserializeInvalidSyntax)
     assert result.line == 7
     assert result.column is not None
-    assert "y = 2" not in result.message
 
 
 @pytest.mark.asyncio
@@ -102,18 +101,44 @@ async def test_deserialize_classifies_plain_python() -> None:
         _context(MagicMock()), DeserializeRequest(source="print('hello')\n")
     )
 
-    assert isinstance(result, DeserializeNotMarimo)
+    assert isinstance(result, DeserializeConvertible)
 
 
 @pytest.mark.asyncio
-async def test_deserialize_classifies_jupytext_percent() -> None:
+async def test_deserialize_classifies_jupytext_percent_as_convertible() -> None:
     result = await deserialize(
         _context(MagicMock()),
         DeserializeRequest(source="# %%\nprint('hello')\n"),
     )
 
-    assert isinstance(result, DeserializeUnsupportedFormat)
-    assert result.format == "jupytext-percent"
+    assert isinstance(result, DeserializeConvertible)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "source",
+    [
+        "print(\n",
+        "def f(:\n",
+        "import marimo\napp = marimo.App(\n",
+    ],
+)
+async def test_deserialize_reports_syntax_errors_in_non_marimo_python(
+    source: str,
+) -> None:
+    result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
+
+    assert isinstance(result, DeserializeInvalidSyntax)
+    assert result.line is not None
+
+
+@pytest.mark.asyncio
+async def test_percent_marker_inside_string_is_just_convertible_python() -> None:
+    result = await deserialize(
+        _context(MagicMock()), DeserializeRequest(source='x = "# %%"\n')
+    )
+
+    assert isinstance(result, DeserializeConvertible)
 
 
 @pytest.mark.asyncio

@@ -43,12 +43,11 @@ from marimo_lsp.models import (
     DeleteCellRequest,
     DependencyTreeRequest,
     DependencyTreeResponse,
+    DeserializeConvertible,
     DeserializeInvalidSyntax,
-    DeserializeNotMarimo,
     DeserializeRequest,
     DeserializeResult,
     DeserializeSuccess,
-    DeserializeUnsupportedFormat,
     ExecuteCellsRequest,
     ExecuteScratchRequest,
     ExportAsIpynbRequest,
@@ -568,17 +567,16 @@ async def deserialize(
     except SyntaxError as error:
         line, column = _syntax_error_position(args.source, error)
         return DeserializeInvalidSyntax(
-            message="The file contains invalid Python syntax.",
             line=line,
             column=column,
         )
     except MarimoFileError as error:
         if str(error) != "`marimo.App` definition expected.":
             raise
-        return _non_marimo_result(args.source)
+        return _classify_convertible(args.source)
 
     if not ir.valid:
-        return _non_marimo_result(args.source)
+        return _classify_convertible(args.source)
 
     return DeserializeSuccess(
         notebook=NotebookDocument(
@@ -610,15 +608,14 @@ def _syntax_error_position(
     return matches[0], error.offset
 
 
-def _non_marimo_result(
+def _classify_convertible(
     source: str,
-) -> DeserializeNotMarimo | DeserializeUnsupportedFormat:
-    if "# %%" in source:
-        return DeserializeUnsupportedFormat(
-            format="jupytext-percent",
-            message="Jupytext percent files require explicit conversion.",
-        )
-    return DeserializeNotMarimo(message="The file is not a native marimo notebook.")
+) -> DeserializeConvertible | DeserializeInvalidSyntax:
+    try:
+        compile(source, "notebook.py", "exec")
+    except SyntaxError as error:
+        return DeserializeInvalidSyntax(line=error.lineno, column=error.offset)
+    return DeserializeConvertible()
 
 
 @marimo_api("get-configuration")

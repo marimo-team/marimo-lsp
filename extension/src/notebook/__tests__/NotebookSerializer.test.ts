@@ -1,7 +1,17 @@
 import * as NodeFs from "node:fs";
 
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Either, HashSet, Layer, Ref } from "effect";
+import {
+  Duration,
+  Effect,
+  Either,
+  Exit,
+  Fiber,
+  HashSet,
+  Layer,
+  Ref,
+  TestClock,
+} from "effect";
 
 import packageJson from "../../../package.json";
 import { TestMarimoClientLive } from "../../__mocks__/TestMarimoClient.ts";
@@ -21,6 +31,31 @@ const NotebookSerializerLive = Layer.empty.pipe(
 );
 
 it.scoped(
+  "bounds a deserialize request that never completes",
+  Effect.fn(function* () {
+    const layer = Layer.empty.pipe(
+      Layer.provideMerge(NotebookSerializer.Default),
+      Layer.provideMerge(makeTestMarimoClient({ execute: () => Effect.never })),
+      Layer.provideMerge(Constants.Default),
+    );
+
+    const exit = yield* Effect.gen(function* () {
+      const serializer = yield* NotebookSerializer;
+      const deserialize = yield* Effect.fork(
+        serializer
+          .deserializeEffect(new TextEncoder().encode("app = marimo.App()"))
+          .pipe(Effect.exit),
+      );
+      yield* TestClock.adjust(Duration.seconds(30));
+      return yield* Fiber.join(deserialize);
+    }).pipe(Effect.provide(layer));
+
+    assert(Exit.isFailure(exit));
+    expect(String(exit)).toContain("TimeoutException");
+  }),
+);
+
+it.scoped(
   "registered serializer explains non-marimo source failures",
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
@@ -30,8 +65,7 @@ it.scoped(
         makeTestMarimoClient({
           execute: () =>
             Effect.succeed({
-              kind: "not-marimo",
-              message: "The file is not a native marimo notebook.",
+              kind: "convertible",
             }),
         }),
       ),
@@ -64,7 +98,7 @@ it.scoped(
 
       assert(error instanceof Error);
       expect(error.message).toBe(
-        "This is a Python script, not a native marimo notebook.",
+        "This is not a native marimo notebook and must be converted first.",
       );
     }).pipe(Effect.provide(layer));
   }),
@@ -271,8 +305,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
         assert(Either.isLeft(result));
         assert(result.left instanceof NotebookSourceError);
         expect(result.left.failure).toEqual({
-          kind: "not-marimo",
-          message: "The file is not a native marimo notebook.",
+          kind: "convertible",
         });
       }),
     );

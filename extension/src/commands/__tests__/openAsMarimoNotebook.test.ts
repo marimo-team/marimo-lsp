@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Layer, Option } from "effect";
+import { Effect, Option } from "effect";
 import { vi } from "vitest";
 
 import {
@@ -7,24 +7,11 @@ import {
   createTestTextEditor,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { openAsMarimoNotebook } from "../openAsMarimoNotebook.ts";
 
-const nativeNotebook = {
-  kind: "success",
-  notebook: {
-    notebook: { version: "1", cells: [], metadata: {} },
-  },
-} as const;
-
-function provideCommand(vscode: TestVsCode, result: unknown = nativeNotebook) {
-  return Effect.provide(
-    Layer.merge(
-      vscode.layer,
-      makeTestMarimoClient({ execute: () => Effect.succeed(result) }),
-    ),
-  );
+function provideCommand(vscode: TestVsCode) {
+  return Effect.provide(vscode.layer);
 }
 
 it.effect(
@@ -167,82 +154,5 @@ it.effect(
 
     expect(save).toHaveBeenCalledOnce();
     expect(yield* vscode.executions).toEqual([]);
-  }),
-);
-
-it.effect(
-  "keeps unrecoverable syntax open as text with a line-aware message",
-  Effect.fn(function* () {
-    const messages: string[] = [];
-    const vscode = yield* TestVsCode.make({
-      window: {
-        showErrorMessage(message) {
-          messages.push(message);
-          return Effect.succeed(Option.none());
-        },
-      },
-    });
-    const document = createTestTextDocument(
-      "/test/notebook.py",
-      "python",
-      "invalid source",
-    );
-    yield* vscode.setActiveTextEditor(
-      Option.some(createTestTextEditor(document)),
-    );
-
-    yield* openAsMarimoNotebook().pipe(
-      provideCommand(vscode, {
-        kind: "invalid-syntax",
-        message: "The file contains invalid Python syntax.",
-        line: 7,
-        column: 3,
-      }),
-    );
-
-    expect(messages).toEqual([
-      "This file can't be opened as a marimo notebook because it has a Python syntax error at line 7.",
-    ]);
-    expect(yield* vscode.executions).toEqual([]);
-  }),
-);
-
-it.effect(
-  "offers to convert non-marimo Python into a copy",
-  Effect.fn(function* () {
-    const messages: string[] = [];
-    const vscode = yield* TestVsCode.make({
-      window: {
-        showInformationMessage(message, options) {
-          messages.push(message);
-          return Effect.succeed(Option.fromNullable(options?.items?.[0]));
-        },
-      },
-    });
-    const document = createTestTextDocument(
-      "/test/script.py",
-      "python",
-      "print('hello')",
-    );
-    yield* vscode.setActiveTextEditor(
-      Option.some(createTestTextEditor(document)),
-    );
-
-    yield* openAsMarimoNotebook().pipe(
-      provideCommand(vscode, {
-        kind: "not-marimo",
-        message: "The file is not a native marimo notebook.",
-      }),
-    );
-
-    expect(messages).toEqual([
-      "This is a Python script, not a native marimo notebook.",
-    ]);
-    expect(yield* vscode.executions).toEqual([
-      {
-        command: "marimo.convert",
-        args: [{ uri: "file:///test/script.py" }],
-      },
-    ]);
   }),
 );

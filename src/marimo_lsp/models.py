@@ -234,33 +234,18 @@ class DeserializeInvalidSyntax(
 ):
     """Python syntax prevented the source from being inspected."""
 
-    message: str
     line: int | None = None
     column: int | None = None
 
 
-class DeserializeNotMarimo(
-    msgspec.Struct, tag="not-marimo", tag_field="kind", rename="camel"
+class DeserializeConvertible(
+    msgspec.Struct, tag="convertible", tag_field="kind", rename="camel"
 ):
-    """Valid Python source that is not a native marimo notebook."""
-
-    message: str
-
-
-class DeserializeUnsupportedFormat(
-    msgspec.Struct, tag="unsupported-format", tag_field="kind", rename="camel"
-):
-    """A recognized non-native notebook format requiring explicit conversion."""
-
-    format: typing.Literal["jupytext-percent", "plain-python", "unknown"]
-    message: str
+    """Valid Python source that can be converted to a marimo notebook."""
 
 
 type DeserializeResult = (
-    DeserializeSuccess
-    | DeserializeInvalidSyntax
-    | DeserializeNotMarimo
-    | DeserializeUnsupportedFormat
+    DeserializeSuccess | DeserializeInvalidSyntax | DeserializeConvertible
 )
 
 

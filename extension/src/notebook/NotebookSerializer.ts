@@ -1,6 +1,7 @@
 import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import {
   Cause,
+  Duration,
   Effect,
   Fiber,
   Option,
@@ -35,6 +36,7 @@ type BooleanMap<T> = {
 type EncodedCellMetadata = typeof Api.CellMetadata.Encoded;
 type EncodedNotebookDocumentMetadata =
   typeof Api.NotebookDocumentMetadata.Encoded;
+const DESERIALIZE_TIMEOUT = Duration.seconds(30);
 export { NotebookSourceError } from "./NotebookSourceError.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -84,9 +86,11 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       const deserializeEffect = Effect.fn("NotebookSerializer.deserialize")(
         function* (bytes: Uint8Array) {
           yield* Effect.annotateCurrentSpan("bytes", bytes.length);
-          const result = yield* marimo.deserialize({
-            source: new TextDecoder().decode(bytes),
-          });
+          const result = yield* marimo
+            .deserialize({
+              source: new TextDecoder().decode(bytes),
+            })
+            .pipe(Effect.timeout(DESERIALIZE_TIMEOUT));
           if (result.kind !== "success") {
             return yield* new NotebookSourceError({ failure: result });
           }
@@ -226,8 +230,11 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
 ) {}
 
 function logDeserializeFailure(cause: Cause.Cause<unknown>) {
+  if (Cause.isInterruptedOnly(cause)) return Effect.void;
+
   const failure = Option.getOrUndefined(Cause.failureOption(cause));
-  const classification = classifyNotebookDeserializeError(failure);
+  const defect = [...Cause.defects(cause)][0];
+  const classification = classifyNotebookDeserializeError(failure ?? defect);
   const annotations = {
     "error.domain": classification.domain,
     "error.kind": classification.kind,

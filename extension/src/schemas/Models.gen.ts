@@ -274,7 +274,6 @@ export type DeserializeSuccess = typeof DeserializeSuccess.Type;
  */
 export const DeserializeInvalidSyntax = Schema.Struct({
   kind: Schema.Literal("invalid-syntax"),
-  message: Schema.String,
   line: Schema.optionalWith(Schema.NullOr(Schema.Int), { default: () => null }),
   column: Schema.optionalWith(Schema.NullOr(Schema.Int), {
     default: () => null,
@@ -283,30 +282,17 @@ export const DeserializeInvalidSyntax = Schema.Struct({
 export type DeserializeInvalidSyntax = typeof DeserializeInvalidSyntax.Type;
 
 /**
- * Valid Python source that is not a native marimo notebook.
+ * Valid Python source that can be converted to a marimo notebook.
  */
-export const DeserializeNotMarimo = Schema.Struct({
-  kind: Schema.Literal("not-marimo"),
-  message: Schema.String,
-}).annotations({ identifier: "DeserializeNotMarimo" });
-export type DeserializeNotMarimo = typeof DeserializeNotMarimo.Type;
-
-/**
- * A recognized non-native notebook format requiring explicit conversion.
- */
-export const DeserializeUnsupportedFormat = Schema.Struct({
-  kind: Schema.Literal("unsupported-format"),
-  format: Schema.Literal("jupytext-percent", "plain-python", "unknown"),
-  message: Schema.String,
-}).annotations({ identifier: "DeserializeUnsupportedFormat" });
-export type DeserializeUnsupportedFormat =
-  typeof DeserializeUnsupportedFormat.Type;
+export const DeserializeConvertible = Schema.Struct({
+  kind: Schema.Literal("convertible"),
+}).annotations({ identifier: "DeserializeConvertible" });
+export type DeserializeConvertible = typeof DeserializeConvertible.Type;
 
 export const DeserializeResult = Schema.Union(
   DeserializeSuccess,
   DeserializeInvalidSyntax,
-  DeserializeNotMarimo,
-  DeserializeUnsupportedFormat,
+  DeserializeConvertible,
 ).annotations({ identifier: "DeserializeResult" });
 export type DeserializeResult = typeof DeserializeResult.Type;
 
