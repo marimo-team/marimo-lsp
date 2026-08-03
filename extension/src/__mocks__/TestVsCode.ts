@@ -1711,15 +1711,15 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           showInputBox:
             options.window?.showInputBox ??
             (() => Effect.succeed(Option.none())),
-          showInformationMessage() {
-            return Effect.succeed(Option.none());
-          },
-          showWarningMessage() {
-            return Effect.succeed(Option.none());
-          },
-          showErrorMessage() {
-            return Effect.succeed(Option.none());
-          },
+          showInformationMessage:
+            options.window?.showInformationMessage ??
+            (() => Effect.succeed(Option.none())),
+          showWarningMessage:
+            options.window?.showWarningMessage ??
+            (() => Effect.succeed(Option.none())),
+          showErrorMessage:
+            options.window?.showErrorMessage ??
+            (() => Effect.succeed(Option.none())),
           showQuickPick() {
             return Effect.succeed(Option.none());
           },

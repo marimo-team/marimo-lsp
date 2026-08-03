@@ -1,11 +1,17 @@
-import { Effect, Either, Option } from "effect";
+import { Cause, Effect, Either, Option } from "effect";
 import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
+import { MarimoClient, MarimoClientStartError } from "../lsp/MarimoClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
+
+const CONVERT_COPY = "Convert a copy";
+const KEEP_TEXT = "Keep open as text";
+
 export const openAsMarimoNotebook = Effect.fn("command.openAsMarimoNotebook")(
   function* (resource?: string | vscode.Uri) {
     const code = yield* VsCode;
+    const marimo = yield* MarimoClient;
 
     let uri: vscode.Uri;
     if (typeof resource === "string") {
@@ -34,6 +40,58 @@ export const openAsMarimoNotebook = Effect.fn("command.openAsMarimoNotebook")(
     const document = documents.find(
       (document) => document.uri.toString() === uri.toString(),
     );
+
+    const source =
+      document?.getText() ??
+      new TextDecoder().decode(yield* code.workspace.fs.readFile(uri));
+    const inspection = yield* Effect.either(marimo.deserialize({ source }));
+
+    if (Either.isLeft(inspection)) {
+      const error = inspection.left;
+      yield* Effect.logError(
+        "Failed to inspect file before notebook open",
+      ).pipe(
+        Effect.annotateLogs({
+          cause: Cause.fail(error),
+          "rpc.method": "deserialize",
+        }),
+      );
+      const message =
+        error instanceof MarimoClientStartError
+          ? "The marimo language server couldn't start, so this file couldn't be checked. The file remains open as text."
+          : "marimo couldn't inspect this file before opening it as a notebook. The file remains open as text.";
+      const selection = yield* code.window.showErrorMessage(
+        `${message}\n\nSee ${marimo.channel.name} logs for details.`,
+        { items: ["Open Logs"] },
+      );
+      if (Option.isSome(selection)) marimo.channel.show();
+      return;
+    }
+
+    const result = inspection.right;
+    if (result.kind === "invalid-syntax") {
+      const location = result.line === null ? "" : ` at line ${result.line}`;
+      yield* code.window.showErrorMessage(
+        `This file can't be opened as a marimo notebook because it has a Python syntax error${location}.`,
+      );
+      return;
+    }
+
+    if (result.kind !== "success") {
+      const message =
+        result.kind === "unsupported-format"
+          ? "This file uses Jupytext percent format, not the native marimo notebook format."
+          : "This is a Python script, not a native marimo notebook.";
+      const selection = yield* code.window.showInformationMessage(message, {
+        items: [CONVERT_COPY, KEEP_TEXT],
+      });
+      if (Option.contains(selection, CONVERT_COPY)) {
+        yield* code.commands.executeVSCode("marimo.convert", {
+          uri: uri.toString(),
+        });
+      }
+      return;
+    }
 
     // `vscode.openWith` deserializes the notebook from disk, so persist any
     // in-memory edits before switching editors.

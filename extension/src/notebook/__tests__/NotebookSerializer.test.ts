@@ -1,10 +1,12 @@
 import * as NodeFs from "node:fs";
 
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Either, Layer } from "effect";
+import { Effect, Either, HashSet, Layer, Ref } from "effect";
 
 import packageJson from "../../../package.json";
 import { TestMarimoClientLive } from "../../__mocks__/TestMarimoClient.ts";
+import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import {
   NotebookSerializer,
@@ -16,6 +18,56 @@ const NotebookSerializerLive = Layer.empty.pipe(
   Layer.provideMerge(NotebookSerializer.Default),
   Layer.provideMerge(TestMarimoClientLive),
   Layer.provideMerge(Constants.Default),
+);
+
+it.scoped(
+  "registered serializer explains non-marimo source failures",
+  Effect.fn(function* () {
+    const vscode = yield* TestVsCode.make();
+    const layer = Layer.empty.pipe(
+      Layer.provideMerge(NotebookSerializer.Default),
+      Layer.provideMerge(
+        makeTestMarimoClient({
+          execute: () =>
+            Effect.succeed({
+              kind: "not-marimo",
+              message: "The file is not a native marimo notebook.",
+            }),
+        }),
+      ),
+      Layer.provideMerge(Constants.Default),
+      Layer.provideMerge(vscode.layer),
+    );
+
+    yield* Effect.gen(function* () {
+      yield* NotebookSerializer;
+      const registrations = HashSet.toValues(
+        yield* Ref.get(vscode.serializers),
+      );
+      const registration = registrations[0];
+      assert.isDefined(registration);
+
+      const error = yield* Effect.promise(async () => {
+        try {
+          await registration.serializer.deserializeNotebook(
+            new TextEncoder().encode("print('hello')\n"),
+            {
+              isCancellationRequested: false,
+              onCancellationRequested: () => ({ dispose() {} }),
+            },
+          );
+          return undefined;
+        } catch (error: unknown) {
+          return error;
+        }
+      });
+
+      assert(error instanceof Error);
+      expect(error.message).toBe(
+        "This is a Python script, not a native marimo notebook.",
+      );
+    }).pipe(Effect.provide(layer));
+  }),
 );
 
 it.layer(NotebookSerializerLive, { timeout: 30_000 })(

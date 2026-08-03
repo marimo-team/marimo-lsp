@@ -188,19 +188,13 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                   );
                   return yield* Fiber.join(fiber);
                 }).pipe(
-                  Effect.tapErrorCause((cause) =>
-                    Effect.logError(`Notebook deserialize failed`).pipe(
-                      Effect.annotateLogs({
-                        cause,
-                        "error.tag": causeTag(cause),
-                      }),
-                    ),
-                  ),
-                  Effect.mapError(
-                    () =>
-                      new Error(
-                        `Failed to deserialize notebook. See marimo logs for details.`,
-                      ),
+                  Effect.tapErrorCause(logDeserializeFailure),
+                  Effect.mapError((error) =>
+                    error instanceof NotebookSourceError
+                      ? new Error(sourceFailureMessage(error.failure))
+                      : new Error(
+                          `Failed to deserialize notebook. See marimo logs for details.`,
+                        ),
                   ),
                 ),
               );
@@ -235,6 +229,41 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
     }),
   },
 ) {}
+
+function sourceFailureMessage(failure: NotebookSourceFailure): string {
+  switch (failure.kind) {
+    case "invalid-syntax": {
+      const location = failure.line === null ? "" : ` at line ${failure.line}`;
+      return `This file can't be opened as a marimo notebook because it has a Python syntax error${location}.`;
+    }
+    case "not-marimo":
+      return "This is a Python script, not a native marimo notebook.";
+    case "unsupported-format":
+      return "This file uses an unsupported notebook format and must be converted first.";
+    default: {
+      const exhaustive: never = failure;
+      return exhaustive;
+    }
+  }
+}
+
+function logDeserializeFailure(cause: Cause.Cause<unknown>) {
+  const failure = Option.getOrUndefined(Cause.failureOption(cause));
+  if (failure instanceof NotebookSourceError) {
+    return Effect.logWarning("Notebook source could not be deserialized").pipe(
+      Effect.annotateLogs({
+        "error.tag": failure._tag,
+        "source.kind": failure.failure.kind,
+      }),
+    );
+  }
+  return Effect.logError(`Notebook deserialize failed`).pipe(
+    Effect.annotateLogs({
+      cause,
+      "error.tag": causeTag(cause),
+    }),
+  );
+}
 
 function hasStringTag(value: unknown): value is { _tag: string } {
   return (
