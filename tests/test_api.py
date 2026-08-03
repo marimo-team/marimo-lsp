@@ -13,12 +13,18 @@ from marimo._types.ids import RequestId
 from marimo_lsp.api import (
     ApiBuilder,
     ApiContext,
+    deserialize,
     get_configuration,
     list_sql_schemas,
     list_sql_tables,
     update_configuration,
 )
 from marimo_lsp.models import (
+    DeserializeInvalidSyntax,
+    DeserializeNotMarimo,
+    DeserializeRequest,
+    DeserializeSuccess,
+    DeserializeUnsupportedFormat,
     GetConfigurationRequest,
     ListSQLSchemasRequest,
     ListSQLTablesRequest,
@@ -31,6 +37,97 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
 NOTEBOOK_URI = "file:///notebook.py"
+
+
+@pytest.mark.asyncio
+async def test_deserialize_native_marimo_notebook() -> None:
+    source = """\
+import marimo
+
+app = marimo.App()
+
+if __name__ == "__main__":
+    app.run()
+"""
+
+    result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
+
+    assert isinstance(result, DeserializeSuccess)
+
+
+@pytest.mark.asyncio
+async def test_deserialize_recovers_syntax_error_inside_cell() -> None:
+    source = """\
+import marimo
+
+app = marimo.App()
+
+@app.cell
+def _():
+    value = (
+    return
+"""
+
+    result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
+
+    assert isinstance(result, DeserializeSuccess)
+
+
+@pytest.mark.asyncio
+async def test_deserialize_reports_unrecoverable_indentation_location() -> None:
+    source = """\
+import marimo
+app = marimo.App()
+@app.cell
+def _():
+    if True:
+        x = 1
+      y = 2
+    return
+"""
+    result = await deserialize(
+        _context(MagicMock()),
+        DeserializeRequest(source=source),
+    )
+
+    assert isinstance(result, DeserializeInvalidSyntax)
+    assert result.line == 7
+    assert result.column is not None
+    assert "y = 2" not in result.message
+
+
+@pytest.mark.asyncio
+async def test_deserialize_classifies_plain_python() -> None:
+    result = await deserialize(
+        _context(MagicMock()), DeserializeRequest(source="print('hello')\n")
+    )
+
+    assert isinstance(result, DeserializeNotMarimo)
+
+
+@pytest.mark.asyncio
+async def test_deserialize_classifies_jupytext_percent() -> None:
+    result = await deserialize(
+        _context(MagicMock()),
+        DeserializeRequest(source="# %%\nprint('hello')\n"),
+    )
+
+    assert isinstance(result, DeserializeUnsupportedFormat)
+    assert result.format == "jupytext-percent"
+
+
+@pytest.mark.asyncio
+async def test_deserialize_propagates_unexpected_converter_error() -> None:
+    with (
+        patch(
+            "marimo_lsp.api.MarimoConvert.from_py",
+            side_effect=RuntimeError("converter broke"),
+        ),
+        pytest.raises(RuntimeError, match="converter broke"),
+    ):
+        await deserialize(
+            _context(MagicMock()), DeserializeRequest(source="print('hello')")
+        )
 
 
 def _context(sessions: MagicMock) -> ApiContext:

@@ -6,7 +6,10 @@ import { Effect, Either, Layer } from "effect";
 import packageJson from "../../../package.json";
 import { TestMarimoClientLive } from "../../__mocks__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import { NotebookSerializer } from "../../notebook/NotebookSerializer.ts";
+import {
+  NotebookSerializer,
+  NotebookSourceError,
+} from "../../notebook/NotebookSerializer.ts";
 import { Constants } from "../../platform/Constants.ts";
 
 const NotebookSerializerLive = Layer.empty.pipe(
@@ -200,6 +203,25 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
         );
 
         expect(Either.isLeft(result)).toBe(true);
+      }),
+    );
+
+    it.effect(
+      "returns a typed source error for non-marimo Python",
+      Effect.fn(function* () {
+        const serializer = yield* NotebookSerializer;
+        const result = yield* Effect.either(
+          serializer.deserializeEffect(
+            new TextEncoder().encode("print('hello')\n"),
+          ),
+        );
+
+        assert(Either.isLeft(result));
+        assert(result.left instanceof NotebookSourceError);
+        expect(result.left.failure).toEqual({
+          kind: "not-marimo",
+          message: "The file is not a native marimo notebook.",
+        });
       }),
     );
 

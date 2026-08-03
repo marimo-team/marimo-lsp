@@ -261,6 +261,56 @@ export const DeserializeRequest = Schema.Struct({
 export type DeserializeRequest = typeof DeserializeRequest.Type;
 
 /**
+ * A successfully parsed native marimo notebook.
+ */
+export const DeserializeSuccess = Schema.Struct({
+  kind: Schema.Literal("success"),
+  notebook: NotebookDocument,
+}).annotations({ identifier: "DeserializeSuccess" });
+export type DeserializeSuccess = typeof DeserializeSuccess.Type;
+
+/**
+ * Python syntax prevented the source from being inspected.
+ */
+export const DeserializeInvalidSyntax = Schema.Struct({
+  kind: Schema.Literal("invalid-syntax"),
+  message: Schema.String,
+  line: Schema.optionalWith(Schema.NullOr(Schema.Int), { default: () => null }),
+  column: Schema.optionalWith(Schema.NullOr(Schema.Int), {
+    default: () => null,
+  }),
+}).annotations({ identifier: "DeserializeInvalidSyntax" });
+export type DeserializeInvalidSyntax = typeof DeserializeInvalidSyntax.Type;
+
+/**
+ * Valid Python source that is not a native marimo notebook.
+ */
+export const DeserializeNotMarimo = Schema.Struct({
+  kind: Schema.Literal("not-marimo"),
+  message: Schema.String,
+}).annotations({ identifier: "DeserializeNotMarimo" });
+export type DeserializeNotMarimo = typeof DeserializeNotMarimo.Type;
+
+/**
+ * A recognized non-native notebook format requiring explicit conversion.
+ */
+export const DeserializeUnsupportedFormat = Schema.Struct({
+  kind: Schema.Literal("unsupported-format"),
+  format: Schema.Literal("jupytext-percent", "plain-python", "unknown"),
+  message: Schema.String,
+}).annotations({ identifier: "DeserializeUnsupportedFormat" });
+export type DeserializeUnsupportedFormat =
+  typeof DeserializeUnsupportedFormat.Type;
+
+export const DeserializeResult = Schema.Union(
+  DeserializeSuccess,
+  DeserializeInvalidSyntax,
+  DeserializeNotMarimo,
+  DeserializeUnsupportedFormat,
+).annotations({ identifier: "DeserializeResult" });
+export type DeserializeResult = typeof DeserializeResult.Type;
+
+/**
  * A request to convert a file source a marimo notebook.
  */
 export const ConvertRequest = Schema.Struct({
@@ -1634,7 +1684,7 @@ export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({
       execute,
       { method: "deserialize", params },
       DeserializePayload,
-      NotebookDocument,
+      DeserializeResult,
     ),
   getConfiguration: (params: typeof GetConfigurationPayload.Encoded) =>
     dispatch(

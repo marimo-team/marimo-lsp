@@ -55,6 +55,7 @@ CONCRETE: list[tuple[str, type | object]] = [
     ("NotebookDocumentMetadata", models.NotebookDocumentMetadata),
     ("NotebookDocument", models.NotebookDocument),
     ("DeserializeRequest", models.DeserializeRequest),
+    ("DeserializeResult", models.DeserializeResult),
     ("ConvertRequest", models.ConvertRequest),
     ("InterruptRequest", models.InterruptRequest),
     ("ListPackagesRequest", models.ListPackagesRequest),

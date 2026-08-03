@@ -1,6 +1,7 @@
 import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import {
   Cause,
+  Data,
   Effect,
   Fiber,
   Option,
@@ -30,6 +31,16 @@ type BooleanMap<T> = {
 type EncodedCellMetadata = typeof Api.CellMetadata.Encoded;
 type EncodedNotebookDocumentMetadata =
   typeof Api.NotebookDocumentMetadata.Encoded;
+type NotebookSourceFailure = Exclude<
+  Api.DeserializeResult,
+  { readonly kind: "success" }
+>;
+
+export class NotebookSourceError extends Data.TaggedError(
+  "NotebookSourceError",
+)<{
+  readonly failure: NotebookSourceFailure;
+}> {}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -78,13 +89,15 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       const deserializeEffect = Effect.fn("NotebookSerializer.deserialize")(
         function* (bytes: Uint8Array) {
           yield* Effect.annotateCurrentSpan("bytes", bytes.length);
-          const {
-            notebook: document,
-            appConfig,
-            header,
-          } = yield* marimo.deserialize({
+          const result = yield* marimo.deserialize({
             source: new TextDecoder().decode(bytes),
           });
+          if (result.kind !== "success") {
+            return yield* new NotebookSourceError({ failure: result });
+          }
+          const {
+            notebook: { notebook: document, appConfig, header },
+          } = result;
 
           const notebook = {
             metadata: MarimoNotebookDocument.createMetadata({
