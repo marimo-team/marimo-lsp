@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Shared output handling for TypeScript generators."""
 
 from __future__ import annotations

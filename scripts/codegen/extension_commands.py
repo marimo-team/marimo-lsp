@@ -1,3 +1,5 @@
+# Copyright 2026 Marimo. All rights reserved.
+
 """Generate default typed extension command tokens from package.json."""
 
 from __future__ import annotations
