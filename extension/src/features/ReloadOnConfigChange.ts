@@ -46,11 +46,29 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
 
   yield* Effect.forkScoped(
     code.workspace.configurationChanges().pipe(
+      Stream.filter((event) => event.affectsConfiguration("marimo.telemetry")),
+      Stream.runForEach(
+        Effect.fn(function* () {
+          const reload = yield* code.window.showInformationMessage(
+            "Changing telemetry requires reloading the window to take effect.",
+            { items: ["Reload Window"] },
+          );
+
+          if (Option.isSome(reload) && reload.value === "Reload Window") {
+            yield* code.commands.executeVSCode("workbench.action.reloadWindow");
+          }
+        }),
+      ),
+    ),
+  );
+
+  yield* Effect.forkScoped(
+    code.workspace.configurationChanges().pipe(
       Stream.filter((event) =>
         event.affectsConfiguration("marimo.disableManagedLanguageFeatures"),
       ),
-      Stream.runForEach(() =>
-        Effect.gen(function* () {
+      Stream.runForEach(
+        Effect.fn(function* () {
           const reload = yield* code.window.showInformationMessage(
             "Changing managed language features requires reloading the window to take effect.",
             { items: ["Reload Window"] },
@@ -69,8 +87,8 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
       Stream.filter((event) =>
         event.affectsConfiguration("marimo.notebookFileRoot"),
       ),
-      Stream.runForEach((event) =>
-        Effect.gen(function* () {
+      Stream.runForEach(
+        Effect.fn(function* (event) {
           for (const { notebookId } of yield* notebooks.getRuntimeSessions()) {
             const uri = code.utils.parseUri(notebookId);
             if (

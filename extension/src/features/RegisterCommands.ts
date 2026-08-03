@@ -93,15 +93,9 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
         Stream.runForEach(
           Effect.fn(function* (result) {
             if (Either.isLeft(result)) {
-              yield* telemetry.capture("executed_command", {
-                command: result.left,
-                success: false,
-              });
+              yield* telemetry.commandExecuted(result.left, false);
             } else {
-              yield* telemetry.capture("executed_command", {
-                command: result.right,
-                success: true,
-              });
+              yield* telemetry.commandExecuted(result.right, true);
             }
           }),
         ),

@@ -54,9 +54,9 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
 
               // Track notebook opened event (only for new notebooks)
               if (!isNewNotebook) {
-                yield* telemetry.capture("notebook_opened", {
-                  cellCount: editor.value.notebook.cellCount,
-                });
+                yield* telemetry.notebookOpened(
+                  editor.value.notebook.cellCount,
+                );
               }
 
               yield* SubscriptionRef.set(

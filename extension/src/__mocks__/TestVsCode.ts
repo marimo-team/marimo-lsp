@@ -1630,6 +1630,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       window?: Partial<Window>;
       commands?: Partial<Commands>;
       workspace?: Partial<Workspace>;
+      env?: Partial<Env>;
     } = {},
   ) {
     const activeTextEditor = yield* SubscriptionRef.make(
@@ -2045,9 +2046,28 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           appRoot: "/mocks",
           appHost: "desktop",
           machineId: "mock-machine-id",
+          createTelemetryLogger(sender) {
+            return acquireDisposable(() => ({
+              isUsageEnabled: true,
+              isErrorsEnabled: true,
+              onDidChangeEnableStates: () => ({ dispose() {} }),
+              logUsage(eventName, data) {
+                sender.sendEventData(eventName, data);
+              },
+              logError(eventNameOrError, data) {
+                if (typeof eventNameOrError === "string") {
+                  sender.sendEventData(eventNameOrError, data);
+                } else {
+                  sender.sendErrorData(eventNameOrError, data);
+                }
+              },
+              dispose() {},
+            }));
+          },
           openExternal() {
             return Effect.succeed(true);
           },
+          ...options.env,
         }),
         debug: Debug.make({
           registerDebugConfigurationProvider() {

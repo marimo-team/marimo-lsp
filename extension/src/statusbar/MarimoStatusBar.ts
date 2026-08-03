@@ -263,7 +263,5 @@ const tutorialCommands = Effect.fn(function* () {
   }
 
   // Track walkthrough step completion
-  yield* telemetry.capture("tutorial_opened", {
-    tutorial: tutorialName,
-  });
+  yield* telemetry.tutorialOpened(tutorialName);
 });

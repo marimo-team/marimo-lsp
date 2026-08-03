@@ -140,14 +140,11 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
           );
 
           if (Option.isSome(telemetry)) {
-            yield* telemetry.value.annotateErrors({
-              "ruff.version": serverVersion,
-            });
-            yield* telemetry.value.reportBinaryResolved(
-              "ruff",
+            yield* telemetry.value.binaryResolved({
+              server: "ruff",
               resolved,
-              serverVersion,
-            );
+              version: serverVersion,
+            });
           }
 
           yield* Ref.set(
