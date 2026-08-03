@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
-import { commandId } from "../commands.ts";
+import { toVscodeCommand } from "../commands.ts";
 import { MarimoCommands } from "../commands/MarimoCommands.ts";
 import { VsCode } from "../platform/VsCode.ts";
 
@@ -68,11 +68,13 @@ export const MarimoCodeLensProviderLive = Layer.scopedDiscard(
 
         // Create a range at the start of the line
         const range = new code.Range(lineNumber, 0, lineNumber, 0);
-        const codeLens = new code.CodeLens(range, {
-          title: "Open as notebook",
-          command: commandId(MarimoCommands.openAsMarimoNotebook),
-          arguments: [],
-        });
+        const codeLens = new code.CodeLens(
+          range,
+          toVscodeCommand(
+            MarimoCommands.openAsMarimoNotebook,
+            "Open as notebook",
+          ),
+        );
 
         return [codeLens];
       },

@@ -1,6 +1,6 @@
 import { Effect, Layer, Option, Stream } from "effect";
 
-import { commandId } from "../../commands.ts";
+import { toVscodeCommand } from "../../commands.ts";
 import { MarimoCommands } from "../../commands/MarimoCommands.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { CellExecutions } from "../../kernel/CellExecutions.ts";
@@ -81,11 +81,11 @@ export const SessionsViewLive = Layer.scopedDiscard(
                   ? "loading~spin"
                   : "circle-outline",
             contextValue: "marimoSession",
-            command: {
-              command: commandId(MarimoCommands.openSession),
-              title: "Open Notebook",
-              arguments: [session],
-            },
+            command: toVscodeCommand(
+              MarimoCommands.openSession,
+              "Open Notebook",
+              session,
+            ),
             collapsibleState: "None",
             resourceUri: session.notebookUri,
           };

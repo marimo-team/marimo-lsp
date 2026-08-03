@@ -1,6 +1,7 @@
 import { Effect, Layer, Option, Stream } from "effect";
+import type * as vscode from "vscode";
 
-import { commandId } from "../commands.ts";
+import { toVscodeCommand } from "../commands.ts";
 import { MarimoCommands } from "../commands/MarimoCommands.ts";
 import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
@@ -48,7 +49,15 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
                 code.NotebookCellStatusBarAlignment.Right,
               );
               item.tooltip = "Cell has been edited but not re-executed";
-              item.command = commandId(MarimoCommands.runStale);
+
+              // VS Code injects the cell for bare status-bar commands. Bind it
+              // explicitly so our typed command contract checks the argument.
+              const command: vscode.Command = toVscodeCommand(
+                MarimoCommands.runStale,
+                "Run stale cells",
+                raw,
+              );
+              item.command = command;
               return [item];
             }),
           );

@@ -1,6 +1,6 @@
 import { Effect, flow, Option } from "effect";
 
-import type { NotebookCommandContext } from "../commands.ts";
+import type { NotebookCommandTarget } from "../commands.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
@@ -8,7 +8,7 @@ import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const runStale = Effect.fn("command.runStale")(
-  function* (context?: NotebookCommandContext) {
+  function* (context?: NotebookCommandTarget) {
     const code = yield* VsCode;
     const executions = yield* CellExecutions;
     const notebook = Option.filterMap(

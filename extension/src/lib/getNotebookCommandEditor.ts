@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect";
 
-import type { NotebookCommandContext } from "../commands.ts";
+import type { NotebookCommandTarget } from "../commands.ts";
 import { VsCode } from "../platform/VsCode.ts";
 
 /**
@@ -9,11 +9,15 @@ import { VsCode } from "../platform/VsCode.ts";
  */
 export const getNotebookCommandEditor = Effect.fn(
   "command.getNotebookCommandEditor",
-)(function* (context?: NotebookCommandContext) {
+)(function* (context?: NotebookCommandTarget) {
   const code = yield* VsCode;
 
   if (context !== undefined) {
-    const target = context.notebookEditor.notebookUri.toString();
+    const target = (
+      "notebookEditor" in context
+        ? context.notebookEditor.notebookUri
+        : context.notebook.uri
+    ).toString();
     const editor = (yield* code.window.getVisibleNotebookEditors()).find(
       (candidate) => candidate.notebook.uri.toString() === target,
     );
