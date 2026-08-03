@@ -120,6 +120,8 @@ export function decodeCommandResult<Result>(
 
 // Pulled from https://code.visualstudio.com/api/references/commands
 export type VscodeBuiltinCommand =
+  // Command registered by marimo-lsp to convert a source file into a copy.
+  | "marimo.convert"
   // Focus the built-in Outline view.
   | "outline.focus"
   // Invoke notebook serializer

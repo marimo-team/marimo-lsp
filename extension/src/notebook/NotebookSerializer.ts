@@ -1,6 +1,7 @@
 import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import {
   Cause,
+  Duration,
   Effect,
   Fiber,
   Option,
@@ -20,7 +21,12 @@ import {
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
 import * as Api from "../schemas/Models.gen.ts";
+import { classifyNotebookDeserializeError } from "../telemetry/classifyNotebookDeserializeError.ts";
 import { classifyCellCode } from "./classifyCellCode.ts";
+import {
+  NotebookSourceError,
+  notebookSourceFailureMessage,
+} from "./NotebookSourceError.ts";
 import { pickLiveNotebook } from "./pickLiveNotebook.ts";
 
 type BooleanMap<T> = {
@@ -30,6 +36,8 @@ type BooleanMap<T> = {
 type EncodedCellMetadata = typeof Api.CellMetadata.Encoded;
 type EncodedNotebookDocumentMetadata =
   typeof Api.NotebookDocumentMetadata.Encoded;
+const DESERIALIZE_TIMEOUT = Duration.seconds(30);
+export { NotebookSourceError } from "./NotebookSourceError.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -78,13 +86,17 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       const deserializeEffect = Effect.fn("NotebookSerializer.deserialize")(
         function* (bytes: Uint8Array) {
           yield* Effect.annotateCurrentSpan("bytes", bytes.length);
+          const result = yield* marimo
+            .deserialize({
+              source: new TextDecoder().decode(bytes),
+            })
+            .pipe(Effect.timeout(DESERIALIZE_TIMEOUT));
+          if (result.kind !== "success") {
+            return yield* new NotebookSourceError({ failure: result });
+          }
           const {
-            notebook: document,
-            appConfig,
-            header,
-          } = yield* marimo.deserialize({
-            source: new TextDecoder().decode(bytes),
-          });
+            notebook: { notebook: document, appConfig, header },
+          } = result;
 
           const notebook = {
             metadata: MarimoNotebookDocument.createMetadata({
@@ -175,19 +187,17 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                   );
                   return yield* Fiber.join(fiber);
                 }).pipe(
-                  Effect.tapErrorCause((cause) =>
-                    Effect.logError(`Notebook deserialize failed`).pipe(
-                      Effect.annotateLogs({
-                        cause,
-                        "error.tag": causeTag(cause),
-                      }),
-                    ),
-                  ),
-                  Effect.mapError(
-                    () =>
-                      new Error(
-                        `Failed to deserialize notebook. See marimo logs for details.`,
-                      ),
+                  Effect.tapErrorCause(logDeserializeFailure),
+                  Effect.mapError((error) =>
+                    error instanceof NotebookSourceError
+                      ? new Error(notebookSourceFailureMessage(error.failure))
+                      : Cause.isTimeoutException(error)
+                        ? new Error(
+                            `Timed out after ${Duration.toSeconds(DESERIALIZE_TIMEOUT)} seconds while opening the notebook. See marimo logs for details.`,
+                          )
+                        : new Error(
+                            `Failed to deserialize notebook. See marimo logs for details.`,
+                          ),
                   ),
                 ),
               );
@@ -222,6 +232,30 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
     }),
   },
 ) {}
+
+function logDeserializeFailure(cause: Cause.Cause<unknown>) {
+  if (Cause.isInterruptedOnly(cause)) return Effect.void;
+
+  const failure = Option.getOrUndefined(Cause.failureOption(cause));
+  const defect = [...Cause.defects(cause)][0];
+  const classification = classifyNotebookDeserializeError(failure ?? defect);
+  const annotations = {
+    "error.domain": classification.domain,
+    "error.kind": classification.kind,
+    ...classification.safeContext,
+  };
+  if (!classification.report) {
+    return Effect.logWarning("Notebook source could not be deserialized").pipe(
+      Effect.annotateLogs(annotations),
+    );
+  }
+  return Effect.logError(`Notebook deserialize failed`).pipe(
+    Effect.annotateLogs({
+      cause,
+      ...annotations,
+    }),
+  );
+}
 
 function hasStringTag(value: unknown): value is { _tag: string } {
   return (

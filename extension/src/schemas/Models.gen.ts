@@ -261,6 +261,42 @@ export const DeserializeRequest = Schema.Struct({
 export type DeserializeRequest = typeof DeserializeRequest.Type;
 
 /**
+ * A successfully parsed native marimo notebook.
+ */
+export const DeserializeSuccess = Schema.Struct({
+  kind: Schema.Literal("success"),
+  notebook: NotebookDocument,
+}).annotations({ identifier: "DeserializeSuccess" });
+export type DeserializeSuccess = typeof DeserializeSuccess.Type;
+
+/**
+ * Python syntax prevented the source from being inspected.
+ */
+export const DeserializeInvalidSyntax = Schema.Struct({
+  kind: Schema.Literal("invalid-syntax"),
+  line: Schema.optionalWith(Schema.NullOr(Schema.Int), { default: () => null }),
+  column: Schema.optionalWith(Schema.NullOr(Schema.Int), {
+    default: () => null,
+  }),
+}).annotations({ identifier: "DeserializeInvalidSyntax" });
+export type DeserializeInvalidSyntax = typeof DeserializeInvalidSyntax.Type;
+
+/**
+ * Valid Python source that can be converted to a marimo notebook.
+ */
+export const DeserializeConvertible = Schema.Struct({
+  kind: Schema.Literal("convertible"),
+}).annotations({ identifier: "DeserializeConvertible" });
+export type DeserializeConvertible = typeof DeserializeConvertible.Type;
+
+export const DeserializeResult = Schema.Union(
+  DeserializeSuccess,
+  DeserializeInvalidSyntax,
+  DeserializeConvertible,
+).annotations({ identifier: "DeserializeResult" });
+export type DeserializeResult = typeof DeserializeResult.Type;
+
+/**
  * A request to convert a file source a marimo notebook.
  */
 export const ConvertRequest = Schema.Struct({
@@ -1634,7 +1670,7 @@ export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({
       execute,
       { method: "deserialize", params },
       DeserializePayload,
-      NotebookDocument,
+      DeserializeResult,
     ),
   getConfiguration: (params: typeof GetConfigurationPayload.Encoded) =>
     dispatch(

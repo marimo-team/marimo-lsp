@@ -3,6 +3,7 @@ import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
+
 export const openAsMarimoNotebook = Effect.fn("command.openAsMarimoNotebook")(
   function* (resource?: string | vscode.Uri) {
     const code = yield* VsCode;

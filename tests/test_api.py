@@ -13,12 +13,17 @@ from marimo._types.ids import RequestId
 from marimo_lsp.api import (
     ApiBuilder,
     ApiContext,
+    deserialize,
     get_configuration,
     list_sql_schemas,
     list_sql_tables,
     update_configuration,
 )
 from marimo_lsp.models import (
+    DeserializeConvertible,
+    DeserializeInvalidSyntax,
+    DeserializeRequest,
+    DeserializeSuccess,
     GetConfigurationRequest,
     ListSQLSchemasRequest,
     ListSQLTablesRequest,
@@ -31,6 +36,149 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
 NOTEBOOK_URI = "file:///notebook.py"
+
+
+@pytest.mark.asyncio
+async def test_deserialize_native_marimo_notebook() -> None:
+    source = """\
+import marimo
+
+app = marimo.App()
+
+if __name__ == "__main__":
+    app.run()
+"""
+
+    result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
+
+    assert isinstance(result, DeserializeSuccess)
+
+
+@pytest.mark.asyncio
+async def test_deserialize_recovers_syntax_error_inside_cell() -> None:
+    source = """\
+import marimo
+
+app = marimo.App()
+
+@app.cell
+def _():
+    value = (
+    return
+"""
+
+    result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
+
+    assert isinstance(result, DeserializeSuccess)
+    assert [cell["code"] for cell in result.notebook.notebook["cells"]] == ["value = ("]
+
+
+@pytest.mark.asyncio
+async def test_deserialize_reports_unrecoverable_indentation_location() -> None:
+    source = """\
+import marimo
+app = marimo.App()
+@app.cell
+def _():
+    if True:
+        x = 1
+      y = 2
+    return
+"""
+    result = await deserialize(
+        _context(MagicMock()),
+        DeserializeRequest(source=source),
+    )
+
+    assert isinstance(result, DeserializeInvalidSyntax)
+    assert result.line == 7
+    assert result.column is not None
+
+
+@pytest.mark.asyncio
+async def test_deserialize_classifies_plain_python() -> None:
+    result = await deserialize(
+        _context(MagicMock()), DeserializeRequest(source="print('hello')\n")
+    )
+
+    assert isinstance(result, DeserializeConvertible)
+
+
+@pytest.mark.asyncio
+async def test_deserialize_classifies_jupytext_percent_as_convertible() -> None:
+    result = await deserialize(
+        _context(MagicMock()),
+        DeserializeRequest(source="# %%\nprint('hello')\n"),
+    )
+
+    assert isinstance(result, DeserializeConvertible)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "source",
+    [
+        "await fetch_data()\n",
+        "# %%\nawait fetch_data()\n",
+        "# %%\n%matplotlib inline\n",
+        "# %%\n%%bash\necho hello\n",
+    ],
+)
+async def test_deserialize_accepts_convertible_notebook_syntax(source: str) -> None:
+    result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
+
+    assert isinstance(result, DeserializeConvertible)
+
+
+@pytest.mark.asyncio
+async def test_deserialize_rejects_malformed_jupytext_cell() -> None:
+    result = await deserialize(
+        _context(MagicMock()), DeserializeRequest(source="# %%\nprint(\n")
+    )
+
+    assert isinstance(result, DeserializeInvalidSyntax)
+    assert result.line == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "source",
+    [
+        "print(\n",
+        "def f(:\n",
+        "import marimo\napp = marimo.App(\n",
+    ],
+)
+async def test_deserialize_reports_syntax_errors_in_non_marimo_python(
+    source: str,
+) -> None:
+    result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
+
+    assert isinstance(result, DeserializeInvalidSyntax)
+    assert result.line is not None
+
+
+@pytest.mark.asyncio
+async def test_percent_marker_inside_string_is_just_convertible_python() -> None:
+    result = await deserialize(
+        _context(MagicMock()), DeserializeRequest(source='x = "# %%"\n')
+    )
+
+    assert isinstance(result, DeserializeConvertible)
+
+
+@pytest.mark.asyncio
+async def test_deserialize_propagates_unexpected_converter_error() -> None:
+    with (
+        patch(
+            "marimo_lsp.api.MarimoConvert.from_py",
+            side_effect=RuntimeError("converter broke"),
+        ),
+        pytest.raises(RuntimeError, match="converter broke"),
+    ):
+        await deserialize(
+            _context(MagicMock()), DeserializeRequest(source="print('hello')")
+        )
 
 
 def _context(sessions: MagicMock) -> ApiContext:

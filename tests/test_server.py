@@ -344,33 +344,36 @@ if __name__ == "__main__":
 
     assert result == snapshot(
         {
+            "kind": "success",
             "notebook": {
-                "version": "1",
-                "cells": [
-                    {
-                        "id": "Hbol",
-                        "code": "import marimo as mo",
-                        "code_hash": "1d0db38904205bec4d6f6f6a1f6cec3e",
-                        "name": "__",
-                        "config": {
-                            "column": None,
-                            "disabled": False,
-                            "hide_code": False,
-                        },
-                    }
-                ],
-                "metadata": {"marimo_version": "0.23.16"},
+                "notebook": {
+                    "version": "1",
+                    "cells": [
+                        {
+                            "id": "Hbol",
+                            "code": "import marimo as mo",
+                            "code_hash": "1d0db38904205bec4d6f6f6a1f6cec3e",
+                            "name": "__",
+                            "config": {
+                                "column": None,
+                                "disabled": False,
+                                "hide_code": False,
+                            },
+                        }
+                    ],
+                    "metadata": {"marimo_version": "0.23.16"},
+                },
+                "appConfig": {
+                    "width": "compact",
+                    "app_title": None,
+                    "layout_file": None,
+                    "css_file": None,
+                    "html_head_file": None,
+                    "auto_download": [],
+                    "sql_output": "auto",
+                },
+                "header": "",
             },
-            "appConfig": {
-                "width": "compact",
-                "app_title": None,
-                "layout_file": None,
-                "css_file": None,
-                "html_head_file": None,
-                "auto_download": [],
-                "sql_output": "auto",
-            },
-            "header": "",
         }
     )
 
