@@ -2,7 +2,9 @@ import { Schema } from "effect";
 
 import {
   withFirstArgument,
-  withOptionalNotebookContext,
+  withOptionalFirstArgument,
+  withOptionalNotebookTarget,
+  withOptionalNotebookToolbarContext,
   VscodeNotebookCellSchema,
   VscodeUriSchema,
 } from "../commands.ts";
@@ -10,20 +12,20 @@ import { NotebookIdFromString } from "../schemas/MarimoNotebookDocument.ts";
 import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 
 const notebookCommands = {
-  createSetupCell: withOptionalNotebookContext(
+  createSetupCell: withOptionalNotebookToolbarContext(
     GeneratedMarimoCommands.createSetupCell,
   ),
-  publishMarimoNotebook: withOptionalNotebookContext(
+  publishMarimoNotebook: withOptionalNotebookToolbarContext(
     GeneratedMarimoCommands.publishMarimoNotebook,
   ),
-  restartKernel: withOptionalNotebookContext(
+  restartKernel: withOptionalNotebookToolbarContext(
     GeneratedMarimoCommands.restartKernel,
   ),
-  runStale: withOptionalNotebookContext(GeneratedMarimoCommands.runStale),
-  showNotebookMenu: withOptionalNotebookContext(
+  runStale: withOptionalNotebookTarget(GeneratedMarimoCommands.runStale),
+  showNotebookMenu: withOptionalNotebookToolbarContext(
     GeneratedMarimoCommands.showNotebookMenu,
   ),
-  updateActivePythonEnvironment: withOptionalNotebookContext(
+  updateActivePythonEnvironment: withOptionalNotebookToolbarContext(
     GeneratedMarimoCommands.updateActivePythonEnvironment,
   ),
 };
@@ -51,9 +53,9 @@ export const MarimoCommands = {
   ...GeneratedMarimoCommands,
   ...notebookCommands,
   ...cellCommands,
-  openAsMarimoNotebook: withFirstArgument(
+  openAsMarimoNotebook: withOptionalFirstArgument(
     GeneratedMarimoCommands.openAsMarimoNotebook,
-    Schema.UndefinedOr(Schema.Union(Schema.String, VscodeUriSchema)),
+    Schema.Union(Schema.String, VscodeUriSchema),
   ),
   openSession: withFirstArgument(
     GeneratedMarimoCommands.openSession,

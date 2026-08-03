@@ -2,7 +2,7 @@ import * as NodePath from "node:path";
 
 import { Cause, Chunk, Effect, Either, flow, Schema, Option } from "effect";
 
-import type { NotebookCommandContext } from "../commands.ts";
+import type { NotebookToolbarContext } from "../commands.ts";
 import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { MarimoClient } from "../lsp/MarimoClient.ts";
@@ -14,7 +14,7 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 export const publishMarimoNotebookGist = Effect.fn(
   "command.publishMarimoNotebookGist",
 )(
-  function* (context?: NotebookCommandContext) {
+  function* (context?: NotebookToolbarContext) {
     const code = yield* VsCode;
     const gh = yield* GitHubClient;
     const marimo = yield* MarimoClient;

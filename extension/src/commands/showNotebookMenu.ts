@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect";
 
-import type { NotebookCommandContext } from "../commands.ts";
+import type { NotebookToolbarContext } from "../commands.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
 import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -34,7 +34,7 @@ const NOTEBOOK_MENU_ITEMS = [
 ] as const;
 
 export const showNotebookMenu = Effect.fn("command.showNotebookMenu")(
-  function* (context?: NotebookCommandContext) {
+  function* (context?: NotebookToolbarContext) {
     const code = yield* VsCode;
     const selection = yield* code.window.showQuickPickItems(
       NOTEBOOK_MENU_ITEMS,

@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect";
 
-import type { NotebookCommandContext } from "../commands.ts";
+import type { NotebookToolbarContext } from "../commands.ts";
 import { SETUP_CELL_NAME } from "../constants.ts";
 import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { Constants } from "../platform/Constants.ts";
@@ -11,7 +11,7 @@ import {
 } from "../schemas/MarimoNotebookDocument.ts";
 
 export const createSetupCell = Effect.fn("command.createSetupCell")(function* (
-  context?: NotebookCommandContext,
+  context?: NotebookToolbarContext,
 ) {
   const code = yield* VsCode;
   const { LanguageId } = yield* Constants;

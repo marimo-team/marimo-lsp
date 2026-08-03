@@ -1,7 +1,7 @@
-import type { NotebookCommandContext } from "../commands.ts";
+import type { NotebookToolbarContext } from "../commands.ts";
 import { createConfigToggle } from "../lib/createConfigToggle.ts";
 
-export const toggleOnCellChange = (context?: NotebookCommandContext) =>
+export const toggleOnCellChange = (context?: NotebookToolbarContext) =>
   createConfigToggle({
     context,
     configPath: "runtime.on_cell_change",

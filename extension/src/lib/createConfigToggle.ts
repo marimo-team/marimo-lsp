@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect";
 
-import type { NotebookCommandContext } from "../commands.ts";
+import type { NotebookToolbarContext } from "../commands.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
 import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
@@ -21,7 +21,7 @@ export const createConfigToggle = <T extends string>({
   choices,
   getDisplayName,
 }: {
-  context: NotebookCommandContext | undefined;
+  context: NotebookToolbarContext | undefined;
   configPath: string;
   settingName: string;
   pickerTitle: string;

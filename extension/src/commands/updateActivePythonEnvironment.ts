@@ -1,6 +1,6 @@
 import { Effect, Either, Option } from "effect";
 
-import type { NotebookCommandContext } from "../commands.ts";
+import type { NotebookToolbarContext } from "../commands.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
@@ -12,7 +12,7 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const updateActivePythonEnvironment = Effect.fn(
   "command.updateActivePythonEnvironment",
-)(function* (context?: NotebookCommandContext) {
+)(function* (context?: NotebookToolbarContext) {
   const uv = yield* Uv;
   const code = yield* VsCode;
   const py = yield* PythonExtension;

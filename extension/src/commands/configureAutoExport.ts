@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect";
 
-import type { NotebookCommandContext } from "../commands.ts";
+import type { NotebookToolbarContext } from "../commands.ts";
 import type { AutoExportFormat } from "../features/AutoExport.ts";
 import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -28,7 +28,7 @@ export function mergeAutoDownloadFormats(
 }
 
 export const configureAutoExport = Effect.fn("command.configureAutoExport")(
-  function* (context?: NotebookCommandContext) {
+  function* (context?: NotebookToolbarContext) {
     const code = yield* VsCode;
     const notebook = Option.filterMap(
       yield* getNotebookCommandEditor(context),

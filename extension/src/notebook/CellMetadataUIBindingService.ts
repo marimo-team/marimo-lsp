@@ -2,7 +2,7 @@ import { Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
-import { commandId } from "../commands.ts";
+import { toVscodeCommand } from "../commands.ts";
 import { MarimoCommands } from "../commands/MarimoCommands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -148,11 +148,11 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
                   binding.alignment,
                 );
                 item.tooltip = binding.getTooltip(value);
-                item.command = {
-                  command: commandId(MarimoCommands.updateCellMetadata),
-                  title: "Update cell metadata",
-                  arguments: [binding.id],
-                };
+                item.command = toVscodeCommand(
+                  MarimoCommands.updateCellMetadata,
+                  "Update cell metadata",
+                  binding.id,
+                );
 
                 return Effect.succeed([item]);
               },

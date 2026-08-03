@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect";
 
-import type { NotebookCommandContext } from "../commands.ts";
+import type { NotebookToolbarContext } from "../commands.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
@@ -9,7 +9,7 @@ import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const restartKernel = Effect.fn("command.restartKernel")(function* (
-  context?: NotebookCommandContext,
+  context?: NotebookToolbarContext,
 ) {
   const code = yield* VsCode;
   const sessions = yield* SessionsService;

@@ -45,6 +45,8 @@ export const VscodeUriSchema = Schema.declare<vscode.Uri>(
   { identifier: "vscode.Uri" },
 );
 
+const isVscodeUri = Schema.is(VscodeUriSchema);
+
 export const VscodeNotebookCellSchema = Schema.declare<vscode.NotebookCell>(
   (value): value is vscode.NotebookCell =>
     typeof value === "object" &&
@@ -54,17 +56,32 @@ export const VscodeNotebookCellSchema = Schema.declare<vscode.NotebookCell>(
     "notebook" in value &&
     typeof value.notebook === "object" &&
     value.notebook !== null &&
+    "uri" in value.notebook &&
+    isVscodeUri(value.notebook.uri) &&
     "document" in value &&
     typeof value.document === "object" &&
     value.document !== null,
   { identifier: "vscode.NotebookCell" },
 );
 
-const NotebookCommandContextSchema = Schema.Struct({
+const NotebookToolbarContextShape = Schema.Struct({
   notebookEditor: Schema.Struct({ notebookUri: VscodeUriSchema }),
 });
 
-export type NotebookCommandContext = typeof NotebookCommandContextSchema.Type;
+export type NotebookToolbarContext = typeof NotebookToolbarContextShape.Type;
+
+export const NotebookToolbarContextSchema =
+  Schema.declare<NotebookToolbarContext>(
+    Schema.is(NotebookToolbarContextShape),
+    { identifier: "vscode.NotebookToolbarContext" },
+  );
+
+const NotebookCommandTargetSchema = Schema.Union(
+  NotebookToolbarContextSchema,
+  VscodeNotebookCellSchema,
+);
+
+export type NotebookCommandTarget = typeof NotebookCommandTargetSchema.Type;
 
 export function withFirstArgument<A, I>(
   command: MarimoCommand,
@@ -82,22 +99,45 @@ export function withFirstArgument<A, I>(
   };
 }
 
-export function withOptionalNotebookContext(
+export function withOptionalNotebookTarget(
   command: MarimoCommand,
-): MarimoCommand<[context?: NotebookCommandContext], void> {
+): MarimoCommand<[target?: NotebookCommandTarget], void> {
+  return withOptionalFirstArgument(command, NotebookCommandTargetSchema);
+}
+
+export function withOptionalNotebookToolbarContext(
+  command: MarimoCommand,
+): MarimoCommand<[context?: NotebookToolbarContext], void> {
+  return withOptionalFirstArgument(command, NotebookToolbarContextSchema);
+}
+
+export function withOptionalFirstArgument<A, I>(
+  command: MarimoCommand,
+  schema: Schema.Schema<A, I>,
+): MarimoCommand<[context?: A], void> {
   return {
     [MarimoCommandTypeId]: {
       id: commandId(command),
       decodeArguments: (args) =>
-        Schema.decodeUnknown(Schema.UndefinedOr(NotebookCommandContextSchema))(
-          args[0],
-        ).pipe(
-          Effect.map((context): [context?: NotebookCommandContext] =>
+        Schema.decodeUnknown(Schema.UndefinedOr(schema))(args[0]).pipe(
+          Effect.map((context): [context?: A] =>
             context === undefined ? [] : [context],
           ),
         ),
       decodeResult: Schema.decodeUnknown(Schema.Void),
     },
+  };
+}
+
+export function toVscodeCommand<Args extends ReadonlyArray<unknown>>(
+  command: MarimoCommand<Args>,
+  title: string,
+  ...args: Args
+): vscode.Command {
+  return {
+    command: commandId(command),
+    title,
+    arguments: [...args],
   };
 }
 export function commandId(command: MarimoCommand): string {
