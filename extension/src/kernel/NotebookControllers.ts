@@ -399,8 +399,21 @@ function isInUvCache(
 
   try {
     const envPath = options.code.Uri.file(env.path).fsPath;
-    return envPath.startsWith(options.uvCacheDir.value.fsPath);
+    return isPathInsideDirectory(envPath, options.uvCacheDir.value.fsPath);
   } catch {
     return false;
   }
+}
+
+export function isPathInsideDirectory(
+  candidatePath: string,
+  directoryPath: string,
+): boolean {
+  const relative = NodePath.relative(directoryPath, candidatePath);
+  return (
+    relative === "" ||
+    (relative !== ".." &&
+      !relative.startsWith(`..${NodePath.sep}`) &&
+      !NodePath.isAbsolute(relative))
+  );
 }

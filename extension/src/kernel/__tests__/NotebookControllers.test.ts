@@ -6,7 +6,10 @@ import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import { NotebookControllersLive } from "../../kernel/NotebookControllers.ts";
+import {
+  isPathInsideDirectory,
+  NotebookControllersLive,
+} from "../../kernel/NotebookControllers.ts";
 import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import { Constants } from "../../platform/Constants.ts";
@@ -52,6 +55,21 @@ it.effect(
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
+
+it("distinguishes uv cache descendants from shared path prefixes", () => {
+  expect(
+    isPathInsideDirectory(
+      "/home/user/.cache/uv/archive-v0/env/bin/python",
+      "/home/user/.cache/uv",
+    ),
+  ).toBe(true);
+  expect(
+    isPathInsideDirectory(
+      "/home/user/.cache/uv-other/bin/python",
+      "/home/user/.cache/uv",
+    ),
+  ).toBe(false);
+});
 
 it.effect(
   "attaches VS Code controller selections to the notebook runtime",
