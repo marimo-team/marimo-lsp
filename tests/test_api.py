@@ -118,6 +118,32 @@ async def test_deserialize_classifies_jupytext_percent_as_convertible() -> None:
 @pytest.mark.parametrize(
     "source",
     [
+        "await fetch_data()\n",
+        "# %%\nawait fetch_data()\n",
+        "# %%\n%matplotlib inline\n",
+        "# %%\n%%bash\necho hello\n",
+    ],
+)
+async def test_deserialize_accepts_convertible_notebook_syntax(source: str) -> None:
+    result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
+
+    assert isinstance(result, DeserializeConvertible)
+
+
+@pytest.mark.asyncio
+async def test_deserialize_rejects_malformed_jupytext_cell() -> None:
+    result = await deserialize(
+        _context(MagicMock()), DeserializeRequest(source="# %%\nprint(\n")
+    )
+
+    assert isinstance(result, DeserializeInvalidSyntax)
+    assert result.line == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "source",
+    [
         "print(\n",
         "def f(:\n",
         "import marimo\napp = marimo.App(\n",

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, cast
 
 import msgspec
 from marimo._ast.app_config import _AppConfig
+from marimo._ast.compiler import module_compile
 from marimo._ast.parse import MarimoFileError
 from marimo._config.config import MarimoConfig  # noqa: TC002 - API introspection
 from marimo._config.manager import get_default_config_manager
@@ -565,11 +566,7 @@ async def deserialize(
         converter = MarimoConvert.from_py(args.source)
         ir = converter.to_ir()
     except SyntaxError as error:
-        line, column = _syntax_error_position(args.source, error)
-        return DeserializeInvalidSyntax(
-            line=line,
-            column=column,
-        )
+        return _classify_convertible(args.source, syntax_error=error)
     except MarimoFileError as error:
         if str(error) != "`marimo.App` definition expected.":
             raise
@@ -610,11 +607,29 @@ def _syntax_error_position(
 
 def _classify_convertible(
     source: str,
+    syntax_error: SyntaxError | None = None,
 ) -> DeserializeConvertible | DeserializeInvalidSyntax:
     try:
-        compile(source, "notebook.py", "exec")
+        # Use the same compiler as marimo cells so valid notebook constructs,
+        # notably top-level await, are not rejected as ordinary scripts.
+        module_compile(source)
     except SyntaxError as error:
-        return DeserializeInvalidSyntax(line=error.lineno, column=error.offset)
+        if "# %%" in source:
+            try:
+                # Jupytext magics are not Python syntax until the percent
+                # converter rewrites them. Validate the conversion we actually
+                # offer instead of guessing from the original source.
+                converted = MarimoConvert.from_non_marimo_python_script(source).to_ir()
+                for cell in converted.cells:
+                    module_compile(cell.code)
+            except SyntaxError:
+                pass
+            else:
+                return DeserializeConvertible()
+
+        failure = syntax_error or error
+        line, column = _syntax_error_position(source, failure)
+        return DeserializeInvalidSyntax(line=line, column=column)
     return DeserializeConvertible()
 
 
