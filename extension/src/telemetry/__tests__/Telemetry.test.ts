@@ -212,6 +212,8 @@ it.scoped(
     yield* ctx.telemetry.notebookCreated();
     expect(posthog.capture).not.toHaveBeenCalled();
     expect(sentrySdk.captureException).not.toHaveBeenCalled();
+    expect(sentrySdk.init).not.toHaveBeenCalled();
+    expect(posthog.constructed).not.toHaveBeenCalled();
   }),
 );
 
@@ -397,7 +399,7 @@ it.scoped(
 );
 
 it.scoped(
-  "keeps diagnostic breadcrumbs in VS Code error-only mode",
+  "keeps message-only breadcrumbs in VS Code error-only mode",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx({
       usageEnabled: false,
@@ -417,7 +419,7 @@ it.scoped(
         category: "marimo",
         message: "language server retrying",
         level: "warning",
-        data: expect.objectContaining({ server: "ty", attempt: 2 }),
+        data: undefined,
       }),
       100,
     );
@@ -490,6 +492,37 @@ it.scoped(
           version: "0.15.0",
         }),
       }),
+    );
+  }),
+);
+
+it.scoped(
+  "gates binary Sentry context independently from usage events",
+  Effect.fn(function* () {
+    const errorsOnly = yield* withTestCtx({
+      usageEnabled: false,
+      errorsEnabled: true,
+    });
+    yield* errorsOnly.telemetry.binaryResolved({
+      server: "ty",
+      resolved: BinarySource.UserConfigured({ path: "/ty" }),
+      version: "0.0.63",
+    });
+    expect(sentrySdk.setTag).toHaveBeenCalledWith("ty.version", "0.0.63");
+    expect(posthog.capture).not.toHaveBeenCalled();
+
+    const usageOnly = yield* withTestCtx({
+      usageEnabled: true,
+      errorsEnabled: false,
+    });
+    yield* usageOnly.telemetry.binaryResolved({
+      server: "ty",
+      resolved: BinarySource.UserConfigured({ path: "/ty" }),
+      version: "0.0.63",
+    });
+    expect(sentrySdk.setTag).not.toHaveBeenCalled();
+    expect(posthog.capture).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "lsp_binary_resolved" }),
     );
   }),
 );

@@ -2046,19 +2046,23 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           appRoot: "/mocks",
           appHost: "desktop",
           machineId: "mock-machine-id",
-          createTelemetryLogger(sender) {
+          createTelemetryLogger(sender, loggerOptions) {
+            const withCommon = (data: Record<string, unknown> = {}) => ({
+              ...data,
+              ...loggerOptions?.additionalCommonProperties,
+            });
             return acquireDisposable(() => ({
               isUsageEnabled: true,
               isErrorsEnabled: true,
               onDidChangeEnableStates: () => ({ dispose() {} }),
               logUsage(eventName, data) {
-                sender.sendEventData(eventName, data);
+                sender.sendEventData(eventName, withCommon(data));
               },
               logError(eventNameOrError, data) {
                 if (typeof eventNameOrError === "string") {
-                  sender.sendEventData(eventNameOrError, data);
+                  sender.sendEventData(eventNameOrError, withCommon(data));
                 } else {
-                  sender.sendErrorData(eventNameOrError, data);
+                  sender.sendErrorData(eventNameOrError, withCommon(data));
                 }
               },
               dispose() {},

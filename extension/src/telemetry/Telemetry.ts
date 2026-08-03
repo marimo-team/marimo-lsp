@@ -67,29 +67,11 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
     );
     const distinctId = yield* anonymousId(storage);
 
-    const sentry = yield* acquireSentryAdapter({
-      appHost: code.env.appHost,
-      appName: code.env.appName,
-      machineId: code.env.machineId,
-      extensionVersion,
-    }).pipe(
-      Effect.catchAllCause((cause) =>
-        Effect.logWarning("Failed to initialize Sentry telemetry").pipe(
-          Effect.annotateLogs({ cause }),
-          Effect.as(NOOP_SENTRY),
-        ),
-      ),
-    );
-    const posthog = yield* acquirePostHogAdapter.pipe(
-      Effect.catchAllCause((cause) =>
-        Effect.logWarning("Failed to initialize PostHog telemetry").pipe(
-          Effect.annotateLogs({ cause }),
-          Effect.as(NOOP_POSTHOG),
-        ),
-      ),
-    );
-
-    const sender = makeTelemetrySender(sentry, posthog, distinctId);
+    const adapters = {
+      sentry: NOOP_SENTRY,
+      posthog: NOOP_POSTHOG,
+    };
+    const sender = makeTelemetrySender(adapters, distinctId);
     const maybeLogger = yield* code.env
       .createTelemetryLogger(sender, {
         additionalCommonProperties: {
@@ -109,6 +91,29 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       );
     if (Option.isNone(maybeLogger)) return disabledTelemetry();
     const logger = maybeLogger.value;
+
+    adapters.sentry = yield* acquireSentryAdapter({
+      appHost: code.env.appHost,
+      appName: code.env.appName,
+      machineId: code.env.machineId,
+      extensionVersion,
+    }).pipe(
+      Effect.catchAllCause((cause) =>
+        Effect.logWarning("Failed to initialize Sentry telemetry").pipe(
+          Effect.annotateLogs({ cause }),
+          Effect.as(NOOP_SENTRY),
+        ),
+      ),
+    );
+    adapters.posthog = yield* acquirePostHogAdapter.pipe(
+      Effect.catchAllCause((cause) =>
+        Effect.logWarning("Failed to initialize PostHog telemetry").pipe(
+          Effect.annotateLogs({ cause }),
+          Effect.as(NOOP_POSTHOG),
+        ),
+      ),
+    );
+
     const errorLogger = makeEffectErrorLogger(logger);
 
     const usage = (event: string, data?: Record<string, unknown>) =>
@@ -118,7 +123,12 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
 
     const binaryResolved = (binary: ResolvedBinary): Effect.Effect<void> =>
       Effect.sync(() => {
-        sentry.setBinaryVersion(binary.server, binary.version);
+        ignoreTelemetryError(() => {
+          logger.logError("marimo.binary.resolved", {
+            server: binary.server,
+            version: binary.version,
+          });
+        });
         ignoreTelemetryError(() => {
           if (binary.server === "uv") {
             logger.logUsage("uv_init", {
@@ -173,27 +183,40 @@ function disabledTelemetry() {
 }
 
 function makeTelemetrySender(
-  sentry: SentryAdapter,
-  posthog: PostHogAdapter,
+  adapters: {
+    readonly sentry: SentryAdapter;
+    readonly posthog: PostHogAdapter;
+  },
   distinctId: string,
 ): vscode.TelemetrySender {
   return {
     sendEventData(eventName, data) {
       const event = unprefixEventName(eventName);
       if (event === "marimo.log.info") {
-        sentry.addBreadcrumb(String(data?.message ?? ""), "info", data);
+        adapters.sentry.addBreadcrumb(String(data?.message ?? ""), "info");
         return;
       }
       if (event === "marimo.log.warning") {
-        sentry.addBreadcrumb(String(data?.message ?? ""), "warning", data);
+        adapters.sentry.addBreadcrumb(String(data?.message ?? ""), "warning");
+        return;
+      }
+      if (event === "marimo.binary.resolved") {
+        const server = data?.server;
+        const version = data?.version;
+        if (
+          (server === "uv" || server === "ruff" || server === "ty") &&
+          typeof version === "string"
+        ) {
+          adapters.sentry.setBinaryVersion(server, version);
+        }
         return;
       }
       ignoreTelemetryError(() => {
-        posthog.capture({ distinctId, event, properties: data });
+        adapters.posthog.capture({ distinctId, event, properties: data });
       });
     },
     sendErrorData(error, data) {
-      sentry.captureError(restoreErrorCause(error, data), data);
+      adapters.sentry.captureError(restoreErrorCause(error, data), data);
     },
   };
 }
@@ -258,21 +281,21 @@ function makeEffectErrorLogger(logger: vscode.TelemetryLogger) {
         .join("\n");
       const cause = findCause(options.cause, options.annotations, messages);
       if (!Cause.isEmpty(cause) && Cause.isInterruptedOnly(cause)) return;
-      const data = logData(options.annotations, cause);
 
       if (
         options.logLevel === LogLevel.Error ||
         options.logLevel === LogLevel.Fatal
       ) {
+        const data = logData(options.annotations, cause);
         logger.logError(errorFromCause(cause, message), {
           ...data,
           "error.level":
             options.logLevel === LogLevel.Fatal ? "fatal" : "error",
         });
       } else if (options.logLevel === LogLevel.Warning) {
-        logger.logError("marimo.log.warning", { message, ...data });
+        logger.logError("marimo.log.warning", { message });
       } else if (options.logLevel === LogLevel.Info) {
-        logger.logError("marimo.log.info", { message, ...data });
+        logger.logError("marimo.log.info", { message });
       }
     } catch {
       // Logging must not be able to fail an application fiber.

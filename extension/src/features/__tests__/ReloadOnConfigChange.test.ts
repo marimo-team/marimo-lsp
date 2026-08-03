@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Deferred, Effect, Layer, Option, Ref, Stream } from "effect";
+import { Deferred, Effect, Layer, Option, Queue, Ref, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -45,40 +45,48 @@ it.scoped(
 );
 
 it.scoped(
-  "offers to reload after telemetry changes",
+  "reloads after telemetry changes only when selected",
   Effect.fn(function* () {
-    const prompted = yield* Deferred.make<void>();
+    const prompted = yield* Queue.unbounded<void>();
+    let acceptReload = true;
     const configurationChange: vscode.ConfigurationChangeEvent = {
       affectsConfiguration: (section) => section === "marimo.telemetry",
     };
     const vscode = yield* TestVsCode.make({
       window: {
-        showInformationMessage: (message, options = {}) => {
+        showInformationMessage: <T extends string>(
+          message: string,
+          options: vscode.MessageOptions & { items?: readonly T[] } = {},
+        ) => {
           expect(message).toBe(
             "Changing telemetry requires reloading the window to take effect.",
           );
-          return Deferred.succeed(prompted, undefined).pipe(
-            Effect.as(
-              Option.fromNullable(
+          const selection = acceptReload
+            ? Option.fromNullable(
                 options.items?.find((item) => item === "Reload Window"),
-              ),
-            ),
-          );
+              )
+            : Option.none<T>();
+          acceptReload = false;
+          return Queue.offer(prompted, undefined).pipe(Effect.as(selection));
         },
       },
       workspace: {
-        configurationChanges: () => Stream.make(configurationChange),
+        configurationChanges: () =>
+          Stream.make(configurationChange, configurationChange),
       },
     });
     const services = Layer.merge(vscode.layer, makeTestNotebookRuntime());
 
     yield* watchForConfigurationChanges().pipe(Effect.provide(services));
-    yield* Deferred.await(prompted);
+    yield* Queue.take(prompted);
+    yield* Queue.take(prompted);
 
-    expect(yield* Ref.get(vscode.executions)).toContainEqual({
-      command: "workbench.action.reloadWindow",
-      args: [],
-    });
+    expect(yield* Ref.get(vscode.executions)).toEqual([
+      {
+        command: "workbench.action.reloadWindow",
+        args: [],
+      },
+    ]);
   }),
 );
 
