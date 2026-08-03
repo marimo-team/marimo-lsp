@@ -452,17 +452,16 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
               ) {
                 return;
               }
+              yield* Effect.annotateCurrentSpan(
+                "operation.type",
+                message.operation.op,
+              );
               yield* Effect.raceFirst(
                 processOperation(message, {
                   forNotebook,
                   session: message.session,
                   ...options,
                 }).pipe(
-                  Effect.annotateLogs({
-                    notebookUri: message.notebookUri,
-                    operation: message.operation.op,
-                  }),
-                  Effect.withSpan("process-operation"),
                   Effect.catchAllCause(
                     Effect.fn(function* (cause) {
                       yield* Effect.logError(
@@ -475,6 +474,9 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
                       );
                     }),
                   ),
+                  Effect.annotateLogs({
+                    "operation.type": message.operation.op,
+                  }),
                 ),
                 Deferred.await(message.session.invalidated),
               );

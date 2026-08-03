@@ -1,8 +1,39 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Either, PubSub, Queue } from "effect";
+import { Effect, Either, Logger, PubSub, Queue } from "effect";
 
 import { commandId } from "../../commands.ts";
 import { MarimoCommands } from "../../commands/MarimoCommands.ts";
+import { withCommandContext } from "../VsCode.ts";
+
+describe("command error context", () => {
+  it.effect("logs failures with their command span", () => {
+    const logs: Array<Record<string, unknown>> = [];
+    const wireId = commandId(MarimoCommands.runStale);
+    const logger = Logger.make(({ annotations }) => {
+      logs.push(Object.fromEntries(annotations));
+    });
+
+    return Effect.fail(new Error("invalid command argument")).pipe(
+      withCommandContext(MarimoCommands.runStale),
+      Effect.exit,
+      Effect.provide(
+        Logger.replace(
+          Logger.defaultLogger,
+          Logger.withSpanAnnotations(logger),
+        ),
+      ),
+      Effect.tap(() =>
+        Effect.sync(() => {
+          expect(logs).toHaveLength(1);
+          expect(logs[0]).toMatchObject({
+            "command.id": wireId,
+            "effect.spanName": "command",
+          });
+        }),
+      ),
+    );
+  });
+});
 
 describe("Commands pubsub", () => {
   it.effect(
