@@ -3,52 +3,98 @@ import type * as vscode from "vscode";
 
 const MarimoCommandTypeId: unique symbol = Symbol("MarimoCommand");
 
+export type CommandArguments = ReadonlyArray<unknown>;
+
+export interface CommandInvocation<
+  CallArgs extends CommandArguments,
+  HandlerArgs extends CommandArguments,
+  Requirements = never,
+> {
+  readonly callArguments?: CallArgs;
+  readonly surfaces: ReadonlyArray<string>;
+  readonly decode: (
+    args: ReadonlyArray<unknown>,
+  ) => Effect.Effect<HandlerArgs, ParseResult.ParseError, Requirements>;
+}
+
 export interface MarimoCommand<
-  Args extends ReadonlyArray<unknown> = ReadonlyArray<unknown>,
+  CallArgs extends CommandArguments = CommandArguments,
+  HandlerArgs extends CommandArguments = CommandArguments,
   Result = unknown,
+  DecodeRequirements = unknown,
 > {
   readonly [MarimoCommandTypeId]: {
+    readonly callArguments?: CallArgs;
     readonly id: string;
+    readonly surfaces: ReadonlyArray<string>;
     readonly decodeArguments: (
       args: ReadonlyArray<unknown>,
-    ) => Effect.Effect<Args, ParseResult.ParseError>;
+    ) => Effect.Effect<HandlerArgs, ParseResult.ParseError, DecodeRequirements>;
     readonly decodeResult: (
       result: unknown,
     ) => Effect.Effect<Result, ParseResult.ParseError>;
   };
 }
 
-export interface MarimoCommandDefinition<
-  Args extends ReadonlyArray<unknown> = ReadonlyArray<unknown>,
-  Result = unknown,
-  Error = unknown,
-  Requirements = unknown,
-> extends MarimoCommand<Args, Result> {
-  readonly handler: (
-    ...args: Args
-  ) => Effect.Effect<Result, Error, Requirements>;
-}
-
-export function defineMarimoCommand<
-  Args extends ReadonlyArray<unknown>,
+export interface CommandDefinition<
+  CallArgs extends CommandArguments,
+  HandlerArgs extends CommandArguments,
   Result,
-  Error,
-  Requirements,
->(
-  command: MarimoCommand<Args, Result>,
-  handler: (...args: Args) => Effect.Effect<Result, Error, Requirements>,
-): MarimoCommandDefinition<Args, Result, Error, Requirements> {
-  return { ...command, handler };
+  DecodeRequirements,
+  HandlerError,
+  HandlerRequirements,
+> {
+  readonly command: MarimoCommand<
+    CallArgs,
+    HandlerArgs,
+    Result,
+    DecodeRequirements
+  >;
+  readonly handler: (
+    ...args: HandlerArgs
+  ) => Effect.Effect<Result, HandlerError, HandlerRequirements>;
 }
 
-export function marimoCommand(id: string): MarimoCommand<[], void> {
+export function defineCommand<
+  CallArgs extends CommandArguments,
+  HandlerArgs extends CommandArguments,
+  Result,
+  DecodeRequirements,
+  HandlerError,
+  HandlerRequirements,
+>(
+  command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
+  handler: (
+    ...args: HandlerArgs
+  ) => Effect.Effect<Result, HandlerError, HandlerRequirements>,
+): CommandDefinition<
+  CallArgs,
+  HandlerArgs,
+  Result,
+  DecodeRequirements,
+  HandlerError,
+  HandlerRequirements
+> {
+  return { command, handler };
+}
+
+export function marimoCommand<
+  CallArgs extends CommandArguments,
+  HandlerArgs extends CommandArguments,
+  Result,
+  ResultEncoded,
+  DecodeRequirements,
+>(
+  id: string,
+  invocation: CommandInvocation<CallArgs, HandlerArgs, DecodeRequirements>,
+  result: Schema.Schema<Result, ResultEncoded>,
+): MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements> {
   return {
     [MarimoCommandTypeId]: {
       id,
-      // VS Code adds invocation context for commands launched from menus and
-      // toolbars. It is platform metadata, not part of the command contract.
-      decodeArguments: () => Effect.succeed([]),
-      decodeResult: Schema.decodeUnknown(Schema.Void),
+      surfaces: invocation.surfaces,
+      decodeArguments: invocation.decode,
+      decodeResult: Schema.decodeUnknown(result),
     },
   };
 }
@@ -68,254 +114,105 @@ export const VscodeUriSchema = Schema.declare<vscode.Uri>(
   { identifier: "vscode.Uri" },
 );
 
-export function withFirstArgument<A, I>(
-  command: MarimoCommand,
-  schema: Schema.Schema<A, I>,
-): MarimoCommand<[A], void> {
-  return {
-    [MarimoCommandTypeId]: {
-      id: commandId(command),
-      decodeArguments: (args) =>
-        Schema.decodeUnknown(schema)(args[0]).pipe(
-          Effect.map((argument) => [argument]),
-        ),
-      decodeResult: Schema.decodeUnknown(Schema.Void),
-    },
-  };
-}
-
-export function withOptionalFirstArgument<A, I>(
-  command: MarimoCommand,
-  schema: Schema.Schema<A, I>,
-): MarimoCommand<[context?: A], void> {
-  return {
-    [MarimoCommandTypeId]: {
-      id: commandId(command),
-      decodeArguments: (args) =>
-        Schema.decodeUnknown(Schema.UndefinedOr(schema))(args[0]).pipe(
-          Effect.map((context): [context?: A] =>
-            context === undefined ? [] : [context],
-          ),
-        ),
-      decodeResult: Schema.decodeUnknown(Schema.Void),
-    },
-  };
-}
-
-export function toVscodeCommand<Args extends ReadonlyArray<unknown>>(
-  command: MarimoCommand<Args>,
-  title: string,
-  ...args: Args
-): vscode.Command {
-  return {
-    command: commandId(command),
-    title,
-    arguments: [...args],
-  };
-}
 export function commandId(command: MarimoCommand): string {
   return command[MarimoCommandTypeId].id;
 }
 
-export function decodeCommandArguments<Args extends ReadonlyArray<unknown>>(
-  command: MarimoCommand<Args>,
+export function commandSurfaces(command: MarimoCommand): ReadonlyArray<string> {
+  return command[MarimoCommandTypeId].surfaces;
+}
+
+export function decodeCommandArguments<
+  CallArgs extends CommandArguments,
+  HandlerArgs extends CommandArguments,
+  Result,
+  DecodeRequirements,
+>(
+  command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
   args: ReadonlyArray<unknown>,
-): Effect.Effect<Args, ParseResult.ParseError> {
+): Effect.Effect<HandlerArgs, ParseResult.ParseError, DecodeRequirements> {
   return command[MarimoCommandTypeId].decodeArguments(args);
 }
 
-export function decodeCommandResult<Result>(
-  command: MarimoCommand<ReadonlyArray<unknown>, Result>,
+export function decodeCommandResult<
+  CallArgs extends CommandArguments,
+  HandlerArgs extends CommandArguments,
+  Result,
+  DecodeRequirements,
+>(
+  command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
   result: unknown,
 ): Effect.Effect<Result, ParseResult.ParseError> {
   return command[MarimoCommandTypeId].decodeResult(result);
 }
 
-// Pulled from https://code.visualstudio.com/api/references/commands
-export type VscodeBuiltinCommand =
-  // Command registered by marimo-lsp to convert a source file into a copy.
-  | "marimo.convert"
-  // Focus the built-in Outline view.
-  | "outline.focus"
-  // Invoke notebook serializer
-  | "vscode.executeDataToNotebook"
-  // Invoke notebook serializer
-  | "vscode.executeNotebookToData"
-  // Trigger kernel picker for specified notebook editor widget
-  | "notebook.selectKernel"
-  // Open interactive window and return notebook editor and input URI
-  | "interactive.open"
-  // Invoke a new editor chat session
-  | "vscode.editorChat.start"
-  // Execute document highlight provider.
-  | "vscode.executeDocumentHighlights"
-  // Execute document symbol provider.
-  | "vscode.executeDocumentSymbolProvider"
-  // Execute document format provider.
-  | "vscode.executeFormatDocumentProvider"
-  // Execute range format provider.
-  | "vscode.executeFormatRangeProvider"
-  // Execute format on type provider.
-  | "vscode.executeFormatOnTypeProvider"
-  // Execute all definition providers.
-  | "vscode.executeDefinitionProvider"
-  // Execute all type definition providers.
-  | "vscode.executeTypeDefinitionProvider"
-  // Execute all declaration providers.
-  | "vscode.executeDeclarationProvider"
-  // Execute all implementation providers.
-  | "vscode.executeImplementationProvider"
-  // Execute all reference providers.
-  | "vscode.executeReferenceProvider"
-  // Execute all hover providers.
-  | "vscode.executeHoverProvider"
-  // Execute selection range provider.
-  | "vscode.executeSelectionRangeProvider"
-  // Execute all workspace symbol providers.
-  | "vscode.executeWorkspaceSymbolProvider"
-  // Prepare call hierarchy at a position inside a document
-  | "vscode.prepareCallHierarchy"
-  // Compute incoming calls for an item
-  | "vscode.provideIncomingCalls"
-  // Compute outgoing calls for an item
-  | "vscode.provideOutgoingCalls"
-  // Execute the prepareRename of rename provider.
-  | "vscode.prepareRename"
-  // Execute rename provider.
-  | "vscode.executeDocumentRenameProvider"
-  // Execute document link provider.
-  | "vscode.executeLinkProvider"
-  // Provide semantic tokens legend for a document
-  | "vscode.provideDocumentSemanticTokensLegend"
-  // Provide semantic tokens for a document
-  | "vscode.provideDocumentSemanticTokens"
-  // Provide semantic tokens legend for a document range
-  | "vscode.provideDocumentRangeSemanticTokensLegend"
-  // Provide semantic tokens for a document range
-  | "vscode.provideDocumentRangeSemanticTokens"
-  // Execute completion item provider.
-  | "vscode.executeCompletionItemProvider"
-  // Execute signature help provider.
-  | "vscode.executeSignatureHelpProvider"
-  // Execute code lens provider.
-  | "vscode.executeCodeLensProvider"
-  // Execute code action provider.
-  | "vscode.executeCodeActionProvider"
-  // Execute document color provider.
-  | "vscode.executeDocumentColorProvider"
-  // Execute color presentation provider.
-  | "vscode.executeColorPresentationProvider"
-  // Execute inlay hints provider
-  | "vscode.executeInlayHintProvider"
-  // Execute folding range provider
-  | "vscode.executeFoldingRangeProvider"
-  // Resolve Notebook Content Providers
-  | "vscode.resolveNotebookContentProviders"
-  // Execute inline value provider
-  | "vscode.executeInlineValueProvider"
-  // Opens the provided resource in the editor. Can be a text or binary file, or an http(s) URL. If you need more control over the options for opening a text file, use "vscode.window.showTextDocument</code> instead."
-  | "vscode.open"
-  // Opens the provided resource with a specific editor.
-  | "vscode.openWith"
-  // Opens the provided resources in the diff editor to compare their contents.
-  | "vscode.diff"
-  // Opens a list of resources in the changes editor to compare their contents.
-  | "vscode.changes"
-  // Prepare type hierarchy at a position inside a document
-  | "vscode.prepareTypeHierarchy"
-  // Compute supertypes for an item
-  | "vscode.provideSupertypes"
-  // Compute subtypes for an item
-  | "vscode.provideSubtypes"
-  // Reveals a test instance in the explorer
-  | "vscode.revealTestInExplorer"
-  // Set a custom context key value that can be used in when clauses.
-  | "setContext"
-  // Move cursor to a logical position in the view
-  | "cursorMove"
-  // Scroll editor in the given direction
-  | "editorScroll"
-  // Reveal the given line at the given logical position
-  | "revealLine"
-  // Unfold the content in the editor
-  | "editor.unfold"
-  // Fold the content in the editor
-  | "editor.fold"
-  // Folds or unfolds the content in the editor depending on its current state
-  | "editor.toggleFold"
-  // Open a new In-Editor Find Widget with specific options.
-  | "editor.actions.findWithArgs"
-  // Go to locations from a position in a file
-  | "editor.action.goToLocations"
-  // Peek locations from a position in a file
-  | "editor.action.peekLocations"
-  // Quick access
-  | "workbench.action.quickOpen"
-  // Toggle Outputs
-  | "notebook.cell.toggleOutputs"
-  // Collapse a cell's input (code) editor
-  | "notebook.cell.collapseCellInput"
-  // Expand a cell's input (code) editor
-  | "notebook.cell.expandCellInput"
-  // Fold Cell
-  | "notebook.fold"
-  // Unfold Cell
-  | "notebook.unfold"
-  // Change Cell Language
-  | "notebook.cell.changeLanguage"
-  // Run All
-  | "notebook.execute"
-  // Execute Cell
-  | "notebook.cell.execute"
-  // Execute Cell and Focus Container
-  | "notebook.cell.executeAndFocusContainer"
-  // Stop Cell Execution
-  | "notebook.cell.cancelExecution"
-  // Open a workspace search
-  | "workbench.action.findInFiles"
-  // Open Interactive Window
-  | "_interactive.open"
-  // Execute the Contents of the Input Box
-  | "interactive.execute"
-  // Open a new search editor. Arguments passed can include variables like ${relativeFileDirname}.
-  | "search.action.openNewEditor"
-  // Open a new search editor. Arguments passed can include variables like ${relativeFileDirname}.
-  | "search.action.openEditor"
-  // Open a new search editor. Arguments passed can include variables like ${relativeFileDirname}.
-  | "search.action.openNewEditorToSide"
-  // Open a folder or workspace in the current window or new window depending on the newWindow argument.
-  | "vscode.openFolder"
-  // Opens an new window depending on the newWindow argument.
-  | "vscode.newWindow"
-  // Removes an entry with the given path from the recently opened list.
-  | "vscode.removeFromRecentlyOpened"
-  // Move the active editor by tabs or groups
-  | "moveActiveEditor"
-  // Copy the active editor by groups
-  | "copyActiveEditor"
-  // Get Editor Layout
-  | "vscode.getEditorLayout"
-  // New Untitled Text File
-  | "workbench.action.files.newUntitledFile"
-  // Install the given extension
-  | "workbench.extensions.installExtension"
-  // Uninstall the given extension
-  | "workbench.extensions.uninstallExtension"
-  // Search for a specific extension
-  | "workbench.extensions.search"
-  // Run Task
-  | "workbench.action.tasks.runTask"
-  // Open the issue reporter and optionally prefill part of the form.
-  | "workbench.action.openIssueReporter"
-  // Open the issue reporter and optionally prefill part of the form.
-  | "vscode.openIssueReporter"
-  // workbench.action.openLogFile
-  | "workbench.action.openLogFile"
-  // Open the walkthrough.
-  | "workbench.action.openWalkthrough"
-  // Close active editor
-  | "workbench.action.closeActiveEditor"
-  // Open settings
-  | "workbench.action.openSettings"
-  // Reload window
-  | "workbench.action.reloadWindow";
+export type CommandCallArgs<C extends MarimoCommand> =
+  C extends MarimoCommand<infer Args, infer _Handler, infer _Result, infer _R>
+    ? Args
+    : never;
+
+export type CommandHandlerArgs<C extends MarimoCommand> =
+  C extends MarimoCommand<infer _Call, infer Args, infer _Result, infer _R>
+    ? Args
+    : never;
+
+export type CommandResult<C extends MarimoCommand> =
+  C extends MarimoCommand<infer _Call, infer _Handler, infer Result, infer _R>
+    ? Result
+    : never;
+
+type NotebookCellRange = {
+  readonly start: number;
+  readonly end: number;
+};
+
+type NotebookCellCommandTarget = {
+  readonly ranges: ReadonlyArray<NotebookCellRange>;
+  readonly document?: vscode.Uri;
+};
+
+/**
+ * Built-in commands the extension actually executes.
+ *
+ * VS Code exposes `executeCommand` as a string plus `any[]`; it does not
+ * publish a machine-readable signature registry. Keep this small catalog
+ * aligned with the call sites and verify its enumerable IDs against VS Code
+ * in the extension integration suite. `vscode.openWith` is executable but is
+ * not returned by `commands.getCommands()`.
+ */
+export interface VscodeCommandMap {
+  readonly "notebook.cell.collapseCellInput": {
+    readonly args: [target: NotebookCellCommandTarget];
+    readonly result: void;
+  };
+  readonly "notebook.cell.execute": {
+    readonly args: [target: NotebookCellCommandTarget];
+    readonly result: void;
+  };
+  readonly "notebook.cell.expandCellInput": {
+    readonly args: [target: NotebookCellCommandTarget];
+    readonly result: void;
+  };
+  readonly "outline.focus": {
+    readonly args: [];
+    readonly result: void;
+  };
+  readonly "vscode.openWith": {
+    readonly args: [resource: vscode.Uri, viewId: string];
+    readonly result: void;
+  };
+  readonly "workbench.action.openSettings": {
+    readonly args: [query?: string];
+    readonly result: void;
+  };
+  readonly "workbench.action.reloadWindow": {
+    readonly args: [];
+    readonly result: void;
+  };
+}
+
+export type VscodeBuiltinCommand = keyof VscodeCommandMap;
+export type VscodeCommandArgs<C extends VscodeBuiltinCommand> =
+  VscodeCommandMap[C]["args"];
+export type VscodeCommandResult<C extends VscodeBuiltinCommand> =
+  VscodeCommandMap[C]["result"];

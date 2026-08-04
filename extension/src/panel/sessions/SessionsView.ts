@@ -1,12 +1,9 @@
 import { Effect, Layer, Option, Stream } from "effect";
 
-import { toVscodeCommand } from "../../commands.ts";
-import {
-  openSessionCommand,
-  restartSessionCommand,
-  shutdownAllSessionsCommand,
-  shutdownSessionCommand,
-} from "../../commands/sessionCommands.ts";
+import openSession from "../../commands/openSession.ts";
+import restartSession from "../../commands/restartSession.ts";
+import shutdownAllSessions from "../../commands/shutdownAllSessions.ts";
+import shutdownSession from "../../commands/shutdownSession.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import { type TreeItem, TreeView } from "../TreeView.ts";
@@ -47,8 +44,8 @@ export const SessionsViewLive = Layer.scopedDiscard(
                   ? "loading~spin"
                   : "circle-outline",
             contextValue: "marimoSession",
-            command: toVscodeCommand(
-              openSessionCommand,
+            command: code.commands.bind(
+              openSession.command,
               "Open Notebook",
               session,
             ),
@@ -108,9 +105,9 @@ export const SessionsViewLive = Layer.scopedDiscard(
         ),
     );
 
-    yield* code.commands.register(openSessionCommand);
-    yield* code.commands.register(restartSessionCommand);
-    yield* code.commands.register(shutdownSessionCommand);
-    yield* code.commands.register(shutdownAllSessionsCommand);
+    yield* code.commands.register(openSession);
+    yield* code.commands.register(restartSession);
+    yield* code.commands.register(shutdownSession);
+    yield* code.commands.register(shutdownAllSessions);
   }),
 );

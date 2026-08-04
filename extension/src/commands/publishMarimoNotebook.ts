@@ -1,20 +1,22 @@
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 
-import { defineMarimoCommand } from "../commands.ts";
-import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
-import type { NotebookToolbarContext } from "./NotebookCommandTarget.ts";
-import { withOptionalNotebookToolbarContext } from "./NotebookCommandTarget.ts";
+import { defineCommand } from "../commands.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import type { NotebookTarget } from "./Invocation.ts";
+import { MarimoCommands } from "./MarimoCommands.ts";
 import { publishMarimoNotebookGist } from "./publishMarimoNotebookGist.ts";
 
-const publishMarimoNotebook = Effect.fn("command.publishMarimoNotebook")(
-  function* (context?: NotebookToolbarContext) {
-    yield* publishMarimoNotebookGist(context);
-  },
-);
+const handler = Effect.fn("command.publishMarimoNotebook")(function* (
+  target: Option.Option<NotebookTarget>,
+) {
+  if (Option.isNone(target)) {
+    const code = yield* VsCode;
+    yield* code.window.showWarningMessage(
+      "Must have an open marimo notebook to publish Gist.",
+    );
+    return;
+  }
+  yield* publishMarimoNotebookGist(target.value.document);
+});
 
-export const publishMarimoNotebookCommand = defineMarimoCommand(
-  withOptionalNotebookToolbarContext(
-    GeneratedMarimoCommands.publishMarimoNotebook,
-  ),
-  publishMarimoNotebook,
-);
+export default defineCommand(MarimoCommands.publishMarimoNotebook, handler);

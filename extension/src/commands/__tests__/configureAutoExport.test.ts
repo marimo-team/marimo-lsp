@@ -15,6 +15,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const notebookFor = (
+  editor: ReturnType<typeof TestVsCode.makeNotebookEditor>,
+) => MarimoNotebookDocument.tryFrom(editor.notebook);
+
 describe("mergeAutoDownloadFormats", () => {
   it("updates all managed formats from the selection", () => {
     expect(mergeAutoDownloadFormats(["html", "markdown"], ["ipynb"])).toEqual([
@@ -76,7 +80,9 @@ it.effect(
     });
 
     yield* vscode.setActiveNotebookEditor(Option.some(editor));
-    yield* configureAutoExport().pipe(Effect.provide(vscode.layer));
+    yield* configureAutoExport(notebookFor(editor)).pipe(
+      Effect.provide(vscode.layer),
+    );
 
     expect(yield* applied).toBe(true);
     expect(yield* information).toEqual(
@@ -115,7 +121,9 @@ it.effect(
     });
 
     yield* vscode.setActiveNotebookEditor(Option.some(editor));
-    yield* configureAutoExport().pipe(Effect.provide(vscode.layer));
+    yield* configureAutoExport(notebookFor(editor)).pipe(
+      Effect.provide(vscode.layer),
+    );
 
     expect(yield* applied).toBe(false);
   }),
@@ -148,7 +156,9 @@ it.effect(
     });
 
     yield* vscode.setActiveNotebookEditor(Option.some(editor));
-    yield* configureAutoExport().pipe(Effect.provide(vscode.layer));
+    yield* configureAutoExport(notebookFor(editor)).pipe(
+      Effect.provide(vscode.layer),
+    );
 
     expect(yield* information).toEqual(
       Option.some("Automatic exports disabled."),
@@ -202,7 +212,9 @@ it.effect(
     });
 
     yield* vscode.setActiveNotebookEditor(Option.some(editor));
-    yield* configureAutoExport().pipe(Effect.provide(vscode.layer));
+    yield* configureAutoExport(notebookFor(editor)).pipe(
+      Effect.provide(vscode.layer),
+    );
 
     const metadata = Option.getOrThrow(yield* updatedMetadata);
     const updated = TestVsCode.makeNotebookEditor("/test/report.py", {
@@ -252,7 +264,9 @@ it.effect(
     });
 
     yield* vscode.setActiveNotebookEditor(Option.some(editor));
-    yield* configureAutoExport().pipe(Effect.provide(vscode.layer));
+    yield* configureAutoExport(notebookFor(editor)).pipe(
+      Effect.provide(vscode.layer),
+    );
 
     expect(yield* information).toEqual(Option.none());
     expect(yield* error).toEqual(
@@ -299,7 +313,9 @@ it.effect(
     });
 
     yield* vscode.setActiveNotebookEditor(Option.some(editor));
-    yield* configureAutoExport().pipe(Effect.provide(vscode.layer));
+    yield* configureAutoExport(notebookFor(editor)).pipe(
+      Effect.provide(vscode.layer),
+    );
 
     expect(yield* information).toEqual(Option.none());
     expect(yield* error).toEqual(

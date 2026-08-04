@@ -2,22 +2,22 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Either, Logger, PubSub, Queue } from "effect";
 
 import { commandId } from "../../commands.ts";
-import { newMarimoNotebookCommand } from "../../commands/newMarimoNotebook.ts";
-import { openTutorialCommand } from "../../commands/openTutorial.ts";
-import { restartKernelCommand } from "../../commands/restartKernel.ts";
-import { runStaleCommand } from "../../commands/runStale.ts";
+import newMarimoNotebook from "../../commands/newMarimoNotebook.ts";
+import openTutorial from "../../commands/openTutorial.ts";
+import restartKernel from "../../commands/restartKernel.ts";
+import runStale from "../../commands/runStale.ts";
 import { withCommandContext } from "../VsCode.ts";
 
 describe("command error context", () => {
   it.effect("logs failures with their command span", () => {
     const logs: Array<Record<string, unknown>> = [];
-    const wireId = commandId(runStaleCommand);
+    const wireId = commandId(runStale.command);
     const logger = Logger.make(({ annotations }) => {
       logs.push(Object.fromEntries(annotations));
     });
 
     return Effect.fail(new Error("invalid command argument")).pipe(
-      withCommandContext(runStaleCommand),
+      withCommandContext(runStale.command),
       Effect.exit,
       Effect.provide(
         Logger.replace(
@@ -53,15 +53,15 @@ describe("Commands pubsub", () => {
           // Publish events
           yield* PubSub.publish(
             commandPubSub,
-            Either.right(commandId(newMarimoNotebookCommand)),
+            Either.right(commandId(newMarimoNotebook.command)),
           );
           yield* PubSub.publish(
             commandPubSub,
-            Either.right(commandId(openTutorialCommand)),
+            Either.right(commandId(openTutorial.command)),
           );
           yield* PubSub.publish(
             commandPubSub,
-            Either.left(commandId(restartKernelCommand)),
+            Either.left(commandId(restartKernel.command)),
           );
 
           // Take 3 events from the subscription
@@ -81,13 +81,13 @@ describe("Commands pubsub", () => {
       expect(Either.isLeft(result[2])).toBe(true);
 
       if (Either.isRight(result[0])) {
-        expect(result[0].right).toBe(commandId(newMarimoNotebookCommand));
+        expect(result[0].right).toBe(commandId(newMarimoNotebook.command));
       }
       if (Either.isRight(result[1])) {
-        expect(result[1].right).toBe(commandId(openTutorialCommand));
+        expect(result[1].right).toBe(commandId(openTutorial.command));
       }
       if (Either.isLeft(result[2])) {
-        expect(result[2].left).toBe(commandId(restartKernelCommand));
+        expect(result[2].left).toBe(commandId(restartKernel.command));
       }
     }),
   );
@@ -107,11 +107,11 @@ describe("Commands pubsub", () => {
           // Publish events
           yield* PubSub.publish(
             commandPubSub,
-            Either.right(commandId(newMarimoNotebookCommand)),
+            Either.right(commandId(newMarimoNotebook.command)),
           );
           yield* PubSub.publish(
             commandPubSub,
-            Either.right(commandId(openTutorialCommand)),
+            Either.right(commandId(openTutorial.command)),
           );
 
           // Both subscribers should receive both events

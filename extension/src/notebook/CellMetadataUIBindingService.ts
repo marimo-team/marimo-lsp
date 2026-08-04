@@ -2,8 +2,7 @@ import { Effect, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
-import { toVscodeCommand } from "../commands.ts";
-import { updateCellMetadataContract } from "../commands/updateCellMetadataCommand.ts";
+import { MarimoCommands } from "../commands/MarimoCommands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -148,9 +147,10 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
                   binding.alignment,
                 );
                 item.tooltip = binding.getTooltip(value);
-                item.command = toVscodeCommand(
-                  updateCellMetadataContract,
+                item.command = code.commands.bind(
+                  MarimoCommands.updateCellMetadata,
                   "Update cell metadata",
+                  rawCell,
                   binding.id,
                 );
 
@@ -164,27 +164,11 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
       /**
        * Create a command handler for a binding
        */
-      function createBindingCommandFor(binding: MetadataBinding) {
+      function createBindingCommandFor(
+        binding: MetadataBinding,
+        activeCell: MarimoNotebookCell,
+      ) {
         return Effect.fn(function* () {
-          const editor = yield* code.window.getActiveNotebookEditor();
-
-          if (Option.isNone(editor)) {
-            return;
-          }
-
-          // Get the active cell
-          const notebook = MarimoNotebookDocument.tryFrom(
-            editor.value.notebook,
-          );
-
-          if (Option.isNone(notebook)) {
-            return;
-          }
-
-          const activeCell = notebook.value.cellAt(
-            editor.value.selection.start,
-          );
-
           if (!binding.shouldShow(activeCell)) {
             return;
           }
@@ -281,7 +265,11 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
         });
       }
 
-      const updateBinding = Effect.fn(function* (bindingId: string) {
+      const updateBinding = Effect.fn(function* (
+        cell: Option.Option<MarimoNotebookCell>,
+        bindingId: string,
+      ) {
+        if (Option.isNone(cell)) return;
         const binding = bindings.get(bindingId);
         if (binding === undefined) {
           yield* Effect.logWarning("Unknown cell metadata binding").pipe(
@@ -289,7 +277,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
           );
           return;
         }
-        yield* createBindingCommandFor(binding)();
+        yield* createBindingCommandFor(binding, cell.value)();
       });
 
       return { registerBinding, updateBinding } as const;

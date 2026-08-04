@@ -16,7 +16,7 @@ import {
 
 declare global {
   // oxlint-disable-next-line eslint/no-var, eslint/no-underscore-dangle
-  var __marimoVsCode: typeof import("vscode") | undefined;
+  var __marimoVsCode: typeof vscode | undefined;
 }
 // VsCode.ts centralizes and restricts access to the VS Code API.
 //
@@ -30,12 +30,15 @@ declare global {
 import * as vscode from "vscode";
 
 import {
+  type CommandArguments,
+  type CommandDefinition,
   commandId,
   decodeCommandArguments,
   decodeCommandResult,
   type MarimoCommand,
-  type MarimoCommandDefinition,
   type VscodeBuiltinCommand,
+  type VscodeCommandArgs,
+  type VscodeCommandResult,
 } from "../commands.ts";
 import type { MarimoContextKey } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
@@ -349,17 +352,27 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
     const commandPubSub =
       yield* PubSub.unbounded<Either.Either<string, string>>();
 
-    function execute<Args extends ReadonlyArray<unknown>, Result>(
-      command: MarimoCommand<Args, Result>,
-      ...args: Args
+    function execute<
+      CallArgs extends CommandArguments,
+      HandlerArgs extends CommandArguments,
+      Result,
+      DecodeRequirements,
+    >(
+      command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
+      ...args: CallArgs
     ): Effect.Effect<Result, ParseResult.ParseError> {
       return Effect.promise(() =>
         api.executeCommand(commandId(command), ...args),
       ).pipe(Effect.flatMap((result) => decodeCommandResult(command, result)));
     }
 
-    function executeVSCode(command: VscodeBuiltinCommand, ...args: unknown[]) {
-      return Effect.promise(() => api.executeCommand(command, ...args));
+    function executeVSCode<C extends VscodeBuiltinCommand>(
+      command: C,
+      ...args: VscodeCommandArgs<C>
+    ): Effect.Effect<VscodeCommandResult<C>> {
+      return Effect.promise(() =>
+        api.executeCommand<VscodeCommandResult<C>>(command, ...args),
+      );
     }
 
     function registerImplementation<A, E, R>(
@@ -395,17 +408,49 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
       });
     }
 
-    function register<Args extends ReadonlyArray<unknown>, A, E, R>(
-      definition: MarimoCommandDefinition<Args, A, E, R>,
+    function register<
+      CallArgs extends CommandArguments,
+      HandlerArgs extends CommandArguments,
+      Result,
+      DecodeRequirements,
+      E,
+      HandlerRequirements,
+    >(
+      definition: CommandDefinition<
+        CallArgs,
+        HandlerArgs,
+        Result,
+        DecodeRequirements,
+        E,
+        HandlerRequirements
+      >,
     ) {
-      const wireId = commandId(definition);
+      const { command, handler } = definition;
+      const wireId = commandId(command);
       return registerImplementation(wireId, (args) =>
-        decodeCommandArguments(definition, args).pipe(
-          Effect.flatMap((decoded) => definition.handler(...decoded)),
-          Effect.flatMap((result) => decodeCommandResult(definition, result)),
-          withCommandContext(definition),
+        decodeCommandArguments(command, args).pipe(
+          Effect.flatMap((decoded) => handler(...decoded)),
+          Effect.flatMap((result) => decodeCommandResult(command, result)),
+          withCommandContext(command),
         ),
       );
+    }
+
+    function bind<
+      CallArgs extends CommandArguments,
+      HandlerArgs extends CommandArguments,
+      Result,
+      DecodeRequirements,
+    >(
+      command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
+      title: string,
+      ...args: CallArgs
+    ): vscode.Command {
+      return {
+        command: commandId(command),
+        title,
+        arguments: [...args],
+      };
     }
 
     return {
@@ -414,6 +459,7 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
       },
       execute,
       executeVSCode,
+      bind,
       setContext<K extends MarimoContextKey>(key: K, value: ContextMap[K]) {
         return Effect.promise(() =>
           api.executeCommand("setContext", key, value),

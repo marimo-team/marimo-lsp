@@ -1,42 +1,30 @@
 import { Effect, Option } from "effect";
 
-import { defineMarimoCommand } from "../commands.ts";
+import { defineCommand } from "../commands.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
-import {
-  getNotebookCommandEditor,
-  type NotebookToolbarContext,
-  withOptionalNotebookToolbarContext,
-} from "./NotebookCommandTarget.ts";
+import type { NotebookTarget } from "./Invocation.ts";
+import { MarimoCommands } from "./MarimoCommands.ts";
 
-const restartKernelHandler = Effect.fn("command.restartKernel")(function* (
-  context?: NotebookToolbarContext,
+const handler = Effect.fn("command.restartKernel")(function* (
+  target: Option.Option<NotebookTarget>,
 ) {
   const code = yield* VsCode;
   const sessions = yield* SessionsService;
   const executions = yield* CellExecutions;
 
-  const editor = yield* getNotebookCommandEditor(context);
-  if (Option.isNone(editor)) {
+  if (Option.isNone(target)) {
     yield* code.window.showInformationMessage(
       "No notebook editor is currently open",
     );
     return;
   }
 
-  const notebook = MarimoNotebookDocument.tryFrom(editor.value.notebook);
-  if (Option.isNone(notebook)) {
-    yield* code.window.showInformationMessage(
-      "No marimo notebook is currently open",
-    );
-    return;
-  }
+  const { document: notebook, editor } = target.value;
 
-  if (Option.isNone(yield* sessions.find(notebook.value.id))) {
+  if (Option.isNone(yield* sessions.find(notebook.id))) {
     yield* code.window.showInformationMessage(
       "This notebook does not have a live kernel",
     );
@@ -52,7 +40,7 @@ const restartKernelHandler = Effect.fn("command.restartKernel")(function* (
     Effect.fn(function* (progress) {
       progress.report({ message: "Restarting session..." });
 
-      const succeeded = yield* sessions.restart(notebook.value.id).pipe(
+      const succeeded = yield* sessions.restart(notebook.id).pipe(
         Effect.as(true),
         Effect.catchAllCause(
           Effect.fn(function* (cause) {
@@ -67,7 +55,7 @@ const restartKernelHandler = Effect.fn("command.restartKernel")(function* (
 
       if (!succeeded) return false;
 
-      yield* executions.handleInterrupt(editor.value);
+      yield* executions.handleInterrupt(editor);
 
       progress.report({ message: "Kernel restarted." });
       yield* Effect.sleep("500 millis");
@@ -80,7 +68,4 @@ const restartKernelHandler = Effect.fn("command.restartKernel")(function* (
   }
 });
 
-export const restartKernelCommand = defineMarimoCommand(
-  withOptionalNotebookToolbarContext(GeneratedMarimoCommands.restartKernel),
-  restartKernelHandler,
-);
+export default defineCommand(MarimoCommands.restartKernel, handler);

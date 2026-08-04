@@ -8,7 +8,7 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
-import { openSessionCommand } from "../sessionCommands.ts";
+import openSession from "../openSession.ts";
 
 const NOTEBOOK_URI = notebookId("file:///workspace/notebook.py");
 
@@ -19,7 +19,7 @@ it.effect(
     const document = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI));
     yield* vscode.addNotebookDocument(document);
 
-    yield* openSessionCommand
+    yield* openSession
       .handler({ notebookUri: NOTEBOOK_URI })
       .pipe(Effect.provide(vscode.layer));
 
@@ -32,7 +32,7 @@ it.effect(
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
 
-    yield* openSessionCommand
+    yield* openSession
       .handler({ notebookUri: NOTEBOOK_URI })
       .pipe(Effect.provide(vscode.layer));
 
@@ -54,7 +54,7 @@ it.effect(
     );
     yield* vscode.addNotebookDocument(document);
 
-    yield* openSessionCommand
+    yield* openSession
       .handler({ notebookUri: rawUri })
       .pipe(Effect.provide(vscode.layer));
 

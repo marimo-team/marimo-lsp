@@ -1,9 +1,13 @@
-import { createConfigToggle } from "../lib/createConfigToggle.ts";
-import type { NotebookToolbarContext } from "./NotebookCommandTarget.ts";
+import type { Option } from "effect";
 
-export const toggleAutoReload = (context?: NotebookToolbarContext) =>
+import { createConfigToggle } from "../lib/createConfigToggle.ts";
+import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+
+export const toggleAutoReload = (
+  notebook: Option.Option<MarimoNotebookDocument>,
+) =>
   createConfigToggle({
-    context,
+    notebook,
     configPath: "runtime.auto_reload",
     settingName: "Module changes",
     pickerTitle: "Module changes",

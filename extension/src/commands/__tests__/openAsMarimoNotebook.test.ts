@@ -8,7 +8,7 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import { openAsMarimoNotebookCommand } from "../openAsMarimoNotebook.ts";
+import openAsMarimoNotebook from "../openAsMarimoNotebook.ts";
 
 function provideCommand(vscode: TestVsCode) {
   return Effect.provide(vscode.layer);
@@ -27,9 +27,7 @@ it.effect(
     });
     const uri = vscode.createMockUri("/test/notebook.py");
 
-    yield* openAsMarimoNotebookCommand
-      .handler(uri)
-      .pipe(provideCommand(vscode));
+    yield* openAsMarimoNotebook.handler(uri).pipe(provideCommand(vscode));
 
     expect(yield* vscode.executions).toEqual([
       {
@@ -52,7 +50,7 @@ it.effect(
       ]),
     });
 
-    yield* openAsMarimoNotebookCommand
+    yield* openAsMarimoNotebook
       .handler("file:///test/notebook.py")
       .pipe(provideCommand(vscode));
 
@@ -77,7 +75,7 @@ it.effect(
       Option.some(createTestTextEditor(document)),
     );
 
-    yield* openAsMarimoNotebookCommand.handler().pipe(provideCommand(vscode));
+    yield* openAsMarimoNotebook.handler().pipe(provideCommand(vscode));
 
     expect(yield* vscode.executions).toEqual([
       {
@@ -103,7 +101,7 @@ it.effect(
       Option.some(createTestTextEditor(document)),
     );
 
-    yield* openAsMarimoNotebookCommand
+    yield* openAsMarimoNotebook
       .handler(document.uri.toString())
       .pipe(provideCommand(vscode));
 
@@ -131,7 +129,7 @@ it.effect(
       Option.some(createTestTextEditor(document)),
     );
 
-    yield* openAsMarimoNotebookCommand.handler().pipe(provideCommand(vscode));
+    yield* openAsMarimoNotebook.handler().pipe(provideCommand(vscode));
 
     expect(save).not.toHaveBeenCalled();
   }),
@@ -152,7 +150,7 @@ it.effect(
       Option.some(createTestTextEditor(document)),
     );
 
-    yield* openAsMarimoNotebookCommand.handler().pipe(provideCommand(vscode));
+    yield* openAsMarimoNotebook.handler().pipe(provideCommand(vscode));
 
     expect(save).toHaveBeenCalledOnce();
     expect(yield* vscode.executions).toEqual([]);

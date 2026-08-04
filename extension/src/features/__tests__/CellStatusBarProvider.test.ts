@@ -9,8 +9,8 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import { toVscodeCommand } from "../../commands.ts";
-import { runStaleCommand } from "../../commands/runStale.ts";
+import { commandId } from "../../commands.ts";
+import runStale from "../../commands/runStale.ts";
 import { CellExecutions } from "../../kernel/CellExecutions.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
@@ -117,9 +117,11 @@ it.effect(
       expect(stalenessItem).toBeDefined();
       expect(stalenessItem?.text).toContain("Stale");
       expect(stalenessItem?.tooltip).toContain("edited but not re-executed");
-      expect(stalenessItem?.command).toEqual(
-        toVscodeCommand(runStaleCommand, "Run stale cells", cell),
-      );
+      expect(stalenessItem?.command).toEqual({
+        command: commandId(runStale.command),
+        title: "Run stale cells",
+        arguments: [cell],
+      });
     }).pipe(Effect.provide(ctx.layer));
   }),
 );

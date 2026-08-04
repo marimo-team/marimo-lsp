@@ -8,31 +8,15 @@ import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { GitHubClient } from "../platform/GitHubClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import {
-  getNotebookCommandEditor,
-  type NotebookToolbarContext,
-} from "./NotebookCommandTarget.ts";
 
 export const publishMarimoNotebookGist = Effect.fn(
   "command.publishMarimoNotebookGist",
 )(
-  function* (context?: NotebookToolbarContext) {
+  function* (notebook: MarimoNotebookDocument) {
     const code = yield* VsCode;
     const gh = yield* GitHubClient;
     const marimo = yield* MarimoClient;
     const serializer = yield* NotebookSerializer;
-
-    const notebook = Option.filterMap(
-      yield* getNotebookCommandEditor(context),
-      (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
-    );
-
-    if (Option.isNone(notebook)) {
-      yield* code.window.showWarningMessage(
-        "Must have an open marimo notebook to publish Gist.",
-      );
-      return;
-    }
 
     const choice = yield* code.window.showQuickPick(["Public", "Secret"], {
       placeHolder: "Gist visibility",
@@ -44,8 +28,8 @@ export const publishMarimoNotebookGist = Effect.fn(
     }
 
     const bytes = yield* serializer.serializeEffect({
-      metadata: notebook.value.rawMetadata,
-      cells: notebook.value
+      metadata: notebook.rawMetadata,
+      cells: notebook
         .getCells()
         .map(
           (cell) =>
@@ -57,7 +41,7 @@ export const publishMarimoNotebookGist = Effect.fn(
         ),
     });
 
-    const filename = NodePath.basename(notebook.value.uri.path);
+    const filename = NodePath.basename(notebook.uri.path);
     const ipynbFilename = filename.replace(/\.py$/, ".ipynb");
     const files: Record<string, { content: string }> = {
       [filename]: {
@@ -68,7 +52,7 @@ export const publishMarimoNotebookGist = Effect.fn(
     // Try to export ipynb with outputs for GitHub rendering
     const ipynbResult = yield* marimo
       .exportAsIpynb({
-        notebookUri: notebook.value.id,
+        notebookUri: notebook.id,
         inner: {},
       })
       .pipe(Effect.andThen(Schema.decodeUnknown(Schema.String)), Effect.either);

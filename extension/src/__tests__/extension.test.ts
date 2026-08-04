@@ -10,10 +10,8 @@ import { TestTelemetryLive } from "../__mocks__/TestTelemetry.ts";
 import { TestTyLanguageServerLive } from "../__mocks__/TestTyLanguageServer.ts";
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
 import { commandId } from "../commands.ts";
-import {
-  hideCellCodeCommand,
-  showCellCodeCommand,
-} from "../commands/setCellCodeVisibility.ts";
+import hideCellCode from "../commands/hideCellCode.ts";
+import showCellCode from "../commands/showCellCode.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { makeActivate } from "../features/Main.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
@@ -109,12 +107,12 @@ describe("package.json validation", () => {
   it("shows the cell visibility action matching the target cell state", () => {
     expect(pkg.contributes.menus["notebook/cell/title"]).toEqual([
       {
-        command: commandId(hideCellCodeCommand),
+        command: commandId(hideCellCode.command),
         when: "notebookType == 'marimo-notebook' && !notebookCellInputIsCollapsed",
         group: "3_edit@1",
       },
       {
-        command: commandId(showCellCodeCommand),
+        command: commandId(showCellCode.command),
         when: "notebookType == 'marimo-notebook' && notebookCellInputIsCollapsed",
         group: "3_edit@1",
       },

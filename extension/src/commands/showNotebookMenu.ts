@@ -1,22 +1,17 @@
 import { Effect, Option } from "effect";
 
-import { defineMarimoCommand } from "../commands.ts";
+import { defineCommand } from "../commands.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { configureAutoExport } from "./configureAutoExport.ts";
-import { createSetupCellCommand } from "./createSetupCell.ts";
-import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
-import {
-  getNotebookCommandEditor,
-  type NotebookToolbarContext,
-  withOptionalNotebookToolbarContext,
-} from "./NotebookCommandTarget.ts";
-import { publishMarimoNotebookCommand } from "./publishMarimoNotebook.ts";
+import createSetupCell from "./createSetupCell.ts";
+import type { NotebookTarget } from "./Invocation.ts";
+import { MarimoCommands } from "./MarimoCommands.ts";
+import publishMarimoNotebook from "./publishMarimoNotebook.ts";
 import { toggleAutoReload } from "./toggleAutoReload.ts";
 import { toggleOnCellChange } from "./toggleOnCellChange.ts";
 
-const NOTEBOOK_MENU_ITEMS = [
+export const NOTEBOOK_MENU_ITEMS = [
   {
     label: "$(zap) Reactivity",
     detail: "Choose when dependent code runs",
@@ -39,10 +34,11 @@ const NOTEBOOK_MENU_ITEMS = [
   },
 ] as const;
 
-const showNotebookMenu = Effect.fn("command.showNotebookMenu")(function* (
-  context?: NotebookToolbarContext,
+const handler = Effect.fn("command.showNotebookMenu")(function* (
+  target: Option.Option<NotebookTarget>,
 ) {
   const code = yield* VsCode;
+  const notebook = Option.map(target, (value) => value.document);
   const selection = yield* code.window.showQuickPickItems(NOTEBOOK_MENU_ITEMS, {
     placeHolder: "Choose a notebook action",
     title: "marimo notebook",
@@ -52,27 +48,19 @@ const showNotebookMenu = Effect.fn("command.showNotebookMenu")(function* (
 
   switch (selection.value.value) {
     case "automatic-exports":
-      yield* configureAutoExport(context);
+      yield* configureAutoExport(notebook);
       return;
     case "create-setup-cell":
-      yield* context === undefined
-        ? code.commands.execute(createSetupCellCommand)
-        : code.commands.execute(createSetupCellCommand, context);
+      yield* createSetupCell.handler(target);
       return;
     case "publish-notebook":
-      yield* context === undefined
-        ? code.commands.execute(publishMarimoNotebookCommand)
-        : code.commands.execute(publishMarimoNotebookCommand, context);
+      yield* publishMarimoNotebook.handler(target);
       return;
     case "reactivity":
       break;
   }
 
   const configService = yield* MarimoConfigurationService;
-  const notebook = Option.filterMap(
-    yield* getNotebookCommandEditor(context),
-    (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
-  );
   if (Option.isNone(notebook)) {
     yield* code.window.showWarningMessage(
       "Open a marimo notebook to configure reactivity.",
@@ -116,11 +104,8 @@ const showNotebookMenu = Effect.fn("command.showNotebookMenu")(function* (
 
   if (Option.isNone(reactivity)) return;
   yield* reactivity.value.value === "cells"
-    ? toggleOnCellChange(context)
-    : toggleAutoReload(context);
+    ? toggleOnCellChange(notebook)
+    : toggleAutoReload(notebook);
 });
 
-export const showNotebookMenuCommand = defineMarimoCommand(
-  withOptionalNotebookToolbarContext(GeneratedMarimoCommands.showNotebookMenu),
-  showNotebookMenu,
-);
+export default defineCommand(MarimoCommands.showNotebookMenu, handler);
