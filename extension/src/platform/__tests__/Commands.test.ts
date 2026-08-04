@@ -9,7 +9,7 @@ import runStale from "../../commands/runStale.ts";
 import { withCommandContext } from "../VsCode.ts";
 
 describe("command error context", () => {
-  it.effect("logs failures with their command span", () => {
+  it.effect("logs failures with their command ID", () => {
     const logs: Array<Record<string, unknown>> = [];
     const wireId = commandId(runStale.command);
     const logger = Logger.make(({ annotations }) => {
@@ -30,7 +30,6 @@ describe("command error context", () => {
           expect(logs).toHaveLength(1);
           expect(logs[0]).toMatchObject({
             "command.id": wireId,
-            "effect.spanName": "command",
           });
         }),
       ),

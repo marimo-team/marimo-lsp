@@ -331,11 +331,6 @@ export const withCommandContext = (command: MarimoCommand) => {
       Effect.tapErrorCause((cause) =>
         isExpectedCancellation(cause) ? Effect.void : Effect.logError(cause),
       ),
-      Effect.withSpan("command", {
-        attributes: {
-          "command.id": wireId,
-        },
-      }),
       Effect.annotateLogs({
         "command.id": wireId,
       }),

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Option } from "effect";
+import { Effect, Logger, Option } from "effect";
 
 import { createNotebookCell, TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import {
   commandContributedSurfaces,
+  defineCommand,
   commandId,
   decodeCommandArguments,
 } from "../../commands.ts";
@@ -87,4 +88,32 @@ describe("command definitions", () => {
       expect(args).toEqual(["file:///notebook.py"]);
     }),
   );
+
+  it.effect("traces direct normalized invocation with the command ID", () => {
+    const logs: Array<Record<string, unknown>> = [];
+    const logger = Logger.make(({ annotations }) => {
+      logs.push(Object.fromEntries(annotations));
+    });
+    const definition = defineCommand(MarimoCommands.restartLsp, () =>
+      Effect.logInfo("invoked"),
+    );
+
+    return definition.invoke().pipe(
+      Effect.provide(
+        Logger.replace(
+          Logger.defaultLogger,
+          Logger.withSpanAnnotations(logger),
+        ),
+      ),
+      Effect.tap(() =>
+        Effect.sync(() => {
+          expect(logs).toHaveLength(1);
+          expect(logs[0]).toMatchObject({
+            "command.id": commandId(definition.command),
+            "effect.spanName": "command",
+          });
+        }),
+      ),
+    );
+  });
 });

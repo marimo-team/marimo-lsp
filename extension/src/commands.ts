@@ -70,7 +70,7 @@ export function defineCommand<
   HandlerRequirements,
 >(
   command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
-  invoke: (
+  operation: (
     ...args: HandlerArgs
   ) => Effect.Effect<Result, HandlerError, HandlerRequirements>,
 ): CommandDefinition<
@@ -81,6 +81,14 @@ export function defineCommand<
   HandlerError,
   HandlerRequirements
 > {
+  const wireId = commandId(command);
+  const invoke = (...args: HandlerArgs) =>
+    operation(...args).pipe(
+      Effect.withSpan("command", {
+        attributes: { "command.id": wireId },
+      }),
+      Effect.annotateLogs({ "command.id": wireId }),
+    );
   return { command, invoke };
 }
 
