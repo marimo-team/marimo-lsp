@@ -1,8 +1,10 @@
 import { Effect, Option } from "effect";
 
-import type { NotebookToolbarContext } from "../commands.ts";
+import {
+  getNotebookCommandEditor,
+  type NotebookToolbarContext,
+} from "../commands/NotebookCommandTarget.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
-import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";

@@ -1,14 +1,18 @@
 import { Effect, Option } from "effect";
 
-import type { NotebookToolbarContext } from "../commands.ts";
+import { defineMarimoCommand } from "../commands.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
-import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import { MarimoCommands } from "./MarimoCommands.ts";
+import {
+  getNotebookCommandEditor,
+  type NotebookToolbarContext,
+} from "./NotebookCommandTarget.ts";
 
-export const restartKernel = Effect.fn("command.restartKernel")(function* (
+const restartKernelHandler = Effect.fn("command.restartKernel")(function* (
   context?: NotebookToolbarContext,
 ) {
   const code = yield* VsCode;
@@ -74,3 +78,8 @@ export const restartKernel = Effect.fn("command.restartKernel")(function* (
     yield* code.window.showInformationMessage("Kernel restarted successfully");
   }
 });
+
+export const restartKernel = defineMarimoCommand(
+  MarimoCommands.restartKernel,
+  restartKernelHandler,
+);

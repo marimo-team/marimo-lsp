@@ -18,6 +18,18 @@ export interface MarimoCommand<
   };
 }
 
+export function defineMarimoCommand<
+  Args extends ReadonlyArray<unknown>,
+  Result,
+  Error,
+  Requirements,
+>(
+  command: MarimoCommand<Args, Result>,
+  handler: (...args: Args) => Effect.Effect<Result, Error, Requirements>,
+) {
+  return { command, handler } as const;
+}
+
 export function marimoCommand(id: string): MarimoCommand<[], void> {
   return {
     [MarimoCommandTypeId]: {
@@ -45,44 +57,6 @@ export const VscodeUriSchema = Schema.declare<vscode.Uri>(
   { identifier: "vscode.Uri" },
 );
 
-const isVscodeUri = Schema.is(VscodeUriSchema);
-
-export const VscodeNotebookCellSchema = Schema.declare<vscode.NotebookCell>(
-  (value): value is vscode.NotebookCell =>
-    typeof value === "object" &&
-    value !== null &&
-    "index" in value &&
-    typeof value.index === "number" &&
-    "notebook" in value &&
-    typeof value.notebook === "object" &&
-    value.notebook !== null &&
-    "uri" in value.notebook &&
-    isVscodeUri(value.notebook.uri) &&
-    "document" in value &&
-    typeof value.document === "object" &&
-    value.document !== null,
-  { identifier: "vscode.NotebookCell" },
-);
-
-const NotebookToolbarContextShape = Schema.Struct({
-  notebookEditor: Schema.Struct({ notebookUri: VscodeUriSchema }),
-});
-
-export type NotebookToolbarContext = typeof NotebookToolbarContextShape.Type;
-
-export const NotebookToolbarContextSchema =
-  Schema.declare<NotebookToolbarContext>(
-    Schema.is(NotebookToolbarContextShape),
-    { identifier: "vscode.NotebookToolbarContext" },
-  );
-
-const NotebookCommandTargetSchema = Schema.Union(
-  NotebookToolbarContextSchema,
-  VscodeNotebookCellSchema,
-);
-
-export type NotebookCommandTarget = typeof NotebookCommandTargetSchema.Type;
-
 export function withFirstArgument<A, I>(
   command: MarimoCommand,
   schema: Schema.Schema<A, I>,
@@ -97,18 +71,6 @@ export function withFirstArgument<A, I>(
       decodeResult: Schema.decodeUnknown(Schema.Void),
     },
   };
-}
-
-export function withOptionalNotebookTarget(
-  command: MarimoCommand,
-): MarimoCommand<[target?: NotebookCommandTarget], void> {
-  return withOptionalFirstArgument(command, NotebookCommandTargetSchema);
-}
-
-export function withOptionalNotebookToolbarContext(
-  command: MarimoCommand,
-): MarimoCommand<[context?: NotebookToolbarContext], void> {
-  return withOptionalFirstArgument(command, NotebookToolbarContextSchema);
 }
 
 export function withOptionalFirstArgument<A, I>(

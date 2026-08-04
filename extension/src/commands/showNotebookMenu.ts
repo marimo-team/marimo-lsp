@@ -1,12 +1,14 @@
 import { Effect, Option } from "effect";
 
-import type { NotebookToolbarContext } from "../commands.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
-import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { configureAutoExport } from "./configureAutoExport.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
+import {
+  getNotebookCommandEditor,
+  type NotebookToolbarContext,
+} from "./NotebookCommandTarget.ts";
 import { toggleAutoReload } from "./toggleAutoReload.ts";
 import { toggleOnCellChange } from "./toggleOnCellChange.ts";
 

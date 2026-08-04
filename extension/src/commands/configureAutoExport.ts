@@ -1,11 +1,13 @@
 import { Effect, Option } from "effect";
 
-import type { NotebookToolbarContext } from "../commands.ts";
 import type { AutoExportFormat } from "../features/AutoExport.ts";
-import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { OwnedAppConfig } from "../schemas/Models.gen.ts";
+import {
+  getNotebookCommandEditor,
+  type NotebookToolbarContext,
+} from "./NotebookCommandTarget.ts";
 
 const FORMATS = ["html", "ipynb", "markdown"] as const;
 

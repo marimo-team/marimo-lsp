@@ -39,40 +39,6 @@ describe("MarimoCommands", () => {
     }),
   );
 
-  it.effect("decodes optional notebook toolbar context", () =>
-    Effect.gen(function* () {
-      const notebookUri = {
-        scheme: "file",
-        path: "/notebook.py",
-        with() {
-          return this;
-        },
-        toString() {
-          return "file:///notebook.py";
-        },
-      };
-      const context = {
-        ui: true,
-        notebookEditor: { notebookUri },
-        source: "notebookToolbar",
-      };
-      const args = yield* decodeCommandArguments(MarimoCommands.restartKernel, [
-        context,
-      ]);
-      expect(args[0]).toBe(context);
-    }),
-  );
-
-  it.effect("accepts no context for a notebook command", () =>
-    Effect.gen(function* () {
-      const args = yield* decodeCommandArguments(
-        MarimoCommands.restartKernel,
-        [],
-      );
-      expect(args).toEqual([]);
-    }),
-  );
-
   it.effect("accepts notebook cell context for a notebook command", () =>
     Effect.gen(function* () {
       const notebook = createTestNotebookDocument("/test/notebook_mo.py");
@@ -87,22 +53,6 @@ describe("MarimoCommands", () => {
       ]);
 
       expect(args).toEqual([cell]);
-    }),
-  );
-
-  it.effect("rejects notebook cell context for a toolbar-only command", () =>
-    Effect.gen(function* () {
-      const cell = createNotebookCell(
-        createTestNotebookDocument("/test/notebook_mo.py"),
-        { kind: 2, value: "x = 1", languageId: "python" },
-        0,
-      );
-
-      const result = yield* Effect.either(
-        decodeCommandArguments(MarimoCommands.restartKernel, [cell]),
-      );
-
-      expect(result._tag).toBe("Left");
     }),
   );
 
