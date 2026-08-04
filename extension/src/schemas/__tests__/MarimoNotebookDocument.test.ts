@@ -80,3 +80,47 @@ describe("MarimoNotebookCell metadata updates", () => {
     },
   );
 });
+
+describe("MarimoNotebookDocument app config", () => {
+  it("validates owned options and preserves options it does not understand", () => {
+    const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
+      data: {
+        cells: [],
+        metadata: {
+          marimo: {
+            appConfig: {
+              auto_download: ["html", "future-format"],
+              width: "wide",
+              future_setting: { answer: 42 },
+            },
+          },
+        },
+      },
+    });
+
+    const parsed = Effect.runSync(
+      MarimoNotebookDocument.from(raw).parseMetadata(),
+    );
+    expect(parsed.appConfig.auto_download).toEqual(["html", "future-format"]);
+    expect(parsed.appConfig).toMatchObject({
+      width: "wide",
+      future_setting: { answer: 42 },
+    });
+  });
+
+  it("rejects invalid values for the option owned by the extension", () => {
+    const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
+      data: {
+        cells: [],
+        metadata: {
+          marimo: { appConfig: { auto_download: [42] } },
+        },
+      },
+    });
+
+    const result = Effect.runSync(
+      Effect.either(MarimoNotebookDocument.from(raw).parseMetadata()),
+    );
+    expect(Either.isLeft(result)).toBe(true);
+  });
+});

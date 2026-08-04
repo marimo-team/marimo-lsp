@@ -107,6 +107,21 @@ class TestSyncAppWithWorkspace:
         assert app.config.width == "medium"
         assert app.config.sql_output == "polars"
 
+    def test_runtime_ignores_unknown_app_options(self) -> None:
+        uri = "file:///test/notebook.py"
+        ws = _make_workspace_with_metadata(
+            uri,
+            metadata={
+                "marimo": {
+                    "appConfig": {"width": "wide", "future_setting": True},
+                }
+            },
+        )
+
+        app = sync_app_with_workspace(workspace=ws, notebook_uri=uri, app=None)
+        assert app.config.width == "wide"
+        assert not hasattr(app.config, "future_setting")
+
     def test_ignores_foreign_top_level_metadata(self) -> None:
         uri = "file:///test/notebook.py"
         ws = _make_workspace_with_metadata(

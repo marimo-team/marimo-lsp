@@ -31,6 +31,22 @@ export const PackageSource = Schema.Union(VenvSource, ScriptSource).annotations(
 export type PackageSource = typeof PackageSource.Type;
 
 /**
+ * App options understood by the extension, projected from ``AppConfig``.
+ *
+ * Codegen preserves excess properties in TypeScript so parsing this owned
+ * subset never discards options belonging to marimo or a future extension.
+ */
+export const OwnedAppConfig = Schema.Struct({
+  auto_download: Schema.optionalWith(Schema.Array(Schema.String), {
+    default: () => [],
+  }),
+}).annotations({
+  identifier: "OwnedAppConfig",
+  parseOptions: { onExcessProperty: "preserve" as const },
+});
+export type OwnedAppConfig = typeof OwnedAppConfig.Type;
+
+/**
  * Configuration for a notebook cell
  */
 export const NotebookCellConfig = Schema.Struct({
@@ -143,40 +159,6 @@ export const CellMetadata = Schema.Struct({
 export type CellMetadata = typeof CellMetadata.Type;
 
 /**
- * Program-specific configuration.
- *
- * Configuration for frontends or runtimes that is specific to
- * a single marimo program.
- */
-export const _AppConfig = Schema.Struct({
-  width: Schema.optionalWith(
-    Schema.Literal("columns", "compact", "full", "medium", "normal"),
-    { default: () => "compact" },
-  ),
-  app_title: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
-  layout_file: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
-  css_file: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
-  html_head_file: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
-  auto_download: Schema.optionalWith(
-    Schema.Array(Schema.Literal("html", "ipynb", "markdown")),
-    { default: () => [] },
-  ),
-  sql_output: Schema.optionalWith(
-    Schema.Literal("auto", "lazy-polars", "native", "pandas", "polars"),
-    { default: () => "auto" },
-  ),
-}).annotations({ identifier: "_AppConfig" });
-export type _AppConfig = typeof _AppConfig.Type;
-
-/**
  * Metadata about the notebook
  */
 export const NotebookMetadata = Schema.Struct({
@@ -188,9 +170,10 @@ export type NotebookMetadata = typeof NotebookMetadata.Type;
  * Persisted marimo-owned metadata on an LSP notebook document.
  */
 export const MarimoNotebookMetadata = Schema.Struct({
-  appConfig: Schema.optionalWith(_AppConfig, {
-    default: () => _AppConfig.make(),
-  }),
+  appConfig: Schema.optionalWith(
+    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+    { default: () => ({}) },
+  ),
   header: Schema.optionalWith(Schema.NullOr(Schema.String), {
     default: () => null,
   }),
@@ -241,9 +224,10 @@ export type NotebookV1 = typeof NotebookV1.Type;
  */
 export const NotebookDocument = Schema.Struct({
   notebook: NotebookV1,
-  appConfig: Schema.optionalWith(_AppConfig, {
-    default: () => _AppConfig.make(),
-  }),
+  appConfig: Schema.optionalWith(
+    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+    { default: () => ({}) },
+  ),
   header: Schema.optionalWith(Schema.NullOr(Schema.String), {
     default: () => null,
   }),
@@ -750,9 +734,10 @@ export type SerializeResponse = typeof SerializeResponse.Type;
 
 export const SerializePayload = Schema.Struct({
   notebook: NotebookV1,
-  appConfig: Schema.optionalWith(_AppConfig, {
-    default: () => _AppConfig.make(),
-  }),
+  appConfig: Schema.optionalWith(
+    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+    { default: () => ({}) },
+  ),
   header: Schema.optionalWith(Schema.NullOr(Schema.String), {
     default: () => null,
   }),

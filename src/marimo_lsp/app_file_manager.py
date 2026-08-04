@@ -179,7 +179,7 @@ def sync_app_with_workspace(
     notebook = find_notebook_document(workspace, notebook_uri)
 
     metadata = decode_notebook_document_metadata(notebook)
-    app_options = metadata.app_config.asdict()
+    app_options = metadata.app_config
     if app is None:
         app = InternalApp(App(**app_options))
 

@@ -4,9 +4,11 @@
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import inspect
 import json
+import keyword
 import typing
 from typing import TYPE_CHECKING, cast
 
@@ -89,6 +91,11 @@ if TYPE_CHECKING:
     from pygls.lsp.server import LanguageServer
 
     from marimo_lsp.sessions import Sessions
+
+
+_APP_CONFIG_FIELD_NAMES = frozenset(
+    field.name for field in dataclasses.fields(_AppConfig)
+)
 
 
 __all__ = ["API_METHODS", "ApiBuilder", "ApiMethod", "handle_api_command"]
@@ -549,12 +556,83 @@ def _package_manager_for(source: VenvSource | ScriptSource) -> LspPackageManager
 @marimo_api("serialize")
 async def serialize(_ctx: ApiContext, args: NotebookDocument) -> SerializeResponse:
     ir = MarimoConvert.from_notebook_v1(args.notebook).to_ir()
+    known_options = {
+        name: value
+        for name, value in args.app_config.items()
+        if name in _APP_CONFIG_FIELD_NAMES
+    }
     ir = dataclasses.replace(
         ir,
-        app=AppInstantiation(options=args.app_config.asdict()),
+        app=AppInstantiation(options=known_options),
         header=Header(value=args.header) if args.header is not None else None,
     )
-    return SerializeResponse(source=MarimoConvert.from_ir(ir).to_py())
+    source = MarimoConvert.from_ir(ir).to_py()
+    return SerializeResponse(
+        source=_restore_unknown_app_options(source, args.app_config)
+    )
+
+
+def _restore_unknown_app_options(source: str, options: dict[str, object]) -> str:
+    """Restore opaque options dropped by marimo's current code generator.
+
+    Marimo parses unknown literal kwargs, but ``generate_filecontents_from_ir``
+    projects them through its installed ``_AppConfig`` and loses them. Replace
+    only the generated ``marimo.App(...)`` expression so future options survive
+    a save without reformatting the rest of the notebook.
+    """
+    known_options = _APP_CONFIG_FIELD_NAMES
+    unknown_options = [
+        (name, value) for name, value in options.items() if name not in known_options
+    ]
+    if not unknown_options:
+        return source
+
+    rendered_options: list[str] = []
+    for name, value in unknown_options:
+        if not name.isidentifier() or keyword.iskeyword(name):
+            msg = f"App config key cannot be represented as a keyword: {name!r}"
+            raise ValueError(msg)
+        rendered = repr(value)
+        try:
+            ast.literal_eval(rendered)
+        except (ValueError, SyntaxError) as error:
+            msg = f"App config value is not a Python literal: {name!r}={rendered}"
+            raise ValueError(msg) from error
+        rendered_options.append(f"{name}={rendered}")
+
+    tree = ast.parse(source)
+    call = next(
+        (
+            node.value
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "app"
+                for target in node.targets
+            )
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and isinstance(node.value.func.value, ast.Name)
+            and node.value.func.value.id == "marimo"
+            and node.value.func.attr == "App"
+        ),
+        None,
+    )
+    if call is None or call.end_lineno is None or call.end_col_offset is None:
+        msg = "Generated notebook did not contain marimo.App(...)"
+        raise ValueError(msg)
+
+    lines = source.splitlines(keepends=True)
+
+    def offset(line_number: int, byte_column: int) -> int:
+        line = lines[line_number - 1]
+        char_column = len(line.encode()[:byte_column].decode())
+        return sum(map(len, lines[: line_number - 1])) + char_column
+
+    end = offset(call.end_lineno, call.end_col_offset)
+    separator = ", " if call.args or call.keywords else ""
+    insertion = f"{separator}{', '.join(rendered_options)}"
+    return f"{source[: end - 1]}{insertion}{source[end - 1 :]}"
 
 
 @marimo_api("deserialize")
@@ -578,7 +656,7 @@ async def deserialize(
     return DeserializeSuccess(
         notebook=NotebookDocument(
             notebook=converter.to_notebook_v1(),
-            app_config=_AppConfig.from_untrusted_dict(ir.app.options),
+            app_config={**_AppConfig().asdict(), **ir.app.options},
             header=ir.header.value if ir.header is not None else None,
         )
     )
