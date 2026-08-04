@@ -51,6 +51,7 @@ class _Inner(msgspec.Struct):
 # (exported name, type) pairs. The emitter topologically orders dependencies.
 CONCRETE: list[tuple[str, type | object]] = [
     ("PackageSource", models.PackageSource),
+    ("OwnedAppConfig", models.OwnedAppConfig),
     ("CellMetadata", models.CellMetadata),
     ("NotebookDocumentMetadata", models.NotebookDocumentMetadata),
     ("NotebookDocument", models.NotebookDocument),

@@ -133,7 +133,7 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
     });
   });
 
-  it("models the notebook wire document without an opaque record", () => {
+  it("preserves app constructor options as an open record", () => {
     const decoded = Schema.decodeUnknownSync(NotebookDocument)({
       notebook: {
         version: "1",
@@ -148,12 +148,16 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
           },
         ],
       },
-      appConfig: { width: "full" },
+      appConfig: { width: "full", future_setting: { answer: 42 } },
       header: null,
     });
 
     expect(decoded.notebook.cells[0]?.config.hide_code).toBe(true);
     expect(decoded.appConfig?.width).toBe("full");
+    expect(decoded.appConfig?.future_setting).toEqual({ answer: 42 });
+    expect(
+      Schema.encodeSync(NotebookDocument)(decoded).appConfig?.future_setting,
+    ).toEqual({ answer: 42 });
   });
 
   it.effect("requires JSON null for fire-and-forget responses", () =>

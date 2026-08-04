@@ -12,7 +12,6 @@ import msgspec
 # These stay runtime imports (noqa: TC002) even though they only appear in
 # annotations: msgspec resolves the stringified annotations when the structs
 # are first encoded/inspected, which fails under TYPE_CHECKING-only imports.
-from marimo._ast.app_config import _AppConfig
 from marimo._config.config import MarimoConfig  # noqa: TC002
 from marimo._convert.common.format import DEFAULT_MARKDOWN_PREFIX
 from marimo._runtime.packages.package_manager import PackageDescription  # noqa: TC002
@@ -32,6 +31,27 @@ T = typing.TypeVar("T", bound=msgspec.Struct)
 # `sourceProjections.sql.engine` for the implicit default engine. We must not
 # emit `engine=__marimo_duckdb` when round-tripping these cells.
 DEFAULT_SQL_ENGINE = "__marimo_duckdb"
+
+
+# Opaque ``marimo.App`` constructor options preserved across the wire.
+#
+# Marimo deliberately accepts ``**kwargs`` for forward/backward compatibility:
+# unknown keys are ignored by the installed runtime, while known keys accept
+# legacy values. The extension should therefore type and validate only options
+# it owns instead of duplicating marimo's evolving private ``_AppConfig``.
+type AppConfig = dict[str, object]
+
+
+class OwnedAppConfig(msgspec.Struct):
+    """App options understood by the extension, projected from ``AppConfig``.
+
+    Codegen preserves excess properties in TypeScript so parsing this owned
+    subset never discards options belonging to marimo or a future extension.
+    """
+
+    __preserve_unknown_fields__: typing.ClassVar[bool] = True
+
+    auto_download: list[str] = msgspec.field(default_factory=list)
 
 
 class NotebookCommand(msgspec.Struct, typing.Generic[T], rename="camel"):  # noqa: UP046
@@ -187,7 +207,7 @@ class MarimoNotebookMetadata(
 ):
     """Persisted marimo-owned metadata on an LSP notebook document."""
 
-    app_config: _AppConfig = msgspec.field(default_factory=_AppConfig)
+    app_config: AppConfig = msgspec.field(default_factory=dict)
     header: str | None = None
     notebook_metadata: NotebookMetadata = msgspec.field(default_factory=dict)
 
@@ -206,7 +226,7 @@ class NotebookDocument(msgspec.Struct, rename="camel"):
     """Strict JSON notebook data plus source-level application metadata."""
 
     notebook: NotebookV1
-    app_config: _AppConfig = msgspec.field(default_factory=_AppConfig)
+    app_config: AppConfig = msgspec.field(default_factory=dict)
     header: str | None = None
 
 

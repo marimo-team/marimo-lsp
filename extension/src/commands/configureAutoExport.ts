@@ -5,7 +5,7 @@ import type { AutoExportFormat } from "../features/AutoExport.ts";
 import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import type { _AppConfig } from "../schemas/Models.gen.ts";
+import type { OwnedAppConfig } from "../schemas/Models.gen.ts";
 
 const FORMATS = ["html", "ipynb"] as const;
 
@@ -13,9 +13,9 @@ const isManagedFormat = (format: string): format is AutoExportFormat =>
   format === "html" || format === "ipynb";
 
 export function mergeAutoDownloadFormats(
-  current: _AppConfig["auto_download"],
+  current: OwnedAppConfig["auto_download"],
   selected: ReadonlyArray<AutoExportFormat>,
-): _AppConfig["auto_download"] {
+): OwnedAppConfig["auto_download"] {
   const retained = current.filter(
     (format) => !isManagedFormat(format) || selected.includes(format),
   );

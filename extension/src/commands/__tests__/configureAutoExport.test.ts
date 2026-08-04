@@ -174,7 +174,7 @@ it.effect(
     const parsed = yield* MarimoNotebookDocument.from(
       updated.notebook,
     ).parseMetadata();
-    expect(parsed.appConfig.width).toBe("full");
+    expect(parsed.appConfig).toMatchObject({ width: "full" });
     expect(parsed.appConfig.auto_download).toEqual(["ipynb"]);
   }),
 );

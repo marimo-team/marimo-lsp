@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock, patch
 
 import msgspec
 import pytest
 from marimo._config.config import DEFAULT_CONFIG
+from marimo._convert.converters import MarimoConvert
 from marimo._types.ids import RequestId
 
 from marimo_lsp.api import (
     ApiBuilder,
     ApiContext,
+    _restore_unknown_app_options,
     deserialize,
     get_configuration,
+    handle_api_command,
     list_sql_schemas,
     list_sql_tables,
     update_configuration,
@@ -52,6 +55,66 @@ if __name__ == "__main__":
     result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
 
     assert isinstance(result, DeserializeSuccess)
+
+
+@pytest.mark.asyncio
+async def test_legacy_and_unknown_app_config_round_trip_over_api_wire() -> None:
+    source = """\
+import marimo
+
+app = marimo.App(
+    width="wide",
+    auto_download=["html"],
+    future_setting="keep",
+    asdict="method-name collision",
+)
+
+if __name__ == "__main__":
+    app.run()
+"""
+
+    deserialized = cast(
+        "dict[str, object]",
+        await handle_api_command(
+            MagicMock(),
+            MagicMock(),
+            "deserialize",
+            {"source": source},
+        ),
+    )
+    deserialized_notebook = cast("dict[str, object]", deserialized["notebook"])
+    app_config = cast("dict[str, object]", deserialized_notebook["appConfig"])
+    assert app_config["width"] == "wide"
+    assert app_config["auto_download"] == ["html"]
+    assert app_config["future_setting"] == "keep"
+    assert app_config["asdict"] == "method-name collision"
+
+    serialized = cast(
+        "dict[str, object]",
+        await handle_api_command(
+            MagicMock(),
+            MagicMock(),
+            "serialize",
+            deserialized_notebook,
+        ),
+    )
+    serialized_source = serialized["source"]
+    assert isinstance(serialized_source, str)
+    reparsed_options = MarimoConvert.from_py(serialized_source).to_ir().app.options
+    assert reparsed_options["width"] == "wide"
+    assert reparsed_options["auto_download"] == ["html"]
+    assert reparsed_options["future_setting"] == "keep"
+    assert reparsed_options["asdict"] == "method-name collision"
+
+
+def test_restore_unknown_app_options_reports_non_literal_value() -> None:
+    value = object()
+
+    with pytest.raises(ValueError, match=r"future_setting.*object"):
+        _restore_unknown_app_options(
+            "import marimo\napp = marimo.App()\n",
+            {"future_setting": value},
+        )
 
 
 @pytest.mark.asyncio

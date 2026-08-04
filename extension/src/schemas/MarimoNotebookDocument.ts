@@ -43,6 +43,8 @@ const notebookMetadataEquivalence = Schema.equivalence(
   Api.MarimoNotebookMetadata,
 );
 
+const parseOwnedAppConfig = Schema.decodeUnknown(Api.OwnedAppConfig);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -385,6 +387,12 @@ export class MarimoNotebookDocument {
     const raw = asRecord(this.#raw.metadata);
     return parseNotebookMetadata(
       Object.hasOwn(raw, "marimo") ? raw.marimo : {},
+    ).pipe(
+      Effect.flatMap((metadata) =>
+        parseOwnedAppConfig(metadata.appConfig).pipe(
+          Effect.map((appConfig) => ({ ...metadata, appConfig })),
+        ),
+      ),
     );
   }
 
