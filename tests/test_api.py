@@ -16,6 +16,7 @@ from marimo_lsp.api import (
     ApiContext,
     _restore_unknown_app_options,
     deserialize,
+    export_as_markdown,
     get_configuration,
     handle_api_command,
     list_sql_schemas,
@@ -27,6 +28,7 @@ from marimo_lsp.models import (
     DeserializeInvalidSyntax,
     DeserializeRequest,
     DeserializeSuccess,
+    ExportAsMarkdownRequest,
     GetConfigurationRequest,
     ListSQLSchemasRequest,
     ListSQLTablesRequest,
@@ -115,6 +117,40 @@ def test_restore_unknown_app_options_reports_non_literal_value() -> None:
             "import marimo\napp = marimo.App()\n",
             {"future_setting": value},
         )
+
+
+@pytest.mark.asyncio
+async def test_export_as_markdown() -> None:
+    source = """\
+import marimo
+
+__generated_with = "0.23.16"
+app = marimo.App()
+
+@app.cell
+def _():
+    x = 1
+    return (x,)
+
+if __name__ == "__main__":
+    app.run()
+"""
+    session = MagicMock()
+    session.filename = "/workspace/report.py"
+    session.app.to_ir.return_value = MarimoConvert.from_py(source).to_ir()
+    sessions = MagicMock()
+    sessions.get.return_value = session
+
+    markdown = await export_as_markdown(
+        _context(sessions),
+        NotebookCommand(
+            notebook_uri=NOTEBOOK_URI,
+            inner=ExportAsMarkdownRequest(),
+        ),
+    )
+
+    assert "title: Report" in markdown
+    assert "```python {.marimo}\nx = 1\n```" in markdown
 
 
 @pytest.mark.asyncio

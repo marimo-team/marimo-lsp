@@ -36,6 +36,7 @@ const controller: NotebookController = {
 
 const withTestCtx = Effect.fn(function* (
   options: {
+    readonly autoDownload?: ReadonlyArray<"html" | "ipynb" | "markdown">;
     readonly execute?: (request: MarimoApiCall) => Effect.Effect<string>;
     readonly hasOutputs?: boolean;
     readonly hasRuntimeSession?: boolean;
@@ -58,7 +59,9 @@ const withTestCtx = Effect.fn(function* (
   const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
     data: {
       metadata: MarimoNotebookDocument.createMetadata({
-        appConfig: { auto_download: ["html", "ipynb"] },
+        appConfig: {
+          auto_download: [...(options.autoDownload ?? ["html", "ipynb"])],
+        },
       }),
       cells: [
         {
@@ -111,7 +114,9 @@ const withTestCtx = Effect.fn(function* (
             Effect.succeed(
               request.method === "export-as-html"
                 ? "<html>report</html>"
-                : "{}",
+                : request.method === "export-as-markdown"
+                  ? "# Report"
+                  : "{}",
             ),
         ),
       ),
@@ -151,6 +156,25 @@ describe("autoExportUri", () => {
 });
 
 describe("AutoExport", () => {
+  it.scoped(
+    "exports Markdown to an md file",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx({ autoDownload: ["markdown"] });
+
+      yield* Effect.gen(function* () {
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
+
+        expect((yield* ctx.calls).map((call) => call.method)).toEqual([
+          "export-as-markdown",
+        ]);
+        expect(Object.fromEntries(yield* ctx.writes)).toEqual({
+          "file:///test/__marimo__/report.md": "# Report",
+        });
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
   it.scoped(
     "waits for a live runtime session before creating exports",
     Effect.fn(function* () {

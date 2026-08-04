@@ -13,7 +13,8 @@ import {
 
 export const AUTO_EXPORT_INTERVAL = "5 seconds";
 
-export type AutoExportFormat = "html" | "ipynb";
+export type AutoExportFormat = "html" | "ipynb" | "markdown";
+type AutoExportExtension = "html" | "ipynb" | "md";
 
 interface AutoExportState {
   readonly incarnation: object;
@@ -24,23 +25,25 @@ interface AutoExportState {
 const initialState = (): AutoExportState => ({
   incarnation: {},
   generation: 0,
-  exported: { html: -1, ipynb: -1 },
+  exported: { html: -1, ipynb: -1, markdown: -1 },
 });
 
 export function autoExportUri(
   code: VsCode,
   notebook: MarimoNotebookDocument,
-  format: AutoExportFormat,
+  extension: AutoExportExtension,
 ) {
   const basename = NodePath.posix.basename(notebook.uri.path);
-  const extension = NodePath.posix.extname(basename);
+  const notebookExtension = NodePath.posix.extname(basename);
   const stem =
-    extension.length > 0 ? basename.slice(0, -extension.length) : basename;
+    notebookExtension.length > 0
+      ? basename.slice(0, -notebookExtension.length)
+      : basename;
   return code.Uri.joinPath(
     notebook.uri,
     "..",
     "__marimo__",
-    `${stem}.${format}`,
+    `${stem}.${extension}`,
   );
 }
 
@@ -163,8 +166,8 @@ export const AutoExportLive = Layer.scopedDiscard(
 
         const metadata = yield* notebook.parseMetadata();
         const enabled = metadata.appConfig.auto_download;
-        const formats = (["html", "ipynb"] as const).filter((format) =>
-          enabled.includes(format),
+        const formats = (["html", "ipynb", "markdown"] as const).filter(
+          (format) => enabled.includes(format),
         );
         if (formats.length === 0) return;
 
@@ -220,23 +223,32 @@ export const AutoExportLive = Layer.scopedDiscard(
       notebook: MarimoNotebookDocument,
       format: AutoExportFormat,
     ) {
-      const content =
-        format === "html"
-          ? marimo.exportAsHtml({
-              notebookUri: notebook.id,
-              inner: {
-                download: false,
-                files: [],
-                includeCode: true,
-                assetUrl: null,
-              },
-            })
-          : marimo.exportAsIpynb({
-              notebookUri: notebook.id,
-              inner: {},
-            });
+      const content = (() => {
+        if (format === "html") {
+          return marimo.exportAsHtml({
+            notebookUri: notebook.id,
+            inner: {
+              download: false,
+              files: [],
+              includeCode: true,
+              assetUrl: null,
+            },
+          });
+        }
+        if (format === "ipynb") {
+          return marimo.exportAsIpynb({
+            notebookUri: notebook.id,
+            inner: {},
+          });
+        }
+        return marimo.exportAsMarkdown({
+          notebookUri: notebook.id,
+          inner: {},
+        });
+      })();
 
-      const uri = autoExportUri(code, notebook, format);
+      const extension = format === "markdown" ? "md" : format;
+      const uri = autoExportUri(code, notebook, extension);
       return content.pipe(
         Effect.andThen(Schema.decodeUnknown(Schema.String)),
         Effect.flatMap((value) =>

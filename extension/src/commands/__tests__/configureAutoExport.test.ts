@@ -16,9 +16,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 describe("mergeAutoDownloadFormats", () => {
-  it("updates HTML and IPYNB without removing latent Markdown export", () => {
+  it("updates all managed formats from the selection", () => {
     expect(mergeAutoDownloadFormats(["html", "markdown"], ["ipynb"])).toEqual([
-      "markdown",
       "ipynb",
     ]);
   });
@@ -31,10 +30,9 @@ describe("mergeAutoDownloadFormats", () => {
   });
 
   it("preserves the order of existing formats", () => {
-    expect(mergeAutoDownloadFormats(["markdown", "html"], ["html"])).toEqual([
-      "markdown",
-      "html",
-    ]);
+    expect(
+      mergeAutoDownloadFormats(["markdown", "html"], ["html", "markdown"]),
+    ).toEqual(["markdown", "html"]);
   });
 });
 
@@ -104,7 +102,11 @@ it.effect(
       window: {
         showQuickPickItemsMany: (items) =>
           Effect.succeed(
-            Option.some(items.filter((item) => item.label === "HTML")),
+            Option.some(
+              items.filter(
+                (item) => item.label === "HTML" || item.label === "Markdown",
+              ),
+            ),
           ),
       },
       workspace: {
@@ -116,6 +118,41 @@ it.effect(
     yield* configureAutoExport().pipe(Effect.provide(vscode.layer));
 
     expect(yield* applied).toBe(false);
+  }),
+);
+
+it.effect(
+  "reports when all automatic exports are disabled",
+  Effect.fn(function* () {
+    const information = yield* Ref.make(Option.none<string>());
+    const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
+      data: {
+        cells: [],
+        metadata: MarimoNotebookDocument.createMetadata({
+          appConfig: { auto_download: ["html", "ipynb", "markdown"] },
+        }),
+      },
+    });
+    const vscode = yield* TestVsCode.make({
+      initialDocuments: [editor.notebook],
+      window: {
+        showQuickPickItemsMany: () => Effect.succeed(Option.some([])),
+        showInformationMessage: (message) =>
+          Ref.set(information, Option.some(message)).pipe(
+            Effect.as(Option.none()),
+          ),
+      },
+      workspace: {
+        applyEdit: () => Effect.succeed(true),
+      },
+    });
+
+    yield* vscode.setActiveNotebookEditor(Option.some(editor));
+    yield* configureAutoExport().pipe(Effect.provide(vscode.layer));
+
+    expect(yield* information).toEqual(
+      Option.some("Automatic exports disabled."),
+    );
   }),
 );
 
