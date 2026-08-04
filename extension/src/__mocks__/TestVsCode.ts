@@ -1625,6 +1625,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   static make = Effect.fn(function* (
     options: {
       initialDocuments?: Array<vscode.NotebookDocument>;
+      visibleNotebookEditors?: Array<vscode.NotebookEditor>;
       version?: string;
       fileSystem?: Map<string, Uint8Array | Error>;
       window?: Partial<Window>;
@@ -1641,7 +1642,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     );
 
     const visibleNotebookEditors = yield* SubscriptionRef.make(
-      [] as ReadonlyArray<vscode.NotebookEditor>,
+      options.visibleNotebookEditors ?? [],
     );
 
     const visibleTextEditors = yield* SubscriptionRef.make(

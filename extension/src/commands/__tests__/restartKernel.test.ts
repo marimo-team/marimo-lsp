@@ -16,8 +16,8 @@ describe("restartKernel invocation", () => {
       const active = TestVsCode.makeNotebookEditor("/test/active.py");
       const vscode = yield* TestVsCode.make({
         initialDocuments: [target.notebook, active.notebook],
+        visibleNotebookEditors: [target, active],
       });
-      yield* vscode.setActiveNotebookEditor(Option.some(target));
       yield* vscode.setActiveNotebookEditor(Option.some(active));
 
       const [resolved] = yield* decodeCommandArguments(restartKernel.command, [
