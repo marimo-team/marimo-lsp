@@ -92,15 +92,17 @@ export default vite.defineConfig({
       "typescript/no-non-null-assertion": "error",
       "typescript/no-misused-spread": "off",
       "typescript/no-shadow": "off",
-      // Keep the new Effect diagnostics visible without making existing findings
-      // block this toolchain migration. New Effect rules still use their defaults.
-      "effecttsgo/strict-effect-provide": "off",
-      "effecttsgo/run-effect-inside-effect": "warn",
-      "effecttsgo/global-error-in-effect-failure": "warn",
-      "effecttsgo/schema-sync-in-effect": "warn",
-      "effecttsgo/catch-unfailable-effect": "warn",
-      "effecttsgo/any-unknown-in-error-context": "warn",
     },
+    overrides: [
+      {
+        files: ["src/**/__tests__/**/*.ts", "src/**/*.test.ts"],
+        rules: {
+          // Effect.provide is the application boundary for independently
+          // constructed test layers that cannot be shared through it.layer.
+          "effecttsgo/strict-effect-provide": "off",
+        },
+      },
+    ],
     options: {
       typeAware: true,
       typeCheck: true,

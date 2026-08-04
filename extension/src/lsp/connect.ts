@@ -169,11 +169,9 @@ export const connectMarimoNotebookLspClient = Effect.fn(
                 ({ type }) => (kind & WATCH_KIND_FOR_CHANGE[type]) !== 0,
               ),
               Stream.runForEach(({ uri, type }) =>
-                client
-                  .sendNotification("workspace/didChangeWatchedFiles", {
-                    changes: [{ uri: uri.toString(), type }],
-                  })
-                  .pipe(Effect.catchAll(() => Effect.void)),
+                client.sendNotification("workspace/didChangeWatchedFiles", {
+                  changes: [{ uri: uri.toString(), type }],
+                }),
               ),
             ),
           );

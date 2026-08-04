@@ -1,6 +1,7 @@
 import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import {
   Cause,
+  Data,
   Duration,
   Effect,
   Fiber,
@@ -38,6 +39,10 @@ type EncodedNotebookDocumentMetadata =
   typeof Api.NotebookDocumentMetadata.Encoded;
 const DESERIALIZE_TIMEOUT = Duration.seconds(120);
 export { NotebookSourceError } from "./NotebookSourceError.ts";
+
+class NotebookSerializerError extends Data.TaggedError(
+  "NotebookSerializerError",
+)<{ readonly message: string }> {}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -171,9 +176,10 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                   ),
                   Effect.mapError(
                     () =>
-                      new Error(
-                        `Failed to serialize notebook. See marimo logs for details.`,
-                      ),
+                      new NotebookSerializerError({
+                        message:
+                          "Failed to serialize notebook. See marimo logs for details.",
+                      }),
                   ),
                 ),
               );
@@ -190,14 +196,17 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
                   Effect.tapErrorCause(logDeserializeFailure),
                   Effect.mapError((error) =>
                     error instanceof NotebookSourceError
-                      ? new Error(notebookSourceFailureMessage(error.failure))
+                      ? new NotebookSerializerError({
+                          message: notebookSourceFailureMessage(error.failure),
+                        })
                       : Cause.isTimeoutException(error)
-                        ? new Error(
-                            `Timed out after ${Duration.toSeconds(DESERIALIZE_TIMEOUT)} seconds while opening the notebook. See marimo logs for details.`,
-                          )
-                        : new Error(
-                            `Failed to deserialize notebook. See marimo logs for details.`,
-                          ),
+                        ? new NotebookSerializerError({
+                            message: `Timed out after ${Duration.toSeconds(DESERIALIZE_TIMEOUT)} seconds while opening the notebook. See marimo logs for details.`,
+                          })
+                        : new NotebookSerializerError({
+                            message:
+                              "Failed to deserialize notebook. See marimo logs for details.",
+                          }),
                   ),
                 ),
               );

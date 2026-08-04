@@ -25,16 +25,18 @@ export class Memento {
   }
 }
 
-export const TestExtensionContextLive = Layer.succeed(ExtensionContext, {
+const testExtensionContext = {
   globalState: new Memento(),
   workspaceState: new Memento(),
   extensionUri: Uri.parse("file:///test/extension/path", true),
   globalStorageUri: Uri.parse("file://test/extension/libs", true),
-});
+};
+
+export const TestExtensionContextLive = Layer.succeed(
+  ExtensionContext,
+  testExtensionContext,
+);
 
 export function getTestExtensionContext() {
-  return ExtensionContext.pipe(
-    Effect.provide(TestExtensionContextLive),
-    Effect.scoped,
-  );
+  return Effect.succeed(testExtensionContext);
 }

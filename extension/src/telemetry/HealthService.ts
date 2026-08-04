@@ -248,13 +248,7 @@ export class HealthService extends Effect.Service<HealthService>()(
         showDiagnostics: Effect.fn(function* () {
           yield* Effect.logInfo("Showing diagnostics");
 
-          const diagnosticText = yield* formatDiagnostics().pipe(
-            Effect.catchAll((error) =>
-              Effect.succeed(
-                `Error generating diagnostics: \n\n${String(error)} `,
-              ),
-            ),
-          );
+          const diagnosticText = yield* formatDiagnostics();
 
           const doc = yield* code.workspace.openUntitledTextDocument({
             content: diagnosticText,

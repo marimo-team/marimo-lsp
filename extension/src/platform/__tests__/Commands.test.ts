@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Either, Logger, PubSub, Queue } from "effect";
+import { Data, Effect, Either, Logger, PubSub, Queue } from "effect";
 
 import { commandId } from "../../commands.ts";
 import newMarimoNotebook from "../../commands/newMarimoNotebook.ts";
@@ -7,6 +7,10 @@ import openTutorial from "../../commands/openTutorial.ts";
 import restartKernel from "../../commands/restartKernel.ts";
 import runStale from "../../commands/runStale.ts";
 import { withCommandContext } from "../VsCode.ts";
+
+class InvalidCommandArgument extends Data.TaggedError(
+  "InvalidCommandArgument",
+)<{ readonly message: string }> {}
 
 describe("command error context", () => {
   it.effect("logs failures with their command ID", () => {
@@ -16,7 +20,9 @@ describe("command error context", () => {
       logs.push(Object.fromEntries(annotations));
     });
 
-    return Effect.fail(new Error("invalid command argument")).pipe(
+    return Effect.fail(
+      new InvalidCommandArgument({ message: "invalid command argument" }),
+    ).pipe(
       withCommandContext(runStale.command),
       Effect.exit,
       Effect.provide(

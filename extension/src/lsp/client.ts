@@ -706,9 +706,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
           Effect.timeout("5 seconds"),
           Effect.catchAll(() => Effect.void),
         );
-        yield* Effect.promise(() => conn.sendNotification("exit")).pipe(
-          Effect.catchAll(() => Effect.void),
-        );
+        yield* Effect.promise(() => conn.sendNotification("exit"));
       }),
     );
 
