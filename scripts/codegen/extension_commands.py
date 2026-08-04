@@ -14,6 +14,16 @@ from scripts.codegen.output import EXTENSION
 OUTPUT = EXTENSION / "src" / "commands" / "CommandIds.gen.ts"
 LABEL = "extension commands"
 
+SURFACE_NAMES = {
+    "file/newFile": "fileNew",
+    "notebook/toolbar": "notebookToolbar",
+    "notebook/cell/title": "notebookCellTitle",
+    "editor/title": "editorTitle",
+    "view/title": "viewTitle",
+    "view/item/context": "viewItemContext",
+}
+SUPPORTED_MENUS = {"commandPalette", *SURFACE_NAMES}
+
 
 class Command(msgspec.Struct):
     command: str
@@ -38,11 +48,19 @@ def _name(command_id: str) -> str:
     return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:])
 
 
+def validate_menu_surfaces(menus: dict[str, list[MenuItem]]) -> None:
+    unsupported = sorted(set(menus) - SUPPORTED_MENUS)
+    if unsupported:
+        message = f"Unsupported command menu surfaces: {unsupported}"
+        raise ValueError(message)
+
+
 def generate() -> str:
     package = msgspec.json.decode(
         (EXTENSION / "package.json").read_bytes(),
         type=PackageJson,
     )
+    validate_menu_surfaces(package.contributes.menus)
     command_ids = "\n".join(
         f"  {_name(entry.command)}: {json.dumps(entry.command)},"
         for entry in sorted(package.contributes.commands, key=lambda item: item.command)
@@ -52,21 +70,13 @@ def generate() -> str:
         for item in package.contributes.menus.get("commandPalette", [])
         if item.when == "never"
     }
-    surface_names = {
-        "file/newFile": "fileNew",
-        "notebook/toolbar": "notebookToolbar",
-        "notebook/cell/title": "notebookCellTitle",
-        "editor/title": "editorTitle",
-        "view/title": "viewTitle",
-        "view/item/context": "viewItemContext",
-    }
     surfaces_by_command: dict[str, set[str]] = {
         entry.command: set() for entry in package.contributes.commands
     }
     for command_id, surfaces in surfaces_by_command.items():
         if command_id not in hidden_from_palette:
             surfaces.add("commandPalette")
-    for menu, surface in surface_names.items():
+    for menu, surface in SURFACE_NAMES.items():
         for item in package.contributes.menus.get(menu, []):
             if item.command in surfaces_by_command:
                 surfaces_by_command[item.command].add(surface)
