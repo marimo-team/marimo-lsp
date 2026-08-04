@@ -1395,6 +1395,19 @@ export const ExportAsIpynbPayload = Schema.Struct({
 });
 
 /**
+ * A request to export the notebook as Markdown.
+ */
+export const ExportAsMarkdownRequest = Schema.Struct({}).annotations({
+  identifier: "ExportAsMarkdownRequest",
+});
+export type ExportAsMarkdownRequest = typeof ExportAsMarkdownRequest.Type;
+
+export const ExportAsMarkdownPayload = Schema.Struct({
+  notebookUri: Schema.String,
+  inner: ExportAsMarkdownRequest,
+});
+
+/**
  * Every command accepted by the `marimo.api` transport.
  *
  * Generated from the `API_METHODS` registry in `src/marimo_lsp/api.py`,
@@ -1496,6 +1509,10 @@ export type MarimoApiCall =
   | {
       readonly method: "export-as-ipynb";
       readonly params: typeof ExportAsIpynbPayload.Encoded;
+    }
+  | {
+      readonly method: "export-as-markdown";
+      readonly params: typeof ExportAsMarkdownPayload.Encoded;
     };
 
 type Execute<E, R> = (call: MarimoApiCall) => Effect.Effect<unknown, E, R>;
@@ -1690,6 +1707,13 @@ export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({
       execute,
       { method: "export-as-ipynb", params },
       ExportAsIpynbPayload,
+      Schema.String,
+    ),
+  exportAsMarkdown: (params: typeof ExportAsMarkdownPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "export-as-markdown", params },
+      ExportAsMarkdownPayload,
       Schema.String,
     ),
 });

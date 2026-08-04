@@ -7,10 +7,10 @@ import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { OwnedAppConfig } from "../schemas/Models.gen.ts";
 
-const FORMATS = ["html", "ipynb"] as const;
+const FORMATS = ["html", "ipynb", "markdown"] as const;
 
 const isManagedFormat = (format: string): format is AutoExportFormat =>
-  format === "html" || format === "ipynb";
+  format === "html" || format === "ipynb" || format === "markdown";
 
 export function mergeAutoDownloadFormats(
   current: OwnedAppConfig["auto_download"],
@@ -57,6 +57,12 @@ export const configureAutoExport = Effect.fn("command.configureAutoExport")(
           detail: "Save a Jupyter notebook with current outputs",
           value: "ipynb" as const,
           picked: current.includes("ipynb"),
+        },
+        {
+          label: "Markdown",
+          detail: "Save a Markdown representation of the notebook",
+          value: "markdown" as const,
+          picked: current.includes("markdown"),
         },
       ],
       {

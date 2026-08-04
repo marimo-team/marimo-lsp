@@ -347,6 +347,10 @@ class ExportAsIpynbRequest(msgspec.Struct, rename="camel"):
     """A request to export the notebook as ipynb."""
 
 
+class ExportAsMarkdownRequest(msgspec.Struct, rename="camel"):
+    """A request to export the notebook as Markdown."""
+
+
 class ExecuteScratchRequest(msgspec.Struct, rename="camel"):
     """Execute arbitrary Python code outside the dependency graph."""
 

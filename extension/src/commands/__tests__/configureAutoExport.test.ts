@@ -16,9 +16,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 describe("mergeAutoDownloadFormats", () => {
-  it("updates HTML and IPYNB without removing latent Markdown export", () => {
+  it("updates all managed formats from the selection", () => {
     expect(mergeAutoDownloadFormats(["html", "markdown"], ["ipynb"])).toEqual([
-      "markdown",
       "ipynb",
     ]);
   });
@@ -31,10 +30,9 @@ describe("mergeAutoDownloadFormats", () => {
   });
 
   it("preserves the order of existing formats", () => {
-    expect(mergeAutoDownloadFormats(["markdown", "html"], ["html"])).toEqual([
-      "markdown",
-      "html",
-    ]);
+    expect(
+      mergeAutoDownloadFormats(["markdown", "html"], ["html", "markdown"]),
+    ).toEqual(["markdown", "html"]);
   });
 });
 
@@ -104,7 +102,11 @@ it.effect(
       window: {
         showQuickPickItemsMany: (items) =>
           Effect.succeed(
-            Option.some(items.filter((item) => item.label === "HTML")),
+            Option.some(
+              items.filter(
+                (item) => item.label === "HTML" || item.label === "Markdown",
+              ),
+            ),
           ),
       },
       workspace: {

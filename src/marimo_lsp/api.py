@@ -19,8 +19,12 @@ from marimo._ast.parse import MarimoFileError
 from marimo._config.config import MarimoConfig  # noqa: TC002 - API introspection
 from marimo._config.manager import get_default_config_manager
 from marimo._convert.converters import MarimoConvert
-from marimo._export.exporter import Exporter
-from marimo._export.requests import HTMLExportRequest, IPYNBExportRequest
+from marimo._export.exporter import Exporter, export_markdown
+from marimo._export.requests import (
+    HTMLExportRequest,
+    IPYNBExportRequest,
+    MarkdownExportRequest,
+)
 from marimo._export.serialization import serialize_notebook_snapshot
 from marimo._runtime.commands import (
     ExecuteScratchpadCommand,
@@ -29,7 +33,7 @@ from marimo._runtime.commands import (
 from marimo._runtime.packages.package_manager import PackageDescription
 from marimo._runtime.packages.package_managers import create_package_manager
 from marimo._schemas.export import ExportAsHTMLRequest, to_html_export_options
-from marimo._schemas.export_options import IPYNBExportOptions
+from marimo._schemas.export_options import IPYNBExportOptions, MarkdownExportOptions
 from marimo._schemas.serialization import (
     AppInstantiation,
     Header,
@@ -54,6 +58,7 @@ from marimo_lsp.models import (
     ExecuteCellsRequest,
     ExecuteScratchRequest,
     ExportAsIpynbRequest,
+    ExportAsMarkdownRequest,
     GetConfigurationRequest,
     GetConfigurationResponse,
     InterruptRequest,
@@ -818,6 +823,28 @@ async def export_as_ipynb(
     )
     ipynb.setdefault("metadata", {}).setdefault("marimo", {})["session"] = session_data
     return json.dumps(ipynb)
+
+
+@marimo_api("export-as-markdown")
+async def export_as_markdown(
+    ctx: ApiContext,
+    args: NotebookCommand[ExportAsMarkdownRequest],
+) -> str:
+    """Export the notebook as Markdown."""
+    logger.info(f"export_as_markdown for {args.notebook_uri}")
+    session = ctx.sessions.get(args.notebook_uri)
+    assert session, f"No session in workspace for {args.notebook_uri}"
+
+    result = export_markdown(
+        MarkdownExportRequest(
+            notebook=session.app.to_ir(),
+            options=MarkdownExportOptions(
+                filename=session.filename,
+                source_filename=session.filename,
+            ),
+        )
+    )
+    return result.text
 
 
 API_METHODS = marimo_api.build()
