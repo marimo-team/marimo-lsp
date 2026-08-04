@@ -57,7 +57,6 @@ const makeAdapter = <
   decode: InvocationAdapter<CallArgs, HandlerArgs, Requirements>["decode"],
 ): InvocationAdapter<CallArgs, HandlerArgs, Requirements> => ({
   surface,
-  surfaces: [surface],
   contributedSurfaces: contributed ? [surface] : [],
   contributed,
   consumedArguments,
@@ -306,7 +305,6 @@ const join = <
 > => {
   const adapters: ReadonlyArray<AnyInvocationAdapter> = [first, ...rest];
   return {
-    surfaces: [...new Set(adapters.map((adapter) => adapter.surface))],
     contributedSurfaces: [
       ...new Set(
         adapters

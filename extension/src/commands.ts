@@ -13,7 +13,6 @@ export interface CommandInvocation<
   Requirements = never,
 > {
   readonly callArguments?: CallArgs;
-  readonly surfaces: ReadonlyArray<string>;
   readonly contributedSurfaces: ReadonlyArray<string>;
   readonly decode: (
     args: ReadonlyArray<unknown>,
@@ -29,7 +28,6 @@ export interface MarimoCommand<
   readonly [MarimoCommandTypeId]: {
     readonly callArguments?: CallArgs;
     readonly id: string;
-    readonly surfaces: ReadonlyArray<string>;
     readonly contributedSurfaces: ReadonlyArray<string>;
     readonly decodeArguments: (
       args: ReadonlyArray<unknown>,
@@ -100,7 +98,6 @@ export function marimoCommand<
   return {
     [MarimoCommandTypeId]: {
       id,
-      surfaces: invocation.surfaces,
       contributedSurfaces: invocation.contributedSurfaces,
       decodeArguments: invocation.decode,
       decodeResult: Schema.decodeUnknown(result),
@@ -125,10 +122,6 @@ export const VscodeUriSchema = Schema.declare<vscode.Uri>(
 
 export function commandId(command: MarimoCommand): string {
   return command[MarimoCommandTypeId].id;
-}
-
-export function commandSurfaces(command: MarimoCommand): ReadonlyArray<string> {
-  return command[MarimoCommandTypeId].surfaces;
 }
 
 export function commandContributedSurfaces(
