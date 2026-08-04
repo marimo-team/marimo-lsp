@@ -124,7 +124,7 @@ export const configureAutoExport = Effect.fn("command.configureAutoExport")(
     yield* code.window.showInformationMessage(
       label.length > 0
         ? `Automatic exports enabled for ${label}.`
-        : "Automatic HTML and IPYNB exports disabled.",
+        : "Automatic exports disabled.",
     );
   },
 );

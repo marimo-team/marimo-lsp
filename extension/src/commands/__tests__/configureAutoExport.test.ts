@@ -122,6 +122,41 @@ it.effect(
 );
 
 it.effect(
+  "reports when all automatic exports are disabled",
+  Effect.fn(function* () {
+    const information = yield* Ref.make(Option.none<string>());
+    const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
+      data: {
+        cells: [],
+        metadata: MarimoNotebookDocument.createMetadata({
+          appConfig: { auto_download: ["html", "ipynb", "markdown"] },
+        }),
+      },
+    });
+    const vscode = yield* TestVsCode.make({
+      initialDocuments: [editor.notebook],
+      window: {
+        showQuickPickItemsMany: () => Effect.succeed(Option.some([])),
+        showInformationMessage: (message) =>
+          Ref.set(information, Option.some(message)).pipe(
+            Effect.as(Option.none()),
+          ),
+      },
+      workspace: {
+        applyEdit: () => Effect.succeed(true),
+      },
+    });
+
+    yield* vscode.setActiveNotebookEditor(Option.some(editor));
+    yield* configureAutoExport().pipe(Effect.provide(vscode.layer));
+
+    expect(yield* information).toEqual(
+      Option.some("Automatic exports disabled."),
+    );
+  }),
+);
+
+it.effect(
   "merges the selection into metadata changed while the picker is open",
   Effect.fn(function* () {
     const updatedMetadata = yield* Ref.make(

@@ -14,6 +14,7 @@ import {
 export const AUTO_EXPORT_INTERVAL = "5 seconds";
 
 export type AutoExportFormat = "html" | "ipynb" | "markdown";
+type AutoExportExtension = "html" | "ipynb" | "md";
 
 interface AutoExportState {
   readonly incarnation: object;
@@ -30,17 +31,19 @@ const initialState = (): AutoExportState => ({
 export function autoExportUri(
   code: VsCode,
   notebook: MarimoNotebookDocument,
-  format: AutoExportFormat | "md",
+  extension: AutoExportExtension,
 ) {
   const basename = NodePath.posix.basename(notebook.uri.path);
-  const extension = NodePath.posix.extname(basename);
+  const notebookExtension = NodePath.posix.extname(basename);
   const stem =
-    extension.length > 0 ? basename.slice(0, -extension.length) : basename;
+    notebookExtension.length > 0
+      ? basename.slice(0, -notebookExtension.length)
+      : basename;
   return code.Uri.joinPath(
     notebook.uri,
     "..",
     "__marimo__",
-    `${stem}.${format}`,
+    `${stem}.${extension}`,
   );
 }
 
