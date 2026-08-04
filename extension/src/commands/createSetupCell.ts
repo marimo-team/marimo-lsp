@@ -1,31 +1,19 @@
 import { Effect, Option } from "effect";
 
-import { defineMarimoCommand } from "../commands.ts";
+import { defineCommand } from "../commands.ts";
 import { SETUP_CELL_NAME } from "../constants.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import {
-  MarimoNotebookCell,
-  MarimoNotebookDocument,
-} from "../schemas/MarimoNotebookDocument.ts";
-import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
-import {
-  getNotebookCommandEditor,
-  type NotebookToolbarContext,
-  withOptionalNotebookToolbarContext,
-} from "./NotebookCommandTarget.ts";
+import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
+import type { NotebookTarget } from "./Invocation.ts";
+import { MarimoCommands } from "./MarimoCommands.ts";
 
-const createSetupCell = Effect.fn("command.createSetupCell")(function* (
-  context?: NotebookToolbarContext,
+const handler = Effect.fn("command.createSetupCell")(function* (
+  target: Option.Option<NotebookTarget>,
 ) {
   const code = yield* VsCode;
   const { LanguageId } = yield* Constants;
-  const notebook = Option.filterMap(
-    yield* getNotebookCommandEditor(context),
-    (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
-  );
-
-  if (Option.isNone(notebook)) {
+  if (Option.isNone(target)) {
     yield* code.window.showInformationMessage(
       "No marimo notebook is currently open",
     );
@@ -33,7 +21,8 @@ const createSetupCell = Effect.fn("command.createSetupCell")(function* (
   }
 
   // Check if setup cell already exists
-  const cells = notebook.value.getCells();
+  const notebook = target.value.document;
+  const cells = notebook.getCells();
   const existing = cells.find((cell) => {
     return Option.isSome(cell.name) && cell.name.value === SETUP_CELL_NAME;
   });
@@ -41,14 +30,9 @@ const createSetupCell = Effect.fn("command.createSetupCell")(function* (
   if (existing) {
     // Show message and focus on existing setup cell
     yield* code.window.showInformationMessage("Setup cell already exists");
-    yield* code.window.showNotebookDocument(
-      notebook.value.rawNotebookDocument,
-      {
-        selections: [
-          new code.NotebookRange(existing.index, existing.index + 1),
-        ],
-      },
-    );
+    yield* code.window.showNotebookDocument(notebook.rawNotebookDocument, {
+      selections: [new code.NotebookRange(existing.index, existing.index + 1)],
+    });
     return;
   }
 
@@ -68,18 +52,15 @@ const createSetupCell = Effect.fn("command.createSetupCell")(function* (
       // UUID here would leave the cell an ordinary cell until reopen.
       marimoRuntime: { stableId: SETUP_CELL_NAME },
     });
-    edit.set(notebook.value.uri, [code.NotebookEdit.insertCells(0, [cell])]);
+    edit.set(notebook.uri, [code.NotebookEdit.insertCells(0, [cell])]);
     yield* code.workspace.applyEdit(edit);
   }
 
   yield* Effect.logInfo("Created setup cell").pipe(
     Effect.annotateLogs({
-      notebook: notebook.value.id,
+      notebook: notebook.id,
     }),
   );
 });
 
-export const createSetupCellCommand = defineMarimoCommand(
-  withOptionalNotebookToolbarContext(GeneratedMarimoCommands.createSetupCell),
-  createSetupCell,
-);
+export default defineCommand(MarimoCommands.createSetupCell, handler);

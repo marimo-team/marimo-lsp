@@ -1625,6 +1625,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   static make = Effect.fn(function* (
     options: {
       initialDocuments?: Array<vscode.NotebookDocument>;
+      visibleNotebookEditors?: Array<vscode.NotebookEditor>;
       version?: string;
       fileSystem?: Map<string, Uint8Array | Error>;
       window?: Partial<Window>;
@@ -1641,7 +1642,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     );
 
     const visibleNotebookEditors = yield* SubscriptionRef.make(
-      [] as ReadonlyArray<vscode.NotebookEditor>,
+      options.visibleNotebookEditors ?? [],
     );
 
     const visibleTextEditors = yield* SubscriptionRef.make(
@@ -1905,8 +1906,15 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           executeVSCode(command, ...args) {
             return Ref.update(executions, (arr) => [...arr, { command, args }]);
           },
+          bind(command, title, ...args) {
+            return {
+              command: commandId(command),
+              title,
+              arguments: [...args],
+            };
+          },
           register(definition) {
-            const name = commandId(definition);
+            const name = commandId(definition.command);
             return Effect.gen(function* () {
               yield* Ref.update(commands, HashSet.add<string>(name));
               yield* Effect.addFinalizer(() =>

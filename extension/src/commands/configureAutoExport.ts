@@ -2,12 +2,8 @@ import { Effect, Option } from "effect";
 
 import type { AutoExportFormat } from "../features/AutoExport.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { OwnedAppConfig } from "../schemas/Models.gen.ts";
-import {
-  getNotebookCommandEditor,
-  type NotebookToolbarContext,
-} from "./NotebookCommandTarget.ts";
 
 const FORMATS = ["html", "ipynb", "markdown"] as const;
 
@@ -30,13 +26,8 @@ export function mergeAutoDownloadFormats(
 }
 
 export const configureAutoExport = Effect.fn("command.configureAutoExport")(
-  function* (context?: NotebookToolbarContext) {
+  function* (notebook: Option.Option<MarimoNotebookDocument>) {
     const code = yield* VsCode;
-    const notebook = Option.filterMap(
-      yield* getNotebookCommandEditor(context),
-      (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
-    );
-
     if (Option.isNone(notebook)) {
       yield* code.window.showWarningMessage(
         "Open a marimo notebook to configure export formats.",

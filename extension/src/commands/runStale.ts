@@ -1,35 +1,27 @@
 import { Effect, flow, Option } from "effect";
 
-import { defineMarimoCommand } from "../commands.ts";
+import { defineCommand } from "../commands.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
-import {
-  getNotebookCommandEditor,
-  type NotebookCommandTarget,
-  withOptionalNotebookTarget,
-} from "./NotebookCommandTarget.ts";
+import type { NotebookTarget } from "./Invocation.ts";
+import { MarimoCommands } from "./MarimoCommands.ts";
 
-const runStale = Effect.fn("command.runStale")(
-  function* (context?: NotebookCommandTarget) {
+const handler = Effect.fn("command.runStale")(
+  function* (target: Option.Option<NotebookTarget>) {
     const code = yield* VsCode;
     const executions = yield* CellExecutions;
-    const notebook = Option.filterMap(
-      yield* getNotebookCommandEditor(context),
-      (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
-    );
 
-    if (Option.isNone(notebook)) {
+    if (Option.isNone(target)) {
       yield* showErrorAndPromptLogs(
         "Must have an open marimo notebook to run stale cells.",
       );
       return;
     }
 
-    const staleCells = yield* Effect.filter(notebook.value.getCells(), (cell) =>
-      executions.isCellStale(cell),
+    const staleCells = yield* Effect.filter(
+      target.value.document.getCells(),
+      (cell) => executions.isCellStale(cell),
     );
 
     if (staleCells.length === 0) {
@@ -41,7 +33,7 @@ const runStale = Effect.fn("command.runStale")(
     yield* Effect.logInfo("Running stale cells").pipe(
       Effect.annotateLogs({
         staleCount: staleCells.length,
-        notebook: notebook.value.id,
+        notebook: target.value.document.id,
       }),
     );
 
@@ -60,7 +52,4 @@ const runStale = Effect.fn("command.runStale")(
   ),
 );
 
-export const runStaleCommand = defineMarimoCommand(
-  withOptionalNotebookTarget(GeneratedMarimoCommands.runStale),
-  runStale,
-);
+export default defineCommand(MarimoCommands.runStale, handler);

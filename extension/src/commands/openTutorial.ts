@@ -3,12 +3,12 @@ import * as NodePath from "node:path";
 
 import { Cause, Effect, Either, Option } from "effect";
 
-import { defineMarimoCommand } from "../commands.ts";
+import { defineCommand } from "../commands.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { ExtensionContext } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
-import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
+import { MarimoCommands } from "./MarimoCommands.ts";
 
 const TUTORIALS = [
   ["Intro", "intro.py", "book"],
@@ -75,20 +75,19 @@ const openTutorial = Effect.fn("command.openTutorial")(function* () {
   yield* telemetry.tutorialOpened(tutorialName);
 });
 
-export const openTutorialCommand = defineMarimoCommand(
-  GeneratedMarimoCommands.openTutorial,
-  () =>
-    openTutorial().pipe(
-      Effect.catchAll(
-        Effect.fn(function* (error) {
-          const code = yield* VsCode;
-          yield* Effect.logError("Failed to open tutorial").pipe(
-            Effect.annotateLogs({ cause: Cause.fail(error) }),
-          );
-          yield* code.window.showErrorMessage(
-            "Failed to open tutorial. See marimo logs for more info.",
-          );
-        }),
-      ),
+const handler = () =>
+  openTutorial().pipe(
+    Effect.catchAll(
+      Effect.fn(function* (error) {
+        const code = yield* VsCode;
+        yield* Effect.logError("Failed to open tutorial").pipe(
+          Effect.annotateLogs({ cause: Cause.fail(error) }),
+        );
+        yield* code.window.showErrorMessage(
+          "Failed to open tutorial. See marimo logs for more info.",
+        );
+      }),
     ),
-);
+  );
+
+export default defineCommand(MarimoCommands.openTutorial, handler);

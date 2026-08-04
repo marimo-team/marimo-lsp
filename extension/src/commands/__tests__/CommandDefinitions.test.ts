@@ -1,163 +1,119 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Logger, Option } from "effect";
 
+import { createNotebookCell, TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import {
-  createNotebookCell,
-  createTestNotebookDocument,
-} from "../../__mocks__/TestVsCode.ts";
-import { commandId, decodeCommandArguments } from "../../commands.ts";
-import { createSetupCellCommand } from "../createSetupCell.ts";
-import { debugCellCommand } from "../debugCell.ts";
-import { exportNotebookAsHtmlCommand } from "../exportNotebookAsHtml.ts";
-import { GeneratedMarimoCommands } from "../MarimoCommands.gen.ts";
-import { newMarimoNotebookCommand } from "../newMarimoNotebook.ts";
-import { openAsMarimoNotebookCommand } from "../openAsMarimoNotebook.ts";
-import { openOutlineViewCommand } from "../openOutlineView.ts";
-import { openTutorialCommand } from "../openTutorial.ts";
-import { publishMarimoNotebookCommand } from "../publishMarimoNotebook.ts";
-import { refreshPackagesCommand } from "../refreshPackages.ts";
-import { reportIssueCommand } from "../reportIssue.ts";
-import { restartKernelCommand } from "../restartKernel.ts";
-import { restartLspCommand } from "../restartLsp.ts";
-import { runStaleCommand } from "../runStale.ts";
-import {
-  openSessionCommand,
-  restartSessionCommand,
-  shutdownAllSessionsCommand,
-  shutdownSessionCommand,
-} from "../sessionCommands.ts";
-import {
-  hideCellCodeCommand,
-  showCellCodeCommand,
-} from "../setCellCodeVisibility.ts";
-import { showDiagnosticsCommand } from "../showDiagnostics.ts";
-import { showMarimoMenuCommand } from "../showMarimoMenu.ts";
-import { showNotebookMenuCommand } from "../showNotebookMenu.ts";
-import { updateActivePythonEnvironmentCommand } from "../updateActivePythonEnvironment.ts";
-import { updateCellMetadataCommand } from "../updateCellMetadata.ts";
-
-const definitions = [
-  createSetupCellCommand,
-  debugCellCommand,
-  exportNotebookAsHtmlCommand,
-  hideCellCodeCommand,
-  newMarimoNotebookCommand,
-  openAsMarimoNotebookCommand,
-  openOutlineViewCommand,
-  openSessionCommand,
-  openTutorialCommand,
-  publishMarimoNotebookCommand,
-  refreshPackagesCommand,
-  reportIssueCommand,
-  restartKernelCommand,
-  restartLspCommand,
-  restartSessionCommand,
-  runStaleCommand,
-  showCellCodeCommand,
-  showDiagnosticsCommand,
-  showMarimoMenuCommand,
-  showNotebookMenuCommand,
-  shutdownAllSessionsCommand,
-  shutdownSessionCommand,
-  updateActivePythonEnvironmentCommand,
-  updateCellMetadataCommand,
-] as const;
+  commandContributedSurfaces,
+  defineCommand,
+  commandId,
+  decodeCommandArguments,
+} from "../../commands.ts";
+import { CommandIds, CommandSurfaces } from "../CommandIds.gen.ts";
+import { MarimoCommands } from "../MarimoCommands.ts";
 
 describe("command definitions", () => {
-  it("covers every generated command exactly once", () => {
-    expect(definitions.map(commandId).toSorted()).toEqual(
-      Object.values(GeneratedMarimoCommands).map(commandId).toSorted(),
+  it("defines every generated command exactly once", () => {
+    expect(Object.values(MarimoCommands).map(commandId).toSorted()).toEqual(
+      Object.values(CommandIds).toSorted(),
     );
   });
 
-  it.effect("ignores VS Code context for a context-free command", () =>
+  it("matches every generated contributed surface", () => {
+    const actual = Object.fromEntries(
+      Object.entries(MarimoCommands).map(([name, command]) => [
+        name,
+        commandContributedSurfaces(command).toSorted(),
+      ]),
+    );
+    expect(actual).toEqual(CommandSurfaces);
+  });
+
+  it.effect("ignores VS Code metadata for a no-target command", () =>
     Effect.gen(function* () {
-      const args = yield* decodeCommandArguments(restartLspCommand, [
-        {
-          ui: true,
-          notebookEditor: { notebookUri: "file:///notebook.py" },
-          source: "notebookToolbar",
-        },
+      const args = yield* decodeCommandArguments(MarimoCommands.restartLsp, [
+        { injectedBy: "commandPalette" },
       ]);
       expect(args).toEqual([]);
     }),
   );
 
-  it.effect("accepts an empty argument list for a no-argument command", () =>
+  it.effect("normalizes a cell-status invocation to its exact notebook", () =>
     Effect.gen(function* () {
-      const args = yield* decodeCommandArguments(restartLspCommand, []);
-      expect(args).toEqual([]);
-    }),
-  );
-
-  it.effect("accepts notebook cell context for a notebook command", () =>
-    Effect.gen(function* () {
-      const notebook = createTestNotebookDocument("/test/notebook_mo.py");
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+      const vscode = yield* TestVsCode.make({
+        initialDocuments: [editor.notebook],
+      });
+      yield* vscode.setActiveNotebookEditor(Option.some(editor));
       const cell = createNotebookCell(
-        notebook,
-        { kind: 2, value: "x = 1", languageId: "python" },
-        5,
-      );
-
-      const args = yield* decodeCommandArguments(runStaleCommand, [cell]);
-
-      expect(args).toEqual([cell]);
-    }),
-  );
-
-  it.effect("preserves notebook context for interpreter synchronization", () =>
-    Effect.gen(function* () {
-      const notebookUri = {
-        scheme: "file",
-        path: "/notebook.py",
-        with() {
-          return this;
-        },
-        toString() {
-          return "file:///notebook.py";
-        },
-      };
-      const args = yield* decodeCommandArguments(
-        updateActivePythonEnvironmentCommand,
-        [{ notebookEditor: { notebookUri } }],
-      );
-      expect(args).toEqual([{ notebookEditor: { notebookUri } }]);
-    }),
-  );
-
-  it.effect("decodes the target cell supplied by a notebook cell menu", () =>
-    Effect.gen(function* () {
-      const cell = createNotebookCell(
-        createTestNotebookDocument("/test/notebook_mo.py"),
+        editor.notebook,
         { kind: 2, value: "x = 1", languageId: "python" },
         0,
       );
 
-      const args = yield* decodeCommandArguments(hideCellCodeCommand, [cell]);
+      const [target] = yield* decodeCommandArguments(MarimoCommands.runStale, [
+        cell,
+      ]).pipe(Effect.provide(vscode.layer));
 
-      expect(args).toEqual([cell]);
+      expect(Option.getOrThrow(target).editor).toBe(editor);
+      expect(Option.getOrThrow(target).document.uri.toString()).toBe(
+        editor.notebook.uri.toString(),
+      );
     }),
   );
 
-  it.effect("decodes the first external argument for open-as-notebook", () =>
+  it.effect("normalizes a cell-title invocation to a marimo cell", () =>
     Effect.gen(function* () {
-      const args = yield* decodeCommandArguments(openAsMarimoNotebookCommand, [
-        "file:///notebook.py",
-        { external: "context" },
-      ]);
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+      const cell = createNotebookCell(
+        editor.notebook,
+        { kind: 2, value: "x = 1", languageId: "python" },
+        0,
+      );
+
+      const [target] = yield* decodeCommandArguments(
+        MarimoCommands.hideCellCode,
+        [cell],
+      );
+
+      expect(Option.getOrThrow(target).index).toBe(0);
+    }),
+  );
+
+  it.effect("preserves a resource argument after joining surfaces", () =>
+    Effect.gen(function* () {
+      const args = yield* decodeCommandArguments(
+        MarimoCommands.openAsMarimoNotebook,
+        ["file:///notebook.py"],
+      );
       expect(args).toEqual(["file:///notebook.py"]);
     }),
   );
 
-  it.effect("ignores contextual arguments for view-title commands", () =>
-    Effect.gen(function* () {
-      const context = { injectedBy: "view/title" };
-      expect(
-        yield* decodeCommandArguments(shutdownAllSessionsCommand, [context]),
-      ).toEqual([]);
-      expect(
-        yield* decodeCommandArguments(refreshPackagesCommand, [context]),
-      ).toEqual([]);
-    }),
-  );
+  it.effect("traces direct normalized invocation with the command ID", () => {
+    const logs: Array<Record<string, unknown>> = [];
+    const logger = Logger.make(({ annotations }) => {
+      logs.push(Object.fromEntries(annotations));
+    });
+    const definition = defineCommand(MarimoCommands.restartLsp, () =>
+      Effect.logInfo("invoked"),
+    );
+
+    return definition.invoke().pipe(
+      Effect.provide(
+        Logger.replace(
+          Logger.defaultLogger,
+          Logger.withSpanAnnotations(logger),
+        ),
+      ),
+      Effect.tap(() =>
+        Effect.sync(() => {
+          expect(logs).toHaveLength(1);
+          expect(logs[0]).toMatchObject({
+            "command.id": commandId(definition.command),
+            "effect.spanName": "command",
+          });
+        }),
+      ),
+    );
+  });
 });

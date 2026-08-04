@@ -1,0 +1,9 @@
+{
+  "notebook.cell.collapseCellInput": { "discoverable": true },
+  "notebook.cell.execute": { "discoverable": true },
+  "notebook.cell.expandCellInput": { "discoverable": true },
+  "outline.focus": { "discoverable": true },
+  "vscode.openWith": { "discoverable": false },
+  "workbench.action.openSettings": { "discoverable": true },
+  "workbench.action.reloadWindow": { "discoverable": true }
+}

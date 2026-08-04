@@ -1,0 +1,58 @@
+// AUTO-GENERATED FILE — DO NOT EDIT.
+//
+// Generated from `extension/package.json` by `scripts.codegen`.
+// Regenerate with `just codegen`.
+/* oxlint-disable marimo/no-marimo-command-id-literals -- generated source of truth */
+export const CommandIds = {
+  createSetupCell: "marimo.createSetupCell",
+  debugCell: "marimo.debugCell",
+  exportStaticHTML: "marimo.exportStaticHTML",
+  hideCellCode: "marimo.hideCellCode",
+  newMarimoNotebook: "marimo.newMarimoNotebook",
+  openAsMarimoNotebook: "marimo.openAsMarimoNotebook",
+  openOutlineView: "marimo.openOutlineView",
+  openSession: "marimo.openSession",
+  openTutorial: "marimo.openTutorial",
+  publishMarimoNotebook: "marimo.publishMarimoNotebook",
+  refreshPackages: "marimo.refreshPackages",
+  reportIssue: "marimo.reportIssue",
+  restartKernel: "marimo.restartKernel",
+  restartLsp: "marimo.restartLsp",
+  restartSession: "marimo.restartSession",
+  runStale: "marimo.runStale",
+  showCellCode: "marimo.showCellCode",
+  showDiagnostics: "marimo.showDiagnostics",
+  showMarimoMenu: "marimo.showMarimoMenu",
+  showNotebookMenu: "marimo.showNotebookMenu",
+  shutdownAllSessions: "marimo.shutdownAllSessions",
+  shutdownSession: "marimo.shutdownSession",
+  updateActivePythonEnvironment: "marimo.updateActivePythonEnvironment",
+  updateCellMetadata: "marimo.updateCellMetadata",
+} as const;
+
+export const CommandSurfaces = {
+  createSetupCell: ["commandPalette"],
+  debugCell: ["commandPalette"],
+  exportStaticHTML: ["commandPalette"],
+  hideCellCode: ["notebookCellTitle"],
+  newMarimoNotebook: ["commandPalette", "fileNew"],
+  openAsMarimoNotebook: ["commandPalette", "editorTitle"],
+  openOutlineView: ["commandPalette", "editorTitle", "notebookToolbar"],
+  openSession: [],
+  openTutorial: ["commandPalette"],
+  publishMarimoNotebook: ["commandPalette"],
+  refreshPackages: ["viewTitle"],
+  reportIssue: ["commandPalette"],
+  restartKernel: ["commandPalette", "notebookToolbar"],
+  restartLsp: ["commandPalette"],
+  restartSession: ["viewItemContext"],
+  runStale: ["commandPalette", "notebookToolbar"],
+  showCellCode: ["notebookCellTitle"],
+  showDiagnostics: ["commandPalette"],
+  showMarimoMenu: [],
+  showNotebookMenu: ["commandPalette", "notebookToolbar"],
+  shutdownAllSessions: ["viewTitle"],
+  shutdownSession: ["viewItemContext"],
+  updateActivePythonEnvironment: ["commandPalette"],
+  updateCellMetadata: [],
+} as const;

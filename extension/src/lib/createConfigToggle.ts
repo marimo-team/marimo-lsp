@@ -1,13 +1,9 @@
 import { Effect, Option } from "effect";
 
-import {
-  getNotebookCommandEditor,
-  type NotebookToolbarContext,
-} from "../commands/NotebookCommandTarget.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { MarimoConfig } from "../types.ts";
 
 /**
@@ -15,7 +11,7 @@ import type { MarimoConfig } from "../types.ts";
  * Creates a handler that shows a quick pick dialog with all available options.
  */
 export const createConfigToggle = <T extends string>({
-  context,
+  notebook,
   configPath,
   settingName,
   pickerTitle,
@@ -23,7 +19,7 @@ export const createConfigToggle = <T extends string>({
   choices,
   getDisplayName,
 }: {
-  context: NotebookToolbarContext | undefined;
+  notebook: Option.Option<MarimoNotebookDocument>;
   configPath: string;
   settingName: string;
   pickerTitle: string;
@@ -38,12 +34,6 @@ export const createConfigToggle = <T extends string>({
   Effect.gen(function* () {
     const code = yield* VsCode;
     const configService = yield* MarimoConfigurationService;
-
-    // Validate the notebook that originated the command.
-    const notebook = Option.filterMap(
-      yield* getNotebookCommandEditor(context),
-      (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
-    );
 
     if (Option.isNone(notebook)) {
       yield* showErrorAndPromptLogs(

@@ -1,13 +1,19 @@
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 
-import { defineMarimoCommand } from "../commands.ts";
+import { defineCommand } from "../commands.ts";
 import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
-import { updateCellMetadataContract } from "./updateCellMetadataCommand.ts";
+import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
+import {
+  type CellMetadataBindingId,
+  MarimoCommands,
+} from "./MarimoCommands.ts";
 
-export const updateCellMetadataCommand = defineMarimoCommand(
-  updateCellMetadataContract,
-  Effect.fn("command.updateCellMetadata")(function* (bindingId) {
-    const bindings = yield* CellMetadataUIBindingService;
-    yield* bindings.updateBinding(bindingId);
-  }),
-);
+const handler = Effect.fn("command.updateCellMetadata")(function* (
+  cell: Option.Option<MarimoNotebookCell>,
+  bindingId: CellMetadataBindingId,
+) {
+  const bindings = yield* CellMetadataUIBindingService;
+  yield* bindings.updateBinding(cell, bindingId);
+});
+
+export default defineCommand(MarimoCommands.updateCellMetadata, handler);

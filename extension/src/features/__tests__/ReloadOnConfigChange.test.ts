@@ -5,7 +5,7 @@ import type * as vscode from "vscode";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { commandId } from "../../commands.ts";
-import { restartKernelCommand } from "../../commands/restartKernel.ts";
+import restartKernel from "../../commands/restartKernel.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import {
   promptToRestartKernelForFileRootChange,
@@ -32,7 +32,7 @@ it.scoped(
       Effect.provide(vscode.layer),
     );
     expect(yield* Ref.get(vscode.executions)).toContainEqual({
-      command: commandId(restartKernelCommand),
+      command: commandId(restartKernel.command),
       args: [],
     });
 

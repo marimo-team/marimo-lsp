@@ -1,6 +1,6 @@
 import { Effect, Layer, Option, Ref, Stream } from "effect";
 
-import { refreshPackagesCommand } from "../../commands/refreshPackages.ts";
+import refreshPackagesCommand from "../../commands/refreshPackages.ts";
 import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../../platform/VsCode.ts";

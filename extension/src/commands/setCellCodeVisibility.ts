@@ -1,18 +1,13 @@
-import { Effect } from "effect";
-import type * as vscode from "vscode";
+import { Effect, Option } from "effect";
 
-import { defineMarimoCommand, withFirstArgument } from "../commands.ts";
 import { updateMarimoCellMetadata } from "../notebook/updateMarimoCellMetadata.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
-import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
-import { VscodeNotebookCellSchema } from "./NotebookCommandTarget.ts";
 
 /** Persist and immediately apply the visibility requested by a cell menu item. */
 const setCellCodeVisibility = Effect.fn("command.setCellCodeVisibility")(
-  function* (rawCell: vscode.NotebookCell, hidden: boolean) {
+  function* (cell: MarimoNotebookCell, hidden: boolean) {
     const code = yield* VsCode;
-    const cell = MarimoNotebookCell.from(rawCell);
 
     const index = yield* updateMarimoCellMetadata(cell, (metadata) => ({
       ...metadata,
@@ -33,18 +28,14 @@ const setCellCodeVisibility = Effect.fn("command.setCellCodeVisibility")(
   },
 );
 
-export const hideCellCodeCommand = defineMarimoCommand(
-  withFirstArgument(
-    GeneratedMarimoCommands.hideCellCode,
-    VscodeNotebookCellSchema,
-  ),
-  (cell) => setCellCodeVisibility(cell, true),
-);
+export const hideCellCode = (cell: Option.Option<MarimoNotebookCell>) =>
+  Option.match(cell, {
+    onNone: () => Effect.void,
+    onSome: (value) => setCellCodeVisibility(value, true),
+  });
 
-export const showCellCodeCommand = defineMarimoCommand(
-  withFirstArgument(
-    GeneratedMarimoCommands.showCellCode,
-    VscodeNotebookCellSchema,
-  ),
-  (cell) => setCellCodeVisibility(cell, false),
-);
+export const showCellCode = (cell: Option.Option<MarimoNotebookCell>) =>
+  Option.match(cell, {
+    onNone: () => Effect.void,
+    onSome: (value) => setCellCodeVisibility(value, false),
+  });

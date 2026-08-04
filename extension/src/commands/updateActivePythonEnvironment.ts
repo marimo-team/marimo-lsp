@@ -1,49 +1,33 @@
 import { Effect, Either, Option } from "effect";
 
-import { defineMarimoCommand } from "../commands.ts";
+import { defineCommand } from "../commands.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
-import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
-import {
-  getNotebookCommandEditor,
-  type NotebookToolbarContext,
-  withOptionalNotebookToolbarContext,
-} from "./NotebookCommandTarget.ts";
+import type { NotebookTarget } from "./Invocation.ts";
+import { MarimoCommands } from "./MarimoCommands.ts";
 
-const updateActivePythonEnvironment = Effect.fn(
-  "command.updateActivePythonEnvironment",
-)(function* (context?: NotebookToolbarContext) {
+const handler = Effect.fn("command.updateActivePythonEnvironment")(function* (
+  target: Option.Option<NotebookTarget>,
+) {
   const uv = yield* Uv;
   const code = yield* VsCode;
   const py = yield* PythonExtension;
   const notebooks = yield* NotebookRuntime;
 
-  const editor = yield* getNotebookCommandEditor(context);
-
-  if (Option.isNone(editor)) {
+  if (Option.isNone(target)) {
     yield* code.window.showInformationMessage(
       "No marimo notebook is currently open.",
     );
     return;
   }
 
-  const notebook = MarimoNotebookDocument.tryFrom(editor.value.notebook);
+  const { document: notebook, editor } = target.value;
 
-  if (Option.isNone(notebook)) {
-    yield* code.window.showInformationMessage(
-      "Active notebook is not a marimo notebook.",
-    );
-    return;
-  }
-
-  const controller = yield* notebooks
-    .forNotebook(notebook.value.id)
-    .getController();
+  const controller = yield* notebooks.forNotebook(notebook.id).getController();
 
   if (Option.isNone(controller)) {
     yield* code.window.showInformationMessage(
@@ -56,7 +40,7 @@ const updateActivePythonEnvironment = Effect.fn(
   if (typeof controller.value.executable === "string") {
     executable = controller.value.executable;
   } else {
-    const script = editor.value.notebook.uri.fsPath;
+    const script = editor.notebook.uri.fsPath;
     const venvResult = yield* uv.syncScript({ script }).pipe(Effect.either);
 
     if (Either.isLeft(venvResult)) {
@@ -83,9 +67,7 @@ const updateActivePythonEnvironment = Effect.fn(
   );
 });
 
-export const updateActivePythonEnvironmentCommand = defineMarimoCommand(
-  withOptionalNotebookToolbarContext(
-    GeneratedMarimoCommands.updateActivePythonEnvironment,
-  ),
-  updateActivePythonEnvironment,
+export default defineCommand(
+  MarimoCommands.updateActivePythonEnvironment,
+  handler,
 );

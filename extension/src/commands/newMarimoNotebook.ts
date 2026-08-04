@@ -1,13 +1,13 @@
 import { Cause, Effect, flow, Option } from "effect";
 
-import { defineMarimoCommand } from "../commands.ts";
+import { defineCommand } from "../commands.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
-import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
+import { MarimoCommands } from "./MarimoCommands.ts";
 
-const newMarimoNotebook = Effect.fn("command.newMarimoNotebook")(
+const handler = Effect.fn("command.newMarimoNotebook")(
   function* () {
     const code = yield* VsCode;
     const telemetry = yield* Telemetry;
@@ -62,7 +62,4 @@ def _():
   ),
 );
 
-export const newMarimoNotebookCommand = defineMarimoCommand(
-  GeneratedMarimoCommands.newMarimoNotebook,
-  newMarimoNotebook,
-);
+export default defineCommand(MarimoCommands.newMarimoNotebook, handler);

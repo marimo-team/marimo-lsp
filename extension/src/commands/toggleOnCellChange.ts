@@ -1,9 +1,13 @@
-import { createConfigToggle } from "../lib/createConfigToggle.ts";
-import type { NotebookToolbarContext } from "./NotebookCommandTarget.ts";
+import type { Option } from "effect";
 
-export const toggleOnCellChange = (context?: NotebookToolbarContext) =>
+import { createConfigToggle } from "../lib/createConfigToggle.ts";
+import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+
+export const toggleOnCellChange = (
+  notebook: Option.Option<MarimoNotebookDocument>,
+) =>
   createConfigToggle({
-    context,
+    notebook,
     configPath: "runtime.on_cell_change",
     settingName: "Cell changes",
     pickerTitle: "Cell changes",
