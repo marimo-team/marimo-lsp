@@ -3,22 +3,12 @@ import { Effect, Option } from "effect";
 
 import { createNotebookCell, TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import {
+  commandContributedSurfaces,
   commandId,
-  commandSurfaces,
   decodeCommandArguments,
 } from "../../commands.ts";
 import { CommandIds, CommandSurfaces } from "../CommandIds.gen.ts";
 import { MarimoCommands } from "../MarimoCommands.ts";
-
-const contributedSurfaces = new Set([
-  "commandPalette",
-  "editorTitle",
-  "fileNew",
-  "notebookCellTitle",
-  "notebookToolbar",
-  "viewItemContext",
-  "viewTitle",
-]);
 
 describe("command definitions", () => {
   it("defines every generated command exactly once", () => {
@@ -31,9 +21,7 @@ describe("command definitions", () => {
     const actual = Object.fromEntries(
       Object.entries(MarimoCommands).map(([name, command]) => [
         name,
-        commandSurfaces(command)
-          .filter((surface) => contributedSurfaces.has(surface))
-          .toSorted(),
+        commandContributedSurfaces(command).toSorted(),
       ]),
     );
     expect(actual).toEqual(CommandSurfaces);

@@ -12,6 +12,7 @@ export interface CommandInvocation<
 > {
   readonly callArguments?: CallArgs;
   readonly surfaces: ReadonlyArray<string>;
+  readonly contributedSurfaces: ReadonlyArray<string>;
   readonly decode: (
     args: ReadonlyArray<unknown>,
   ) => Effect.Effect<HandlerArgs, ParseResult.ParseError, Requirements>;
@@ -27,6 +28,7 @@ export interface MarimoCommand<
     readonly callArguments?: CallArgs;
     readonly id: string;
     readonly surfaces: ReadonlyArray<string>;
+    readonly contributedSurfaces: ReadonlyArray<string>;
     readonly decodeArguments: (
       args: ReadonlyArray<unknown>,
     ) => Effect.Effect<HandlerArgs, ParseResult.ParseError, DecodeRequirements>;
@@ -97,6 +99,7 @@ export function marimoCommand<
     [MarimoCommandTypeId]: {
       id,
       surfaces: invocation.surfaces,
+      contributedSurfaces: invocation.contributedSurfaces,
       decodeArguments: invocation.decode,
       decodeResult: Schema.decodeUnknown(result),
     },
@@ -124,6 +127,12 @@ export function commandId(command: MarimoCommand): string {
 
 export function commandSurfaces(command: MarimoCommand): ReadonlyArray<string> {
   return command[MarimoCommandTypeId].surfaces;
+}
+
+export function commandContributedSurfaces(
+  command: MarimoCommand,
+): ReadonlyArray<string> {
+  return command[MarimoCommandTypeId].contributedSurfaces;
 }
 
 export function decodeCommandArguments<

@@ -58,6 +58,7 @@ const makeAdapter = <
 ): InvocationAdapter<CallArgs, HandlerArgs, Requirements> => ({
   surface,
   surfaces: [surface],
+  contributedSurfaces: contributed ? [surface] : [],
   contributed,
   consumedArguments,
   decode,
@@ -306,6 +307,13 @@ const join = <
   const adapters: ReadonlyArray<AnyInvocationAdapter> = [first, ...rest];
   return {
     surfaces: [...new Set(adapters.map((adapter) => adapter.surface))],
+    contributedSurfaces: [
+      ...new Set(
+        adapters
+          .filter((adapter) => adapter.contributed)
+          .map((adapter) => adapter.surface),
+      ),
+    ],
     decode: (args) =>
       Effect.firstSuccessOf([
         first.decode(args),
