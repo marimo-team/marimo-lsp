@@ -27,7 +27,7 @@ it.effect(
     });
     const uri = vscode.createMockUri("/test/notebook.py");
 
-    yield* openAsMarimoNotebook.handler(uri).pipe(provideCommand(vscode));
+    yield* openAsMarimoNotebook.invoke(uri).pipe(provideCommand(vscode));
 
     expect(yield* vscode.executions).toEqual([
       {
@@ -51,7 +51,7 @@ it.effect(
     });
 
     yield* openAsMarimoNotebook
-      .handler("file:///test/notebook.py")
+      .invoke("file:///test/notebook.py")
       .pipe(provideCommand(vscode));
 
     const executions = yield* vscode.executions;
@@ -75,7 +75,7 @@ it.effect(
       Option.some(createTestTextEditor(document)),
     );
 
-    yield* openAsMarimoNotebook.handler().pipe(provideCommand(vscode));
+    yield* openAsMarimoNotebook.invoke().pipe(provideCommand(vscode));
 
     expect(yield* vscode.executions).toEqual([
       {
@@ -102,7 +102,7 @@ it.effect(
     );
 
     yield* openAsMarimoNotebook
-      .handler(document.uri.toString())
+      .invoke(document.uri.toString())
       .pipe(provideCommand(vscode));
 
     expect(save).toHaveBeenCalledOnce();
@@ -129,7 +129,7 @@ it.effect(
       Option.some(createTestTextEditor(document)),
     );
 
-    yield* openAsMarimoNotebook.handler().pipe(provideCommand(vscode));
+    yield* openAsMarimoNotebook.invoke().pipe(provideCommand(vscode));
 
     expect(save).not.toHaveBeenCalled();
   }),
@@ -150,7 +150,7 @@ it.effect(
       Option.some(createTestTextEditor(document)),
     );
 
-    yield* openAsMarimoNotebook.handler().pipe(provideCommand(vscode));
+    yield* openAsMarimoNotebook.invoke().pipe(provideCommand(vscode));
 
     expect(save).toHaveBeenCalledOnce();
     expect(yield* vscode.executions).toEqual([]);

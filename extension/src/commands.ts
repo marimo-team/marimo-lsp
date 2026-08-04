@@ -50,7 +50,11 @@ export interface CommandDefinition<
     Result,
     DecodeRequirements
   >;
-  readonly handler: (
+  /**
+   * Run the command operation with arguments already normalized by its
+   * invocation adapter.
+   */
+  readonly invoke: (
     ...args: HandlerArgs
   ) => Effect.Effect<Result, HandlerError, HandlerRequirements>;
 }
@@ -64,7 +68,7 @@ export function defineCommand<
   HandlerRequirements,
 >(
   command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
-  handler: (
+  invoke: (
     ...args: HandlerArgs
   ) => Effect.Effect<Result, HandlerError, HandlerRequirements>,
 ): CommandDefinition<
@@ -75,7 +79,7 @@ export function defineCommand<
   HandlerError,
   HandlerRequirements
 > {
-  return { command, handler };
+  return { command, invoke };
 }
 
 export function marimoCommand<

@@ -51,10 +51,10 @@ const handler = Effect.fn("command.showNotebookMenu")(function* (
       yield* configureAutoExport(notebook);
       return;
     case "create-setup-cell":
-      yield* createSetupCell.handler(target);
+      yield* createSetupCell.invoke(target);
       return;
     case "publish-notebook":
-      yield* publishMarimoNotebook.handler(target);
+      yield* publishMarimoNotebook.invoke(target);
       return;
     case "reactivity":
       break;

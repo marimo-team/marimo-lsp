@@ -20,7 +20,7 @@ it.effect(
     yield* vscode.addNotebookDocument(document);
 
     yield* openSession
-      .handler({ notebookUri: NOTEBOOK_URI })
+      .invoke({ notebookUri: NOTEBOOK_URI })
       .pipe(Effect.provide(vscode.layer));
 
     expect(yield* Ref.get(vscode.executions)).toEqual([]);
@@ -33,7 +33,7 @@ it.effect(
     const vscode = yield* TestVsCode.make();
 
     yield* openSession
-      .handler({ notebookUri: NOTEBOOK_URI })
+      .invoke({ notebookUri: NOTEBOOK_URI })
       .pipe(Effect.provide(vscode.layer));
 
     const executions = yield* Ref.get(vscode.executions);
@@ -55,7 +55,7 @@ it.effect(
     yield* vscode.addNotebookDocument(document);
 
     yield* openSession
-      .handler({ notebookUri: rawUri })
+      .invoke({ notebookUri: rawUri })
       .pipe(Effect.provide(vscode.layer));
 
     expect(yield* Ref.get(vscode.executions)).toEqual([]);

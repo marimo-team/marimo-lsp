@@ -425,11 +425,11 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
         HandlerRequirements
       >,
     ) {
-      const { command, handler } = definition;
+      const { command, invoke } = definition;
       const wireId = commandId(command);
       return registerImplementation(wireId, (args) =>
         decodeCommandArguments(command, args).pipe(
-          Effect.flatMap((decoded) => handler(...decoded)),
+          Effect.flatMap((decoded) => invoke(...decoded)),
           Effect.flatMap((result) => decodeCommandResult(command, result)),
           withCommandContext(command),
         ),

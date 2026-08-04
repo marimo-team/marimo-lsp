@@ -49,8 +49,8 @@ it.effect.each([
     });
     const rawCell = document.cellAt(1);
 
-    const handler = hidden ? hideCellCode.handler : showCellCode.handler;
-    yield* handler(Option.some(MarimoNotebookCell.from(rawCell))).pipe(
+    const invoke = hidden ? hideCellCode.invoke : showCellCode.invoke;
+    yield* invoke(Option.some(MarimoNotebookCell.from(rawCell))).pipe(
       Effect.provide(vscode.layer),
     );
 

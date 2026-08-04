@@ -9,7 +9,7 @@ it.effect(
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
 
-    yield* openOutlineView.handler().pipe(Effect.provide(vscode.layer));
+    yield* openOutlineView.invoke().pipe(Effect.provide(vscode.layer));
 
     expect(yield* vscode.executions).toEqual([
       { command: "outline.focus", args: [] },
