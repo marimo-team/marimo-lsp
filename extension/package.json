@@ -482,14 +482,6 @@
         {
           "command": "marimo.updateCellMetadata",
           "when": "never"
-        },
-        {
-          "command": "marimo.hideCellCode",
-          "when": "never"
-        },
-        {
-          "command": "marimo.showCellCode",
-          "when": "never"
         }
       ],
       "file/newFile": [
