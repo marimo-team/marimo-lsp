@@ -8,7 +8,7 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import { openAsMarimoNotebook } from "../openAsMarimoNotebook.ts";
+import { openAsMarimoNotebookCommand } from "../openAsMarimoNotebook.ts";
 
 function provideCommand(vscode: TestVsCode) {
   return Effect.provide(vscode.layer);
@@ -27,7 +27,9 @@ it.effect(
     });
     const uri = vscode.createMockUri("/test/notebook.py");
 
-    yield* openAsMarimoNotebook(uri).pipe(provideCommand(vscode));
+    yield* openAsMarimoNotebookCommand
+      .handler(uri)
+      .pipe(provideCommand(vscode));
 
     expect(yield* vscode.executions).toEqual([
       {
@@ -50,9 +52,9 @@ it.effect(
       ]),
     });
 
-    yield* openAsMarimoNotebook("file:///test/notebook.py").pipe(
-      provideCommand(vscode),
-    );
+    yield* openAsMarimoNotebookCommand
+      .handler("file:///test/notebook.py")
+      .pipe(provideCommand(vscode));
 
     const executions = yield* vscode.executions;
     expect(executions).toHaveLength(1);
@@ -75,7 +77,7 @@ it.effect(
       Option.some(createTestTextEditor(document)),
     );
 
-    yield* openAsMarimoNotebook().pipe(provideCommand(vscode));
+    yield* openAsMarimoNotebookCommand.handler().pipe(provideCommand(vscode));
 
     expect(yield* vscode.executions).toEqual([
       {
@@ -101,9 +103,9 @@ it.effect(
       Option.some(createTestTextEditor(document)),
     );
 
-    yield* openAsMarimoNotebook(document.uri.toString()).pipe(
-      provideCommand(vscode),
-    );
+    yield* openAsMarimoNotebookCommand
+      .handler(document.uri.toString())
+      .pipe(provideCommand(vscode));
 
     expect(save).toHaveBeenCalledOnce();
     expect(yield* vscode.executions).toEqual([
@@ -129,7 +131,7 @@ it.effect(
       Option.some(createTestTextEditor(document)),
     );
 
-    yield* openAsMarimoNotebook().pipe(provideCommand(vscode));
+    yield* openAsMarimoNotebookCommand.handler().pipe(provideCommand(vscode));
 
     expect(save).not.toHaveBeenCalled();
   }),
@@ -150,7 +152,7 @@ it.effect(
       Option.some(createTestTextEditor(document)),
     );
 
-    yield* openAsMarimoNotebook().pipe(provideCommand(vscode));
+    yield* openAsMarimoNotebookCommand.handler().pipe(provideCommand(vscode));
 
     expect(save).toHaveBeenCalledOnce();
     expect(yield* vscode.executions).toEqual([]);

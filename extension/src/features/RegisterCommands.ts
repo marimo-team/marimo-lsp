@@ -1,21 +1,24 @@
 import { Effect, Either, Layer, Stream } from "effect";
 
-import { createSetupCell } from "../commands/createSetupCell.ts";
-import { debugCell } from "../commands/debugCell.ts";
-import { exportNotebookAsHtml } from "../commands/exportNotebookAsHtml.ts";
-import { MarimoCommands } from "../commands/MarimoCommands.ts";
-import { newMarimoNotebook } from "../commands/newMarimoNotebook.ts";
-import { openAsMarimoNotebook } from "../commands/openAsMarimoNotebook.ts";
-import { openOutlineView } from "../commands/openOutlineView.ts";
-import { publishMarimoNotebook } from "../commands/publishMarimoNotebook.ts";
-import { reportIssue } from "../commands/reportIssue.ts";
-import { restartKernel } from "../commands/restartKernel.ts";
-import { restartLsp } from "../commands/restartLsp.ts";
-import { runStale } from "../commands/runStale.ts";
-import { setCellCodeVisibility } from "../commands/setCellCodeVisibility.ts";
-import { showDiagnostics } from "../commands/showDiagnostics.ts";
-import { showNotebookMenu } from "../commands/showNotebookMenu.ts";
-import { updateActivePythonEnvironment } from "../commands/updateActivePythonEnvironment.ts";
+import { createSetupCellCommand } from "../commands/createSetupCell.ts";
+import { debugCellCommand } from "../commands/debugCell.ts";
+import { exportNotebookAsHtmlCommand } from "../commands/exportNotebookAsHtml.ts";
+import { newMarimoNotebookCommand } from "../commands/newMarimoNotebook.ts";
+import { openAsMarimoNotebookCommand } from "../commands/openAsMarimoNotebook.ts";
+import { openOutlineViewCommand } from "../commands/openOutlineView.ts";
+import { publishMarimoNotebookCommand } from "../commands/publishMarimoNotebook.ts";
+import { reportIssueCommand } from "../commands/reportIssue.ts";
+import { restartKernelCommand } from "../commands/restartKernel.ts";
+import { restartLspCommand } from "../commands/restartLsp.ts";
+import { runStaleCommand } from "../commands/runStale.ts";
+import {
+  hideCellCodeCommand,
+  showCellCodeCommand,
+} from "../commands/setCellCodeVisibility.ts";
+import { showDiagnosticsCommand } from "../commands/showDiagnostics.ts";
+import { showNotebookMenuCommand } from "../commands/showNotebookMenu.ts";
+import { updateActivePythonEnvironmentCommand } from "../commands/updateActivePythonEnvironment.ts";
+import { updateCellMetadataCommand } from "../commands/updateCellMetadata.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 
@@ -27,64 +30,23 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     const code = yield* VsCode;
     const telemetry = yield* Telemetry;
 
-    yield* code.commands.register(
-      MarimoCommands.newMarimoNotebook,
-      newMarimoNotebook,
-    );
-
-    yield* code.commands.register(
-      MarimoCommands.createSetupCell,
-      createSetupCell,
-    );
-
-    yield* code.commands.register(
-      MarimoCommands.openAsMarimoNotebook,
-      openAsMarimoNotebook,
-    );
-
-    yield* code.commands.register(
-      MarimoCommands.openOutlineView,
-      openOutlineView,
-    );
-
-    yield* code.commands.register(
-      MarimoCommands.publishMarimoNotebook,
-      publishMarimoNotebook,
-    );
-
-    yield* code.commands.register(MarimoCommands.runStale, runStale);
-    yield* code.commands.register(
-      MarimoCommands.showNotebookMenu,
-      showNotebookMenu,
-    );
-    yield* code.commands.register(MarimoCommands.debugCell, debugCell);
-    yield* code.commands.register(MarimoCommands.hideCellCode, (cell) =>
-      setCellCodeVisibility(cell, true),
-    );
-    yield* code.commands.register(MarimoCommands.showCellCode, (cell) =>
-      setCellCodeVisibility(cell, false),
-    );
-
-    yield* code.commands.register(restartKernel.command, restartKernel.handler);
-
-    yield* code.commands.register(MarimoCommands.restartLsp, restartLsp);
-
-    yield* code.commands.register(
-      MarimoCommands.showDiagnostics,
-      showDiagnostics,
-    );
-
-    yield* code.commands.register(MarimoCommands.reportIssue, reportIssue);
-
-    yield* code.commands.register(
-      MarimoCommands.exportStaticHTML,
-      exportNotebookAsHtml,
-    );
-
-    yield* code.commands.register(
-      MarimoCommands.updateActivePythonEnvironment,
-      updateActivePythonEnvironment,
-    );
+    yield* code.commands.register(newMarimoNotebookCommand);
+    yield* code.commands.register(createSetupCellCommand);
+    yield* code.commands.register(openAsMarimoNotebookCommand);
+    yield* code.commands.register(openOutlineViewCommand);
+    yield* code.commands.register(publishMarimoNotebookCommand);
+    yield* code.commands.register(runStaleCommand);
+    yield* code.commands.register(showNotebookMenuCommand);
+    yield* code.commands.register(debugCellCommand);
+    yield* code.commands.register(hideCellCodeCommand);
+    yield* code.commands.register(showCellCodeCommand);
+    yield* code.commands.register(restartKernelCommand);
+    yield* code.commands.register(restartLspCommand);
+    yield* code.commands.register(showDiagnosticsCommand);
+    yield* code.commands.register(reportIssueCommand);
+    yield* code.commands.register(exportNotebookAsHtmlCommand);
+    yield* code.commands.register(updateActivePythonEnvironmentCommand);
+    yield* code.commands.register(updateCellMetadataCommand);
 
     // Telemetry for commands
     const queue = yield* code.commands.subscribeToCommands();

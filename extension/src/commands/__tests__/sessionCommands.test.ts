@@ -5,10 +5,10 @@ import {
   createTestNotebookDocument,
   TestVsCode,
   Uri,
-} from "../../../__mocks__/TestVsCode.ts";
-import { NOTEBOOK_TYPE } from "../../../constants.ts";
-import { notebookId } from "../../../lib/__tests__/branded.ts";
-import { openSessionNotebook } from "../SessionsView.ts";
+} from "../../__mocks__/TestVsCode.ts";
+import { NOTEBOOK_TYPE } from "../../constants.ts";
+import { notebookId } from "../../lib/__tests__/branded.ts";
+import { openSessionCommand } from "../sessionCommands.ts";
 
 const NOTEBOOK_URI = notebookId("file:///workspace/notebook.py");
 
@@ -19,7 +19,9 @@ it.effect(
     const document = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI));
     yield* vscode.addNotebookDocument(document);
 
-    yield* openSessionNotebook(NOTEBOOK_URI).pipe(Effect.provide(vscode.layer));
+    yield* openSessionCommand
+      .handler({ notebookUri: NOTEBOOK_URI })
+      .pipe(Effect.provide(vscode.layer));
 
     expect(yield* Ref.get(vscode.executions)).toEqual([]);
   }),
@@ -30,7 +32,9 @@ it.effect(
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
 
-    yield* openSessionNotebook(NOTEBOOK_URI).pipe(Effect.provide(vscode.layer));
+    yield* openSessionCommand
+      .handler({ notebookUri: NOTEBOOK_URI })
+      .pipe(Effect.provide(vscode.layer));
 
     const executions = yield* Ref.get(vscode.executions);
     expect(executions).toHaveLength(1);
@@ -50,7 +54,9 @@ it.effect(
     );
     yield* vscode.addNotebookDocument(document);
 
-    yield* openSessionNotebook(rawUri).pipe(Effect.provide(vscode.layer));
+    yield* openSessionCommand
+      .handler({ notebookUri: rawUri })
+      .pipe(Effect.provide(vscode.layer));
 
     expect(yield* Ref.get(vscode.executions)).toEqual([]);
   }),

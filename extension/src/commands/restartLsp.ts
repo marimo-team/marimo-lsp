@@ -1,9 +1,11 @@
 import { Effect } from "effect";
 
+import { defineMarimoCommand } from "../commands.ts";
 import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
+import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 
-export const restartLsp = Effect.fn(function* () {
+const restartLsp = Effect.fn(function* () {
   const marimo = yield* MarimoClient;
   const sessions = yield* SessionsService;
   yield* marimo.restart();
@@ -17,3 +19,8 @@ export const restartLsp = Effect.fn(function* () {
       ),
     );
 });
+
+export const restartLspCommand = defineMarimoCommand(
+  GeneratedMarimoCommands.restartLsp,
+  restartLsp,
+);

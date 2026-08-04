@@ -9,7 +9,7 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { commandId } from "../../commands.ts";
-import { MarimoCommands } from "../../commands/MarimoCommands.ts";
+import { updateCellMetadataContract } from "../../commands/updateCellMetadataCommand.ts";
 import { DEFAULT_SQL_ENGINE } from "../../features/CellMetadataBindings.ts";
 import {
   CellMetadataUIBindingService,
@@ -106,7 +106,7 @@ it.scoped(
       expect(sqlItems.length).toBe(1);
       expect(sqlItems[0]?.text).toContain("$(database) df");
       expect(sqlItems[0]?.command).toEqual({
-        command: commandId(MarimoCommands.updateCellMetadata),
+        command: commandId(updateCellMetadataContract),
         title: "Update cell metadata",
         arguments: ["test.sql"],
       });

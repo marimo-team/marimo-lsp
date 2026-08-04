@@ -1,5 +1,6 @@
 import { Effect, Either, Option } from "effect";
 
+import { defineMarimoCommand } from "../commands.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -7,12 +8,14 @@ import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 import {
   getNotebookCommandEditor,
   type NotebookToolbarContext,
+  withOptionalNotebookToolbarContext,
 } from "./NotebookCommandTarget.ts";
 
-export const updateActivePythonEnvironment = Effect.fn(
+const updateActivePythonEnvironment = Effect.fn(
   "command.updateActivePythonEnvironment",
 )(function* (context?: NotebookToolbarContext) {
   const uv = yield* Uv;
@@ -79,3 +82,10 @@ export const updateActivePythonEnvironment = Effect.fn(
     Effect.annotateLogs({ executable }),
   );
 });
+
+export const updateActivePythonEnvironmentCommand = defineMarimoCommand(
+  withOptionalNotebookToolbarContext(
+    GeneratedMarimoCommands.updateActivePythonEnvironment,
+  ),
+  updateActivePythonEnvironment,
+);

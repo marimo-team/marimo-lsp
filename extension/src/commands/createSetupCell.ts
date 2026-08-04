@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect";
 
+import { defineMarimoCommand } from "../commands.ts";
 import { SETUP_CELL_NAME } from "../constants.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -7,12 +8,14 @@ import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
+import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 import {
   getNotebookCommandEditor,
   type NotebookToolbarContext,
+  withOptionalNotebookToolbarContext,
 } from "./NotebookCommandTarget.ts";
 
-export const createSetupCell = Effect.fn("command.createSetupCell")(function* (
+const createSetupCell = Effect.fn("command.createSetupCell")(function* (
   context?: NotebookToolbarContext,
 ) {
   const code = yield* VsCode;
@@ -75,3 +78,8 @@ export const createSetupCell = Effect.fn("command.createSetupCell")(function* (
     }),
   );
 });
+
+export const createSetupCellCommand = defineMarimoCommand(
+  withOptionalNotebookToolbarContext(GeneratedMarimoCommands.createSetupCell),
+  createSetupCell,
+);

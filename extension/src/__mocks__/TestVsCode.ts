@@ -1905,8 +1905,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           executeVSCode(command, ...args) {
             return Ref.update(executions, (arr) => [...arr, { command, args }]);
           },
-          register(command) {
-            const name = commandId(command);
+          register(definition) {
+            const name = commandId(definition);
             return Effect.gen(function* () {
               yield* Ref.update(commands, HashSet.add<string>(name));
               yield* Effect.addFinalizer(() =>

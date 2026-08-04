@@ -2,7 +2,7 @@ import { Effect, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { toVscodeCommand } from "../commands.ts";
-import { MarimoCommands } from "../commands/MarimoCommands.ts";
+import { runStaleCommand } from "../commands/runStale.ts";
 import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -53,7 +53,7 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
               // VS Code injects the cell for bare status-bar commands. Bind it
               // explicitly so our typed command contract checks the argument.
               const command: vscode.Command = toVscodeCommand(
-                MarimoCommands.runStale,
+                runStaleCommand,
                 "Run stale cells",
                 raw,
               );

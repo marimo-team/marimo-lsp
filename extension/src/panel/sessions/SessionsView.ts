@@ -1,38 +1,16 @@
 import { Effect, Layer, Option, Stream } from "effect";
 
 import { toVscodeCommand } from "../../commands.ts";
-import { MarimoCommands } from "../../commands/MarimoCommands.ts";
-import { NOTEBOOK_TYPE } from "../../constants.ts";
-import { CellExecutions } from "../../kernel/CellExecutions.ts";
-import { showErrorAndPromptLogs } from "../../lib/showErrorAndPromptLogs.ts";
-import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
-import { VsCode } from "../../platform/VsCode.ts";
 import {
-  MarimoNotebookDocument,
-  type NotebookId,
-} from "../../schemas/MarimoNotebookDocument.ts";
+  openSessionCommand,
+  restartSessionCommand,
+  shutdownAllSessionsCommand,
+  shutdownSessionCommand,
+} from "../../commands/sessionCommands.ts";
+import { VsCode } from "../../platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import { type TreeItem, TreeView } from "../TreeView.ts";
 import { type SessionViewItem, SessionsService } from "./SessionsService.ts";
-
-export const openSessionNotebook = Effect.fn("SessionsView.openNotebook")(
-  function* (notebookUri: NotebookId) {
-    const code = yield* VsCode;
-    const openNotebooks = yield* code.workspace.getNotebookDocuments();
-    const existing = openNotebooks.find(
-      (document) =>
-        document.notebookType === NOTEBOOK_TYPE &&
-        document.uri.toString(true) === notebookUri,
-    );
-
-    if (existing) {
-      yield* code.window.showNotebookDocument(existing);
-      return;
-    }
-
-    const uri = code.Uri.parse(notebookUri);
-    yield* code.commands.executeVSCode("vscode.openWith", uri, NOTEBOOK_TYPE);
-  },
-);
 
 /** Native VS Code tree view for live marimo kernel sessions. */
 export const SessionsViewLive = Layer.scopedDiscard(
@@ -40,18 +18,6 @@ export const SessionsViewLive = Layer.scopedDiscard(
     const code = yield* VsCode;
     const treeView = yield* TreeView;
     const sessions = yield* SessionsService;
-    const executions = yield* CellExecutions;
-    const editors = yield* NotebookEditorRegistry;
-
-    const endExecutions = Effect.fn("SessionsView.endExecutions")(function* (
-      notebookUri: NotebookId,
-    ) {
-      const editor = yield* editors.getLastNotebookEditor(notebookUri);
-      if (Option.isSome(editor)) {
-        yield* executions.handleInterrupt(editor.value);
-      }
-    });
-
     const provider = yield* treeView.createTreeDataProvider({
       viewId: "marimo-explorer-sessions",
       showCollapseAll: false,
@@ -82,7 +48,7 @@ export const SessionsViewLive = Layer.scopedDiscard(
                   : "circle-outline",
             contextValue: "marimoSession",
             command: toVscodeCommand(
-              MarimoCommands.openSession,
+              openSessionCommand,
               "Open Notebook",
               session,
             ),
@@ -142,72 +108,9 @@ export const SessionsViewLive = Layer.scopedDiscard(
         ),
     );
 
-    yield* code.commands.register(
-      MarimoCommands.openSession,
-      Effect.fn("SessionsView.open")(function* ({ notebookUri }) {
-        yield* openSessionNotebook(notebookUri);
-      }),
-    );
-
-    yield* code.commands.register(
-      MarimoCommands.restartSession,
-      Effect.fn("SessionsView.restart")(function* ({ notebookUri }) {
-        yield* sessions.restart(notebookUri).pipe(
-          Effect.tap(() => endExecutions(notebookUri)),
-          Effect.catchAllCause(
-            Effect.fn(function* (cause) {
-              yield* Effect.logError("Failed to restart kernel").pipe(
-                Effect.annotateLogs({ cause, notebookUri }),
-              );
-              yield* showErrorAndPromptLogs("Failed to restart kernel.");
-            }),
-          ),
-        );
-      }),
-    );
-
-    yield* code.commands.register(
-      MarimoCommands.shutdownSession,
-      Effect.fn("SessionsView.shutdown")(function* ({ notebookUri }) {
-        const session = yield* sessions.find(notebookUri);
-        if (Option.isNone(session)) return;
-
-        yield* sessions.shutdown(notebookUri);
-        yield* endExecutions(notebookUri);
-        const choice = yield* code.window.showInformationMessage(
-          `Shut down kernel for ${session.value.filename ?? "notebook"}.`,
-          { items: ["Restart"] },
-        );
-        if (!Option.contains(choice, "Restart")) return;
-
-        yield* openSessionNotebook(notebookUri);
-        yield* sessions.restore(
-          notebookUri,
-          session.value.executable,
-          session.value.workingDirectory,
-        );
-      }),
-    );
-
-    yield* code.commands.register(
-      MarimoCommands.shutdownAllSessions,
-      Effect.fn("SessionsView.shutdownAll")(function* () {
-        const live = yield* sessions.get();
-        if (live.length === 0) return;
-        if (live.length > 1) {
-          const choice = yield* code.window.showWarningMessage(
-            `Shut down all ${live.length} live kernels?`,
-            { modal: true, items: ["Shut Down All"] },
-          );
-          if (!Option.contains(choice, "Shut Down All")) return;
-        }
-        yield* sessions.shutdownAll();
-        yield* Effect.forEach(
-          live,
-          (session) => endExecutions(session.notebookUri),
-          { discard: true },
-        );
-      }),
-    );
+    yield* code.commands.register(openSessionCommand);
+    yield* code.commands.register(restartSessionCommand);
+    yield* code.commands.register(shutdownSessionCommand);
+    yield* code.commands.register(shutdownAllSessionsCommand);
   }),
 );

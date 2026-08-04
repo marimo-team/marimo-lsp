@@ -1,11 +1,13 @@
 import { Effect, Either, Option, Schema } from "effect";
 
+import { defineMarimoCommand } from "../commands.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 
-export const exportNotebookAsHtml = Effect.fn("command.exportNotebookAsHtml")(
+const exportNotebookAsHtml = Effect.fn("command.exportNotebookAsHtml")(
   function* () {
     const code = yield* VsCode;
     const marimo = yield* MarimoClient;
@@ -100,4 +102,9 @@ export const exportNotebookAsHtml = Effect.fn("command.exportNotebookAsHtml")(
       }),
     );
   },
+);
+
+export const exportNotebookAsHtmlCommand = defineMarimoCommand(
+  GeneratedMarimoCommands.exportStaticHTML,
+  exportNotebookAsHtml,
 );
