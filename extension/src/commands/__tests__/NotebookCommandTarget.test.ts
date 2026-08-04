@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Option } from "effect";
 
 import { createNotebookCell, TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { getNotebookCommandEditor } from "../getNotebookCommandEditor.ts";
+import { getNotebookCommandEditor } from "../NotebookCommandTarget.ts";
 
 describe("getNotebookCommandEditor", () => {
   it.effect("prefers the notebook referenced by toolbar context", () =>
@@ -40,6 +40,26 @@ describe("getNotebookCommandEditor", () => {
 
       expect(Option.getOrThrow(editor)).toBe(active);
     }),
+  );
+
+  it.effect(
+    "falls back to the active notebook when toolbar serialization omits its URI",
+    () =>
+      Effect.gen(function* () {
+        const active = TestVsCode.makeNotebookEditor("/test/active.py");
+        const vscode = yield* TestVsCode.make({
+          initialDocuments: [active.notebook],
+        });
+        yield* vscode.setActiveNotebookEditor(Option.some(active));
+
+        const editor = yield* getNotebookCommandEditor({
+          ui: true,
+          source: "notebookToolbar",
+          notebookEditor: {},
+        }).pipe(Effect.provide(vscode.layer));
+
+        expect(Option.getOrThrow(editor)).toBe(active);
+      }),
   );
 
   it.effect("resolves the notebook referenced by cell context", () =>

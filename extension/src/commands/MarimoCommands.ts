@@ -3,13 +3,15 @@ import { Schema } from "effect";
 import {
   withFirstArgument,
   withOptionalFirstArgument,
-  withOptionalNotebookTarget,
-  withOptionalNotebookToolbarContext,
-  VscodeNotebookCellSchema,
   VscodeUriSchema,
 } from "../commands.ts";
 import { NotebookIdFromString } from "../schemas/MarimoNotebookDocument.ts";
 import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
+import {
+  VscodeNotebookCellSchema,
+  withOptionalNotebookTarget,
+  withOptionalNotebookToolbarContext,
+} from "./NotebookCommandTarget.ts";
 
 const notebookCommands = {
   createSetupCell: withOptionalNotebookToolbarContext(

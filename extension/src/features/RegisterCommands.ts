@@ -65,7 +65,7 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
       setCellCodeVisibility(cell, false),
     );
 
-    yield* code.commands.register(MarimoCommands.restartKernel, restartKernel);
+    yield* code.commands.register(restartKernel.command, restartKernel.handler);
 
     yield* code.commands.register(MarimoCommands.restartLsp, restartLsp);
 

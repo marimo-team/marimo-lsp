@@ -1,14 +1,16 @@
 import { Effect, Either, Option } from "effect";
 
-import type { NotebookToolbarContext } from "../commands.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
-import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import {
+  getNotebookCommandEditor,
+  type NotebookToolbarContext,
+} from "./NotebookCommandTarget.ts";
 
 export const updateActivePythonEnvironment = Effect.fn(
   "command.updateActivePythonEnvironment",

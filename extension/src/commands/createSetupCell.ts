@@ -1,14 +1,16 @@
 import { Effect, Option } from "effect";
 
-import type { NotebookToolbarContext } from "../commands.ts";
 import { SETUP_CELL_NAME } from "../constants.ts";
-import { getNotebookCommandEditor } from "../lib/getNotebookCommandEditor.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
+import {
+  getNotebookCommandEditor,
+  type NotebookToolbarContext,
+} from "./NotebookCommandTarget.ts";
 
 export const createSetupCell = Effect.fn("command.createSetupCell")(function* (
   context?: NotebookToolbarContext,
