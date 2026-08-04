@@ -71,7 +71,13 @@ export default vite.defineConfig({
       restriction: "off",
     },
     jsPlugins: ["./lint/marimo-plugin.mjs"],
-    plugins: ["typescript", "react", "import"],
+    plugins: [
+      "typescript",
+      "react",
+      "import",
+      // @ts-expect-error -- Vite+ 0.2.7 predates Effect's patched plugin.
+      "effecttsgo",
+    ],
     rules: {
       "eslint/no-underscore-dangle": "off",
       "react/react-in-jsx-scope": "off",
@@ -86,6 +92,14 @@ export default vite.defineConfig({
       "typescript/no-non-null-assertion": "error",
       "typescript/no-misused-spread": "off",
       "typescript/no-shadow": "off",
+      // Keep the new Effect diagnostics visible without making existing findings
+      // block this toolchain migration. New Effect rules still use their defaults.
+      "effecttsgo/strict-effect-provide": "off",
+      "effecttsgo/run-effect-inside-effect": "warn",
+      "effecttsgo/global-error-in-effect-failure": "warn",
+      "effecttsgo/schema-sync-in-effect": "warn",
+      "effecttsgo/catch-unfailable-effect": "warn",
+      "effecttsgo/any-unknown-in-error-context": "warn",
     },
     options: {
       typeAware: true,
