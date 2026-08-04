@@ -1,15 +1,18 @@
 import { Effect, flow, Option } from "effect";
 
+import { defineMarimoCommand } from "../commands.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 import {
   getNotebookCommandEditor,
   type NotebookCommandTarget,
+  withOptionalNotebookTarget,
 } from "./NotebookCommandTarget.ts";
 
-export const runStale = Effect.fn("command.runStale")(
+const runStale = Effect.fn("command.runStale")(
   function* (context?: NotebookCommandTarget) {
     const code = yield* VsCode;
     const executions = yield* CellExecutions;
@@ -55,4 +58,9 @@ export const runStale = Effect.fn("command.runStale")(
       showErrorAndPromptLogs("Failed to run stale cells."),
     ),
   ),
+);
+
+export const runStaleCommand = defineMarimoCommand(
+  withOptionalNotebookTarget(GeneratedMarimoCommands.runStale),
+  runStale,
 );

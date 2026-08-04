@@ -1,10 +1,15 @@
-import { Effect, Either } from "effect";
+import { Effect } from "effect";
 
+import { defineMarimoCommand } from "../commands.ts";
 import { Links } from "../lib/links.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import { openExternalUrl } from "../lib/openExternalUrl.ts";
+import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 
-export const reportIssue = Effect.fn(function* () {
-  const code = yield* VsCode;
-  const uri = Either.getOrThrow(code.utils.parseUri(Links.issues));
-  yield* code.env.openExternal(uri);
+const reportIssue = Effect.fn(function* () {
+  yield* openExternalUrl(Links.issues);
 });
+
+export const reportIssueCommand = defineMarimoCommand(
+  GeneratedMarimoCommands.reportIssue,
+  reportIssue,
+);

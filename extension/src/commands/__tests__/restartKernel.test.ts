@@ -6,8 +6,7 @@ import {
   createTestNotebookDocument,
 } from "../../__mocks__/TestVsCode.ts";
 import { decodeCommandArguments } from "../../commands.ts";
-import { MarimoCommands } from "../MarimoCommands.ts";
-import { restartKernel } from "../restartKernel.ts";
+import { restartKernelCommand } from "../restartKernel.ts";
 
 describe("restartKernel command definition", () => {
   it.effect("decodes optional notebook toolbar context", () =>
@@ -27,7 +26,7 @@ describe("restartKernel command definition", () => {
         notebookEditor: { notebookUri },
         source: "notebookToolbar",
       };
-      const args = yield* decodeCommandArguments(restartKernel.command, [
+      const args = yield* decodeCommandArguments(restartKernelCommand, [
         context,
       ]);
       expect(args[0]).toBe(context);
@@ -36,13 +35,13 @@ describe("restartKernel command definition", () => {
 
   it.effect("accepts no context", () =>
     Effect.gen(function* () {
-      const args = yield* decodeCommandArguments(restartKernel.command, []);
+      const args = yield* decodeCommandArguments(restartKernelCommand, []);
       expect(args).toEqual([]);
     }),
   );
 
   it.effect(
-    "shares the incomplete toolbar contract with the command catalog",
+    "decodes a notebook toolbar hint whose editor URI was omitted",
     () =>
       Effect.gen(function* () {
         const context = {
@@ -51,23 +50,18 @@ describe("restartKernel command definition", () => {
           notebookEditor: {},
         };
 
-        const args = yield* decodeCommandArguments(restartKernel.command, [
+        const args = yield* decodeCommandArguments(restartKernelCommand, [
           context,
         ]);
-        const catalogArgs = yield* decodeCommandArguments(
-          MarimoCommands.restartKernel,
-          [context],
-        );
 
         expect(args[0]).toBe(context);
-        expect(catalogArgs[0]).toBe(context);
       }),
   );
 
   it.effect("rejects unrelated UI metadata", () =>
     Effect.gen(function* () {
       const result = yield* Effect.either(
-        decodeCommandArguments(restartKernel.command, [
+        decodeCommandArguments(restartKernelCommand, [
           { ui: true, source: "editorToolbar", notebookEditor: {} },
         ]),
       );
@@ -79,7 +73,7 @@ describe("restartKernel command definition", () => {
   it.effect("rejects a malformed notebook URI", () =>
     Effect.gen(function* () {
       const result = yield* Effect.either(
-        decodeCommandArguments(restartKernel.command, [
+        decodeCommandArguments(restartKernelCommand, [
           {
             ui: true,
             source: "notebookToolbar",
@@ -101,7 +95,7 @@ describe("restartKernel command definition", () => {
       );
 
       const result = yield* Effect.either(
-        decodeCommandArguments(restartKernel.command, [cell]),
+        decodeCommandArguments(restartKernelCommand, [cell]),
       );
 
       expect(result._tag).toBe("Left");

@@ -6,8 +6,9 @@ import { commandId } from "../../commands.ts";
 import { MarimoConfigurationService } from "../../config/MarimoConfigurationService.ts";
 import { marimoConfigFixture } from "../../lib/__tests__/branded.ts";
 import { OutputChannel } from "../../platform/OutputChannel.ts";
-import { MarimoCommands } from "../MarimoCommands.ts";
-import { showNotebookMenu } from "../showNotebookMenu.ts";
+import { createSetupCellCommand } from "../createSetupCell.ts";
+import { publishMarimoNotebookCommand } from "../publishMarimoNotebook.ts";
+import { showNotebookMenuCommand } from "../showNotebookMenu.ts";
 
 const configLayer = Layer.succeed(
   MarimoConfigurationService,
@@ -45,7 +46,9 @@ describe("showNotebookMenu", () => {
         },
       });
 
-      yield* showNotebookMenu().pipe(Effect.provide(testLayer(vscode)));
+      yield* showNotebookMenuCommand
+        .handler()
+        .pipe(Effect.provide(testLayer(vscode)));
 
       expect(yield* labels).toEqual([
         "$(zap) Reactivity",
@@ -74,10 +77,12 @@ describe("showNotebookMenu", () => {
         },
       });
 
-      yield* showNotebookMenu(context).pipe(Effect.provide(testLayer(vscode)));
+      yield* showNotebookMenuCommand
+        .handler(context)
+        .pipe(Effect.provide(testLayer(vscode)));
 
       expect(yield* Ref.get(vscode.executions)).toContainEqual({
-        command: commandId(MarimoCommands.publishMarimoNotebook),
+        command: commandId(publishMarimoNotebookCommand),
         args: [context],
       });
     }),
@@ -100,10 +105,12 @@ describe("showNotebookMenu", () => {
         },
       });
 
-      yield* showNotebookMenu(context).pipe(Effect.provide(testLayer(vscode)));
+      yield* showNotebookMenuCommand
+        .handler(context)
+        .pipe(Effect.provide(testLayer(vscode)));
 
       expect(yield* Ref.get(vscode.executions)).toContainEqual({
-        command: commandId(MarimoCommands.createSetupCell),
+        command: commandId(createSetupCellCommand),
         args: [context],
       });
     }),
@@ -133,7 +140,9 @@ describe("showNotebookMenu", () => {
       });
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
-      yield* showNotebookMenu().pipe(Effect.provide(testLayer(vscode)));
+      yield* showNotebookMenuCommand
+        .handler()
+        .pipe(Effect.provide(testLayer(vscode)));
 
       expect(yield* descriptions).toEqual(["Lazy", "Auto-run"]);
     }),

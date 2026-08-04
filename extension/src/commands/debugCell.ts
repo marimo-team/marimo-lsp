@@ -1,11 +1,13 @@
 import { Effect, flow, Option } from "effect";
 
+import { defineMarimoCommand } from "../commands.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 
-export const debugCell = Effect.fn("command.debugCell")(
+const debugCell = Effect.fn("command.debugCell")(
   function* () {
     const code = yield* VsCode;
     const debugAdapter = yield* DebugAdapter;
@@ -48,4 +50,9 @@ export const debugCell = Effect.fn("command.debugCell")(
     }),
     Effect.catchAllCause(() => showErrorAndPromptLogs("Failed to debug cell.")),
   ),
+);
+
+export const debugCellCommand = defineMarimoCommand(
+  GeneratedMarimoCommands.debugCell,
+  debugCell,
 );

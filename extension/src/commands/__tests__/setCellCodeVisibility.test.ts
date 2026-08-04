@@ -9,7 +9,10 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
-import { setCellCodeVisibility } from "../setCellCodeVisibility.ts";
+import {
+  hideCellCodeCommand,
+  showCellCodeCommand,
+} from "../setCellCodeVisibility.ts";
 
 it.effect.each([
   {
@@ -48,9 +51,8 @@ it.effect.each([
     });
     const rawCell = document.cellAt(1);
 
-    yield* setCellCodeVisibility(rawCell, hidden).pipe(
-      Effect.provide(vscode.layer),
-    );
+    const definition = hidden ? hideCellCodeCommand : showCellCodeCommand;
+    yield* definition.handler(rawCell).pipe(Effect.provide(vscode.layer));
 
     const workspaceEdit = Option.getOrThrow(yield* Ref.get(applied));
     const replacement = getNotebookEdits(workspaceEdit, uri)[0]?.newCells[0];

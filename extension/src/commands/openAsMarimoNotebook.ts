@@ -1,10 +1,16 @@
-import { Effect, Either, Option } from "effect";
+import { Effect, Either, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 
+import {
+  defineMarimoCommand,
+  VscodeUriSchema,
+  withOptionalFirstArgument,
+} from "../commands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 
-export const openAsMarimoNotebook = Effect.fn("command.openAsMarimoNotebook")(
+const openAsMarimoNotebook = Effect.fn("command.openAsMarimoNotebook")(
   function* (resource?: string | vscode.Uri) {
     const code = yield* VsCode;
 
@@ -59,4 +65,12 @@ export const openAsMarimoNotebook = Effect.fn("command.openAsMarimoNotebook")(
       Effect.annotateLogs({ uri: uri.toString() }),
     );
   },
+);
+
+export const openAsMarimoNotebookCommand = defineMarimoCommand(
+  withOptionalFirstArgument(
+    GeneratedMarimoCommands.openAsMarimoNotebook,
+    Schema.Union(Schema.String, VscodeUriSchema),
+  ),
+  openAsMarimoNotebook,
 );

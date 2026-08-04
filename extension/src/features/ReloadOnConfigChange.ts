@@ -1,6 +1,6 @@
 import { Effect, Either, Layer, Option, Stream } from "effect";
 
-import { restartKernel } from "../commands/restartKernel.ts";
+import { restartKernelCommand } from "../commands/restartKernel.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
@@ -13,7 +13,7 @@ export const promptToRestartKernelForFileRootChange = Effect.fn(function* () {
     { items: ["Restart Kernel"] },
   );
   if (Option.isSome(restart) && restart.value === "Restart Kernel") {
-    yield* code.commands.execute(restartKernel.command);
+    yield* code.commands.execute(restartKernelCommand);
   }
 });
 

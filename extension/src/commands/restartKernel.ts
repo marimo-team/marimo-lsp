@@ -6,10 +6,11 @@ import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import { MarimoCommands } from "./MarimoCommands.ts";
+import { GeneratedMarimoCommands } from "./MarimoCommands.gen.ts";
 import {
   getNotebookCommandEditor,
   type NotebookToolbarContext,
+  withOptionalNotebookToolbarContext,
 } from "./NotebookCommandTarget.ts";
 
 const restartKernelHandler = Effect.fn("command.restartKernel")(function* (
@@ -79,7 +80,7 @@ const restartKernelHandler = Effect.fn("command.restartKernel")(function* (
   }
 });
 
-export const restartKernel = defineMarimoCommand(
-  MarimoCommands.restartKernel,
+export const restartKernelCommand = defineMarimoCommand(
+  withOptionalNotebookToolbarContext(GeneratedMarimoCommands.restartKernel),
   restartKernelHandler,
 );

@@ -34,6 +34,7 @@ import {
   decodeCommandArguments,
   decodeCommandResult,
   type MarimoCommand,
+  type MarimoCommandDefinition,
   type VscodeBuiltinCommand,
 } from "../commands.ts";
 import type { MarimoContextKey } from "../constants.ts";
@@ -395,15 +396,14 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
     }
 
     function register<Args extends ReadonlyArray<unknown>, A, E, R>(
-      command: MarimoCommand<Args, A>,
-      fn: (...args: Args) => Effect.Effect<A, E, R>,
+      definition: MarimoCommandDefinition<Args, A, E, R>,
     ) {
-      const wireId = commandId(command);
+      const wireId = commandId(definition);
       return registerImplementation(wireId, (args) =>
-        decodeCommandArguments(command, args).pipe(
-          Effect.flatMap((decoded) => fn(...decoded)),
-          Effect.flatMap((result) => decodeCommandResult(command, result)),
-          withCommandContext(command),
+        decodeCommandArguments(definition, args).pipe(
+          Effect.flatMap((decoded) => definition.handler(...decoded)),
+          Effect.flatMap((result) => decodeCommandResult(definition, result)),
+          withCommandContext(definition),
         ),
       );
     }

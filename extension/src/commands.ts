@@ -18,6 +18,17 @@ export interface MarimoCommand<
   };
 }
 
+export interface MarimoCommandDefinition<
+  Args extends ReadonlyArray<unknown> = ReadonlyArray<unknown>,
+  Result = unknown,
+  Error = unknown,
+  Requirements = unknown,
+> extends MarimoCommand<Args, Result> {
+  readonly handler: (
+    ...args: Args
+  ) => Effect.Effect<Result, Error, Requirements>;
+}
+
 export function defineMarimoCommand<
   Args extends ReadonlyArray<unknown>,
   Result,
@@ -26,8 +37,8 @@ export function defineMarimoCommand<
 >(
   command: MarimoCommand<Args, Result>,
   handler: (...args: Args) => Effect.Effect<Result, Error, Requirements>,
-) {
-  return { command, handler } as const;
+): MarimoCommandDefinition<Args, Result, Error, Requirements> {
+  return { ...command, handler };
 }
 
 export function marimoCommand(id: string): MarimoCommand<[], void> {

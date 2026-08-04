@@ -3,7 +3,7 @@ import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
 import { toVscodeCommand } from "../commands.ts";
-import { MarimoCommands } from "../commands/MarimoCommands.ts";
+import { updateCellMetadataContract } from "../commands/updateCellMetadataCommand.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -149,7 +149,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
                 );
                 item.tooltip = binding.getTooltip(value);
                 item.command = toVscodeCommand(
-                  MarimoCommands.updateCellMetadata,
+                  updateCellMetadataContract,
                   "Update cell metadata",
                   binding.id,
                 );
@@ -281,21 +281,18 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
         });
       }
 
-      yield* code.commands.register(
-        MarimoCommands.updateCellMetadata,
-        Effect.fn(function* (bindingId) {
-          const binding = bindings.get(bindingId);
-          if (binding === undefined) {
-            yield* Effect.logWarning("Unknown cell metadata binding").pipe(
-              Effect.annotateLogs({ bindingId }),
-            );
-            return;
-          }
-          yield* createBindingCommandFor(binding)();
-        }),
-      );
+      const updateBinding = Effect.fn(function* (bindingId: string) {
+        const binding = bindings.get(bindingId);
+        if (binding === undefined) {
+          yield* Effect.logWarning("Unknown cell metadata binding").pipe(
+            Effect.annotateLogs({ bindingId }),
+          );
+          return;
+        }
+        yield* createBindingCommandFor(binding)();
+      });
 
-      return { registerBinding } as const;
+      return { registerBinding, updateBinding } as const;
     }),
   },
 ) {}
