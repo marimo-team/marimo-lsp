@@ -1,6 +1,8 @@
 import { Effect, ParseResult, Schema } from "effect";
 import type * as vscode from "vscode";
 
+import builtinCommandCatalog from "../builtin-command-catalog.json";
+
 const MarimoCommandTypeId: unique symbol = Symbol("MarimoCommand");
 
 export type CommandArguments = ReadonlyArray<unknown>;
@@ -224,7 +226,8 @@ export interface VscodeCommandMap {
   };
 }
 
-export type VscodeBuiltinCommand = keyof VscodeCommandMap;
+export const VscodeBuiltinCommandCatalog = builtinCommandCatalog;
+export type VscodeBuiltinCommand = keyof typeof VscodeBuiltinCommandCatalog;
 export type VscodeCommandArgs<C extends VscodeBuiltinCommand> =
   VscodeCommandMap[C]["args"];
 export type VscodeCommandResult<C extends VscodeBuiltinCommand> =

@@ -1,8 +1,12 @@
-import { expect, it } from "@effect/vitest";
+import { expect, expectTypeOf, it } from "@effect/vitest";
 import { Effect } from "effect";
 import type * as vscode from "vscode";
 
-import { defineCommand } from "../../commands.ts";
+import {
+  defineCommand,
+  type VscodeBuiltinCommand,
+  type VscodeCommandMap,
+} from "../../commands.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { Invocation } from "../Invocation.ts";
 import { MarimoCommands } from "../MarimoCommands.ts";
@@ -49,4 +53,8 @@ const typecheckedUsage = (cell: vscode.NotebookCell) =>
 
 it("keeps registration and bindings statically compatible", () => {
   expect(typecheckedUsage).toBeDefined();
+});
+
+it("catalogs every typed built-in command exactly once", () => {
+  expectTypeOf<keyof VscodeCommandMap>().toEqualTypeOf<VscodeBuiltinCommand>();
 });
