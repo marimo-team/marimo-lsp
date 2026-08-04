@@ -38,7 +38,10 @@ export const MarimoCommands = {
   ),
   hideCellCode: command(
     CommandIds.hideCellCode,
-    Invocation.NotebookCellTitle.notebookCell,
+    Invocation.join(
+      Invocation.CommandPalette.notebookCell,
+      Invocation.NotebookCellTitle.notebookCell,
+    ),
   ),
   newMarimoNotebook: command(
     CommandIds.newMarimoNotebook,
@@ -99,7 +102,10 @@ export const MarimoCommands = {
   ),
   showCellCode: command(
     CommandIds.showCellCode,
-    Invocation.NotebookCellTitle.notebookCell,
+    Invocation.join(
+      Invocation.CommandPalette.notebookCell,
+      Invocation.NotebookCellTitle.notebookCell,
+    ),
   ),
   showDiagnostics: command(
     CommandIds.showDiagnostics,

@@ -64,6 +64,7 @@ describe("command definitions", () => {
   it.effect("normalizes a cell-title invocation to a marimo cell", () =>
     Effect.gen(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+      const vscode = yield* TestVsCode.make();
       const cell = createNotebookCell(
         editor.notebook,
         { kind: 2, value: "x = 1", languageId: "python" },
@@ -73,10 +74,32 @@ describe("command definitions", () => {
       const [target] = yield* decodeCommandArguments(
         MarimoCommands.hideCellCode,
         [cell],
-      );
+      ).pipe(Effect.provide(vscode.layer));
 
       expect(Option.getOrThrow(target).index).toBe(0);
     }),
+  );
+
+  it.effect.each([MarimoCommands.hideCellCode, MarimoCommands.showCellCode])(
+    "resolves an omitted cell target to the active cell",
+    (command) =>
+      Effect.gen(function* () {
+        const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+          data: {
+            cells: [{ kind: 2, value: "x = 1", languageId: "python" }],
+          },
+        });
+        const vscode = yield* TestVsCode.make({
+          initialDocuments: [editor.notebook],
+        });
+        yield* vscode.setActiveNotebookEditor(Option.some(editor));
+
+        const [target] = yield* decodeCommandArguments(command, []).pipe(
+          Effect.provide(vscode.layer),
+        );
+
+        expect(Option.getOrThrow(target).index).toBe(0);
+      }),
   );
 
   it.effect("preserves a resource argument after joining surfaces", () =>
