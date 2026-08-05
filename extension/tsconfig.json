@@ -14,7 +14,6 @@
     "erasableSyntaxOnly": true,
     "paths": {
       "@/*": ["./node_modules/@marimo-team/frontend/src/*"]
-    },
-    "plugins": [{ "name": "@effect/language-service" }]
+    }
   }
 }

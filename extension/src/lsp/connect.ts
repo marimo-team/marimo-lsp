@@ -173,7 +173,7 @@ export const connectMarimoNotebookLspClient = Effect.fn(
                   .sendNotification("workspace/didChangeWatchedFiles", {
                     changes: [{ uri: uri.toString(), type }],
                   })
-                  .pipe(Effect.catchAll(() => Effect.void)),
+                  .pipe(Effect.ignore),
               ),
             ),
           );

@@ -679,7 +679,7 @@ describe("NotebookRuntime scratch stream", () => {
         }> = [];
         for (const command of executions) {
           if (command.method === "execute-scratchpad") {
-            const params = Schema.decodeUnknownSync(
+            const params = yield* Schema.decodeUnknown(
               Api.ExecuteScratchpadPayload,
             )(command.params);
             assert(typeof params.inner.runId === "string");
@@ -748,9 +748,9 @@ describe("NotebookRuntime scratch stream", () => {
         );
 
         assert(executeCmd !== undefined);
-        const { runId } = Schema.decodeUnknownSync(
+        const { runId } = (yield* Schema.decodeUnknown(
           Api.ExecuteScratchpadPayload,
-        )(executeCmd.params).inner;
+        )(executeCmd.params)).inner;
         expect(runId).toBeDefined();
 
         const cell = ctx.notebook.cellAt(0);
@@ -885,9 +885,9 @@ describe("NotebookRuntime scratch stream", () => {
           (c) => c.method === "execute-scratchpad",
         );
         assert(executeCmd !== undefined);
-        const { runId } = Schema.decodeUnknownSync(
+        const { runId } = (yield* Schema.decodeUnknown(
           Api.ExecuteScratchpadPayload,
-        )(executeCmd.params).inner;
+        )(executeCmd.params)).inner;
 
         // Our completed-run ends the stream normally.
         yield* PubSub.publish(ctx.operationsPubSub, {

@@ -71,7 +71,13 @@ export default vite.defineConfig({
       restriction: "off",
     },
     jsPlugins: ["./lint/marimo-plugin.mjs"],
-    plugins: ["typescript", "react", "import"],
+    plugins: [
+      "typescript",
+      "react",
+      "import",
+      // @ts-expect-error -- Vite+ 0.2.7 predates Effect's patched plugin.
+      "effecttsgo",
+    ],
     rules: {
       "eslint/no-underscore-dangle": "off",
       "react/react-in-jsx-scope": "off",
@@ -87,6 +93,16 @@ export default vite.defineConfig({
       "typescript/no-misused-spread": "off",
       "typescript/no-shadow": "off",
     },
+    overrides: [
+      {
+        files: ["src/**/__tests__/**/*.ts", "src/**/*.test.ts"],
+        rules: {
+          // Effect.provide is the application boundary for independently
+          // constructed test layers that cannot be shared through it.layer.
+          "effecttsgo/strict-effect-provide": "off",
+        },
+      },
+    ],
     options: {
       typeAware: true,
       typeCheck: true,

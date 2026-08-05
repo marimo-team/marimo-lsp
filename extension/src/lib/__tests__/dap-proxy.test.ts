@@ -1,7 +1,13 @@
 import * as NodeNet from "node:net";
 
 import { describe, expect, it } from "@effect/vitest";
-import { Deferred, Effect, Array as EffectArray, Stream } from "effect";
+import {
+  Deferred,
+  Effect,
+  Array as EffectArray,
+  Runtime,
+  Stream,
+} from "effect";
 import type * as vscode from "vscode";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -46,11 +52,12 @@ type Connection = {
 const withTestCtx = Effect.fn(function* (
   mapping: ReturnType<typeof createSourceMapping>,
 ) {
+  const runSync = Runtime.runSync(yield* Effect.runtime());
   const port = yield* Deferred.make<number, Error>();
   const connection = yield* Deferred.make<Connection, Error>();
 
   const server = NodeNet.createServer((socket) =>
-    Effect.runSync(
+    runSync(
       Deferred.succeed(connection, {
         dispatch: (msg) => socket.write(encodeDap(msg)),
         messages: Stream.async<Uint8Array, Error>((emit) => {
@@ -68,7 +75,7 @@ const withTestCtx = Effect.fn(function* (
     if (addr == null || typeof addr === "string") {
       return;
     }
-    Effect.runSync(Deferred.succeed(port, addr.port));
+    runSync(Deferred.succeed(port, addr.port));
   });
 
   return {
@@ -167,8 +174,9 @@ describe("makeDapProxy", () => {
 
       // Subscribe to proxy's outgoing messages (debugpy -> VS Code)
       const received = yield* Deferred.make<vscode.DebugProtocolMessage>();
+      const runFork = Runtime.runFork(yield* Effect.runtime());
       proxy.adapter.onDidSendMessage((msg) => {
-        Effect.runFork(Deferred.succeed(received, msg));
+        runFork(Deferred.succeed(received, msg));
       });
 
       conn.dispatch({

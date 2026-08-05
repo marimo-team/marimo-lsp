@@ -2,7 +2,16 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 
-import { Cause, Data, Effect, Option, PubSub, Redacted, Stream } from "effect";
+import {
+  Cause,
+  Data,
+  Effect,
+  Option,
+  PubSub,
+  Redacted,
+  Runtime,
+  Stream,
+} from "effect";
 import * as lsp from "vscode-languageclient/node";
 
 import { Config } from "../config/Config.ts";
@@ -71,13 +80,14 @@ export const makeMarimoOperationStream = Effect.fn(function* (
   },
 ) {
   const operationPubSub = yield* PubSub.unbounded<MarimoOperation>();
+  const runSync = Runtime.runSync(yield* Effect.runtime());
   yield* Effect.addFinalizer(() => PubSub.shutdown(operationPubSub));
 
   // vscode-languageclient stores one notification handler per method, so
   // register once and fan out to every operations() consumer.
   yield* acquireDisposable(() =>
     register((message) => {
-      Effect.runSync(PubSub.publish(operationPubSub, message));
+      runSync(PubSub.publish(operationPubSub, message));
     }),
   );
 

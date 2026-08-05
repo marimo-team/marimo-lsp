@@ -706,8 +706,8 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
           Effect.timeout("5 seconds"),
           Effect.catchAll(() => Effect.void),
         );
-        yield* Effect.promise(() => conn.sendNotification("exit")).pipe(
-          Effect.catchAll(() => Effect.void),
+        yield* Effect.tryPromise(() => conn.sendNotification("exit")).pipe(
+          Effect.ignore,
         );
       }),
     );
@@ -926,7 +926,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
 
       /** Send a raw notification to the server. */
       sendNotification(method: string, params: unknown) {
-        return Effect.promise(() => conn.sendNotification(method, params));
+        return Effect.tryPromise(() => conn.sendNotification(method, params));
       },
 
       // ---- Notifications stream -----------------------------------------

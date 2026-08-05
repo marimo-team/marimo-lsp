@@ -30,20 +30,9 @@ export interface InvocationAdapter<
   ) => Effect.Effect<HandlerArgs, ParseResult.ParseError, Requirements>;
 }
 
-type AnyInvocationAdapter = InvocationAdapter<
-  CommandArguments,
-  CommandArguments,
-  unknown
->;
-
 type CallArgsOf<Adapter> =
   Adapter extends InvocationAdapter<infer Args, CommandArguments, unknown>
     ? Args
-    : never;
-
-type RequirementsOf<Adapter> =
-  Adapter extends InvocationAdapter<CommandArguments, CommandArguments, infer R>
-    ? R
     : never;
 
 const makeAdapter = <
@@ -309,11 +298,8 @@ const join = <
   FirstCallArgs extends CommandArguments,
   HandlerArgs extends CommandArguments,
   FirstRequirements,
-  // Requirements are recovered from `Rest` below; `any` prevents the
-  // structural constraint from widening every adapter requirement to unknown.
-  // oxlint-disable-next-line typescript/no-explicit-any
   const Rest extends ReadonlyArray<
-    InvocationAdapter<CommandArguments, NoInfer<HandlerArgs>, any>
+    InvocationAdapter<CommandArguments, NoInfer<HandlerArgs>, FirstRequirements>
   >,
 >(
   first: InvocationAdapter<FirstCallArgs, HandlerArgs, FirstRequirements>,
@@ -321,9 +307,14 @@ const join = <
 ): CommandInvocation<
   FirstCallArgs | CallArgsOf<Rest[number]>,
   HandlerArgs,
-  FirstRequirements | RequirementsOf<Rest[number]>
+  FirstRequirements
 > => {
-  const adapters: ReadonlyArray<AnyInvocationAdapter> = [first, ...rest];
+  const adapters: ReadonlyArray<
+    Pick<
+      InvocationAdapter<CommandArguments, HandlerArgs, FirstRequirements>,
+      "contributed" | "surface"
+    >
+  > = [first, ...rest];
   return {
     contributedSurfaces: [
       ...new Set(

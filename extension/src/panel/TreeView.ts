@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Runtime } from "effect";
 import type * as vscode from "vscode";
 
 import type { MarimoView } from "../constants.ts";
@@ -42,6 +42,9 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
         getTreeItem: (element: T) => Effect.Effect<TreeItem>;
         showCollapseAll?: boolean;
       }) {
+        const runtime = yield* Effect.runtime();
+        const runPromise = Runtime.runPromise(runtime);
+        const runSync = Runtime.runSync(runtime);
         // Create event emitter for refresh events
         const eventEmitter = yield* Effect.acquireRelease(
           Effect.sync(() => new code.EventEmitter<T | undefined | null>()),
@@ -56,12 +59,12 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
               // This is synchronous in VS Code API, but we need to run effect
               // For now, we'll use a simple synchronous version
               // In practice, you'd cache or compute items ahead of time
-              const item = Effect.runSync(options.getTreeItem(element));
+              const item = runSync(options.getTreeItem(element));
               return toVSCodeTreeItem(code, item);
             },
 
             getChildren: (element?: T): vscode.ProviderResult<T[]> => {
-              return Effect.runPromise(options.getChildren(element));
+              return runPromise(options.getChildren(element));
             },
           },
           showCollapseAll: options.showCollapseAll ?? true,

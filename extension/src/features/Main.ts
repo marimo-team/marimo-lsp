@@ -6,6 +6,7 @@ import {
   Logger,
   type LogLevel,
   pipe,
+  Runtime,
   Scope,
 } from "effect";
 import type * as vscode from "vscode";
@@ -136,6 +137,7 @@ export function makeActivate(
   return (context) =>
     pipe(
       Effect.gen(function* () {
+        const runPromise = Runtime.runPromise(yield* Effect.runtime());
         // Create a scope and build layers with it. Layer.buildWithScope completes
         // once all layer initialization finishes (commands registered, serializer
         // registered, notification streams set up). The LSP client will start lazily
@@ -150,7 +152,7 @@ export function makeActivate(
         const api = Context.get(ctx, Api);
         return {
           experimental: api.experimental,
-          dispose: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+          dispose: () => runPromise(Scope.close(scope, Exit.void)),
         };
       }),
       Effect.provideService(ExtensionContext, context),

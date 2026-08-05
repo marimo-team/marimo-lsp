@@ -287,7 +287,8 @@ export class Window extends Effect.Service<Window>()("Window", {
         ) => Effect.Effect<A, E, R>,
       ) {
         return Effect.gen(function* () {
-          const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
+          const runtime = yield* Effect.runtime<R>();
+          const runPromise = Runtime.runPromise(runtime);
           return yield* Effect.promise((signal) =>
             api.withProgress(options, (progress, token) =>
               runPromise(
@@ -646,7 +647,9 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
         },
       ): Effect.Effect<void, never, Scope.Scope | R> {
         return Effect.gen(function* () {
-          const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
+          const runtime = yield* Effect.runtime<R>();
+          const runPromise = Runtime.runPromise(runtime);
+          const runFork = Runtime.runFork(runtime);
 
           yield* acquireDisposable(() =>
             api.registerDebugAdapterDescriptorFactory(debugType, {
@@ -665,8 +668,7 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
 
                     return new vscode.DebugAdapterInlineImplementation(
                       Object.assign(adapter.value, {
-                        dispose: () =>
-                          Effect.runFork(Scope.close(scope, Exit.void)),
+                        dispose: () => runFork(Scope.close(scope, Exit.void)),
                       }),
                     );
                   }),
