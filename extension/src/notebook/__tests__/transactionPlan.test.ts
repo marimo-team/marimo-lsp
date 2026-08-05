@@ -4,6 +4,7 @@ import { cellId as cid } from "../../lib/__tests__/branded.ts";
 import type { DocumentChange } from "../../types.ts";
 import type { LanguageIds } from "../classifyCellCode.ts";
 import {
+  changesForEditor,
   computeDesiredCells,
   diffToReplaceRange,
   type PlanCell,
@@ -238,6 +239,22 @@ describe("computeDesiredCells", () => {
     expect(desired[0].sourceProjections?.markdown).toEqual({
       quotePrefix: "r",
     });
+  });
+});
+
+describe("changesForEditor", () => {
+  it.each(["frontend", "kernel", "file-watch", "cell-manager"])(
+    "drops %s transactions",
+    (source) => {
+      expect(
+        changesForEditor([setCode("a", "x = 2"), reorder("b", "a")], source),
+      ).toEqual([]);
+    },
+  );
+
+  it("keeps code-mode transactions", () => {
+    const changes = [setCode("a", "x = 2"), reorder("b", "a")];
+    expect(changesForEditor(changes, "code-mode")).toEqual(changes);
   });
 });
 

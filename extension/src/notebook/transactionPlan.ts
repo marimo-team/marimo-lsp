@@ -60,6 +60,18 @@ export interface ReplaceRange {
   readonly cells: readonly PlanCell[];
 }
 
+/**
+ * Keep non-code-mode writers from changing the editor document. VS Code's LSP
+ * notebook is the source of truth; code mode is the sole remote writer whose
+ * explicit document edits are replayed.
+ */
+export function changesForEditor(
+  changes: readonly DocumentChange[],
+  source: string,
+): readonly DocumentChange[] {
+  return source === "code-mode" ? changes : [];
+}
+
 /** Apply CellConfig's documented defaults so wire configs land in the normalized shape. */
 const normalizeConfig = (config: CellConfig): typeof PlanCellConfig.Type => ({
   column: config.column ?? null,

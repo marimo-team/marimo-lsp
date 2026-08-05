@@ -20,6 +20,7 @@ import {
 import * as Api from "../schemas/Models.gen.ts";
 import type { DocumentTransactionNotification } from "../types.ts";
 import {
+  changesForEditor,
   computeDesiredCells,
   diffToReplaceRange,
   type PlanCell,
@@ -73,7 +74,11 @@ export const applyDocumentTransaction = Effect.fn(
     }
   }
 
-  const desired = computeDesiredCells(current, transaction.changes, LanguageId);
+  const desired = computeDesiredCells(
+    current,
+    changesForEditor(transaction.changes, transaction.source),
+    LanguageId,
+  );
   const range = diffToReplaceRange(current, desired);
   if (range == null) return;
 
