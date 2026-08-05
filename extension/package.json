@@ -550,12 +550,12 @@
       "notebook/cell/title": [
         {
           "command": "marimo.hideCellCode",
-          "when": "notebookType == 'marimo-notebook' && !notebookCellInputIsCollapsed",
+          "when": "notebookType == 'marimo-notebook' && ((notebookCellType == 'code' && !notebookCellInputIsCollapsed) || notebookCellType == 'markup')",
           "group": "3_edit@1"
         },
         {
           "command": "marimo.showCellCode",
-          "when": "notebookType == 'marimo-notebook' && notebookCellInputIsCollapsed",
+          "when": "notebookType == 'marimo-notebook' && ((notebookCellType == 'code' && notebookCellInputIsCollapsed) || notebookCellType == 'markup')",
           "group": "3_edit@1"
         }
       ],

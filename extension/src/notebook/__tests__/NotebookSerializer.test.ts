@@ -301,6 +301,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       { name: "empty", metadata: {} },
       { name: "foreign-only", metadata: { foreign: { value: true } } },
       { name: "empty marimo", metadata: { marimo: {} } },
+      { name: "empty options", metadata: { marimo: { options: {} } } },
     ])("uses markdown defaults for a $name metadata envelope", ({ metadata }) =>
       Effect.gen(function* () {
         const { LanguageId } = yield* Constants;
@@ -317,6 +318,30 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
         });
 
         expect(new TextDecoder().decode(bytes)).toContain(
+          "@app.cell(hide_code=True)",
+        );
+      }),
+    );
+
+    it.effect(
+      "preserves an explicit hide_code=false for markdown",
+      Effect.fn(function* () {
+        const { LanguageId } = yield* Constants;
+        const serializer = yield* NotebookSerializer;
+        const bytes = yield* serializer.serializeEffect({
+          cells: [
+            {
+              kind: 1,
+              value: "# markdown",
+              languageId: LanguageId.Markdown,
+              metadata: {
+                marimo: { options: { hide_code: false } },
+              },
+            },
+          ],
+        });
+
+        expect(new TextDecoder().decode(bytes)).not.toContain(
           "@app.cell(hide_code=True)",
         );
       }),

@@ -14,14 +14,14 @@ import {
   CellInputVisibilitySyncLive,
 } from "../CellInputVisibilitySync.ts";
 
-const cell = (index: number, hideCode: boolean) =>
+const cell = (index: number, hideCode: boolean, kind: 1 | 2 = 2) =>
   MarimoNotebookCell.from(
     createNotebookCell(
       createTestNotebookDocument("/test/notebook_mo.py"),
       {
-        kind: 2,
+        kind,
         value: "",
-        languageId: "python",
+        languageId: kind === 1 ? "markdown" : "python",
         metadata: MarimoNotebookCell.createMetadata({
           marimo: { options: { hide_code: hideCode } },
           marimoRuntime: { stableId: `cell-${index}` },
@@ -47,6 +47,10 @@ describe("hiddenInputCellRanges", () => {
 
   it("returns no ranges when no cell hides its code", () => {
     expect(hiddenInputCellRanges([cell(0, false)])).toEqual([]);
+  });
+
+  it("does not hide native markup cells with persisted hide_code", () => {
+    expect(hiddenInputCellRanges([cell(0, true, 1)])).toEqual([]);
   });
 });
 
@@ -81,15 +85,16 @@ const commandRanges = Effect.fn(function* (
 interface CellState {
   readonly stableId: string;
   readonly hideCode: boolean;
+  readonly kind?: 1 | 2;
 }
 
 const makeEditor = (cells: readonly CellState[]) =>
   TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
     data: {
-      cells: cells.map(({ stableId, hideCode: hide_code }) => ({
-        kind: 2,
+      cells: cells.map(({ stableId, hideCode: hide_code, kind = 2 }) => ({
+        kind,
         value: "",
-        languageId: "python",
+        languageId: kind === 1 ? "markdown" : "python",
         metadata: MarimoNotebookCell.createMetadata({
           marimo: { options: { hide_code } },
           marimoRuntime: { stableId },
@@ -152,6 +157,64 @@ describe("CellInputVisibilitySync", () => {
             { start: 2, end: 3 },
           ],
         ]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.scoped(
+    "expands markup cells while collapsing hidden code cells on activation",
+    Effect.fn(function* () {
+      const initial = [
+        { stableId: "code", hideCode: true },
+        { stableId: "markdown", hideCode: true, kind: 1 as const },
+      ];
+      const editor = makeEditor(initial);
+      const vscode = yield* TestVsCode.make({
+        initialDocuments: [editor.notebook],
+      });
+      const layer = CellInputVisibilitySyncLive.pipe(
+        Layer.provide(vscode.layer),
+      );
+      yield* vscode.setActiveNotebookEditor(Option.some(editor));
+
+      yield* Effect.gen(function* () {
+        yield* TestClock.adjust("1 millis");
+
+        expect(
+          yield* commandRanges(vscode, "notebook.cell.collapseCellInput"),
+        ).toEqual([[{ start: 0, end: 1 }]]);
+        expect(
+          yield* commandRanges(vscode, "notebook.cell.expandCellInput"),
+        ).toEqual([[{ start: 1, end: 2 }]]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.scoped(
+    "re-expands markup cells whenever the notebook becomes active",
+    Effect.fn(function* () {
+      const initial = [
+        { stableId: "markdown", hideCode: true, kind: 1 as const },
+      ];
+      const editor = makeEditor(initial);
+      const vscode = yield* TestVsCode.make({
+        initialDocuments: [editor.notebook],
+      });
+      const layer = CellInputVisibilitySyncLive.pipe(
+        Layer.provide(vscode.layer),
+      );
+      yield* vscode.setActiveNotebookEditor(Option.some(editor));
+
+      yield* Effect.gen(function* () {
+        yield* TestClock.adjust("1 millis");
+        yield* vscode.setActiveNotebookEditor(Option.none());
+        yield* TestClock.adjust("1 millis");
+        yield* vscode.setActiveNotebookEditor(Option.some(editor));
+        yield* TestClock.adjust("1 millis");
+
+        expect(
+          yield* commandRanges(vscode, "notebook.cell.expandCellInput"),
+        ).toEqual([[{ start: 0, end: 1 }], [{ start: 0, end: 1 }]]);
       }).pipe(Effect.provide(layer));
     }),
   );
@@ -254,6 +317,32 @@ describe("CellInputVisibilitySync", () => {
         expect(
           yield* commandRanges(vscode, "notebook.cell.expandCellInput"),
         ).toEqual([]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.scoped(
+    "expands a hidden code cell when it becomes markup",
+    Effect.fn(function* () {
+      const before = [{ stableId: "cell", hideCode: true }];
+      const after = [{ stableId: "cell", hideCode: true, kind: 1 as const }];
+      const editor = makeEditor(before);
+      const vscode = yield* TestVsCode.make({
+        initialDocuments: [editor.notebook],
+      });
+      const layer = CellInputVisibilitySyncLive.pipe(
+        Layer.provide(vscode.layer),
+      );
+
+      yield* Effect.gen(function* () {
+        yield* vscode.setActiveNotebookEditor(Option.some(editor));
+        yield* TestClock.adjust("1 millis");
+        yield* changeNotebook(vscode, before, after);
+        yield* TestClock.adjust("1 millis");
+
+        expect(
+          yield* commandRanges(vscode, "notebook.cell.expandCellInput"),
+        ).toEqual([[{ start: 0, end: 1 }]]);
       }).pipe(Effect.provide(layer));
     }),
   );

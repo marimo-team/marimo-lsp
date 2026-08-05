@@ -8,6 +8,7 @@ import {
   Ref,
   Stream,
 } from "effect";
+import type * as vscode from "vscode";
 
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -28,6 +29,25 @@ export interface CellRange {
   readonly end: number;
 }
 
+const NotebookCellKind: {
+  readonly Markup: vscode.NotebookCellKind;
+  readonly Code: vscode.NotebookCellKind;
+} = {
+  Markup: 1,
+  Code: 2,
+};
+
+const isMarkupCell = (cell: MarimoNotebookCell) =>
+  cell.kind === NotebookCellKind.Markup;
+
+const isInputHidden = (cell: MarimoNotebookCell) =>
+  cell.kind === NotebookCellKind.Code && cell.isCodeHidden;
+
+const cellRange = (cell: MarimoNotebookCell): CellRange => ({
+  start: cell.index,
+  end: cell.index + 1,
+});
+
 /**
  * Returns one single-cell range per `hide_code` cell, in document order.
  *
@@ -37,9 +57,7 @@ export interface CellRange {
 export function hiddenInputCellRanges(
   cells: readonly MarimoNotebookCell[],
 ): CellRange[] {
-  return cells
-    .filter((cell) => cell.isCodeHidden)
-    .map((cell) => ({ start: cell.index, end: cell.index + 1 }));
+  return cells.filter(isInputHidden).map(cellRange);
 }
 
 type HiddenCodeSnapshot = HashMap.HashMap<NotebookCellId, boolean>;
@@ -50,7 +68,7 @@ function snapshotHiddenCode(
   let snapshot = HashMap.empty<NotebookCellId, boolean>();
   for (const cell of cells) {
     if (Option.isSome(cell.id)) {
-      snapshot = HashMap.set(snapshot, cell.id.value, cell.isCodeHidden);
+      snapshot = HashMap.set(snapshot, cell.id.value, isInputHidden(cell));
     }
   }
   return snapshot;
@@ -74,21 +92,42 @@ const CellInputVisibilitySyncEvent =
 function visibilityChanges(
   previous: Option.Option<HiddenCodeSnapshot>,
   cells: readonly MarimoNotebookCell[],
+  initialize: boolean,
 ): VisibilityChanges {
   if (Option.isNone(previous)) {
-    return { collapse: hiddenInputCellRanges(cells), expand: [] };
+    return {
+      collapse: hiddenInputCellRanges(cells),
+      expand: cells.filter(isMarkupCell).map(cellRange),
+    };
   }
 
   const collapse: CellRange[] = [];
   const expand: CellRange[] = [];
   for (const cell of cells) {
+    // `hide_code` is still persisted for marimo markdown cells, but a native
+    // VS Code markup cell must keep its editable input expanded. Reapply this
+    // on activation because VS Code does not expose the current view state.
+    if (isMarkupCell(cell)) {
+      const before = Option.flatMap(cell.id, (id) =>
+        HashMap.get(previous.value, id),
+      );
+      if (
+        initialize ||
+        Option.isNone(before) ||
+        Option.getOrElse(before, () => false)
+      ) {
+        expand.push(cellRange(cell));
+      }
+      continue;
+    }
+
     if (Option.isNone(cell.id)) continue;
 
     const before = HashMap.get(previous.value, cell.id.value);
-    const range = { start: cell.index, end: cell.index + 1 };
-    if (cell.isCodeHidden && !Option.getOrElse(before, () => false)) {
+    const range = cellRange(cell);
+    if (isInputHidden(cell) && !Option.getOrElse(before, () => false)) {
       collapse.push(range);
-    } else if (!cell.isCodeHidden && Option.isSome(before) && before.value) {
+    } else if (!isInputHidden(cell) && Option.isSome(before) && before.value) {
       expand.push(range);
     }
   }
@@ -119,7 +158,7 @@ export const CellInputVisibilitySyncLive = Layer.scopedDiscard(
         if (!initialize && Option.isNone(previous)) return;
 
         const cells = notebook.getCells();
-        const changes = visibilityChanges(previous, cells);
+        const changes = visibilityChanges(previous, cells, initialize);
         const next = snapshotHiddenCode(cells);
 
         yield* Effect.annotateCurrentSpan({
@@ -167,6 +206,9 @@ export const CellInputVisibilitySyncLive = Layer.scopedDiscard(
       Stream.fromEffect(code.window.getActiveNotebookEditor()),
       code.window.activeNotebookEditorChanges(),
     ).pipe(
+      // The current-editor read can race with the first change event. Keep the
+      // intervening `none` states so a real tab refocus still re-synchronizes.
+      Stream.changes,
       Stream.filterMap((editor) =>
         Option.filterMap(editor, (editor) =>
           MarimoNotebookDocument.tryFrom(editor.notebook),

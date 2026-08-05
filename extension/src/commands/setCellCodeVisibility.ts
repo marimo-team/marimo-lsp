@@ -1,8 +1,11 @@
 import { Effect, Option } from "effect";
+import type * as vscode from "vscode";
 
 import { updateMarimoCellMetadata } from "../notebook/updateMarimoCellMetadata.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
+
+const MARKUP_CELL_KIND: vscode.NotebookCellKind = 1;
 
 /** Persist and immediately apply the visibility requested by a cell menu item. */
 const setCellCodeVisibility = Effect.fn("command.setCellCodeVisibility")(
@@ -14,17 +17,20 @@ const setCellCodeVisibility = Effect.fn("command.setCellCodeVisibility")(
       options: { ...metadata.options, hide_code: hidden },
     }));
 
-    // Apply the requested view state even when metadata already had this value,
-    // such as after a user manually expanded a persisted hidden cell.
-    yield* code.commands.executeVSCode(
-      hidden
-        ? "notebook.cell.collapseCellInput"
-        : "notebook.cell.expandCellInput",
-      {
-        ranges: [{ start: index, end: index + 1 }],
-        document: cell.notebook.uri,
-      },
-    );
+    // `hide_code` remains persisted marimo state for native markup cells, but
+    // their VS Code input must stay expanded. Code cells mirror the persisted
+    // value into the editor view.
+    const command =
+      cell.kind === MARKUP_CELL_KIND
+        ? "notebook.cell.expandCellInput"
+        : hidden
+          ? "notebook.cell.collapseCellInput"
+          : "notebook.cell.expandCellInput";
+
+    yield* code.commands.executeVSCode(command, {
+      ranges: [{ start: index, end: index + 1 }],
+      document: cell.notebook.uri,
+    });
   },
 );
 

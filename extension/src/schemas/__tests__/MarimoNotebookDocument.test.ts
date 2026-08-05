@@ -20,6 +20,31 @@ const partialUpdate: MarimoUpdate = { name: "renamed" };
 void partialUpdate;
 
 describe("MarimoNotebookCell metadata updates", () => {
+  it.each([
+    { kind: 1 as const, hideCode: undefined, expected: true },
+    { kind: 1 as const, hideCode: false, expected: false },
+    { kind: 2 as const, hideCode: undefined, expected: false },
+    { kind: 2 as const, hideCode: true, expected: true },
+  ])(
+    "defaults hide_code by cell kind: $kind/$hideCode -> $expected",
+    ({ kind, hideCode, expected }) => {
+      const rawCell = createNotebookCell(
+        createTestNotebookDocument("file:///test/notebook_mo.py"),
+        {
+          kind,
+          value: "",
+          languageId: kind === 1 ? "markdown" : "python",
+          metadata: MarimoNotebookCell.createMetadata({
+            marimo: { options: { hide_code: hideCode } },
+          }),
+        },
+        0,
+      );
+
+      expect(MarimoNotebookCell.from(rawCell).isCodeHidden).toBe(expected);
+    },
+  );
+
   it("replaces complete persisted metadata while preserving runtime and foreign fields", () => {
     const metadata = {
       ...MarimoNotebookCell.createMetadata({
