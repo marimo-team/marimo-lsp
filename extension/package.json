@@ -40,7 +40,7 @@
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "@types/vscode": "^1.125.0",
+    "@types/vscode": "~1.108.0",
     "@types/vscode-notebook-renderer": "^1.72.4",
     "@vitest/coverage-v8": "4.1.10",
     "@vscode/debugprotocol": "^1.68.0",
