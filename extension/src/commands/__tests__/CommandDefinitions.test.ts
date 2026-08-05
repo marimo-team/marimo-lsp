@@ -9,6 +9,7 @@ import {
   decodeCommandArguments,
 } from "../../commands.ts";
 import { CommandIds, CommandSurfaces } from "../CommandIds.gen.ts";
+import hideCellCode from "../hideCellCode.ts";
 import { MarimoCommands } from "../MarimoCommands.ts";
 
 describe("command definitions", () => {
@@ -28,8 +29,9 @@ describe("command definitions", () => {
     expect(actual).toEqual(CommandSurfaces);
   });
 
-  it.effect("ignores VS Code metadata for a no-target command", () =>
-    Effect.gen(function* () {
+  it.effect(
+    "ignores VS Code metadata for a no-target command",
+    Effect.fn(function* () {
       const args = yield* decodeCommandArguments(MarimoCommands.restartLsp, [
         { injectedBy: "commandPalette" },
       ]);
@@ -37,8 +39,9 @@ describe("command definitions", () => {
     }),
   );
 
-  it.effect("normalizes a cell-status invocation to its exact notebook", () =>
-    Effect.gen(function* () {
+  it.effect(
+    "normalizes a cell-status invocation to its exact notebook",
+    Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
       const vscode = yield* TestVsCode.make({
         initialDocuments: [editor.notebook],
@@ -61,8 +64,9 @@ describe("command definitions", () => {
     }),
   );
 
-  it.effect("normalizes a cell-title invocation to a marimo cell", () =>
-    Effect.gen(function* () {
+  it.effect(
+    "normalizes a cell-title invocation to a marimo cell",
+    Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
       const vscode = yield* TestVsCode.make();
       const cell = createNotebookCell(
@@ -80,30 +84,78 @@ describe("command definitions", () => {
     }),
   );
 
-  it.effect.each([MarimoCommands.hideCellCode, MarimoCommands.showCellCode])(
-    "resolves an omitted cell target to the active cell",
-    (command) =>
-      Effect.gen(function* () {
-        const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
-          data: {
-            cells: [{ kind: 2, value: "x = 1", languageId: "python" }],
+  it.effect(
+    "handles a cell-container invocation using the active cell",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+        data: {
+          cells: [{ kind: 2, value: "x = 1", languageId: "python" }],
+        },
+      });
+      const vscode = yield* TestVsCode.make({
+        initialDocuments: [editor.notebook],
+      });
+      yield* vscode.setActiveNotebookEditor(Option.some(editor));
+
+      const [target] = yield* decodeCommandArguments(
+        MarimoCommands.hideCellCode,
+        [{ from: "cellContainer" }],
+      ).pipe(Effect.provide(vscode.layer));
+
+      expect(Option.getOrThrow(target).index).toBe(0);
+      yield* hideCellCode.invoke(target).pipe(Effect.provide(vscode.layer));
+      expect(yield* vscode.executions).toContainEqual({
+        command: "notebook.cell.collapseCellInput",
+        args: [
+          {
+            ranges: [{ start: 0, end: 1 }],
+            document: editor.notebook.uri,
           },
-        });
-        const vscode = yield* TestVsCode.make({
-          initialDocuments: [editor.notebook],
-        });
-        yield* vscode.setActiveNotebookEditor(Option.some(editor));
-
-        const [target] = yield* decodeCommandArguments(command, []).pipe(
-          Effect.provide(vscode.layer),
-        );
-
-        expect(Option.getOrThrow(target).index).toBe(0);
-      }),
+        ],
+      });
+    }),
   );
 
-  it.effect("preserves a resource argument after joining surfaces", () =>
-    Effect.gen(function* () {
+  it.effect(
+    "ignores a cell-container invocation without an active cell",
+    Effect.fn(function* () {
+      const vscode = yield* TestVsCode.make();
+
+      const [target] = yield* decodeCommandArguments(
+        MarimoCommands.hideCellCode,
+        [{ from: "cellContainer" }],
+      ).pipe(Effect.provide(vscode.layer));
+
+      expect(Option.isNone(target)).toBe(true);
+      yield* hideCellCode.invoke(target).pipe(Effect.provide(vscode.layer));
+      expect(yield* vscode.executions).toEqual([]);
+    }),
+  );
+
+  it.effect.each([MarimoCommands.hideCellCode, MarimoCommands.showCellCode])(
+    "resolves an omitted cell target to the active cell",
+    Effect.fn(function* (command) {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+        data: {
+          cells: [{ kind: 2, value: "x = 1", languageId: "python" }],
+        },
+      });
+      const vscode = yield* TestVsCode.make({
+        initialDocuments: [editor.notebook],
+      });
+      yield* vscode.setActiveNotebookEditor(Option.some(editor));
+
+      const [target] = yield* decodeCommandArguments(command, []).pipe(
+        Effect.provide(vscode.layer),
+      );
+
+      expect(Option.getOrThrow(target).index).toBe(0);
+    }),
+  );
+
+  it.effect(
+    "preserves a resource argument after joining surfaces",
+    Effect.fn(function* () {
       const args = yield* decodeCommandArguments(
         MarimoCommands.openAsMarimoNotebook,
         ["file:///notebook.py"],
