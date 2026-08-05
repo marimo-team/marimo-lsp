@@ -28,6 +28,7 @@ import * as Api from "../platform/Api.ts";
 import * as Constants from "../platform/Constants.ts";
 import * as ExtensionContext from "../platform/ExtensionContext.ts";
 import * as GitHubClient from "../platform/GitHubClient.ts";
+import * as HostPlatform from "../platform/HostPlatform.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as Storage from "../platform/Storage.ts";
 import type * as VsCode from "../platform/VsCode.ts";
@@ -129,8 +130,12 @@ export function makeExtension(
         throw new Error("Extension is already active");
       }
 
+      const dependencies = Layer.empty.pipe(
+        Layer.provideMerge(HostPlatform.layer),
+        Layer.provideMerge(layer),
+      );
       const appLayer = Layer.provide(
-        Layer.provide(MainLive, layer),
+        Layer.provide(MainLive, dependencies),
         Layer.succeed(ExtensionContext.Service, context),
       ).pipe(
         Layer.provideMerge(
