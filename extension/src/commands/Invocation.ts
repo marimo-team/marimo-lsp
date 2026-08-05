@@ -118,6 +118,10 @@ const NotebookToolbarContextSchema = Schema.declare<NotebookToolbarContext>(
   { identifier: "vscode.NotebookToolbarContext" },
 );
 
+const NotebookCellContainerContext = Schema.Struct({
+  from: Schema.Literal("cellContainer"),
+});
+
 const notebookFromEditor = (
   editor: vscode.NotebookEditor,
 ): Option.Option<NotebookTarget> =>
@@ -163,6 +167,19 @@ const activeNotebookCell = Effect.gen(function* () {
   return Option.fromNullable(
     notebook.value.getCells()[editor.value.selection.start],
   );
+});
+
+const notebookCellFromTitle = Effect.fn(function* (value: unknown) {
+  const cell = Schema.decodeUnknownOption(VscodeNotebookCellSchema)(value);
+  if (Option.isSome(cell)) {
+    return Option.some(MarimoNotebookCell.from(cell.value));
+  }
+
+  // VS Code may pass this context marker instead of the cell when a notebook
+  // cell title command is invoked from the cell container. In that case the
+  // targeted cell is the active editor's selected cell.
+  yield* Schema.decodeUnknown(NotebookCellContainerContext)(value);
+  return yield* activeNotebookCell;
 });
 
 const commandPalette = {
@@ -215,19 +232,22 @@ const notebookCellTitle = {
     [notebook: Option.Option<NotebookTarget>],
     VsCode
   >("notebookCellTitle", true, 1, (args) =>
-    Schema.decodeUnknown(VscodeNotebookCellSchema)(args[0]).pipe(
-      Effect.flatMap(notebookFromCell),
+    notebookCellFromTitle(args[0]).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.succeed(Option.none<NotebookTarget>()),
+          onSome: (cell) => notebookForUri(cell.notebook.uri),
+        }),
+      ),
       Effect.map((notebook) => [notebook]),
     ),
   ),
   notebookCell: makeAdapter<
     [cell: vscode.NotebookCell],
     [cell: Option.Option<MarimoNotebookCell>],
-    never
+    VsCode
   >("notebookCellTitle", true, 1, (args) =>
-    Schema.decodeUnknown(VscodeNotebookCellSchema)(args[0]).pipe(
-      Effect.map((cell) => [Option.some(MarimoNotebookCell.from(cell))]),
-    ),
+    notebookCellFromTitle(args[0]).pipe(Effect.map((cell) => [cell])),
   ),
 } as const;
 
