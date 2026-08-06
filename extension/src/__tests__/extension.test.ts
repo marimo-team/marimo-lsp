@@ -108,12 +108,12 @@ describe("package.json validation", () => {
     expect(pkg.contributes.menus["notebook/cell/title"]).toEqual([
       {
         command: commandId(hideCellCode.command),
-        when: "notebookType == 'marimo-notebook' && !notebookCellInputIsCollapsed",
+        when: "notebookType == 'marimo-notebook' && notebookCellType == 'code' && !notebookCellInputIsCollapsed",
         group: "3_edit@1",
       },
       {
         command: commandId(showCellCode.command),
-        when: "notebookType == 'marimo-notebook' && notebookCellInputIsCollapsed",
+        when: "notebookType == 'marimo-notebook' && notebookCellType == 'code' && notebookCellInputIsCollapsed",
         group: "3_edit@1",
       },
     ]);

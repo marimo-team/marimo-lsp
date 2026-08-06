@@ -44,6 +44,7 @@ const notebookMetadataEquivalence = Schema.equivalence(
 );
 
 const parseOwnedAppConfig = Schema.decodeUnknown(Api.OwnedAppConfig);
+const MARKUP_CELL_KIND: vscode.NotebookCellKind = 1;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -231,18 +232,23 @@ export class MarimoNotebookCell {
   }
 
   /**
-   * Whether the cell's code is hidden via `@app.cell(hide_code=True)`.
+   * The cell's effective marimo code visibility setting.
    *
    * marimo stores the decorator's `hide_code` flag in the cell's config; the
-   * LSP deserialize path surfaces it as `metadata.options.hide_code`. VS Code
+   * LSP deserialize path surfaces it as `metadata.options.hide_code`. Native
+   * markup cells default to hidden code because their Python `mo.md` wrapper is
+   * projected away; explicit metadata always wins. VS Code
    * has no API to read or set the input-collapsed state, so this is the source
    * of truth for the one-way synchronization performed by
    * {@link CellInputVisibilitySyncLive} (issue #326).
    */
   get isCodeHidden() {
     return this.metadata.pipe(
-      Option.map((meta) => meta.marimo.options.hide_code === true),
-      Option.getOrElse(() => false),
+      Option.map(
+        (meta) =>
+          meta.marimo.options.hide_code ?? this.#raw.kind === MARKUP_CELL_KIND,
+      ),
+      Option.getOrElse(() => this.#raw.kind === MARKUP_CELL_KIND),
     );
   }
 

@@ -324,6 +324,10 @@ function notebookDataToNotebookDocument(
           const name = cellMetadata.marimo.name;
           const config = (fallback: typeof Api.NotebookCellConfig.Type) =>
             hasOptions ? cellMetadata.marimo.options : fallback;
+          const markdownConfig = {
+            ...cellMetadata.marimo.options,
+            hide_code: cellMetadata.marimo.options.hide_code ?? true,
+          };
 
           // oxlint-disable-next-line typescript/no-unsafe-enum-comparison
           if (cell.kind === NotebookCellKind.Markup) {
@@ -339,7 +343,7 @@ function notebookDataToNotebookDocument(
                 code: result.code,
                 code_hash: null,
                 name,
-                config: config({ hide_code: true }),
+                config: markdownConfig,
               };
             }
             // Otherwise use the default wrapInMarkdown
@@ -348,7 +352,7 @@ function notebookDataToNotebookDocument(
               code: wrapInMarkdown(cell.value),
               code_hash: null,
               name,
-              config: config({ hide_code: true }),
+              config: markdownConfig,
             };
           }
 

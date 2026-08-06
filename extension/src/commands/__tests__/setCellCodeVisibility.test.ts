@@ -73,3 +73,55 @@ it.effect.each([
     ]);
   }),
 );
+
+it.effect.each([
+  { hidden: true, invoke: hideCellCode.invoke },
+  { hidden: false, invoke: showCellCode.invoke },
+])("persists markup hide_code=$hidden while keeping input expanded", (test) =>
+  Effect.gen(function* () {
+    const applied = yield* Ref.make(Option.none<vscode.WorkspaceEdit>());
+    const vscode = yield* TestVsCode.make({
+      workspace: {
+        applyEdit: (edit) =>
+          Ref.set(applied, Option.some(edit)).pipe(Effect.as(true)),
+      },
+    });
+    const uri = createNotebookUri("file:///test/notebook_mo.py");
+    const document = createTestNotebookDocument(uri, {
+      data: {
+        cells: [
+          {
+            kind: 1,
+            value: "# Markdown",
+            languageId: "markdown",
+            metadata: MarimoNotebookCell.createMetadata({
+              marimo: { options: { hide_code: !test.hidden } },
+              marimoRuntime: { stableId: "markdown" },
+            }),
+          },
+        ],
+      },
+    });
+    const cell = Option.some(MarimoNotebookCell.from(document.cellAt(0)));
+
+    yield* test.invoke(cell).pipe(Effect.provide(vscode.layer));
+
+    const workspaceEdit = Option.getOrThrow(yield* Ref.get(applied));
+    const replacement = getNotebookEdits(workspaceEdit, uri)[0]?.newCells[0];
+    const metadata = Option.getOrThrow(
+      MarimoNotebookCell.decodeMetadata(replacement?.metadata),
+    );
+    expect(metadata.marimo.options.hide_code).toBe(test.hidden);
+    expect(yield* vscode.executions).toEqual([
+      {
+        command: "notebook.cell.expandCellInput",
+        args: [
+          {
+            ranges: [{ start: 0, end: 1 }],
+            document: uri,
+          },
+        ],
+      },
+    ]);
+  }),
+);
