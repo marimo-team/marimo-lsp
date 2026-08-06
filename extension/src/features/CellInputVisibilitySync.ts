@@ -49,7 +49,9 @@ const cellRange = (cell: MarimoNotebookCell): CellRange => ({
 });
 
 /**
- * Returns one single-cell range per `hide_code` cell, in document order.
+ * Returns one single-cell range per code cell whose input should be hidden, in
+ * document order. Native markup cells are intentionally excluded even when
+ * their persisted marimo `hide_code` setting is true.
  *
  * It is a plain function rather than part of the layer below so the selection
  * logic can be tested without standing up a notebook editor.
