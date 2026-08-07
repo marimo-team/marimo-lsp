@@ -1,9 +1,23 @@
 import * as NodeChildProcess from "node:child_process";
+import type { EventEmitter } from "node:events";
 import * as NodePath from "node:path";
-import type { Writable } from "node:stream";
+import type { Readable, Writable } from "node:stream";
+
+interface SpawnedProcess extends EventEmitter {
+  readonly stdin: Writable | null;
+  readonly stdout: Readable | null;
+  readonly stderr: Readable | null;
+  kill(): boolean;
+}
+
+type SpawnProcess = (
+  executable: string,
+  args: string[],
+  options: NodeChildProcess.SpawnOptions,
+) => SpawnedProcess;
 
 interface ProcessState {
-  readonly child: NodeChildProcess.ChildProcess;
+  readonly child: SpawnedProcess;
   readonly input: Writable;
   expectedClose: boolean;
   exited: boolean;
@@ -22,9 +36,15 @@ interface ProcessCallbacks {
 export class Processes {
   readonly #processes = new Map<string, ProcessState>();
   readonly #callbacks: ProcessCallbacks;
+  readonly #spawn: SpawnProcess;
 
-  constructor(callbacks: ProcessCallbacks) {
+  constructor(
+    callbacks: ProcessCallbacks,
+    spawn: SpawnProcess = (executable, args, options) =>
+      NodeChildProcess.spawn(executable, args, options),
+  ) {
     this.#callbacks = callbacks;
+    this.#spawn = spawn;
   }
 
   spawn(processId: string, executable: string, workingDirectory: string): void {
@@ -35,7 +55,7 @@ export class Processes {
       "wasm",
       "kernel.py",
     );
-    const child = NodeChildProcess.spawn(executable, [script], {
+    const child = this.#spawn(executable, [script], {
       cwd: workingDirectory,
       // Keep smoke tests from writing bytecode into packaged resources.
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
@@ -68,9 +88,10 @@ export class Processes {
     };
     child.once("error", (error) => {
       process.stderr.write(`${error.message}\n`);
-      exited(null, null);
     });
-    child.once("exit", exited);
+    // `exit` can precede the final stdout data. `close` is emitted only after
+    // the process has exited and its stdio streams have closed.
+    child.once("close", exited);
   }
 
   write(processId: string, chunk: Uint8Array): void {
