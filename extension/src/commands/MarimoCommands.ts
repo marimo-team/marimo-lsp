@@ -129,10 +129,7 @@ export const MarimoCommands = {
   ),
   disableCell: command(
     CommandIds.disableCell,
-    Invocation.join(
-      Invocation.CommandPalette.notebookCell,
-      Invocation.NotebookCellTitle.notebookCell,
-    ),
+    Invocation.NotebookCellTitle.notebookCell,
   ),
   enableCell: command(
     CommandIds.enableCell,
