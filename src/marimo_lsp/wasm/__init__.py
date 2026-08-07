@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import typing
 
@@ -51,12 +53,28 @@ class WasmServer:
         logger.setLevel(logging.DEBUG)
         logger.addHandler(lsp_handler(self._server))
 
-    def handle_message(self, message_json: str) -> None:
-        """Deserialize and dispatch one complete JSON-RPC message."""
+    async def handle_message(self, message_json: str) -> None:
+        """Deserialize, dispatch, and drive one JSON-RPC message to completion."""
         message = self._server.protocol.structure_message(
             msgspec.json.decode(message_json)
         )
         self._server.protocol.handle_message(message)
+
+        # pygls schedules coroutine handlers on the current event loop. Its
+        # regular transports own that loop, but this bridge is called directly
+        # from JavaScript, so keep the loop alive until a request completes.
+        message_id = getattr(message, "id", None)
+        pending = self._server.protocol._request_futures.get(message_id)  # noqa: SLF001
+        if pending is None:
+            # Give coroutine notification handlers an opportunity to run.
+            await asyncio.sleep(0)
+            return
+
+        with contextlib.suppress(BaseException):
+            if isinstance(pending, asyncio.Future):
+                await asyncio.shield(pending)
+            else:
+                await asyncio.wrap_future(pending)
 
     def close(self) -> None:
         """Release sessions and protocol resources."""

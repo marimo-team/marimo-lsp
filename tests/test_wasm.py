@@ -5,19 +5,21 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 import msgspec
+import pytest
 from inline_snapshot import snapshot
 
 from marimo_lsp.wasm import create_bridge
 
 
-def test_wasm_server_handles_initialize_message() -> None:
+@pytest.mark.asyncio
+async def test_wasm_server_handles_initialize_message() -> None:
     messages: list[object] = []
     server = create_bridge(
         lambda message: messages.append(msgspec.json.decode(message)),
         Mock(),
     )
 
-    server.handle_message(
+    await server.handle_message(
         msgspec.json.encode(
             {
                 "id": 1,
@@ -72,4 +74,36 @@ def test_wasm_server_handles_initialize_message() -> None:
                 },
             }
         ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_wasm_server_drives_async_api_handler() -> None:
+    messages: list[object] = []
+    server = create_bridge(
+        lambda message: messages.append(msgspec.json.decode(message)),
+        Mock(),
+    )
+
+    await server.handle_message(
+        msgspec.json.encode(
+            {
+                "id": 1,
+                "method": "workspace/executeCommand",
+                "jsonrpc": "2.0",
+                "params": {
+                    "command": "marimo.api",
+                    "arguments": [{"method": "list-sessions", "params": {}}],
+                },
+            }
+        ).decode()
+    )
+
+    responses = [
+        message
+        for message in messages
+        if isinstance(message, dict) and message.get("id") == 1
+    ]
+    assert responses == snapshot(
+        [{"jsonrpc": "2.0", "id": 1, "result": {"sessions": []}}]
     )
