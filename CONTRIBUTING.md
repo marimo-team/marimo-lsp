@@ -18,9 +18,9 @@ code .
 ```
 
 > [!NOTE]
-> The extension builds against a specific version of
-> [`marimo-team/marimo`](https://github.com/marimo-team/marimo), specified in
-> the `.marimo-version` file. Both repositories must be cloned side-by-side:
+> The extension builds against the marimo release pinned by the exact
+> `marimo-base` dependency in `pyproject.toml`. Both repositories must be
+> cloned side-by-side:
 >
 > ```
 > parent-folder/
@@ -32,12 +32,13 @@ code .
 >
 > ```sh
 > cd ../marimo
-> git checkout $(cat ../marimo-lsp/.marimo-version)
+> git checkout $(cd ../marimo-lsp && uv run --no-project python -m scripts.marimo_version show)
 > ```
 >
-> CI automatically checks out the version specified in `.marimo-version`. To update
-> the pinned version, change `.marimo-version` to a tag (e.g., `0.18.4`), branch, or
-> commit SHA.
+> CI derives the same source tag from the exact dependency. To update the Bundled
+> marimo, run `uv run --no-project python -m scripts.marimo_version update`, or pass
+> an exact release as the final argument. You may check out a different sibling ref
+> temporarily when developing against unreleased marimo changes.
 
 ### Pre-commit Hooks
 
