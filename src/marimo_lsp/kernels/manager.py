@@ -49,7 +49,7 @@ def launch_kernel(
     executable: str,
     args: ipc.KernelArgs,
     cwd: str | None = None,
-) -> PopenProcessLike:
+) -> Process:
     """Launch kernel as a subprocess."""
     cmd = [executable, "-m", "marimo._ipc.launch_kernel"]
     logger.info(f"Launching kernel subprocess: {' '.join(cmd)}")
@@ -96,10 +96,10 @@ def launch_kernel(
         raise RuntimeError(msg)
 
     logger.info(f"Kernel subprocess started successfully with PID: {process.pid}")
-    return PopenProcessLike(inner=process)
+    return Process(inner=process)
 
 
-class LspKernelManager(KernelManagerImpl):
+class Manager(KernelManagerImpl):
     """Kernel manager for marimo-lsp."""
 
     def __init__(  # noqa: PLR0913
@@ -159,7 +159,7 @@ class LspKernelManager(KernelManagerImpl):
         )
 
 
-class PopenProcessLike(ProcessLike):
+class Process(ProcessLike):
     """Wraps `subprocess.Popen` as a `ProcessLike`.
 
     Provides the `ProcessLike` protocol required by marimo's KernelManager.

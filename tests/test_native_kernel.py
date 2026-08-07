@@ -8,14 +8,14 @@ from unittest.mock import Mock
 
 import pytest
 
-from marimo_lsp.kernel_manager import LspKernelManager
+from marimo_lsp.kernels.manager import Manager
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _manager(notebook: Path, working_directory: str) -> LspKernelManager:
-    manager = LspKernelManager.__new__(LspKernelManager)
+def _manager(notebook: Path, working_directory: str) -> Manager:
+    manager = Manager.__new__(Manager)
     manager.executable = "/usr/bin/python"
     manager.connection_info = Mock()
     manager.configs = {}
@@ -30,7 +30,7 @@ def test_supplied_working_directory_reaches_launch_kernel(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     launch = Mock(return_value=Mock())
-    monkeypatch.setattr("marimo_lsp.kernel_manager.launch_kernel", launch)
+    monkeypatch.setattr("marimo_lsp.kernels.manager.launch_kernel", launch)
     selected = tmp_path / "selected"
     selected.mkdir()
 
@@ -45,7 +45,7 @@ def test_invalid_working_directory_is_rejected(
     kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     launch = Mock(return_value=Mock())
-    monkeypatch.setattr("marimo_lsp.kernel_manager.launch_kernel", launch)
+    monkeypatch.setattr("marimo_lsp.kernels.manager.launch_kernel", launch)
     if kind == "relative":
         selected = "relative/path"
     elif kind == "missing":

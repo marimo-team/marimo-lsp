@@ -2,7 +2,7 @@
 
 """Tests for process cleanup on shutdown.
 
-Verifies `PopenProcessLike` terminates subprocesses (including force-kill)
+Verifies the kernel `Process` terminates subprocesses (including force-kill).
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import typing
 
 import pytest
 
-from marimo_lsp.kernel_manager import PopenProcessLike
+from marimo_lsp.kernels.manager import Process
 
 
 def process_exists(pid: int) -> bool:
@@ -79,7 +79,7 @@ def test_popen_terminate_graceful(
     long_running_process: subprocess.Popen[bytes],
 ) -> None:
     """Test that terminate() gracefully stops a process."""
-    wrapper = PopenProcessLike(long_running_process)
+    wrapper = Process(long_running_process)
     pid = wrapper.pid
 
     assert pid is not None
@@ -102,7 +102,7 @@ def test_popen_terminate_already_dead() -> None:
     )
     process.wait()
 
-    wrapper = PopenProcessLike(process)
+    wrapper = Process(process)
     wrapper.terminate()  # Should not raise
 
     assert not wrapper.is_alive()
@@ -116,7 +116,7 @@ def test_popen_terminate_force_kill(
     stubborn_process: subprocess.Popen[bytes],
 ) -> None:
     """Test that terminate() force-kills processes that ignore SIGTERM."""
-    wrapper = PopenProcessLike(stubborn_process)
+    wrapper = Process(stubborn_process)
     wrapper.TERMINATE_TIMEOUT = 0.5  # Shorter timeout for testing
 
     pid = wrapper.pid
