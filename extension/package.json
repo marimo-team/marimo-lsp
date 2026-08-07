@@ -82,12 +82,12 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Path to a custom `marimo-lsp` executable, e.g., `[\"/path/to/marimo-lsp\"]`. Leave empty to use the bundled WASM server by default, or the uv-based server when `marimo.experimental.wasmLsp` is disabled.",
+          "markdownDescription": "Path to a custom `marimo-lsp` executable, e.g., `[\"/path/to/marimo-lsp\"]`. Leave empty to use the uv-based server, or enable `marimo.experimental.wasmLsp` to use the bundled WASM server.",
           "scope": "resource"
         },
         "marimo.experimental.wasmLsp": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "markdownDescription": "Experimental: run the bundled marimo language server in Pyodide instead of provisioning a Python environment.",
           "scope": "window"
         },

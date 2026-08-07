@@ -28,7 +28,7 @@ export class Config extends Effect.Service<Config>()("Config", {
         },
         lsp: {
           executable: Effect.succeed(Option.none()),
-          wasm: Effect.succeed(true),
+          wasm: Effect.succeed(false),
         },
         notebookFileRoot() {
           return Effect.succeed(DEFAULT_NOTEBOOK_FILE_ROOT);
@@ -96,7 +96,7 @@ export class Config extends Effect.Service<Config>()("Config", {
         get wasm() {
           return Effect.andThen(
             code.value.workspace.getConfiguration("marimo.experimental"),
-            (config) => config.get("wasmLsp", true),
+            (config) => config.get("wasmLsp", false),
           );
         },
       },
