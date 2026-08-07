@@ -20,6 +20,8 @@ if typing.TYPE_CHECKING:
 
     from pygls.lsp.server import LanguageServer
 
+    from marimo_lsp.loggers import LspLoggingHandler
+
 
 class _MessageWriter:
     """Adapt pygls writes to a host-provided JSON message callback."""
@@ -51,7 +53,9 @@ class WasmServer:
         )
         logger = get_logger()
         logger.setLevel(logging.DEBUG)
-        logger.addHandler(lsp_handler(self._server))
+        self._log_handler: LspLoggingHandler = lsp_handler(self._server)
+        logger.addHandler(self._log_handler)
+        self._closed = False
 
     async def handle_message(self, message_json: str) -> None:
         """Deserialize, dispatch, and drive one JSON-RPC message to completion."""
@@ -78,7 +82,14 @@ class WasmServer:
 
     def close(self) -> None:
         """Release sessions and protocol resources."""
-        self._server.shutdown()
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._kernels.close_all()
+            self._server.shutdown()
+        finally:
+            get_logger().removeHandler(self._log_handler)
 
     def handle_kernel_bytes(self, process_id: str, chunk: bytes) -> None:
         """Route opaque process bytes into their WASM kernel."""

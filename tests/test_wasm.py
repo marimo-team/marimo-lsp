@@ -75,6 +75,7 @@ async def test_wasm_server_handles_initialize_message() -> None:
             }
         ]
     )
+    server.close()
 
 
 @pytest.mark.asyncio
@@ -107,3 +108,15 @@ async def test_wasm_server_drives_async_api_handler() -> None:
     assert responses == snapshot(
         [{"jsonrpc": "2.0", "id": 1, "result": {"sessions": []}}]
     )
+    server.close()
+
+
+def test_wasm_server_close_releases_tracked_kernels() -> None:
+    server = create_bridge(Mock(), Mock())
+    kernel = Mock()
+    server._kernels._kernels["kernel"] = kernel
+
+    server.close()
+    server.close()
+
+    kernel.close.assert_called_once_with()

@@ -247,3 +247,12 @@ class WasmKernels:
         kernel = self._kernels.get(process_id)
         if kernel is not None:
             kernel.exited(code, signal)
+
+    def close_all(self) -> None:
+        """Close every tracked kernel bridge."""
+        for kernel in tuple(self._kernels.values()):
+            try:
+                kernel.close()
+            except Exception:
+                logger.exception("Error closing WASM kernel bridge")
+        self._kernels.clear()
