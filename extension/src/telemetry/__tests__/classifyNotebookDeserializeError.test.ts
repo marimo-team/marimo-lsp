@@ -43,6 +43,7 @@ it("separates LSP startup failures", () => {
   const result = classifyNotebookDeserializeError(
     new MarimoClientStartError({
       exec: { command: "uv", args: ["run", "marimo-lsp"] },
+      mode: "uv",
       cause: new Error("spawn failed"),
     }),
   );
@@ -51,7 +52,10 @@ it("separates LSP startup failures", () => {
     report: true,
     domain: "notebook.deserialize",
     kind: "transport.lsp-start",
-    safeContext: { "error.exception_class": "MarimoClientStartError" },
+    safeContext: {
+      "error.exception_class": "MarimoClientStartError",
+      "lsp.mode": "uv",
+    },
   });
 });
 
@@ -84,6 +88,7 @@ it("groups internal RPC failures by method, code, and exception class", () => {
       "rpc.method": "deserialize",
       "rpc.code": -32603,
       "error.exception_class": "ResponseError",
+      "lsp.mode": "wasm",
     },
   });
   expect(JSON.stringify(result)).not.toContain(secret);
@@ -101,6 +106,7 @@ it("separates client lifecycle failures from internal RPC errors", () => {
   expect(result.safeContext).toEqual({
     "rpc.method": "deserialize",
     "error.exception_class": "Error",
+    "lsp.mode": "wasm",
   });
 });
 
@@ -114,5 +120,6 @@ function commandError(cause: unknown) {
       },
     }),
     cause,
+    mode: "wasm",
   });
 }

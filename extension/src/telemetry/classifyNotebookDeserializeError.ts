@@ -39,7 +39,10 @@ export function classifyNotebookDeserializeError(
       report: true,
       domain: "notebook.deserialize",
       kind: "transport.lsp-start",
-      safeContext: { "error.exception_class": error._tag },
+      safeContext: {
+        "error.exception_class": error._tag,
+        "lsp.mode": error.mode,
+      },
     };
   }
 
@@ -67,6 +70,7 @@ export function classifyNotebookDeserializeError(
         ...(method ? { "rpc.method": method } : {}),
         ...(code === undefined ? {} : { "rpc.code": code }),
         "error.exception_class": exceptionClass,
+        "lsp.mode": error.mode,
       },
     };
   }

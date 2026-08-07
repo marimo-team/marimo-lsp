@@ -263,6 +263,25 @@ it.scoped(
 );
 
 it.scoped(
+  "attributes successful marimo-lsp starts to the selected runtime",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx();
+    posthog.capture.mockClear();
+
+    yield* ctx.telemetry.lspModeSelected("wasm");
+    yield* ctx.telemetry.lspStarted("wasm");
+
+    expect(sentrySdk.setTag).toHaveBeenCalledWith("marimo_lsp.mode", "wasm");
+    expect(posthog.capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "marimo_lsp_started",
+        properties: expect.objectContaining({ mode: "wasm" }),
+      }),
+    );
+  }),
+);
+
+it.scoped(
   "preserves Error type, trace, cause, and structured diagnostics",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();

@@ -55,6 +55,11 @@ icon in the editor title bar to open it as a notebook (see image above).
 | `marimo.telemetry`                      | `boolean` | `true`           | Anonymous usage data. This helps us prioritize features for the marimo VSCode extension.                                                                                                            |
 | `marimo.notebookFileRoot`               | `string`  | `${fileDirname}` | Initial working directory for locally launched kernels. Supports the notebook directory, workspace folder, home-relative, absolute, and workspace-relative paths. Requires a kernel restart.        |
 
+The experimental WASM language server loads entirely from artifacts bundled
+with the extension and does not download Python packages at runtime. Notebook
+kernels still run in the selected Python environment: opening and executing a
+notebook launches that interpreter and runs the notebook's code locally.
+
 `marimo.notebookFileRoot` controls process-relative behavior such as `Path.cwd()`, file access, and subprocesses. For paths that must remain portable across VS Code, CLI execution, exports, and deployment, prefer `mo.notebook_dir()`.
 
 ### Language Features

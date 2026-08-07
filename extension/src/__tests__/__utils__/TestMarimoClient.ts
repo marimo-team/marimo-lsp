@@ -118,6 +118,7 @@ export function makeTestNotebookRuntime(options: Options = {}) {
 
 function makeTestMarimoClientValue(options: Options) {
   return MarimoClient.make({
+    mode: "uv",
     channel: { name: "marimo-lsp-test", show() {} },
     restart: () => Effect.void,
     ...makeMarimoCommands({

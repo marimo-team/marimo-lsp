@@ -41,6 +41,7 @@ export const TestMarimoClientLive = Layer.scoped(
         }),
     );
     return MarimoClient.make({
+      mode: "uv",
       channel: {
         name: "marimo-lsp",
         show() {},
@@ -62,6 +63,7 @@ export const TestMarimoClientLive = Layer.scoped(
               new MarimoCommandError({
                 command: Redacted.make(command),
                 cause,
+                mode: "uv",
               }),
           });
         },

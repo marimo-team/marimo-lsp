@@ -46,6 +46,7 @@ const constantsLayer = Layer.succeed(
 const marimoLayer = Layer.succeed(
   MarimoClient,
   MarimoClient.make({
+    mode: "uv",
     channel: { name: "marimo-lsp-test", show() {} },
     restart: () => Effect.void,
     ...makeMarimoCommands({

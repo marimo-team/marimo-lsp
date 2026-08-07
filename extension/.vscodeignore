@@ -1,18 +1,24 @@
 .vscode/**
 .vscode-test/**
+.vscode-test.cjs
 src/**
 node_modules/**
 scripts/**
+coverage/**
+lint/**
 *.vsix
 pnpm-lock.yaml
+pnpm-workspace.yaml
 tsconfig.json
 .turbo/**
 turbo.json
 vite.config.mjs
+vite.config.mts
 .tsbuildinfo
 .vscode-test
 .claude
 tests
+.gitignore
 
 # Ignore sourcemap files (use ** to match all subdirectories)
 **/*.js.map
