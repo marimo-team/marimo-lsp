@@ -13,7 +13,7 @@ This is a **dual-stack monorepo**: a Python LSP server and a TypeScript VS Code 
 - `extension/tests/` — `@vscode/test-cli` integration tests that launch a real VS Code instance.
 - `scripts/` — release / maintenance Python scripts (e.g. `generate_release_notes.py`).
 
-The Python server is pinned to a specific `marimo` version (`.marimo-version`). For local dev, clone `marimo-team/marimo` as a sibling directory and check out that tag — the extension links `@marimo-team/frontend`, `@marimo-team/openapi`, and `@marimo-team/smart-cells` from `../../marimo/`. CI does this automatically.
+The exact `marimo-base` dependency in `pyproject.toml` defines the Bundled marimo used by the Python server and the matching marimo source tag used to build the extension. For local dev, clone `marimo-team/marimo` as a sibling directory and check out the tag printed by `uv run --no-project python -m scripts.marimo_version show` — the extension links `@marimo-team/frontend`, `@marimo-team/openapi`, and `@marimo-team/smart-cells` from `../../marimo/`. CI does this automatically.
 
 ## Common commands
 
@@ -124,7 +124,7 @@ Background: [Be assertive](https://trevorma.nz/blog/be-assertive), [Catch errors
 
 Two distinct version pins live in `pyproject.toml`:
 
-- `dependencies.marimo == <exact>` — the version the LSP server *ships with* (bundled frontend + Python API). Auto-bumped by the `update-marimo-version` cron.
+- `dependencies.marimo-base == <exact>` — the Bundled marimo used by both language-server runtimes and the matching frontend source tag. Auto-bumped by the `update-marimo-version` cron.
 - `[tool.marimo-lsp] minimum-kernel-version` — the floor we claim to support in the *user's* kernel env. Bumped manually when intentionally dropping support.
 
 Don't conflate these when editing. The cron only touches the first.

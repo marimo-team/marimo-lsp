@@ -22,51 +22,32 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Get latest marimo version from PyPI
-        id: get_version
-        run: |
-          LATEST_VERSION=$(curl -fsSL https://pypi.org/pypi/marimo/json | jq -r .info.version)
-          echo "version=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Read current pinned version
+      - name: Read current Bundled marimo
         id: current_version
         run: |
-          CURRENT_VERSION=$(sed -n 's/^  "marimo-base==\([0-9.]*\)",$/\1/p' pyproject.toml)
-          echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version=$(uv run --no-project python -m scripts.marimo_version show)" >> "$GITHUB_OUTPUT"
 
-      - name: Skip if already up to date
-        if: steps.current_version.outputs.version == steps.get_version.outputs.version
-        run: echo "Already on ${{ steps.current_version.outputs.version }} — nothing to do."
+      - name: Update Bundled marimo
+        run: uv run --no-project python -m scripts.marimo_version update
 
-      - name: Bump pyproject.toml pin
-        if: steps.current_version.outputs.version != steps.get_version.outputs.version
+      - name: Read updated Bundled marimo
+        id: updated_version
         run: |
-          sed -i 's/^  "marimo-base==[0-9.]*",$/  "marimo-base==${{ steps.get_version.outputs.version }}",/' pyproject.toml
-
-      - name: Bump .marimo-version
-        if: steps.current_version.outputs.version != steps.get_version.outputs.version
-        run: |
-          echo "${{ steps.get_version.outputs.version }}" > .marimo-version
-
-      - name: Refresh uv.lock
-        if: steps.current_version.outputs.version != steps.get_version.outputs.version
-        run: uv lock --upgrade-package marimo-base
+          echo "version=$(uv run --no-project python -m scripts.marimo_version show)" >> "$GITHUB_OUTPUT"
 
       - name: Create Pull Request
-        if: steps.current_version.outputs.version != steps.get_version.outputs.version
         uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "Bump marimo to ${{ steps.get_version.outputs.version }}"
-          title: "Bump marimo to ${{ steps.get_version.outputs.version }}"
+          commit-message: "Bump marimo to ${{ steps.updated_version.outputs.version }}"
+          title: "Bump marimo to ${{ steps.updated_version.outputs.version }}"
           labels: enhancement
           body: |
-            Automated PR to bump the pinned `marimo` version from `${{ steps.current_version.outputs.version }}` to `${{ steps.get_version.outputs.version }}`.
+            Automated PR to bump the Bundled marimo from `${{ steps.current_version.outputs.version }}` to `${{ steps.updated_version.outputs.version }}`.
 
             Updates:
             - `pyproject.toml` — exact pin of the `marimo-base` dependency
-            - `.marimo-version` — sibling-checkout ref used by CI and local dev
-            - `uv.lock` — refreshed via `uv lock --upgrade-package marimo-base`
+            - `uv.lock` — refreshed by the marimo version-policy module
 
             Note: `[tool.marimo-lsp] minimum-kernel-version` is **not** changed by this workflow. Bump it manually when intentionally dropping support for an older marimo release.
 
