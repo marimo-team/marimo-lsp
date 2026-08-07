@@ -4,9 +4,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import threading
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -22,9 +23,13 @@ from marimo._session.managers import IPCQueueManagerImpl
 from marimo._session.state.session_view import SessionView
 from marimo._types.ids import CellId_t, RequestId, UIElementId
 
+from marimo_lsp.kernels import KernelOpenError
 from marimo_lsp.kernels.native import NativeKernel
 from marimo_lsp.models import SessionInfo
 from marimo_lsp.sessions import Session, Sessions, _OperationSink
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def _make_session() -> tuple[Session, Mock]:
@@ -284,6 +289,151 @@ async def test_failed_replacement_preserves_existing_session() -> None:
 
     assert sessions.get("file:///test.py") is current
     current.close.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_starts_share_one_kernel_launch() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    launch_started = asyncio.Event()
+    finish_launch = asyncio.Event()
+    replacement = Mock(spec=Session)
+    replacement.executable = "/usr/bin/python"
+    replacement.describe.return_value = Mock()
+
+    async def create(*_args: object, **_kwargs: object) -> Session:
+        launch_started.set()
+        await finish_launch.wait()
+        return replacement
+
+    sessions._create = AsyncMock(side_effect=create)
+    sessions._notify_changed = Mock()
+
+    first = asyncio.create_task(
+        sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
+    )
+    await launch_started.wait()
+    second = asyncio.create_task(
+        sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
+    )
+    await asyncio.sleep(0)
+
+    sessions._create.assert_awaited_once()
+    finish_launch.set()
+
+    assert await first is replacement
+    assert await second is replacement
+    sessions._create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_during_start_discards_launched_kernel() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    launch_started = asyncio.Event()
+    finish_launch = asyncio.Event()
+    replacement = Mock(spec=Session)
+
+    async def create(*_args: object, **_kwargs: object) -> Session:
+        launch_started.set()
+        await finish_launch.wait()
+        return replacement
+
+    sessions._create = AsyncMock(side_effect=create)
+    start = asyncio.create_task(
+        sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
+    )
+    await launch_started.wait()
+
+    sessions.close("file:///test.py")
+    finish_launch.set()
+
+    with pytest.raises(KernelOpenError, match="changed while its kernel was starting"):
+        await start
+    assert sessions.get("file:///test.py") is None
+    replacement.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_session_creation_failure_closes_launched_kernel() -> None:
+    kernel = Mock()
+    kernels = Mock()
+    kernels.launch = AsyncMock(return_value=kernel)
+    sessions = Sessions(Mock(), kernels=kernels)
+    previous = Mock(spec=Session)
+    previous.app_file_manager = Mock()
+    previous.config_manager = Mock()
+    previous.config_manager.get_config.side_effect = RuntimeError("bad config")
+    previous.session_view = Mock()
+    previous.started_at = 42
+
+    with pytest.raises(RuntimeError, match="bad config"):
+        await sessions._create(
+            "file:///test.py",
+            "/usr/bin/python",
+            "/workspace",
+            previous=previous,
+        )
+
+    kernel.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_startup_message_handoff_preserves_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = KernelMessage(b'{"op": "first"}')
+    second = KernelMessage(b'{"op": "second"}')
+    third = KernelMessage(b'{"op": "third"}')
+    kernel = Mock()
+    receive_callback: list[Callable[[KernelMessage], None]] = []
+
+    async def launch(**kwargs: object) -> object:
+        receive = cast("Callable[[KernelMessage], None]", kwargs["receive"])
+        receive_callback.append(receive)
+        delivered = threading.Event()
+
+        def deliver_initial_messages() -> None:
+            receive(first)
+            receive(second)
+            delivered.set()
+
+        threading.Thread(target=deliver_initial_messages, daemon=True).start()
+        assert await asyncio.to_thread(delivered.wait, 1)
+        return kernel
+
+    kernels = Mock()
+    kernels.launch = AsyncMock(side_effect=launch)
+    sessions = Sessions(Mock(), kernels=kernels)
+    previous = Mock(spec=Session)
+    previous.app_file_manager = Mock()
+    previous.config_manager = Mock()
+    previous.config_manager.get_config.return_value = DEFAULT_CONFIG
+    previous.session_view = Mock()
+    previous.started_at = 42
+    loop_thread = threading.get_ident()
+    observed: list[tuple[KernelMessage, int]] = []
+    third_delivered = asyncio.Event()
+
+    def accept(_session: Session, message: KernelMessage) -> None:
+        observed.append((message, threading.get_ident()))
+        if message == third:
+            third_delivered.set()
+
+    monkeypatch.setattr(Session, "accept_kernel_message", accept)
+
+    await sessions._create(
+        "file:///test.py",
+        "/usr/bin/python",
+        "/workspace",
+        previous=previous,
+    )
+    threading.Thread(target=receive_callback[0], args=(third,), daemon=True).start()
+    await asyncio.wait_for(third_delivered.wait(), timeout=1)
+
+    assert observed == [
+        (first, loop_thread),
+        (second, loop_thread),
+        (third, loop_thread),
+    ]
 
 
 @pytest.mark.asyncio

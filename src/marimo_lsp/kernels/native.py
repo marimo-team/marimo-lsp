@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import queue
 import threading
 import typing
@@ -13,6 +14,7 @@ from marimo._ipc import QueueManager as IpcQueues
 from marimo._session.managers import IPCQueueManagerImpl as IpcQueueManager
 
 from marimo_lsp.kernels.manager import Manager
+from marimo_lsp.loggers import get_logger
 
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
@@ -22,6 +24,9 @@ if typing.TYPE_CHECKING:
     from marimo._runtime.commands import CommandMessage
 
     from marimo_lsp.app_file_manager import LspAppFileManager
+
+
+logger = get_logger()
 
 
 class NativeKernel:
@@ -76,9 +81,11 @@ class NativeKernel:
         if self._closed:
             return
         self._closed = True
-        if self._manager.kernel_task is not None:
-            self._manager.close_kernel()
-        self._queue_manager.close_queues()
+        try:
+            if self._manager.kernel_task is not None:
+                self._manager.close_kernel()
+        finally:
+            self._queue_manager.close_queues()
 
 
 class NativeKernels:
@@ -105,9 +112,27 @@ class NativeKernels:
             working_directory=working_directory,
         )
         kernel = NativeKernel(queue_manager, manager)
+        start_task = asyncio.create_task(asyncio.to_thread(kernel.start, receive))
+
+        def close_after_cancelled_start(task: asyncio.Task[None]) -> None:
+            with contextlib.suppress(BaseException):
+                task.result()
+            try:
+                kernel.close()
+            except Exception:
+                logger.exception("Error closing kernel after cancelled launch")
+
         try:
-            await asyncio.to_thread(kernel.start, receive)
-        except Exception:
-            kernel.close()
+            await asyncio.shield(start_task)
+        except asyncio.CancelledError:
+            # Cancelling `to_thread` cannot stop the worker. Close its kernel
+            # once startup finishes instead of abandoning the process.
+            start_task.add_done_callback(close_after_cancelled_start)
+            raise
+        except BaseException:
+            try:
+                kernel.close()
+            except Exception:
+                logger.exception("Error closing kernel after failed launch")
             raise
         return kernel

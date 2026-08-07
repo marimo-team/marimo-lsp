@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
@@ -9,6 +11,7 @@ from unittest.mock import Mock
 import pytest
 
 from marimo_lsp.kernels.manager import Manager
+from marimo_lsp.kernels.native import NativeKernels
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -60,3 +63,52 @@ def test_invalid_working_directory_is_rejected(
         manager.start_kernel()
 
     launch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_launch_closes_kernel_after_start_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = threading.Event()
+    finish = threading.Event()
+    closed = threading.Event()
+
+    class FakeKernel:
+        def __init__(self, *_args: object) -> None:
+            pass
+
+        def start(self, _receive: object) -> None:
+            started.set()
+            assert finish.wait(timeout=1)
+
+        def close(self) -> None:
+            closed.set()
+
+    monkeypatch.setattr(
+        "marimo_lsp.kernels.native.IpcQueues.create",
+        Mock(return_value=(Mock(), Mock())),
+    )
+    monkeypatch.setattr(
+        "marimo_lsp.kernels.native.IpcQueueManager.from_ipc", Mock(return_value=Mock())
+    )
+    monkeypatch.setattr("marimo_lsp.kernels.native.Manager", Mock(return_value=Mock()))
+    monkeypatch.setattr("marimo_lsp.kernels.native.NativeKernel", FakeKernel)
+
+    launch = asyncio.create_task(
+        NativeKernels().launch(
+            executable="python",
+            working_directory="/workspace",
+            app_file_manager=Mock(),
+            config_manager=Mock(),
+            receive=Mock(),
+        )
+    )
+    assert await asyncio.to_thread(started.wait, 1)
+
+    launch.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await launch
+    assert not closed.is_set()
+
+    finish.set()
+    assert await asyncio.to_thread(closed.wait, 1)
