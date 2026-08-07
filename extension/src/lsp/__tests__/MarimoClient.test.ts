@@ -11,6 +11,7 @@ import type { MarimoApiCall, MarimoOperation } from "../../types.ts";
 import {
   disposeLanguageClient,
   findMarimoLspExecutable,
+  findWasmMarimoLspExecutable,
   makeMarimoCommands,
   makeMarimoOperationStream,
 } from "../MarimoClient.ts";
@@ -195,6 +196,16 @@ describe("findMarimoLspExecutable", () => {
       (directory) => Effect.sync(() => directory.remove()),
     ),
   );
+});
+
+describe("findWasmMarimoLspExecutable", () => {
+  it("launches the bundled server with VS Code's Node runtime", () => {
+    const executable = findWasmMarimoLspExecutable("/extension/dist");
+
+    expect(executable.command).toBe(process.execPath);
+    expect(executable.args).toEqual(["/extension/dist/wasmServer.js"]);
+    expect(executable.options?.env?.ELECTRON_RUN_AS_NODE).toBe("1");
+  });
 });
 
 it.scoped(

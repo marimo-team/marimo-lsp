@@ -91,6 +91,41 @@ it.scoped(
 );
 
 it.scoped(
+  "prompts to reload after changing the language-server runtime",
+  Effect.fn(function* () {
+    const prompted = yield* Deferred.make<void>();
+    const vscode = yield* TestVsCode.make({
+      window: {
+        showInformationMessage: (message, options = {}) => {
+          expect(message).toBe(
+            "Changing the language-server runtime requires reloading the window to take effect.",
+          );
+          return Deferred.succeed(prompted, undefined).pipe(
+            Effect.as(Option.fromNullable(options.items?.[0])),
+          );
+        },
+      },
+      workspace: {
+        configurationChanges: () =>
+          Stream.make({
+            affectsConfiguration: (section: string) =>
+              section === "marimo.experimental.wasmLsp",
+          }),
+      },
+    });
+    const services = Layer.merge(vscode.layer, makeTestNotebookRuntime());
+
+    yield* watchForConfigurationChanges().pipe(Effect.provide(services));
+    yield* Deferred.await(prompted);
+
+    expect(yield* Ref.get(vscode.executions)).toContainEqual({
+      command: "workbench.action.reloadWindow",
+      args: [],
+    });
+  }),
+);
+
+it.scoped(
   "prompts when an affected inactive RuntimeSession becomes active",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor("/project/notebook.py");

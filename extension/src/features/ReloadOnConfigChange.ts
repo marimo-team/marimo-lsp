@@ -75,6 +75,10 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
     "marimo.disableManagedLanguageFeatures",
     "Changing managed language features requires reloading the window to take effect.",
   );
+  yield* watchForWindowReload(
+    "marimo.experimental.wasmLsp",
+    "Changing the language-server runtime requires reloading the window to take effect.",
+  );
 
   yield* Effect.forkScoped(
     code.workspace.configurationChanges().pipe(
