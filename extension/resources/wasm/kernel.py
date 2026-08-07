@@ -162,7 +162,7 @@ class _Bridge:
         assert self._queues is not None
         interrupt_queue = self._queues.win32_interrupt_queue
         if sys.platform == "win32" and interrupt_queue is not None:
-            interrupt_queue.put_nowait(item=True)
+            interrupt_queue.put_nowait(True)  # noqa: FBT003
         else:
             os.kill(self._process.pid, signal.SIGINT)
 
