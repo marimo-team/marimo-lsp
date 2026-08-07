@@ -66,7 +66,8 @@ async function main(): Promise<void> {
   );
   pyodide.runPython(`
 import shutil
-shutil.unpack_archive("/marimo-lsp-site-packages.zip", "/lib/python3.14/site-packages")
+import sysconfig
+shutil.unpack_archive("/marimo-lsp-site-packages.zip", sysconfig.get_path("purelib"))
 `);
 
   const imported: unknown = pyodide.pyimport("marimo_lsp.wasm");

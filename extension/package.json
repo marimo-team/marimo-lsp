@@ -24,7 +24,8 @@
     "test:extension": "vscode-test",
     "embed-sdist": "node scripts/embed-sdist.mjs",
     "build:wasm-lsp": "node scripts/build-wasm-lsp.mjs",
-    "test:wasm-lsp": "node scripts/test-wasm-lsp.mjs"
+    "test:wasm-lsp": "node scripts/test-wasm-lsp.mjs",
+    "verify:wasm-lsp": "pnpm build:wasm-lsp && pnpm build:extension && pnpm test:wasm-lsp"
   },
   "devDependencies": {
     "@effect/platform": "^0.92.1",

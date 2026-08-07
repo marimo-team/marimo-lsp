@@ -16,9 +16,6 @@ const pyodideDir = NodePath.dirname(
   NodeUrl.fileURLToPath(import.meta.resolve("pyodide")),
 );
 const outputDir = NodePath.join(extensionDir, "bundled", "wasm");
-const buildDir = NodeFs.mkdtempSync(
-  NodePath.join(NodeOs.tmpdir(), "marimo-lsp-wasm-"),
-);
 const uvCacheDir = NodePath.join(NodeOs.tmpdir(), "marimo-lsp-uv-cache");
 const pyodidePackage = JSON.parse(
   NodeFs.readFileSync(NodePath.join(pyodideDir, "package.json"), "utf8"),
@@ -40,7 +37,12 @@ const runtimeFiles = [
 //             └── import click
 const pyodidePackages = ["click", "micropip", "msgspec", "pyyaml"];
 
+/** @type {string | undefined} */
+let buildDir;
 try {
+  buildDir = NodeFs.mkdtempSync(
+    NodePath.join(NodeOs.tmpdir(), "marimo-lsp-wasm-"),
+  );
   NodeFs.mkdirSync(outputDir, { recursive: true });
   for (const filename of runtimeFiles) {
     NodeFs.copyFileSync(
@@ -87,8 +89,9 @@ try {
   pyodide.runPython(`
 from pathlib import Path
 import shutil
+import sysconfig
 
-site_packages = Path("/lib/python3.14/site-packages")
+site_packages = Path(sysconfig.get_path("purelib"))
 excluded = ("micropip", "jedi", "parso", "pygments", "docutils")
 for package in excluded:
     shutil.rmtree(site_packages / package, ignore_errors=True)
@@ -116,5 +119,7 @@ shutil.make_archive("/marimo-lsp-site-packages", "zip", site_packages)
   );
   console.log(`Built offline WASM language server in ${outputDir}`);
 } finally {
-  NodeFs.rmSync(buildDir, { recursive: true, force: true });
+  if (buildDir !== undefined) {
+    NodeFs.rmSync(buildDir, { recursive: true, force: true });
+  }
 }
