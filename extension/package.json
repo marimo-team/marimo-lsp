@@ -82,7 +82,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Path to a custom `marimo-lsp` executable, e.g., `[\"/path/to/marimo-lsp\"]`. Leave empty to use the bundled version via uvx.",
+          "markdownDescription": "Path to a custom `marimo-lsp` executable, e.g., `[\"/path/to/marimo-lsp\"]`. Leave empty to use the bundled WASM server by default, or the uv-based server when `marimo.experimental.wasmLsp` is disabled.",
           "scope": "resource"
         },
         "marimo.experimental.wasmLsp": {

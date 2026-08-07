@@ -55,6 +55,7 @@ test-vscode *args:
 build:
     pnpm -C extension build
     pnpm -C extension embed-sdist
+    pnpm -C extension build:wasm-lsp
 
 # Regenerate every checked-in source file
 [group('build')]
