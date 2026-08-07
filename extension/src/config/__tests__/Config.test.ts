@@ -18,3 +18,12 @@ it.layer(ConfigLive)("Config", (it) => {
     }),
   );
 });
+
+it.effect(
+  "defaults to the WASM language server without the VS Code API",
+  Effect.fn(function* () {
+    const config = yield* Config.pipe(Effect.provide(Config.Default));
+
+    expect(yield* config.lsp.wasm).toBe(true);
+  }),
+);

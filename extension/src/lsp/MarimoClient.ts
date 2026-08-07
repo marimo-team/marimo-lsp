@@ -119,19 +119,10 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
 
       const configuredExec = yield* config.lsp.executable;
       const useWasm = yield* config.lsp.wasm;
-      const selection = yield* Option.match(configuredExec, {
-        onSome: (exec) =>
-          Effect.succeed(MarimoLspExecutable.Configured({ exec })),
-        onNone: () =>
-          useWasm
-            ? Effect.succeed(
-                MarimoLspExecutable.Wasm({
-                  exec: findWasmMarimoLspExecutable(),
-                }),
-              )
-            : findMarimoLspExecutable(uv.bin.executable).pipe(
-                Effect.map((exec) => MarimoLspExecutable.Uv({ exec })),
-              ),
+      const selection = yield* selectMarimoLspExecutable({
+        configuredExec,
+        useWasm,
+        uvBinary: uv.bin.executable,
       });
       const { exec } = selection;
 
@@ -396,6 +387,32 @@ export const findMarimoLspExecutable = Effect.fn("findMarimoLspExecutable")(
       command: uvBinary,
       args: ["run", "--directory", searchDirectory, "marimo-lsp"],
     };
+  },
+);
+
+export const selectMarimoLspExecutable = Effect.fn("selectMarimoLspExecutable")(
+  function* ({
+    configuredExec,
+    useWasm,
+    uvBinary,
+    searchDirectory = __dirname,
+  }: {
+    readonly configuredExec: Option.Option<lsp.Executable>;
+    readonly useWasm: boolean;
+    readonly uvBinary: string;
+    readonly searchDirectory?: string;
+  }) {
+    if (Option.isSome(configuredExec)) {
+      return MarimoLspExecutable.Configured({ exec: configuredExec.value });
+    }
+    if (useWasm) {
+      return MarimoLspExecutable.Wasm({
+        exec: findWasmMarimoLspExecutable(searchDirectory),
+      });
+    }
+    return MarimoLspExecutable.Uv({
+      exec: yield* findMarimoLspExecutable(uvBinary, searchDirectory),
+    });
   },
 );
 
