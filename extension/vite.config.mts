@@ -7,6 +7,9 @@ import stylesheet from "./scripts/vite-plugin-virtual-stylesheet.mts";
 
 export default vite.defineConfig({
   build: {
+    // The extension bundle shares dist/ and is built independently by Turbo.
+    // Output cleanup happens once in scripts/run-turbo.mjs before cache restore.
+    emptyOutDir: false,
     // Shipped in: Electron 37.7, VSCode 1.106
     target: "chrome138",
     minify: process.env.NODE_ENV === "production",

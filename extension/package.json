@@ -14,7 +14,7 @@
     "prepare": "effect-tsgo patch --no-typescript --oxlint",
     "patch-tsc": "effect-language-service patch",
     "typecheck-ci": "tsc",
-    "build": "turbo build:renderer && turbo build:extension",
+    "build": "node scripts/run-turbo.mjs build:renderer build:extension",
     "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --external:../bundled/wasm/pyodide.js --bundle --sourcemap src/extension.ts src/wasmServer.ts --outdir=dist",
     "build:renderer": "vp build",
     "check": "vp check && node ./scripts/check-css-variables.mjs",
@@ -23,9 +23,10 @@
     "pretest:extension": "pnpm run build:extension",
     "test:extension": "vscode-test",
     "embed-sdist": "node scripts/embed-sdist.mjs",
-    "build:wasm-lsp": "node scripts/build-wasm-lsp.mjs",
+    "build:wasm-lsp": "node scripts/run-turbo.mjs build:wasm-lsp:bundle",
+    "build:wasm-lsp:bundle": "node scripts/build-wasm-lsp.mjs",
     "test:wasm-lsp": "node scripts/test-wasm-lsp.mjs",
-    "verify:wasm-lsp": "pnpm build:wasm-lsp && pnpm build:extension && pnpm test:wasm-lsp"
+    "verify:wasm-lsp": "node scripts/run-turbo.mjs build:wasm-lsp:bundle build:extension && pnpm test:wasm-lsp"
   },
   "devDependencies": {
     "@effect/platform": "^0.92.1",
