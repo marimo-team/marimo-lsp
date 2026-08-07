@@ -8,8 +8,13 @@ import argparse
 import pathlib
 from collections.abc import Callable
 
-from scripts.codegen import effect_schemas, extension_commands, extension_constants
-from scripts.codegen.output import write_typescript
+from scripts.codegen import (
+    effect_schemas,
+    extension_commands,
+    extension_constants,
+    wasm_protocol,
+)
+from scripts.codegen.output import write_text, write_typescript
 
 Generator = tuple[str, pathlib.Path, Callable[[], str]]
 
@@ -45,6 +50,17 @@ def main() -> int:
         else:
             drifted.append(output)
             print(f"✗ {label}: {output} is out of date")
+
+    current = write_text(
+        wasm_protocol.OUTPUT,
+        wasm_protocol.generate(),
+        check=check,
+    )
+    if current:
+        print(f"✓ {wasm_protocol.LABEL}: {wasm_protocol.OUTPUT}")
+    else:
+        drifted.append(wasm_protocol.OUTPUT)
+        print(f"✗ {wasm_protocol.LABEL}: {wasm_protocol.OUTPUT} is out of date")
 
     if drifted:
         print("Run `just codegen` to regenerate checked-in sources.")

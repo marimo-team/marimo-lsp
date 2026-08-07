@@ -11,6 +11,22 @@ ROOT = pathlib.Path(__file__).parents[2]
 EXTENSION = ROOT / "extension"
 
 
+def write_text(
+    output: pathlib.Path,
+    source: str,
+    *,
+    check: bool,
+) -> bool:
+    """Write generated text or report whether the checked-in copy is current."""
+    if output.exists() and output.read_text(encoding="utf-8") == source:
+        return True
+    if check:
+        return False
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(source, encoding="utf-8")
+    return True
+
+
 def write_typescript(
     output: pathlib.Path,
     source: str,
