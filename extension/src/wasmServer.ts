@@ -10,7 +10,7 @@ interface PyodideModule {
 }
 
 interface WasmBridge {
-  readonly handle_message: (messageJson: string) => void;
+  readonly handle_message: (messageJson: string) => Promise<void>;
   readonly close: () => void;
   readonly destroy: () => void;
 }
@@ -94,7 +94,13 @@ shutil.unpack_archive("/marimo-lsp-site-packages.zip", "/lib/python3.14/site-pac
       resolveExit();
       return;
     }
-    bridge.handle_message(JSON.stringify(message));
+    void bridge
+      .handle_message(JSON.stringify(message))
+      .catch((error: unknown) => {
+        console.error(error);
+        process.exitCode = 1;
+        resolveExit();
+      });
   });
   const stdinEnded = new Promise<void>((resolve, reject) => {
     process.stdin.once("end", resolve);
