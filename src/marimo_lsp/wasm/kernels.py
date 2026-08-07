@@ -108,7 +108,8 @@ class WasmKernel:
         """Report an unexpected kernel bridge exit."""
         if not self._closed:
             self._fail(
-                f"Kernel bridge exited unexpectedly (code={code}, signal={signal})"
+                f"Kernel bridge exited unexpectedly (code={code}, signal={signal})",
+                close_process=False,
             )
 
     async def wait_ready(self) -> None:
@@ -117,21 +118,38 @@ class WasmKernel:
 
     def abort(self) -> None:
         """Release a kernel bridge that failed before readiness."""
+        self._release(close_process=True)
+
+    def _fail(self, error: str, *, close_process: bool = True) -> None:
+        if not self._ready.done():
+            self._ready.set_exception(KernelOpenError(error))
+        else:
+            self._receive(
+                KernelMessage(
+                    json.dumps({"op": "kernel-startup-error", "error": error}).encode()
+                )
+            )
+        self._release(close_process=close_process)
+
+    def _release(
+        self,
+        *,
+        close_process: bool,
+        request_close: bool = False,
+    ) -> None:
+        """Release the bridge exactly once, even when a close write fails."""
         if self._closed:
             return
         self._closed = True
-        self._callbacks.close(self._process_id)
-        self._on_close()
-
-    def _fail(self, error: str) -> None:
-        if not self._ready.done():
-            self._ready.set_exception(KernelOpenError(error))
-            return
-        self._receive(
-            KernelMessage(
-                json.dumps({"op": "kernel-startup-error", "error": error}).encode()
-            )
-        )
+        try:
+            if request_close:
+                self._write(Close())
+        finally:
+            try:
+                if close_process:
+                    self._callbacks.close(self._process_id)
+            finally:
+                self._on_close()
 
     def _write(self, message: ToBridge) -> None:
         self._callbacks.write(self._process_id, encode(message))
@@ -150,12 +168,7 @@ class WasmKernel:
 
     def close(self) -> None:
         """Close the kernel bridge."""
-        if self._closed:
-            return
-        self._closed = True
-        self._write(Close())
-        self._callbacks.close(self._process_id)
-        self._on_close()
+        self._release(close_process=True, request_close=True)
 
 
 class WasmKernels:
@@ -213,7 +226,7 @@ class WasmKernels:
                 ),
             )
             await kernel.wait_ready()
-        except Exception:
+        except BaseException:
             kernel.abort()
             raise
         return kernel
@@ -231,6 +244,6 @@ class WasmKernels:
         signal: str | None,
     ) -> None:
         """Report a kernel bridge exit to its WASM kernel."""
-        kernel = self._kernels.pop(process_id, None)
+        kernel = self._kernels.get(process_id)
         if kernel is not None:
             kernel.exited(code, signal)

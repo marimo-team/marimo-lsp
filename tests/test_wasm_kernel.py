@@ -99,6 +99,18 @@ async def test_wasm_launch_fails_before_publishing_unready_kernel() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cancelled_wasm_launch_releases_bridge() -> None:
+    callbacks, _kernels, launch, _messages = await _begin_launch()
+    process_id = callbacks.spawns[0][0]
+
+    launch.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await launch
+    assert callbacks.closes == snapshot([process_id])
+
+
+@pytest.mark.asyncio
 async def test_wasm_kernel_forwards_lifecycle_and_messages() -> None:
     callbacks, kernels, kernel, messages = await _launch_kernel()
     process_id = callbacks.spawns[0][0]
@@ -166,4 +178,38 @@ async def test_closed_wasm_kernel_drops_late_messages() -> None:
         encode(Operation(message=msgspec.Raw(b'{"op":"late"}'))),
     )
 
+    assert messages == snapshot([])
+
+
+@pytest.mark.asyncio
+async def test_ready_wasm_kernel_failure_releases_bridge() -> None:
+    callbacks, kernels, _kernel, messages = await _launch_kernel()
+    process_id = callbacks.spawns[0][0]
+
+    kernels.accept(process_id, encode(Error(message="bridge failed")))
+    kernels.accept(
+        process_id,
+        encode(Operation(message=msgspec.Raw(b'{"op":"late"}'))),
+    )
+
+    assert callbacks.closes == snapshot([process_id])
+    assert messages == snapshot(
+        [KernelMessage(b'{"op": "kernel-startup-error", "error": "bridge failed"}')]
+    )
+
+
+@pytest.mark.asyncio
+async def test_failed_close_write_still_releases_bridge() -> None:
+    callbacks, kernels, kernel, messages = await _launch_kernel()
+    process_id = callbacks.spawns[0][0]
+    callbacks.write = Mock(side_effect=RuntimeError("write failed"))
+
+    with pytest.raises(RuntimeError, match="write failed"):
+        kernel.close()
+    kernels.accept(
+        process_id,
+        encode(Operation(message=msgspec.Raw(b'{"op":"late"}'))),
+    )
+
+    assert callbacks.closes == snapshot([process_id])
     assert messages == snapshot([])
