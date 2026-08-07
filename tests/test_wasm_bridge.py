@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
-import sys
-import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 
@@ -30,36 +28,64 @@ def _load_bridge_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     return module
 
 
-def test_windows_interrupt_uses_positional_queue_value(
+def test_interrupt_delegates_to_marimo_kernel_manager(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bridge_module = _load_bridge_module(monkeypatch)
     bridge = bridge_module._Bridge()
-    bridge._process = Mock(pid=42)
-    bridge._process.poll.return_value = None
-    bridge._queues = Mock()
-    interrupt_queue = bridge._queues.win32_interrupt_queue
-    monkeypatch.setattr(sys, "platform", "win32")
+    bridge._manager = Mock()
 
     bridge.interrupt()
 
-    interrupt_queue.put_nowait.assert_called_once_with(True)  # noqa: FBT003
+    bridge._manager.interrupt_kernel.assert_called_once_with()
 
 
-def test_kernel_readiness_has_a_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bridge_uses_normal_edit_mode_multiprocessing_manager(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     bridge_module = _load_bridge_module(monkeypatch)
+    queues = Mock()
+    manager = Mock()
+    manager.kernel_connection.recv.side_effect = EOFError
+    queue_manager = Mock(return_value=queues)
+    kernel_manager = Mock(return_value=manager)
+    write_frame = Mock()
+    monkeypatch.setattr(bridge_module, "QueueManagerImpl", queue_manager)
+    monkeypatch.setattr(bridge_module, "KernelManagerImpl", kernel_manager)
+    monkeypatch.setattr(bridge_module, "_write_frame", write_frame)
     bridge = bridge_module._Bridge()
-    release_reader = threading.Event()
-    bridge._process = Mock()
-    bridge._process.stdout.readline.side_effect = lambda: (
-        release_reader.wait(),
-        b"KERNEL_READY\n",
-    )[1]
+    args = SimpleNamespace(
+        configs={},
+        app_metadata=Mock(),
+        user_config=Mock(),
+        redirect_console_to_browser=True,
+    )
 
-    with pytest.raises(TimeoutError, match="did not become ready"):
-        bridge._wait_for_kernel_ready(timeout=0.01)
+    bridge.start(
+        SimpleNamespace(
+            working_directory=str(tmp_path),
+            kernel_args=args,
+        )
+    )
+    assert bridge._operation_thread is not None
+    bridge._operation_thread.join(timeout=1)
 
-    release_reader.set()
+    queue_manager.assert_called_once_with(use_multiprocessing=True)
+    kernel_manager.assert_called_once_with(
+        queue_manager=queues,
+        mode=bridge_module.SessionMode.EDIT,
+        configs={},
+        app_metadata=args.app_metadata,
+        config_manager=ANY,
+        virtual_file_storage=None,
+        redirect_console_to_browser=True,
+    )
+    config_manager = kernel_manager.call_args.kwargs["config_manager"]
+    assert isinstance(config_manager, bridge_module._StaticConfigManager)
+    assert config_manager.get_config() is args.user_config
+    manager.start_kernel.assert_called_once_with()
+    write_frame.assert_any_call(bridge_module.Ready())
 
 
 def test_bridge_rejects_oversized_frame_before_reading_payload(
