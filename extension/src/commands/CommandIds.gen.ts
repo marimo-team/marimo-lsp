@@ -35,7 +35,7 @@ export const CommandIds = {
 export const CommandSurfaces = {
   createSetupCell: ["commandPalette"],
   debugCell: ["commandPalette"],
-  disableCell: ["commandPalette", "notebookCellTitle"],
+  disableCell: ["notebookCellTitle"],
   enableCell: [],
   exportStaticHTML: ["commandPalette"],
   hideCellCode: ["commandPalette", "notebookCellTitle"],

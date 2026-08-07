@@ -202,7 +202,8 @@ async def test_enabling_disabled_cell_runs_registered_source(
             initial_run_completed.set()
         console = getattr(operation, "console", None)
         if (
-            getattr(operation, "cell_id", None) == "cell1"
+            console is not None
+            and getattr(operation, "cell_id", None) == "cell1"
             and getattr(console, "channel", None) == "stdout"
             and not stdout.done()
         ):
