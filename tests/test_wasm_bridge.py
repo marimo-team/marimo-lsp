@@ -6,6 +6,7 @@ import importlib.util
 import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
@@ -59,3 +60,19 @@ def test_kernel_readiness_has_a_timeout(monkeypatch: pytest.MonkeyPatch) -> None
         bridge._wait_for_kernel_ready(timeout=0.01)
 
     release_reader.set()
+
+
+def test_bridge_rejects_oversized_frame_before_reading_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge_module = _load_bridge_module(monkeypatch)
+    stream = Mock()
+    stream.read.return_value = (bridge_module.MAX_FRAME_SIZE + 1).to_bytes(
+        4, byteorder="big"
+    )
+    monkeypatch.setattr(bridge_module.sys, "stdin", SimpleNamespace(buffer=stream))
+
+    with pytest.raises(ValueError, match="frame exceeds"):
+        bridge_module._read_frame()
+
+    stream.read.assert_called_once_with(bridge_module.HEADER_SIZE)

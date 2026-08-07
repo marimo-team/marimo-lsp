@@ -25,6 +25,7 @@ from marimo._runtime.commands import StopKernelCommand
 from marimo._session.managers import IPCQueueManagerImpl
 from protocol import (
     HEADER_SIZE,
+    MAX_FRAME_SIZE,
     Close,
     Control,
     Error,
@@ -53,6 +54,9 @@ def _read_frame() -> ToBridge | None:
     if not header:
         return None
     length = read_header(header)
+    if length > MAX_FRAME_SIZE:
+        msg = f"Kernel frame exceeds {MAX_FRAME_SIZE} bytes"
+        raise ValueError(msg)
     payload = sys.stdin.buffer.read(length)
     if len(payload) != length:
         message = "Incomplete kernel frame payload"
