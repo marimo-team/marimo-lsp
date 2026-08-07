@@ -52,6 +52,11 @@ if TYPE_CHECKING:
 logger = get_logger()
 
 
+def _raise_kernel_failure(_session: Session, error: str) -> None:
+    """Turn a terminal failure before publication into a launch failure."""
+    raise KernelOpenError(error)
+
+
 class _OperationSink:
     """Forward operations to the single attached language-server client."""
 
@@ -503,6 +508,7 @@ class Sessions:
                 session_view=previous.session_view if previous else None,
                 started_at=previous.started_at if previous else None,
             )
+            session.set_on_kernel_failure(_raise_kernel_failure)
             for message in pending_messages:
                 session.accept_kernel_message(message)
             pending_messages.clear()

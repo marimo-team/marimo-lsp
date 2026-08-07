@@ -464,6 +464,38 @@ async def test_startup_message_handoff_preserves_order(
 
 
 @pytest.mark.asyncio
+async def test_terminal_error_during_startup_handoff_aborts_session() -> None:
+    error = KernelMessage(b'{"op": "kernel-startup-error", "error": "bridge exited"}')
+    kernel = Mock()
+
+    async def launch(**kwargs: object) -> object:
+        receive = cast("Callable[[KernelMessage], None]", kwargs["receive"])
+        receive(error)
+        await asyncio.sleep(0)
+        return kernel
+
+    kernels = Mock()
+    kernels.launch = AsyncMock(side_effect=launch)
+    sessions = Sessions(Mock(), kernels=kernels)
+    previous = Mock(spec=Session)
+    previous.app_file_manager = Mock()
+    previous.config_manager = Mock()
+    previous.config_manager.get_config.return_value = DEFAULT_CONFIG
+    previous.session_view = Mock()
+    previous.started_at = 42
+
+    with pytest.raises(KernelOpenError, match="bridge exited"):
+        await sessions._create(
+            "file:///test.py",
+            "/usr/bin/python",
+            "/workspace",
+            previous=previous,
+        )
+
+    kernel.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
 async def test_restart_replaces_kernel_without_reloading_closed_notebook() -> None:
     sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)
