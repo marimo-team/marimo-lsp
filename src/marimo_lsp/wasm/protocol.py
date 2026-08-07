@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 VERSION = 1
 _HEADER = struct.Struct(">I")
 HEADER_SIZE = _HEADER.size
+MAX_FRAME_SIZE = 64 * 1024 * 1024
 
 
 class Ready(msgspec.Struct, tag="ready", tag_field="type", rename="camel"):
@@ -102,6 +103,9 @@ type ToBridge = Start | Control | Input | Interrupt | Close
 def encode(message: FromBridge | ToBridge) -> bytes:
     """Encode one length-prefixed protocol message."""
     payload = msgspec.json.encode(message)
+    if len(payload) > MAX_FRAME_SIZE:
+        msg = f"Kernel frame exceeds {MAX_FRAME_SIZE} bytes"
+        raise ValueError(msg)
     return _HEADER.pack(len(payload)) + payload
 
 
@@ -126,6 +130,10 @@ class Decoder[Message]:
         messages: list[Message] = []
         while len(self._buffer) >= _HEADER.size:
             length = read_header(self._buffer[: _HEADER.size])
+            if length > MAX_FRAME_SIZE:
+                self._buffer.clear()
+                msg = f"Kernel frame exceeds {MAX_FRAME_SIZE} bytes"
+                raise ValueError(msg)
             frame_length = _HEADER.size + length
             if len(self._buffer) < frame_length:
                 break

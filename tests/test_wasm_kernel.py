@@ -17,8 +17,10 @@ from marimo._runtime.commands import ExecuteCellsCommand
 from marimo_lsp.kernels import KernelOpenError
 from marimo_lsp.wasm.kernels import WasmKernels
 from marimo_lsp.wasm.protocol import (
+    MAX_FRAME_SIZE,
     Decoder,
     Error,
+    FromBridge,
     Operation,
     Ready,
     ToBridge,
@@ -213,3 +215,13 @@ async def test_failed_close_write_still_releases_bridge() -> None:
 
     assert callbacks.closes == snapshot([process_id])
     assert messages == snapshot([])
+
+
+def test_decoder_rejects_and_discards_oversized_frame() -> None:
+    decoder = Decoder(FromBridge)
+    oversized_header = (MAX_FRAME_SIZE + 1).to_bytes(4, byteorder="big")
+
+    with pytest.raises(ValueError, match="frame exceeds"):
+        decoder.feed(oversized_header)
+
+    assert decoder.feed(encode(Ready())) == [Ready()]
