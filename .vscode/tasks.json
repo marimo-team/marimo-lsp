@@ -27,8 +27,21 @@
       }
     },
     {
+      "label": "Build WASM Language Server",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["run", "build:wasm-lsp"],
+      "options": {
+        "cwd": "${workspaceFolder}/extension"
+      }
+    },
+    {
       "label": "Build",
-      "dependsOn": ["Install Dependencies", "Build Extension"],
+      "dependsOn": [
+        "Install Dependencies",
+        "Build Extension",
+        "Build WASM Language Server"
+      ],
       "dependsOrder": "sequence",
       "problemMatcher": []
     }

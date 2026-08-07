@@ -5,7 +5,7 @@ import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Config } from "../../config/Config.ts";
 import { PythonEnvInvalidation } from "../../python/PythonEnvInvalidation.ts";
-import { Uv } from "../../python/Uv.ts";
+import { Uv, UvBin } from "../../python/Uv.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotificationOf } from "../../types.ts";
 import type { NotebookController } from "../NotebookRuntime.ts";
@@ -69,7 +69,12 @@ const withTestCtx = Effect.fn(function* (options: {
     // defect. Layer.mock still requires the non-method properties.
     Layer.mock(Uv, {
       _tag: "Uv",
-      bin: { _tag: "Bundled", executable: "uv", version: Option.none() },
+      bin: Effect.succeed(
+        UvBin.Bundled({
+          executable: "uv",
+          version: Option.none(),
+        }),
+      ),
       channel: { name: "test", show: () => undefined },
     }),
   );

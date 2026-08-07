@@ -1,6 +1,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
+import * as NodeProcess from "node:process";
 
 import {
   Cause,
@@ -29,6 +30,13 @@ import type {
 } from "../types.ts";
 
 const MAX_STDERR_LINES = 200;
+
+const MarimoLspExecutable = Data.taggedEnum<MarimoLspExecutable>();
+type MarimoLspExecutable = Data.TaggedEnum<{
+  Configured: { readonly exec: lsp.Executable };
+  Wasm: { readonly exec: lsp.Executable };
+  Uv: { readonly exec: lsp.Executable };
+}>;
 
 export interface LspProcessExit {
   readonly code: number | null;
@@ -105,20 +113,34 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
   {
     dependencies: [Config.Default, Uv.Default],
     scoped: Effect.gen(function* () {
-      const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
 
-      const exec = yield* Option.match(yield* config.lsp.executable, {
-        onSome: Effect.succeed,
-        onNone: () => findMarimoLspExecutable(uv.bin.executable),
+      const configuredExec = yield* config.lsp.executable;
+      const useWasm = yield* config.lsp.wasm;
+      const uvBinary =
+        Option.isNone(configuredExec) && !useWasm
+          ? (yield* (yield* Uv).bin).executable
+          : undefined;
+      const selection = yield* selectMarimoLspExecutable({
+        configuredExec,
+        useWasm,
+        uvBinary,
       });
+      const { exec } = selection;
 
-      yield* Effect.logDebug("Got marimo-lsp executable").pipe(
-        Effect.annotateLogs({
-          command: exec.command,
-          args: (exec.args ?? []).join(" "),
-        }),
+      yield* Effect.logInfo("Starting marimo-lsp").pipe(
+        Effect.annotateLogs(
+          MarimoLspExecutable.$match(selection, {
+            Configured: ({ exec }) => ({
+              mode: "configured",
+              command: exec.command,
+              args: (exec.args ?? []).join(" "),
+            }),
+            Wasm: () => ({ mode: "wasm" }),
+            Uv: () => ({ mode: "uv" }),
+          }),
+        ),
       );
 
       const outputChannel =
@@ -141,7 +163,11 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
           const spawn: SpawnState = { stderrTail: [], pending: "" };
           currentSpawn = spawn;
 
-          const child = NodeChildProcess.spawn(exec.command, exec.args ?? []);
+          const child = NodeChildProcess.spawn(
+            exec.command,
+            exec.args ?? [],
+            exec.options,
+          );
           child.once("error", reject);
           if (child.pid === undefined) return;
 
@@ -366,3 +392,51 @@ export const findMarimoLspExecutable = Effect.fn("findMarimoLspExecutable")(
     };
   },
 );
+
+export const selectMarimoLspExecutable = Effect.fn("selectMarimoLspExecutable")(
+  function* ({
+    configuredExec,
+    useWasm,
+    uvBinary,
+    searchDirectory = __dirname,
+  }: {
+    readonly configuredExec: Option.Option<lsp.Executable>;
+    readonly useWasm: boolean;
+    readonly uvBinary?: string;
+    readonly searchDirectory?: string;
+  }) {
+    if (Option.isSome(configuredExec)) {
+      return MarimoLspExecutable.Configured({ exec: configuredExec.value });
+    }
+    if (useWasm) {
+      return MarimoLspExecutable.Wasm({
+        exec: findWasmMarimoLspExecutable(searchDirectory),
+      });
+    }
+    if (uvBinary === undefined) {
+      throw new Error(
+        "uv is required when the WASM language server is disabled",
+      );
+    }
+    return MarimoLspExecutable.Uv({
+      exec: yield* findMarimoLspExecutable(uvBinary, searchDirectory),
+    });
+  },
+);
+
+export function findWasmMarimoLspExecutable(
+  searchDirectory = __dirname,
+): lsp.Executable {
+  return {
+    command: NodeProcess.execPath,
+    args: [NodePath.join(searchDirectory, "wasmServer.js")],
+    options: {
+      env: {
+        ...NodeProcess.env,
+        // VS Code runs extensions in Electron. This makes the dedicated
+        // language-server child use Electron's bundled Node runtime.
+        ELECTRON_RUN_AS_NODE: "1",
+      },
+    },
+  };
+}

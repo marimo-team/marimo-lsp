@@ -11,8 +11,10 @@ import type { MarimoApiCall, MarimoOperation } from "../../types.ts";
 import {
   disposeLanguageClient,
   findMarimoLspExecutable,
+  findWasmMarimoLspExecutable,
   makeMarimoCommands,
   makeMarimoOperationStream,
+  selectMarimoLspExecutable,
 } from "../MarimoClient.ts";
 
 const notebook = notebookId("notebook-a");
@@ -190,6 +192,80 @@ describe("findMarimoLspExecutable", () => {
               sdist,
               "marimo-lsp",
             ],
+          });
+        }),
+      (directory) => Effect.sync(() => directory.remove()),
+    ),
+  );
+});
+
+describe("findWasmMarimoLspExecutable", () => {
+  it("launches the bundled server with VS Code's Node runtime", () => {
+    const executable = findWasmMarimoLspExecutable("/extension/dist");
+
+    expect(executable.command).toBe(process.execPath);
+    expect(executable.args).toEqual([
+      NodePath.join("/extension/dist", "wasmServer.js"),
+    ]);
+    expect(executable.options?.env?.ELECTRON_RUN_AS_NODE).toBe("1");
+  });
+});
+
+describe("selectMarimoLspExecutable", () => {
+  it.effect(
+    "prefers an explicitly configured executable",
+    Effect.fn(function* () {
+      const exec = { command: "/custom/marimo-lsp", args: ["--stdio"] };
+      const selection = yield* selectMarimoLspExecutable({
+        configuredExec: Option.some(exec),
+        useWasm: true,
+        uvBinary: "bundled-uv",
+        searchDirectory: "/does/not/exist",
+      });
+
+      expect(selection).toEqual({ _tag: "Configured", exec });
+    }),
+  );
+
+  it.effect(
+    "prefers WASM over uv when enabled",
+    Effect.fn(function* () {
+      const selection = yield* selectMarimoLspExecutable({
+        configuredExec: Option.none(),
+        useWasm: true,
+        uvBinary: "bundled-uv",
+        searchDirectory: "/extension/dist",
+      });
+
+      expect(selection._tag).toBe("Wasm");
+      expect(selection.exec.args).toEqual([
+        NodePath.join("/extension/dist", "wasmServer.js"),
+      ]);
+    }),
+  );
+
+  it.scoped("falls back to uv when WASM is disabled", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() =>
+        NodeFs.mkdtempDisposableSync(
+          NodePath.join(NodeOs.tmpdir(), "marimo-lsp-selection-"),
+        ),
+      ),
+      (directory) =>
+        Effect.gen(function* () {
+          const selection = yield* selectMarimoLspExecutable({
+            configuredExec: Option.none(),
+            useWasm: false,
+            uvBinary: "bundled-uv",
+            searchDirectory: directory.path,
+          });
+
+          expect(selection).toEqual({
+            _tag: "Uv",
+            exec: {
+              command: "bundled-uv",
+              args: ["run", "--directory", directory.path, "marimo-lsp"],
+            },
           });
         }),
       (directory) => Effect.sync(() => directory.remove()),

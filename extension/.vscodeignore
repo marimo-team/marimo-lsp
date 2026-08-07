@@ -17,6 +17,7 @@ tests
 # Ignore sourcemap files (use ** to match all subdirectories)
 **/*.js.map
 **/*.mjs.map
+**/__pycache__/**
 
 # Include tutorial files in the extension package
 !tutorials/**
