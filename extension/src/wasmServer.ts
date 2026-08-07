@@ -5,22 +5,13 @@ import * as NodePath from "node:path";
 import type { loadPyodide as LoadPyodide } from "pyodide";
 import { StreamMessageReader, StreamMessageWriter } from "vscode-jsonrpc/node";
 
+import {
+  WasmBridgeRuntime,
+  type WasmModule,
+} from "./wasm/WasmBridgeRuntime.ts";
+
 interface PyodideModule {
   readonly loadPyodide: typeof LoadPyodide;
-}
-
-interface WasmBridge {
-  readonly handle_message: (messageJson: string) => Promise<void>;
-  readonly close: () => void;
-  readonly destroy: () => void;
-}
-
-interface WasmModule {
-  readonly create_bridge: (
-    writeMessage: (messageJson: string) => void,
-    processes: object,
-  ) => WasmBridge;
-  readonly destroy: () => void;
 }
 
 function isPyodideModule(value: unknown): value is PyodideModule {
@@ -75,16 +66,9 @@ shutil.unpack_archive("/marimo-lsp-site-packages.zip", sysconfig.get_path("purel
     throw new TypeError("Bundled marimo_lsp.wasm module is invalid");
   }
   const writer = new StreamMessageWriter(process.stdout);
-  const unsupportedProcesses = {
-    spawn: () => {
-      throw new Error("Native kernels are not available in this revision");
-    },
-    write: () => {},
-    close: () => {},
-  };
-  const bridge = imported.create_bridge((messageJson: string) => {
+  const runtime = new WasmBridgeRuntime(imported, (messageJson: string) => {
     void writer.write(JSON.parse(messageJson));
-  }, unsupportedProcesses);
+  });
   const reader = new StreamMessageReader(process.stdin);
   let resolveExit = () => {};
   const exitRequested = new Promise<void>((resolve) => {
@@ -95,8 +79,8 @@ shutil.unpack_archive("/marimo-lsp-site-packages.zip", sysconfig.get_path("purel
       resolveExit();
       return;
     }
-    void bridge
-      .handle_message(JSON.stringify(message))
+    void runtime
+      .handleMessage(JSON.stringify(message))
       .catch((error: unknown) => {
         console.error(error);
         process.exitCode = 1;
@@ -110,9 +94,7 @@ shutil.unpack_archive("/marimo-lsp-site-packages.zip", sysconfig.get_path("purel
   await Promise.race([stdinEnded, exitRequested]);
   reader.dispose();
   process.stdin.pause();
-  bridge.close();
-  bridge.destroy();
-  imported.destroy();
+  runtime.close();
 }
 
 void main().catch((error: unknown) => {
