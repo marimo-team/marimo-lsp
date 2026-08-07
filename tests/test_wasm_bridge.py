@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
+import pytest
+
 if TYPE_CHECKING:
     from types import ModuleType
-
-    import pytest
 
 
 def _load_bridge_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
@@ -42,3 +43,19 @@ def test_windows_interrupt_uses_positional_queue_value(
     bridge.interrupt()
 
     interrupt_queue.put_nowait.assert_called_once_with(True)  # noqa: FBT003
+
+
+def test_kernel_readiness_has_a_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge_module = _load_bridge_module(monkeypatch)
+    bridge = bridge_module._Bridge()
+    release_reader = threading.Event()
+    bridge._process = Mock()
+    bridge._process.stdout.readline.side_effect = lambda: (
+        release_reader.wait(),
+        b"KERNEL_READY\n",
+    )[1]
+
+    with pytest.raises(TimeoutError, match="did not become ready"):
+        bridge._wait_for_kernel_ready(timeout=0.01)
+
+    release_reader.set()

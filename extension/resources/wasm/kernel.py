@@ -11,6 +11,7 @@ from __future__ import annotations
 import atexit
 import contextlib
 import os
+import queue
 import signal
 import subprocess
 import sys
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
 
 _write_lock = threading.Lock()
 _decoder = msgspec.json.Decoder(ToBridge)
+KERNEL_READY_TIMEOUT = 10.0
 
 
 def _read_frame() -> ToBridge | None:
@@ -105,15 +107,42 @@ class _Bridge:
         self._process.stdin.flush()
         self._process.stdin.close()
 
-        ready = self._process.stdout.readline().decode(errors="replace").strip()
+        # Drain stderr before waiting for readiness so a noisy child cannot
+        # fill its pipe and deadlock startup.
+        threading.Thread(target=self._forward_stderr, daemon=True).start()
+        ready = self._wait_for_kernel_ready()
         if ready != "KERNEL_READY":
-            error = self._read_kernel_stderr()
-            msg = f"Expected KERNEL_READY, received {ready!r}. {error}".strip()
+            msg = f"Expected KERNEL_READY, received {ready!r}"
             raise RuntimeError(msg)
 
         threading.Thread(target=self._forward_operations, daemon=True).start()
-        threading.Thread(target=self._forward_stderr, daemon=True).start()
         _write_frame(Ready())
+
+    def _wait_for_kernel_ready(
+        self,
+        timeout: float = KERNEL_READY_TIMEOUT,
+    ) -> str:
+        """Read the readiness line without allowing startup to hang forever."""
+        assert self._process is not None
+        assert self._process.stdout is not None
+        result: queue.Queue[str | Exception] = queue.Queue(maxsize=1)
+
+        def read_ready() -> None:
+            try:
+                ready = self._process.stdout.readline().decode(errors="replace").strip()
+                result.put(ready)
+            except Exception as error:  # noqa: BLE001
+                result.put(error)
+
+        threading.Thread(target=read_ready, daemon=True).start()
+        try:
+            ready = result.get(timeout=timeout)
+        except queue.Empty as error:
+            msg = f"Kernel did not become ready within {timeout:g} seconds"
+            raise TimeoutError(msg) from error
+        if isinstance(ready, Exception):
+            raise ready
+        return ready
 
     def _forward_operations(self) -> None:
         assert self._queues is not None
@@ -131,11 +160,6 @@ class _Bridge:
             return
         for line in self._process.stderr:
             _write_frame(Log(message=line.decode(errors="replace").rstrip()))
-
-    def _read_kernel_stderr(self) -> str:
-        if self._process is None or self._process.stderr is None:
-            return ""
-        return self._process.stderr.read().decode(errors="replace")
 
     def handle(self, message: ToBridge) -> bool:
         """Apply one command and return whether to keep reading."""
