@@ -210,6 +210,8 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
           pnpm embed-sdist
+          pnpm build:wasm-lsp
+          pnpm test:wasm-lsp
 
       - name: Package extension
         working-directory: marimo-lsp/extension
@@ -282,6 +284,8 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
           pnpm embed-sdist
+          pnpm build:wasm-lsp
+          pnpm test:wasm-lsp
 
       # NOTE: No pip install for uv - this is the universal fallback without bundled binary
 
