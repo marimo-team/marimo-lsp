@@ -24,7 +24,7 @@ import { VsCode } from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 
 export const UvBin = Data.taggedEnum<UvBin>();
-type UvBin = Data.TaggedEnum<{
+export type UvBin = Data.TaggedEnum<{
   Bundled: {
     readonly executable: string;
     readonly version: Option.Option<VersionInfo>;

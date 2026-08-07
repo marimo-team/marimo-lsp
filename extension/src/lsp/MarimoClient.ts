@@ -23,6 +23,7 @@ import { tokenFromSignal } from "../lib/tokenFromSignal.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Uv } from "../python/Uv.ts";
 import * as Api from "../schemas/Models.gen.ts";
+import { Telemetry } from "../telemetry/Telemetry.ts";
 import type {
   MarimoApiCall,
   MarimoOperation,
@@ -30,6 +31,8 @@ import type {
 } from "../types.ts";
 
 const MAX_STDERR_LINES = 200;
+
+export type MarimoLspMode = "wasm" | "uv" | "configured";
 
 const MarimoLspExecutable = Data.taggedEnum<MarimoLspExecutable>();
 type MarimoLspExecutable = Data.TaggedEnum<{
@@ -52,6 +55,7 @@ export class MarimoClientStartError extends Data.TaggedError(
   stderr?: string;
   /** Exit code/signal if marimo-lsp exited before or during startup. */
   exit?: LspProcessExit;
+  mode: MarimoLspMode;
 }> {}
 
 export class MarimoCommandError extends Data.TaggedError("MarimoCommandError")<{
@@ -60,6 +64,7 @@ export class MarimoCommandError extends Data.TaggedError("MarimoCommandError")<{
     readonly params: MarimoApiCall;
   }>;
   readonly cause: unknown;
+  readonly mode: MarimoLspMode;
 }> {}
 
 /**
@@ -111,10 +116,11 @@ export const makeMarimoOperationStream = Effect.fn(function* (
 export class MarimoClient extends Effect.Service<MarimoClient>()(
   "MarimoClient",
   {
-    dependencies: [Config.Default, Uv.Default],
+    dependencies: [Config.Default, Uv.Default, Telemetry.Default],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const config = yield* Config;
+      const telemetry = yield* Telemetry;
 
       const configuredExec = yield* config.lsp.executable;
       const useWasm = yield* config.lsp.wasm;
@@ -128,6 +134,8 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
         uvBinary,
       });
       const { exec } = selection;
+      const mode = marimoLspMode(selection);
+      yield* telemetry.lspModeSelected(mode);
 
       yield* Effect.logInfo("Starting marimo-lsp").pipe(
         Effect.annotateLogs(
@@ -237,6 +245,7 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
                   : (lastExitedSpawn ?? currentSpawn);
               return new MarimoClientStartError({
                 exec,
+                mode,
                 cause,
                 stderr:
                   source && source.stderrTail.length > 0
@@ -246,7 +255,10 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
               });
             },
           });
-          yield* Effect.logInfo("marimo-lsp client started");
+          yield* telemetry.lspStarted(mode);
+          yield* Effect.logInfo("marimo-lsp client started").pipe(
+            Effect.annotateLogs({ "lsp.mode": mode }),
+          );
         }).pipe(Effect.withSpan("lsp.start"));
 
       yield* Effect.addFinalizer(() => disposeLanguageClient(client));
@@ -279,7 +291,10 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
                 Effect.fn(function* (error) {
                   const message = "Failed to restart marimo-lsp.";
                   yield* Effect.logError(message).pipe(
-                    Effect.annotateLogs({ cause: Cause.fail(error) }),
+                    Effect.annotateLogs({
+                      cause: Cause.fail(error),
+                      "lsp.mode": mode,
+                    }),
                   );
                   yield* showErrorAndPromptLogs(message, {
                     channel: outputChannel,
@@ -312,6 +327,7 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
               new MarimoCommandError({
                 command: Redacted.make(command),
                 cause,
+                mode,
               }),
           }).pipe(
             Effect.withSpan("lsp.executeCommand", {
@@ -334,6 +350,7 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
       };
 
       return {
+        mode,
         channel: {
           name: outputChannel.name,
           show: outputChannel.show.bind(outputChannel),
@@ -344,6 +361,14 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
     }),
   },
 ) {}
+
+function marimoLspMode(selection: MarimoLspExecutable): MarimoLspMode {
+  return MarimoLspExecutable.$match(selection, {
+    Configured: () => "configured" as const,
+    Wasm: () => "wasm" as const,
+    Uv: () => "uv" as const,
+  });
+}
 
 /**
  * Dispose the language client without allowing dependency cleanup failures to

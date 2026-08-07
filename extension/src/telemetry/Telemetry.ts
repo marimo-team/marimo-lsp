@@ -39,6 +39,7 @@ const NOOP_SENTRY: SentryAdapter = {
   captureError() {},
   addBreadcrumb() {},
   setBinaryVersion() {},
+  setLspMode() {},
 };
 
 const NOOP_POSTHOG: PostHogAdapter = {
@@ -153,6 +154,15 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
         });
       });
 
+    const lspModeSelected = (
+      mode: "wasm" | "uv" | "configured",
+    ): Effect.Effect<void> =>
+      Effect.sync(() => adapters.sentry.setLspMode(mode));
+
+    const lspStarted = (
+      mode: "wasm" | "uv" | "configured",
+    ): Effect.Effect<void> => usage("marimo_lsp_started", { mode });
+
     yield* usage("extension_activated");
     return {
       commandExecuted: (command: string, success: boolean) =>
@@ -167,6 +177,8 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       ) => usage("uv_missing", { binType }),
       uvInstallClicked: () => usage("uv_install_clicked"),
       binaryResolved,
+      lspModeSelected,
+      lspStarted,
       errorLogger,
     };
   }),
@@ -183,6 +195,8 @@ function disabledTelemetry() {
     ) => Effect.void,
     uvInstallClicked: () => Effect.void,
     binaryResolved: (_binary: ResolvedBinary) => Effect.void,
+    lspModeSelected: (_mode: "wasm" | "uv" | "configured") => Effect.void,
+    lspStarted: (_mode: "wasm" | "uv" | "configured") => Effect.void,
     errorLogger: Logger.none,
   };
 }

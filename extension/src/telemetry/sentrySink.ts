@@ -16,6 +16,7 @@ export interface SentryAdapter {
     server: "ruff" | "ty" | "uv",
     version: string,
   ) => void;
+  readonly setLspMode: (mode: "wasm" | "uv" | "configured") => void;
 }
 
 export interface SentryAdapterOptions {
@@ -113,7 +114,15 @@ export const acquireSentryAdapter = Effect.fn("telemetry.acquireSentryAdapter")(
       }
     };
 
-    return { captureError, addBreadcrumb, setBinaryVersion };
+    const setLspMode: SentryAdapter["setLspMode"] = (mode) => {
+      try {
+        scope.setTag("marimo_lsp.mode", mode);
+      } catch {
+        // Telemetry must never affect product behavior.
+      }
+    };
+
+    return { captureError, addBreadcrumb, setBinaryVersion, setLspMode };
   },
 );
 
@@ -126,6 +135,7 @@ function classify(data: Record<string, unknown> | undefined) {
     "error.tag",
     "rpc.method",
     "rpc.code",
+    "lsp.mode",
   ]) {
     const value = data?.[key];
     if (typeof value === "string" || typeof value === "number") {
