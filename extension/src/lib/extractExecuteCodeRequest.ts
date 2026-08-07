@@ -22,11 +22,6 @@ export function extractExecuteCodeRequest(
       continue;
     }
 
-    // Disabled cells (`@app.cell(disabled=True)`) must not run (issue #154).
-    if (cell.isDisabled) {
-      continue;
-    }
-
     const code = getCellExecutableCode(cell, LanguageId);
     const cellId = cell.id.value;
 
@@ -35,7 +30,6 @@ export function extractExecuteCodeRequest(
   }
 
   if (codes.length === 0) {
-    // no request — e.g. a selection of only disabled cells (issue #154)
     return Option.none();
   }
 
