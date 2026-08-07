@@ -2,6 +2,8 @@ import { Effect, Either, Layer, Stream } from "effect";
 
 import createSetupCell from "../commands/createSetupCell.ts";
 import debugCell from "../commands/debugCell.ts";
+import disableCell from "../commands/disableCell.ts";
+import enableCell from "../commands/enableCell.ts";
 import exportNotebookAsHtml from "../commands/exportNotebookAsHtml.ts";
 import hideCellCode from "../commands/hideCellCode.ts";
 import newMarimoNotebook from "../commands/newMarimoNotebook.ts";
@@ -38,6 +40,8 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     yield* code.commands.register(debugCell);
     yield* code.commands.register(hideCellCode);
     yield* code.commands.register(showCellCode);
+    yield* code.commands.register(disableCell);
+    yield* code.commands.register(enableCell);
     yield* code.commands.register(restartKernel);
     yield* code.commands.register(restartLsp);
     yield* code.commands.register(showDiagnostics);

@@ -127,6 +127,17 @@ export const MarimoCommands = {
     CommandIds.shutdownSession,
     Invocation.ViewItemContext.argument(SessionCommandTarget),
   ),
+  disableCell: command(
+    CommandIds.disableCell,
+    Invocation.join(
+      Invocation.CommandPalette.notebookCell,
+      Invocation.NotebookCellTitle.notebookCell,
+    ),
+  ),
+  enableCell: command(
+    CommandIds.enableCell,
+    Invocation.NotebookCellStatusBar.notebookCell,
+  ),
   updateActivePythonEnvironment: command(
     CommandIds.updateActivePythonEnvironment,
     Invocation.CommandPalette.notebook,

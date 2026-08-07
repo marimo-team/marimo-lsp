@@ -1,6 +1,7 @@
 import { Effect, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
+import enableCell from "../commands/enableCell.ts";
 import runStale from "../commands/runStale.ts";
 import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
@@ -90,6 +91,30 @@ export const CellStatusBarProviderLive = Layer.scopedDiscard(
             code.NotebookCellStatusBarAlignment.Left,
           );
           item.tooltip = `Cell name: ${name.value}`;
+          return Effect.succeed([item]);
+        },
+        changes: metadataChanges,
+      },
+    );
+
+    // Disabled provider — direct cells can be re-enabled from their status.
+    yield* code.notebooks.registerNotebookCellStatusBarItemProvider(
+      NOTEBOOK_TYPE,
+      {
+        provideCellStatusBarItems(raw) {
+          const cell = MarimoNotebookCell.from(raw);
+          if (!cell.isDisabled) return Effect.succeed([]);
+
+          const item = new code.NotebookCellStatusBarItem(
+            "$(circle-slash) Disabled",
+            code.NotebookCellStatusBarAlignment.Right,
+          );
+          item.tooltip = "Cell is disabled; click to enable";
+          item.command = code.commands.bind(
+            enableCell.command,
+            "Enable cell",
+            raw,
+          );
           return Effect.succeed([item]);
         },
         changes: metadataChanges,

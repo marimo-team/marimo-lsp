@@ -351,6 +351,20 @@
         "enablement": "notebookType == 'marimo-notebook'"
       },
       {
+        "command": "marimo.disableCell",
+        "title": "Disable Cell",
+        "category": "marimo",
+        "icon": "$(circle-slash)",
+        "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
+        "command": "marimo.enableCell",
+        "title": "Enable Cell",
+        "category": "marimo",
+        "icon": "$(circle-large-outline)",
+        "enablement": "notebookType == 'marimo-notebook'"
+      },
+      {
         "command": "marimo.openSession",
         "title": "Open Notebook",
         "category": "marimo",
@@ -493,6 +507,14 @@
         {
           "command": "marimo.updateCellMetadata",
           "when": "never"
+        },
+        {
+          "command": "marimo.disableCell",
+          "when": "never"
+        },
+        {
+          "command": "marimo.enableCell",
+          "when": "never"
         }
       ],
       "file/newFile": [
@@ -567,6 +589,11 @@
           "command": "marimo.showCellCode",
           "when": "notebookType == 'marimo-notebook' && notebookCellType == 'code' && notebookCellInputIsCollapsed",
           "group": "3_edit@1"
+        },
+        {
+          "command": "marimo.disableCell",
+          "when": "notebookType == 'marimo-notebook' && notebookCellType == 'code'",
+          "group": "3_edit@2"
         }
       ],
       "editor/title": [

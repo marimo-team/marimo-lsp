@@ -10,6 +10,7 @@ import { TestTelemetryLive } from "../__mocks__/TestTelemetry.ts";
 import { TestTyLanguageServerLive } from "../__mocks__/TestTyLanguageServer.ts";
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
 import { commandId } from "../commands.ts";
+import disableCell from "../commands/disableCell.ts";
 import hideCellCode from "../commands/hideCellCode.ts";
 import showCellCode from "../commands/showCellCode.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
@@ -115,6 +116,11 @@ describe("package.json validation", () => {
         command: commandId(showCellCode.command),
         when: "notebookType == 'marimo-notebook' && notebookCellType == 'code' && notebookCellInputIsCollapsed",
         group: "3_edit@1",
+      },
+      {
+        command: commandId(disableCell.command),
+        when: "notebookType == 'marimo-notebook' && notebookCellType == 'code'",
+        group: "3_edit@2",
       },
     ]);
   });

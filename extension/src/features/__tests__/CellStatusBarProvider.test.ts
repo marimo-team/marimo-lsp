@@ -10,6 +10,7 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { commandId } from "../../commands.ts";
+import enableCell from "../../commands/enableCell.ts";
 import runStale from "../../commands/runStale.ts";
 import { CellExecutions } from "../../kernel/CellExecutions.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
@@ -217,6 +218,55 @@ it.effect(
       expect(nameItems.some((item) => item.text.includes("my_cell"))).toBe(
         true,
       );
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
+  "shows an enable action only for disabled cells",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx();
+    yield* Effect.gen(function* () {
+      const enabled = createMockCell(notebookUri, {
+        marimo: { options: { disabled: false } },
+        marimoRuntime: { stableId: "enabled" },
+      });
+      const disabled = createMockCell(notebookUri, {
+        marimo: { options: { disabled: true } },
+        marimoRuntime: { stableId: "disabled" },
+      });
+      const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
+
+      const enabledItems = yield* Effect.forEach(providers, (provider) =>
+        provider.provideCellStatusBarItems(enabled),
+      );
+      expect(
+        enabledItems
+          .flat()
+          .some(
+            (item) =>
+              typeof item.command !== "string" &&
+              item.command?.command === commandId(enableCell.command),
+          ),
+      ).toBe(false);
+
+      const disabledItems = yield* Effect.forEach(providers, (provider) =>
+        provider.provideCellStatusBarItems(disabled),
+      );
+      const item = disabledItems
+        .flat()
+        .find(
+          (item) =>
+            typeof item.command !== "string" &&
+            item.command?.command === commandId(enableCell.command),
+        );
+      expect(item?.text).toBe("$(circle-slash) Disabled");
+      expect(item?.tooltip).toBe("Cell is disabled; click to enable");
+      expect(item?.command).toEqual({
+        command: commandId(enableCell.command),
+        title: "Enable cell",
+        arguments: [disabled],
+      });
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
