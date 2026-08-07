@@ -66,6 +66,41 @@ def test_invalid_working_directory_is_rejected(
 
 
 @pytest.mark.asyncio
+async def test_failed_launch_closes_queues_without_a_started_kernel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queue_manager = Mock()
+    manager = Mock()
+    manager.kernel_task = None
+    manager.start_kernel.side_effect = RuntimeError("launch failed")
+
+    monkeypatch.setattr(
+        "marimo_lsp.kernels.native.IpcQueues.create",
+        Mock(return_value=(Mock(), Mock())),
+    )
+    monkeypatch.setattr(
+        "marimo_lsp.kernels.native.IpcQueueManager.from_ipc",
+        Mock(return_value=queue_manager),
+    )
+    monkeypatch.setattr(
+        "marimo_lsp.kernels.native.Manager",
+        Mock(return_value=manager),
+    )
+
+    with pytest.raises(RuntimeError, match="launch failed"):
+        await NativeKernels().launch(
+            executable="python",
+            working_directory="/workspace",
+            app_file_manager=Mock(),
+            config_manager=Mock(),
+            receive=Mock(),
+        )
+
+    manager.close_kernel.assert_not_called()
+    queue_manager.close_queues.assert_called_once_with()
+
+
+@pytest.mark.asyncio
 async def test_cancelled_launch_closes_kernel_after_start_finishes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
