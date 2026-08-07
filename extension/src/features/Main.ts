@@ -38,6 +38,7 @@ import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
 import { Api, type MarimoApi } from "../platform/Api.ts";
 import { Constants } from "../platform/Constants.ts";
 import { GitHubClient } from "../platform/GitHubClient.ts";
+import { HostPlatform } from "../platform/HostPlatform.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
 import { ExtensionContext, Storage } from "../platform/Storage.ts";
 import type { VsCode } from "../platform/VsCode.ts";
@@ -145,8 +146,12 @@ export function makeActivate(
         // manually-managed scope, and are only released when we explicitly close the
         // scope on deactivation.
         const scope = yield* Scope.make();
+        const dependencies = Layer.empty.pipe(
+          Layer.provideMerge(HostPlatform.Live),
+          Layer.provideMerge(layer),
+        );
         const ctx = yield* Layer.buildWithScope(
-          Layer.provide(MainLive, layer),
+          Layer.provide(MainLive, dependencies),
           scope,
         );
         const api = Context.get(ctx, Api);

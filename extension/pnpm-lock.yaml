@@ -36,6 +36,9 @@ importers:
       '@oxlint/plugins':
         specifier: ^1.77.0
         version: 1.77.0
+      '@posit-dev/positron':
+        specifier: 0.2.4
+        version: 0.2.4(@types/vscode@1.108.1)
       '@sentry/node':
         specifier: ^9.47.1
         version: 9.47.1(supports-color@8.1.1)
@@ -1190,6 +1193,12 @@ packages:
 
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
+
+  '@posit-dev/positron@0.2.4':
+    resolution: {integrity: sha512-9dqxnWdPp4deJqWAatQravonSOiUYuP9+gRkwcDrmffdodalIjb9N3fsU2T/KOzW9iAnuoufUBLDyyEbWPZwhg==}
+    engines: {node: '>=16.0.0'}
+    peerDependencies:
+      '@types/vscode': ^1.74.0
 
   '@posthog/core@1.46.6':
     resolution: {integrity: sha512-m7iLFU7Cx4IjsUG6wQE3AJRzCFW/tUDCMIWhifvogLCxRAD6pELnqWHqshUB83KcTpxKnFACOQVMxmzzeO98dg==}
@@ -3704,6 +3713,10 @@ snapshots:
     optional: true
 
   '@polka/url@1.0.0-next.29': {}
+
+  '@posit-dev/positron@0.2.4(@types/vscode@1.108.1)':
+    dependencies:
+      '@types/vscode': 1.108.1
 
   '@posthog/core@1.46.6':
     dependencies:
