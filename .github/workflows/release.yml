@@ -53,6 +53,7 @@ jobs:
   build:
     needs: version-bump
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest

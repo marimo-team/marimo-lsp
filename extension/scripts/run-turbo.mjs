@@ -129,29 +129,27 @@ if (wasmRequested) {
   });
 }
 
-NodeChildProcess.execFileSync(
-  process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-  ["exec", "turbo", "run", ...tasks],
-  {
-    cwd: extensionDir,
-    env: {
-      ...process.env,
-      BUILD_NODE_VERSION: process.version,
-      ...(frontendSourceHash === undefined
-        ? {}
-        : { MARIMO_FRONTEND_SOURCE_HASH: frontendSourceHash }),
-      MARIMO_LSP_UV_VERSION: wasmRequested
-        ? NodeChildProcess.execFileSync("uv", ["--version"], {
-            encoding: "utf8",
-          })
-            .trim()
-            .split(" ", 2)
-            .join(" ")
-        : "",
-      ...(wasmSourceHash === undefined
-        ? {}
-        : { MARIMO_LSP_WASM_SOURCE_HASH: wasmSourceHash }),
-    },
-    stdio: "inherit",
+NodeChildProcess.execFileSync("pnpm", ["exec", "turbo", "run", ...tasks], {
+  cwd: extensionDir,
+  env: {
+    ...process.env,
+    BUILD_NODE_VERSION: process.version,
+    ...(frontendSourceHash === undefined
+      ? {}
+      : { MARIMO_FRONTEND_SOURCE_HASH: frontendSourceHash }),
+    MARIMO_LSP_UV_VERSION: wasmRequested
+      ? NodeChildProcess.execFileSync("uv", ["--version"], {
+          encoding: "utf8",
+        })
+          .trim()
+          .split(" ", 2)
+          .join(" ")
+      : "",
+    ...(wasmSourceHash === undefined
+      ? {}
+      : { MARIMO_LSP_WASM_SOURCE_HASH: wasmSourceHash }),
   },
-);
+  // Windows cannot execute .cmd shims directly. Resolve pnpm through cmd.exe.
+  shell: process.platform === "win32",
+  stdio: "inherit",
+});
