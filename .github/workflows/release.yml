@@ -125,6 +125,12 @@ jobs:
         with:
           python-version: "3.x"
 
+      # Cross-platform installers run as root inside a container or chroot. Keep
+      # the shared parent directory owned by the runner so later build steps can
+      # create sibling bundles such as bundled/wasm.
+      - name: Prepare bundle directory
+        run: mkdir -p ./marimo-lsp/extension/bundled
+
       # macOS ARM - use arch prefix to ensure we get the ARM wheel
       - name: Install uv binary (macOS ARM)
         if: ${{ startsWith(matrix.os, 'macos') && startsWith(matrix.target, 'aarch64') }}
