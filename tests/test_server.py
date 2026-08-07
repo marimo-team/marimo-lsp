@@ -186,6 +186,96 @@ async def test_notebook_did_change(client: LanguageClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_enabling_disabled_cell_runs_registered_source(
+    client: LanguageClient,
+) -> None:
+    uri = "file:///disabled_sync_test.py"
+    cell_uri = f"{uri}#cell1"
+    source = 'print("registered while disabled")'
+    initial_run_completed = asyncio.Event()
+    stdout: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+
+    @client.feature("marimo/operation")
+    def _(params: Any) -> None:  # noqa: ANN401
+        operation = getattr(params, "operation", None)
+        if getattr(operation, "op", None) == "completed-run":
+            initial_run_completed.set()
+        console = getattr(operation, "console", None)
+        if (
+            console is not None
+            and getattr(operation, "cell_id", None) == "cell1"
+            and getattr(console, "channel", None) == "stdout"
+            and not stdout.done()
+        ):
+            stdout.set_result(console.data)
+
+    def cell(*, disabled: bool) -> lsp.NotebookCell:
+        return lsp.NotebookCell(
+            kind=lsp.NotebookCellKind.Code,
+            document=cell_uri,
+            metadata=cast(
+                "lsp.LSPObject",
+                {
+                    "marimo": {"options": {"disabled": disabled}},
+                    "marimoRuntime": {"stableId": "cell1"},
+                },
+            ),
+        )
+
+    client.notebook_document_did_open(
+        lsp.DidOpenNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocument(
+                uri=uri,
+                notebook_type="marimo-notebook",
+                version=1,
+                cells=[cell(disabled=True)],
+            ),
+            cell_text_documents=[
+                lsp.TextDocumentItem(
+                    uri=cell_uri,
+                    language_id="python",
+                    version=1,
+                    text=source,
+                )
+            ],
+        )
+    )
+
+    await client.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[
+                {
+                    "method": "execute-cells",
+                    "params": {
+                        "notebookUri": uri,
+                        "executable": sys.executable,
+                        "workingDirectory": str(Path.cwd()),
+                        "inner": {"cellIds": ["cell1"], "codes": [source]},
+                    },
+                }
+            ],
+        )
+    )
+    await asyncio.wait_for(initial_run_completed.wait(), timeout=5)
+    assert not stdout.done()
+
+    client.notebook_document_did_change(
+        lsp.DidChangeNotebookDocumentParams(
+            notebook_document=lsp.VersionedNotebookDocumentIdentifier(
+                uri=uri,
+                version=2,
+            ),
+            change=lsp.NotebookDocumentChangeEvent(
+                cells=lsp.NotebookDocumentCellChanges(data=[cell(disabled=False)])
+            ),
+        )
+    )
+
+    assert await asyncio.wait_for(stdout, timeout=5) == "registered while disabled\n"
+
+
+@pytest.mark.asyncio
 async def test_notebook_did_save(client: LanguageClient) -> None:
     """Test saving a notebook document."""
     client.notebook_document_did_open(

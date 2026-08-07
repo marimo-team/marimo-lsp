@@ -222,7 +222,8 @@ export class MarimoNotebookCell {
    *
    * marimo stores the decorator's `disabled` flag in the cell's config; the
    * LSP deserialize path surfaces it as `metadata.options.disabled`. Disabled
-   * cells must not be sent for execution (issue #154).
+   * cell source is still sent to keep the runtime graph current; marimo
+   * enforces the disabled state when handling the execution request.
    */
   get isDisabled() {
     return this.metadata.pipe(

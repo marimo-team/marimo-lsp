@@ -80,47 +80,39 @@ describe("extractExecuteCodeRequest", () => {
     }).pipe(Effect.provide(Constants.Default)),
   );
 
-  // Regression test for https://github.com/marimo-team/marimo-lsp/issues/154
-  // A cell authored as `@app.cell(disabled=True)` reaches the extension with
-  // metadata.options = { disabled: true } (set by NotebookSerializer from the
-  // LSP server's deserialize response). It must NOT be sent for execution.
-  it.effect(
-    "excludes cells disabled via @app.cell(disabled=True) (issue #154)",
-    () =>
-      Effect.gen(function* () {
-        const { LanguageId } = yield* Constants;
+  // Disabled cells still submit edited code to marimo. The runtime updates its
+  // graph before enforcing the disabled config, matching marimo's editor.
+  it.effect("includes disabled cells", () =>
+    Effect.gen(function* () {
+      const { LanguageId } = yield* Constants;
 
-        const enabled = createRawCell(
-          "x = 1",
-          { marimoRuntime: { stableId: "cell-enabled" } },
-          0,
-        );
-        const disabled = createRawCell(
-          'print("RAN")',
-          {
-            marimo: { options: { disabled: true } },
-            marimoRuntime: { stableId: "cell-disabled" },
-          },
-          1,
-        );
+      const enabled = createRawCell(
+        "x = 1",
+        { marimoRuntime: { stableId: "cell-enabled" } },
+        0,
+      );
+      const disabled = createRawCell(
+        'print("RAN")',
+        {
+          marimo: { options: { disabled: true } },
+          marimoRuntime: { stableId: "cell-disabled" },
+        },
+        1,
+      );
 
-        const request = extractExecuteCodeRequest(
-          [enabled, disabled],
-          LanguageId,
-        );
+      const request = extractExecuteCodeRequest(
+        [enabled, disabled],
+        LanguageId,
+      );
 
-        expect(Option.isSome(request)).toBe(true);
-        const { codes, cellIds } = Option.getOrThrow(request);
-        expect(cellIds).toContain("cell-enabled");
-        expect(cellIds).not.toContain("cell-disabled");
-        expect(codes).not.toContain('print("RAN")');
-      }).pipe(Effect.provide(Constants.Default)),
+      expect(Option.getOrThrow(request)).toEqual({
+        codes: ["x = 1", 'print("RAN")'],
+        cellIds: ["cell-enabled", "cell-disabled"],
+      });
+    }).pipe(Effect.provide(Constants.Default)),
   );
 
-  // Once disabled cells are filtered, a selection of only disabled cells
-  // produces an empty request, which must be Option.none() so the controller
-  // stops instead of sending an empty execute-cells request (issue #154).
-  it.effect("returns none when every selected cell is disabled", () =>
+  it.effect("submits a selection containing only a disabled cell", () =>
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants;
 
@@ -135,7 +127,10 @@ describe("extractExecuteCodeRequest", () => {
 
       const request = extractExecuteCodeRequest([disabled], LanguageId);
 
-      expect(Option.isNone(request)).toBe(true);
+      expect(Option.getOrThrow(request)).toEqual({
+        codes: ['print("RAN")'],
+        cellIds: ["cell-disabled"],
+      });
     }).pipe(Effect.provide(Constants.Default)),
   );
 });

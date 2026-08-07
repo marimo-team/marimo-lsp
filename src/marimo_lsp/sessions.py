@@ -20,6 +20,7 @@ from marimo._runtime.commands import (
     CreateNotebookCommand,
     ExecuteCellCommand,
     HTTPRequest,
+    UpdateCellConfigCommand,
     UpdateUIElementCommand,
     UpdateUserConfigCommand,
 )
@@ -182,11 +183,32 @@ class Session:
 
     def sync(self, workspace: Workspace) -> None:
         """Synchronize the live app with the current notebook document."""
+        previous_configs = {
+            cell_id: config.asdict()
+            for cell_id, config in self._app_file_manager.app.cell_manager.config_map().items()
+        }
         sync_app_with_workspace(
             workspace=workspace,
             notebook_uri=self._notebook_uri,
             app=self._app_file_manager.app,
         )
+        current_configs = {
+            cell_id: config.asdict()
+            for cell_id, config in self._app_file_manager.app.cell_manager.config_map().items()
+        }
+        changed_configs = {
+            cell_id: config
+            for cell_id, config in current_configs.items()
+            if previous_configs.get(cell_id) != config
+        }
+        # marimo 0.23.16 only schedules the stale closure from the last
+        # enabled cell in a batched UpdateCellConfigCommand. Forward each
+        # change separately so every newly enabled cell is considered.
+        for cell_id, config in changed_configs.items():
+            self.put_control_request(
+                UpdateCellConfigCommand(configs={cell_id: config}),
+                from_consumer_id=None,
+            )
 
     def accept_kernel_message(self, message: KernelMessage) -> None:
         """Record and forward an operation received from the kernel."""

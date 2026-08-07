@@ -243,6 +243,10 @@ async def run(
     session = await ctx.sessions.start(
         args.notebook_uri, args.executable, args.working_directory
     )
+    # Reconcile document metadata before enqueueing execution. LSP change
+    # notifications normally keep the session synchronized, but doing it here
+    # provides an ordering barrier when a metadata edit immediately precedes a run.
+    session.sync(ctx.ls.workspace)
     session.mark_running()
 
     session.instantiate(

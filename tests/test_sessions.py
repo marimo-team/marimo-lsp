@@ -8,7 +8,7 @@ import asyncio
 import copy
 import threading
 from typing import TYPE_CHECKING, cast
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
 from marimo._config.config import DEFAULT_CONFIG, MarimoConfig, RuntimeConfig
@@ -16,6 +16,7 @@ from marimo._messaging.types import KernelMessage
 from marimo._runtime.commands import (
     CodeCompletionCommand,
     StopKernelCommand,
+    UpdateCellConfigCommand,
     UpdateUIElementCommand,
     UpdateUserConfigCommand,
 )
@@ -66,6 +67,73 @@ def test_control_requests_update_live_session_snapshot() -> None:
 
     assert session.session_view.ui_values == {UIElementId("slider"): 1}
     assert session.session_view.needs_export("html")
+
+
+def test_sync_forwards_changed_document_configs_to_the_kernel() -> None:
+    session, queue_manager = _make_session()
+    session._notebook_uri = "file:///test.py"
+    session._app_file_manager = Mock()
+    session._app_file_manager.app.cell_manager.config_map.side_effect = [
+        {CellId_t("cell-1"): Mock(asdict=Mock(return_value={"disabled": True}))},
+        {CellId_t("cell-1"): Mock(asdict=Mock(return_value={"disabled": False}))},
+    ]
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        sync = Mock()
+        monkeypatch.setattr("marimo_lsp.sessions.sync_app_with_workspace", sync)
+        session.sync(Mock())
+
+    sync.assert_called_once_with(
+        workspace=ANY,
+        notebook_uri="file:///test.py",
+        app=session._app_file_manager.app,
+    )
+    command = queue_manager.control_queue.put.call_args.args[0]
+    assert isinstance(command, UpdateCellConfigCommand)
+    assert command.configs == {CellId_t("cell-1"): {"disabled": False}}
+
+
+def test_sync_forwards_each_changed_config_separately() -> None:
+    session, queue_manager = _make_session()
+    session._notebook_uri = "file:///test.py"
+    session._app_file_manager = Mock()
+    session._app_file_manager.app.cell_manager.config_map.side_effect = [
+        {
+            CellId_t("cell-1"): Mock(asdict=Mock(return_value={"disabled": True})),
+            CellId_t("cell-2"): Mock(asdict=Mock(return_value={"disabled": True})),
+        },
+        {
+            CellId_t("cell-1"): Mock(asdict=Mock(return_value={"disabled": False})),
+            CellId_t("cell-2"): Mock(asdict=Mock(return_value={"disabled": False})),
+        },
+    ]
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr("marimo_lsp.sessions.sync_app_with_workspace", Mock())
+        session.sync(Mock())
+
+    commands = [call.args[0] for call in queue_manager.control_queue.put.call_args_list]
+    assert [command.configs for command in commands] == [
+        {CellId_t("cell-1"): {"disabled": False}},
+        {CellId_t("cell-2"): {"disabled": False}},
+    ]
+
+
+def test_sync_does_not_notify_kernel_when_configs_are_unchanged() -> None:
+    session, queue_manager = _make_session()
+    session._notebook_uri = "file:///test.py"
+    config = Mock(asdict=Mock(return_value={"disabled": True}))
+    session._app_file_manager = Mock()
+    session._app_file_manager.app.cell_manager.config_map.side_effect = [
+        {CellId_t("cell-1"): config},
+        {CellId_t("cell-1"): config},
+    ]
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr("marimo_lsp.sessions.sync_app_with_workspace", Mock())
+        session.sync(Mock())
+
+    queue_manager.control_queue.put.assert_not_called()
 
 
 def test_regular_commands_are_routed_to_control_queue_only() -> None:

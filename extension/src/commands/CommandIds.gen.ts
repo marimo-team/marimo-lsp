@@ -6,6 +6,8 @@
 export const CommandIds = {
   createSetupCell: "marimo.createSetupCell",
   debugCell: "marimo.debugCell",
+  disableCell: "marimo.disableCell",
+  enableCell: "marimo.enableCell",
   exportStaticHTML: "marimo.exportStaticHTML",
   hideCellCode: "marimo.hideCellCode",
   newMarimoNotebook: "marimo.newMarimoNotebook",
@@ -33,6 +35,8 @@ export const CommandIds = {
 export const CommandSurfaces = {
   createSetupCell: ["commandPalette"],
   debugCell: ["commandPalette"],
+  disableCell: ["notebookCellTitle"],
+  enableCell: [],
   exportStaticHTML: ["commandPalette"],
   hideCellCode: ["commandPalette", "notebookCellTitle"],
   newMarimoNotebook: ["commandPalette", "fileNew"],
