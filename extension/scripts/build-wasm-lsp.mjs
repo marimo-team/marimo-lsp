@@ -43,6 +43,7 @@ try {
   buildDir = NodeFs.mkdtempSync(
     NodePath.join(NodeOs.tmpdir(), "marimo-lsp-wasm-"),
   );
+  NodeFs.rmSync(outputDir, { recursive: true, force: true });
   NodeFs.mkdirSync(outputDir, { recursive: true });
   for (const filename of runtimeFiles) {
     NodeFs.copyFileSync(

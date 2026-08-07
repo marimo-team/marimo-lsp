@@ -2,19 +2,61 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "build:renderer": {
-      "outputs": ["dist/renderer.mjs", "dist/renderer.mjs.map"],
-      "inputs": ["src/renderer/**", "vite.config.ts", "package.json"],
-      "env": ["NODE_ENV", "MODE"]
+      "outputs": ["dist/**/*.mjs", "dist/**/*.mjs.map"],
+      "inputs": [
+        "src/renderer/**",
+        "!src/renderer/**/__tests__/**",
+        "!src/renderer/**/*.test.*",
+        "src/assert.ts",
+        "src/types.ts",
+        "scripts/run-turbo.mjs",
+        "scripts/vite-plugin-virtual-stylesheet.mts",
+        "vite.config.mts",
+        "package.json"
+      ],
+      "env": ["NODE_ENV", "BUILD_NODE_VERSION", "MARIMO_FRONTEND_SOURCE_HASH"],
+      "outputLogs": "new-only"
     },
     "build:extension": {
-      "outputs": ["dist/extension.js", "dist/extension.js.map"],
-      "inputs": ["src/**/*.ts", "!src/renderer/**", "package.json"],
-      "env": ["NODE_ENV", "MODE"]
+      "outputs": [
+        "dist/extension.js",
+        "dist/extension.js.map",
+        "dist/wasmServer.js",
+        "dist/wasmServer.js.map"
+      ],
+      "inputs": [
+        "src/**/*.ts",
+        "!src/renderer/**",
+        "!src/**/__mocks__/**",
+        "!src/**/__tests__/**",
+        "!src/**/*.test.*",
+        "builtin-command-catalog.json",
+        "package.json"
+      ],
+      "env": ["BUILD_NODE_VERSION", "MARIMO_FRONTEND_SOURCE_HASH"],
+      "outputLogs": "new-only"
+    },
+    "build:wasm-lsp:bundle": {
+      "outputs": ["bundled/wasm/**"],
+      "inputs": [
+        "scripts/build-wasm-lsp.mjs",
+        "scripts/run-turbo.mjs",
+        "package.json"
+      ],
+      "env": [
+        "BUILD_NODE_VERSION",
+        "MARIMO_LSP_UV_VERSION",
+        "MARIMO_LSP_WASM_SOURCE_HASH"
+      ],
+      "outputLogs": "new-only"
     },
     "check": {},
-    "fix": {},
+    "fix": {
+      "cache": false
+    },
     "test:extension": {
-      "dependsOn": ["build:extension"]
+      "dependsOn": ["build:extension"],
+      "cache": false
     }
   }
 }

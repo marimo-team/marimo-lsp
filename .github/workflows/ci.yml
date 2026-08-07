@@ -160,6 +160,8 @@ jobs:
 
       - name: Build and test the WASM language server
         if: runner.os == 'Linux'
+        env:
+          TURBO_TOKEN: ${{ steps.secrets.outputs.TURBO_TOKEN }}
         run: pnpm verify:wasm-lsp
         working-directory: marimo-lsp/extension
 
