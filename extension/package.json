@@ -15,14 +15,16 @@
     "patch-tsc": "effect-language-service patch",
     "typecheck-ci": "tsc",
     "build": "turbo build:renderer && turbo build:extension",
-    "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --bundle --sourcemap src/extension.ts --outdir=dist",
+    "build:extension": "esbuild --format=cjs --define:import.meta.env.DEV=false --platform=node --minify --external:vscode --external:../bundled/wasm/pyodide.js --bundle --sourcemap src/extension.ts src/wasmServer.ts --outdir=dist",
     "build:renderer": "vp build",
     "check": "vp check && node ./scripts/check-css-variables.mjs",
     "fix": "vp fmt && vp check --fix",
     "test": "vp test",
     "pretest:extension": "pnpm run build:extension",
     "test:extension": "vscode-test",
-    "embed-sdist": "node scripts/embed-sdist.mjs"
+    "embed-sdist": "node scripts/embed-sdist.mjs",
+    "build:wasm-lsp": "node scripts/build-wasm-lsp.mjs",
+    "test:wasm-lsp": "node scripts/test-wasm-lsp.mjs"
   },
   "devDependencies": {
     "@effect/platform": "^0.92.1",
@@ -56,6 +58,7 @@
     "oxlint": "1.77.0",
     "oxlint-tsgolint": "7.0.2001",
     "posthog-node": "^5.47.9",
+    "pyodide": "314.0.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tar": "^7.5.22",
