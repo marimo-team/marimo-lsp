@@ -26,25 +26,50 @@ function hashFile(hash, root, path) {
   hash.update("\0");
 }
 
+/** @param {string} repository @param {string[]} args */
+async function gitOutput(repository, args) {
+  const child = NodeChildProcess.spawn("git", args, {
+    cwd: repository,
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  const completed = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+  const chunks = [];
+  for await (const chunk of child.stdout) chunks.push(chunk);
+  const code = await completed;
+  if (code !== 0) throw new Error(`git ${args[0]} exited with code ${code}`);
+  return Buffer.concat(chunks);
+}
+
 /** @param {string} repository @param {string[]} paths */
-function gitSourceHash(repository, paths) {
+async function gitSourceHash(repository, paths) {
   const hash = NodeCrypto.createHash("sha256");
-  for (const args of [
-    ["rev-parse", ...paths.map((path) => `HEAD:${path}`)],
-    ["diff", "--no-ext-diff", "--binary", "HEAD", "--", ...paths],
-  ]) {
-    hash.update(
-      NodeChildProcess.execFileSync("git", args, { cwd: repository }),
-    );
+  const outputs = await Promise.all(
+    [
+      ["rev-parse", ...paths.map((path) => `HEAD:${path}`)],
+      ["diff", "--no-ext-diff", "--binary", "HEAD", "--", ...paths],
+    ].map((args) => gitOutput(repository, args)),
+  );
+  for (const output of outputs) {
+    hash.update(output);
     hash.update("\0");
   }
 
-  const untracked = NodeChildProcess.execFileSync(
-    "git",
-    ["ls-files", "--others", "--exclude-standard", "-z", "--", ...paths],
-    { cwd: repository, encoding: "utf8" },
-  );
-  for (const relativePath of untracked.split("\0").filter(Boolean).sort()) {
+  const untracked = await gitOutput(repository, [
+    "ls-files",
+    "--others",
+    "--exclude-standard",
+    "-z",
+    "--",
+    ...paths,
+  ]);
+  for (const relativePath of untracked
+    .toString("utf8")
+    .split("\0")
+    .filter(Boolean)
+    .sort()) {
     hashFile(hash, repository, NodePath.join(repository, relativePath));
   }
   return hash.digest("hex");
@@ -72,6 +97,25 @@ const rendererRequested = tasks.includes("build:renderer");
 const frontendRequested = tasks.some((task) =>
   ["build:extension", "build:renderer"].includes(task),
 );
+const [frontendSourceHash, wasmSourceHash] = await Promise.all([
+  frontendRequested
+    ? gitSourceHash(marimoDir, [
+        "frontend",
+        "package.json",
+        "packages",
+        "patches",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+      ])
+    : undefined,
+  wasmRequested
+    ? gitSourceHash(repositoryDir, [
+        "pyproject.toml",
+        "README.md",
+        "src/marimo_lsp",
+      ])
+    : undefined,
+]);
 
 if (rendererRequested) {
   removeFiles(NodePath.join(extensionDir, "dist"), (path) =>
@@ -93,14 +137,9 @@ NodeChildProcess.execFileSync(
     env: {
       ...process.env,
       BUILD_NODE_VERSION: process.version,
-      ...(frontendRequested
-        ? {
-            MARIMO_FRONTEND_SOURCE_HASH: gitSourceHash(marimoDir, [
-              "frontend",
-              "packages",
-            ]),
-          }
-        : {}),
+      ...(frontendSourceHash === undefined
+        ? {}
+        : { MARIMO_FRONTEND_SOURCE_HASH: frontendSourceHash }),
       MARIMO_LSP_UV_VERSION: wasmRequested
         ? NodeChildProcess.execFileSync("uv", ["--version"], {
             encoding: "utf8",
@@ -109,15 +148,9 @@ NodeChildProcess.execFileSync(
             .split(" ", 2)
             .join(" ")
         : "",
-      ...(wasmRequested
-        ? {
-            MARIMO_LSP_WASM_SOURCE_HASH: gitSourceHash(repositoryDir, [
-              "pyproject.toml",
-              "README.md",
-              "src/marimo_lsp",
-            ]),
-          }
-        : {}),
+      ...(wasmSourceHash === undefined
+        ? {}
+        : { MARIMO_LSP_WASM_SOURCE_HASH: wasmSourceHash }),
     },
     stdio: "inherit",
   },

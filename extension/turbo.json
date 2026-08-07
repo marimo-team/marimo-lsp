@@ -7,6 +7,8 @@
         "src/renderer/**",
         "!src/renderer/**/__tests__/**",
         "!src/renderer/**/*.test.*",
+        "src/assert.ts",
+        "src/types.ts",
         "scripts/run-turbo.mjs",
         "scripts/vite-plugin-virtual-stylesheet.mts",
         "vite.config.mts",
