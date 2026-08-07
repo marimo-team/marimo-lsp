@@ -156,6 +156,11 @@ jobs:
         run: pnpm test --coverage
         working-directory: marimo-lsp/extension
 
+      - name: Build and test the WASM language server
+        if: runner.os == 'Linux'
+        run: pnpm verify:wasm-lsp
+        working-directory: marimo-lsp/extension
+
       - name: Upload TypeScript coverage
         if: always() && matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

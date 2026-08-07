@@ -31,7 +31,7 @@ jobs:
       - name: Read current pinned version
         id: current_version
         run: |
-          CURRENT_VERSION=$(sed -n 's/^  "marimo==\([0-9.]*\)",$/\1/p' pyproject.toml)
+          CURRENT_VERSION=$(sed -n 's/^  "marimo-base==\([0-9.]*\)",$/\1/p' pyproject.toml)
           echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Skip if already up to date
@@ -41,7 +41,7 @@ jobs:
       - name: Bump pyproject.toml pin
         if: steps.current_version.outputs.version != steps.get_version.outputs.version
         run: |
-          sed -i 's/^  "marimo==[0-9.]*",$/  "marimo==${{ steps.get_version.outputs.version }}",/' pyproject.toml
+          sed -i 's/^  "marimo-base==[0-9.]*",$/  "marimo-base==${{ steps.get_version.outputs.version }}",/' pyproject.toml
 
       - name: Bump .marimo-version
         if: steps.current_version.outputs.version != steps.get_version.outputs.version
@@ -50,7 +50,7 @@ jobs:
 
       - name: Refresh uv.lock
         if: steps.current_version.outputs.version != steps.get_version.outputs.version
-        run: uv lock --upgrade-package marimo
+        run: uv lock --upgrade-package marimo-base
 
       - name: Create Pull Request
         if: steps.current_version.outputs.version != steps.get_version.outputs.version
@@ -64,9 +64,9 @@ jobs:
             Automated PR to bump the pinned `marimo` version from `${{ steps.current_version.outputs.version }}` to `${{ steps.get_version.outputs.version }}`.
 
             Updates:
-            - `pyproject.toml` — exact pin of the `marimo` dependency
+            - `pyproject.toml` — exact pin of the `marimo-base` dependency
             - `.marimo-version` — sibling-checkout ref used by CI and local dev
-            - `uv.lock` — refreshed via `uv lock --upgrade-package marimo`
+            - `uv.lock` — refreshed via `uv lock --upgrade-package marimo-base`
 
             Note: `[tool.marimo-lsp] minimum-kernel-version` is **not** changed by this workflow. Bump it manually when intentionally dropping support for an older marimo release.
 
