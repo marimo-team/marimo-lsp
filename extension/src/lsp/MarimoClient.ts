@@ -113,16 +113,19 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
   {
     dependencies: [Config.Default, Uv.Default],
     scoped: Effect.gen(function* () {
-      const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
 
       const configuredExec = yield* config.lsp.executable;
       const useWasm = yield* config.lsp.wasm;
+      const uvBinary =
+        Option.isNone(configuredExec) && !useWasm
+          ? (yield* (yield* Uv).bin).executable
+          : undefined;
       const selection = yield* selectMarimoLspExecutable({
         configuredExec,
         useWasm,
-        uvBinary: uv.bin.executable,
+        uvBinary,
       });
       const { exec } = selection;
 
@@ -399,7 +402,7 @@ export const selectMarimoLspExecutable = Effect.fn("selectMarimoLspExecutable")(
   }: {
     readonly configuredExec: Option.Option<lsp.Executable>;
     readonly useWasm: boolean;
-    readonly uvBinary: string;
+    readonly uvBinary?: string;
     readonly searchDirectory?: string;
   }) {
     if (Option.isSome(configuredExec)) {
@@ -409,6 +412,11 @@ export const selectMarimoLspExecutable = Effect.fn("selectMarimoLspExecutable")(
       return MarimoLspExecutable.Wasm({
         exec: findWasmMarimoLspExecutable(searchDirectory),
       });
+    }
+    if (uvBinary === undefined) {
+      throw new Error(
+        "uv is required when the WASM language server is disabled",
+      );
     }
     return MarimoLspExecutable.Uv({
       exec: yield* findMarimoLspExecutable(uvBinary, searchDirectory),

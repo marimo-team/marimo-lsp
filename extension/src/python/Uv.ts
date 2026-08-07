@@ -6,7 +6,16 @@ import * as NodeProcess from "node:process";
 import { Command, CommandExecutor } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import type { PlatformError } from "@effect/platform/Error";
-import { Data, Effect, Function, Option, Schema, Stream, String } from "effect";
+import {
+  Data,
+  Effect,
+  Function,
+  Option,
+  Schema,
+  Scope,
+  Stream,
+  String,
+} from "effect";
 import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
@@ -179,35 +188,46 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
     const config = yield* Config;
     const telemetry = yield* Telemetry;
     const executor = yield* CommandExecutor.CommandExecutor;
+    const scope = yield* Effect.scope;
     const channel = yield* code.window.createOutputChannel("marimo (uv)");
 
-    // Eagerly verify UV is installed - this runs during layer construction
-    const uvBinary = yield* findUvBin(yield* config.uv.path).pipe(
-      Effect.catchTag("UvExecutionError", (error) =>
-        handleUvNotInstalled(error, code, telemetry),
+    // Resolve uv on first use. WASM language-server startup does not need uv,
+    // and the universal extension intentionally does not bundle the binary.
+    const uvBinary = yield* Effect.cached(
+      Effect.gen(function* () {
+        const bin = yield* findUvBin(yield* config.uv.path).pipe(
+          Effect.catchTag("UvExecutionError", (error) =>
+            handleUvNotInstalled(error, code, telemetry),
+          ),
+        );
+
+        if (Option.isNone(bin.version)) {
+          yield* code.window.showWarningMessage(
+            "Unable to determine uv version. Some features may not work correctly.",
+          );
+        }
+
+        const version = Option.match(bin.version, {
+          onSome: (value) => value.version,
+          onNone: () => "unknown",
+        });
+        yield* telemetry.binaryResolved({
+          server: "uv",
+          source: bin._tag,
+          version,
+        });
+        return bin;
+      }).pipe(
+        Effect.provideService(VsCode, code),
+        Effect.provideService(CommandExecutor.CommandExecutor, executor),
+        Effect.provideService(Scope.Scope, scope),
       ),
     );
 
-    if (Option.isNone(uvBinary.version)) {
-      yield* code.window.showWarningMessage(
-        "Unable to determine uv version. Some features may not work correctly.",
+    const uv = (options: Parameters<ReturnType<typeof createUv>>[0]) =>
+      Effect.flatMap(uvBinary, (bin) =>
+        createUv(bin, executor, channel)(options),
       );
-    }
-
-    {
-      const version = Option.match(uvBinary.version, {
-        onSome: (v) => v.version,
-        onNone: () => "unknown",
-      });
-
-      yield* telemetry.binaryResolved({
-        server: "uv",
-        source: uvBinary._tag,
-        version,
-      });
-    }
-
-    const uv = createUv(uvBinary, executor, channel);
 
     return {
       bin: uvBinary,

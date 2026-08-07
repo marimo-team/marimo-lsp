@@ -54,7 +54,8 @@ export class HealthService extends Effect.Service<HealthService>()(
           // LSP Status
           lines.push("Language Server (LSP):");
 
-          UvBin.$match(uv.bin, {
+          const uvBin = yield* uv.bin;
+          UvBin.$match(uvBin, {
             Bundled: (bin) =>
               lines.push(`\tUV Bin: Bundled (${bin.executable})`),
             Default: (bin) =>
@@ -65,8 +66,8 @@ export class HealthService extends Effect.Service<HealthService>()(
               lines.push(`\tUV Bin: Discovered (${bin.executable})`),
           });
 
-          if (Option.isSome(uv.bin.version)) {
-            lines.push(`\tUV: ${uv.bin.version.value.format()} ✓`);
+          if (Option.isSome(uvBin.version)) {
+            lines.push(`\tUV: ${uvBin.version.value.format()} ✓`);
           } else {
             lines.push("\tUV: Not found ✗");
           }
@@ -208,7 +209,7 @@ export class HealthService extends Effect.Service<HealthService>()(
           lines.push(`\tNode version: ${NodeProcess.version} `);
           lines.push("");
 
-          if (UvBin.$is("Default")(uv.bin)) {
+          if (UvBin.$is("Default")(uvBin)) {
             // If using default UV (i.e., "uv"), show PATH for debugging
 
             // PATH (formatted for readability)
