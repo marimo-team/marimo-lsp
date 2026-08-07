@@ -400,11 +400,11 @@ async def test_marimo_get_package_list_venv_no_session(
     )
 
     # Endpoint is session-free; uv lists packages from the executable directly.
-    # `marimo` is a runtime dep of marimo-lsp, so it must appear when listing
+    # `marimo-base` is a runtime dep of marimo-lsp, so it must appear when listing
     # against `sys.executable`. Asserting on it catches a regression to `[]`.
     assert result is not None
     names = {p["name"] for p in result["packages"]}
-    assert "marimo" in names, f"expected marimo in package list, got {names}"
+    assert "marimo-base" in names, f"expected marimo-base in package list, got {names}"
 
 
 @pytest.mark.asyncio

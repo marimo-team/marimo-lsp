@@ -7,7 +7,7 @@ exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for 
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
-marimo = false
+marimo-base = false
 
 [[package]]
 name = "anyio"
@@ -416,7 +416,7 @@ wheels = [
 ]
 
 [[package]]
-name = "marimo"
+name = "marimo-base"
 version = "0.23.16"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
@@ -440,9 +440,9 @@ dependencies = [
     { name = "uvicorn", marker = "sys_platform != 'emscripten'" },
     { name = "websockets", marker = "sys_platform != 'emscripten'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/83/c0/b6b7101dc9d3760c51d67714d4547047cb2c29c11f26691bed6a64d8a995/marimo-0.23.16.tar.gz", hash = "sha256:378c892f0e1bc3985bc0b5b61109078e09fc767438b95234bfec9faa45858c98", size = 38789959, upload-time = "2026-07-31T20:04:47.92Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/39/7d1fac9c337465e666142370d1c7fff928e9ab3eeab24ef8345bd5985884/marimo_base-0.23.16.tar.gz", hash = "sha256:5ea00af7034b9c9c92b8f2311d5226b7a8171701bf88fdc22e9f16fbc2410229", size = 1639775, upload-time = "2026-07-31T20:01:34.008Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/7a/db0583b21d1f03403fc26800cb4638f59e95a33efd333f7a4d45ac348b82/marimo-0.23.16-py3-none-any.whl", hash = "sha256:e0bba0a44b395d402072c65d686fb459bd8955c9ab8b0d6135a22f729c989373", size = 39241287, upload-time = "2026-07-31T20:04:43.678Z" },
+    { url = "https://files.pythonhosted.org/packages/81/67/3599202da0bc2f827186f4d1ac6bfcd8471884d1eeb4362ae722d32557c7/marimo_base-0.23.16-py3-none-any.whl", hash = "sha256:96c5db9e96526fc19ad2c20640d19c9de8be2b296c176e0236add6b587585928", size = 1880917, upload-time = "2026-07-31T20:01:32.45Z" },
 ]
 
 [[package]]
@@ -452,7 +452,7 @@ source = { editable = "." }
 dependencies = [
     { name = "jupytext" },
     { name = "lsprotocol" },
-    { name = "marimo" },
+    { name = "marimo-base" },
     { name = "pygls" },
     { name = "typing-extensions" },
 ]
@@ -472,7 +472,7 @@ dev = [
 requires-dist = [
     { name = "jupytext", specifier = "==1.19.5" },
     { name = "lsprotocol", specifier = "==2025.0.0" },
-    { name = "marimo", specifier = "==0.23.16" },
+    { name = "marimo-base", specifier = "==0.23.16" },
     { name = "pygls", specifier = "==2.1.1" },
     { name = "typing-extensions", specifier = ">=4.15.0" },
 ]
