@@ -5,45 +5,13 @@ import * as NodePath from "node:path";
 import type { loadPyodide as LoadPyodide } from "pyodide";
 import { StreamMessageReader, StreamMessageWriter } from "vscode-jsonrpc/node";
 
-import { Processes } from "./wasm/Processes.ts";
+import {
+  WasmBridgeRuntime,
+  type WasmModule,
+} from "./wasm/WasmBridgeRuntime.ts";
 
 interface PyodideModule {
   readonly loadPyodide: typeof LoadPyodide;
-}
-
-interface WasmBridge {
-  readonly handle_message: (messageJson: string) => Promise<void>;
-  readonly handle_kernel_bytes: (processId: string, chunk: Uint8Array) => void;
-  readonly handle_kernel_exit: (
-    processId: string,
-    code: number | null,
-    signal: string | null,
-  ) => void;
-  readonly close: () => void;
-  readonly destroy: () => void;
-}
-
-interface BytesProxy {
-  readonly toJs: () => unknown;
-  readonly destroy: () => void;
-}
-
-function takeBytes(value: Uint8Array | BytesProxy): Uint8Array {
-  if (value instanceof Uint8Array) return value;
-  const converted = value.toJs();
-  value.destroy();
-  if (!(converted instanceof Uint8Array)) {
-    throw new TypeError("Python bytes did not convert to Uint8Array");
-  }
-  return converted;
-}
-
-interface WasmModule {
-  readonly create_bridge: (
-    writeMessage: (messageJson: string) => void,
-    processes: object,
-  ) => WasmBridge;
-  readonly destroy: () => void;
 }
 
 function isPyodideModule(value: unknown): value is PyodideModule {
@@ -98,23 +66,9 @@ shutil.unpack_archive("/marimo-lsp-site-packages.zip", sysconfig.get_path("purel
     throw new TypeError("Bundled marimo_lsp.wasm module is invalid");
   }
   const writer = new StreamMessageWriter(process.stdout);
-  let bridge: WasmBridge | undefined;
-  const processes = new Processes({
-    stdout: (processId, chunk) => bridge?.handle_kernel_bytes(processId, chunk),
-    exited: (processId, code, signal) =>
-      bridge?.handle_kernel_exit(processId, code, signal),
-  });
-  const processCallbacks = {
-    spawn: (processId: string, executable: string, workingDirectory: string) =>
-      processes.spawn(processId, executable, workingDirectory),
-    write: (processId: string, chunk: Uint8Array | BytesProxy) => {
-      processes.write(processId, takeBytes(chunk));
-    },
-    close: (processId: string) => processes.close(processId),
-  };
-  bridge = imported.create_bridge((messageJson: string) => {
+  const runtime = new WasmBridgeRuntime(imported, (messageJson: string) => {
     void writer.write(JSON.parse(messageJson));
-  }, processCallbacks);
+  });
   const reader = new StreamMessageReader(process.stdin);
   let resolveExit = () => {};
   const exitRequested = new Promise<void>((resolve) => {
@@ -125,8 +79,8 @@ shutil.unpack_archive("/marimo-lsp-site-packages.zip", sysconfig.get_path("purel
       resolveExit();
       return;
     }
-    void bridge
-      .handle_message(JSON.stringify(message))
+    void runtime
+      .handleMessage(JSON.stringify(message))
       .catch((error: unknown) => {
         console.error(error);
         process.exitCode = 1;
@@ -138,12 +92,9 @@ shutil.unpack_archive("/marimo-lsp-site-packages.zip", sysconfig.get_path("purel
     process.stdin.once("error", reject);
   });
   await Promise.race([stdinEnded, exitRequested]);
-  processes.closeAll();
   reader.dispose();
   process.stdin.pause();
-  bridge.close();
-  bridge.destroy();
-  imported.destroy();
+  runtime.close();
 }
 
 void main().catch((error: unknown) => {

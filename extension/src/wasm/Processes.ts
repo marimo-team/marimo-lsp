@@ -81,7 +81,7 @@ export class Processes {
 
   close(processId: string): void {
     const state = this.#processes.get(processId);
-    if (state === undefined) return;
+    if (state === undefined || state.expectedClose) return;
     state.expectedClose = true;
     state.input.end();
   }
