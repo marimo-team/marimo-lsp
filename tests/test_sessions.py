@@ -4,10 +4,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import threading
-from typing import cast
-from unittest.mock import Mock
+from typing import TYPE_CHECKING, cast
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from marimo._config.config import DEFAULT_CONFIG, MarimoConfig, RuntimeConfig
@@ -22,14 +23,22 @@ from marimo._session.managers import IPCQueueManagerImpl
 from marimo._session.state.session_view import SessionView
 from marimo._types.ids import CellId_t, RequestId, UIElementId
 
+from marimo_lsp.kernels import KernelOpenError
+from marimo_lsp.kernels.native import NativeKernel
 from marimo_lsp.models import SessionInfo
 from marimo_lsp.sessions import Session, Sessions, _OperationSink
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def _make_session() -> tuple[Session, Mock]:
     session = Session.__new__(Session)
     ipc_queue_manager = Mock()
-    session._queue_manager = IPCQueueManagerImpl.from_ipc(ipc_queue_manager)
+    session._kernel = NativeKernel(
+        IPCQueueManagerImpl.from_ipc(ipc_queue_manager),
+        Mock(executable="python", working_directory="/workspace"),
+    )
     session.session_view = SessionView()
     session._on_change = Mock()
     session._status = "idle"
@@ -128,29 +137,6 @@ def test_detach_only_overrides_auto_reload() -> None:
     assert session.attached
 
 
-def test_failed_kernel_start_closes_replacement_resources() -> None:
-    queue_manager = Mock()
-    kernel_manager = Mock()
-    kernel_manager.kernel_task = Mock()
-    kernel_manager.start_kernel.side_effect = RuntimeError("failed to start")
-    config_manager = Mock()
-    config_manager.get_config.return_value = DEFAULT_CONFIG
-
-    with pytest.raises(RuntimeError, match="failed to start"):
-        Session(
-            initialization_id="session",
-            notebook_uri="file:///test.py",
-            operation_sink=Mock(),
-            queue_manager=queue_manager,
-            kernel_manager=kernel_manager,
-            app_file_manager=Mock(),
-            config_manager=config_manager,
-        )
-
-    kernel_manager.close_kernel.assert_called_once_with()
-    queue_manager.close_queues.assert_called_once_with()
-
-
 def test_detached_session_keeps_auto_reload_paused_after_config_update() -> None:
     session, queue_manager = _make_session()
     session._config_manager = Mock()
@@ -204,7 +190,7 @@ def test_session_status_tracks_running_and_completed_operations() -> None:
 
 def test_sessions_changed_notification_contains_public_snapshot() -> None:
     server = Mock()
-    sessions = Sessions(server)
+    sessions = Sessions(server, kernels=Mock())
     session = Mock(spec=Session)
     session.describe.return_value = SessionInfo(
         session_id="session",
@@ -239,28 +225,30 @@ def test_sessions_changed_notification_contains_public_snapshot() -> None:
     )
 
 
-def test_start_reuses_session_with_same_executable() -> None:
-    sessions = Sessions(Mock())
+@pytest.mark.asyncio
+async def test_start_reuses_session_with_same_executable() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)
     current.executable = "/usr/bin/python"
     sessions._sessions["file:///test.py"] = current
-    sessions._create = Mock()
+    sessions._create = AsyncMock()
 
-    result = sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
+    result = await sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
 
     assert result is current
     current.attach.assert_called_once_with()
     sessions._create.assert_not_called()
 
 
-def test_start_reuses_same_executable_despite_new_working_directory() -> None:
-    sessions = Sessions(Mock())
+@pytest.mark.asyncio
+async def test_start_reuses_same_executable_despite_new_working_directory() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)
     current.executable = "/usr/bin/python"
     sessions._sessions["file:///test.py"] = current
-    sessions._create = Mock()
+    sessions._create = AsyncMock()
 
-    result = sessions.start(
+    result = await sessions.start(
         "file:///test.py", "/usr/bin/python", "/new/working/directory"
     )
 
@@ -269,17 +257,18 @@ def test_start_reuses_same_executable_despite_new_working_directory() -> None:
     sessions._create.assert_not_called()
 
 
-def test_start_replaces_session_after_replacement_starts() -> None:
-    sessions = Sessions(Mock())
+@pytest.mark.asyncio
+async def test_start_replaces_session_after_replacement_starts() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)
     current.executable = "/old/python"
     replacement = Mock(spec=Session)
     replacement.describe.return_value = Mock()
     sessions._sessions["file:///test.py"] = current
-    sessions._create = Mock(return_value=replacement)
+    sessions._create = AsyncMock(return_value=replacement)
     sessions._notify_changed = Mock()
 
-    result = sessions.start("file:///test.py", "/new/python", "/workspace")
+    result = await sessions.start("file:///test.py", "/new/python", "/workspace")
 
     assert result is replacement
     assert sessions.get("file:///test.py") is replacement
@@ -287,22 +276,169 @@ def test_start_replaces_session_after_replacement_starts() -> None:
     sessions._notify_changed.assert_called_once_with()
 
 
-def test_failed_replacement_preserves_existing_session() -> None:
-    sessions = Sessions(Mock())
+@pytest.mark.asyncio
+async def test_failed_replacement_preserves_existing_session() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)
     current.executable = "/old/python"
     sessions._sessions["file:///test.py"] = current
-    sessions._create = Mock(side_effect=RuntimeError("failed to start"))
+    sessions._create = AsyncMock(side_effect=RuntimeError("failed to start"))
 
     with pytest.raises(RuntimeError, match="failed to start"):
-        sessions.start("file:///test.py", "/new/python", "/workspace")
+        await sessions.start("file:///test.py", "/new/python", "/workspace")
 
     assert sessions.get("file:///test.py") is current
     current.close.assert_not_called()
 
 
-def test_restart_replaces_kernel_without_reloading_closed_notebook() -> None:
-    sessions = Sessions(Mock())
+@pytest.mark.asyncio
+async def test_concurrent_starts_share_one_kernel_launch() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    launch_started = asyncio.Event()
+    finish_launch = asyncio.Event()
+    replacement = Mock(spec=Session)
+    replacement.executable = "/usr/bin/python"
+    replacement.describe.return_value = Mock()
+
+    async def create(*_args: object, **_kwargs: object) -> Session:
+        launch_started.set()
+        await finish_launch.wait()
+        return replacement
+
+    sessions._create = AsyncMock(side_effect=create)
+    sessions._notify_changed = Mock()
+
+    first = asyncio.create_task(
+        sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
+    )
+    await launch_started.wait()
+    second = asyncio.create_task(
+        sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
+    )
+    await asyncio.sleep(0)
+
+    sessions._create.assert_awaited_once()
+    finish_launch.set()
+
+    assert await first is replacement
+    assert await second is replacement
+    sessions._create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_during_start_discards_launched_kernel() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    launch_started = asyncio.Event()
+    finish_launch = asyncio.Event()
+    replacement = Mock(spec=Session)
+
+    async def create(*_args: object, **_kwargs: object) -> Session:
+        launch_started.set()
+        await finish_launch.wait()
+        return replacement
+
+    sessions._create = AsyncMock(side_effect=create)
+    start = asyncio.create_task(
+        sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
+    )
+    await launch_started.wait()
+
+    sessions.close("file:///test.py")
+    finish_launch.set()
+
+    with pytest.raises(KernelOpenError, match="changed while its kernel was starting"):
+        await start
+    assert sessions.get("file:///test.py") is None
+    replacement.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_session_creation_failure_closes_launched_kernel() -> None:
+    kernel = Mock()
+    kernels = Mock()
+    kernels.launch = AsyncMock(return_value=kernel)
+    sessions = Sessions(Mock(), kernels=kernels)
+    previous = Mock(spec=Session)
+    previous.app_file_manager = Mock()
+    previous.config_manager = Mock()
+    previous.config_manager.get_config.side_effect = RuntimeError("bad config")
+    previous.session_view = Mock()
+    previous.started_at = 42
+
+    with pytest.raises(RuntimeError, match="bad config"):
+        await sessions._create(
+            "file:///test.py",
+            "/usr/bin/python",
+            "/workspace",
+            previous=previous,
+        )
+
+    kernel.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_startup_message_handoff_preserves_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = KernelMessage(b'{"op": "first"}')
+    second = KernelMessage(b'{"op": "second"}')
+    third = KernelMessage(b'{"op": "third"}')
+    kernel = Mock()
+    receive_callback: list[Callable[[KernelMessage], None]] = []
+
+    async def launch(**kwargs: object) -> object:
+        receive = cast("Callable[[KernelMessage], None]", kwargs["receive"])
+        receive_callback.append(receive)
+        delivered = threading.Event()
+
+        def deliver_initial_messages() -> None:
+            receive(first)
+            receive(second)
+            delivered.set()
+
+        threading.Thread(target=deliver_initial_messages, daemon=True).start()
+        assert await asyncio.to_thread(delivered.wait, 1)
+        return kernel
+
+    kernels = Mock()
+    kernels.launch = AsyncMock(side_effect=launch)
+    sessions = Sessions(Mock(), kernels=kernels)
+    previous = Mock(spec=Session)
+    previous.app_file_manager = Mock()
+    previous.config_manager = Mock()
+    previous.config_manager.get_config.return_value = DEFAULT_CONFIG
+    previous.session_view = Mock()
+    previous.started_at = 42
+    loop_thread = threading.get_ident()
+    observed: list[tuple[KernelMessage, int]] = []
+    third_delivered = asyncio.Event()
+
+    def accept(_session: Session, message: KernelMessage) -> None:
+        observed.append((message, threading.get_ident()))
+        if message == third:
+            third_delivered.set()
+
+    monkeypatch.setattr(Session, "accept_kernel_message", accept)
+
+    await sessions._create(
+        "file:///test.py",
+        "/usr/bin/python",
+        "/workspace",
+        previous=previous,
+    )
+    threading.Thread(target=receive_callback[0], args=(third,), daemon=True).start()
+    await asyncio.wait_for(third_delivered.wait(), timeout=1)
+
+    assert observed == [
+        (first, loop_thread),
+        (second, loop_thread),
+        (third, loop_thread),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_restart_replaces_kernel_without_reloading_closed_notebook() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)
     current.executable = "/usr/bin/python"
     current.working_directory = "/workspace"
@@ -311,10 +447,10 @@ def test_restart_replaces_kernel_without_reloading_closed_notebook() -> None:
     current.started_at = 42
     replacement = Mock(spec=Session)
     sessions._sessions["file:///test.py"] = current
-    sessions._create = Mock(return_value=replacement)
+    sessions._create = AsyncMock(return_value=replacement)
     sessions._notify_changed = Mock()
 
-    result = sessions.restart(
+    result = await sessions.restart(
         "file:///test.py",
         executable="/usr/bin/python",
         working_directory="/workspace",
@@ -332,13 +468,14 @@ def test_restart_replaces_kernel_without_reloading_closed_notebook() -> None:
     sessions._notify_changed.assert_called_once_with()
 
 
-def test_restore_uses_requested_working_directory() -> None:
-    sessions = Sessions(Mock())
+@pytest.mark.asyncio
+async def test_restore_uses_requested_working_directory() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
     replacement = Mock(spec=Session)
-    sessions._create = Mock(return_value=replacement)
+    sessions._create = AsyncMock(return_value=replacement)
     sessions._notify_changed = Mock()
 
-    result = sessions.restart(
+    result = await sessions.restart(
         "file:///test.py",
         executable="/usr/bin/python",
         working_directory="/workspace",
@@ -351,11 +488,12 @@ def test_restore_uses_requested_working_directory() -> None:
     )
 
 
-def test_restart_does_not_restore_a_missing_session() -> None:
-    sessions = Sessions(Mock())
-    sessions._create = Mock()
+@pytest.mark.asyncio
+async def test_restart_does_not_restore_a_missing_session() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    sessions._create = AsyncMock()
 
-    result = sessions.restart(
+    result = await sessions.restart(
         "file:///test.py",
         executable="/usr/bin/python",
         working_directory="/workspace",
@@ -368,7 +506,7 @@ def test_restart_does_not_restore_a_missing_session() -> None:
 def test_move_preserves_live_session() -> None:
     server = Mock()
     server.workspace.notebook_documents = {}
-    sessions = Sessions(server)
+    sessions = Sessions(server, kernels=Mock())
     current = Mock(spec=Session)
     sessions._sessions["file:///old.py"] = current
     sessions._notify_changed = Mock()
@@ -382,7 +520,7 @@ def test_move_preserves_live_session() -> None:
 
 
 def test_close_all_clears_collection_and_notifies_once() -> None:
-    sessions = Sessions(Mock())
+    sessions = Sessions(Mock(), kernels=Mock())
     first = Mock(spec=Session)
     second = Mock(spec=Session)
     sessions._sessions = {

@@ -250,7 +250,7 @@ async def test_file_notebook_did_close_detaches_session() -> None:
         ),
         patch.object(server_module.atexit, "register"),
     ):
-        server = server_module.create_server()
+        server = server_module.create_server(kernels=MagicMock())
 
     uri = "file:///test.py"
     did_close = server.protocol.fm.features[lsp.NOTEBOOK_DOCUMENT_DID_CLOSE]

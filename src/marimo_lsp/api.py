@@ -240,7 +240,7 @@ async def run(
     args: SessionCommand[ExecuteCellsRequest],
 ) -> None:
     logger.info(f"run for {args.notebook_uri}")
-    session = ctx.sessions.start(
+    session = await ctx.sessions.start(
         args.notebook_uri, args.executable, args.working_directory
     )
     session.mark_running()
@@ -366,7 +366,7 @@ async def restart_session(
     args: NotebookCommand[RestartSessionRequest],
 ) -> None:
     logger.info(f"restart_session for {args.notebook_uri}")
-    restarted = ctx.sessions.restart(
+    restarted = await ctx.sessions.restart(
         args.notebook_uri,
         executable=args.inner.executable,
         working_directory=args.inner.working_directory,
@@ -428,7 +428,7 @@ async def execute_scratch(
         )
         return
 
-    session = ctx.sessions.start(
+    session = await ctx.sessions.start(
         args.notebook_uri, args.executable, args.working_directory
     )
     session.mark_running()

@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-import queue
 import threading
 import time
 import typing
@@ -14,7 +14,6 @@ from uuid import uuid4
 
 import msgspec
 from marimo._config.manager import get_default_config_manager
-from marimo._ipc import QueueManager as IpcQueues
 from marimo._runtime.commands import (
     CodeCompletionCommand,
     CommandMessage,
@@ -24,11 +23,10 @@ from marimo._runtime.commands import (
     UpdateUIElementCommand,
     UpdateUserConfigCommand,
 )
-from marimo._session.managers import IPCQueueManagerImpl as IpcQueueManager
 from marimo._session.state.session_view import SessionView
 
 from marimo_lsp.app_file_manager import LspAppFileManager, sync_app_with_workspace
-from marimo_lsp.kernel_manager import LspKernelManager
+from marimo_lsp.kernels import KernelOpenError
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import ListSessionsResponse, SessionInfo
 
@@ -44,10 +42,11 @@ if TYPE_CHECKING:
     from marimo._config.manager import MarimoConfigManager
     from marimo._messaging.types import KernelMessage
     from marimo._session.requests import InstantiateNotebookRequest
-    from marimo._session.types import QueueManager
     from marimo._types.ids import ConsumerId
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace
+
+    from marimo_lsp.kernels import Kernel, Kernels
 
 
 logger = get_logger()
@@ -103,8 +102,7 @@ class Session:
         initialization_id: str,
         notebook_uri: str,
         operation_sink: _OperationSink,
-        queue_manager: QueueManager,
-        kernel_manager: LspKernelManager,
+        kernel: Kernel,
         app_file_manager: LspAppFileManager,
         config_manager: MarimoConfigManager,
         on_change: typing.Callable[[], None] | None = None,
@@ -119,43 +117,25 @@ class Session:
         self.session_view = session_view if session_view is not None else SessionView()
 
         self._operation_sink = operation_sink
-        self._queue_manager = queue_manager
-        self._kernel_manager = kernel_manager
         self._closed = False
-        self._listener_thread: threading.Thread | None = None
         self._runtime_config = config_manager.get_config(hide_secrets=False)
         self.started_at = started_at if started_at is not None else time.time()
         self._status: typing.Literal["idle", "running"] = "idle"
         self._on_change = on_change or (lambda: None)
         self._state_lock = threading.RLock()
 
-        try:
-            self._kernel_manager.start_kernel()
-        except Exception:
-            # Session construction transfers ownership of the IPC transport.
-            # Release it when startup fails before a Session can be returned.
-            if self._kernel_manager.kernel_task is not None:
-                try:
-                    self._kernel_manager.close_kernel()
-                except Exception:
-                    logger.exception("Error closing partially started kernel")
-            try:
-                self._queue_manager.close_queues()
-            except Exception:
-                logger.exception("Error closing queues after failed kernel start")
-            raise
-        self._start_message_listener()
+        self._kernel = kernel
         logger.info(f"Started session {initialization_id}")
 
     @property
     def executable(self) -> str:
         """Return the Python executable used by this session."""
-        return self._kernel_manager.executable
+        return self._kernel.executable
 
     @property
     def working_directory(self) -> str:
         """Return the configured kernel working directory."""
-        return self._kernel_manager.working_directory
+        return self._kernel.working_directory
 
     @property
     def attached(self) -> bool:
@@ -200,26 +180,13 @@ class Session:
             app=self._app_file_manager.app,
         )
 
-    def _start_message_listener(self) -> None:
-        """Start the background kernel-message listener."""
-
-        def listen() -> None:
-            stream_queue = self._queue_manager.stream_queue
-            if stream_queue is None:
-                return
-            while not self._closed:
-                try:
-                    msg = stream_queue.get(timeout=0.1)
-                    if msg is None:
-                        return
-                    self.session_view.add_raw_notification(msg)
-                    self._update_status(msg)
-                    self._operation_sink.notify(msg)
-                except queue.Empty:
-                    continue
-
-        self._listener_thread = threading.Thread(target=listen, daemon=True)
-        self._listener_thread.start()
+    def accept_kernel_message(self, message: KernelMessage) -> None:
+        """Record and forward an operation received from the kernel."""
+        if self._closed:
+            return
+        self.session_view.add_raw_notification(message)
+        self._update_status(message)
+        self._operation_sink.notify(message)
 
     def _update_status(self, message: KernelMessage) -> None:
         try:
@@ -267,11 +234,11 @@ class Session:
 
     def put_input(self, text: str) -> None:
         """Send user input to the kernel's stdin."""
-        self._queue_manager.input_queue.put(text)
+        self._kernel.input(text)
 
     def try_interrupt(self) -> None:
         """Interrupt the kernel."""
-        self._kernel_manager.interrupt_kernel()
+        self._kernel.interrupt()
 
     def put_control_request(
         self,
@@ -282,7 +249,7 @@ class Session:
         del from_consumer_id
         if not isinstance(request, CodeCompletionCommand):
             self.session_view.add_control_request(request)
-        self._queue_manager.put_control_request(request)
+        self._kernel.send(request)
 
     def _effective_runtime(self, config: MarimoConfig) -> MarimoConfig:
         if self.attached:
@@ -365,18 +332,38 @@ class Session:
         self._closed = True
         self._on_change = lambda: None
         logger.info(f"Closing session {self.initialization_id}")
-        self._kernel_manager.close_kernel()
-        self._queue_manager.close_queues()
+        self._kernel.close()
         self._operation_sink.detach()
 
 
 class Sessions:
     """The language server's collection of live kernel sessions."""
 
-    def __init__(self, server: LanguageServer) -> None:
+    def __init__(
+        self,
+        server: LanguageServer,
+        *,
+        kernels: Kernels,
+    ) -> None:
         self._server = server
+        self._kernels = kernels
         self._sessions: dict[str, Session] = {}
         self._lock = threading.RLock()
+        self._lifecycle_locks: dict[str, asyncio.Lock] = {}
+        self._lifecycle_versions: dict[str, int] = {}
+
+    def _lifecycle_lock(self, notebook_uri: str) -> asyncio.Lock:
+        with self._lock:
+            return self._lifecycle_locks.setdefault(notebook_uri, asyncio.Lock())
+
+    def _lifecycle_version(self, notebook_uri: str) -> int:
+        with self._lock:
+            return self._lifecycle_versions.get(notebook_uri, 0)
+
+    def _invalidate_lifecycle(self, notebook_uri: str) -> None:
+        self._lifecycle_versions[notebook_uri] = (
+            self._lifecycle_versions.get(notebook_uri, 0) + 1
+        )
 
     def __iter__(self) -> Iterator[Session]:
         """Iterate over the live sessions."""
@@ -406,7 +393,7 @@ class Sessions:
         with self._lock:
             return self._sessions.get(notebook_uri)
 
-    def start(
+    async def start(
         self,
         notebook_uri: str,
         executable: str,
@@ -417,21 +404,35 @@ class Sessions:
         A different executable replaces the existing session only after the
         replacement has started successfully.
         """
-        current = self.get(notebook_uri)
-        if current is not None and current.executable == executable:
-            current.attach()
-            return current
+        async with self._lifecycle_lock(notebook_uri):
+            current = self.get(notebook_uri)
+            if current is not None and current.executable == executable:
+                current.attach()
+                return current
 
-        replacement = self._create(notebook_uri, executable, working_directory)
-        with self._lock:
-            self._sessions[notebook_uri] = replacement
-            replacement.set_on_change(self._notify_changed)
-        if current is not None:
-            self._close(current, notebook_uri)
-        self._notify_changed()
-        return replacement
+            version = self._lifecycle_version(notebook_uri)
+            replacement = await self._create(
+                notebook_uri, executable, working_directory
+            )
+            with self._lock:
+                if version != self._lifecycle_version(notebook_uri):
+                    superseded = True
+                else:
+                    superseded = False
+                    self._sessions[notebook_uri] = replacement
+                    replacement.set_on_change(self._notify_changed)
+            if superseded:
+                self._close(replacement, notebook_uri)
+                message = (
+                    f"Session changed while its kernel was starting: {notebook_uri}"
+                )
+                raise KernelOpenError(message)
+            if current is not None:
+                self._close(current, notebook_uri)
+            self._notify_changed()
+            return replacement
 
-    def _create(
+    async def _create(
         self,
         notebook_uri: str,
         executable: str,
@@ -450,31 +451,56 @@ class Sessions:
             config_manager = get_default_config_manager(
                 current_path=app_file_manager.path
             )
-        ipc_queues, connection_info = IpcQueues.create()
-        queue_manager = IpcQueueManager.from_ipc(ipc_queues)
-        kernel_manager = LspKernelManager(
-            executable=executable,
-            queue_manager=queue_manager,
-            app_file_manager=app_file_manager,
-            config_manager=config_manager,
-            connection_info=connection_info,
-            working_directory=working_directory,
-        )
+        initialization_id = str(uuid4())
+        pending_messages: list[KernelMessage] = []
+        session: Session | None = None
+        loop = asyncio.get_running_loop()
+
+        def deliver(message: KernelMessage) -> None:
+            if session is None:
+                pending_messages.append(message)
+            else:
+                session.accept_kernel_message(message)
+
+        def receive(message: KernelMessage) -> None:
+            # Kernel adapters may deliver from another thread. Serialize all
+            # state updates and language-server notifications on the LSP loop.
+            loop.call_soon_threadsafe(deliver, message)
 
         logger.info(f"Starting session for {notebook_uri}")
-        return Session(
-            initialization_id=str(uuid4()),
-            notebook_uri=notebook_uri,
-            operation_sink=_OperationSink(self._server, notebook_uri),
-            queue_manager=queue_manager,
-            kernel_manager=kernel_manager,
+        kernel = await self._kernels.launch(
+            executable=executable,
             app_file_manager=app_file_manager,
             config_manager=config_manager,
-            session_view=previous.session_view if previous else None,
-            started_at=previous.started_at if previous else None,
+            working_directory=working_directory,
+            receive=receive,
         )
+        try:
+            session = Session(
+                initialization_id=initialization_id,
+                notebook_uri=notebook_uri,
+                operation_sink=_OperationSink(self._server, notebook_uri),
+                kernel=kernel,
+                app_file_manager=app_file_manager,
+                config_manager=config_manager,
+                session_view=previous.session_view if previous else None,
+                started_at=previous.started_at if previous else None,
+            )
+            for message in pending_messages:
+                session.accept_kernel_message(message)
+            pending_messages.clear()
+        except BaseException:
+            try:
+                if session is None:
+                    kernel.close()
+                else:
+                    session.close()
+            except Exception:
+                logger.exception("Error closing kernel after session creation failed")
+            raise
+        return session
 
-    def restart(
+    async def restart(
         self,
         notebook_uri: str,
         *,
@@ -483,38 +509,52 @@ class Sessions:
         create_if_missing: bool = False,
     ) -> Session | None:
         """Atomically replace a live session's kernel."""
-        current = self.get(notebook_uri)
-        if current is None:
-            if not create_if_missing:
+        async with self._lifecycle_lock(notebook_uri):
+            current = self.get(notebook_uri)
+            if current is None and not create_if_missing:
                 return None
-            replacement = self._create(notebook_uri, executable, working_directory)
+
+            version = self._lifecycle_version(notebook_uri)
+            if current is None:
+                replacement = await self._create(
+                    notebook_uri, executable, working_directory
+                )
+            else:
+                replacement = await self._create(
+                    notebook_uri,
+                    current.executable,
+                    current.working_directory,
+                    previous=current,
+                )
+                if not current.attached:
+                    replacement.detach(notify=False)
+
             with self._lock:
-                self._sessions[notebook_uri] = replacement
-                replacement.set_on_change(self._notify_changed)
+                if version != self._lifecycle_version(notebook_uri):
+                    superseded = True
+                else:
+                    superseded = False
+                    self._sessions[notebook_uri] = replacement
+                    replacement.set_on_change(self._notify_changed)
+            if superseded:
+                self._close(replacement, notebook_uri)
+                message = (
+                    f"Session changed while its kernel was starting: {notebook_uri}"
+                )
+                raise KernelOpenError(message)
+            if current is not None:
+                self._close(current, notebook_uri)
             self._notify_changed()
             return replacement
-
-        replacement = self._create(
-            notebook_uri,
-            current.executable,
-            current.working_directory,
-            previous=current,
-        )
-        if not current.attached:
-            replacement.detach(notify=False)
-        with self._lock:
-            self._sessions[notebook_uri] = replacement
-            replacement.set_on_change(self._notify_changed)
-        self._close(current, notebook_uri)
-        self._notify_changed()
-        return replacement
 
     def move(self, notebook_uri: str, new_notebook_uri: str) -> None:
         """Move a live session to a renamed notebook URI."""
         with self._lock:
+            self._invalidate_lifecycle(notebook_uri)
             session = self._sessions.pop(notebook_uri, None)
             if session is None:
                 return
+            self._invalidate_lifecycle(new_notebook_uri)
             replaced = self._sessions.pop(new_notebook_uri, None)
             self._sessions[new_notebook_uri] = session
         if replaced is not None:
@@ -551,6 +591,7 @@ class Sessions:
     def close(self, notebook_uri: str) -> None:
         """Close and forget a notebook's session."""
         with self._lock:
+            self._invalidate_lifecycle(notebook_uri)
             session = self._sessions.pop(notebook_uri, None)
         if session is None:
             return
@@ -571,6 +612,8 @@ class Sessions:
         """Close all live sessions."""
         logger.info("Closing all sessions")
         with self._lock:
+            for notebook_uri in self._lifecycle_locks:
+                self._invalidate_lifecycle(notebook_uri)
             live = self._sessions
             self._sessions = {}
         for notebook_uri, session in live.items():
