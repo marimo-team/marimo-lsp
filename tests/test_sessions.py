@@ -188,6 +188,33 @@ def test_session_status_tracks_running_and_completed_operations() -> None:
     assert session._on_change.call_count == 2
 
 
+def test_terminal_kernel_error_removes_live_session() -> None:
+    server = Mock()
+    sessions = Sessions(server, kernels=Mock())
+    session = Mock(spec=Session)
+    sessions._sessions["file:///test.py"] = session
+    sessions._notify_changed = Mock()
+
+    sessions._kernel_failed(session, "bridge exited")
+
+    assert sessions.get("file:///test.py") is None
+    session.close.assert_called_once_with()
+    sessions._notify_changed.assert_called_once_with()
+
+
+def test_terminal_kernel_operation_invokes_failure_callback() -> None:
+    session, _queue_manager = _make_session()
+    session._closed = False
+    session._operation_sink = Mock()
+    session._on_kernel_failure = Mock()
+    message = KernelMessage(b'{"op": "kernel-startup-error", "error": "bridge exited"}')
+
+    session.accept_kernel_message(message)
+
+    session._on_kernel_failure.assert_called_once_with(session, "bridge exited")
+    session._operation_sink.notify.assert_called_once_with(message)
+
+
 def test_sessions_changed_notification_contains_public_snapshot() -> None:
     server = Mock()
     sessions = Sessions(server, kernels=Mock())

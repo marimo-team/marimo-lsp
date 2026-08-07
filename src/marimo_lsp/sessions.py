@@ -122,6 +122,9 @@ class Session:
         self.started_at = started_at if started_at is not None else time.time()
         self._status: typing.Literal["idle", "running"] = "idle"
         self._on_change = on_change or (lambda: None)
+        self._on_kernel_failure: typing.Callable[[Session, str], None] = (
+            lambda _session, _error: None
+        )
         self._state_lock = threading.RLock()
 
         self._kernel = kernel
@@ -185,14 +188,16 @@ class Session:
         if self._closed:
             return
         self.session_view.add_raw_notification(message)
-        self._update_status(message)
+        kernel_error = self._update_status(message)
         self._operation_sink.notify(message)
+        if kernel_error is not None:
+            self._on_kernel_failure(self, kernel_error)
 
-    def _update_status(self, message: KernelMessage) -> None:
+    def _update_status(self, message: KernelMessage) -> str | None:
         try:
             operation = json.loads(message)
         except json.JSONDecodeError:
-            return
+            return None
 
         if operation.get("op") == "completed-run":
             self._set_status("idle")
@@ -201,6 +206,9 @@ class Session:
             "running",
         }:
             self._set_status("running")
+        elif operation.get("op") == "kernel-startup-error":
+            return str(operation.get("error", "Kernel bridge failed"))
+        return None
 
     def _set_status(self, status: typing.Literal["idle", "running"]) -> None:
         with self._state_lock:
@@ -231,6 +239,14 @@ class Session:
         """Install the callback after the session joins its owning collection."""
         with self._state_lock:
             self._on_change = on_change
+
+    def set_on_kernel_failure(
+        self,
+        on_kernel_failure: typing.Callable[[Session, str], None],
+    ) -> None:
+        """Install the callback for a terminal kernel transport failure."""
+        with self._state_lock:
+            self._on_kernel_failure = on_kernel_failure
 
     def put_input(self, text: str) -> None:
         """Send user input to the kernel's stdin."""
@@ -421,6 +437,7 @@ class Sessions:
                     superseded = False
                     self._sessions[notebook_uri] = replacement
                     replacement.set_on_change(self._notify_changed)
+                    replacement.set_on_kernel_failure(self._kernel_failed)
             if superseded:
                 self._close(replacement, notebook_uri)
                 message = (
@@ -536,6 +553,7 @@ class Sessions:
                     superseded = False
                     self._sessions[notebook_uri] = replacement
                     replacement.set_on_change(self._notify_changed)
+                    replacement.set_on_kernel_failure(self._kernel_failed)
             if superseded:
                 self._close(replacement, notebook_uri)
                 message = (
@@ -607,6 +625,20 @@ class Sessions:
             session.close()
         except Exception:
             logger.exception(f"Error closing session for {notebook_uri}")
+
+    def _kernel_failed(self, failed: Session, error: str) -> None:
+        """Remove a session whose ready kernel transport terminated."""
+        with self._lock:
+            notebook_uri = next(
+                (uri for uri, session in self._sessions.items() if session is failed),
+                None,
+            )
+            if notebook_uri is None:
+                return
+            self._sessions.pop(notebook_uri)
+        logger.error(f"Kernel failed for {notebook_uri}: {error}")
+        self._close(failed, notebook_uri)
+        self._notify_changed()
 
     def close_all(self) -> None:
         """Close all live sessions."""
