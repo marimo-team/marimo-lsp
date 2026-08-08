@@ -45,6 +45,7 @@
       ],
       "env": [
         "BUILD_NODE_VERSION",
+        "MARIMO_LSP_BUILD_PLATFORM",
         "MARIMO_LSP_UV_VERSION",
         "MARIMO_LSP_WASM_SOURCE_HASH"
       ],

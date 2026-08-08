@@ -134,6 +134,10 @@ NodeChildProcess.execFileSync("pnpm", ["exec", "turbo", "run", ...tasks], {
   env: {
     ...process.env,
     BUILD_NODE_VERSION: process.version,
+    // Keys build:wasm-lsp:bundle per OS: its output is platform-independent,
+    // but a cross-platform remote-cache hit would skip running the build
+    // script on the one platform (Windows) where its host quirks show up.
+    MARIMO_LSP_BUILD_PLATFORM: process.platform,
     ...(frontendSourceHash === undefined
       ? {}
       : { MARIMO_FRONTEND_SOURCE_HASH: frontendSourceHash }),

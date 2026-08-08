@@ -80,9 +80,16 @@ try {
 
   const micropip = pyodide.pyimport("micropip");
   try {
-    await micropip.install(
-      NodeUrl.pathToFileURL(NodePath.join(buildDir, wheel)).href,
+    // micropip opens file: URLs on the host filesystem as raw URL paths,
+    // which breaks on Windows: file:///C:/... is read as /C:/... (resolved
+    // against the current drive) and percent-escapes (e.g. %7E for the ~ in
+    // 8.3 temp paths) are never decoded. Stage the wheel inside the
+    // Emscripten FS instead.
+    pyodide.FS.writeFile(
+      `/${wheel}`,
+      NodeFs.readFileSync(NodePath.join(buildDir, wheel)),
     );
+    await micropip.install(`emfs:/${wheel}`);
   } finally {
     micropip.destroy();
   }

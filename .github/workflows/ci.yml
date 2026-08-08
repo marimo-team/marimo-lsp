@@ -158,8 +158,9 @@ jobs:
         run: pnpm test --coverage
         working-directory: marimo-lsp/extension
 
+      # Runs on every matrix OS: the release workflow builds this bundle on
+      # Windows too, and Windows-only breakage otherwise first surfaces there.
       - name: Build and test the WASM language server
-        if: runner.os == 'Linux'
         env:
           TURBO_TOKEN: ${{ steps.secrets.outputs.TURBO_TOKEN }}
         run: pnpm verify:wasm-lsp
