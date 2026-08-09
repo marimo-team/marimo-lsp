@@ -1,7 +1,10 @@
-import { expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref } from "effect";
+import * as NodeFs from "node:fs";
+import * as NodeOs from "node:os";
+import * as NodePath from "node:path";
 
-import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
+import { expect, it } from "@effect/vitest";
+import { Effect, Layer, Option, Ref, Stream } from "effect";
+
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Config } from "../../config/Config.ts";
 import { PythonEnvInvalidation } from "../../python/PythonEnvInvalidation.ts";
@@ -29,13 +32,19 @@ const controller: NotebookController = {
 
 const withTestCtx = Effect.fn(function* (options: {
   disableUvIntegration: boolean;
+  installAll?: boolean;
 }) {
   const prompts = yield* Ref.make(0);
+  const invalidations = yield* Ref.make(0);
   const vscode = yield* TestVsCode.make({
     window: {
-      showInformationMessage: <T extends string>() =>
+      showInformationMessage: (_message, messageOptions = {}) =>
         Ref.update(prompts, (count) => count + 1).pipe(
-          Effect.as(Option.none<T>()),
+          Effect.as(
+            options.installAll
+              ? Option.fromNullable(messageOptions.items?.[0])
+              : Option.none(),
+          ),
         ),
     },
     workspace: {
@@ -62,11 +71,16 @@ const withTestCtx = Effect.fn(function* (options: {
   const layer = Layer.mergeAll(
     vscode.layer,
     Config.Default.pipe(Layer.provide(vscode.layer)),
-    PythonEnvInvalidation.Default.pipe(
-      Layer.provide(TestPythonExtension.Default),
+    Layer.succeed(
+      PythonEnvInvalidation,
+      PythonEnvInvalidation.make({
+        invalidate: () =>
+          Ref.update(invalidations, (count) => count + 1).pipe(Effect.as(true)),
+        changes: () => Stream.empty,
+      }),
     ),
-    // These tests never reach the install path; any Uv method call is a
-    // defect. Layer.mock still requires the non-method properties.
+    // Cancellation happens before invoking uv; any Uv method call is a defect.
+    // Layer.mock still requires the non-method properties.
     Layer.mock(Uv, {
       _tag: "Uv",
       bin: Effect.succeed(
@@ -78,7 +92,7 @@ const withTestCtx = Effect.fn(function* (options: {
       channel: { name: "test", show: () => undefined },
     }),
   );
-  return { layer, notebook, prompts };
+  return { layer, notebook, prompts, invalidations };
 });
 
 it.scoped("prompts to install missing packages when uv is enabled", () =>
@@ -99,4 +113,38 @@ it.scoped("skips the install prompt when uv integration is disabled", () =>
     );
     expect(yield* Ref.get(ctx.prompts)).toBe(0);
   }),
+);
+
+it.scoped(
+  "does not invalidate the environment when placement is cancelled",
+  () =>
+    Effect.gen(function* () {
+      using project = NodeFs.mkdtempDisposableSync(
+        NodePath.join(NodeOs.tmpdir(), "marimo-operations-"),
+      );
+      const venv = NodePath.join(project.path, ".venv");
+      NodeFs.mkdirSync(NodePath.join(venv, "bin"), { recursive: true });
+      NodeFs.writeFileSync(NodePath.join(venv, "pyvenv.cfg"), "");
+      NodeFs.writeFileSync(
+        NodePath.join(project.path, "pyproject.toml"),
+        `
+[project]
+dependencies = ["polars"]
+
+[dependency-groups]
+dev = ["polars"]
+`,
+      );
+
+      const ctx = yield* withTestCtx({
+        disableUvIntegration: false,
+        installAll: true,
+      });
+      yield* handleMissingPackageAlert(alert, ctx.notebook, {
+        ...controller,
+        executable: NodePath.join(venv, "bin", "python"),
+      }).pipe(Effect.provide(ctx.layer));
+
+      expect(yield* Ref.get(ctx.invalidations)).toBe(0);
+    }),
 );

@@ -10,6 +10,7 @@ import { Effect, Either, Layer, Option } from "effect";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Uv } from "../../python/Uv.ts";
+import { ProjectDependencyTarget } from "../ProjectDependencyTarget.ts";
 
 const python = "3.13";
 const timeout = 30_000;
@@ -64,6 +65,58 @@ describe("Uv", () => {
         );
         assert(Either.isLeft(result), "Expected failure");
         assert.strictEqual(result.left._tag, "UvMissingPyProjectError");
+      }),
+      { timeout },
+    );
+  });
+
+  it.layer(Layer.fresh(UvLive))((it) => {
+    it.scoped(
+      "should preserve custom dependency-group placement with `uv add`",
+      Effect.fn(function* () {
+        const uv = yield* Uv;
+        const tmpdir = yield* TmpDir;
+        yield* uv.init(tmpdir.path, { python });
+
+        yield* uv.addProject({
+          directory: tmpdir.path,
+          packages: ["httpx"],
+          target: ProjectDependencyTarget.Group({ name: "notebooks" }),
+        });
+
+        const pyproject = NodeFs.readFileSync(
+          NodePath.join(tmpdir.path, "pyproject.toml"),
+          "utf8",
+        );
+        expect(pyproject).toContain("[dependency-groups]");
+        expect(pyproject).toMatch(/notebooks = \[\s*"httpx/);
+        expect(pyproject).not.toMatch(/dependencies = \[\s*"httpx/);
+      }),
+      { timeout },
+    );
+  });
+
+  it.layer(Layer.fresh(UvLive))((it) => {
+    it.scoped(
+      "should preserve optional-dependency placement with `uv add`",
+      Effect.fn(function* () {
+        const uv = yield* Uv;
+        const tmpdir = yield* TmpDir;
+        yield* uv.init(tmpdir.path, { python });
+
+        yield* uv.addProject({
+          directory: tmpdir.path,
+          packages: ["typing-extensions"],
+          target: ProjectDependencyTarget.Optional({ name: "notebooks" }),
+        });
+
+        const pyproject = NodeFs.readFileSync(
+          NodePath.join(tmpdir.path, "pyproject.toml"),
+          "utf8",
+        );
+        expect(pyproject).toContain("[project.optional-dependencies]");
+        expect(pyproject).toMatch(/notebooks = \[\s*"typing-extensions/);
+        expect(pyproject).not.toMatch(/dependencies = \[\s*"typing-extensions/);
       }),
       { timeout },
     );

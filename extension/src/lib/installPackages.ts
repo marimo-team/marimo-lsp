@@ -1,9 +1,14 @@
 import * as NodeFs from "node:fs";
 
-import { Cause, Effect } from "effect";
+import { Cause, Data, Effect, Option } from "effect";
 
 import { assert } from "../assert.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import {
+  formatProjectDependencyTarget,
+  inspectProjectDependencies,
+  ProjectDependencyTarget,
+} from "../python/ProjectDependencyTarget.ts";
 import { Uv, UvUnknownError } from "../python/Uv.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
@@ -12,24 +17,24 @@ export function installPackages(
   options: {
     venvPath: string;
   },
-): Effect.Effect<void, never, Uv | VsCode>;
+): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode>;
 export function installPackages(
   packages: ReadonlyArray<string>,
   options: {
     script: MarimoNotebookDocument;
   },
-): Effect.Effect<void, never, Uv | VsCode>;
+): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode>;
 export function installPackages(
   packages: ReadonlyArray<string>,
   options: {
     script?: MarimoNotebookDocument;
     venvPath?: string;
   },
-): Effect.Effect<void, never, Uv | VsCode> {
+): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode> {
   return Effect.gen(function* () {
     const uv = yield* Uv;
     const code = yield* VsCode;
-    yield* code.window.withProgress(
+    return yield* code.window.withProgress(
       {
         location: code.ProgressLocation.Notification,
         title: `Installing ${packages.length > 1 ? "packages" : "package"}`,
@@ -43,17 +48,33 @@ export function installPackages(
 
           if (options.venvPath) {
             const venvPath = options.venvPath;
-            yield* uv.addProject({ directory: venvPath, packages }).pipe(
-              Effect.catchTag(
-                "UvMissingPyProjectError",
-                Effect.fn(function* () {
-                  yield* Effect.logWarning(
-                    "Failed to `uv add`, attempting `uv pip install`.",
-                  );
-                  yield* uv.pipInstall(packages, { venv: venvPath });
-                }),
-              ),
-            );
+            const requests = yield* resolveProjectInstallRequests(
+              packages,
+              venvPath,
+            ).pipe(Effect.provideService(VsCode, code));
+            if (requests == null) return "cancelled" as const;
+
+            for (const request of requests) {
+              yield* uv
+                .addProject({
+                  directory: venvPath,
+                  packages: request.packages,
+                  target: request.target,
+                })
+                .pipe(
+                  Effect.catchTag(
+                    "UvMissingPyProjectError",
+                    Effect.fn(function* () {
+                      yield* Effect.logWarning(
+                        "Failed to `uv add`, attempting `uv pip install`.",
+                      );
+                      yield* uv.pipInstall(request.packages, {
+                        venv: venvPath,
+                      });
+                    }),
+                  ),
+                );
+            }
           } else {
             const notebook = options.script;
             assert(notebook, "Expected notebook");
@@ -75,6 +96,7 @@ export function installPackages(
           progress.report({
             message: `Successfully installed ${packages.join(", ")}`,
           });
+          return "installed" as const;
         }).pipe(
           Effect.catchAllCause(
             Effect.fn(function* (cause) {
@@ -91,10 +113,101 @@ export function installPackages(
               yield* code.window.showErrorMessage(
                 `Failed to install ${packages.join(", ")}.${suffix}`,
               );
+              return "failed" as const;
             }),
           ),
         ),
     );
+  });
+}
+
+export type InstallPackagesOutcome = "installed" | "cancelled" | "failed";
+
+export type ProjectInstallRequest = {
+  readonly packages: ReadonlyArray<string>;
+  readonly target: ProjectDependencyTarget;
+};
+
+class ProjectInspectionError extends Data.TaggedError(
+  "ProjectInspectionError",
+)<{
+  readonly cause: unknown;
+}> {}
+
+export const resolveProjectInstallRequests = Effect.fn(
+  "resolveProjectInstallRequests",
+)(function* (packages: ReadonlyArray<string>, directory: string) {
+  const code = yield* VsCode;
+  const requests: ProjectInstallRequest[] = [];
+
+  const inspection = yield* Effect.try({
+    try: () => inspectProjectDependencies(directory),
+    catch: (cause) => new ProjectInspectionError({ cause }),
+  }).pipe(
+    Effect.tapError((cause) =>
+      Effect.logWarning(
+        "Failed to inspect pyproject.toml; using project dependencies",
+      ).pipe(Effect.annotateLogs({ cause })),
+    ),
+    Effect.option,
+  );
+
+  for (const pkg of packages) {
+    const targets = Option.match(inspection, {
+      onNone: () => [],
+      onSome: (index) => index.findTargets(pkg),
+    });
+
+    const hasDuplicateDevDeclaration =
+      Option.isSome(inspection) &&
+      inspection.value.hasDuplicateDevDeclaration(pkg);
+    if (hasDuplicateDevDeclaration || targets.length > 1) {
+      const locations = targets.map(formatProjectDependencyTarget).join(", ");
+      const legacyLocation = hasDuplicateDevDeclaration
+        ? `${locations.length > 0 ? ", " : ""}Legacy uv dev dependencies`
+        : "";
+      yield* code.window.showErrorMessage(
+        `${pkg} is declared in multiple locations (${locations}${legacyLocation}). uv cannot safely update only one declaration because the remaining constraint may prevent resolution. Consolidate or update the declarations in pyproject.toml manually.`,
+      );
+      return null;
+    }
+
+    let target: ProjectDependencyTarget;
+    if (targets.length === 0) {
+      target = ProjectDependencyTarget.Production();
+    } else {
+      const [onlyTarget] = targets;
+      assert(onlyTarget, "Expected one project dependency target");
+      target = onlyTarget;
+    }
+
+    const existing = requests.find((request) =>
+      dependencyTargetsEqual(request.target, target),
+    );
+    if (existing == null) {
+      requests.push({ packages: [pkg], target });
+    } else {
+      requests[requests.indexOf(existing)] = {
+        ...existing,
+        packages: [...existing.packages, pkg],
+      };
+    }
+  }
+
+  return requests;
+});
+
+function dependencyTargetsEqual(
+  left: ProjectDependencyTarget,
+  right: ProjectDependencyTarget,
+): boolean {
+  if (left._tag !== right._tag) {
+    return false;
+  }
+  return ProjectDependencyTarget.$match(left, {
+    Production: () => true,
+    Group: ({ name }) => right._tag === "Group" && name == right.name,
+    Optional: ({ name }) => right._tag === "Optional" && name == right.name,
   });
 }
 

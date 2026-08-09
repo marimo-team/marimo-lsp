@@ -22,6 +22,7 @@ import { assert } from "../assert.ts";
 import { Config } from "../config/Config.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
+import type { ProjectDependencyTarget } from "./ProjectDependencyTarget.ts";
 
 export const UvBin = Data.taggedEnum<UvBin>();
 export type UvBin = Data.TaggedEnum<{
@@ -320,13 +321,18 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
       addProject(options: {
         directory: string;
         packages: ReadonlyArray<string>;
+        target?: ProjectDependencyTarget;
       }) {
-        const args = [
-          "add",
-          ...options.packages,
-          "--directory",
-          options.directory,
-        ];
+        const args = ["add"];
+        switch (options.target?._tag) {
+          case "Group":
+            args.push("--group", options.target.name);
+            break;
+          case "Optional":
+            args.push("--optional", options.target.name);
+            break;
+        }
+        args.push(...options.packages, "--directory", options.directory);
         return uv({ args }).pipe(
           Effect.catchTag(
             "UvUnknownError",
