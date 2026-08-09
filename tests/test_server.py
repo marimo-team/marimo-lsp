@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 import lsprotocol.types as lsp
 import pytest
+import pytest_asyncio
 import pytest_lsp
 from dirty_equals import IsFloat, IsList, IsUUID
 from inline_snapshot import snapshot
@@ -25,6 +26,8 @@ from pytest_lsp import ClientServerConfig, LanguageClient
 import marimo_lsp.server as server_module
 from marimo_lsp.diagnostics import GraphUpdaterRegistry
 from marimo_lsp.sessions import Sessions
+
+pytestmark = pytest.mark.asyncio(loop_scope="module")
 
 
 class NotebookCell(lsp.NotebookCell):
@@ -67,9 +70,11 @@ def replace_generated_with(src: str) -> str:
     )
 
 
-@pytest_lsp.fixture(config=ClientServerConfig(server_command=["marimo-lsp"]))
-async def client(lsp_client: LanguageClient):  # noqa: ANN201
-    """Fixture to set up and tear down LSP client."""
+@pytest_lsp.fixture(
+    config=ClientServerConfig(server_command=["marimo-lsp"]), scope="module"
+)
+async def lsp_process(lsp_client: LanguageClient):  # noqa: ANN201
+    """Start one initialized LSP process for this module."""
     response = await lsp_client.initialize_session(
         lsp.InitializeParams(
             root_uri="file:///test/workspace",
@@ -87,13 +92,50 @@ async def client(lsp_client: LanguageClient):  # noqa: ANN201
     await lsp_client.shutdown_session()
 
 
-@pytest.mark.asyncio
+@pytest_asyncio.fixture(loop_scope="module")
+async def client(lsp_process: LanguageClient):  # noqa: ANN201
+    """Give each test an isolated view of the shared LSP process."""
+    opened: dict[str, lsp.DidOpenNotebookDocumentParams] = {}
+    features = dict(lsp_process.protocol.fm.features)
+    did_open = lsp_process.notebook_document_did_open
+
+    def track_open(params: lsp.DidOpenNotebookDocumentParams) -> None:
+        opened[params.notebook_document.uri] = params
+        did_open(params)
+
+    with patch.object(lsp_process, "notebook_document_did_open", track_open):
+        yield lsp_process
+
+    for params in opened.values():
+        lsp_process.notebook_document_did_close(
+            lsp.DidCloseNotebookDocumentParams(
+                notebook_document=lsp.NotebookDocumentIdentifier(
+                    uri=params.notebook_document.uri
+                ),
+                cell_text_documents=[
+                    lsp.TextDocumentIdentifier(uri=document.uri)
+                    for document in params.cell_text_documents
+                ],
+            )
+        )
+
+    await lsp_process.workspace_execute_command_async(
+        lsp.ExecuteCommandParams(
+            command="marimo.api",
+            arguments=[{"method": "shutdown-all-sessions", "params": {}}],
+        )
+    )
+
+    # Tests register per-test notification handlers on the shared client.
+    lsp_process.protocol.fm.features.clear()
+    lsp_process.protocol.fm.features.update(features)
+
+
 async def test_server_initialization(client: LanguageClient) -> None:
     """Test that server initializes properly."""
     assert client is not None
 
 
-@pytest.mark.asyncio
 async def test_notebook_did_open(client: LanguageClient) -> None:
     """Test opening a notebook document."""
     client.notebook_document_did_open(
@@ -121,7 +163,6 @@ async def test_notebook_did_open(client: LanguageClient) -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_notebook_did_change(client: LanguageClient) -> None:
     """Test changing a notebook document."""
     client.notebook_document_did_open(
@@ -185,7 +226,6 @@ async def test_notebook_did_change(client: LanguageClient) -> None:
     # We should have some way of querying the graph state
 
 
-@pytest.mark.asyncio
 async def test_enabling_disabled_cell_runs_registered_source(
     client: LanguageClient,
 ) -> None:
@@ -275,7 +315,6 @@ async def test_enabling_disabled_cell_runs_registered_source(
     assert await asyncio.wait_for(stdout, timeout=5) == "registered while disabled\n"
 
 
-@pytest.mark.asyncio
 async def test_notebook_did_save(client: LanguageClient) -> None:
     """Test saving a notebook document."""
     client.notebook_document_did_open(
@@ -300,7 +339,6 @@ async def test_notebook_did_save(client: LanguageClient) -> None:
     # We should have some way of querying the graph state
 
 
-@pytest.mark.asyncio
 async def test_notebook_did_close(client: LanguageClient) -> None:
     """Test closing an untitled notebook document."""
     client.notebook_document_did_open(
@@ -325,7 +363,6 @@ async def test_notebook_did_close(client: LanguageClient) -> None:
     # We should have some way of querying the graph state
 
 
-@pytest.mark.asyncio
 async def test_file_notebook_did_close_detaches_session() -> None:
     """Closing a file-backed notebook detaches without stopping its session."""
     sessions = MagicMock(spec=Sessions)
@@ -356,7 +393,6 @@ async def test_file_notebook_did_close_detaches_session() -> None:
     sessions.close.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_marimo_serialize_command(client: LanguageClient) -> None:
     """Test the marimo.serialize command."""
     notebook = {
@@ -407,7 +443,6 @@ if __name__ == "__main__":
 """)
 
 
-@pytest.mark.asyncio
 async def test_marimo_deserialize_command(client: LanguageClient) -> None:
     """Test the marimo.deserialize command."""
     source = """
@@ -468,7 +503,6 @@ if __name__ == "__main__":
     )
 
 
-@pytest.mark.asyncio
 async def test_marimo_get_package_list_venv_no_session(
     client: LanguageClient,
 ) -> None:
@@ -497,7 +531,6 @@ async def test_marimo_get_package_list_venv_no_session(
     assert "marimo-base" in names, f"expected marimo-base in package list, got {names}"
 
 
-@pytest.mark.asyncio
 async def test_marimo_get_package_list_with_session(client: LanguageClient) -> None:
     """Test the marimo.get_package_list command with an active session."""
     # First create a session by opening a notebook and running a cell
@@ -575,7 +608,6 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
     assert len(packages) > 2  # Has more than just marimo
 
 
-@pytest.mark.asyncio
 async def test_execute_scratchpad_binds_code_mode_and_emits_transaction(
     client: LanguageClient,
 ) -> None:
@@ -692,7 +724,6 @@ async def test_execute_scratchpad_binds_code_mode_and_emits_transaction(
     )
 
 
-@pytest.mark.asyncio
 async def test_code_mode_edit_cell_config_on_existing_cell(
     client: LanguageClient,
 ) -> None:
@@ -796,7 +827,6 @@ async def test_code_mode_edit_cell_config_on_existing_cell(
     )
 
 
-@pytest.mark.asyncio
 async def test_marimo_get_dependency_tree_venv_no_session(
     client: LanguageClient,
 ) -> None:
@@ -825,7 +855,6 @@ async def test_marimo_get_dependency_tree_venv_no_session(
     assert "tree" in result
 
 
-@pytest.mark.asyncio
 async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -> None:
     """Test the marimo.get_dependency_tree command with an active session."""
     # First create a session by opening a notebook and running a cell
@@ -941,7 +970,6 @@ def _build_local_script_fixture(tmp_path: pathlib.Path) -> pathlib.Path:
     return script
 
 
-@pytest.mark.asyncio
 async def test_marimo_get_dependency_tree_script_source(
     client: LanguageClient, tmp_path: pathlib.Path
 ) -> None:
@@ -977,7 +1005,6 @@ async def test_marimo_get_dependency_tree_script_source(
     )
 
 
-@pytest.mark.asyncio
 async def test_marimo_get_dependency_tree_script_no_pep723(
     client: LanguageClient, tmp_path: pathlib.Path
 ) -> None:
@@ -1009,7 +1036,6 @@ async def test_marimo_get_dependency_tree_script_no_pep723(
     assert result == {"tree": None}
 
 
-@pytest.mark.asyncio
 async def test_marimo_get_package_list_script_source(
     client: LanguageClient, tmp_path: pathlib.Path
 ) -> None:
@@ -1040,7 +1066,6 @@ async def test_marimo_get_package_list_script_source(
     assert "foo" in names, f"expected local 'foo' in flattened script list, got {names}"
 
 
-@pytest.mark.asyncio
 async def test_simple_marimo_run(client: LanguageClient) -> None:
     """Test that we can collect marimo operations until cell reaches idle state."""
     code = """\
@@ -1301,7 +1326,6 @@ x\
     )
 
 
-@pytest.mark.asyncio
 async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
     """Test that we can collect marimo operations until cell reaches idle state."""
     code_x = """x = 42"""
@@ -1630,7 +1654,6 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_incremental_graph_text_change(client: LanguageClient) -> None:
     """Test that changing cell text updates the graph incrementally."""
     variables_operations = []
@@ -1702,7 +1725,6 @@ async def test_incremental_graph_text_change(client: LanguageClient) -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_cell_addition(client: LanguageClient) -> None:
     """Test that adding a cell updates the graph correctly."""
     variables_operations = []
@@ -1846,7 +1868,6 @@ async def test_cell_addition(client: LanguageClient) -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_scratchpad_execution(client: LanguageClient) -> None:
     """Test that scratchpad executes code outside the dependency graph."""
     # First, open a notebook with a cell (required to have a session)
@@ -2036,7 +2057,6 @@ y\
     )
 
 
-@pytest.mark.asyncio
 async def test_scratchpad_creates_session_when_missing(
     client: LanguageClient,
 ) -> None:
