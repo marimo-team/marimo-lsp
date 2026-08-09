@@ -279,23 +279,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
       syncScript(options: { script: string }) {
         return Effect.andThen(
           uv({ args: ["sync", "--script", options.script] }),
-          ({ stderr }) => {
-            const match =
-              stderr.match(/Using script environment at: (.+)/m) ??
-              stderr.match(/Updating script environment at: (.+)/m) ??
-              stderr.match(/Creating script environment at: (.+)/m);
-            const path = match?.[1];
-            assert(path, `Expected path from uv, got: stderr=${stderr}`);
-
-            // uv's user_display() strips the CWD prefix from paths when possible
-            // (see https://github.com/astral-sh/uv/blob/main/crates/uv-fs/src/path.rs#L80).
-            // When CWD is an ancestor of the cache directory, uv outputs relative paths
-            // like ".cache/uv/...".
-            //
-            // Since we later use the venv path to locate a Python binary from a different CWD,
-            // a relative path breaks our logic later. Fix this by ensuring our returned path is absolute
-            return NodePath.resolve(path);
-          },
+          ({ stderr }) => resolveScriptEnvironmentPath(stderr),
         ).pipe(
           Effect.catchTag(
             "UvUnknownError",
@@ -506,6 +490,19 @@ function createUv(
     }
     return { stdout, stderr };
   });
+}
+
+export function resolveScriptEnvironmentPath(stderr: string): string {
+  const match =
+    stderr.match(/Using script environment at: (.+)/m) ??
+    stderr.match(/Updating script environment at: (.+)/m) ??
+    stderr.match(/Creating script environment at: (.+)/m);
+  const path = match?.[1];
+  assert(path, `Expected path from uv, got: stderr=${stderr}`);
+
+  // uv's user_display() can make cache paths relative to its working directory.
+  // Consumers use this path from other directories, so keep it absolute.
+  return NodePath.resolve(path);
 }
 
 /** Helper to collect stream output as a string */

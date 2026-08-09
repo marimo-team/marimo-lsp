@@ -26,49 +26,113 @@ export interface SentryAdapterOptions {
   readonly extensionVersion: string;
 }
 
+export interface SentryRuntime<Scope, Client, Integration> {
+  readonly createScope: () => Scope;
+  readonly setTags: (scope: Scope, tags: Record<string, string>) => void;
+  readonly setUser: (scope: Scope, user: { readonly id: string }) => void;
+  readonly getCurrentClient: () => Client | undefined;
+  readonly setCurrentClient: (client: Client | undefined) => void;
+  readonly init: (options: {
+    readonly dsn: string;
+    readonly release: string;
+    readonly environment: string;
+    readonly skipOpenTelemetrySetup: true;
+    readonly normalizeDepth: number;
+    readonly integrations: ReadonlyArray<Integration>;
+  }) => Client | undefined;
+  readonly linkedErrorsIntegration: () => Integration;
+  readonly extraErrorDataIntegration: () => Integration;
+  readonly setClient: (scope: Scope, client: Client) => void;
+  readonly close: (client: Client, timeout: number) => PromiseLike<unknown>;
+  readonly captureException: (
+    scope: Scope,
+    error: Error,
+    hint: Parameters<SentrySDK.Scope["captureException"]>[1],
+  ) => void;
+  readonly addBreadcrumb: (
+    scope: Scope,
+    breadcrumb: Parameters<SentrySDK.Scope["addBreadcrumb"]>[0],
+    maxBreadcrumbs: number,
+  ) => void;
+  readonly setTag: (scope: Scope, key: string, value: string) => void;
+}
+
+type LiveClient = NonNullable<
+  ReturnType<typeof SentrySDK.initWithoutDefaultIntegrations>
+>;
+type LiveIntegration = ReturnType<typeof SentrySDK.linkedErrorsIntegration>;
+
+const SENTRY_RUNTIME_LIVE: SentryRuntime<
+  SentrySDK.Scope,
+  LiveClient,
+  LiveIntegration
+> = {
+  createScope: () => new SentrySDK.Scope(),
+  setTags: (scope, tags) => scope.setTags(tags),
+  setUser: (scope, user) => scope.setUser(user),
+  getCurrentClient: () => SentrySDK.getCurrentScope().getClient(),
+  setCurrentClient: (client) => SentrySDK.getCurrentScope().setClient(client),
+  init: (options) =>
+    SentrySDK.initWithoutDefaultIntegrations({
+      ...options,
+      integrations: [...options.integrations],
+    }),
+  linkedErrorsIntegration: () => SentrySDK.linkedErrorsIntegration(),
+  extraErrorDataIntegration: () => SentrySDK.extraErrorDataIntegration(),
+  setClient: (scope, client) => scope.setClient(client),
+  close: (client, timeout) => client.close(timeout),
+  captureException: (scope, error, hint) => scope.captureException(error, hint),
+  addBreadcrumb: (scope, breadcrumb, maxBreadcrumbs) =>
+    scope.addBreadcrumb(breadcrumb, maxBreadcrumbs),
+  setTag: (scope, key, value) => scope.setTag(key, value),
+};
+
 /** Private Sentry delivery adapter owned by the Telemetry scope. */
-export const acquireSentryAdapter = Effect.fn("telemetry.acquireSentryAdapter")(
-  function* (options: SentryAdapterOptions) {
-    const scope = new SentrySDK.Scope();
-    scope.setTags({
+export const makeAcquireSentryAdapter = <Scope, Client, Integration>(
+  runtime: SentryRuntime<Scope, Client, Integration>,
+) =>
+  Effect.fn("telemetry.acquireSentryAdapter")(function* (
+    options: SentryAdapterOptions,
+  ) {
+    const scope = runtime.createScope();
+    runtime.setTags(scope, {
       marimo: "true",
       "editor.appHost": options.appHost,
       "editor.appName": options.appName,
       "extension.version": options.extensionVersion,
     });
-    scope.setUser({ id: options.machineId });
+    runtime.setUser(scope, { id: options.machineId });
 
     yield* Effect.acquireRelease(
       Effect.sync(() => {
-        const globalScope = SentrySDK.getCurrentScope();
-        const previousClient = globalScope.getClient();
+        const previousClient = runtime.getCurrentClient();
         let client;
         try {
-          client = SentrySDK.initWithoutDefaultIntegrations({
+          client = runtime.init({
             dsn: SENTRY_DSN,
             release: `vscode-marimo@${options.extensionVersion}`,
             environment: process.env.NODE_ENV ?? "production",
             skipOpenTelemetrySetup: true,
             normalizeDepth: 8,
             integrations: [
-              SentrySDK.linkedErrorsIntegration(),
-              SentrySDK.extraErrorDataIntegration(),
+              runtime.linkedErrorsIntegration(),
+              runtime.extraErrorDataIntegration(),
             ],
           });
         } finally {
-          globalScope.setClient(previousClient);
+          runtime.setCurrentClient(previousClient);
         }
         if (!client) throw new Error("Sentry failed to initialize");
         try {
-          scope.setClient(client);
+          runtime.setClient(scope, client);
         } catch (error) {
-          void client.close(2000);
+          void runtime.close(client, 2000);
           throw error;
         }
         return client;
       }),
       (client) =>
-        Effect.promise(() => client.close(2000)).pipe(
+        Effect.promise(() => runtime.close(client, 2000)).pipe(
           Effect.catchAllCause(() => Effect.void),
         ),
     );
@@ -76,7 +140,7 @@ export const acquireSentryAdapter = Effect.fn("telemetry.acquireSentryAdapter")(
     const captureError: SentryAdapter["captureError"] = (error, data) => {
       try {
         const classification = classify(data);
-        scope.captureException(error, {
+        runtime.captureException(scope, error, {
           captureContext: {
             ...(data ? { extra: data } : {}),
             level: data?.["error.level"] === "fatal" ? "fatal" : "error",
@@ -97,7 +161,11 @@ export const acquireSentryAdapter = Effect.fn("telemetry.acquireSentryAdapter")(
       data,
     ) => {
       try {
-        scope.addBreadcrumb({ category: "marimo", message, level, data }, 100);
+        runtime.addBreadcrumb(
+          scope,
+          { category: "marimo", message, level, data },
+          100,
+        );
       } catch {
         // Telemetry must never affect product behavior.
       }
@@ -108,7 +176,7 @@ export const acquireSentryAdapter = Effect.fn("telemetry.acquireSentryAdapter")(
       version,
     ) => {
       try {
-        scope.setTag(`${server}.version`, version.slice(0, 100));
+        runtime.setTag(scope, `${server}.version`, version.slice(0, 100));
       } catch {
         // Telemetry must never affect product behavior.
       }
@@ -116,15 +184,17 @@ export const acquireSentryAdapter = Effect.fn("telemetry.acquireSentryAdapter")(
 
     const setLspMode: SentryAdapter["setLspMode"] = (mode) => {
       try {
-        scope.setTag("marimo_lsp.mode", mode);
+        runtime.setTag(scope, "marimo_lsp.mode", mode);
       } catch {
         // Telemetry must never affect product behavior.
       }
     };
 
     return { captureError, addBreadcrumb, setBinaryVersion, setLspMode };
-  },
-);
+  });
+
+export const acquireSentryAdapter =
+  makeAcquireSentryAdapter(SENTRY_RUNTIME_LIVE);
 
 function classify(data: Record<string, unknown> | undefined) {
   const tags: Record<string, string> = {};

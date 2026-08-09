@@ -53,9 +53,16 @@ const NOOP_POSTHOG: PostHogAdapter = {
  * responsible for its global usage/error gates and for cleaning all caller
  * data before the private PostHog and Sentry adapters receive it.
  */
-export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
-  dependencies: [Storage.Default],
-  scoped: Effect.gen(function* () {
+export function makeTelemetry(
+  vendors: {
+    readonly acquireSentry: typeof acquireSentryAdapter;
+    readonly acquirePostHog: typeof acquirePostHogAdapter;
+  } = {
+    acquireSentry: acquireSentryAdapter,
+    acquirePostHog: acquirePostHogAdapter,
+  },
+) {
+  return Effect.gen(function* () {
     const code = yield* VsCode;
     const config = yield* code.workspace.getConfiguration("marimo");
     const enabled = config.get<boolean>("telemetry") ?? true;
@@ -98,27 +105,31 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
     if (Option.isNone(maybeLogger)) return disabledTelemetry();
     const logger = maybeLogger.value;
 
-    adapters.sentry = yield* acquireSentryAdapter({
-      appHost: code.env.appHost,
-      appName: code.env.appName,
-      machineId: code.env.machineId,
-      extensionVersion,
-    }).pipe(
-      Effect.catchAllCause((cause) =>
-        Effect.logWarning("Failed to initialize Sentry telemetry").pipe(
-          Effect.annotateLogs({ cause }),
-          Effect.as(NOOP_SENTRY),
+    adapters.sentry = yield* vendors
+      .acquireSentry({
+        appHost: code.env.appHost,
+        appName: code.env.appName,
+        machineId: code.env.machineId,
+        extensionVersion,
+      })
+      .pipe(
+        Effect.catchAllCause((cause) =>
+          Effect.logWarning("Failed to initialize Sentry telemetry").pipe(
+            Effect.annotateLogs({ cause }),
+            Effect.as(NOOP_SENTRY),
+          ),
         ),
-      ),
-    );
-    adapters.posthog = yield* acquirePostHogAdapter.pipe(
-      Effect.catchAllCause((cause) =>
-        Effect.logWarning("Failed to initialize PostHog telemetry").pipe(
-          Effect.annotateLogs({ cause }),
-          Effect.as(NOOP_POSTHOG),
+      );
+    adapters.posthog = yield* vendors
+      .acquirePostHog()
+      .pipe(
+        Effect.catchAllCause((cause) =>
+          Effect.logWarning("Failed to initialize PostHog telemetry").pipe(
+            Effect.annotateLogs({ cause }),
+            Effect.as(NOOP_POSTHOG),
+          ),
         ),
-      ),
-    );
+      );
 
     const errorLogger = makeEffectErrorLogger(logger);
 
@@ -181,7 +192,12 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       lspStarted,
       errorLogger,
     };
-  }),
+  });
+}
+
+export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
+  dependencies: [Storage.Default],
+  scoped: makeTelemetry(),
 }) {}
 
 function disabledTelemetry() {

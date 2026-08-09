@@ -6,71 +6,58 @@ import type * as vscode from "vscode";
 import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { BinarySource } from "../../lib/binaryResolution.ts";
-import { Telemetry } from "../Telemetry.ts";
+import { Storage } from "../../platform/Storage.ts";
+import { acquirePostHogAdapter } from "../posthogSink.ts";
+import { makeAcquireSentryAdapter, type SentryRuntime } from "../sentrySink.ts";
+import { makeTelemetry, Telemetry } from "../Telemetry.ts";
 
-const sentrySdk = vi.hoisted(() => {
-  const init = vi.fn();
-  const close = vi.fn(async () => true);
-  const setClient = vi.fn();
-  const setTags = vi.fn();
-  const setTag = vi.fn();
-  const setUser = vi.fn();
-  const addBreadcrumb = vi.fn();
-  const captureException = vi.fn();
-  const linkedErrorsIntegration = vi.fn(() => ({ name: "LinkedErrors" }));
-  const extraErrorDataIntegration = vi.fn(() => ({ name: "ExtraErrorData" }));
-  const globalClient = { name: "existing Sentry client" };
-  const globalSetClient = vi.fn();
-  const globalScope = {
-    getClient: vi.fn(() => globalClient),
-    setClient: globalSetClient,
-  };
+type TestSentryClient = { readonly name: string };
+type TestSentryIntegration = { readonly name: string };
 
-  class Scope {
-    setClient = setClient;
-    setTags = setTags;
-    setTag = setTag;
-    setUser = setUser;
-    addBreadcrumb = addBreadcrumb;
-    captureException = captureException;
-  }
+const sentrySdk = {
+  init: vi.fn((_options: unknown): TestSentryClient | undefined => ({
+    name: "test Sentry client",
+  })),
+  close: vi.fn(async (_client: TestSentryClient, _timeout: number) => true),
+  setClient: vi.fn(),
+  setTags: vi.fn(),
+  setTag: vi.fn(),
+  setUser: vi.fn(),
+  addBreadcrumb: vi.fn(),
+  captureException: vi.fn(),
+  linkedErrorsIntegration: vi.fn(() => ({ name: "LinkedErrors" })),
+  extraErrorDataIntegration: vi.fn(() => ({ name: "ExtraErrorData" })),
+  globalClient: { name: "existing Sentry client" },
+  globalSetClient: vi.fn(),
+};
 
-  return {
-    Scope,
-    initWithoutDefaultIntegrations: init,
-    init,
-    close,
-    setClient,
-    setTags,
-    setTag,
-    setUser,
-    addBreadcrumb,
-    captureException,
-    linkedErrorsIntegration,
-    extraErrorDataIntegration,
-    getCurrentScope: vi.fn(() => globalScope),
-    globalClient,
-    globalSetClient,
-  };
-});
+const sentryRuntime: SentryRuntime<
+  object,
+  TestSentryClient,
+  TestSentryIntegration
+> = {
+  createScope: () => ({}),
+  setTags: (_scope, tags) => sentrySdk.setTags(tags),
+  setUser: (_scope, user) => sentrySdk.setUser(user),
+  getCurrentClient: () => sentrySdk.globalClient,
+  setCurrentClient: (client) => sentrySdk.globalSetClient(client),
+  init: (options) => sentrySdk.init(options),
+  linkedErrorsIntegration: () => sentrySdk.linkedErrorsIntegration(),
+  extraErrorDataIntegration: () => sentrySdk.extraErrorDataIntegration(),
+  setClient: (_scope, client) => sentrySdk.setClient(client),
+  close: (client, timeout) => sentrySdk.close(client, timeout),
+  captureException: (_scope, error, hint) =>
+    sentrySdk.captureException(error, hint),
+  addBreadcrumb: (_scope, breadcrumb, maxBreadcrumbs) =>
+    sentrySdk.addBreadcrumb(breadcrumb, maxBreadcrumbs),
+  setTag: (_scope, key, value) => sentrySdk.setTag(key, value),
+};
 
-const posthog = vi.hoisted(() => ({
+const posthog = {
   constructed: vi.fn(),
   capture: vi.fn(),
   shutdown: vi.fn(async () => undefined),
-}));
-
-vi.mock("@sentry/node", () => sentrySdk);
-
-vi.mock("posthog-node", () => ({
-  PostHog: class {
-    constructor() {
-      posthog.constructed();
-    }
-    capture = posthog.capture;
-    shutdown = posthog.shutdown;
-  },
-}));
+};
 
 const withTestCtx = Effect.fn(function* (options?: {
   telemetry?: boolean;
@@ -102,7 +89,7 @@ const withTestCtx = Effect.fn(function* (options?: {
       throw new Error("sentry exploded");
     });
   } else {
-    sentrySdk.init.mockReturnValue({ close: sentrySdk.close });
+    sentrySdk.init.mockReturnValue({ name: "test Sentry client" });
   }
   sentrySdk.close.mockResolvedValue(true);
   posthog.shutdown.mockResolvedValue(undefined);
@@ -181,8 +168,22 @@ const withTestCtx = Effect.fn(function* (options?: {
   });
 
   const context = yield* Layer.build(
-    Telemetry.Default.pipe(
+    Layer.scoped(
+      Telemetry,
+      makeTelemetry({
+        acquireSentry: makeAcquireSentryAdapter(sentryRuntime),
+        acquirePostHog: () =>
+          acquirePostHogAdapter(() => {
+            posthog.constructed();
+            return {
+              capture: posthog.capture,
+              shutdown: posthog.shutdown,
+            };
+          }),
+      }).pipe(Effect.map(Telemetry.make)),
+    ).pipe(
       Layer.provide(vscodeMock.layer),
+      Layer.provide(Storage.Default),
       Layer.provide(TestExtensionContextLive),
     ),
   );
