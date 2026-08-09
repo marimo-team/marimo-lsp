@@ -2,12 +2,12 @@ import * as NodeFs from "node:fs";
 
 import { Cause, Data, Effect, Option } from "effect";
 
-import { assert, unreachable } from "../assert.ts";
+import { assert } from "../assert.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   formatProjectDependencyTarget,
   inspectProjectDependencies,
-  type ProjectDependencyTarget,
+  ProjectDependencyTarget,
 } from "../python/ProjectDependencyTarget.ts";
 import { Uv, UvUnknownError } from "../python/Uv.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
@@ -174,7 +174,7 @@ export const resolveProjectInstallRequests = Effect.fn(
 
     let target: ProjectDependencyTarget;
     if (targets.length === 0) {
-      target = { kind: "production" };
+      target = ProjectDependencyTarget.Production();
     } else {
       const [onlyTarget] = targets;
       assert(onlyTarget, "Expected one project dependency target");
@@ -201,16 +201,14 @@ function dependencyTargetsEqual(
   left: ProjectDependencyTarget,
   right: ProjectDependencyTarget,
 ): boolean {
-  if (left.kind !== right.kind) return false;
-  switch (left.kind) {
-    case "production":
-      return true;
-    case "group":
-      return right.kind === "group" && left.name === right.name;
-    case "optional":
-      return right.kind === "optional" && left.name === right.name;
+  if (left._tag !== right._tag) {
+    return false;
   }
-  return unreachable(left);
+  return ProjectDependencyTarget.$match(left, {
+    Production: () => true,
+    Group: ({ name }) => right._tag === "Group" && name == right.name,
+    Optional: ({ name }) => right._tag === "Optional" && name == right.name,
+  });
 }
 
 export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (

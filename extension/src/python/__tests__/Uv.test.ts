@@ -10,6 +10,7 @@ import { Effect, Either, Layer, Option } from "effect";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Uv } from "../../python/Uv.ts";
+import { ProjectDependencyTarget } from "../ProjectDependencyTarget.ts";
 
 const python = "3.13";
 const timeout = 30_000;
@@ -80,7 +81,7 @@ describe("Uv", () => {
         yield* uv.addProject({
           directory: tmpdir.path,
           packages: ["httpx"],
-          target: { kind: "group", name: "notebooks" },
+          target: ProjectDependencyTarget.Group({ name: "notebooks" }),
         });
 
         const pyproject = NodeFs.readFileSync(
@@ -106,7 +107,7 @@ describe("Uv", () => {
         yield* uv.addProject({
           directory: tmpdir.path,
           packages: ["typing-extensions"],
-          target: { kind: "optional", name: "notebooks" },
+          target: ProjectDependencyTarget.Optional({ name: "notebooks" }),
         });
 
         const pyproject = NodeFs.readFileSync(

@@ -36,7 +36,7 @@ notebooks = ["marimo>=0.10"]
     expect(requests).toEqual([
       {
         packages: ["marimo>=0.20"],
-        target: { kind: "group", name: "notebooks" },
+        target: { _tag: "Group", name: "notebooks" },
       },
     ]);
   }),
@@ -101,7 +101,7 @@ it.effect(
     expect(requests).toEqual([
       {
         packages: ["marimo>=0.20"],
-        target: { kind: "production" },
+        target: { _tag: "Production" },
       },
     ]);
   }),
@@ -127,11 +127,11 @@ dev = ["marimo", "pytest"]
     expect(requests).toEqual([
       {
         packages: ["marimo>=0.20", "pytest"],
-        target: { kind: "group", name: "dev" },
+        target: { _tag: "Group", name: "dev" },
       },
       {
         packages: ["httpx"],
-        target: { kind: "production" },
+        target: { _tag: "Production" },
       },
     ]);
   }),

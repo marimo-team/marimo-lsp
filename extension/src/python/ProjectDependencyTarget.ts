@@ -2,13 +2,16 @@ import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 
 import { parse } from "@std/toml";
+import { Data } from "effect";
 
-import { unreachable } from "../assert.ts";
+export type ProjectDependencyTarget = Data.TaggedEnum<{
+  Production: {};
+  Group: { readonly name: string };
+  Optional: { readonly name: string };
+}>;
 
-export type ProjectDependencyTarget =
-  | { readonly kind: "production" }
-  | { readonly kind: "group"; readonly name: string }
-  | { readonly kind: "optional"; readonly name: string };
+export const ProjectDependencyTarget =
+  Data.taggedEnum<ProjectDependencyTarget>();
 
 export type ProjectDependencyInspection = {
   readonly findTargets: (
@@ -16,8 +19,6 @@ export type ProjectDependencyInspection = {
   ) => ReadonlyArray<ProjectDependencyTarget>;
   readonly hasDuplicateDevDeclaration: (requirement: string) => boolean;
 };
-
-const PRODUCTION_TARGET = { kind: "production" } as const;
 
 /**
  * Find every pyproject location in which a package is declared directly.
@@ -60,20 +61,20 @@ export function inspectProjectDependencies(
 
       const targets: ProjectDependencyTarget[] = [];
       if (containsPackage(project?.dependencies, packageName)) {
-        targets.push(PRODUCTION_TARGET);
+        targets.push(ProjectDependencyTarget.Production());
       }
 
       for (const [name, dependencies] of Object.entries(
         asTable(project?.["optional-dependencies"]) ?? {},
       )) {
         if (containsPackage(dependencies, packageName)) {
-          targets.push({ kind: "optional", name });
+          targets.push(ProjectDependencyTarget.Optional({ name }));
         }
       }
 
       for (const [name, dependencies] of Object.entries(dependencyGroups)) {
         if (containsPackage(dependencies, packageName)) {
-          targets.push({ kind: "group", name });
+          targets.push(ProjectDependencyTarget.Group({ name }));
         }
       }
 
@@ -83,7 +84,7 @@ export function inspectProjectDependencies(
         containsPackage(legacyDevDependencies, packageName) &&
         !containsPackage(standardDevDependencies, packageName)
       ) {
-        targets.push({ kind: "group", name: "dev" });
+        targets.push(ProjectDependencyTarget.Group({ name: "dev" }));
       }
 
       return targets;
@@ -102,15 +103,11 @@ export function inspectProjectDependencies(
 export function formatProjectDependencyTarget(
   target: ProjectDependencyTarget,
 ): string {
-  switch (target.kind) {
-    case "production":
-      return "Project dependencies";
-    case "group":
-      return `Dependency group: ${target.name}`;
-    case "optional":
-      return `Optional dependency: ${target.name}`;
-  }
-  return unreachable(target);
+  return ProjectDependencyTarget.$match(target, {
+    Production: () => "Project dependencies",
+    Group: ({ name }) => `Dependency group: ${name}`,
+    Optional: ({ name }) => `Optional dependency: ${name}`,
+  });
 }
 
 function findPyProject(directory: string): string | null {

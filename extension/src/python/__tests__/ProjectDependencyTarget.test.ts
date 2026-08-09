@@ -34,10 +34,10 @@ docs = ["marimo>=0.13"]
       (directory) => {
         expect(findProjectDependencyTargets(directory, "marimo>=0.20")).toEqual(
           [
-            { kind: "production" },
-            { kind: "optional", name: "notebooks" },
-            { kind: "group", name: "dev" },
-            { kind: "group", name: "docs" },
+            { _tag: "Production" },
+            { _tag: "Optional", name: "notebooks" },
+            { _tag: "Group", name: "dev" },
+            { _tag: "Group", name: "docs" },
           ],
         );
       },
@@ -56,7 +56,7 @@ notebooks = ["marimo>=0.10"]
 `,
       (directory) => {
         expect(findProjectDependencyTargets(directory, "marimo")).toEqual([
-          { kind: "group", name: "notebooks" },
+          { _tag: "Group", name: "notebooks" },
         ]);
       },
     );
@@ -73,7 +73,7 @@ dev-dependencies = ["marimo>=0.10"]
 `,
       (directory) => {
         expect(findProjectDependencyTargets(directory, "marimo")).toEqual([
-          { kind: "group", name: "dev" },
+          { _tag: "Group", name: "dev" },
         ]);
       },
     );
@@ -93,7 +93,7 @@ dev-dependencies = ["marimo>=0.10"]
 `,
       (directory) => {
         expect(findProjectDependencyTargets(directory, "marimo")).toEqual([
-          { kind: "group", name: "dev" },
+          { _tag: "Group", name: "dev" },
         ]);
       },
     );
@@ -137,10 +137,10 @@ dev = ["marimo"]
         );
 
         expect(inspection.findTargets("httpx")).toEqual([
-          { kind: "production" },
+          { _tag: "Production" },
         ]);
         expect(inspection.findTargets("marimo")).toEqual([
-          { kind: "group", name: "dev" },
+          { _tag: "Group", name: "dev" },
         ]);
       },
     );
@@ -158,7 +158,7 @@ dev = ["My.Package_Name>=1"]
       (directory) => {
         expect(
           findProjectDependencyTargets(directory, "my-package-name>=2"),
-        ).toEqual([{ kind: "group", name: "dev" }]);
+        ).toEqual([{ _tag: "Group", name: "dev" }]);
       },
     );
   });
@@ -176,7 +176,7 @@ test = ["marimo"]
         const venv = NodePath.join(directory, ".venv", "nested");
         NodeFs.mkdirSync(venv, { recursive: true });
         expect(findProjectDependencyTargets(venv, "marimo")).toEqual([
-          { kind: "group", name: "test" },
+          { _tag: "Group", name: "test" },
         ]);
       },
     );

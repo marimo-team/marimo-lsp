@@ -324,11 +324,11 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         target?: ProjectDependencyTarget;
       }) {
         const args = ["add"];
-        switch (options.target?.kind) {
-          case "group":
+        switch (options.target?._tag) {
+          case "Group":
             args.push("--group", options.target.name);
             break;
-          case "optional":
+          case "Optional":
             args.push("--optional", options.target.name);
             break;
         }
