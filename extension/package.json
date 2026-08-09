@@ -39,6 +39,7 @@
     "@oxlint/plugins": "^1.77.0",
     "@sentry/node": "^9.47.1",
     "@std/semver": "jsr:^1.0.8",
+    "@std/toml": "jsr:^1.0.11",
     "@tailwindcss/vite": "^4.3.3",
     "@types/mocha": "^10.0.10",
     "@types/node": "^24.13.3",

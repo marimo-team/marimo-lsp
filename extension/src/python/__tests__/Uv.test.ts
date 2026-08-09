@@ -71,6 +71,58 @@ describe("Uv", () => {
 
   it.layer(Layer.fresh(UvLive))((it) => {
     it.scoped(
+      "should preserve custom dependency-group placement with `uv add`",
+      Effect.fn(function* () {
+        const uv = yield* Uv;
+        const tmpdir = yield* TmpDir;
+        yield* uv.init(tmpdir.path, { python });
+
+        yield* uv.addProject({
+          directory: tmpdir.path,
+          packages: ["httpx"],
+          target: { kind: "group", name: "notebooks" },
+        });
+
+        const pyproject = NodeFs.readFileSync(
+          NodePath.join(tmpdir.path, "pyproject.toml"),
+          "utf8",
+        );
+        expect(pyproject).toContain("[dependency-groups]");
+        expect(pyproject).toMatch(/notebooks = \[\s*"httpx/);
+        expect(pyproject).not.toMatch(/dependencies = \[\s*"httpx/);
+      }),
+      { timeout },
+    );
+  });
+
+  it.layer(Layer.fresh(UvLive))((it) => {
+    it.scoped(
+      "should preserve optional-dependency placement with `uv add`",
+      Effect.fn(function* () {
+        const uv = yield* Uv;
+        const tmpdir = yield* TmpDir;
+        yield* uv.init(tmpdir.path, { python });
+
+        yield* uv.addProject({
+          directory: tmpdir.path,
+          packages: ["typing-extensions"],
+          target: { kind: "optional", name: "notebooks" },
+        });
+
+        const pyproject = NodeFs.readFileSync(
+          NodePath.join(tmpdir.path, "pyproject.toml"),
+          "utf8",
+        );
+        expect(pyproject).toContain("[project.optional-dependencies]");
+        expect(pyproject).toMatch(/notebooks = \[\s*"typing-extensions/);
+        expect(pyproject).not.toMatch(/dependencies = \[\s*"typing-extensions/);
+      }),
+      { timeout },
+    );
+  });
+
+  it.layer(Layer.fresh(UvLive))((it) => {
+    it.scoped(
       "should `uv pip install` into venv",
       Effect.fn(function* () {
         const uv = yield* Uv;

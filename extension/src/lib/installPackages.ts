@@ -1,9 +1,14 @@
 import * as NodeFs from "node:fs";
 
-import { Cause, Effect } from "effect";
+import { Cause, Data, Effect, Option } from "effect";
 
-import { assert } from "../assert.ts";
+import { assert, unreachable } from "../assert.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import {
+  findProjectDependencyTargets,
+  formatProjectDependencyTarget,
+  type ProjectDependencyTarget,
+} from "../python/ProjectDependencyTarget.ts";
 import { Uv, UvUnknownError } from "../python/Uv.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
@@ -43,17 +48,33 @@ export function installPackages(
 
           if (options.venvPath) {
             const venvPath = options.venvPath;
-            yield* uv.addProject({ directory: venvPath, packages }).pipe(
-              Effect.catchTag(
-                "UvMissingPyProjectError",
-                Effect.fn(function* () {
-                  yield* Effect.logWarning(
-                    "Failed to `uv add`, attempting `uv pip install`.",
-                  );
-                  yield* uv.pipInstall(packages, { venv: venvPath });
-                }),
-              ),
-            );
+            const requests = yield* resolveProjectInstallRequests(
+              packages,
+              venvPath,
+            ).pipe(Effect.provideService(VsCode, code));
+            if (requests == null) return;
+
+            for (const request of requests) {
+              yield* uv
+                .addProject({
+                  directory: venvPath,
+                  packages: request.packages,
+                  target: request.target,
+                })
+                .pipe(
+                  Effect.catchTag(
+                    "UvMissingPyProjectError",
+                    Effect.fn(function* () {
+                      yield* Effect.logWarning(
+                        "Failed to `uv add`, attempting `uv pip install`.",
+                      );
+                      yield* uv.pipInstall(request.packages, {
+                        venv: venvPath,
+                      });
+                    }),
+                  ),
+                );
+            }
           } else {
             const notebook = options.script;
             assert(notebook, "Expected notebook");
@@ -96,6 +117,89 @@ export function installPackages(
         ),
     );
   });
+}
+
+export type ProjectInstallRequest = {
+  readonly packages: ReadonlyArray<string>;
+  readonly target: ProjectDependencyTarget;
+};
+
+class ProjectInspectionError extends Data.TaggedError(
+  "ProjectInspectionError",
+)<{
+  readonly cause: unknown;
+}> {}
+
+export const resolveProjectInstallRequests = Effect.fn(
+  "resolveProjectInstallRequests",
+)(function* (packages: ReadonlyArray<string>, directory: string) {
+  const code = yield* VsCode;
+  const requests: ProjectInstallRequest[] = [];
+
+  for (const pkg of packages) {
+    const targets = yield* Effect.try({
+      try: () => findProjectDependencyTargets(directory, pkg),
+      catch: (cause) => new ProjectInspectionError({ cause }),
+    }).pipe(
+      Effect.tapError((cause) =>
+        Effect.logWarning(
+          "Failed to inspect pyproject.toml; using project dependencies",
+        ).pipe(Effect.annotateLogs({ cause, package: pkg })),
+      ),
+      Effect.orElseSucceed(() => []),
+    );
+
+    let target: ProjectDependencyTarget;
+    if (targets.length === 0) {
+      target = { kind: "production" };
+    } else if (targets.length === 1) {
+      const [onlyTarget] = targets;
+      assert(onlyTarget, "Expected one project dependency target");
+      target = onlyTarget;
+    } else {
+      const labels = targets.map(formatProjectDependencyTarget);
+      const selection = yield* code.window.showQuickPick(labels, {
+        placeHolder: `${pkg} is declared in multiple locations. Choose where to update it.`,
+      });
+      if (Option.isNone(selection)) return null;
+      const selectedTarget = targets.find(
+        (candidate) =>
+          formatProjectDependencyTarget(candidate) === selection.value,
+      );
+      assert(selectedTarget, "Expected selected project dependency target");
+      target = selectedTarget;
+    }
+
+    const existing = requests.find((request) =>
+      dependencyTargetsEqual(request.target, target),
+    );
+    if (existing == null) {
+      requests.push({ packages: [pkg], target });
+    } else {
+      requests[requests.indexOf(existing)] = {
+        ...existing,
+        packages: [...existing.packages, pkg],
+      };
+    }
+  }
+
+  return requests;
+});
+
+function dependencyTargetsEqual(
+  left: ProjectDependencyTarget,
+  right: ProjectDependencyTarget,
+): boolean {
+  if (left.kind !== right.kind) return false;
+  switch (left.kind) {
+    case "production":
+      return true;
+    case "group":
+      return right.kind === "group" && left.name === right.name;
+    case "optional":
+      return right.kind === "optional" && left.name === right.name;
+  }
+  return unreachable(left);
 }
 
 export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (

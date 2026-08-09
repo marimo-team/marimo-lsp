@@ -1722,9 +1722,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           showErrorMessage:
             options.window?.showErrorMessage ??
             (() => Effect.succeed(Option.none())),
-          showQuickPick() {
-            return Effect.succeed(Option.none());
-          },
+          showQuickPick:
+            options.window?.showQuickPick ??
+            (() => Effect.succeed(Option.none())),
           showQuickPickItems() {
             return Effect.succeed(Option.none());
           },
