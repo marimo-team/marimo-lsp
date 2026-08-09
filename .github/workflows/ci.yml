@@ -160,6 +160,7 @@ jobs:
 
       # Runs on every matrix OS: the release workflow builds this bundle on
       # Windows too, and Windows-only breakage otherwise first surfaces there.
+      # The Windows run also verifies that every spawned Python process exits.
       - name: Build and test the WASM language server
         env:
           TURBO_TOKEN: ${{ steps.secrets.outputs.TURBO_TOKEN }}

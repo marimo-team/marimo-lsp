@@ -9,6 +9,81 @@ import * as NodeUrl from "node:url";
 import { StreamMessageReader } from "vscode-jsonrpc/node";
 
 const TIMEOUT_MS = 20_000;
+
+/**
+ * @typedef {{ pid: number; parentPid: number; name: string }} WindowsProcess
+ */
+
+/** @param {number} rootPid */
+function getWindowsDescendants(rootPid) {
+  const script = `
+$processes = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name)
+$frontier = @([uint32]${rootPid})
+$descendants = @()
+while ($frontier.Count -gt 0) {
+  $next = @($processes | Where-Object { $frontier -contains [uint32]($_.ParentProcessId) })
+  if ($next.Count -eq 0) { break }
+  $descendants += $next
+  $frontier = @($next | ForEach-Object { [uint32]$_.ProcessId })
+}
+$result = @($descendants | ForEach-Object {
+  [pscustomobject]@{
+    pid = [uint32]$_.ProcessId
+    parentPid = [uint32]$_.ParentProcessId
+    name = [string]$_.Name
+  }
+})
+[Console]::Out.Write((ConvertTo-Json -Compress -Depth 3 -InputObject $result))
+`;
+  const output = NodeChildProcess.execFileSync(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-Command", script],
+    { encoding: "utf8" },
+  ).trim();
+  if (output.length === 0) return [];
+  const processes = JSON.parse(output);
+  /** @type {WindowsProcess[]} */
+  const result = Array.isArray(processes) ? processes : [processes];
+  return result;
+}
+
+/** @param {number} pid */
+function processExists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code =
+      error !== null && typeof error === "object" && "code" in error
+        ? error.code
+        : undefined;
+    if (code === "ESRCH") return false;
+    if (code === "EPERM") return true;
+    throw error;
+  }
+}
+
+/** @param {number[]} pids */
+async function waitForProcessExit(pids) {
+  const deadline = Date.now() + TIMEOUT_MS;
+  const poll = async () => {
+    const alive = pids.filter(processExists);
+    if (alive.length === 0 || Date.now() >= deadline) return alive;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    return poll();
+  };
+  return poll();
+}
+
+/** @param {number} pid */
+function forceKillWindowsProcessTree(pid) {
+  NodeChildProcess.spawnSync(
+    "taskkill.exe",
+    ["/PID", String(pid), "/T", "/F"],
+    { stdio: "ignore" },
+  );
+}
+
 const extensionDir = NodePath.dirname(
   NodeUrl.fileURLToPath(new URL("../package.json", import.meta.url)),
 );
@@ -26,6 +101,22 @@ const child = NodeChildProcess.spawn(
   [NodePath.join(extensionDir, "dist", "wasmServer.js")],
   { stdio: ["pipe", "pipe", "pipe"] },
 );
+const serverPid = child.pid;
+NodeAssert.ok(serverPid !== undefined, "WASM server did not expose its PID");
+/** @type {WindowsProcess[]} */
+let windowsProcessTree = [];
+process.on("exit", () => {
+  if (process.platform === "win32") {
+    for (const pid of [
+      serverPid,
+      ...windowsProcessTree.map((entry) => entry.pid),
+    ]) {
+      if (processExists(pid)) forceKillWindowsProcessTree(pid);
+    }
+  } else if (child.exitCode === null) {
+    child.kill();
+  }
+});
 /** @type {Buffer[]} */
 const stdout = [];
 /** @type {Buffer[]} */
@@ -178,6 +269,21 @@ await executed;
 await waitForOutput(/"op":"completed-run"/);
 await waitForOutput(/slider-value:0/);
 
+windowsProcessTree =
+  process.platform === "win32" ? getWindowsDescendants(serverPid) : [];
+if (process.platform === "win32") {
+  const pythonProcesses = windowsProcessTree.filter((entry) =>
+    entry.name.toLowerCase().startsWith("python"),
+  );
+  NodeAssert.ok(
+    pythonProcesses.length >= 2,
+    `Expected the WASM server to own a Python bridge and kernel, found: ${JSON.stringify(windowsProcessTree)}`,
+  );
+  console.log(
+    `Tracking WASM process tree: ${windowsProcessTree.map((entry) => `${entry.name}:${entry.pid}`).join(", ")}`,
+  );
+}
+
 const initialOutput = Buffer.concat(stdout).toString("utf8");
 const sliderId = initialOutput.match(/object-id='([^']+)'/)?.[1];
 NodeAssert.ok(
@@ -282,6 +388,20 @@ const exitCode = await new Promise((resolve, reject) => {
 });
 const errors = Buffer.concat(stderr).toString("utf8");
 const output = Buffer.concat(stdout).toString("utf8");
+
+if (process.platform === "win32") {
+  const trackedPids = windowsProcessTree.map((entry) => entry.pid);
+  const lingeringPids = await waitForProcessExit(trackedPids);
+  for (const pid of lingeringPids) forceKillWindowsProcessTree(pid);
+  NodeAssert.deepEqual(
+    lingeringPids,
+    [],
+    `WASM server left descendant processes running after shutdown: ${JSON.stringify(
+      windowsProcessTree.filter((entry) => lingeringPids.includes(entry.pid)),
+    )}`,
+  );
+}
+
 NodeAssert.equal(exitCode, 0, errors);
 NodeAssert.equal(initializeMessage.result.serverInfo.name, "marimo-lsp");
 NodeAssert.match(output, /"method":"marimo\/operation"/);
@@ -289,4 +409,9 @@ NodeAssert.match(output, /"op":"completed-run"/);
 NodeAssert.match(output, /slider-value:100/);
 NodeAssert.match(output, /"op":"interrupted"/);
 NodeAssert.doesNotMatch(output, /"channel":"marimo-error"/);
-console.log("WASM language-server UI update and interrupt test passed");
+
+console.log(
+  process.platform === "win32"
+    ? "WASM language-server UI, interrupt, and process cleanup test passed"
+    : "WASM language-server UI and interrupt test passed (process cleanup assertion runs on Windows)",
+);
