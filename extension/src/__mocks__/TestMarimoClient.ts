@@ -11,7 +11,14 @@ import {
   MarimoCommandError,
 } from "../lsp/MarimoClient.ts";
 
-export const TestMarimoClientLive = Layer.scoped(
+/**
+ * Process-backed Adapter for tests that intentionally verify the
+ * TypeScript/Python marimo command contract.
+ *
+ * Unit tests should use `makeTestMarimoClient` instead. Constructing this
+ * Layer starts a real `marimo-lsp` process and performs an LSP handshake.
+ */
+export const TestMarimoClientProcess = Layer.scoped(
   MarimoClient,
   Effect.gen(function* () {
     const { conn } = yield* Effect.acquireRelease(

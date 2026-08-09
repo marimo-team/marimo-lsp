@@ -3,7 +3,6 @@ import { Effect, Layer, LogLevel } from "effect";
 
 import * as pkg from "../../package.json";
 import { getTestExtensionContext } from "../__mocks__/TestExtensionContext.ts";
-import { TestMarimoClientLive } from "../__mocks__/TestMarimoClient.ts";
 import { TestPythonExtension } from "../__mocks__/TestPythonExtension.ts";
 import { TestRuffLanguageServerLive } from "../__mocks__/TestRuffLanguageServer.ts";
 import { TestTelemetryLive } from "../__mocks__/TestTelemetry.ts";
@@ -16,12 +15,13 @@ import showCellCode from "../commands/showCellCode.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { makeActivate } from "../features/Main.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
+import { makeTestMarimoClient } from "./__utils__/TestMarimoClient.ts";
 
 const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
     Layer.provideMerge(vscode.layer),
-    Layer.provideMerge(TestMarimoClientLive),
+    Layer.provideMerge(makeTestMarimoClient()),
     Layer.provideMerge(TestPythonExtension.Default),
     Layer.provideMerge(TestTyLanguageServerLive),
     Layer.provideMerge(TestRuffLanguageServerLive),
