@@ -13,7 +13,7 @@ import disableCell from "../commands/disableCell.ts";
 import hideCellCode from "../commands/hideCellCode.ts";
 import showCellCode from "../commands/showCellCode.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { makeActivate } from "../features/Main.ts";
+import { makeExtension } from "../features/Main.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
 import { makeTestMarimoClient } from "./__utils__/TestMarimoClient.ts";
 
@@ -28,24 +28,22 @@ const withTestCtx = Effect.fn(function* () {
     Layer.provideMerge(TestTelemetryLive),
   );
   return {
-    layer,
     vscode,
-    activate: makeActivate(layer, LogLevel.Error),
+    extension: makeExtension(layer, LogLevel.Error),
   };
 });
 
 describe("extension.activate", () => {
   it.scoped(
-    "should return a disposable",
+    "should return the public API",
     Effect.fn(function* () {
-      const { activate } = yield* withTestCtx();
+      const { extension } = yield* withTestCtx();
 
       const context = yield* getTestExtensionContext();
-      const disposable = yield* Effect.promise(() => activate(context));
+      const api = yield* Effect.promise(() => extension.activate(context));
 
-      expect(disposable).toMatchInlineSnapshot(`
+      expect(api).toMatchInlineSnapshot(`
         {
-          "dispose": [Function],
           "experimental": {
             "kernels": {
               "getKernel": [Function],
@@ -53,6 +51,7 @@ describe("extension.activate", () => {
           },
         }
       `);
+      yield* Effect.promise(() => extension.deactivate());
       // Full activation builds the entire layer graph; the default 5s
       // timeout flakes under parallel-worker load.
     }),
@@ -60,13 +59,13 @@ describe("extension.activate", () => {
   );
 
   it.scoped(
-    "should register contributions on activation",
+    "should own contributions until deactivation",
     Effect.fn(function* () {
-      const { vscode, activate } = yield* withTestCtx();
+      const { vscode, extension } = yield* withTestCtx();
 
       // activate the extension
       const context = yield* getTestExtensionContext();
-      yield* Effect.promise(() => activate(context));
+      yield* Effect.promise(() => extension.activate(context));
 
       const snapshot = yield* vscode.snapshot();
 
@@ -86,6 +85,14 @@ describe("extension.activate", () => {
 
       assert.strictEqual(pkg.contributes.notebooks.length, 1);
       assert.strictEqual(pkg.contributes.notebooks[0].type, NOTEBOOK_TYPE);
+
+      yield* Effect.promise(() => extension.deactivate());
+      expect(yield* vscode.snapshot()).toEqual({
+        views: [],
+        commands: [],
+        serializers: [],
+        controllers: [],
+      });
     }),
     20_000,
   );
