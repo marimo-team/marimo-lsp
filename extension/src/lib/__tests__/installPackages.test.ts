@@ -3,7 +3,7 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
 import { expect, it } from "@effect/vitest";
-import { Effect, Option } from "effect";
+import { Effect } from "effect";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { resolveProjectInstallRequests } from "../installPackages.ts";
@@ -43,7 +43,7 @@ notebooks = ["marimo>=0.10"]
 );
 
 it.effect(
-  "asks which existing declaration to update when placement is ambiguous",
+  "refuses to update only one of multiple declarations",
   Effect.fn(function* () {
     using project = makeProject(`
 [project]
@@ -52,36 +52,29 @@ dependencies = ["marimo>=0.10"]
 [dependency-groups]
 dev = ["marimo>=0.10"]
 `);
-    const vscode = yield* TestVsCode.make({
-      window: {
-        showQuickPick: (items) =>
-          Effect.succeed(Option.some(items[1] ?? items[0])),
-      },
-    });
+    const vscode = yield* TestVsCode.make();
 
     const requests = yield* resolveProjectInstallRequests(
       ["marimo>=0.20"],
       project.path,
     ).pipe(Effect.provide(vscode.layer));
 
-    expect(requests).toEqual([
-      {
-        packages: ["marimo>=0.20"],
-        target: { kind: "group", name: "dev" },
-      },
-    ]);
+    expect(requests).toBeNull();
   }),
 );
 
 it.effect(
-  "cancels installation when ambiguous placement is dismissed",
+  "cancels when standard and legacy dev declarations conflict",
   Effect.fn(function* () {
     using project = makeProject(`
 [project]
-dependencies = ["marimo>=0.10"]
+dependencies = []
 
 [dependency-groups]
-dev = ["marimo>=0.10"]
+dev = ["marimo<0.20"]
+
+[tool.uv]
+dev-dependencies = ["marimo<0.20"]
 `);
     const vscode = yield* TestVsCode.make();
 

@@ -10,6 +10,13 @@ export type ProjectDependencyTarget =
   | { readonly kind: "group"; readonly name: string }
   | { readonly kind: "optional"; readonly name: string };
 
+export type ProjectDependencyInspection = {
+  readonly findTargets: (
+    requirement: string,
+  ) => ReadonlyArray<ProjectDependencyTarget>;
+  readonly hasDuplicateDevDeclaration: (requirement: string) => boolean;
+};
+
 const PRODUCTION_TARGET = { kind: "production" } as const;
 
 /**
@@ -23,49 +30,73 @@ export function findProjectDependencyTargets(
   directory: string,
   requirement: string,
 ): ReadonlyArray<ProjectDependencyTarget> {
-  const pyproject = findPyProject(directory);
-  if (pyproject == null) return [];
+  return inspectProjectDependencies(directory).findTargets(requirement);
+}
 
-  const packageName = parseRequirementName(requirement);
-  if (packageName == null) return [];
+/** Read and index the nearest pyproject once for a package-install batch. */
+export function inspectProjectDependencies(
+  directory: string,
+): ProjectDependencyInspection {
+  const pyproject = findPyProject(directory);
+  if (pyproject == null) {
+    return {
+      findTargets: () => [],
+      hasDuplicateDevDeclaration: () => false,
+    };
+  }
 
   const document = parse(NodeFs.readFileSync(pyproject, "utf8"));
-  const targets: ProjectDependencyTarget[] = [];
   const project = asTable(document.project);
-
-  if (containsPackage(project?.dependencies, packageName)) {
-    targets.push(PRODUCTION_TARGET);
-  }
-
-  for (const [name, dependencies] of Object.entries(
-    asTable(project?.["optional-dependencies"]) ?? {},
-  )) {
-    if (containsPackage(dependencies, packageName)) {
-      targets.push({ kind: "optional", name });
-    }
-  }
-
-  for (const [name, dependencies] of Object.entries(
-    asTable(document["dependency-groups"]) ?? {},
-  )) {
-    if (containsPackage(dependencies, packageName)) {
-      targets.push({ kind: "group", name });
-    }
-  }
-
-  // uv preserves this legacy field when `--dev` is used. Treat it as the dev
-  // group, while avoiding a duplicate if both old and new fields are present.
   const legacyDevDependencies = asTable(asTable(document.tool)?.uv)?.[
     "dev-dependencies"
   ];
-  if (
-    containsPackage(legacyDevDependencies, packageName) &&
-    !targets.some((target) => target.kind === "group" && target.name === "dev")
-  ) {
-    targets.push({ kind: "group", name: "dev" });
-  }
+  const dependencyGroups = asTable(document["dependency-groups"]) ?? {};
+  const standardDevDependencies = dependencyGroups.dev;
 
-  return targets;
+  return {
+    findTargets(requirement) {
+      const packageName = parseRequirementName(requirement);
+      if (packageName == null) return [];
+
+      const targets: ProjectDependencyTarget[] = [];
+      if (containsPackage(project?.dependencies, packageName)) {
+        targets.push(PRODUCTION_TARGET);
+      }
+
+      for (const [name, dependencies] of Object.entries(
+        asTable(project?.["optional-dependencies"]) ?? {},
+      )) {
+        if (containsPackage(dependencies, packageName)) {
+          targets.push({ kind: "optional", name });
+        }
+      }
+
+      for (const [name, dependencies] of Object.entries(dependencyGroups)) {
+        if (containsPackage(dependencies, packageName)) {
+          targets.push({ kind: "group", name });
+        }
+      }
+
+      // uv preserves this legacy field when `--dev` is used. Treat it as the
+      // dev group when there is no matching standard declaration.
+      if (
+        containsPackage(legacyDevDependencies, packageName) &&
+        !containsPackage(standardDevDependencies, packageName)
+      ) {
+        targets.push({ kind: "group", name: "dev" });
+      }
+
+      return targets;
+    },
+    hasDuplicateDevDeclaration(requirement) {
+      const packageName = parseRequirementName(requirement);
+      return (
+        packageName != null &&
+        containsPackage(standardDevDependencies, packageName) &&
+        containsPackage(legacyDevDependencies, packageName)
+      );
+    },
+  };
 }
 
 export function formatProjectDependencyTarget(

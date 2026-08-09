@@ -4,7 +4,10 @@ import * as NodePath from "node:path";
 
 import { describe, expect, it } from "vite-plus/test";
 
-import { findProjectDependencyTargets } from "../ProjectDependencyTarget.ts";
+import {
+  findProjectDependencyTargets,
+  inspectProjectDependencies,
+} from "../ProjectDependencyTarget.ts";
 
 function withProject(content: string, test: (directory: string) => void) {
   using tmp = NodeFs.mkdtempDisposableSync(
@@ -90,6 +93,53 @@ dev-dependencies = ["marimo>=0.10"]
 `,
       (directory) => {
         expect(findProjectDependencyTargets(directory, "marimo")).toEqual([
+          { kind: "group", name: "dev" },
+        ]);
+      },
+    );
+  });
+
+  it("reports matching legacy and standard dev declarations", () => {
+    withProject(
+      `
+[project]
+dependencies = []
+
+[dependency-groups]
+dev = ["marimo>=0.10"]
+
+[tool.uv]
+dev-dependencies = ["marimo>=0.10"]
+`,
+      (directory) => {
+        const inspection = inspectProjectDependencies(directory);
+        expect(inspection.hasDuplicateDevDeclaration("marimo>=0.20")).toBe(
+          true,
+        );
+      },
+    );
+  });
+
+  it("uses a single project snapshot for multiple package lookups", () => {
+    withProject(
+      `
+[project]
+dependencies = ["httpx"]
+
+[dependency-groups]
+dev = ["marimo"]
+`,
+      (directory) => {
+        const inspection = inspectProjectDependencies(directory);
+        NodeFs.writeFileSync(
+          NodePath.join(directory, "pyproject.toml"),
+          "[invalid",
+        );
+
+        expect(inspection.findTargets("httpx")).toEqual([
+          { kind: "production" },
+        ]);
+        expect(inspection.findTargets("marimo")).toEqual([
           { kind: "group", name: "dev" },
         ]);
       },

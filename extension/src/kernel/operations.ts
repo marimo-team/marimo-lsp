@@ -79,13 +79,14 @@ export const handleMissingPackageAlert = Effect.fn("handleMissingPackageAlert")(
         Effect.annotateLogs("packages", operation.packages),
       );
 
-      if ("venvPath" in options) {
-        yield* installPackages(operation.packages, options);
-      } else {
-        yield* installPackages(operation.packages, options);
-      }
+      const outcome =
+        "venvPath" in options
+          ? yield* installPackages(operation.packages, options)
+          : yield* installPackages(operation.packages, options);
 
-      yield* envInvalidation.invalidate("package-install");
+      if (outcome === "installed") {
+        yield* envInvalidation.invalidate("package-install");
+      }
       return;
     }
 
@@ -105,13 +106,14 @@ export const handleMissingPackageAlert = Effect.fn("handleMissingPackageAlert")(
         Effect.annotateLogs("packages", newPackages),
       );
 
-      if ("venvPath" in options) {
-        yield* installPackages(newPackages, options);
-      } else {
-        yield* installPackages(newPackages, options);
-      }
+      const outcome =
+        "venvPath" in options
+          ? yield* installPackages(newPackages, options)
+          : yield* installPackages(newPackages, options);
 
-      yield* envInvalidation.invalidate("package-install");
+      if (outcome === "installed") {
+        yield* envInvalidation.invalidate("package-install");
+      }
     }
   },
 );

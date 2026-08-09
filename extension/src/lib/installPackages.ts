@@ -5,8 +5,8 @@ import { Cause, Data, Effect, Option } from "effect";
 import { assert, unreachable } from "../assert.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
-  findProjectDependencyTargets,
   formatProjectDependencyTarget,
+  inspectProjectDependencies,
   type ProjectDependencyTarget,
 } from "../python/ProjectDependencyTarget.ts";
 import { Uv, UvUnknownError } from "../python/Uv.ts";
@@ -17,24 +17,24 @@ export function installPackages(
   options: {
     venvPath: string;
   },
-): Effect.Effect<void, never, Uv | VsCode>;
+): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode>;
 export function installPackages(
   packages: ReadonlyArray<string>,
   options: {
     script: MarimoNotebookDocument;
   },
-): Effect.Effect<void, never, Uv | VsCode>;
+): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode>;
 export function installPackages(
   packages: ReadonlyArray<string>,
   options: {
     script?: MarimoNotebookDocument;
     venvPath?: string;
   },
-): Effect.Effect<void, never, Uv | VsCode> {
+): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode> {
   return Effect.gen(function* () {
     const uv = yield* Uv;
     const code = yield* VsCode;
-    yield* code.window.withProgress(
+    return yield* code.window.withProgress(
       {
         location: code.ProgressLocation.Notification,
         title: `Installing ${packages.length > 1 ? "packages" : "package"}`,
@@ -52,7 +52,7 @@ export function installPackages(
               packages,
               venvPath,
             ).pipe(Effect.provideService(VsCode, code));
-            if (requests == null) return;
+            if (requests == null) return "cancelled" as const;
 
             for (const request of requests) {
               yield* uv
@@ -96,6 +96,7 @@ export function installPackages(
           progress.report({
             message: `Successfully installed ${packages.join(", ")}`,
           });
+          return "installed" as const;
         }).pipe(
           Effect.catchAllCause(
             Effect.fn(function* (cause) {
@@ -112,12 +113,15 @@ export function installPackages(
               yield* code.window.showErrorMessage(
                 `Failed to install ${packages.join(", ")}.${suffix}`,
               );
+              return "failed" as const;
             }),
           ),
         ),
     );
   });
 }
+
+export type InstallPackagesOutcome = "installed" | "cancelled" | "failed";
 
 export type ProjectInstallRequest = {
   readonly packages: ReadonlyArray<string>;
@@ -136,38 +140,45 @@ export const resolveProjectInstallRequests = Effect.fn(
   const code = yield* VsCode;
   const requests: ProjectInstallRequest[] = [];
 
+  const inspection = yield* Effect.try({
+    try: () => inspectProjectDependencies(directory),
+    catch: (cause) => new ProjectInspectionError({ cause }),
+  }).pipe(
+    Effect.tapError((cause) =>
+      Effect.logWarning(
+        "Failed to inspect pyproject.toml; using project dependencies",
+      ).pipe(Effect.annotateLogs({ cause })),
+    ),
+    Effect.option,
+  );
+
   for (const pkg of packages) {
-    const targets = yield* Effect.try({
-      try: () => findProjectDependencyTargets(directory, pkg),
-      catch: (cause) => new ProjectInspectionError({ cause }),
-    }).pipe(
-      Effect.tapError((cause) =>
-        Effect.logWarning(
-          "Failed to inspect pyproject.toml; using project dependencies",
-        ).pipe(Effect.annotateLogs({ cause, package: pkg })),
-      ),
-      Effect.orElseSucceed(() => []),
-    );
+    const targets = Option.match(inspection, {
+      onNone: () => [],
+      onSome: (index) => index.findTargets(pkg),
+    });
+
+    const hasDuplicateDevDeclaration =
+      Option.isSome(inspection) &&
+      inspection.value.hasDuplicateDevDeclaration(pkg);
+    if (hasDuplicateDevDeclaration || targets.length > 1) {
+      const locations = targets.map(formatProjectDependencyTarget).join(", ");
+      const legacyLocation = hasDuplicateDevDeclaration
+        ? `${locations.length > 0 ? ", " : ""}Legacy uv dev dependencies`
+        : "";
+      yield* code.window.showErrorMessage(
+        `${pkg} is declared in multiple locations (${locations}${legacyLocation}). uv cannot safely update only one declaration because the remaining constraint may prevent resolution. Consolidate or update the declarations in pyproject.toml manually.`,
+      );
+      return null;
+    }
 
     let target: ProjectDependencyTarget;
     if (targets.length === 0) {
       target = { kind: "production" };
-    } else if (targets.length === 1) {
+    } else {
       const [onlyTarget] = targets;
       assert(onlyTarget, "Expected one project dependency target");
       target = onlyTarget;
-    } else {
-      const labels = targets.map(formatProjectDependencyTarget);
-      const selection = yield* code.window.showQuickPick(labels, {
-        placeHolder: `${pkg} is declared in multiple locations. Choose where to update it.`,
-      });
-      if (Option.isNone(selection)) return null;
-      const selectedTarget = targets.find(
-        (candidate) =>
-          formatProjectDependencyTarget(candidate) === selection.value,
-      );
-      assert(selectedTarget, "Expected selected project dependency target");
-      target = selectedTarget;
     }
 
     const existing = requests.find((request) =>
