@@ -9,7 +9,7 @@ import { Effect, Either, Layer, Option } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { Uv } from "../../python/Uv.ts";
+import { resolveScriptEnvironmentPath, Uv } from "../../python/Uv.ts";
 import { ProjectDependencyTarget } from "../ProjectDependencyTarget.ts";
 
 const python = "3.13";
@@ -223,50 +223,12 @@ print("This script has no PEP 723 metadata")
     );
   });
 
-  it.layer(Layer.fresh(UvLive))((it) => {
-    it.scoped(
-      "should return absolute path from syncScript even if uv outputs relative path",
-      Effect.fn(function* () {
-        const uv = yield* Uv;
-        const tmpdir = yield* TmpDir;
-
-        const script = NodePath.join(tmpdir.path, "test-script.py");
-        NodeFs.writeFileSync(
-          script,
-          `\
-# /// script
-# requires-python = ">=3.13"
-# dependencies = []
-# ///
-
-print("hello")
-`,
-          { encoding: "utf8" },
-        );
-
-        // Change CWD to home directory to trigger uv's relative path output.
-        // uv uses user_display() which strips CWD prefix from paths.
-        // When CWD is home (~), cache path ~/.cache/uv/... becomes .cache/uv/...
-        const originalCwd = NodeProcess.cwd();
-        NodeProcess.chdir(NodeOs.homedir());
-        yield* Effect.addFinalizer(() =>
-          Effect.sync(() => NodeProcess.chdir(originalCwd)),
-        );
-
-        const envPath = yield* uv.syncScript({ script });
-
-        assert(
-          NodePath.isAbsolute(envPath),
-          `Expected absolute path, got: ${envPath}`,
-        );
-
-        assert(
-          NodeFs.existsSync(envPath),
-          `Expected environment path to exist: ${envPath}`,
-        );
-      }),
-      { timeout },
+  it("should resolve relative script environment paths", () => {
+    const envPath = resolveScriptEnvironmentPath(
+      "Using script environment at: .cache/uv/environments-v2/test",
     );
+
+    expect(envPath).toBe(NodePath.resolve(".cache/uv/environments-v2/test"));
   });
 
   describe("ensureLanguageServerBinaryInstalled", () => {

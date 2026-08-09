@@ -15,7 +15,7 @@ import {
 } from "effect";
 
 import packageJson from "../../../package.json";
-import { TestMarimoClientLive } from "../../__mocks__/TestMarimoClient.ts";
+import { TestMarimoClientProcess } from "../../__mocks__/TestMarimoClient.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
@@ -27,7 +27,8 @@ import { Constants } from "../../platform/Constants.ts";
 
 const NotebookSerializerLive = Layer.empty.pipe(
   Layer.provideMerge(NotebookSerializer.Default),
-  Layer.provideMerge(TestMarimoClientLive),
+  // These tests intentionally cover the cross-language serialization contract.
+  Layer.provideMerge(TestMarimoClientProcess),
   Layer.provideMerge(Constants.Default),
 );
 
