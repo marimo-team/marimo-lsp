@@ -1,14 +1,4 @@
-import {
-  Context,
-  Effect,
-  Exit,
-  Layer,
-  Logger,
-  type LogLevel,
-  pipe,
-  Runtime,
-  Scope,
-} from "effect";
+import { Layer, Logger, type LogLevel, ManagedRuntime } from "effect";
 import type * as vscode from "vscode";
 
 import { Config } from "../config/Config.ts";
@@ -116,7 +106,7 @@ const MainLive = Layer.empty
     Layer.provide(NotebookRuntime.Default),
   );
 
-export function makeActivate(
+export function makeExtension(
   layer: Layer.Layer<
     | MarimoClient
     | VsCode
@@ -128,35 +118,43 @@ export function makeActivate(
     ExtensionContext
   >,
   minimumLogLevel: LogLevel.LogLevel,
-): (
-  context: Pick<
-    vscode.ExtensionContext,
-    "workspaceState" | "globalState" | "extensionUri" | "globalStorageUri"
-  >,
-) => Promise<vscode.Disposable & MarimoApi> {
-  return (context) =>
-    pipe(
-      Effect.gen(function* () {
-        const runPromise = Runtime.runPromise(yield* Effect.runtime());
-        // Create a scope and build layers with it. Layer.buildWithScope completes
-        // once all layer initialization finishes (commands registered, serializer
-        // registered, notification streams set up). The LSP client will start lazily
-        // on first use. Resources are kept alive by extending their lifetime to the
-        // manually-managed scope, and are only released when we explicitly close the
-        // scope on deactivation.
-        const scope = yield* Scope.make();
-        const ctx = yield* Layer.buildWithScope(
-          Layer.provide(MainLive, layer),
-          scope,
-        );
-        const api = Context.get(ctx, Api);
-        return {
-          experimental: api.experimental,
-          dispose: () => runPromise(Scope.close(scope, Exit.void)),
-        };
-      }),
-      Effect.provideService(ExtensionContext, context),
-      Logger.withMinimumLogLevel(minimumLogLevel),
-      Effect.runPromise,
-    );
+): {
+  readonly activate: (
+    context: Pick<
+      vscode.ExtensionContext,
+      "workspaceState" | "globalState" | "extensionUri" | "globalStorageUri"
+    >,
+  ) => Promise<MarimoApi>;
+  readonly deactivate: () => Promise<void>;
+} {
+  let closeActive: (() => Promise<void>) | undefined;
+
+  return {
+    async activate(context): Promise<MarimoApi> {
+      if (closeActive !== undefined) {
+        throw new Error("Extension is already active");
+      }
+
+      const appLayer = Layer.provide(
+        Layer.provide(MainLive, layer),
+        Layer.succeed(ExtensionContext, context),
+      ).pipe(Layer.merge(Logger.minimumLogLevel(minimumLogLevel)));
+      const runtime = ManagedRuntime.make(appLayer);
+      closeActive = runtime.dispose;
+
+      try {
+        const api = await runtime.runPromise(Api);
+        return { experimental: api.experimental };
+      } catch (error) {
+        closeActive = undefined;
+        await runtime.dispose();
+        throw error;
+      }
+    },
+    async deactivate(): Promise<void> {
+      const close = closeActive;
+      closeActive = undefined;
+      await close?.();
+    },
+  };
 }
