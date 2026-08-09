@@ -1,5 +1,5 @@
 import { describe, assert, expect, it } from "@effect/vitest";
-import { Effect, Layer, LogLevel } from "effect";
+import { Effect, Layer, LogLevel, Ref } from "effect";
 
 import * as pkg from "../../package.json";
 import { getTestExtensionContext } from "../__mocks__/TestExtensionContext.ts";
@@ -17,9 +17,12 @@ import { makeExtension } from "../features/Main.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
 import { makeTestMarimoClient } from "./__utils__/TestMarimoClient.ts";
 
-const withTestCtx = Effect.fn(function* () {
+const withTestCtx = Effect.fn(function* (
+  additionalLayer: Layer.Layer<never> = Layer.empty,
+) {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
+    Layer.merge(additionalLayer),
     Layer.provideMerge(vscode.layer),
     Layer.provideMerge(makeTestMarimoClient()),
     Layer.provideMerge(TestPythonExtension.Default),
@@ -93,6 +96,25 @@ describe("extension.activate", () => {
         serializers: [],
         controllers: [],
       });
+    }),
+    20_000,
+  );
+
+  it.scoped(
+    "should dispose the runtime exactly once",
+    Effect.fn(function* () {
+      const disposals = yield* Ref.make(0);
+      const finalizer = Layer.scopedDiscard(
+        Effect.addFinalizer(() => Ref.update(disposals, (count) => count + 1)),
+      );
+      const { extension } = yield* withTestCtx(finalizer);
+
+      const context = yield* getTestExtensionContext();
+      yield* Effect.promise(() => extension.activate(context));
+      yield* Effect.promise(() => extension.deactivate());
+      yield* Effect.promise(() => extension.deactivate());
+
+      expect(yield* Ref.get(disposals)).toBe(1);
     }),
     20_000,
   );
