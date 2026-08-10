@@ -104,11 +104,21 @@ class WasmKernel:
             elif isinstance(message, Log):
                 logger.info(message.message)
 
-    def exited(self, code: int | None, signal: str | None) -> None:
+    def exited(
+        self,
+        code: int | None,
+        signal: str | None,
+        stderr: str | None,
+    ) -> None:
         """Report an unexpected kernel bridge exit."""
         if not self._closed:
+            message = (
+                f"Kernel bridge exited unexpectedly (code={code}, signal={signal})"
+            )
+            if stderr:
+                message = f"{message}\nBridge stderr:\n{stderr}"
             self._fail(
-                f"Kernel bridge exited unexpectedly (code={code}, signal={signal})",
+                message,
                 close_process=False,
             )
 
@@ -242,11 +252,12 @@ class WasmKernels:
         process_id: str,
         code: int | None,
         signal: str | None,
+        stderr: str | None,
     ) -> None:
         """Report a kernel bridge exit to its WASM kernel."""
         kernel = self._kernels.get(process_id)
         if kernel is not None:
-            kernel.exited(code, signal)
+            kernel.exited(code, signal, stderr)
 
     def close_all(self) -> None:
         """Close every tracked kernel bridge."""

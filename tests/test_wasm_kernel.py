@@ -101,6 +101,22 @@ async def test_wasm_launch_fails_before_publishing_unready_kernel() -> None:
 
 
 @pytest.mark.asyncio
+async def test_wasm_process_exit_includes_stderr_in_open_error() -> None:
+    callbacks, kernels, launch, _messages = await _begin_launch()
+    process_id = callbacks.spawns[0][0]
+
+    kernels.exited(process_id, 1, None, "ModuleNotFoundError: No module named 'marimo'")
+
+    with pytest.raises(KernelOpenError) as exc_info:
+        await launch
+    assert "Kernel bridge exited unexpectedly (code=1, signal=None)" in str(
+        exc_info.value
+    )
+    assert "Bridge stderr:" in str(exc_info.value)
+    assert "ModuleNotFoundError" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
 async def test_cancelled_wasm_launch_releases_bridge() -> None:
     callbacks, _kernels, launch, _messages = await _begin_launch()
     process_id = callbacks.spawns[0][0]

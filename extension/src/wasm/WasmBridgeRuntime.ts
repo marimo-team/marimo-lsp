@@ -7,6 +7,7 @@ interface WasmBridge {
     processId: string,
     code: number | null,
     signal: string | null,
+    stderr: string | null,
   ) => void;
   readonly close: () => void;
   readonly destroy: () => void;
@@ -59,10 +60,15 @@ export class WasmBridgeRuntime {
           state.bridge.handle_kernel_bytes(processId, chunk);
         }
       },
-      exited: (processId, code, signal) => {
+      exited: (processId, code, signal, stderr) => {
         const state = this.#state;
         if (state.status === "running") {
-          state.bridge.handle_kernel_exit(processId, code, signal);
+          state.bridge.handle_kernel_exit(
+            processId,
+            code,
+            signal,
+            stderr ?? null,
+          );
         }
       },
     });

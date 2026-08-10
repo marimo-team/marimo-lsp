@@ -11,10 +11,12 @@ it("reports a selected-Python spawn failure", async () => {
   const exited = Promise.withResolvers<{
     code: number | null;
     signal: NodeJS.Signals | null;
+    stderr: string | undefined;
   }>();
   const processes = new Processes({
     stdout: () => {},
-    exited: (_processId, code, signal) => exited.resolve({ code, signal }),
+    exited: (_processId, code, signal, processStderr) =>
+      exited.resolve({ code, signal, stderr: processStderr }),
   });
 
   processes.spawn("kernel", "/definitely-not-a-marimo-python", process.cwd());
@@ -22,6 +24,7 @@ it("reports a selected-Python spawn failure", async () => {
   const result = await exited.promise;
   expect(result.code).not.toBe(0);
   expect(result.signal).toBeNull();
+  expect(result.stderr).toContain("definitely-not-a-marimo-python");
   expect(() => processes.write("kernel", new Uint8Array())).toThrow(
     "No process with id kernel",
   );
@@ -53,4 +56,31 @@ it("drains stdout before reporting process exit", () => {
 
   child.emit("close", 0, null);
   expect(events).toEqual(["final output", "exited"]);
+});
+
+it("includes captured stderr when reporting process exit", () => {
+  const child = Object.assign(new EventEmitter(), {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(() => true),
+  });
+  const spawn = vi.fn(() => child);
+  const captured: Array<string | undefined> = [];
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const processes = new Processes(
+    {
+      stdout: () => {},
+      exited: (_processId, _code, _signal, processStderr) =>
+        captured.push(processStderr),
+    },
+    spawn,
+  );
+
+  processes.spawn("kernel", "/python", "/workspace");
+  child.stderr.write("Traceback: missing dependency\n");
+  child.emit("close", 1, null);
+
+  expect(captured).toEqual(["Traceback: missing dependency"]);
+  stderr.mockRestore();
 });
