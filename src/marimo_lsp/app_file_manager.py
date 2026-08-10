@@ -35,6 +35,15 @@ if TYPE_CHECKING:
     from marimo_lsp.sessions import Session
 
 
+class DuplicateCellIdError(ValueError):
+    """Raised when multiple notebook cells share one runtime stable ID."""
+
+    def __init__(self, cell_ids: list[CellId_t]) -> None:
+        self.cell_ids = tuple(cell_ids)
+        joined = ", ".join(str(cell_id) for cell_id in cell_ids)
+        super().__init__(f"Notebook contains duplicate stable cell IDs: {joined}")
+
+
 class LspAppFileManager:
     """AppFileManager implementation for marimo LSP integration.
 
@@ -180,10 +189,6 @@ def sync_app_with_workspace(
 
     metadata = decode_notebook_document_metadata(notebook)
     app_options = metadata.app_config
-    if app is None:
-        app = InternalApp(App(**app_options))
-
-    app.update_config(app_options)
 
     cell_ids: list[CellId_t] = []
     codes: list[str] = []
@@ -197,6 +202,19 @@ def sync_app_with_workspace(
         # `config.column` off these (a dict raises AttributeError).
         configs.append(CellConfig.from_dict(dict(config)))
         names.append(name)
+
+    seen: set[CellId_t] = set()
+    duplicate_ids: set[CellId_t] = set()
+    for cell_id in cell_ids:
+        if cell_id in seen:
+            duplicate_ids.add(cell_id)
+        seen.add(cell_id)
+    if duplicate_ids:
+        raise DuplicateCellIdError(sorted(duplicate_ids))
+
+    if app is None:
+        app = InternalApp(App(**app_options))
+    app.update_config(app_options)
 
     return app.with_data(
         cell_ids=cell_ids,

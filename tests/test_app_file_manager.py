@@ -11,7 +11,11 @@ import lsprotocol.types as lsp
 import msgspec
 import pytest
 
-from marimo_lsp.app_file_manager import find_notebook_document, sync_app_with_workspace
+from marimo_lsp.app_file_manager import (
+    DuplicateCellIdError,
+    find_notebook_document,
+    sync_app_with_workspace,
+)
 
 
 def _lsp_object(d: dict[str, object] | None) -> lsp.LSPObject | None:
@@ -90,6 +94,42 @@ def _make_workspace_with_metadata(
 
 
 class TestSyncAppWithWorkspace:
+    def test_rejects_duplicate_stable_cell_ids_before_mutating_app(self) -> None:
+        uri = "file:///test/notebook.py"
+        original = _make_workspace_with_metadata(
+            uri,
+            metadata={"marimo": {"appConfig": {"width": "wide"}}},
+        )
+        app = sync_app_with_workspace(
+            workspace=original,
+            notebook_uri=uri,
+            app=None,
+        )
+        cell_uris = [f"{uri}#cell-1", f"{uri}#cell-2"]
+        cells = [
+            lsp.NotebookCell(
+                kind=lsp.NotebookCellKind.Code,
+                document=cell_uri,
+                metadata=_lsp_object({"marimoRuntime": {"stableId": "duplicate-id"}}),
+            )
+            for cell_uri in cell_uris
+        ]
+        ws = _make_workspace_with_metadata(
+            uri,
+            metadata={"marimo": {"appConfig": {"width": "medium"}}},
+            cells=cells,
+        )
+        ws.text_documents = {
+            cell_uri: MagicMock(source=f"value_{index} = {index}", language_id="python")
+            for index, cell_uri in enumerate(cell_uris)
+        }
+
+        with pytest.raises(DuplicateCellIdError) as exc_info:
+            sync_app_with_workspace(workspace=ws, notebook_uri=uri, app=app)
+
+        assert exc_info.value.cell_ids == ("duplicate-id",)
+        assert app.config.width == "wide"
+
     def test_extracts_app_options_from_metadata(self) -> None:
         """App config should come from namespaced notebook metadata."""
         uri = "file:///test/notebook.py"
