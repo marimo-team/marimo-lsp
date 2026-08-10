@@ -6,6 +6,7 @@ import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Option, Ref, Stream } from "effect";
 import { vi } from "vite-plus/test";
 
+import { MarimoLspServer } from "../../config/Config.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { MarimoApiCall, MarimoOperation } from "../../types.ts";
 import {
@@ -213,27 +214,29 @@ describe("findWasmMarimoLspExecutable", () => {
 
 describe("selectMarimoLspExecutable", () => {
   it.effect(
-    "prefers an explicitly configured executable",
+    "uses the command carried by the custom server variant",
     Effect.fn(function* () {
-      const exec = { command: "/custom/marimo-lsp", args: ["--stdio"] };
       const selection = yield* selectMarimoLspExecutable({
-        configuredExec: Option.some(exec),
-        useWasm: true,
-        uvBinary: "bundled-uv",
+        server: MarimoLspServer.Custom({
+          command: ["/custom/marimo-lsp", "--stdio"],
+        }),
+        resolveUvBinary: Effect.die("custom mode must not resolve uv"),
         searchDirectory: "/does/not/exist",
       });
 
-      expect(selection).toEqual({ _tag: "Configured", exec });
+      expect(selection).toEqual({
+        _tag: "Configured",
+        exec: { command: "/custom/marimo-lsp", args: ["--stdio"] },
+      });
     }),
   );
 
   it.effect(
-    "prefers WASM over uv when enabled",
+    "uses WASM without resolving uv",
     Effect.fn(function* () {
       const selection = yield* selectMarimoLspExecutable({
-        configuredExec: Option.none(),
-        useWasm: true,
-        uvBinary: "bundled-uv",
+        server: MarimoLspServer.Wasm(),
+        resolveUvBinary: Effect.die("WASM mode must not resolve uv"),
         searchDirectory: "/extension/dist",
       });
 
@@ -244,7 +247,7 @@ describe("selectMarimoLspExecutable", () => {
     }),
   );
 
-  it.scoped("falls back to uv when WASM is disabled", () =>
+  it.scoped("resolves uv only for the Python server variant", () =>
     Effect.acquireUseRelease(
       Effect.sync(() =>
         NodeFs.mkdtempDisposableSync(
@@ -254,9 +257,8 @@ describe("selectMarimoLspExecutable", () => {
       (directory) =>
         Effect.gen(function* () {
           const selection = yield* selectMarimoLspExecutable({
-            configuredExec: Option.none(),
-            useWasm: false,
-            uvBinary: "bundled-uv",
+            server: MarimoLspServer.Python(),
+            resolveUvBinary: Effect.succeed("bundled-uv"),
             searchDirectory: directory.path,
           });
 

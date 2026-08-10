@@ -1,8 +1,109 @@
-import { Effect, Option } from "effect";
+import { Data, Effect, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 
 import { DEFAULT_NOTEBOOK_FILE_ROOT } from "../kernel/NotebookFileRoot.ts";
 import { VsCode } from "../platform/VsCode.ts";
+
+const MarimoLspServerSetting = Schema.Literal("wasm", "python", "custom");
+const MarimoLspCommand = Schema.NonEmptyArray(Schema.String).pipe(
+  Schema.filter(([command]) => command.trim().length > 0, {
+    message: () => "The marimo-lsp command must not be empty",
+  }),
+);
+
+export type MarimoLspCommand = typeof MarimoLspCommand.Type;
+
+export const MarimoLspServer = Data.taggedEnum<MarimoLspServer>();
+export type MarimoLspServer = Data.TaggedEnum<{
+  Wasm: {};
+  Python: {};
+  Custom: { readonly command: MarimoLspCommand };
+}>;
+
+export class InvalidMarimoLspConfiguration extends Data.TaggedError(
+  "InvalidMarimoLspConfiguration",
+)<{
+  readonly setting: "marimo.lsp.path" | "marimo.lsp.server";
+  readonly message: string;
+  readonly cause: unknown;
+}> {}
+
+const decodeServerSetting = (value: unknown) =>
+  Schema.decodeUnknown(MarimoLspServerSetting)(value).pipe(
+    Effect.mapError(
+      (cause) =>
+        new InvalidMarimoLspConfiguration({
+          setting: "marimo.lsp.server",
+          message:
+            "Invalid marimo.lsp.server value. Choose wasm, python, or custom.",
+          cause,
+        }),
+    ),
+  );
+
+const decodeCommand = (value: unknown) =>
+  Schema.decodeUnknown(MarimoLspCommand)(value).pipe(
+    Effect.mapError(
+      (cause) =>
+        new InvalidMarimoLspConfiguration({
+          setting: "marimo.lsp.path",
+          message:
+            "marimo.lsp.server is set to custom, but marimo.lsp.path does not contain a valid command.",
+          cause,
+        }),
+    ),
+  );
+
+export const resolveMarimoLspServer = Effect.fn(
+  "Config.resolveMarimoLspServer",
+)(function* ({
+  server,
+  path,
+}: {
+  readonly server: unknown;
+  readonly path: unknown;
+}) {
+  const configured = yield* decodeServerSetting(
+    server === undefined ? "wasm" : server,
+  );
+  switch (configured) {
+    case "wasm":
+      return MarimoLspServer.Wasm();
+    case "python":
+      return MarimoLspServer.Python();
+    case "custom":
+      return MarimoLspServer.Custom({
+        command: yield* decodeCommand(path),
+      });
+    default: {
+      const exhaustive: never = configured;
+      return exhaustive;
+    }
+  }
+});
+
+interface ConfigService {
+  readonly uv: {
+    readonly path: Effect.Effect<Option.Option<string>>;
+    readonly enabled: Effect.Effect<boolean>;
+  };
+  readonly ruff: {
+    readonly path: Effect.Effect<Option.Option<string>>;
+  };
+  readonly ty: {
+    readonly path: Effect.Effect<Option.Option<string>>;
+  };
+  readonly lsp: {
+    readonly server: Effect.Effect<
+      MarimoLspServer,
+      InvalidMarimoLspConfiguration
+    >;
+  };
+  readonly notebookFileRoot: (
+    scope?: vscode.ConfigurationScope,
+  ) => Effect.Effect<string>;
+  readonly getManagedLanguageFeaturesEnabled: () => Effect.Effect<boolean>;
+}
 
 /**
  * Provides access to the extension configuration settings.
@@ -15,7 +116,7 @@ export class Config extends Effect.Service<Config>()("Config", {
       yield* Effect.logWarning(
         "VsCode API is not available. Using default configuration values.",
       );
-      return {
+      const defaults: ConfigService = {
         uv: {
           path: Effect.succeed(Option.none<string>()),
           enabled: Effect.succeed(false),
@@ -27,8 +128,7 @@ export class Config extends Effect.Service<Config>()("Config", {
           path: Effect.succeed(Option.none<string>()),
         },
         lsp: {
-          executable: Effect.succeed(Option.none()),
-          wasm: Effect.succeed(false),
+          server: Effect.succeed(MarimoLspServer.Wasm()),
         },
         notebookFileRoot() {
           return Effect.succeed(DEFAULT_NOTEBOOK_FILE_ROOT);
@@ -37,9 +137,10 @@ export class Config extends Effect.Service<Config>()("Config", {
           return Effect.succeed(false);
         },
       };
+      return defaults;
     }
 
-    return {
+    const configured: ConfigService = {
       uv: {
         get path() {
           return Effect.map(
@@ -80,24 +181,15 @@ export class Config extends Effect.Service<Config>()("Config", {
         },
       },
       lsp: {
-        get executable() {
+        get server() {
           return Effect.gen(function* () {
-            const config =
+            const lspConfig =
               yield* code.value.workspace.getConfiguration("marimo.lsp");
-            return Option.fromNullable(config.get<string[]>("path")).pipe(
-              Option.filter((path) => path.length > 0),
-              Option.map(([command, ...args]) => ({
-                command,
-                args,
-              })),
-            );
+            return yield* resolveMarimoLspServer({
+              server: lspConfig.get<unknown>("server"),
+              path: lspConfig.get<unknown>("path") ?? [],
+            });
           });
-        },
-        get wasm() {
-          return Effect.andThen(
-            code.value.workspace.getConfiguration("marimo.experimental"),
-            (config) => config.get("wasmLsp", false),
-          );
         },
       },
       notebookFileRoot(scope?: vscode.ConfigurationScope) {
@@ -115,5 +207,6 @@ export class Config extends Effect.Service<Config>()("Config", {
         );
       },
     };
+    return configured;
   }),
 }) {}

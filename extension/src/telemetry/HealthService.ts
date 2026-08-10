@@ -3,12 +3,12 @@ import * as NodeProcess from "node:process";
 import * as semver from "@std/semver";
 import { Effect, Option } from "effect";
 
-import { Config } from "../config/Config.ts";
+import { Config, MarimoLspServer } from "../config/Config.ts";
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
-import { MarimoClient, type MarimoLspMode } from "../lsp/MarimoClient.ts";
+import { MarimoClient } from "../lsp/MarimoClient.ts";
 import {
   RuffLanguageServer,
   RuffLanguageServerStatus,
@@ -40,8 +40,7 @@ export class HealthService extends Effect.Service<HealthService>()(
 
       const formatDiagnostics = () =>
         Effect.gen(function* () {
-          const [lspCustomPath, uvDisabled, extVersion] = yield* Effect.all([
-            config.lsp.executable,
+          const [uvDisabled, extVersion] = yield* Effect.all([
             Effect.map(config.uv.enabled, (enabled) => !enabled),
             getExtensionVersion().pipe(Effect.provideService(VsCode, code)),
           ]);
@@ -55,12 +54,12 @@ export class HealthService extends Effect.Service<HealthService>()(
 
           // LSP Status
           lines.push("Language Server (LSP):");
-          const uvBin =
-            marimo.mode === "uv" ? Option.some(yield* uv.bin) : Option.none();
+          const uvBin = MarimoLspServer.$is("Python")(marimo.server)
+            ? Option.some(yield* uv.bin)
+            : Option.none();
           lines.push(
             ...formatMarimoLspDiagnostics({
-              mode: marimo.mode,
-              customExecutable: lspCustomPath,
+              server: marimo.server,
               uvBin,
             }),
           );
@@ -258,54 +257,43 @@ function formatBinarySource(source: BinarySource): string {
 }
 
 export function formatMarimoLspDiagnostics({
-  mode,
-  customExecutable,
+  server,
   uvBin,
 }: {
-  mode: MarimoLspMode;
-  customExecutable: Option.Option<{
-    readonly command: string;
-    readonly args?: readonly string[];
-  }>;
+  server: MarimoLspServer;
   uvBin: Option.Option<UvBin>;
 }): readonly string[] {
-  if (mode === "wasm") {
-    return ["\tMode: WASM (bundled Pyodide)"];
-  }
-  if (mode === "configured") {
-    return [
+  return MarimoLspServer.$match(server, {
+    Wasm: () => ["\tMode: WASM (bundled Pyodide)"],
+    Custom: ({ command: [executable, ...args] }) => [
       "\tMode: Native (configured)",
-      Option.match(customExecutable, {
-        onNone: () => "\tCustom path: unavailable",
-        onSome: ({ command, args = [] }) =>
-          `\tCustom path: ${command} ${args.join(" ")}`,
+      `\tCustom path: ${executable} ${args.join(" ")}`,
+    ],
+    Python: () =>
+      Option.match(uvBin, {
+        onNone: () => ["\tMode: Native (uv)", "\tUV: Not found ✗"],
+        onSome: (bin) => {
+          const lines = ["\tMode: Native (uv)"];
+          UvBin.$match(bin, {
+            Bundled: ({ executable }) =>
+              lines.push(`\tUV Bin: Bundled (${executable})`),
+            Default: ({ executable }) =>
+              lines.push(`\tUV Bin: Default (${executable})`),
+            Configured: ({ executable }) =>
+              lines.push(`\tUV Bin: Configured (${executable})`),
+            Discovered: ({ executable }) =>
+              lines.push(`\tUV Bin: Discovered (${executable})`),
+          });
+          lines.push(
+            Option.match(bin.version, {
+              onSome: (version) => `\tUV: ${version.format()} ✓`,
+              onNone: () => "\tUV: Version unknown",
+            }),
+          );
+          lines.push("\tUsing bundled marimo-lsp via uvx");
+          return lines;
+        },
       }),
-    ];
-  }
-
-  return Option.match(uvBin, {
-    onNone: () => ["\tMode: Native (uv)", "\tUV: Not found ✗"],
-    onSome: (bin) => {
-      const lines = ["\tMode: Native (uv)"];
-      UvBin.$match(bin, {
-        Bundled: ({ executable }) =>
-          lines.push(`\tUV Bin: Bundled (${executable})`),
-        Default: ({ executable }) =>
-          lines.push(`\tUV Bin: Default (${executable})`),
-        Configured: ({ executable }) =>
-          lines.push(`\tUV Bin: Configured (${executable})`),
-        Discovered: ({ executable }) =>
-          lines.push(`\tUV Bin: Discovered (${executable})`),
-      });
-      lines.push(
-        Option.match(bin.version, {
-          onSome: (version) => `\tUV: ${version.format()} ✓`,
-          onNone: () => "\tUV: Version unknown",
-        }),
-      );
-      lines.push("\tUsing bundled marimo-lsp via uvx");
-      return lines;
-    },
   });
 }
 

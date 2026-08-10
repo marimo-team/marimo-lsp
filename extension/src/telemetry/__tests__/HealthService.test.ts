@@ -1,14 +1,14 @@
 import { expect, it } from "@effect/vitest";
 import { Option } from "effect";
 
+import { MarimoLspServer } from "../../config/Config.ts";
 import { UvBin } from "../../python/Uv.ts";
 import { formatMarimoLspDiagnostics } from "../HealthService.ts";
 
 it("reports the bundled WASM runtime without uv diagnostics", () => {
   expect(
     formatMarimoLspDiagnostics({
-      mode: "wasm",
-      customExecutable: Option.none(),
+      server: MarimoLspServer.Wasm(),
       uvBin: Option.none(),
     }),
   ).toEqual(["\tMode: WASM (bundled Pyodide)"]);
@@ -17,8 +17,7 @@ it("reports the bundled WASM runtime without uv diagnostics", () => {
 it("reports the uv-provisioned native runtime", () => {
   expect(
     formatMarimoLspDiagnostics({
-      mode: "uv",
-      customExecutable: Option.none(),
+      server: MarimoLspServer.Python(),
       uvBin: Option.some(
         UvBin.Bundled({
           executable: "/extension/bundled/uv",
@@ -37,10 +36,8 @@ it("reports the uv-provisioned native runtime", () => {
 it("reports the configured native runtime", () => {
   expect(
     formatMarimoLspDiagnostics({
-      mode: "configured",
-      customExecutable: Option.some({
-        command: "/opt/marimo-lsp",
-        args: ["--stdio"],
+      server: MarimoLspServer.Custom({
+        command: ["/opt/marimo-lsp", "--stdio"],
       }),
       uvBin: Option.none(),
     }),

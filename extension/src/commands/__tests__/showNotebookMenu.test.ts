@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, Stream } from "effect";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import { MarimoLspServer } from "../../config/Config.ts";
 import { MarimoConfigurationService } from "../../config/MarimoConfigurationService.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { marimoConfigFixture } from "../../lib/__tests__/branded.ts";
@@ -46,7 +47,7 @@ const constantsLayer = Layer.succeed(
 const marimoLayer = Layer.succeed(
   MarimoClient,
   MarimoClient.make({
-    mode: "uv",
+    server: MarimoLspServer.Python(),
     channel: { name: "marimo-lsp-test", show() {} },
     restart: () => Effect.void,
     ...makeMarimoCommands({

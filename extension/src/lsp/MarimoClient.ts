@@ -3,19 +3,10 @@ import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
-import {
-  Cause,
-  Data,
-  Effect,
-  Option,
-  PubSub,
-  Redacted,
-  Runtime,
-  Stream,
-} from "effect";
+import { Cause, Data, Effect, PubSub, Redacted, Runtime, Stream } from "effect";
 import * as lsp from "vscode-languageclient/node";
 
-import { Config } from "../config/Config.ts";
+import { Config, MarimoLspServer } from "../config/Config.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
@@ -122,16 +113,27 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
       const config = yield* Config;
       const telemetry = yield* Telemetry;
 
-      const configuredExec = yield* config.lsp.executable;
-      const useWasm = yield* config.lsp.wasm;
-      const uvBinary =
-        Option.isNone(configuredExec) && !useWasm
-          ? (yield* (yield* Uv).bin).executable
-          : undefined;
+      const lspServer = yield* config.lsp.server.pipe(
+        Effect.catchTag(
+          "InvalidMarimoLspConfiguration",
+          Effect.fn(function* (error) {
+            yield* Effect.logError("Invalid marimo-lsp configuration").pipe(
+              Effect.annotateLogs({
+                cause: Cause.fail(error),
+                setting: error.setting,
+              }),
+            );
+            yield* code.window.showErrorMessage(
+              `${error.message} Falling back to the WASM language server.`,
+            );
+            return MarimoLspServer.Wasm();
+          }),
+        ),
+      );
+      const uv = yield* Uv;
       const selection = yield* selectMarimoLspExecutable({
-        configuredExec,
-        useWasm,
-        uvBinary,
+        server: lspServer,
+        resolveUvBinary: Effect.map(uv.bin, ({ executable }) => executable),
       });
       const { exec } = selection;
       const mode = marimoLspMode(selection);
@@ -350,7 +352,7 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
       };
 
       return {
-        mode,
+        server: lspServer,
         channel: {
           name: outputChannel.name,
           show: outputChannel.show.bind(outputChannel),
@@ -420,31 +422,34 @@ export const findMarimoLspExecutable = Effect.fn("findMarimoLspExecutable")(
 
 export const selectMarimoLspExecutable = Effect.fn("selectMarimoLspExecutable")(
   function* ({
-    configuredExec,
-    useWasm,
-    uvBinary,
+    server,
+    resolveUvBinary,
     searchDirectory = __dirname,
   }: {
-    readonly configuredExec: Option.Option<lsp.Executable>;
-    readonly useWasm: boolean;
-    readonly uvBinary?: string;
+    readonly server: MarimoLspServer;
+    readonly resolveUvBinary: Effect.Effect<string>;
     readonly searchDirectory?: string;
   }) {
-    if (Option.isSome(configuredExec)) {
-      return MarimoLspExecutable.Configured({ exec: configuredExec.value });
-    }
-    if (useWasm) {
-      return MarimoLspExecutable.Wasm({
-        exec: findWasmMarimoLspExecutable(searchDirectory),
-      });
-    }
-    if (uvBinary === undefined) {
-      throw new Error(
-        "uv is required when the WASM language server is disabled",
-      );
-    }
-    return MarimoLspExecutable.Uv({
-      exec: yield* findMarimoLspExecutable(uvBinary, searchDirectory),
+    return yield* MarimoLspServer.$match(server, {
+      Custom: ({ command: [executable, ...args] }) =>
+        Effect.succeed(
+          MarimoLspExecutable.Configured({
+            exec: { command: executable, args },
+          }),
+        ),
+      Wasm: () =>
+        Effect.succeed(
+          MarimoLspExecutable.Wasm({
+            exec: findWasmMarimoLspExecutable(searchDirectory),
+          }),
+        ),
+      Python: () =>
+        Effect.flatMap(resolveUvBinary, (uvBinary) =>
+          Effect.map(
+            findMarimoLspExecutable(uvBinary, searchDirectory),
+            (exec) => MarimoLspExecutable.Uv({ exec }),
+          ),
+        ),
     });
   },
 );

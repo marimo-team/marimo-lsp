@@ -7,6 +7,7 @@ import {
   Stream,
 } from "effect";
 
+import { MarimoLspServer } from "../../config/Config.ts";
 import {
   type NotebookController,
   type NotebookControllerSelection,
@@ -118,7 +119,7 @@ export function makeTestNotebookRuntime(options: Options = {}) {
 
 function makeTestMarimoClientValue(options: Options) {
   return MarimoClient.make({
-    mode: "uv",
+    server: MarimoLspServer.Python(),
     channel: { name: "marimo-lsp-test", show() {} },
     restart: () => Effect.void,
     ...makeMarimoCommands({

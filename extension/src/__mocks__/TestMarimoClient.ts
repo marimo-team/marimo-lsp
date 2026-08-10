@@ -3,6 +3,7 @@ import * as NodeChildProcess from "node:child_process";
 import { Effect, Layer, Redacted, Stream } from "effect";
 import * as rpc from "vscode-jsonrpc/node";
 
+import { MarimoLspServer } from "../config/Config.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import {
   findMarimoLspExecutable,
@@ -48,7 +49,7 @@ export const TestMarimoClientProcess = Layer.scoped(
         }),
     );
     return MarimoClient.make({
-      mode: "uv",
+      server: MarimoLspServer.Python(),
       channel: {
         name: "marimo-lsp",
         show() {},
