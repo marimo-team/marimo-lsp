@@ -9,6 +9,7 @@ import logging
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -120,12 +121,13 @@ class _BridgeProcess:
     """Drive the real kernel bridge over framed stdio, as the extension does."""
 
     def __init__(self, working_directory: Path) -> None:
+        self._stderr = tempfile.TemporaryFile()  # noqa: SIM115 - closed in close().
         self.child = subprocess.Popen(  # noqa: S603
             [sys.executable, str(BRIDGE_SCRIPT)],
             cwd=str(working_directory),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=self._stderr,
         )
         assert self.child.stdin is not None
         assert self.child.stdout is not None
@@ -147,6 +149,13 @@ class _BridgeProcess:
             for message in decoder.feed(chunk):
                 self.frames.put(message)
 
+    def _failure_details(self, received: list[FromBridge]) -> str:
+        self._stderr.seek(0)
+        stderr = self._stderr.read().decode(errors="replace")
+        if stderr:
+            return f"received: {received}; bridge stderr:\n{stderr}"
+        return f"received: {received}; bridge stderr was empty"
+
     def send(self, message: Start | Control) -> None:
         assert self.child.stdin is not None
         self.child.stdin.write(encode(message))
@@ -164,14 +173,15 @@ class _BridgeProcess:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 pytest.fail(
-                    f"No matching frame within {timeout}s; received: {received}"
+                    f"No matching frame within {timeout}s; "
+                    f"{self._failure_details(received)}"
                 )
             try:
                 message = self.frames.get(timeout=remaining)
             except queue.Empty:
                 continue
             if message is None:
-                pytest.fail(f"Bridge closed stdout; received: {received}")
+                pytest.fail(f"Bridge closed stdout; {self._failure_details(received)}")
             received.append(message)
             if predicate(message):
                 return received
@@ -184,6 +194,7 @@ class _BridgeProcess:
         except subprocess.TimeoutExpired:
             self.child.kill()
             self.child.wait()
+        self._stderr.close()
 
 
 def _start_frame(working_directory: Path) -> Start:
