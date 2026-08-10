@@ -75,7 +75,7 @@ export const acquireSentryAdapter = Effect.fn("telemetry.acquireSentryAdapter")(
 
     const captureError: SentryAdapter["captureError"] = (error, data) => {
       try {
-        const classification = classify(data);
+        const classification = classifySentryError(error, data);
         scope.captureException(error, {
           captureContext: {
             ...(data ? { extra: data } : {}),
@@ -126,7 +126,10 @@ export const acquireSentryAdapter = Effect.fn("telemetry.acquireSentryAdapter")(
   },
 );
 
-function classify(data: Record<string, unknown> | undefined) {
+export function classifySentryError(
+  error: Error,
+  data: Record<string, unknown> | undefined,
+) {
   const tags: Record<string, string> = {};
   for (const key of [
     "error.domain",
@@ -148,6 +151,11 @@ function classify(data: Record<string, unknown> | undefined) {
   const code = tags["rpc.code"];
   const exceptionClass = tags["error.exception_class"];
   const errorTag = tags["error.tag"];
+  const commandCause = classifyMarimoCommandCause(error);
+  if (commandCause) {
+    tags["error.exception_class"] ??= commandCause.exceptionClass;
+    tags["error.kind"] ??= `marimo-command.${commandCause.kind}`;
+  }
   const fingerprint =
     domain && kind
       ? [
@@ -158,6 +166,65 @@ function classify(data: Record<string, unknown> | undefined) {
         ]
       : errorTag
         ? ["marimo extension error", errorTag]
-        : undefined;
+        : commandCause
+          ? ["marimo command error", commandCause.kind]
+          : undefined;
   return { tags, fingerprint };
+}
+
+function classifyMarimoCommandCause(
+  error: Error,
+): { readonly exceptionClass: string; readonly kind: string } | undefined {
+  if (error.name !== "MarimoCommandError") {
+    return undefined;
+  }
+
+  const causes = errorCauseChain(error.cause);
+  if (causes.length === 0) return undefined;
+
+  const message = causes.map((cause) => cause.message).join("\n");
+  let exceptionClass = "Error";
+  for (let index = causes.length - 1; index >= 0; index--) {
+    const candidate = nestedExceptionClass(causes[index]);
+    if (candidate !== "Error") {
+      exceptionClass = candidate;
+      break;
+    }
+  }
+  if (message.includes("Kernel bridge exited unexpectedly")) {
+    return { exceptionClass, kind: "kernel-bridge-exit" };
+  }
+  if (
+    exceptionClass === "DuplicateCellIdError" ||
+    /Cell\s+['"`][^'"`]+['"`]\s+already exists/i.test(message)
+  ) {
+    return { exceptionClass, kind: "duplicate-cell-id" };
+  }
+  if (exceptionClass !== "Error") {
+    return { exceptionClass, kind: exceptionClass };
+  }
+  return { exceptionClass, kind: "rpc-error" };
+}
+
+function errorCauseChain(value: unknown): Error[] {
+  const causes: Error[] = [];
+  const seen = new Set<Error>();
+  while (value instanceof Error && !seen.has(value)) {
+    causes.push(value);
+    seen.add(value);
+    value = value.cause;
+  }
+  return causes;
+}
+
+function nestedExceptionClass(error: Error): string {
+  if (error.name !== "Error" && isSafeClassName(error.name)) return error.name;
+  const match = error.message.match(
+    /(?:^|\.)\s*([A-Za-z_$][\w$]*(?:Error|Exception)):/,
+  );
+  return match && isSafeClassName(match[1]) ? match[1] : "Error";
+}
+
+function isSafeClassName(value: string): boolean {
+  return /^[A-Za-z_$][\w$.-]{0,79}$/.test(value);
 }
