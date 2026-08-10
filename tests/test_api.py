@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock, patch
 
@@ -336,13 +337,16 @@ async def test_update_configuration_returns_saved_config() -> None:
 
 
 @pytest.mark.asyncio
-async def test_update_configuration_returns_effective_config_without_session() -> None:
+async def test_update_configuration_returns_effective_config_without_session(
+    tmp_path: Path,
+) -> None:
     sessions = MagicMock()
     sessions.get.return_value = None
     manager = MagicMock()
     manager.save_config.return_value = MagicMock(name="saved_user_config")
     manager.get_config.return_value = DEFAULT_CONFIG
     partial_config: dict[str, object] = {"runtime": {"on_cell_change": "lazy"}}
+    notebook_path = tmp_path / "notebook.py"
 
     with patch(
         "marimo_lsp.api.get_default_config_manager", return_value=manager
@@ -350,23 +354,25 @@ async def test_update_configuration_returns_effective_config_without_session() -
         result = await update_configuration(
             _context(sessions),
             NotebookCommand(
-                notebook_uri="file:///notebook.py",
+                notebook_uri=notebook_path.as_uri(),
                 inner=UpdateConfigurationRequest(config=partial_config),
             ),
         )
 
-    get_manager.assert_called_once_with(current_path="/notebook.py")
+    get_manager.assert_called_once()
+    assert Path(get_manager.call_args.kwargs["current_path"]) == notebook_path
     manager.save_config.assert_called_once_with(partial_config)
     manager.get_config.assert_called_once_with()
     assert result == DEFAULT_CONFIG
 
 
 @pytest.mark.asyncio
-async def test_get_configuration_loads_without_session() -> None:
+async def test_get_configuration_loads_without_session(tmp_path: Path) -> None:
     sessions = MagicMock()
     sessions.get.return_value = None
     manager = MagicMock()
     manager.get_config.return_value = DEFAULT_CONFIG
+    notebook_path = tmp_path / "notebook.py"
 
     with patch(
         "marimo_lsp.api.get_default_config_manager", return_value=manager
@@ -374,12 +380,13 @@ async def test_get_configuration_loads_without_session() -> None:
         result = await get_configuration(
             _context(sessions),
             NotebookCommand(
-                notebook_uri="file:///notebook.py",
+                notebook_uri=notebook_path.as_uri(),
                 inner=GetConfigurationRequest(),
             ),
         )
 
-    get_manager.assert_called_once_with(current_path="/notebook.py")
+    get_manager.assert_called_once()
+    assert Path(get_manager.call_args.kwargs["current_path"]) == notebook_path
     manager.get_config.assert_called_once_with()
     assert result.config == DEFAULT_CONFIG
 

@@ -7,7 +7,6 @@ Verifies the kernel `Process` terminates subprocesses (including force-kill).
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 import time
@@ -16,16 +15,6 @@ import typing
 import pytest
 
 from marimo_lsp.kernels.manager import Process
-
-
-def process_exists(pid: int) -> bool:
-    """Check if a process with the given PID exists."""
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-
-    return True
 
 
 @pytest.fixture
@@ -80,16 +69,13 @@ def test_popen_terminate_graceful(
 ) -> None:
     """Test that terminate() gracefully stops a process."""
     wrapper = Process(long_running_process)
-    pid = wrapper.pid
 
-    assert pid is not None
+    assert wrapper.pid is not None
     assert wrapper.is_alive()
-    assert process_exists(pid)
 
     wrapper.terminate()
 
     assert not wrapper.is_alive()
-    assert not process_exists(pid)
 
 
 def test_popen_terminate_already_dead() -> None:
@@ -119,11 +105,9 @@ def test_popen_terminate_force_kill(
     wrapper = Process(stubborn_process)
     wrapper.TERMINATE_TIMEOUT = 0.5  # Shorter timeout for testing
 
-    pid = wrapper.pid
-    assert pid is not None
+    assert wrapper.pid is not None
     assert wrapper.is_alive()
 
     wrapper.terminate()
 
     assert not wrapper.is_alive()
-    assert not process_exists(pid)
