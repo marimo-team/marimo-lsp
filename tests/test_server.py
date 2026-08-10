@@ -70,26 +70,36 @@ def replace_generated_with(src: str) -> str:
     )
 
 
-@pytest_lsp.fixture(
-    config=ClientServerConfig(server_command=["marimo-lsp"]), scope="module"
-)
-async def lsp_process(lsp_client: LanguageClient):  # noqa: ANN201
-    """Start one initialized LSP process for this module."""
-    response = await lsp_client.initialize_session(
-        lsp.InitializeParams(
-            root_uri="file:///test/workspace",
-            capabilities=lsp.ClientCapabilities(
-                notebook_document=lsp.NotebookDocumentClientCapabilities(
-                    synchronization=lsp.NotebookDocumentSyncClientCapabilities()
-                )
-            ),
+if sys.platform == "win32":
+
+    @pytest.fixture(scope="module")
+    def lsp_process() -> None:
+        pytest.skip(
+            "pytest-lsp cannot start subprocesses with marimo's Windows selector event loop"
         )
+
+else:
+
+    @pytest_lsp.fixture(
+        config=ClientServerConfig(server_command=["marimo-lsp"]), scope="module"
     )
-    assert response is not None
+    async def lsp_process(lsp_client: LanguageClient):  # noqa: ANN201
+        """Start one initialized LSP process for this module."""
+        response = await lsp_client.initialize_session(
+            lsp.InitializeParams(
+                root_uri="file:///test/workspace",
+                capabilities=lsp.ClientCapabilities(
+                    notebook_document=lsp.NotebookDocumentClientCapabilities(
+                        synchronization=lsp.NotebookDocumentSyncClientCapabilities()
+                    )
+                ),
+            )
+        )
+        assert response is not None
 
-    yield lsp_client
+        yield lsp_client
 
-    await lsp_client.shutdown_session()
+        await lsp_client.shutdown_session()
 
 
 @pytest_asyncio.fixture(loop_scope="module")
