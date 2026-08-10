@@ -45,8 +45,8 @@ icon in the editor title bar to open it as a notebook (see image above).
 
 | Setting                                 | Type      | Default          | Description                                                                                                                                                                                         |
 | --------------------------------------- | --------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `marimo.lsp.path`                       | `array`   | `[]`             | Path to a custom `marimo-lsp` executable, e.g., `["/path/to/marimo-lsp"]`. Leave empty to use the uv-based server, or enable `marimo.experimental.wasmLsp` to use the bundled WASM server.          |
-| `marimo.experimental.wasmLsp`           | `boolean` | `false`          | Experimental: run the bundled marimo language server in Pyodide instead of provisioning a Python environment.                                                                                       |
+| `marimo.lsp.server`                     | `string`  | `wasm`           | Language-server runtime: bundled `wasm`, uv-managed `python`, or `custom`. This does not change the interpreter used by notebook kernels.                                                           |
+| `marimo.lsp.path`                       | `array`   | `[]`             | Command and arguments used when `marimo.lsp.server` is `custom`, e.g., `["/path/to/marimo-lsp"]`.                                                                                                   |
 | `marimo.uv.path`                        | `string`  |                  | Path to the `uv` binary, e.g., `/Users/me/.local/bin/uv`. Leave empty to use `uv` from the system PATH.                                                                                             |
 | `marimo.ruff.path`                      | `string`  |                  | Path to a custom `ruff` binary, e.g., `/usr/local/bin/ruff`. Useful for offline environments. Leave empty to auto-discover or install via uv.                                                       |
 | `marimo.ty.path`                        | `string`  |                  | Path to a custom `ty` binary, e.g., `/usr/local/bin/ty`. Useful for offline environments. Leave empty to auto-discover or install via uv.                                                           |
@@ -55,10 +55,13 @@ icon in the editor title bar to open it as a notebook (see image above).
 | `marimo.telemetry`                      | `boolean` | `true`           | Anonymous usage data. This helps us prioritize features for the marimo VSCode extension.                                                                                                            |
 | `marimo.notebookFileRoot`               | `string`  | `${fileDirname}` | Initial working directory for locally launched kernels. Supports the notebook directory, workspace folder, home-relative, absolute, and workspace-relative paths. Requires a kernel restart.        |
 
-The experimental WASM language server loads entirely from artifacts bundled
-with the extension and does not download Python packages at runtime. Notebook
-kernels still run in the selected Python environment: opening and executing a
-notebook launches that interpreter and runs the notebook's code locally.
+By default, the WASM language server loads entirely from artifacts bundled with
+the extension and does not download Python packages at runtime. Set
+`marimo.lsp.server` to `python` to use the bundled server through a uv-managed
+CPython environment, or to `custom` with `marimo.lsp.path` to run another
+command. Notebook kernels still run in the selected Python environment: opening
+and executing a notebook launches that interpreter and runs the notebook's code
+locally.
 
 `marimo.notebookFileRoot` controls process-relative behavior such as `Path.cwd()`, file access, and subprocesses. For paths that must remain portable across VS Code, CLI execution, exports, and deployment, prefer `mo.notebook_dir()`.
 

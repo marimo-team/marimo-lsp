@@ -78,19 +78,36 @@
     "configuration": {
       "title": "Marimo",
       "properties": {
+        "marimo.lsp.server": {
+          "type": "string",
+          "default": "wasm",
+          "enum": [
+            "wasm",
+            "python",
+            "custom"
+          ],
+          "markdownEnumDescriptions": [
+            "Default. Run the self-contained language server using the bundled Pyodide runtime.",
+            "Run the bundled Python language server in a uv-managed CPython environment.",
+            "Run the command configured by `marimo.lsp.path`."
+          ],
+          "markdownDescription": "Select how the extension runs the marimo language server. This does not change the Python interpreter used by notebook kernels.",
+          "scope": "window"
+        },
         "marimo.lsp.path": {
           "type": "array",
           "items": {
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Path to a custom `marimo-lsp` executable, e.g., `[\"/path/to/marimo-lsp\"]`. Leave empty to use the uv-based server, or enable `marimo.experimental.wasmLsp` to use the bundled WASM server.",
-          "scope": "resource"
+          "markdownDescription": "Command and arguments used when `marimo.lsp.server` is `custom`, e.g., `[\"/path/to/marimo-lsp\"]`.",
+          "scope": "window"
         },
         "marimo.experimental.wasmLsp": {
           "type": "boolean",
-          "default": false,
-          "markdownDescription": "Experimental: run the bundled marimo language server in Pyodide instead of provisioning a Python environment.",
+          "markdownDescription": "Deprecated setting retained so existing configurations receive migration guidance. It no longer affects which language server runs.",
+          "markdownDeprecationMessage": "**Deprecated:** This setting no longer has any effect. Use `#marimo.lsp.server#` instead; select `python` to keep the previous native server.",
+          "deprecationMessage": "Deprecated: This setting no longer has any effect. Use marimo.lsp.server instead; select python to keep the previous native server.",
           "scope": "window"
         },
         "marimo.uv.path": {

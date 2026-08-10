@@ -24,12 +24,14 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
   const pendingFileRootChanges = new Set<string>();
 
   const watchForWindowReload = Effect.fn(function* (
-    section: string,
+    sections: readonly string[],
     message: string,
   ) {
     yield* Effect.forkScoped(
       code.workspace.configurationChanges().pipe(
-        Stream.filter((event) => event.affectsConfiguration(section)),
+        Stream.filter((event) =>
+          sections.some((section) => event.affectsConfiguration(section)),
+        ),
         Stream.runForEach(
           Effect.fn(function* () {
             const reload = yield* code.window.showInformationMessage(message, {
@@ -68,15 +70,15 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
   });
 
   yield* watchForWindowReload(
-    "marimo.telemetry",
+    ["marimo.telemetry"],
     "Changing telemetry requires reloading the window to take effect.",
   );
   yield* watchForWindowReload(
-    "marimo.disableManagedLanguageFeatures",
+    ["marimo.disableManagedLanguageFeatures"],
     "Changing managed language features requires reloading the window to take effect.",
   );
   yield* watchForWindowReload(
-    "marimo.experimental.wasmLsp",
+    ["marimo.lsp.server", "marimo.lsp.path"],
     "Changing the language-server runtime requires reloading the window to take effect.",
   );
 

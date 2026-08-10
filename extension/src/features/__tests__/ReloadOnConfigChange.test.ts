@@ -94,13 +94,15 @@ it.scoped(
   "prompts to reload after changing the language-server runtime",
   Effect.fn(function* () {
     const prompted = yield* Deferred.make<void>();
+    const prompts = yield* Ref.make(0);
     const vscode = yield* TestVsCode.make({
       window: {
         showInformationMessage: (message, options = {}) => {
           expect(message).toBe(
             "Changing the language-server runtime requires reloading the window to take effect.",
           );
-          return Deferred.succeed(prompted, undefined).pipe(
+          return Ref.update(prompts, (count) => count + 1).pipe(
+            Effect.andThen(Deferred.succeed(prompted, undefined)),
             Effect.as(Option.fromNullable(options.items?.[0])),
           );
         },
@@ -109,7 +111,7 @@ it.scoped(
         configurationChanges: () =>
           Stream.make({
             affectsConfiguration: (section: string) =>
-              section === "marimo.experimental.wasmLsp",
+              ["marimo.lsp.server", "marimo.lsp.path"].includes(section),
           }),
       },
     });
@@ -117,11 +119,13 @@ it.scoped(
 
     yield* watchForConfigurationChanges().pipe(Effect.provide(services));
     yield* Deferred.await(prompted);
+    yield* Effect.yieldNow();
 
     expect(yield* Ref.get(vscode.executions)).toContainEqual({
       command: "workbench.action.reloadWindow",
       args: [],
     });
+    expect(yield* Ref.get(prompts)).toBe(1);
   }),
 );
 
