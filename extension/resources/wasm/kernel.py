@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import os
 import sys
 import threading
 from pathlib import Path
@@ -43,6 +44,42 @@ if TYPE_CHECKING:
 
 _write_lock = threading.Lock()
 _decoder = msgspec.json.Decoder(ToBridge)
+
+
+def _bind_std_handles_to_nul() -> None:
+    """Point this process's Win32 standard handles at the NUL device.
+
+    ``multiprocessing`` spawns children on Windows with ``bInheritHandles=FALSE``
+    and no ``STARTUPINFO``, so the kernel process inherits this bridge's
+    standard handle *values* without the handles themselves. Those dangling
+    numbers end up aliasing whatever unrelated objects reuse them inside the
+    kernel — multiprocessing pipes among them. ``subprocess`` forwards
+    ``GetStdHandle(...)`` results to every child it launches, so a notebook
+    cell's ``subprocess.run(...)`` hands its child an aliased pipe as stdin and
+    the child hangs at startup behind that pipe's pending reads until the next
+    control message happens to complete them (marimo-lsp#734). Rebinding the
+    slots to NUL gives cell subprocesses real, inert handles; streams a cell
+    doesn't redirect land in NUL, matching a windowless host.
+    """
+    import ctypes  # noqa: PLC0415 - Windows-only, in the hook that needs it.
+    import msvcrt  # noqa: PLC0415
+
+    kernel32 = ctypes.windll.kernel32
+    for slot, flags in (
+        (-10, os.O_RDONLY),  # STD_INPUT_HANDLE
+        (-11, os.O_WRONLY),  # STD_OUTPUT_HANDLE
+        (-12, os.O_WRONLY),  # STD_ERROR_HANDLE
+    ):
+        # Deliberately left open for the life of the process.
+        fd = os.open(os.devnull, flags)
+        if not kernel32.SetStdHandle(slot, msvcrt.get_osfhandle(fd)):
+            raise ctypes.WinError()
+
+
+# multiprocessing re-imports this script in every spawned child before running
+# its target, which is the only hook we get into the kernel process itself.
+if sys.platform == "win32" and __name__ == "__mp_main__":
+    _bind_std_handles_to_nul()
 
 
 class _StaticConfigManager(MarimoConfigReader):
