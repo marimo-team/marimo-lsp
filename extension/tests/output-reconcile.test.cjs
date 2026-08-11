@@ -2,7 +2,7 @@
 /// <reference types="mocha" />
 
 // Integration coverage for the cell-output emission/reconcile path
-// (`ExecutionRegistry`): re-running a cell must reconcile its outputs in place
+// (`CellRuns`): re-running a cell must reconcile its outputs in place
 // rather than stacking or duplicating them, and the built-in error/stdout
 // outputs must survive every re-run.
 //

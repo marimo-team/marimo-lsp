@@ -12,10 +12,7 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import {
-  buildCellOutputs,
-  CellExecutions,
-} from "../../kernel/CellExecutions.ts";
+import { buildCellOutputs, CellRuns } from "../../kernel/CellRuns.ts";
 import { PythonController } from "../../kernel/PythonController.ts";
 import {
   cellId,
@@ -38,7 +35,7 @@ const withTestCtx = Effect.fn(function* (
 ) {
   const vscode = yield* TestVsCode.make(options);
   const layer = Layer.empty.pipe(
-    Layer.merge(CellExecutions.layer),
+    Layer.merge(CellRuns.layer),
     Layer.provide(TestNotebookRuntime),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
@@ -1103,7 +1100,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellRuns;
       const code = yield* VsCode;
       const vscodeController = yield* code.notebooks.createNotebookController(
         "test-controller",
@@ -1168,7 +1165,7 @@ it.effect(
     const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
 
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellRuns;
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cell = notebook.cellAt(0);
       const cid = Option.getOrThrow(cell.id);
@@ -1270,7 +1267,7 @@ it.effect(
     const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
 
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellRuns;
       const code = yield* VsCode;
 
       const notebook = MarimoNotebookDocument.from(editor.notebook);
@@ -1306,7 +1303,7 @@ it.effect(
         ),
       });
 
-      // Check that CellExecutions tracked the cell as stale
+      // Check that CellRuns tracked the cell as stale
       expect(
         yield* executions.isCellStale(
           MarimoNotebookCell.from(cell.rawNotebookCell),
@@ -1334,7 +1331,7 @@ it.effect(
     const ctx = yield* withTestCtx();
 
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellRuns;
 
       // Create a test notebook with a stale cell
       const cellData = {
@@ -1362,7 +1359,7 @@ it.effect(
       // Wait for NotebookEditorRegistry to process the change
       yield* TestClock.adjust("10 millis");
 
-      // First, invalidate the cell in CellExecutions
+      // First, invalidate the cell in CellRuns
       yield* executions.invalidateCell(
         MarimoNotebookCell.from(cell.rawNotebookCell),
       );
@@ -1414,7 +1411,7 @@ it.effect(
     const ctx = yield* withTestCtx();
 
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellRuns;
 
       const cellData = {
         kind: 1, // Code
@@ -1529,7 +1526,7 @@ it.effect(
     const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
 
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellRuns;
 
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cell = notebook.cellAt(0);
@@ -1583,7 +1580,7 @@ it.effect(
     const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
 
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellRuns;
 
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cell = notebook.cellAt(0);

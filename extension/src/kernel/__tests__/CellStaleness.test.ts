@@ -7,7 +7,7 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { CellExecutions } from "../../kernel/CellExecutions.ts";
+import { CellRuns } from "../../kernel/CellRuns.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -17,14 +17,14 @@ import {
 const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
-    Layer.merge(CellExecutions.layer),
+    Layer.merge(CellRuns.layer),
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
   );
   return { vscode, layer };
 });
 
-describe("CellExecutions staleness", () => {
+describe("CellRuns staleness", () => {
   it.effect(
     "getNotebookCellId returns consistent cell IDs",
     Effect.fn(function* () {
@@ -84,7 +84,7 @@ describe("CellExecutions staleness", () => {
 
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
-        const executions = yield* CellExecutions;
+        const executions = yield* CellRuns;
 
         const cellData0 = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -134,7 +134,7 @@ describe("CellExecutions staleness", () => {
 
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
-        const executions = yield* CellExecutions;
+        const executions = yield* CellRuns;
 
         // Cell B, depends on a slow cell A elsewhere. Starts with original code.
         const cellDataB = new code.NotebookCellData(
@@ -204,7 +204,7 @@ describe("CellExecutions staleness", () => {
 
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
-        const executions = yield* CellExecutions;
+        const executions = yield* CellRuns;
 
         const cellData = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -234,7 +234,7 @@ describe("CellExecutions staleness", () => {
 
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
-        const executions = yield* CellExecutions;
+        const executions = yield* CellRuns;
 
         const cellData = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -272,7 +272,7 @@ describe("CellExecutions staleness", () => {
 
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
-        const executions = yield* CellExecutions;
+        const executions = yield* CellRuns;
 
         const cellData = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -342,7 +342,7 @@ describe("CellExecutions staleness", () => {
 
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
-        const executions = yield* CellExecutions;
+        const executions = yield* CellRuns;
 
         const cellDataA = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -425,7 +425,7 @@ describe("CellExecutions staleness", () => {
 
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
-        const executions = yield* CellExecutions;
+        const executions = yield* CellRuns;
 
         const cellData = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -478,7 +478,7 @@ describe("CellExecutions staleness", () => {
 
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
-        const executions = yield* CellExecutions;
+        const executions = yield* CellRuns;
 
         const cellData0 = new code.NotebookCellData(
           code.NotebookCellKind.Code,

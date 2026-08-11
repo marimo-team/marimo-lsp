@@ -12,7 +12,7 @@ import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoCli
 import { commandId } from "../../commands.ts";
 import enableCell from "../../commands/enableCell.ts";
 import runStale from "../../commands/runStale.ts";
-import { CellExecutions } from "../../kernel/CellExecutions.ts";
+import { CellRuns } from "../../kernel/CellRuns.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
@@ -21,7 +21,7 @@ const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
     Layer.provideMerge(CellStatusBarProviderLive),
-    Layer.provideMerge(CellExecutions.layer),
+    Layer.provideMerge(CellRuns.layer),
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
     Layer.provide(makeTestNotebookRuntime()),
@@ -80,7 +80,7 @@ it.effect(
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellRuns;
       const cell = createMockCell(notebookUri, {
         marimo: { name: "test_cell" },
         marimoRuntime: { stableId: "cell-1" },
@@ -101,7 +101,7 @@ it.effect(
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellRuns;
       const cell = createMockCell(notebookUri, {
         marimo: { name: "test_cell" },
         marimoRuntime: { stableId: "cell-1" },
@@ -196,7 +196,7 @@ it.effect(
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellRuns;
       const cell = createMockCell(notebookUri, {
         marimo: { name: "my_cell" },
         marimoRuntime: { stableId: "cell-2" },

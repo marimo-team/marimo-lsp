@@ -6,8 +6,8 @@ import { Brand, Data, Option } from "effect";
 import type { NotebookCellId } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellOperationNotification, CellRuntimeState } from "../types.ts";
 
-export type RunId = Brand.Branded<string, "RunId">;
-export const RunId = Brand.nominal<RunId>();
+export type CellRunId = Brand.Branded<string, "CellRunId">;
+export const CellRunId = Brand.nominal<CellRunId>();
 
 /**
  * Where a cell is in its current run.
@@ -17,8 +17,8 @@ export const RunId = Brand.nominal<RunId>();
  */
 export type RunPhase = Data.TaggedEnum<{
   Idle: {};
-  Queued: { readonly runId: RunId };
-  Running: { readonly runId: RunId };
+  Queued: { readonly runId: CellRunId };
+  Running: { readonly runId: CellRunId };
   Completed: {};
 }>;
 export const RunPhase = Data.taggedEnum<RunPhase>();
@@ -30,7 +30,7 @@ export const RunPhase = Data.taggedEnum<RunPhase>();
  * id and timings, so the reducer never sees marimo's nullable wire status.
  */
 export type Op = Data.TaggedEnum<{
-  Queue: { readonly runId: RunId; readonly next: CellRuntimeState };
+  Queue: { readonly runId: CellRunId; readonly next: CellRuntimeState };
   Start: { readonly startTime: number; readonly next: CellRuntimeState };
   Settle: {
     readonly success: boolean;
@@ -62,13 +62,13 @@ export type Action = Data.TaggedEnum<{
 export const Action = Data.taggedEnum<Action>();
 
 /** Pure, vscode-free per-cell reducer state. */
-export interface CellRunEntry {
+export interface CellRunState {
   readonly id: NotebookCellId;
   readonly state: CellRuntimeState;
   readonly phase: RunPhase;
 }
 
-export function makeCellRunEntry(id: NotebookCellId): CellRunEntry {
+export function makeCellRunState(id: NotebookCellId): CellRunState {
   return { id, state: createCellRuntimeState(), phase: RunPhase.Idle() };
 }
 
@@ -93,7 +93,9 @@ export function parseOp(
 ): Option.Option<Op> {
   switch (msg.status) {
     case "queued": {
-      const runId = Option.fromNullishOr(msg.run_id).pipe(Option.map(RunId));
+      const runId = Option.fromNullishOr(msg.run_id).pipe(
+        Option.map(CellRunId),
+      );
       return Option.map(runId, (id) => Op.Queue({ runId: id, next }));
     }
     case "running":
@@ -127,9 +129,9 @@ const isError = (state: CellRuntimeState): boolean =>
  * The one place that decides what a cell-op *means*.
  */
 export function step(
-  entry: CellRunEntry,
+  entry: CellRunState,
   op: Op,
-): { readonly entry: CellRunEntry; readonly actions: ReadonlyArray<Action> } {
+): { readonly entry: CellRunState; readonly actions: ReadonlyArray<Action> } {
   return Op.$match(op, {
     Interrupt: () => {
       if (!hasExecution(entry.phase)) return { entry, actions: [] };

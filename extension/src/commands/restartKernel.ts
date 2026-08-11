@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { CellExecutions } from "../kernel/CellExecutions.ts";
+import { CellRuns } from "../kernel/CellRuns.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -13,7 +13,7 @@ const handler = Effect.fn("command.restartKernel")(function* (
 ) {
   const code = yield* VsCode;
   const sessions = yield* SessionsService;
-  const executions = yield* CellExecutions;
+  const executions = yield* CellRuns;
 
   if (Option.isNone(target)) {
     yield* code.window.showInformationMessage(

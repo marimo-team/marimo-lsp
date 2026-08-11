@@ -56,7 +56,7 @@ import type {
   MarimoOperation,
   NotificationOf,
 } from "../types.ts";
-import { CellExecutions } from "./CellExecutions.ts";
+import { CellRuns } from "./CellRuns.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import {
   NotebookFileRootError,
@@ -70,7 +70,7 @@ import { handleMissingPackageAlert } from "./operations.ts";
  */
 type MarimoClientService = Context.Service.Shape<typeof MarimoClient>;
 type VsCodeService = Context.Service.Shape<typeof VsCode>;
-type CellExecutionsService = Context.Service.Shape<typeof CellExecutions>;
+type CellRunsService = Context.Service.Shape<typeof CellRuns>;
 
 type InnerRequest<K extends keyof MarimoClientService> =
   MarimoClientService[K] extends (params: infer Params) => unknown
@@ -227,7 +227,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       const config = yield* Config;
       const marimo = yield* MarimoClient;
       const renderer = yield* NotebookRenderer;
-      const executions = yield* CellExecutions;
+      const executions = yield* CellRuns;
       const variables = yield* VariablesService;
       const datasources = yield* DatasourcesService;
       const liveSessions = yield* SessionsService;
@@ -699,7 +699,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       OutputChannel.layer,
       VariablesService.layer,
       NotebookRenderer.layer,
-      CellExecutions.layer,
+      CellRuns.layer,
       DatasourcesService.layer,
       NotebookEditorRegistry.layer,
       PythonEnvInvalidation.layer,
@@ -945,7 +945,7 @@ function processNotebookOperation(
   return Effect.gen(function* () {
     const editors = yield* NotebookEditorRegistry;
     const renderer = yield* NotebookRenderer;
-    const executions = yield* CellExecutions;
+    const executions = yield* CellRuns;
 
     const forkForSession = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       Effect.forkDetach(
@@ -1045,7 +1045,7 @@ function syncCellIdentity(
   },
   options: {
     code: VsCodeService;
-    executions: CellExecutionsService;
+    executions: CellRunsService;
     notebook: NotebookHandle;
   },
 ) {

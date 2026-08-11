@@ -17,7 +17,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { scratchCellNotificationsToVsCodeOutput } from "../kernel/CellExecutions.ts";
+import { scratchCellNotificationsToVsCodeOutput } from "../kernel/CellRuns.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { VsCode } from "./VsCode.ts";

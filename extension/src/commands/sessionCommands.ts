@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { CellExecutions } from "../kernel/CellExecutions.ts";
+import { CellRuns } from "../kernel/CellRuns.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
@@ -33,7 +33,7 @@ const endExecutions = Effect.fn("command.endSessionExecutions")(function* (
   notebookUri: NotebookId,
 ) {
   const editors = yield* NotebookEditorRegistry;
-  const executions = yield* CellExecutions;
+  const executions = yield* CellRuns;
   const editor = yield* editors.getLastNotebookEditor(notebookUri);
   if (Option.isSome(editor)) {
     yield* executions.handleInterrupt(editor.value);

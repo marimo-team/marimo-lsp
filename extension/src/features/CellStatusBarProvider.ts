@@ -4,7 +4,7 @@ import type * as vscode from "vscode";
 import enableCell from "../commands/enableCell.ts";
 import runStale from "../commands/runStale.ts";
 import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
-import { CellExecutions } from "../kernel/CellExecutions.ts";
+import { CellRuns } from "../kernel/CellRuns.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -21,7 +21,7 @@ const DEFAULT_NAME = "_";
 export const CellStatusBarProviderLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const executions = yield* CellExecutions;
+    const executions = yield* CellRuns;
 
     // Stream that fires when metadata changes on any marimo notebook cell
     const metadataChanges: Stream.Stream<void> =
@@ -37,7 +37,7 @@ export const CellStatusBarProviderLive = Layer.effectDiscard(
         Stream.map(() => undefined),
       );
 
-    // Staleness provider — derived from CellExecutions records
+    // Staleness provider — derived from CellRuns records
     yield* code.notebooks.registerNotebookCellStatusBarItemProvider(
       NOTEBOOK_TYPE,
       {

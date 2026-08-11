@@ -1,7 +1,7 @@
 import { Effect, flow, Option } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { CellExecutions } from "../kernel/CellExecutions.ts";
+import { CellRuns } from "../kernel/CellRuns.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import type { NotebookTarget } from "./Invocation.ts";
@@ -10,7 +10,7 @@ import { MarimoCommands } from "./MarimoCommands.ts";
 const handler = Effect.fn("command.runStale")(
   function* (target: Option.Option<NotebookTarget>) {
     const code = yield* VsCode;
-    const executions = yield* CellExecutions;
+    const executions = yield* CellRuns;
 
     if (Option.isNone(target)) {
       yield* showErrorAndPromptLogs(

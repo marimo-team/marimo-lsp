@@ -4,7 +4,7 @@ import type * as vscode from "vscode";
 import { Config } from "../config/Config.ts";
 import { ConfigContextManagerLive } from "../config/ConfigContextManager.ts";
 import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
-import { CellExecutions } from "../kernel/CellExecutions.ts";
+import { CellRuns } from "../kernel/CellRuns.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
 import { NotebookControllersLive } from "../kernel/NotebookControllers.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
@@ -84,7 +84,7 @@ const MainLive = Layer.empty
     Layer.provide(GitHubClient.layer),
     Layer.provide(NotebookRenderer.layer),
     Layer.provide(NotebookSerializer.layer),
-    Layer.provide(CellExecutions.layer),
+    Layer.provide(CellRuns.layer),
     Layer.provide(VariablesService.layer),
     Layer.provide(DatasourcesService.layer),
     Layer.provide(PackagesService.layer),

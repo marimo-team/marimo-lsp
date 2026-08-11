@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 
-import { CellExecutions } from "../kernel/CellExecutions.ts";
+import { CellRuns } from "../kernel/CellRuns.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { VariablesService } from "../panel/variables/VariablesService.ts";
@@ -23,7 +23,7 @@ export const DebugLayerLive = Layer.effectDiscard(
     if (process.env.MARIMO_DEBUG !== "1") return;
 
     globalThis.__marimoDebug = {
-      cellExecutions: yield* CellExecutions,
+      cellExecutions: yield* CellRuns,
       variablesService: yield* VariablesService,
       notebookEditorRegistry: yield* NotebookEditorRegistry,
       notebookRuntime: yield* NotebookRuntime,

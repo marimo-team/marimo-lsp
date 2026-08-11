@@ -5,17 +5,17 @@ import { cellId } from "../../lib/__tests__/branded.ts";
 import type { CellRuntimeState } from "../../types.ts";
 import {
   Action,
-  type CellRunEntry,
+  type CellRunState,
   Op,
-  RunId,
+  CellRunId,
   RunPhase,
   step,
 } from "../CellRunReducer.ts";
 
 const ID = cellId("cell-1");
-const RUN = RunId("run-1");
+const RUN = CellRunId("run-1");
 
-const entry = (phase: RunPhase): CellRunEntry => ({
+const entry = (phase: RunPhase): CellRunState => ({
   id: ID,
   state: createCellRuntimeState(),
   phase,
@@ -89,7 +89,7 @@ describe("cell run reducer", () => {
     const running = entry(RunPhase.Running({ runId: RUN }));
     const { actions } = step(
       running,
-      Op.Queue({ runId: RunId("run-2"), next: okState() }),
+      Op.Queue({ runId: CellRunId("run-2"), next: okState() }),
     );
     expect(tags(actions)).toEqual([
       "RecordExecution",
