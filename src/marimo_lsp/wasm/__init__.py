@@ -100,9 +100,10 @@ class WasmServer:
         process_id: str,
         code: int | None,
         signal: str | None,
+        stderr: str | None,
     ) -> None:
         """Route a native process exit into its WASM kernel."""
-        self._kernels.exited(process_id, code, signal)
+        self._kernels.exited(process_id, code, signal, stderr)
 
 
 def create_bridge(

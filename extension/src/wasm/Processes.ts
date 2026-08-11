@@ -2,6 +2,9 @@ import * as NodeChildProcess from "node:child_process";
 import type { EventEmitter } from "node:events";
 import * as NodePath from "node:path";
 import type { Readable, Writable } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
+
+const MAX_STDERR_TAIL_LENGTH = 16_000;
 
 interface SpawnedProcess extends EventEmitter {
   readonly stdin: Writable | null;
@@ -19,6 +22,8 @@ type SpawnProcess = (
 interface ProcessState {
   readonly child: SpawnedProcess;
   readonly input: Writable;
+  readonly stderrDecoder: StringDecoder;
+  stderrTail: string;
   expectedClose: boolean;
   exited: boolean;
 }
@@ -29,7 +34,15 @@ interface ProcessCallbacks {
     processId: string,
     code: number | null,
     signal: NodeJS.Signals | null,
+    stderr: string | undefined,
   ) => void;
+}
+
+function appendStderr(state: ProcessState, text: string): void {
+  if (text.length === 0) return;
+  state.stderrTail = `${state.stderrTail}${text}`.slice(
+    -MAX_STDERR_TAIL_LENGTH,
+  );
 }
 
 /** Brokers opaque bytes between Pyodide and selected-Python processes. */
@@ -69,6 +82,8 @@ export class Processes {
     const state: ProcessState = {
       child,
       input: child.stdin,
+      stderrDecoder: new StringDecoder("utf8"),
+      stderrTail: "",
       expectedClose: false,
       exited: false,
     };
@@ -79,14 +94,27 @@ export class Processes {
         new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength),
       );
     });
-    child.stderr?.on("data", (chunk: Buffer) => process.stderr.write(chunk));
+    child.stderr?.on("data", (chunk: Buffer) => {
+      appendStderr(state, state.stderrDecoder.write(chunk));
+      process.stderr.write(chunk);
+    });
     const exited = (code: number | null, signal: NodeJS.Signals | null) => {
       if (state.exited) return;
       state.exited = true;
+      appendStderr(state, state.stderrDecoder.end());
       this.#processes.delete(processId);
-      if (!state.expectedClose) this.#callbacks.exited(processId, code, signal);
+      if (!state.expectedClose) {
+        const stderr = state.stderrTail.trim();
+        this.#callbacks.exited(
+          processId,
+          code,
+          signal,
+          stderr.length > 0 ? stderr : undefined,
+        );
+      }
     };
     child.once("error", (error) => {
+      appendStderr(state, `${error.message}\n`);
       process.stderr.write(`${error.message}\n`);
     });
     // `exit` can precede the final stdout data. `close` is emitted only after
