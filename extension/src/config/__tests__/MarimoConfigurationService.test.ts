@@ -34,21 +34,26 @@ const LAZY_CONFIG = marimoConfigFixture({
 });
 
 /**
- * Forks a collector on `stream` and waits for the subscription.
+ * Forks a collector on `stream` and waits until its subscription is live.
  *
- * The inner subscription of a stream attaches some time after the fork. One
- * `TestClock.adjust` call drains the scheduler one time. Two calls make sure
- * that the consumer is subscribed. The first event is then not lost.
+ * The streams under test replay their current value on subscription (both
+ * zipLatest inputs are SubscriptionRef-backed), so observing the first
+ * element proves the subscription is attached and later events cannot be
+ * lost — without assuming how many scheduler drains the attachment takes.
  */
 const forkCollecting = Effect.fn(function* <A, E, R>(
   stream: Stream.Stream<A, E, R>,
   take: number,
 ) {
+  const subscribed = yield* Deferred.make<void>();
   const fiber = yield* Effect.forkChild(
-    stream.pipe(Stream.take(take), Stream.runCollect),
+    stream.pipe(
+      Stream.tap(() => Deferred.succeed(subscribed, undefined)),
+      Stream.take(take),
+      Stream.runCollect,
+    ),
   );
-  yield* TestClock.adjust("10 millis");
-  yield* TestClock.adjust("10 millis");
+  yield* Deferred.await(subscribed);
   return fiber;
 });
 
@@ -239,8 +244,9 @@ describe("MarimoConfigurationService", () => {
           code.Uri.parse(notebookUri, true),
         );
         yield* ctx.vscode.addNotebookDocument(doc);
-        // Let the service's close-subscription fiber attach before events fire
-        yield* TestClock.adjust("10 millis");
+        // No drain needed: the service's lifecycle subscription is live
+        // before its layer finishes building, so the close below cannot
+        // outrun it.
 
         const config1 = yield* service.getConfig(notebookUri);
         expect(config1.runtime?.on_cell_change).toBe("autorun");
