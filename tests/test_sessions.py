@@ -43,6 +43,11 @@ def _make_session() -> tuple[Session, Mock]:
     session.session_view = SessionView()
     session._on_change = Mock()
     session._status = "idle"
+    session._idle = asyncio.Event()
+    session._idle.set()
+    session._scratchpad_running = False
+    session._scratchpad_run_id = None
+    session._closed = False
     session._state_lock = threading.RLock()
     return session, ipc_queue_manager
 
@@ -256,6 +261,37 @@ def test_session_status_tracks_running_and_completed_operations() -> None:
     assert session._on_change.call_count == 2
 
 
+@pytest.mark.asyncio
+async def test_wait_until_idle_blocks_while_an_execution_is_running() -> None:
+    session, _ = _make_session()
+    session.mark_running()
+
+    waiter = asyncio.create_task(session.wait_until_idle())
+    await asyncio.sleep(0)
+    assert not waiter.done()
+
+    session._update_status(KernelMessage(b'{"op": "completed-run"}'))
+    assert await waiter
+
+
+def test_scratchpad_ignores_unrelated_completed_runs() -> None:
+    session, _ = _make_session()
+
+    assert session.try_start_scratchpad("scratch-1")
+    session._update_status(
+        KernelMessage(b'{"op": "completed-run", "run_id": null}')
+    )
+
+    assert session._status == "running"
+    assert session.is_scratchpad_running("scratch-1")
+
+    session._update_status(
+        KernelMessage(b'{"op": "completed-run", "run_id": "scratch-1"}')
+    )
+    assert session._status == "idle"
+    assert not session.is_scratchpad_running("scratch-1")
+
+
 def test_terminal_kernel_error_removes_live_session() -> None:
     server = Mock()
     sessions = Sessions(server, kernels=Mock())
@@ -281,6 +317,32 @@ def test_terminal_kernel_operation_invokes_failure_callback() -> None:
 
     session._on_kernel_failure.assert_called_once_with(session, "bridge exited")
     session._operation_sink.notify.assert_called_once_with(message)
+
+
+def test_pending_scratchpad_cancellation_does_not_interrupt_other_work() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    session = Mock(spec=Session)
+    sessions._sessions["file:///test.py"] = session
+    session.is_scratchpad_running.return_value = False
+
+    sessions.cancel_scratchpad("file:///test.py", "run-1")
+
+    session.try_interrupt.assert_not_called()
+    assert sessions.take_scratchpad_cancellation("file:///test.py", "run-1")
+    assert not sessions.take_scratchpad_cancellation("file:///test.py", "run-1")
+
+
+def test_active_scratchpad_cancellation_interrupts_and_is_consumed_once() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    session = Mock(spec=Session)
+    sessions._sessions["file:///test.py"] = session
+    session.is_scratchpad_running.return_value = True
+
+    sessions.cancel_scratchpad("file:///test.py", "run-1")
+
+    session.try_interrupt.assert_called_once_with()
+    assert sessions.take_scratchpad_cancellation("file:///test.py", "run-1")
+    assert not sessions.take_scratchpad_cancellation("file:///test.py", "run-1")
 
 
 def test_sessions_changed_notification_contains_public_snapshot() -> None:

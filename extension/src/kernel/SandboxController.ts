@@ -1,10 +1,9 @@
 import * as semver from "@std/semver";
-import { Effect, flow, Option, Queue, Schema, Stream } from "effect";
+import { Effect, flow, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
-import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../lib/extractExecuteCodeRequest.ts";
 import { extractPythonError } from "../lib/extractPythonError.ts";
 import { uvAddScriptSafe } from "../lib/installPackages.ts";
@@ -22,6 +21,7 @@ import {
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
+import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import {
   ExecutableResolutionError,
   NotebookRuntime,
@@ -211,18 +211,8 @@ export const createSandboxController = Effect.fn("createSandboxController")(
     // controller is registered, which can happen before any subscriber fiber
     // runs. Attach the listener in the same fiber turn as creation so a
     // restored selection buffers in the queue instead of firing unheard.
-    const selections = yield* Effect.acquireRelease(
-      Queue.make<{
-        notebook: vscode.NotebookDocument;
-        selected: boolean;
-      }>(),
-      Queue.shutdown,
-    );
-    yield* acquireDisposable(() =>
-      controller.onDidChangeSelectedNotebooks((event) =>
-        Queue.offerUnsafe(selections, event),
-      ),
-    );
+    const selectedNotebookChanges =
+      yield* makeControllerSelectionChanges(controller);
 
     return {
       id: controller.id,
@@ -241,7 +231,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
       createNotebookCellExecution(cell: MarimoNotebookCell) {
         return controller.createNotebookCellExecution(cell.rawNotebookCell);
       },
-      selectedNotebookChanges: Stream.fromQueue(selections),
+      selectedNotebookChanges,
       updateNotebookAffinity(
         notebook: vscode.NotebookDocument,
         affinity: vscode.NotebookControllerAffinity,

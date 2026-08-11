@@ -1,8 +1,9 @@
 import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Fiber, Option, Stream } from "effect";
+import type * as vscode from "vscode";
 
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import { makeNotebookLifecycle, VsCode } from "../platform/VsCode.ts";
 
 // Tests for our VsCode test harness
 describe("TestVsCode", () => {
@@ -42,6 +43,88 @@ describe("TestVsCode", () => {
           "file:///test/foo_mo.py",
         ]
       `);
+    }),
+  );
+
+  it.effect(
+    "keeps notebook lifecycle events and the document snapshot consistent",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/foo_mo.py");
+      const vscode = yield* TestVsCode.make();
+
+      yield* Effect.gen(function* () {
+        const code = yield* VsCode;
+
+        // Open before subscribing: the document must still appear in the
+        // lifecycle snapshot instead of being lost between independent stores.
+        yield* vscode.openNotebook(editor.notebook);
+        const lifecycle = yield* code.workspace.subscribeNotebookLifecycle;
+        const opened = yield* Stream.runHead(lifecycle);
+        expect(Option.map(opened, (event) => event.type)).toEqual(
+          Option.some("opened"),
+        );
+        expect(yield* code.workspace.getNotebookDocuments).toContain(
+          editor.notebook,
+        );
+
+        const closeLifecycle = yield* code.workspace.subscribeNotebookLifecycle;
+        const closedFiber = yield* closeLifecycle.pipe(
+          Stream.filter((event) => event.type === "closed"),
+          Stream.runHead,
+          Effect.forkChild,
+        );
+        yield* vscode.closeNotebook(editor.notebook);
+        const closed = yield* Fiber.join(closedFiber);
+        expect(Option.map(closed, (event) => event.document)).toEqual(
+          Option.some(editor.notebook),
+        );
+        expect(yield* code.workspace.getNotebookDocuments).not.toContain(
+          editor.notebook,
+        );
+      }).pipe(Effect.provide(vscode.layer));
+    }),
+  );
+
+  it.effect(
+    "disposes notebook lifecycle listeners when its consumer ends",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+      let opened: ((document: vscode.NotebookDocument) => unknown) | undefined;
+      let closed: ((document: vscode.NotebookDocument) => unknown) | undefined;
+      let disposals = 0;
+      const lifecycle = yield* makeNotebookLifecycle({
+        notebookDocuments: [],
+        onDidOpenNotebookDocument: (listener) => {
+          opened = listener;
+          return {
+            dispose() {
+              disposals += 1;
+              opened = undefined;
+            },
+          };
+        },
+        onDidCloseNotebookDocument: (listener) => {
+          closed = listener;
+          return {
+            dispose() {
+              disposals += 1;
+              closed = undefined;
+            },
+          };
+        },
+      });
+
+      const consumer = yield* lifecycle.pipe(
+        Stream.take(1),
+        Stream.runDrain,
+        Effect.forkChild,
+      );
+      opened?.(editor.notebook);
+      yield* Fiber.join(consumer);
+
+      expect(disposals).toBe(2);
+      expect(opened).toBeUndefined();
+      expect(closed).toBeUndefined();
     }),
   );
 

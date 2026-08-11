@@ -1,5 +1,14 @@
 import { expect, it } from "@effect/vitest";
-import { Deferred, Effect, Layer, Option, Queue, Ref, Stream } from "effect";
+import {
+  Deferred,
+  Effect,
+  Layer,
+  Option,
+  Queue,
+  Ref,
+  Schedule,
+  Stream,
+} from "effect";
 import type * as vscode from "vscode";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -92,7 +101,7 @@ it.effect(
   }),
 );
 
-it.effect(
+it.live(
   "prompts to reload after changing the language-server runtime",
   Effect.fn(function* () {
     const prompted = yield* Deferred.make<void>();
@@ -120,11 +129,22 @@ it.effect(
 
     yield* watchForConfigurationChanges().pipe(Effect.provide(services));
     yield* Deferred.await(prompted);
-    // The watcher fiber resolves the prompt before executing the reload
-    // command; yield so it can run past the prompt before we assert.
-    yield* Effect.yieldNow;
-
-    expect(yield* Ref.get(vscode.executions)).toContainEqual({
+    const executions = yield* Ref.get(vscode.executions).pipe(
+      Effect.filterOrFail(
+        (current) =>
+          current.some(
+            ({ command }) => command === "workbench.action.reloadWindow",
+          ),
+        () => "reload command not recorded" as const,
+      ),
+      Effect.retry(
+        Schedule.recurs(100).pipe(
+          Schedule.addDelay(() => Effect.succeed("10 millis")),
+        ),
+      ),
+      Effect.catch(() => Ref.get(vscode.executions)),
+    );
+    expect(executions).toContainEqual({
       command: "workbench.action.reloadWindow",
       args: [],
     });

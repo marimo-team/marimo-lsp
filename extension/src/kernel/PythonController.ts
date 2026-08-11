@@ -1,11 +1,10 @@
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import { Brand, Cause, Effect, Option, Queue, Redacted, Stream } from "effect";
+import { Brand, Cause, Effect, Option, Redacted, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { unreachable } from "../assert.ts";
 import { Config } from "../config/Config.ts";
-import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../lib/extractExecuteCodeRequest.ts";
 import { extractPythonError } from "../lib/extractPythonError.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
@@ -21,6 +20,7 @@ import {
   type MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
+import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import { NotebookRuntime } from "./NotebookRuntime.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
@@ -239,23 +239,13 @@ export const createPythonController = Effect.fn("createPythonController")(
     // controller is registered, which can happen before any subscriber fiber
     // runs. Attach the listener in the same fiber turn as creation so a
     // restored selection buffers in the queue instead of firing unheard.
-    const selections = yield* Effect.acquireRelease(
-      Queue.make<{
-        notebook: vscode.NotebookDocument;
-        selected: boolean;
-      }>(),
-      Queue.shutdown,
-    );
-    yield* acquireDisposable(() =>
-      controller.onDidChangeSelectedNotebooks((event) =>
-        Queue.offerUnsafe(selections, event),
-      ),
-    );
+    const selectedNotebookChanges =
+      yield* makeControllerSelectionChanges(controller);
 
     return new PythonController(
       controller,
       options.env.path,
-      Stream.fromQueue(selections),
+      selectedNotebookChanges,
     );
   },
 );

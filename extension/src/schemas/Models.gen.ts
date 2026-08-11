@@ -296,9 +296,11 @@ export type ConvertRequest = typeof ConvertRequest.Type;
 /**
  * A request to interrupt the kernel execution.
  */
-export const InterruptRequest = Schema.Struct({}).annotate({
-  identifier: "InterruptRequest",
-});
+export const InterruptRequest = Schema.Struct({
+  runId: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({ identifier: "InterruptRequest" });
 export type InterruptRequest = typeof InterruptRequest.Type;
 
 /**

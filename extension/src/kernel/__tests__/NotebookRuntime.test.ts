@@ -161,6 +161,7 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
             }),
           );
 
+          yield* vscode.openNotebook(editor.notebook);
           yield* runtime
             .forNotebook(id)
             .executeCells({ cellIds: [], codes: [] }, "/python-two");
@@ -204,11 +205,11 @@ it.effect(
       notebooks.forNotebook(notebook);
       notebooks.forNotebook(notebookId("notebook-b"));
 
-      // Subscription now happens when the runtime's forked fiber first runs
-      // the stream, so yield to let it start before counting.
-      yield* Effect.yieldNow;
-
-      expect(subscriptions).toBe(1);
+      const settledSubscriptions = yield* eventually(
+        Effect.sync(() => subscriptions),
+        (count) => count === 1,
+      );
+      expect(settledSubscriptions).toBe(1);
     }).pipe(Effect.provide(layer));
   }),
 );

@@ -883,12 +883,21 @@ describe("NotebookRuntime scratch stream", () => {
 
         const executions = yield* SubscriptionRef.get(ctx.executions);
 
-        // The finalizer should have sent an interrupt to the kernel.
+        const executeCmd = executions.find(
+          (c) => c.method === "execute-scratchpad",
+        );
+        assert(executeCmd !== undefined);
+        const { runId } = (yield* Schema.decodeUnknownEffect(
+          Api.ExecuteScratchpadPayload,
+        )(executeCmd.params)).inner;
+
+        // The finalizer should have sent a run-correlated interrupt. The
+        // server uses the id to remember cancellation during kernel startup.
         const interruptCmd = executions.find((c) => c.method === "interrupt");
 
         expect(interruptCmd).toMatchObject({
           method: "interrupt",
-          params: { inner: {}, notebookUri: ctx.notebookUri },
+          params: { inner: { runId }, notebookUri: ctx.notebookUri },
         });
       }).pipe(Effect.provide(ctx.layer));
     }),

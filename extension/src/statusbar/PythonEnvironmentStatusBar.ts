@@ -70,8 +70,12 @@ export const PythonEnvironmentStatusBarLive = Layer.effectDiscard(
     // Each trigger source has its own fiber that writes to one queue. A
     // `Stream.mergeAll` attaches its inner subscriptions too late and loses
     // the events in that time. One fork for each source subscribes as soon
-    // as the fiber runs.
-    const visibilityTriggers = yield* Queue.unbounded<void>();
+    // as the fiber runs. Only the latest trigger matters because every update
+    // re-reads the complete current editor/configuration state.
+    const visibilityTriggers = yield* Effect.acquireRelease(
+      Queue.sliding<void>(1),
+      Queue.shutdown,
+    );
     for (const source of visibilityTriggerSources) {
       yield* Effect.forkScoped(
         source.pipe(

@@ -5,7 +5,7 @@ description: Use this skill when setting up a repository that uses the Effect Ty
 
 # Step 1: Install effect
 
-Use the users preferred package manager:
+Use the user's preferred package manager:
 
 ```
 pnpm add effect@beta

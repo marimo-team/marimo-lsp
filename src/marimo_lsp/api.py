@@ -296,6 +296,14 @@ async def interrupt(
     args: NotebookCommand[InterruptRequest],
 ) -> None:
     logger.info(f"interrupt for {args.notebook_uri}")
+    if args.inner.run_id is not None:
+        ctx.sessions.cancel_scratchpad(args.notebook_uri, args.inner.run_id)
+        logger.info(
+            f"Scratchpad cancellation recorded for {args.notebook_uri} "
+            f"({args.inner.run_id})"
+        )
+        return
+
     session = ctx.sessions.get(args.notebook_uri)
     if session:
         session.try_interrupt()
@@ -423,6 +431,13 @@ async def execute_scratch(
     Creates the session on demand when none exists, like :func:`run`.
     """
     logger.info(f"execute_scratch for {args.notebook_uri}")
+    run_id = args.inner.run_id
+    if run_id is not None and ctx.sessions.take_scratchpad_cancellation(
+        args.notebook_uri, run_id
+    ):
+        logger.info(f"Skipping cancelled scratchpad run {run_id}")
+        return
+
     try:
         notebook = find_notebook_document(ctx.ls.workspace, args.notebook_uri)
     except KeyError:
@@ -435,28 +450,44 @@ async def execute_scratch(
     session = await ctx.sessions.start(
         args.notebook_uri, args.executable, args.working_directory
     )
-    session.mark_running()
+    while True:
+        if not await session.wait_until_idle():
+            logger.info(f"Skipping scratchpad run {run_id}; session closed")
+            return
+        if run_id is not None and ctx.sessions.take_scratchpad_cancellation(
+            args.notebook_uri, run_id
+        ):
+            logger.info(
+                f"Skipping scratchpad run {run_id} cancelled before dispatch"
+            )
+            return
+        if session.try_start_scratchpad(run_id):
+            break
 
-    session.instantiate(
-        InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
-        http_request=None,
-    )
+    try:
+        session.instantiate(
+            InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
+            http_request=None,
+        )
 
-    notebook_cells, cell_outputs = snapshot_for_scratchpad(
-        workspace=ctx.ls.workspace,
-        session=session,
-        notebook=notebook,
-    )
+        notebook_cells, cell_outputs = snapshot_for_scratchpad(
+            workspace=ctx.ls.workspace,
+            session=session,
+            notebook=notebook,
+        )
 
-    session.put_control_request(
-        ExecuteScratchpadCommand(
-            code=args.inner.code,
-            run_id=args.inner.run_id,
-            notebook_cells=notebook_cells,
-            cell_outputs=cell_outputs,
-        ),
-        from_consumer_id=None,
-    )
+        session.put_control_request(
+            ExecuteScratchpadCommand(
+                code=args.inner.code,
+                run_id=args.inner.run_id,
+                notebook_cells=notebook_cells,
+                cell_outputs=cell_outputs,
+            ),
+            from_consumer_id=None,
+        )
+    except BaseException:
+        session.release_scratchpad(run_id)
+        raise
     logger.info(f"Scratchpad execution request sent for {args.notebook_uri}")
 
 

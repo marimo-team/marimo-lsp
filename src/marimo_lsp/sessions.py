@@ -52,6 +52,8 @@ if TYPE_CHECKING:
 
 logger = get_logger()
 
+_MAX_CANCELLED_SCRATCHPAD_RUNS = 1024
+
 
 def _raise_kernel_failure(_session: Session, error: str) -> None:
     """Turn a terminal failure before publication into a launch failure."""
@@ -127,6 +129,10 @@ class Session:
         self._runtime_config = config_manager.get_config(hide_secrets=False)
         self.started_at = started_at if started_at is not None else time.time()
         self._status: typing.Literal["idle", "running"] = "idle"
+        self._idle = asyncio.Event()
+        self._idle.set()
+        self._scratchpad_running = False
+        self._scratchpad_run_id: str | None = None
         self._on_change = on_change or (lambda: None)
         self._on_kernel_failure: typing.Callable[[Session, str], None] = (
             lambda _session, _error: None
@@ -227,7 +233,7 @@ class Session:
             return None
 
         if operation.get("op") == "completed-run":
-            self._set_status("idle")
+            self._complete_run(operation.get("run_id"))
         elif operation.get("op") == "cell-op" and operation.get("status") in {
             "queued",
             "running",
@@ -242,11 +248,55 @@ class Session:
             if self._status == status:
                 return
             self._status = status
+            if status == "idle":
+                self._idle.set()
+            else:
+                self._idle.clear()
+        self._on_change()
+
+    def _complete_run(self, run_id: str | None) -> None:
+        with self._state_lock:
+            if self._scratchpad_running:
+                if self._scratchpad_run_id != run_id:
+                    return
+                self._scratchpad_running = False
+                self._scratchpad_run_id = None
+            if self._status == "idle":
+                return
+            self._status = "idle"
+            self._idle.set()
         self._on_change()
 
     def mark_running(self) -> None:
         """Mark the session busy before sending an execution request."""
         self._set_status("running")
+
+    async def wait_until_idle(self) -> bool:
+        """Wait until this live session can accept another execution."""
+        await self._idle.wait()
+        with self._state_lock:
+            return not self._closed
+
+    def try_start_scratchpad(self, run_id: str | None) -> bool:
+        """Claim an idle session for one scratchpad run without yielding."""
+        with self._state_lock:
+            if self._closed or self._status != "idle":
+                return False
+            self._scratchpad_running = True
+            self._scratchpad_run_id = run_id
+            self._status = "running"
+            self._idle.clear()
+        self._on_change()
+        return True
+
+    def is_scratchpad_running(self, run_id: str) -> bool:
+        """Return whether the correlated scratchpad currently owns the kernel."""
+        with self._state_lock:
+            return self._scratchpad_running and self._scratchpad_run_id == run_id
+
+    def release_scratchpad(self, run_id: str | None) -> None:
+        """Release a scratchpad claim when dispatch fails before reaching the kernel."""
+        self._complete_run(run_id)
 
     def describe(self) -> SessionInfo:
         """Return the public snapshot for this live session."""
@@ -373,6 +423,7 @@ class Session:
         if self._closed:
             return
         self._closed = True
+        self._idle.set()
         self._on_change = lambda: None
         logger.info(f"Closing session {self.initialization_id}")
         self._kernel.close()
@@ -394,6 +445,10 @@ class Sessions:
         self._lock = threading.RLock()
         self._lifecycle_locks: dict[str, asyncio.Lock] = {}
         self._lifecycle_versions: dict[str, int] = {}
+        # A bounded set of cancellation tombstones closes the race where a
+        # run-correlated interrupt is handled before execute-scratchpad reaches
+        # session startup. Run ids are unique, so late tombstones are harmless.
+        self._cancelled_scratchpad_runs: dict[tuple[str, str], None] = {}
 
     def _lifecycle_lock(self, notebook_uri: str) -> asyncio.Lock:
         with self._lock:
@@ -435,6 +490,27 @@ class Sessions:
         """Return the live session for a notebook, if one exists."""
         with self._lock:
             return self._sessions.get(notebook_uri)
+
+    def cancel_scratchpad(self, notebook_uri: str, run_id: str) -> None:
+        """Remember a cancellation and interrupt only its active scratchpad."""
+        key = (notebook_uri, run_id)
+        with self._lock:
+            self._cancelled_scratchpad_runs[key] = None
+            while len(self._cancelled_scratchpad_runs) > _MAX_CANCELLED_SCRATCHPAD_RUNS:
+                oldest = next(iter(self._cancelled_scratchpad_runs))
+                del self._cancelled_scratchpad_runs[oldest]
+            session = self._sessions.get(notebook_uri)
+        if session is not None and session.is_scratchpad_running(run_id):
+            session.try_interrupt()
+
+    def take_scratchpad_cancellation(self, notebook_uri: str, run_id: str) -> bool:
+        """Consume a pending cancellation for one scratchpad run."""
+        key = (notebook_uri, run_id)
+        with self._lock:
+            if key not in self._cancelled_scratchpad_runs:
+                return False
+            del self._cancelled_scratchpad_runs[key]
+            return True
 
     async def start(
         self,

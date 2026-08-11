@@ -1612,22 +1612,26 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   }
 
   openNotebook(doc: vscode.NotebookDocument) {
-    return Effect.andThen(
-      PubSub.publish(this.documentOpenedPubSub, doc),
-      PubSub.publish(this.documentLifecyclePubSub, {
-        type: "opened" as const,
-        document: doc,
-      }),
+    return this.addNotebookDocument(doc).pipe(
+      Effect.andThen(PubSub.publish(this.documentOpenedPubSub, doc)),
+      Effect.andThen(
+        PubSub.publish(this.documentLifecyclePubSub, {
+          type: "opened" as const,
+          document: doc,
+        }),
+      ),
     );
   }
 
   closeNotebook(doc: vscode.NotebookDocument) {
-    return Effect.andThen(
-      PubSub.publish(this.documentClosedPubSub, doc),
-      PubSub.publish(this.documentLifecyclePubSub, {
-        type: "closed" as const,
-        document: doc,
-      }),
+    return this.removeNotebookDocument(doc).pipe(
+      Effect.andThen(PubSub.publish(this.documentClosedPubSub, doc)),
+      Effect.andThen(
+        PubSub.publish(this.documentLifecyclePubSub, {
+          type: "closed" as const,
+          document: doc,
+        }),
+      ),
     );
   }
 

@@ -1,7 +1,8 @@
 import { assert, expect, it } from "@effect/vitest";
 import type * as py from "@vscode/python-extension";
-import { Effect, Layer, Option } from "effect";
+import { Effect, Fiber, Layer, Option, Stream } from "effect";
 import { TestClock } from "effect/testing";
+import type * as vscode from "vscode";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
@@ -14,6 +15,7 @@ import {
 import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import { Constants } from "../../platform/Constants.ts";
+import { makeControllerSelectionChanges } from "../ControllerSelectionChanges.ts";
 
 const withTestCtx = Effect.fn(function* (
   options: {
@@ -109,6 +111,42 @@ it.effect(
       assert(Option.isSome(selected));
       expect(selected.value.id).toBe(`marimo-${executable}`);
     }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
+  "disposes the controller selection listener when its consumer ends",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    let emit:
+      | ((event: {
+          notebook: vscode.NotebookDocument;
+          selected: boolean;
+        }) => unknown)
+      | undefined;
+    let disposals = 0;
+    const changes = yield* makeControllerSelectionChanges({
+      onDidChangeSelectedNotebooks: (listener) => {
+        emit = listener;
+        return {
+          dispose() {
+            disposals += 1;
+            emit = undefined;
+          },
+        };
+      },
+    });
+
+    const consumer = yield* changes.pipe(
+      Stream.take(1),
+      Stream.runDrain,
+      Effect.forkChild,
+    );
+    emit?.({ notebook: editor.notebook, selected: true });
+    yield* Fiber.join(consumer);
+
+    expect(disposals).toBe(1);
+    expect(emit).toBeUndefined();
   }),
 );
 

@@ -294,20 +294,18 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
               const subscription = yield* PubSub.subscribe(operations);
               const runId = crypto.randomUUID();
 
-              // The finalizer is armed before the command is sent. If the
-              // stream stops, the finalizer must always interrupt the kernel.
-              // An interrupt for a session that did not start is safe. The
-              // server ignores it.
-              //
-              // Only the command stays interruptible. The server starts the
-              // kernel process before it replies, and it has no timeout. You
-              // cannot cancel a masked command.
+              // Arm the finalizer before sending the command. Cancellation of
+              // the send remains prompt; its run id lets the server remember a
+              // cancellation that arrives before session startup completes.
               yield* Effect.uninterruptibleMask((restore) =>
                 Effect.gen(function* () {
                   yield* Effect.addFinalizer((exit) =>
                     Exit.hasInterrupts(exit)
                       ? marimo
-                          .interrupt({ notebookUri: notebookId, inner: {} })
+                          .interrupt({
+                            notebookUri: notebookId,
+                            inner: { runId },
+                          })
                           .pipe(
                             // You cannot interrupt a finalizer. Without a
                             // timeout, a dead server stops the cancel.
