@@ -1,4 +1,4 @@
-import { Layer, Logger, type LogLevel, ManagedRuntime } from "effect";
+import { Layer, type LogLevel, ManagedRuntime, References } from "effect";
 import type * as vscode from "vscode";
 
 import { Config } from "../config/Config.ts";
@@ -138,7 +138,9 @@ export function makeExtension(
       const appLayer = Layer.provide(
         Layer.provide(MainLive, layer),
         Layer.succeed(ExtensionContext, context),
-      ).pipe(Layer.merge(Logger.minimumLogLevel(minimumLogLevel)));
+      ).pipe(
+        Layer.merge(Layer.succeed(References.MinimumLogLevel, minimumLogLevel)),
+      );
       const runtime = ManagedRuntime.make(appLayer);
       closeActive = runtime.dispose;
 

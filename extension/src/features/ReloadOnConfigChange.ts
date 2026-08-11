@@ -1,4 +1,4 @@
-import { Effect, Either, Layer, Option, Stream } from "effect";
+import { Effect, Layer, Option, Result, Stream } from "effect";
 
 import restartKernel from "../commands/restartKernel.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
@@ -28,7 +28,7 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
     message: string,
   ) {
     yield* Effect.forkScoped(
-      code.workspace.configurationChanges().pipe(
+      code.workspace.configurationChanges.pipe(
         Stream.filter((event) =>
           sections.some((section) => event.affectsConfiguration(section)),
         ),
@@ -49,8 +49,8 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
   });
 
   const promptForActiveAffectedSession = Effect.fn(function* () {
-    const activeNotebook = Option.filterMap(
-      yield* code.window.getActiveNotebookEditor(),
+    const activeNotebook = Option.flatMap(
+      yield* code.window.getActiveNotebookEditor,
       (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
     );
     if (
@@ -83,17 +83,17 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
   );
 
   yield* Effect.forkScoped(
-    code.workspace.configurationChanges().pipe(
+    code.workspace.configurationChanges.pipe(
       Stream.filter((event) =>
         event.affectsConfiguration("marimo.notebookFileRoot"),
       ),
       Stream.runForEach(
         Effect.fn(function* (event) {
-          for (const { notebookId } of yield* notebooks.getRuntimeSessions()) {
+          for (const { notebookId } of yield* notebooks.getRuntimeSessions) {
             const uri = code.utils.parseUri(notebookId);
             if (
-              Either.isRight(uri) &&
-              event.affectsConfiguration("marimo.notebookFileRoot", uri.right)
+              Result.isSuccess(uri) &&
+              event.affectsConfiguration("marimo.notebookFileRoot", uri.success)
             ) {
               pendingFileRootChanges.add(notebookId);
             }
@@ -105,12 +105,12 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
   );
 
   yield* Effect.forkScoped(
-    code.window
-      .activeNotebookEditorChanges()
-      .pipe(Stream.runForEach(promptForActiveAffectedSession)),
+    code.window.activeNotebookEditorChanges.pipe(
+      Stream.runForEach(promptForActiveAffectedSession),
+    ),
   );
 });
 
-export const ReloadOnConfigChangeLive = Layer.scopedDiscard(
+export const ReloadOnConfigChangeLive = Layer.effectDiscard(
   watchForConfigurationChanges(),
 );

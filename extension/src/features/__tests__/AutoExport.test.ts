@@ -8,8 +8,8 @@ import {
   PubSub,
   Ref,
   Stream,
-  TestClock,
 } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
@@ -106,7 +106,7 @@ const withTestCtx = Effect.fn(function* (
       options.hasRuntimeSession === false
         ? undefined
         : { executable: "/usr/bin/python", workingDirectory: "/test" },
-    operations: () => Stream.fromPubSub(operations),
+    operations: Stream.fromPubSub(operations),
     execute: (request) =>
       Ref.update(calls, (current) => [...current, request]).pipe(
         Effect.andThen(
@@ -165,10 +165,10 @@ describe("AutoExport", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
 
-        expect((yield* ctx.calls).map((call) => call.method)).toEqual([
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
           "export-as-markdown",
         ]);
-        expect(Object.fromEntries(yield* ctx.writes)).toEqual({
+        expect(Object.fromEntries(yield* Ref.get(ctx.writes))).toEqual({
           "file:///test/__marimo__/report.md": "# Report",
         });
       }).pipe(Effect.provide(ctx.layer));
@@ -184,9 +184,9 @@ describe("AutoExport", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
 
-        expect(yield* ctx.calls).toEqual([]);
-        expect(yield* ctx.directories).toEqual([]);
-        expect(yield* ctx.writes).toEqual(new Map());
+        expect(yield* Ref.get(ctx.calls)).toEqual([]);
+        expect(yield* Ref.get(ctx.directories)).toEqual([]);
+        expect(yield* Ref.get(ctx.writes)).toEqual(new Map());
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -200,25 +200,27 @@ describe("AutoExport", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
 
-        expect((yield* ctx.calls).map((call) => call.method)).toEqual([
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
           "export-as-html",
           "export-as-ipynb",
         ]);
-        expect(Object.fromEntries(yield* ctx.writes)).toEqual({
+        expect(Object.fromEntries(yield* Ref.get(ctx.writes))).toEqual({
           "file:///test/__marimo__/report.html": "<html>report</html>",
           "file:///test/__marimo__/report.ipynb": "{}",
         });
-        expect(yield* ctx.directories).toEqual(["file:///test/__marimo__"]);
+        expect(yield* Ref.get(ctx.directories)).toEqual([
+          "file:///test/__marimo__",
+        ]);
 
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
-        expect(yield* ctx.calls).toHaveLength(2);
+        expect(yield* Ref.get(ctx.calls)).toHaveLength(2);
 
         yield* PubSub.publish(ctx.operations, {
           notebookUri: ctx.notebook.id,
           operation: { op: "completed-run", run_id: null },
         });
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
-        expect((yield* ctx.calls).map((call) => call.method)).toEqual([
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
           "export-as-html",
           "export-as-ipynb",
           "export-as-html",
@@ -238,7 +240,7 @@ describe("AutoExport", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
 
-        expect((yield* ctx.calls).map((call) => call.method)).toEqual([
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
           "export-as-html",
           "export-as-ipynb",
         ]);
@@ -254,7 +256,7 @@ describe("AutoExport", () => {
       yield* Effect.gen(function* () {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
-        expect((yield* ctx.calls).map((call) => call.method)).toEqual([
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
           "export-as-ipynb",
         ]);
 
@@ -272,7 +274,7 @@ describe("AutoExport", () => {
         });
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
 
-        expect((yield* ctx.calls).map((call) => call.method)).toEqual([
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
           "export-as-ipynb",
           "export-as-html",
           "export-as-ipynb",
@@ -298,7 +300,7 @@ describe("AutoExport", () => {
 
       yield* Effect.gen(function* () {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        const firstTick = yield* Effect.fork(
+        const firstTick = yield* Effect.forkChild(
           TestClock.adjust(AUTO_EXPORT_INTERVAL),
         );
         yield* Deferred.await(exportStarted);
@@ -330,7 +332,7 @@ describe("AutoExport", () => {
         yield* Fiber.join(firstTick);
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
 
-        expect((yield* ctx.calls).map((call) => call.method)).toEqual([
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
           "export-as-html",
           "export-as-ipynb",
           "export-as-html",

@@ -1,12 +1,12 @@
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 
 import { VsCode } from "../platform/VsCode.ts";
 
 export type StatusBarAlignment = "Left" | "Right";
 export type StatusBarCommand = string;
 
-export type StatusBarItem = Effect.Effect.Success<
-  ReturnType<StatusBar["createStatusBarItem"]>
+export type StatusBarItem = Effect.Success<
+  ReturnType<Context.Service.Shape<typeof StatusBar>["createStatusBarItem"]>
 >;
 
 /**
@@ -52,8 +52,8 @@ export type StatusBarItem = Effect.Effect.Success<
  * });
  * ```
  */
-export class StatusBar extends Effect.Service<StatusBar>()("StatusBar", {
-  scoped: Effect.gen(function* () {
+export class StatusBar extends Context.Service<StatusBar>()("StatusBar", {
+  make: Effect.gen(function* () {
     const code = yield* VsCode;
 
     return {
@@ -209,4 +209,6 @@ export class StatusBar extends Effect.Service<StatusBar>()("StatusBar", {
         }),
     };
   }).pipe(Effect.annotateLogs("service", "StatusBar")),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}

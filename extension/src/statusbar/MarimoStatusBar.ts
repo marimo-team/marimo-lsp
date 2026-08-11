@@ -7,7 +7,7 @@ import { VsCode } from "../platform/VsCode.ts";
 import { StatusBar } from "./StatusBar.ts";
 
 /** Manages the marimo status bar item with quick pick menu. */
-export const MarimoStatusBarLive = Layer.scopedDiscard(
+export const MarimoStatusBarLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const statusBar = yield* StatusBar;

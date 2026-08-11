@@ -71,8 +71,10 @@ it.effect(
         },
       },
       workspace: {
-        configurationChanges: () =>
-          Stream.make(configurationChange, configurationChange),
+        configurationChanges: Stream.make(
+          configurationChange,
+          configurationChange,
+        ),
       },
     });
     const services = Layer.merge(vscode.layer, makeTestNotebookRuntime());
@@ -108,17 +110,18 @@ it.effect(
         },
       },
       workspace: {
-        configurationChanges: () =>
-          Stream.make({
-            affectsConfiguration: (section: string) =>
-              ["marimo.lsp.server", "marimo.lsp.path"].includes(section),
-          }),
+        configurationChanges: Stream.make({
+          affectsConfiguration: (section: string) =>
+            ["marimo.lsp.server", "marimo.lsp.path"].includes(section),
+        }),
       },
     });
     const services = Layer.merge(vscode.layer, makeTestNotebookRuntime());
 
     yield* watchForConfigurationChanges().pipe(Effect.provide(services));
     yield* Deferred.await(prompted);
+    // The watcher fiber resolves the prompt before executing the reload
+    // command; yield so it can run past the prompt before we assert.
     yield* Effect.yieldNow;
 
     expect(yield* Ref.get(vscode.executions)).toContainEqual({
@@ -159,14 +162,13 @@ it.effect(
     };
     const vscode = yield* TestVsCode.make({
       window: {
-        getActiveNotebookEditor: () => Ref.get(activeEditor),
-        activeNotebookEditorChanges: () =>
-          Stream.fromEffect(
-            Effect.promise(() => resourceChecked).pipe(
-              Effect.andThen(Ref.set(activeEditor, Option.some(editor))),
-              Effect.as(Option.some(editor)),
-            ),
+        getActiveNotebookEditor: Ref.get(activeEditor),
+        activeNotebookEditorChanges: Stream.fromEffect(
+          Effect.promise(() => resourceChecked).pipe(
+            Effect.andThen(Ref.set(activeEditor, Option.some(editor))),
+            Effect.as(Option.some(editor)),
           ),
+        ),
         showInformationMessage: <T extends string>() =>
           Ref.update(prompts, (count) => count + 1).pipe(
             Effect.andThen(Deferred.succeed(prompted, undefined)),
@@ -174,7 +176,7 @@ it.effect(
           ),
       },
       workspace: {
-        configurationChanges: () => Stream.make(configurationChange),
+        configurationChanges: Stream.make(configurationChange),
       },
     });
     const session = {

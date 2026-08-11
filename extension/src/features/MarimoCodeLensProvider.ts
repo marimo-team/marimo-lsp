@@ -36,7 +36,7 @@ export function findMarimoAppLine(text: string): number | undefined {
  * Provides a CodeLens above marimo app declarations that allows users to
  * open the Python file as a marimo notebook in VS Code.
  */
-export const MarimoCodeLensProviderLive = Layer.scopedDiscard(
+export const MarimoCodeLensProviderLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
 

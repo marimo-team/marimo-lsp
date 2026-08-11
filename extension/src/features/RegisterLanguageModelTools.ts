@@ -1,12 +1,11 @@
 import {
   Array as EffectArray,
-  Chunk,
   Effect,
+  Formatter,
   Layer,
   Option,
-  Runtime,
+  Result,
   Stream,
-  Inspectable,
   Schema,
 } from "effect";
 
@@ -47,7 +46,7 @@ export function consoleText(op: CellOperationNotification): string {
     .map((output) =>
       typeof output.data === "string"
         ? output.data
-        : Inspectable.format(output.data),
+        : Formatter.format(output.data, { space: 2 }),
     )
     .join("");
 }
@@ -65,11 +64,11 @@ export const ExecuteCodeInput = Schema.Struct({
  * `marimo._code_mode` (taught by the marimo-pair skill). The tool's output is
  * the scratch run's text (stdout/result + code mode's summary).
  */
-export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
+export const RegisterLanguageModelToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const notebooks = yield* NotebookRuntime;
-    const runPromise = Runtime.runPromise(yield* Effect.runtime());
+    const runPromise = Effect.runPromiseWith(yield* Effect.context());
     const decoder = new TextDecoder();
 
     /**
@@ -78,7 +77,7 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
     const resolveNotebookId = Effect.fn(function* (
       input: typeof ExecuteCodeInput.Type,
     ) {
-      const notebooks = yield* code.workspace.getNotebookDocuments();
+      const notebooks = yield* code.workspace.getNotebookDocuments;
 
       const first = EffectArray.findFirst(
         EffectArray.getSomes(
@@ -96,7 +95,8 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
     const executeCode = Effect.fn("lm.executeCode")(function* (
       unknownInput: unknown,
     ) {
-      const input = yield* Schema.decodeUnknown(ExecuteCodeInput)(unknownInput);
+      const input =
+        yield* Schema.decodeUnknownEffect(ExecuteCodeInput)(unknownInput);
 
       const notebookId = yield* resolveNotebookId(input);
       if (Option.isNone(notebookId)) {
@@ -116,9 +116,10 @@ export const RegisterLanguageModelToolsLive = Layer.scopedDiscard(
       // Mirror marimo's SSE `/execute` endpoint (`ScratchCellListener.stream`):
       // surface the scratch cell's own output PLUS console (stdout/stderr) from
       // any cells a code-mode cascade re-ran
-      const [scratchOps, cascadeOps] = EffectArray.partition(
-        Chunk.toReadonlyArray(ops),
-        (op) => extractCellIdFromCellMessage(op) === SCRATCH_CELL_ID,
+      const [scratchOps, cascadeOps] = EffectArray.partition(ops, (op) =>
+        extractCellIdFromCellMessage(op) === SCRATCH_CELL_ID
+          ? Result.succeed(op)
+          : Result.fail(op),
       );
 
       // The scratch cell's own output (its console + rendered value).

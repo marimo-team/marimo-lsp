@@ -1,6 +1,16 @@
 import * as NodePath from "node:path";
 
-import { Effect, HashMap, Layer, Option, Ref, Schema, Stream } from "effect";
+import {
+  type Context,
+  Effect,
+  Filter,
+  HashMap,
+  Layer,
+  Option,
+  Ref,
+  Schema,
+  Stream,
+} from "effect";
 import type * as vscode from "vscode";
 
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
@@ -29,7 +39,7 @@ const initialState = (): AutoExportState => ({
 });
 
 export function autoExportUri(
-  code: VsCode,
+  code: Context.Service.Shape<typeof VsCode>,
   notebook: MarimoNotebookDocument,
   extension: AutoExportExtension,
 ) {
@@ -56,7 +66,7 @@ function marimoNotebooks(editors: ReadonlyArray<vscode.NotebookEditor>) {
   ];
 }
 
-export const AutoExportLive = Layer.scopedDiscard(
+export const AutoExportLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const marimo = yield* MarimoClient;
@@ -106,8 +116,8 @@ export const AutoExportLive = Layer.scopedDiscard(
       );
 
     const visibleNotebooks = Stream.concat(
-      Stream.fromEffect(code.window.getVisibleNotebookEditors()),
-      code.window.visibleNotebookEditorsChanges(),
+      Stream.fromEffect(code.window.getVisibleNotebookEditors),
+      code.window.visibleNotebookEditorsChanges,
     ).pipe(Stream.map(marimoNotebooks));
 
     yield* Effect.forkScoped(
@@ -121,24 +131,28 @@ export const AutoExportLive = Layer.scopedDiscard(
     );
 
     yield* Effect.forkScoped(
-      marimo
-        .operations()
-        .pipe(Stream.runForEach((message) => markDirty(message.notebookUri))),
+      marimo.operations.pipe(
+        Stream.runForEach((message) => markDirty(message.notebookUri)),
+      ),
     );
 
     yield* Effect.forkScoped(
-      code.workspace.notebookDocumentChanges().pipe(
-        Stream.filterMap((event) =>
-          MarimoNotebookDocument.tryFrom(event.notebook),
+      code.workspace.notebookDocumentChanges.pipe(
+        Stream.filterMap(
+          Filter.fromPredicateOption((event) =>
+            MarimoNotebookDocument.tryFrom(event.notebook),
+          ),
         ),
         Stream.runForEach((notebook) => markDirty(notebook.id)),
       ),
     );
 
     yield* Effect.forkScoped(
-      code.workspace.notebookDocumentClosed().pipe(
-        Stream.filterMap((document) =>
-          MarimoNotebookDocument.tryFrom(document),
+      code.workspace.notebookDocumentClosed.pipe(
+        Stream.filterMap(
+          Filter.fromPredicateOption((document) =>
+            MarimoNotebookDocument.tryFrom(document),
+          ),
         ),
         Stream.runForEach((notebook) =>
           Ref.update(states, HashMap.remove(notebook.id)),
@@ -150,7 +164,7 @@ export const AutoExportLive = Layer.scopedDiscard(
       Stream.tick(AUTO_EXPORT_INTERVAL).pipe(
         Stream.runForEach(() =>
           Effect.gen(function* () {
-            const editors = yield* code.window.getVisibleNotebookEditors();
+            const editors = yield* code.window.getVisibleNotebookEditors;
             yield* Effect.forEach(marimoNotebooks(editors), exportNotebook, {
               concurrency: "unbounded",
               discard: true,
@@ -195,7 +209,7 @@ export const AutoExportLive = Layer.scopedDiscard(
           (format) => {
             return exportFormat(notebook, format).pipe(
               Effect.andThen(markExported(notebook.id, format, state)),
-              Effect.catchAll((error) =>
+              Effect.catch((error) =>
                 Effect.logWarning(
                   "Failed to automatically export notebook",
                 ).pipe(
@@ -211,7 +225,7 @@ export const AutoExportLive = Layer.scopedDiscard(
           { discard: true },
         );
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.logWarning("Failed to process notebook for auto-export").pipe(
             Effect.annotateLogs({ error, notebook: notebook.id }),
           ),
@@ -250,7 +264,7 @@ export const AutoExportLive = Layer.scopedDiscard(
       const extension = format === "markdown" ? "md" : format;
       const uri = autoExportUri(code, notebook, extension);
       return content.pipe(
-        Effect.andThen(Schema.decodeUnknown(Schema.String)),
+        Effect.andThen(Schema.decodeUnknownEffect(Schema.String)),
         Effect.flatMap((value) =>
           code.workspace.fs.writeFile(uri, new TextEncoder().encode(value)),
         ),

@@ -7,7 +7,7 @@ import { VsCode } from "../platform/VsCode.ts";
  * Detects if the active Python file is a marimo notebook and sets context
  * to show/hide the "Open as Notebook" button in the editor title.
  */
-export const MarimoFileDetectorLive = Layer.scopedDiscard(
+export const MarimoFileDetectorLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
 
@@ -51,13 +51,13 @@ export const MarimoFileDetectorLive = Layer.scopedDiscard(
     });
 
     // Set initial context for current active editor
-    yield* updateContext(yield* code.window.getActiveTextEditor());
+    yield* updateContext(yield* code.window.getActiveTextEditor);
 
     // Listen for active text editor changes
     yield* Effect.forkScoped(
-      code.window
-        .activeTextEditorChanges()
-        .pipe(Stream.runForEach(updateContext)),
+      code.window.activeTextEditorChanges.pipe(
+        Stream.runForEach(updateContext),
+      ),
     );
   }),
 );
