@@ -61,7 +61,7 @@ it.effect(
       yield* first
         .executeCells({ cellIds: [], codes: [] }, "/usr/bin/python")
         .pipe(Effect.orDie);
-      yield* first.interrupt().pipe(Effect.orDie);
+      yield* first.interrupt.pipe(Effect.orDie);
 
       assert.deepStrictEqual(yield* Ref.get(requests), [
         {
@@ -164,7 +164,7 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
           yield* runtime
             .forNotebook(id)
             .executeCells({ cellIds: [], codes: [] }, "/python-two");
-          yield* runtime.forNotebook(id).close();
+          yield* runtime.forNotebook(id).close;
           expect(Option.isNone(yield* runtime.getRuntimeSession(id))).toBe(
             true,
           );
@@ -191,16 +191,22 @@ it.effect(
   Effect.fn(function* () {
     let subscriptions = 0;
     const { layer } = yield* makeTestLayer({
-      operations: () => {
+      // Stream.suspend evaluates once per subscription, so the counter still
+      // measures how many times the runtime subscribed to `operations`.
+      operations: Stream.suspend(() => {
         subscriptions += 1;
         return Stream.never;
-      },
+      }),
     });
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime;
       notebooks.forNotebook(notebook);
       notebooks.forNotebook(notebookId("notebook-b"));
+
+      // Subscription now happens when the runtime's forked fiber first runs
+      // the stream, so yield to let it start before counting.
+      yield* Effect.yieldNow;
 
       expect(subscriptions).toBe(1);
     }).pipe(Effect.provide(layer));
@@ -223,10 +229,10 @@ it.effect(
       const notebooks = yield* NotebookRuntime;
       const handle = notebooks.forNotebook(notebook);
 
-      expect(Option.isNone(yield* handle.getController())).toBe(true);
+      expect(Option.isNone(yield* handle.getController)).toBe(true);
       yield* notebooks.attachController(notebook, controller);
 
-      expect(yield* handle.getController()).toEqual(Option.some(controller));
+      expect(yield* handle.getController).toEqual(Option.some(controller));
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -283,7 +289,7 @@ const eventually = <A>(
 ) =>
   Effect.filterOrFail(get, predicate, () => "not settled yet" as const).pipe(
     Effect.retry(Schedule.recurs(100)),
-    Effect.orElse(() => get),
+    Effect.catch(() => get),
   );
 
 it.effect(
@@ -324,7 +330,7 @@ it.effect(
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const id = notebookId(editor.notebook.uri.toString());
     const { layer, vscode } = yield* makeTestLayer({
-      sessionChanges: () => Stream.fromPubSub(changes),
+      sessionChanges: Stream.fromPubSub(changes),
     });
 
     yield* Effect.gen(function* () {
@@ -383,7 +389,7 @@ it.effect(
       // so the runtime must stop handing this one out. Re-resolve the handle
       // each attempt: one captured before the close reads the released state.
       const released = yield* eventually(
-        Effect.suspend(() => notebooks.forNotebook(id).getController()),
+        Effect.suspend(() => notebooks.forNotebook(id).getController),
         Option.isNone,
       );
       expect(Option.isNone(released)).toBe(true);

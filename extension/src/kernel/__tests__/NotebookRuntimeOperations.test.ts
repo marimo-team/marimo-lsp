@@ -2,9 +2,9 @@ import * as NodePath from "node:path";
 
 import { assert, describe, expect, it } from "@effect/vitest";
 import {
-  Chunk,
   Effect,
   Fiber,
+  Latch,
   Layer,
   Option,
   PubSub,
@@ -13,8 +13,8 @@ import {
   Schema,
   Stream,
   SubscriptionRef,
-  TestClock,
 } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
@@ -53,7 +53,7 @@ import type {
 const withTestCtx = Effect.fn(function* () {
   // Controllable showInputBox via Queue
   const inputQueue = yield* Queue.unbounded<Option.Option<string>>();
-  const inputRequested = yield* Effect.makeLatch();
+  const inputRequested = yield* Latch.make();
 
   // Capture executeCommand calls
   const executions = yield* SubscriptionRef.make<ReadonlyArray<MarimoApiCall>>(
@@ -112,12 +112,12 @@ const withTestCtx = Effect.fn(function* () {
     Layer.provide(
       makeTestMarimoClient({
         execute(request) {
-          return Ref.update(executions, (current) => [
+          return SubscriptionRef.update(executions, (current) => [
             ...current,
             request,
           ]).pipe(Effect.as(null));
         },
-        operations: () => Stream.fromPubSub(operationsPubSub),
+        operations: Stream.fromPubSub(operationsPubSub),
       }),
     ),
     Layer.provide(TestTelemetryLive),
@@ -169,9 +169,9 @@ describe("NotebookRuntime operation processing", () => {
     Effect.fn(function* () {
       const source =
         yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
-      const firstStarted = yield* Effect.makeLatch();
-      const releaseFirst = yield* Effect.makeLatch();
-      const latestProcessed = yield* Effect.makeLatch();
+      const firstStarted = yield* Latch.make();
+      const releaseFirst = yield* Latch.make();
+      const latestProcessed = yield* Latch.make();
       const processed = yield* Ref.make<
         ReadonlyArray<{ runId: string | null | undefined; project: boolean }>
       >([]);
@@ -196,7 +196,7 @@ describe("NotebookRuntime operation processing", () => {
             yield* latestProcessed.open;
           }
         }),
-      ).pipe(Effect.fork);
+      ).pipe(Effect.forkChild);
       yield* TestClock.adjust("1 millis");
 
       yield* PubSub.publish(
@@ -230,9 +230,9 @@ describe("NotebookRuntime operation processing", () => {
     Effect.fn(function* () {
       const source =
         yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
-      const blockerStarted = yield* Effect.makeLatch();
-      const releaseBlocker = yield* Effect.makeLatch();
-      const trailerProcessed = yield* Effect.makeLatch();
+      const blockerStarted = yield* Latch.make();
+      const releaseBlocker = yield* Latch.make();
+      const trailerProcessed = yield* Latch.make();
       const processed = yield* Ref.make<
         ReadonlyArray<{ label: string; project: boolean }>
       >([]);
@@ -254,7 +254,7 @@ describe("NotebookRuntime operation processing", () => {
           }
           if (label === "serialization") yield* trailerProcessed.open;
         }),
-      ).pipe(Effect.fork);
+      ).pipe(Effect.forkChild);
       yield* TestClock.adjust("1 millis");
 
       // Occupy the worker so the next two operations arrive as one batch.
@@ -306,10 +306,10 @@ describe("NotebookRuntime operation processing", () => {
     Effect.fn(function* () {
       const source =
         yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
-      const firstStarted = yield* Effect.makeLatch();
-      const releaseFirst = yield* Effect.makeLatch();
-      const otherProcessed = yield* Effect.makeLatch();
-      const secondProcessed = yield* Effect.makeLatch();
+      const firstStarted = yield* Latch.make();
+      const releaseFirst = yield* Latch.make();
+      const otherProcessed = yield* Latch.make();
+      const secondProcessed = yield* Latch.make();
       const processed = yield* Ref.make<ReadonlyArray<string>>([]);
       const notebookA = notebookId("notebook-a");
       const notebookB = notebookId("notebook-b");
@@ -328,7 +328,7 @@ describe("NotebookRuntime operation processing", () => {
           if (runId === "b-1") yield* otherProcessed.open;
           if (runId === "a-2") yield* secondProcessed.open;
         }),
-      ).pipe(Effect.fork);
+      ).pipe(Effect.forkChild);
       yield* TestClock.adjust("1 millis");
 
       yield* PubSub.publish(
@@ -365,6 +365,13 @@ describe("NotebookRuntime cell identity", () => {
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime;
+        // One scheduler drain so NotebookRuntime's forked
+        // notebookDocumentChanges consumer subscribes to the mock PubSub
+        // before we publish the change event. In production this stream is a
+        // vscode event listener registered during activation, so the event
+        // cannot fire before the listener exists; the mock's PubSub has no
+        // replay, so a publish before the fork first runs is silently lost.
+        yield* TestClock.adjust("1 millis");
 
         const cell = ctx.editor.notebook.cellAt(0);
         yield* ctx.vscode.notebookChange({
@@ -381,7 +388,7 @@ describe("NotebookRuntime cell identity", () => {
         });
         yield* TestClock.adjust("10 millis");
 
-        expect(yield* Ref.get(ctx.executions)).toContainEqual({
+        expect(yield* SubscriptionRef.get(ctx.executions)).toContainEqual({
           method: "delete-cell",
           params: {
             notebookUri: ctx.notebookUri,
@@ -399,6 +406,11 @@ describe("NotebookRuntime cell identity", () => {
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime;
+        // Drain so the change event below is actually delivered (see the
+        // deleted-cell test above); without it this test would pass vacuously
+        // because the mock PubSub drops events published before the forked
+        // consumer subscribes.
+        yield* TestClock.adjust("1 millis");
 
         const cell = ctx.editor.notebook.cellAt(0);
         yield* ctx.vscode.notebookChange({
@@ -420,7 +432,7 @@ describe("NotebookRuntime cell identity", () => {
         });
         yield* TestClock.adjust("10 millis");
 
-        const commands = yield* Ref.get(ctx.executions);
+        const commands = yield* SubscriptionRef.get(ctx.executions);
         expect(
           commands.some((command) => command.method === "delete-cell"),
         ).toBe(false);
@@ -465,7 +477,7 @@ describe("NotebookRuntime stdin", () => {
         yield* TestClock.adjust("1 millis");
 
         // Assert executeCommand was called with send-stdin
-        const cmds = yield* Ref.get(ctx.executions);
+        const cmds = yield* SubscriptionRef.get(ctx.executions);
         const stdinCmd = cmds.find((c) => c.method === "send-stdin");
         expect(stdinCmd).toMatchObject({
           method: "send-stdin",
@@ -511,7 +523,7 @@ describe("NotebookRuntime stdin", () => {
         yield* TestClock.adjust("1 millis");
 
         // No send-stdin command should have been sent
-        const cmds = yield* Ref.get(ctx.executions);
+        const cmds = yield* SubscriptionRef.get(ctx.executions);
         const stdinCmd = cmds.find((c) => c.method === "send-stdin");
         expect(stdinCmd).toBeUndefined();
 
@@ -560,7 +572,7 @@ describe("NotebookRuntime stdin", () => {
         yield* TestClock.adjust("1 millis");
 
         expect(
-          (yield* Ref.get(ctx.executions)).some(
+          (yield* SubscriptionRef.get(ctx.executions)).some(
             (command) => command.method === "send-stdin",
           ),
         ).toBe(false);
@@ -577,14 +589,12 @@ describe("NotebookRuntime scratch stream", () => {
 
       yield* Effect.gen(function* () {
         const notebook = (yield* NotebookRuntime).forNotebook(ctx.notebookUri);
-        const first = yield* Effect.fork(
+        const first = yield* Effect.forkChild(
           notebook.executeScratchpad("print('first')").pipe(Stream.runDrain),
         );
-        const second = yield* Effect.fork(
+        const second = yield* Effect.forkChild(
           notebook.executeScratchpad("print('second')").pipe(Stream.runDrain),
         );
-
-        yield* TestClock.adjust("1 millis");
 
         const scratchpadCalls = (calls: ReadonlyArray<MarimoApiCall>) =>
           calls
@@ -595,7 +605,21 @@ describe("NotebookRuntime scratch stream", () => {
               ),
             );
 
-        const first_ = scratchpadCalls(yield* Ref.get(ctx.executions));
+        // Wait until the first command is actually recorded instead of
+        // counting scheduler drains: the scratchpad setup can span more than
+        // one drain under v4's time-sliced scheduler.
+        yield* SubscriptionRef.changes(ctx.executions).pipe(
+          Stream.filter((calls) => scratchpadCalls(calls).length >= 1),
+          Stream.runHead,
+        );
+        // Extra drain: give the second scratchpad every chance to
+        // (incorrectly) bypass the per-notebook lock before asserting that
+        // exactly one command went out.
+        yield* TestClock.adjust("1 millis");
+
+        const first_ = scratchpadCalls(
+          yield* SubscriptionRef.get(ctx.executions),
+        );
         expect(first_).toHaveLength(1);
         const firstCommand = first_[0];
         assert(
@@ -610,9 +634,16 @@ describe("NotebookRuntime scratch stream", () => {
             run_id: firstCommand.inner.runId,
           },
         });
-        yield* TestClock.adjust("1 millis");
 
-        const commands = scratchpadCalls(yield* Ref.get(ctx.executions));
+        // Await the second command the same way: the released scratchpad may
+        // need several drains to acquire the lock and send its command.
+        const commands = scratchpadCalls(
+          yield* SubscriptionRef.changes(ctx.executions).pipe(
+            Stream.filter((calls) => scratchpadCalls(calls).length >= 2),
+            Stream.runHead,
+            Effect.map(Option.getOrThrow),
+          ),
+        );
         expect(commands).toHaveLength(2);
         const secondCommand = commands[1];
         assert(
@@ -646,24 +677,31 @@ describe("NotebookRuntime scratch stream", () => {
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime;
         yield* ctx.vscode.addNotebookDocument(otherEditor.notebook);
+        // Drain BEFORE publishing the open event: NotebookSessions' forked
+        // documentOpened consumer must subscribe to the mock PubSub first, or
+        // the open is dropped, the second notebook never gets a session, and
+        // its completed-run is filtered out (hanging this test). Production
+        // uses a vscode event listener registered during activation, so opens
+        // cannot outrun the subscription there.
+        yield* TestClock.adjust("1 millis");
         yield* ctx.vscode.openNotebook(otherEditor.notebook);
         yield* TestClock.adjust("1 millis");
         yield* runtime.attachController(otherNotebook.id, ctx.mockController);
 
-        const first = yield* Effect.fork(
+        const first = yield* Effect.forkChild(
           runtime
             .forNotebook(ctx.notebookUri)
             .executeScratchpad("print('first')")
             .pipe(Stream.runDrain),
         );
-        const second = yield* Effect.fork(
+        const second = yield* Effect.forkChild(
           runtime
             .forNotebook(otherNotebook.id)
             .executeScratchpad("print('second')")
             .pipe(Stream.runDrain),
         );
 
-        const executions = yield* ctx.executions.changes.pipe(
+        const executions = yield* SubscriptionRef.changes(ctx.executions).pipe(
           Stream.filter(
             (calls) =>
               calls.filter((call) => call.method === "execute-scratchpad")
@@ -679,7 +717,7 @@ describe("NotebookRuntime scratch stream", () => {
         }> = [];
         for (const command of executions) {
           if (command.method === "execute-scratchpad") {
-            const params = yield* Schema.decodeUnknown(
+            const params = yield* Schema.decodeUnknownEffect(
               Api.ExecuteScratchpadPayload,
             )(command.params);
             assert(typeof params.inner.runId === "string");
@@ -727,7 +765,7 @@ describe("NotebookRuntime scratch stream", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
 
-        const streamFiber = yield* Effect.fork(
+        const streamFiber = yield* Effect.forkChild(
           runtime
             .forNotebook(ctx.notebookUri)
             .executeScratchpad("print('hi')")
@@ -736,7 +774,7 @@ describe("NotebookRuntime scratch stream", () => {
 
         // Wait for executeScratchpad to enqueue marimo.api with its generated
         // runId instead of relying on a scheduler tick.
-        const executions = yield* ctx.executions.changes.pipe(
+        const executions = yield* SubscriptionRef.changes(ctx.executions).pipe(
           Stream.filter((calls) =>
             calls.some((call) => call.method === "execute-scratchpad"),
           ),
@@ -748,7 +786,7 @@ describe("NotebookRuntime scratch stream", () => {
         );
 
         assert(executeCmd !== undefined);
-        const { runId } = (yield* Schema.decodeUnknown(
+        const { runId } = (yield* Schema.decodeUnknownEffect(
           Api.ExecuteScratchpadPayload,
         )(executeCmd.params)).inner;
         expect(runId).toBeDefined();
@@ -807,7 +845,7 @@ describe("NotebookRuntime scratch stream", () => {
           },
         });
 
-        const ops = Chunk.toReadonlyArray(yield* Fiber.join(streamFiber));
+        const ops = yield* Fiber.join(streamFiber);
         const cellIds = ops.map((op) => op.cell_id);
         expect(ops).toHaveLength(2);
         expect(cellIds).toContain(SCRATCH_CELL_ID);
@@ -827,7 +865,7 @@ describe("NotebookRuntime scratch stream", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
 
-        const streamFiber = yield* Effect.fork(
+        const streamFiber = yield* Effect.forkChild(
           runtime
             .forNotebook(ctx.notebookUri)
             .executeScratchpad("print('hi')")
@@ -837,7 +875,7 @@ describe("NotebookRuntime scratch stream", () => {
         // Wait until executeScratchpad sends the command and arms the
         // interrupt-on-abandon finalizer instead of relying on a scheduler
         // tick.
-        yield* ctx.executions.changes.pipe(
+        yield* SubscriptionRef.changes(ctx.executions).pipe(
           Stream.filter((calls) =>
             calls.some((call) => call.method === "execute-scratchpad"),
           ),
@@ -848,7 +886,7 @@ describe("NotebookRuntime scratch stream", () => {
         // cancelled tool invocation interrupting the fiber).
         yield* Fiber.interrupt(streamFiber);
 
-        const executions = yield* Ref.get(ctx.executions);
+        const executions = yield* SubscriptionRef.get(ctx.executions);
 
         // The finalizer should have sent an interrupt to the kernel.
         const interruptCmd = executions.find((c) => c.method === "interrupt");
@@ -872,20 +910,27 @@ describe("NotebookRuntime scratch stream", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
 
-        const streamFiber = yield* Effect.fork(
+        const streamFiber = yield* Effect.forkChild(
           runtime
             .forNotebook(ctx.notebookUri)
             .executeScratchpad("print('hi')")
             .pipe(Stream.runCollect),
         );
 
-        yield* TestClock.adjust("1 millis");
-
-        const executeCmd = (yield* Ref.get(ctx.executions)).find(
-          (c) => c.method === "execute-scratchpad",
+        // Wait for the command to actually be recorded instead of counting
+        // scheduler drains: the scratchpad setup can span more than one drain
+        // under v4's time-sliced scheduler, which made a single
+        // `TestClock.adjust` flaky. Mirrors the sibling abandon test.
+        const calls = yield* SubscriptionRef.changes(ctx.executions).pipe(
+          Stream.filter((current) =>
+            current.some((call) => call.method === "execute-scratchpad"),
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
         );
+        const executeCmd = calls.find((c) => c.method === "execute-scratchpad");
         assert(executeCmd !== undefined);
-        const { runId } = (yield* Schema.decodeUnknown(
+        const { runId } = (yield* Schema.decodeUnknownEffect(
           Api.ExecuteScratchpadPayload,
         )(executeCmd.params)).inner;
 
@@ -897,7 +942,7 @@ describe("NotebookRuntime scratch stream", () => {
 
         yield* Fiber.join(streamFiber);
 
-        const interruptCmd = (yield* Ref.get(ctx.executions)).find(
+        const interruptCmd = (yield* SubscriptionRef.get(ctx.executions)).find(
           (c) => c.method === "interrupt",
         );
         expect(interruptCmd).toBeUndefined();
@@ -916,6 +961,14 @@ describe("NotebookRuntime state eviction", () => {
         yield* NotebookRuntime;
         const variables = yield* VariablesService;
         const datasources = yield* DatasourcesService;
+
+        // One scheduler drain so NotebookRuntime's forked operations pipeline
+        // subscribes to the mock PubSub before we publish (forked fibers only
+        // start once the test fiber yields; a publish before that is silently
+        // dropped since the PubSub has no replay). In production, operations
+        // only flow for sessions started via this same runtime, so nothing
+        // can be published before the pipeline subscribes.
+        yield* TestClock.adjust("1 millis");
 
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,

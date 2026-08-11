@@ -1,17 +1,20 @@
 import {
-  Chunk,
+  Context,
   Data,
   Deferred,
   Effect,
   Exit,
   Fiber,
+  Filter,
+  Layer,
   Option,
-  type SchemaError,
   PubSub,
   Queue,
   Ref,
+  type SchemaError,
+  type Scope,
+  Semaphore,
   Stream,
-  TSemaphore,
   Array as EffectArray,
 } from "effect";
 import type * as vscode from "vscode";
@@ -61,13 +64,20 @@ import {
 } from "./NotebookFileRoot.ts";
 import { handleMissingPackageAlert } from "./operations.ts";
 
-type InnerRequest<K extends keyof MarimoClient> = MarimoClient[K] extends (
-  params: infer Params,
-) => unknown
-  ? Params extends { readonly inner: infer Request }
-    ? Request
-    : never
-  : never;
+/**
+ * Service shapes. In v4 a `Context.Service` class is only the context key;
+ * the service value's type is extracted with `Context.Service.Shape`.
+ */
+type MarimoClientService = Context.Service.Shape<typeof MarimoClient>;
+type VsCodeService = Context.Service.Shape<typeof VsCode>;
+type CellExecutionsService = Context.Service.Shape<typeof CellExecutions>;
+
+type InnerRequest<K extends keyof MarimoClientService> =
+  MarimoClientService[K] extends (params: infer Params) => unknown
+    ? Params extends { readonly inner: infer Request }
+      ? Request
+      : never
+    : never;
 
 export interface NotebookController {
   readonly id: string;
@@ -108,9 +118,7 @@ export class UnsavedNotebookError extends Data.TaggedError(
  */
 export interface NotebookHandle {
   readonly id: NotebookId;
-  readonly getController: () => Effect.Effect<
-    Option.Option<NotebookController>
-  >;
+  readonly getController: Effect.Effect<Option.Option<NotebookController>>;
   readonly executeCells: (
     request: InnerRequest<"executeCells">,
     executable: string,
@@ -136,21 +144,21 @@ export interface NotebookHandle {
   >;
   readonly updateUIElements: (
     request: InnerRequest<"updateUiElement">,
-  ) => ReturnType<MarimoClient["updateUiElement"]>;
+  ) => ReturnType<MarimoClientService["updateUiElement"]>;
   readonly updateModel: (
     request: InnerRequest<"setModelValue">,
-  ) => ReturnType<MarimoClient["setModelValue"]>;
+  ) => ReturnType<MarimoClientService["setModelValue"]>;
   readonly invokeFunction: (
     request: InnerRequest<"invokeFunction">,
-  ) => ReturnType<MarimoClient["invokeFunction"]>;
+  ) => ReturnType<MarimoClientService["invokeFunction"]>;
   readonly deleteCell: (
     request: InnerRequest<"deleteCell">,
-  ) => ReturnType<MarimoClient["deleteCell"]>;
+  ) => ReturnType<MarimoClientService["deleteCell"]>;
   readonly sendStdin: (
     request: InnerRequest<"sendStdin">,
-  ) => ReturnType<MarimoClient["sendStdin"]>;
-  readonly interrupt: () => ReturnType<MarimoClient["interrupt"]>;
-  readonly close: () => ReturnType<MarimoClient["closeSession"]>;
+  ) => ReturnType<MarimoClientService["sendStdin"]>;
+  readonly interrupt: ReturnType<MarimoClientService["interrupt"]>;
+  readonly close: ReturnType<MarimoClientService["closeSession"]>;
 }
 
 interface NotebookState {
@@ -205,29 +213,16 @@ function isScratchpadOutput(
  *
  * yield* notebook.executeCells(request, executable);
  * yield* notebook.updateUIElements(update);
- * yield* notebook.interrupt();
+ * yield* notebook.interrupt;
  * ```
  *
  * Commands still go directly through MarimoClient. This Module does not
  * schedule or merge them.
  */
-export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
+export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
   "NotebookRuntime",
   {
-    dependencies: [
-      Uv.layer,
-      Config.layer,
-      Constants.layer,
-      OutputChannel.layer,
-      VariablesService.layer,
-      NotebookRenderer.layer,
-      CellExecutions.layer,
-      DatasourcesService.layer,
-      NotebookEditorRegistry.layer,
-      PythonEnvInvalidation.layer,
-      SessionsService.layer,
-    ],
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const code = yield* VsCode;
       const config = yield* Config;
       const marimo = yield* MarimoClient;
@@ -252,10 +247,10 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       const makeHandle = (
         notebookId: NotebookId,
         controller: Ref.Ref<Option.Option<NotebookController>>,
-        scratchpadLock: TSemaphore.TSemaphore,
+        scratchpadLock: Semaphore.Semaphore,
       ): NotebookHandle => ({
         id: notebookId,
-        getController: () => Ref.get(controller),
+        getController: Ref.get(controller),
         executeCells: (request, executable) =>
           Effect.gen(function* () {
             const workingDirectory = yield* resolveWorkingDirectory(
@@ -275,9 +270,13 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
             return result;
           }),
         executeScratchpad: (sourceCode) =>
-          Stream.unwrapScoped(
+          Stream.unwrap(
             Effect.gen(function* () {
-              yield* TSemaphore.withPermitsScoped(scratchpadLock, 1);
+              // Hold one permit for the lifetime of the stream's scope
+              // (v3 `TSemaphore.withPermitsScoped`).
+              yield* Effect.acquireRelease(scratchpadLock.take(1), () =>
+                scratchpadLock.release(1),
+              );
 
               const selectedController = yield* Ref.get(controller);
               if (Option.isNone(selectedController)) {
@@ -296,40 +295,54 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
               const subscription = yield* PubSub.subscribe(operations);
               const runId = crypto.randomUUID();
 
-              yield* marimo.executeScratchpad({
-                notebookUri: notebookId,
-                executable,
-                workingDirectory,
-                inner: { code: sourceCode, runId },
-              });
-              runtimeSessions.set(notebookId, {
-                executable,
-                workingDirectory,
-              });
+              // Sending the command and arming the interrupt-on-abandon
+              // finalizer must be atomic w.r.t. interruption: once the kernel
+              // has been told to run, an abandoned stream must always reach
+              // the finalizer that interrupts it. Without this, interruption
+              // can land between the two (v4's inline Deferred resumption can
+              // resume a waiter observing the sent command before this fiber
+              // proceeds) and the kernel would keep running unsupervised.
+              yield* Effect.uninterruptible(
+                Effect.gen(function* () {
+                  yield* marimo.executeScratchpad({
+                    notebookUri: notebookId,
+                    executable,
+                    workingDirectory,
+                    inner: { code: sourceCode, runId },
+                  });
+                  runtimeSessions.set(notebookId, {
+                    executable,
+                    workingDirectory,
+                  });
 
-              yield* Effect.addFinalizer((exit) =>
-                Exit.isInterrupted(exit)
-                  ? marimo
-                      .interrupt({ notebookUri: notebookId, inner: {} })
-                      .pipe(
-                        Effect.catchAllCause((cause) =>
-                          Effect.logWarning(
-                            "Failed to interrupt kernel after scratchpad stream was abandoned",
-                          ).pipe(Effect.annotateLogs({ cause })),
-                        ),
-                      )
-                  : Effect.void,
+                  yield* Effect.addFinalizer((exit) =>
+                    Exit.hasInterrupts(exit)
+                      ? marimo
+                          .interrupt({ notebookUri: notebookId, inner: {} })
+                          .pipe(
+                            Effect.catchCause((cause) =>
+                              Effect.logWarning(
+                                "Failed to interrupt kernel after scratchpad stream was abandoned",
+                              ).pipe(Effect.annotateLogs({ cause })),
+                            ),
+                          )
+                      : Effect.void,
+                  );
+                }),
               );
 
-              return Stream.fromQueue(subscription).pipe(
+              return Stream.fromSubscription(subscription).pipe(
                 Stream.filter(
                   (operation) => operation.notebookUri === notebookId,
                 ),
                 Stream.takeUntil(isCompletedRunFor(runId)),
-                Stream.filterMap(({ operation }) =>
-                  isScratchpadOutput(operation)
-                    ? Option.some(operation)
-                    : Option.none(),
+                Stream.filterMap(
+                  Filter.fromPredicateOption(
+                    ({ operation }: MarimoOperation) =>
+                      isScratchpadOutput(operation)
+                        ? Option.some(operation)
+                        : Option.none(),
+                  ),
                 ),
               );
             }),
@@ -359,25 +372,23 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
             notebookUri: notebookId,
             inner: request,
           }),
-        interrupt: () =>
-          marimo.interrupt({ notebookUri: notebookId, inner: {} }),
-        close: () =>
-          marimo
-            .closeSession({ notebookUri: notebookId, inner: {} })
-            .pipe(
-              Effect.tap(() =>
-                Effect.sync(() => runtimeSessions.delete(notebookId)),
-              ),
+        interrupt: marimo.interrupt({ notebookUri: notebookId, inner: {} }),
+        close: marimo
+          .closeSession({ notebookUri: notebookId, inner: {} })
+          .pipe(
+            Effect.tap(() =>
+              Effect.sync(() => runtimeSessions.delete(notebookId)),
             ),
+          ),
       });
 
       const makeState = (notebookId: NotebookId): NotebookState => {
-        const controller = Ref.unsafeMake<Option.Option<NotebookController>>(
+        const controller = Ref.makeUnsafe<Option.Option<NotebookController>>(
           Option.none(),
         );
         return {
           controller,
-          handle: makeHandle(notebookId, controller, TSemaphore.unsafeMake(1)),
+          handle: makeHandle(notebookId, controller, Semaphore.makeUnsafe(1)),
         };
       };
 
@@ -396,8 +407,8 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       const updateKernelContext = Effect.fn(
         "NotebookRuntime.updateKernelContext",
       )(function* () {
-        const activeNotebook = Option.filterMap(
-          yield* code.window.getActiveNotebookEditor(),
+        const activeNotebook = Option.flatMap(
+          yield* code.window.getActiveNotebookEditor,
           (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
         );
         const hasKernel = Option.isSome(activeNotebook)
@@ -409,9 +420,9 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
 
       yield* Effect.forkScoped(updateKernelContext());
       yield* Effect.forkScoped(
-        code.window
-          .activeNotebookEditorChanges()
-          .pipe(Stream.runForEach(updateKernelContext)),
+        code.window.activeNotebookEditorChanges.pipe(
+          Stream.runForEach(updateKernelContext),
+        ),
       );
       const notebookSessions = yield* makeNotebookSessions(
         code,
@@ -423,19 +434,20 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
         }),
       );
       yield* Effect.forkScoped(
-        liveSessions.changes().pipe(Stream.runForEach(updateKernelContext)),
+        liveSessions.changes.pipe(Stream.runForEach(updateKernelContext)),
       );
       yield* Effect.forkScoped(
         processRuntimeOperations(
-          marimo
-            .operations()
+          marimo.operations
             .pipe(
-              Stream.filterMap((message) => {
-                const session = notebookSessions.current(message.notebookUri);
-                return isOpenNotebookSession(session)
-                  ? Option.some<SessionOperation>({ ...message, session })
-                  : Option.none();
-              }),
+              Stream.filterMap(
+                Filter.fromPredicateOption((message: MarimoOperation) => {
+                  const session = notebookSessions.current(message.notebookUri);
+                  return isOpenNotebookSession(session)
+                    ? Option.some<SessionOperation>({ ...message, session })
+                    : Option.none();
+                }),
+              ),
             )
             .pipe(
               Stream.tap((operation) => PubSub.publish(operations, operation)),
@@ -462,12 +474,12 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
                   session: message.session,
                   ...options,
                 }).pipe(
-                  Effect.catchAllCause(
+                  Effect.catchCause(
                     Effect.fn(function* (cause) {
                       yield* Effect.logError(
                         "Failed to process marimo operation",
                       ).pipe(Effect.annotateLogs({ cause }));
-                      yield* Effect.fork(
+                      yield* Effect.forkChild(
                         showErrorAndPromptLogs(
                           "Failed to process marimo operation.",
                         ),
@@ -486,7 +498,7 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       );
 
       yield* Effect.forkScoped(
-        renderer.messages().pipe(
+        renderer.messages.pipe(
           Stream.runForEach(({ editor, message }) =>
             Effect.gen(function* () {
               const notebook = MarimoNotebookDocument.from(editor.notebook);
@@ -504,7 +516,7 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
                   break;
                 case "navigate-to-cell": {
                   const activeEditor =
-                    yield* code.window.getActiveNotebookEditor();
+                    yield* code.window.getActiveNotebookEditor;
                   if (Option.isNone(activeEditor)) {
                     yield* Effect.logWarning(
                       "No active notebook editor to navigate to cell",
@@ -534,7 +546,7 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
                     message.params.suggestedName,
                     editor.notebook.uri,
                   ).pipe(
-                    Effect.catchAll((cause) =>
+                    Effect.catch((cause) =>
                       Effect.logError("Failed to save image").pipe(
                         Effect.annotateLogs({ cause }),
                       ),
@@ -564,11 +576,14 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       );
 
       yield* Effect.forkScoped(
-        code.workspace.notebookDocumentChanges().pipe(
-          Stream.filterMap((event) =>
-            Option.map(
-              MarimoNotebookDocument.tryFrom(event.notebook),
-              (notebook) => ({ ...event, notebook }),
+        code.workspace.notebookDocumentChanges.pipe(
+          Stream.filterMap(
+            Filter.fromPredicateOption(
+              (event: vscode.NotebookDocumentChangeEvent) =>
+                Option.map(
+                  MarimoNotebookDocument.tryFrom(event.notebook),
+                  (notebook) => ({ ...event, notebook }),
+                ),
             ),
           ),
           Stream.runForEach((event) =>
@@ -602,42 +617,36 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
             yield* updateKernelContext();
           });
         },
-        controllerChanges() {
-          return Stream.fromPubSub(controllerSelections);
-        },
+        controllerChanges: Stream.fromPubSub(controllerSelections),
         getRuntimeSession(notebookId: NotebookId) {
           return Effect.sync(() =>
             Option.fromNullishOr(runtimeSessions.get(notebookId)),
           );
         },
-        getRuntimeSessions() {
-          return Effect.sync(() =>
-            Array.from(runtimeSessions, ([notebookId, session]) => ({
-              notebookId,
-              session,
-            })),
+        getRuntimeSessions: Effect.sync(() =>
+          Array.from(runtimeSessions, ([notebookId, session]) => ({
+            notebookId,
+            session,
+          })),
+        ),
+        activeRuntimeSession: Effect.gen(function* () {
+          const activeNotebook = Option.flatMap(
+            yield* code.window.getActiveNotebookEditor,
+            (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
           );
-        },
-        activeRuntimeSession() {
-          return Effect.gen(function* () {
-            const activeNotebook = Option.filterMap(
-              yield* code.window.getActiveNotebookEditor(),
-              (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
-            );
-            if (Option.isNone(activeNotebook)) {
-              return Option.none<RuntimeSession>();
-            }
-            return Option.fromNullishOr(
-              runtimeSessions.get(activeNotebook.value.id),
-            );
-          });
-        },
+          if (Option.isNone(activeNotebook)) {
+            return Option.none<RuntimeSession>();
+          }
+          return Option.fromNullishOr(
+            runtimeSessions.get(activeNotebook.value.id),
+          );
+        }),
         forNotebook,
       };
 
       function findOpenNotebook(notebookId: NotebookId) {
         return Effect.gen(function* () {
-          const documents = yield* code.workspace.getNotebookDocuments();
+          const documents = yield* code.workspace.getNotebookDocuments;
           const notebook = EffectArray.findFirst(
             EffectArray.getSomes(
               documents.map((raw) => MarimoNotebookDocument.tryFrom(raw)),
@@ -666,7 +675,7 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
           const resolution = yield* resolveNotebookFileRoot({
             configuredValue,
             notebookUri: notebook.uri,
-            workspaceFolders: yield* code.workspace.getWorkspaceFolders(),
+            workspaceFolders: yield* code.workspace.getWorkspaceFolders,
           });
           if (resolution.usedFirstWorkspaceFallback) {
             yield* Effect.logInfo(
@@ -678,7 +687,23 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
       }
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide([
+      Uv.layer,
+      Config.layer,
+      Constants.layer,
+      OutputChannel.layer,
+      VariablesService.layer,
+      NotebookRenderer.layer,
+      CellExecutions.layer,
+      DatasourcesService.layer,
+      NotebookEditorRegistry.layer,
+      PythonEnvInvalidation.layer,
+      SessionsService.layer,
+    ]),
+  );
+}
 
 /**
  * Processes operations in order with one worker per notebook.
@@ -697,12 +722,12 @@ export function processRuntimeOperations<
     operation: Operation,
     options: { readonly renderCellOutput: boolean },
   ) => Effect.Effect<void, E, R>,
-): Effect.Effect<void, E, R> {
+): Effect.Effect<void, E, Exclude<R, Scope.Scope>> {
   return Effect.scoped(
     Effect.gen(function* () {
       type Work = Option.Option<Operation>;
       const queues = new Map<NotebookId, Queue.Queue<Work>>();
-      const workers: Array<Fiber.RuntimeFiber<void, E>> = [];
+      const workers: Array<Fiber.Fiber<void, E>> = [];
 
       const processBatch = (batch: ReadonlyArray<Operation>) => {
         // The newest op for a cell may carry no payload at all — marimo sends
@@ -742,10 +767,12 @@ export function processRuntimeOperations<
             const first = yield* Queue.take(queue);
             if (Option.isNone(first)) return;
 
-            const waiting = yield* Queue.takeAll(queue);
+            // `Queue.clear` is v4's non-blocking "take everything buffered"
+            // (v3 `Queue.takeAll`; v4 `takeAll` waits for at least one item).
+            const waiting = yield* Queue.clear(queue);
             const batch = [
               first.value,
-              ...Chunk.toReadonlyArray(waiting).flatMap((item) =>
+              ...waiting.flatMap((item) =>
                 Option.match(item, {
                   onNone: () => [],
                   onSome: (message) => [message],
@@ -754,7 +781,7 @@ export function processRuntimeOperations<
             ];
             yield* processBatch(batch);
 
-            if (Chunk.some(waiting, Option.isNone)) return;
+            if (waiting.some(Option.isNone)) return;
           }
         });
 
@@ -918,7 +945,7 @@ function processNotebookOperation(
     const executions = yield* CellExecutions;
 
     const forkForSession = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-      Effect.forkDaemon(
+      Effect.forkDetach(
         Effect.raceFirst(
           effect,
           Deferred.await(options.session.invalidated),
@@ -932,7 +959,7 @@ function processNotebookOperation(
     }
     if (editor.value.notebook !== options.session.document) return;
 
-    const controller = yield* options.forNotebook(notebookUri).getController();
+    const controller = yield* options.forNotebook(notebookUri).getController;
     if (Option.isNone(controller)) {
       yield* Effect.logWarning("No active controller, skipping operation");
       return;
@@ -999,7 +1026,7 @@ function handleStdinPrompt(
       if (Option.isSome(result)) {
         yield* notebook.sendStdin({ text: result.value });
       } else {
-        yield* notebook.interrupt();
+        yield* notebook.interrupt;
       }
     }
   });
@@ -1014,8 +1041,8 @@ function syncCellIdentity(
     }>;
   },
   options: {
-    code: VsCode;
-    executions: CellExecutions;
+    code: VsCodeService;
+    executions: CellExecutionsService;
     notebook: NotebookHandle;
   },
 ) {
@@ -1063,7 +1090,7 @@ function syncCellIdentity(
 
       yield* options.executions.forgetCell(event.notebook.id, cellId);
       yield* options.notebook.deleteCell({ cellId }).pipe(
-        Effect.catchAllCause((cause) =>
+        Effect.catchCause((cause) =>
           Effect.logWarning(
             "Failed to notify backend about cell deletion",
           ).pipe(
