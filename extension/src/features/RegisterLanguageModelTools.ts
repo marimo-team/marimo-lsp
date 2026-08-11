@@ -11,8 +11,8 @@ import {
 } from "effect";
 
 import { SCRATCH_CELL_ID } from "../constants.ts";
-import { scratchCellNotificationsToVsCodeOutput } from "../kernel/CellRuns.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import { scratchCellNotificationsToVsCodeOutput } from "../kernel/VsCodeCellOutputs.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {

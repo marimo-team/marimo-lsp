@@ -63,6 +63,7 @@ import {
   resolveNotebookFileRoot,
 } from "./NotebookFileRoot.ts";
 import { handleMissingPackageAlert } from "./operations.ts";
+import { VsCodeCellRunPresentation } from "./VsCodeCellRunPresentation.ts";
 
 /**
  * Service shapes. A `Context.Service` class is the context key. Use
@@ -701,6 +702,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       VariablesService.layer,
       NotebookRenderer.layer,
       CellRuns.layer,
+      VsCodeCellRunPresentation.layer,
       DatasourcesService.layer,
       NotebookEditorRegistry.layer,
       PythonEnvInvalidation.layer,
@@ -935,6 +937,7 @@ function processNotebookCellOperations(
   return Effect.gen(function* () {
     const editors = yield* NotebookEditorRegistry;
     const cellRuns = yield* CellRuns;
+    const presentations = yield* VsCodeCellRunPresentation;
     const editor = yield* editors.getLastNotebookEditor(notebookUri);
     if (Option.isNone(editor)) {
       yield* Effect.logWarning(
@@ -958,11 +961,23 @@ function processNotebookCellOperations(
     );
     if (accepted.length === 0) return;
 
+    const notebook = MarimoNotebookDocument.from(editor.value.notebook);
+    const sourceByCell = new Map<NotebookCellId, string>();
+    for (const cell of notebook.getCells()) {
+      if (Option.isSome(cell.id)) {
+        sourceByCell.set(cell.id.value, cell.document.getText());
+      }
+    }
+
     yield* cellRuns.accept(
       CellRunInput.Operations({
+        notebookId: notebookUri,
         operations: accepted,
-        editor: editor.value,
-        controller: controller.value,
+        sourceByCell,
+        presentation: presentations.bind({
+          editor: editor.value,
+          controller: controller.value,
+        }),
       }),
     );
 

@@ -23,7 +23,7 @@ export const DebugLayerLive = Layer.effectDiscard(
     if (process.env.MARIMO_DEBUG !== "1") return;
 
     globalThis.__marimoDebug = {
-      cellExecutions: yield* CellRuns,
+      cellRuns: yield* CellRuns,
       variablesService: yield* VariablesService,
       notebookEditorRegistry: yield* NotebookEditorRegistry,
       notebookRuntime: yield* NotebookRuntime,

@@ -10,7 +10,7 @@ import { MarimoCommands } from "./MarimoCommands.ts";
 const handler = Effect.fn("command.runStale")(
   function* (target: Option.Option<NotebookTarget>) {
     const code = yield* VsCode;
-    const executions = yield* CellRuns;
+    const cellRuns = yield* CellRuns;
 
     if (Option.isNone(target)) {
       yield* showErrorAndPromptLogs(
@@ -21,7 +21,16 @@ const handler = Effect.fn("command.runStale")(
 
     const staleCells = yield* Effect.filter(
       target.value.document.getCells(),
-      (cell) => executions.isCellStale(cell),
+      (cell) =>
+        Option.match(cell.id, {
+          onNone: () => Effect.succeed(false),
+          onSome: (cellId) =>
+            cellRuns.isStale({
+              notebookId: cell.notebook.id,
+              cellId,
+              source: cell.document.getText(),
+            }),
+        }),
     );
 
     if (staleCells.length === 0) {

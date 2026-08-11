@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option, Ref } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -12,7 +13,12 @@ import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoCli
 import { commandId } from "../../commands.ts";
 import enableCell from "../../commands/enableCell.ts";
 import runStale from "../../commands/runStale.ts";
-import { CellRuns } from "../../kernel/CellRuns.ts";
+import {
+  CellRunInput,
+  type CellRunPresentation,
+  CellRuns,
+} from "../../kernel/CellRuns.ts";
+import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
@@ -22,6 +28,7 @@ const withTestCtx = Effect.fn(function* () {
   const layer = Layer.empty.pipe(
     Layer.provideMerge(CellStatusBarProviderLive),
     Layer.provideMerge(CellRuns.layer),
+    Layer.provide(NotebookEditorRegistry.layer),
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
     Layer.provide(makeTestNotebookRuntime()),
@@ -30,6 +37,44 @@ const withTestCtx = Effect.fn(function* () {
 });
 
 const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
+
+const presentation: CellRunPresentation = {
+  apply: () => Effect.void,
+};
+
+let nextRunId = 0;
+
+const acceptCell = (
+  cellRuns: CellRuns["Service"],
+  cell: MarimoNotebookCell,
+  operation:
+    | { readonly status: "queued"; readonly run_id: string }
+    | {
+        readonly stale_inputs: true;
+      },
+) => {
+  const cellId = Option.getOrThrow(cell.id);
+  return cellRuns.accept(
+    CellRunInput.Operations({
+      notebookId: cell.notebook.id,
+      operations: [{ op: "cell-op", cell_id: cellId, ...operation }],
+      sourceByCell: new Map([[cellId, cell.document.getText()]]),
+      presentation,
+    }),
+  );
+};
+
+const acceptSource = (
+  cellRuns: CellRuns["Service"],
+  cell: MarimoNotebookCell,
+) =>
+  acceptCell(cellRuns, cell, {
+    status: "queued",
+    run_id: `test-run-${nextRunId++}`,
+  });
+
+const markStale = (cellRuns: CellRuns["Service"], cell: MarimoNotebookCell) =>
+  acceptCell(cellRuns, cell, { stale_inputs: true });
 
 function createMockCell(
   uri: ReturnType<typeof createNotebookUri>,
@@ -87,7 +132,7 @@ it.effect(
       });
 
       // Record execution — clears stale
-      yield* executions.recordExecution(MarimoNotebookCell.from(cell));
+      yield* acceptSource(executions, MarimoNotebookCell.from(cell));
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[0].provideCellStatusBarItems(cell);
@@ -108,8 +153,8 @@ it.effect(
       });
 
       // Execute then invalidate (simulates staleInputs from kernel)
-      yield* executions.recordExecution(MarimoNotebookCell.from(cell));
-      yield* executions.invalidateCell(MarimoNotebookCell.from(cell));
+      yield* acceptSource(executions, MarimoNotebookCell.from(cell));
+      yield* markStale(executions, MarimoNotebookCell.from(cell));
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[0].provideCellStatusBarItems(cell);
@@ -122,6 +167,51 @@ it.effect(
         command: commandId(runStale.command),
         title: "Run stale cells",
         arguments: [cell],
+      });
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
+  "projects stale-cell state into the VS Code context",
+  Effect.fn(function* () {
+    const ctx = yield* withTestCtx();
+    yield* Effect.gen(function* () {
+      const cellRuns = yield* CellRuns;
+      const editor = TestVsCode.makeNotebookEditor(notebookUri, {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      });
+      yield* ctx.vscode.addNotebookDocument(editor.notebook);
+      yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
+      yield* TestClock.adjust("10 millis");
+
+      const cell = MarimoNotebookCell.from(editor.notebook.cellAt(0));
+      yield* acceptSource(cellRuns, cell);
+      yield* Ref.set(ctx.vscode.executions, []);
+
+      yield* markStale(cellRuns, cell);
+      yield* TestClock.adjust("10 millis");
+      expect(yield* Ref.get(ctx.vscode.executions)).toContainEqual({
+        command: "setContext",
+        args: ["marimo.notebook.hasStaleCells", true],
+      });
+
+      yield* acceptSource(cellRuns, cell);
+      yield* TestClock.adjust("10 millis");
+      expect(yield* Ref.get(ctx.vscode.executions)).toContainEqual({
+        command: "setContext",
+        args: ["marimo.notebook.hasStaleCells", false],
       });
     }).pipe(Effect.provide(ctx.layer));
   }),
@@ -203,8 +293,8 @@ it.effect(
       });
 
       // Execute then invalidate → stale + shows name
-      yield* executions.recordExecution(MarimoNotebookCell.from(cell));
-      yield* executions.invalidateCell(MarimoNotebookCell.from(cell));
+      yield* acceptSource(executions, MarimoNotebookCell.from(cell));
+      yield* markStale(executions, MarimoNotebookCell.from(cell));
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
 

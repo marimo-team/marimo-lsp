@@ -1,10 +1,4 @@
-import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import type {
-  CellOutput,
-  OutputMessage,
-} from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
 import {
-  Cause,
   Context,
   Data,
   Effect,
@@ -17,40 +11,14 @@ import {
   Array as EffectArray,
 } from "effect";
 import { constVoid } from "effect/Function";
-import type * as vscode from "vscode";
 
-import { assert, logUnreachable } from "../assert.ts";
-import { SCRATCH_CELL_ID } from "../constants.ts";
-import { acquireDisposable } from "../lib/acquireDisposable.ts";
-import { prettyErrorMessage } from "../lib/errors.ts";
-import {
-  extractCellFrames,
-  parseTraceback,
-  type TracebackCellFrame,
-} from "../lib/tracebacks.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
-import { VsCode } from "../platform/VsCode.ts";
-import {
-  findNotebookCell,
-  type MarimoNotebookCell,
-  MarimoNotebookDocument,
+import type {
+  NotebookCellId,
+  NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
+import type { CellOperationNotification } from "../types.ts";
 import {
-  extractCellIdFromCellMessage,
-  type NotebookCellId,
-  type NotebookId,
-} from "../schemas/MarimoNotebookDocument.ts";
-import {
-  type CellOperationNotification,
-  type CellRuntimeState,
-  createCellNavigationLink,
-} from "../types.ts";
-import {
-  CellOutputProjection,
-  type KeyedCellOutput,
-} from "./CellOutputProjection.ts";
-import {
-  Action,
+  type Action,
   type CellRunState,
   makeCellRunState,
   Op,
@@ -59,24 +27,42 @@ import {
   transitionCell,
 } from "./CellRunReducer.ts";
 
-/**
- * The VS Code API service shape. A `Context.Service` class is the context
- * key. Use `Context.Service.Shape` to get the type of the service value.
- */
-type VsCodeService = Context.Service.Shape<typeof VsCode>;
-
-interface CellRunController {
-  readonly createNotebookCellExecution: (
-    cell: MarimoNotebookCell,
-  ) => vscode.NotebookCellExecution;
+/** Stable identity of one cell whose runs are tracked. */
+export interface CellRunRef {
+  readonly notebookId: NotebookId;
+  readonly cellId: NotebookCellId;
 }
 
-/** Inputs accepted by the Cell Runs Module. */
+/** A cell snapshot used to ask whether its source is stale. */
+export interface CellRunSnapshot extends CellRunRef {
+  readonly source: string;
+}
+
+export type CellRunPresentationAction = Exclude<
+  Action,
+  { readonly _tag: "RecordExecution" | "InvalidateCell" }
+>;
+
+/**
+ * Narrow Interface implemented by a platform Adapter.
+ *
+ * The Adapter owns any live platform resource returned when a run is created;
+ * callers and the Cell Runs Module only submit domain actions.
+ */
+export interface CellRunPresentation {
+  readonly apply: (
+    cell: CellRunRef,
+    action: CellRunPresentationAction,
+  ) => Effect.Effect<void>;
+}
+
+/** Facts accepted by the Cell Runs Module. */
 export type CellRunInput = Data.TaggedEnum<{
   Operations: {
+    readonly notebookId: NotebookId;
     readonly operations: ReadonlyArray<CellOperationNotification>;
-    readonly editor: vscode.NotebookEditor;
-    readonly controller: CellRunController;
+    readonly sourceByCell: ReadonlyMap<NotebookCellId, string>;
+    readonly presentation: CellRunPresentation;
   };
   Interrupted: { readonly notebookId: NotebookId };
   CellsRemoved: {
@@ -86,937 +72,247 @@ export type CellRunInput = Data.TaggedEnum<{
 }>;
 export const CellRunInput = Data.taggedEnum<CellRunInput>();
 
-/**
- * Thrown when VS Code's `createNotebookCellExecution` fails because the cell
- * is no longer part of the notebook (e.g., deleted between the time we looked
- * it up and the time we tried to create an execution for it).
- */
-class InvalidCellError extends Data.TaggedError("InvalidCellError")<{
-  readonly cellId: NotebookCellId;
-  readonly cause: unknown;
-}> {}
+type CellRunOperationsInput = Extract<
+  CellRunInput,
+  { readonly _tag: "Operations" }
+>;
 
-/** A run's live VS Code execution and the projection driving its outputs. */
-interface RunResource {
-  readonly execution: vscode.NotebookCellExecution;
-  readonly projection: CellOutputProjection;
+interface CellRunRecord {
+  readonly state: CellRunState;
+  readonly presentation: CellRunPresentation;
 }
 
-interface CellExecutionKey {
-  readonly notebookId: NotebookId;
-  readonly cellId: NotebookCellId;
-}
-
-// A plain object is sufficient. HashMap compares plain objects by structure.
-const cellExecutionKey = (
+const cellRunRef = (
   notebookId: NotebookId,
   cellId: NotebookCellId,
-): CellExecutionKey => ({ notebookId, cellId });
+): CellRunRef => ({ notebookId, cellId });
 
 /**
- * Everything tracked for one cell: the pure {@link CellRunState},
- * the editor it belongs to (for interrupt fan-out), and its live execution
- * while a run is in flight.
- */
-interface RunRecord {
-  readonly entry: CellRunState;
-  readonly editor: vscode.NotebookEditor;
-  readonly resource: Option.Option<RunResource>;
-}
-
-/**
- * What the {@link Action} interpreter needs to perform a single op's actions.
- * `notebookCell` / `controller` are absent for interrupts (which only end
- * executions); actions that require them assert their presence.
- */
-interface PerformContext {
-  readonly key: CellExecutionKey;
-  readonly cellId: NotebookCellId;
-  readonly notebookCell: MarimoNotebookCell | undefined;
-  readonly controller: CellRunController | undefined;
-  readonly notebook: vscode.NotebookDocument | undefined;
-}
-
-/**
- * Owns the state and VS Code resources for cell executions.
- *
- * Cell operations update the run state, diagnostics, and projected output for
- * one cell. The same execution record tracks the code last accepted by the
- * kernel, which is used to derive whether the cell is stale. Interrupts end
- * every active execution for an editor.
+ * Owns cell-run state, accepted source, batching, interruption, and cleanup.
+ * Platform resources are private to the supplied presentation Adapter.
  */
 export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
   make: Effect.gen(function* () {
-    const code = yield* VsCode;
-    const editorRegistry = yield* NotebookEditorRegistry;
-    // MutableHashMap hashes and compares only the keys. HashMap.set also
-    // compares the old value and the new value when the key exists. That
-    // walks the RunRecord by structure. The RunRecord holds a live
-    // vscode.NotebookCellExecution. It is not safe to hash its getters.
-    const records = MutableHashMap.empty<CellExecutionKey, RunRecord>();
-    const lastExecutedCodeRef = yield* SubscriptionRef.make(
+    const records = MutableHashMap.empty<CellRunRef, CellRunRecord>();
+    const acceptedSourceRef = yield* SubscriptionRef.make(
       HashMap.empty<
         NotebookId,
         HashMap.HashMap<NotebookCellId, Option.Option<string>>
       >(),
     );
 
-    const isCellStale = (cell: MarimoNotebookCell) => {
-      const cellId = cell.id;
-      if (Option.isNone(cellId)) {
-        return Effect.succeed(false);
+    const recordAcceptedSource = (cell: CellRunRef, source: string) =>
+      SubscriptionRef.update(acceptedSourceRef, (map) => {
+        const notebook = Option.getOrElse(
+          HashMap.get(map, cell.notebookId),
+          () => HashMap.empty<NotebookCellId, Option.Option<string>>(),
+        );
+        return HashMap.set(
+          map,
+          cell.notebookId,
+          HashMap.set(notebook, cell.cellId, Option.some(source)),
+        );
+      });
+
+    const invalidate = (cell: CellRunRef) =>
+      SubscriptionRef.update(acceptedSourceRef, (map) => {
+        const notebook = Option.getOrElse(
+          HashMap.get(map, cell.notebookId),
+          () => HashMap.empty<NotebookCellId, Option.Option<string>>(),
+        );
+        return HashMap.set(
+          map,
+          cell.notebookId,
+          HashMap.set(notebook, cell.cellId, Option.none()),
+        );
+      });
+
+    const perform = (
+      action: Action,
+      options: {
+        readonly cell: CellRunRef;
+        readonly source: string | undefined;
+        readonly presentation: CellRunPresentation;
+      },
+    ) => {
+      switch (action._tag) {
+        case "RecordExecution":
+          return options.source === undefined
+            ? Effect.logWarning(
+                "Cell source unavailable; accepted source was not recorded",
+              ).pipe(Effect.annotateLogs({ ...options.cell }))
+            : recordAcceptedSource(options.cell, options.source);
+        case "InvalidateCell":
+          return invalidate(options.cell);
+        default:
+          return options.presentation.apply(options.cell, action);
       }
-      const notebookId = cell.notebook.id;
-      const currentCode = cell.document.getText();
+    };
 
-      return SubscriptionRef.get(lastExecutedCodeRef).pipe(
-        Effect.map((map) =>
-          Option.match(
-            HashMap.get(map, notebookId).pipe(
-              Option.flatMap(HashMap.get(cellId.value)),
-            ),
-            {
-              onNone: () => false,
-              onSome: (lastExecutedCode) =>
-                Option.match(lastExecutedCode, {
-                  onNone: () => true,
-                  onSome: (executedCode) => executedCode !== currentCode,
-                }),
-            },
-          ),
-        ),
+    const interruptRecords = (
+      targets: ReadonlyArray<readonly [CellRunRef, CellRunRecord]>,
+      options: { readonly remove: boolean },
+    ) =>
+      Effect.forEach(
+        targets,
+        Effect.fn(function* ([cell, record]) {
+          const { entry, actions } = step(record.state, Op.Interrupt());
+          if (options.remove) {
+            MutableHashMap.remove(records, cell);
+          } else {
+            MutableHashMap.set(records, cell, { ...record, state: entry });
+          }
+          yield* Effect.forEach(
+            actions,
+            (action) =>
+              perform(action, {
+                cell,
+                source: undefined,
+                presentation: record.presentation,
+              }),
+            { discard: true },
+          );
+        }),
+        { discard: true },
       );
-    };
-
-    const updateStaleContext = Effect.fn(function* () {
-      const activeNotebook = yield* editorRegistry.getActiveNotebookUri;
-      const hasStaleCells = yield* Option.match(activeNotebook, {
-        onNone: () => Effect.succeed(false),
-        onSome: (notebookId) =>
-          Effect.gen(function* () {
-            const editor =
-              yield* editorRegistry.getLastNotebookEditor(notebookId);
-            if (Option.isNone(editor)) return false;
-            const notebook = MarimoNotebookDocument.tryFrom(
-              editor.value.notebook,
-            );
-            if (Option.isNone(notebook)) return false;
-            for (const cell of notebook.value.getCells()) {
-              if (yield* isCellStale(cell)) return true;
-            }
-            return false;
-          }),
-      });
-
-      yield* code.commands.setContext(
-        "marimo.notebook.hasStaleCells",
-        hasStaleCells,
-      );
-    });
-
-    const contentChanges = code.workspace.notebookDocumentChanges.pipe(
-      Stream.filter((event) => {
-        if (Option.isNone(MarimoNotebookDocument.tryFrom(event.notebook))) {
-          return false;
-        }
-        return event.cellChanges.some(
-          (change) => change.document !== undefined,
-        );
-      }),
-    );
-
-    yield* Effect.forkScoped(
-      SubscriptionRef.changes(lastExecutedCodeRef).pipe(
-        Stream.runForEach(updateStaleContext),
-      ),
-    );
-    yield* Effect.forkScoped(
-      editorRegistry.streamActiveNotebookChanges.pipe(
-        Stream.runForEach(updateStaleContext),
-      ),
-    );
-    yield* Effect.forkScoped(
-      contentChanges.pipe(
-        Stream.mapEffect(updateStaleContext),
-        Stream.runDrain,
-      ),
-    );
-
-    const recordExecution = (cell: MarimoNotebookCell) => {
-      const cellId = cell.id;
-      if (Option.isNone(cellId)) return Effect.void;
-      const notebookId = cell.notebook.id;
-      const currentCode = cell.document.getText();
-      return SubscriptionRef.update(lastExecutedCodeRef, (map) => {
-        const notebookMap = Option.getOrElse(HashMap.get(map, notebookId), () =>
-          HashMap.empty<NotebookCellId, Option.Option<string>>(),
-        );
-        return HashMap.set(
-          map,
-          notebookId,
-          HashMap.set(notebookMap, cellId.value, Option.some(currentCode)),
-        );
-      });
-    };
-
-    const invalidateCell = (cell: MarimoNotebookCell) => {
-      const cellId = cell.id;
-      if (Option.isNone(cellId)) return Effect.void;
-      const notebookId = cell.notebook.id;
-      return SubscriptionRef.update(lastExecutedCodeRef, (map) => {
-        const notebookMap = Option.getOrElse(HashMap.get(map, notebookId), () =>
-          HashMap.empty<NotebookCellId, Option.Option<string>>(),
-        );
-        return HashMap.set(
-          map,
-          notebookId,
-          HashMap.set(notebookMap, cellId.value, Option.none()),
-        );
-      });
-    };
 
     yield* Effect.addFinalizer(() =>
-      Effect.sync(() => {
-        MutableHashMap.forEach(records, (record) => {
-          if (Option.isSome(record.resource)) {
-            // Ensure all in-flight executions are ended on shutdown. `end`
-            // throws if one was already ended (a benign race); swallow it so
-            // disposal still completes.
-            try {
-              record.resource.value.execution.end(false);
-            } catch {
-              // already ended
-            }
-          }
-        });
-        MutableHashMap.clear(records);
-      }),
+      interruptRecords(EffectArray.fromIterable(records), { remove: true }),
     );
 
-    // Runtime-error diagnostics: a red squiggle on the cell line that
-    // raised, mirroring Jupyter. Kept in its own collection (separate from
-    // the LSP server's static diagnostics) so the two don't clobber each
-    // other; cleared when the cell re-runs.
-    const errorDiagnostics = yield* acquireDisposable(() =>
-      code.languages.createDiagnosticCollection("marimo-runtime"),
-    );
-
-    const clearErrorDiagnostic = (uri: vscode.Uri) =>
-      Effect.sync(() => errorDiagnostics.delete(uri));
-
-    const applyErrorDiagnostic = (
-      notebookCell: MarimoNotebookCell,
-      cellId: NotebookCellId,
-      state: CellRuntimeState,
-    ) =>
-      Effect.sync(() => {
-        const { document } = notebookCell;
-        const frame =
-          state.output?.channel === "marimo-error"
-            ? cellTracebackFrame(state, cellId)
-            : undefined;
-        if (frame === undefined) {
-          // Not an error (or no in-cell frame to point at, e.g. a syntax
-          // error already covered by the language server) — drop any stale
-          // squiggle.
-          errorDiagnostics.delete(document.uri);
-          return;
+    const acceptOperations = (input: CellRunOperationsInput) => {
+      // Every operation advances state. Only presentation writes coalesce:
+      // the newest renderable operation for each cell owns the output write.
+      // A trailing state-only operation therefore cannot suppress output.
+      const renderIndex = new Map<NotebookCellId, number>();
+      for (const [index, operation] of input.operations.entries()) {
+        if (
+          operation.status === "idle" ||
+          operation.output != null ||
+          operation.console != null
+        ) {
+          renderIndex.set(operation.cell_id, index);
         }
-        const lineIdx = Math.min(
-          Math.max(frame.line - 1, 0),
-          Math.max(document.lineCount - 1, 0),
-        );
-        const diagnostic = new code.Diagnostic(
-          document.lineAt(lineIdx).range,
-          diagnosticMessage(state),
-          code.DiagnosticSeverity.Error,
-        );
-        diagnostic.source = "marimo";
-        errorDiagnostics.set(document.uri, [diagnostic]);
-      });
+      }
 
-    const setResource = (
-      key: CellExecutionKey,
-      resource: Option.Option<RunResource>,
-    ) =>
-      Effect.sync(() => {
-        MutableHashMap.modify(records, key, (record) => ({
-          ...record,
-          resource,
-        }));
-      });
+      return Effect.forEach(
+        input.operations,
+        (message, index) => {
+          const cell = cellRunRef(input.notebookId, message.cell_id);
+          const record = Option.getOrElse(
+            MutableHashMap.get(records, cell),
+            () => ({
+              state: makeCellRunState(cell.cellId),
+              presentation: input.presentation,
+            }),
+          );
 
-    const getResource = (key: CellExecutionKey) =>
-      Effect.sync(() =>
-        MutableHashMap.get(records, key).pipe(
-          Option.flatMap((record) => record.resource),
-        ),
-      );
-
-    // Run `f` against the cell's live execution, or log+skip when there is
-    // none (a benign race: the execution was ended concurrently).
-    const withResource = (
-      key: CellExecutionKey,
-      f: (resource: RunResource) => Effect.Effect<void>,
-    ) =>
-      getResource(key).pipe(
-        Effect.flatMap(
-          Option.match({
-            onSome: f,
-            onNone: () =>
-              Effect.logDebug(
-                "No live execution for cell; skipping action",
-              ).pipe(
-                Effect.annotateLogs({
-                  notebookId: key.notebookId,
-                  cellId: key.cellId,
-                }),
-              ),
-          }),
-        ),
-      );
-
-    const emitOutputs = (
-      ctx: PerformContext,
-      state: CellRuntimeState,
-      final: boolean,
-    ) =>
-      withResource(ctx.key, ({ projection }) => {
-        const keyed = buildKeyedCellOutputs(
-          ctx.cellId,
-          state,
-          code,
-          ctx.notebook,
-        );
-        return Effect.tryPromise(() =>
-          final ? projection.commit(keyed) : projection.project(keyed),
-        ).pipe(
-          // A concurrent op may have ended the execution; not actionable.
-          Effect.catchCause((cause) =>
-            Effect.logWarning("Failed to update cell output").pipe(
-              Effect.annotateLogs({ cause, cellId: ctx.cellId }),
-            ),
-          ),
-        );
-      });
-
-    // The operation interpreter: perform one Action against the real world.
-    const perform = (action: Action, ctx: PerformContext) =>
-      Action.$match(action, {
-        CreateExecution: () =>
-          Effect.gen(function* () {
-            assert(
-              ctx.notebookCell !== undefined && ctx.controller !== undefined,
-              "CreateExecution requires a notebook cell and controller",
-            );
-            const notebookCell = ctx.notebookCell;
-            const controller = ctx.controller;
-            const execution = yield* Effect.try({
-              try: () => controller.createNotebookCellExecution(notebookCell),
-              catch: (cause) =>
-                new InvalidCellError({ cellId: ctx.cellId, cause }),
+          const next = transitionCell(record.state.state, message);
+          const op = parseOp(next, message);
+          if (Option.isNone(op)) {
+            MutableHashMap.set(records, cell, {
+              state: { ...record.state, state: next },
+              presentation: input.presentation,
             });
-            yield* setResource(
-              ctx.key,
-              Option.some({
-                execution,
-                projection: new CellOutputProjection(execution),
+            return Effect.logWarning(
+              "Queued cell-op missing run_id; cannot track execution",
+            ).pipe(
+              Effect.annotateLogs({
+                ...cell,
+                status: message.status,
               }),
             );
-          }),
-        StartExecution: ({ startTime }) =>
-          withResource(ctx.key, ({ execution }) =>
-            Effect.sync(() => execution.start(startTime)),
-          ),
-        EmitOutputs: ({ state }) => emitOutputs(ctx, state, false),
-        FinalizeOutputs: ({ state }) => emitOutputs(ctx, state, true),
-        EndExecution: ({ success, endTime }) =>
-          withResource(ctx.key, ({ execution }) =>
-            Effect.gen(function* () {
-              // `end` throws if already ended (a race); swallow it.
-              yield* Effect.try(() => execution.end(success, endTime)).pipe(
-                Effect.ignore,
-              );
-              yield* setResource(ctx.key, Option.none());
-            }),
-          ),
-        ApplyRuntimeError: ({ state }) => {
-          assert(
-            ctx.notebookCell !== undefined,
-            "ApplyRuntimeError requires a notebook cell",
+          }
+
+          const result = step(record.state, op.value);
+          MutableHashMap.set(records, cell, {
+            state: result.entry,
+            presentation: input.presentation,
+          });
+          const source = input.sourceByCell.get(cell.cellId);
+
+          return Effect.forEach(
+            result.actions,
+            (action) => {
+              if (
+                renderIndex.get(cell.cellId) !== index &&
+                (action._tag === "EmitOutputs" ||
+                  action._tag === "FinalizeOutputs")
+              ) {
+                return Effect.void;
+              }
+              return perform(action, {
+                cell,
+                source,
+                presentation: input.presentation,
+              });
+            },
+            { discard: true },
           );
-          return applyErrorDiagnostic(ctx.notebookCell, ctx.cellId, state);
         },
-        ClearRuntimeError: () => {
-          assert(
-            ctx.notebookCell !== undefined,
-            "ClearRuntimeError requires a notebook cell",
-          );
-          return clearErrorDiagnostic(ctx.notebookCell.document.uri);
-        },
-        RecordExecution: () => {
-          assert(
-            ctx.notebookCell !== undefined,
-            "RecordExecution requires a notebook cell",
-          );
-          return recordExecution(ctx.notebookCell);
-        },
-        InvalidateCell: () => {
-          assert(
-            ctx.notebookCell !== undefined,
-            "InvalidateCell requires a notebook cell",
-          );
-          return invalidateCell(ctx.notebookCell);
-        },
-      });
+        { discard: true },
+      );
+    };
 
     return {
-      isCellStale,
-      recordExecution,
-      invalidateCell,
+      isStale: (cell: CellRunSnapshot) =>
+        SubscriptionRef.get(acceptedSourceRef).pipe(
+          Effect.map((map) =>
+            Option.match(
+              HashMap.get(map, cell.notebookId).pipe(
+                Option.flatMap(HashMap.get(cell.cellId)),
+              ),
+              {
+                onNone: () => false,
+                onSome: (acceptedSource) =>
+                  Option.match(acceptedSource, {
+                    onNone: () => true,
+                    onSome: (source) => source !== cell.source,
+                  }),
+              },
+            ),
+          ),
+        ),
       get changes(): Stream.Stream<void> {
-        return Stream.merge(
-          Stream.map(SubscriptionRef.changes(lastExecutedCodeRef), constVoid),
-          Stream.map(contentChanges, constVoid),
+        return Stream.map(
+          SubscriptionRef.changes(acceptedSourceRef),
+          constVoid,
         );
       },
       accept: (input: CellRunInput) =>
         CellRunInput.$match(input, {
-          CellsRemoved: ({ notebookId, cellIds }) =>
-            SubscriptionRef.update(lastExecutedCodeRef, (map) => {
-              const notebookMap = HashMap.get(map, notebookId);
-              if (Option.isNone(notebookMap)) return map;
-              const updated = cellIds.reduce(
-                (cells, cellId) => HashMap.remove(cells, cellId),
-                notebookMap.value,
-              );
-              return HashMap.isEmpty(updated)
-                ? HashMap.remove(map, notebookId)
-                : HashMap.set(map, notebookId, updated);
-            }),
+          Operations: acceptOperations,
           Interrupted: ({ notebookId }) =>
-            Effect.gen(function* () {
-              const targets = EffectArray.fromIterable(records).filter(
-                ([key]) => key.notebookId === notebookId,
-              );
-              for (const [key, record] of targets) {
-                const { entry, actions } = step(record.entry, Op.Interrupt());
-                yield* Effect.sync(() =>
-                  MutableHashMap.set(records, key, { ...record, entry }),
-                );
-                const ctx: PerformContext = {
-                  key,
-                  cellId: key.cellId,
-                  notebookCell: undefined,
-                  controller: undefined,
-                  notebook: undefined,
-                };
-                for (const action of actions) {
-                  // oxlint-disable-next-line eslint/no-await-in-loop -- ordered
-                  yield* perform(action, ctx);
-                }
-              }
-            }),
-          Operations: ({ operations: messages, editor, controller }) => {
-            // Every notification still advances the run state. Only
-            // presentation writes are coalesced: for each cell, the newest
-            // notification in the batch that can actually render owns the
-            // output write. A trailing state-only notification must not
-            // suppress a terminal output.
-            const renderIndex = new Map<NotebookCellId, number>();
-            for (const [index, message] of messages.entries()) {
-              if (
-                message.status === "idle" ||
-                message.output != null ||
-                message.console != null
-              ) {
-                renderIndex.set(message.cell_id, index);
-              }
-            }
-
-            return Effect.forEach(
-              messages,
-              (msg, index) =>
-                Effect.gen(function* () {
-                  const cellId = extractCellIdFromCellMessage(msg);
-                  const notebook = MarimoNotebookDocument.from(editor.notebook);
-                  const key = cellExecutionKey(notebook.id, cellId);
-
-                  const record = Option.getOrElse(
-                    MutableHashMap.get(records, key),
-                    () => ({
-                      entry: makeCellRunState(cellId),
-                      editor,
-                      resource: Option.none<RunResource>(),
-                    }),
-                  );
-
-                  const notebookCell = yield* findNotebookCell(
-                    notebook,
-                    cellId,
-                  );
-
-                  // Fold the cell-op into the run state once, up front, so the
-                  // folded state is persisted even for an op we drop.
-                  const next = transitionCell(record.entry.state, msg);
-                  const op = parseOp(next, msg);
-                  if (Option.isNone(op)) {
-                    yield* Effect.logWarning(
-                      "Queued cell-op missing run_id; cannot track execution",
-                    ).pipe(Effect.annotateLogs({ cellId, status: msg.status }));
-                    yield* Effect.sync(() =>
-                      MutableHashMap.set(records, key, {
-                        ...record,
-                        entry: { ...record.entry, state: next },
-                      }),
-                    );
-                    return;
-                  }
-
-                  const result = step(record.entry, op.value);
-                  yield* Effect.sync(() =>
-                    MutableHashMap.set(records, key, {
-                      ...record,
-                      entry: result.entry,
-                    }),
-                  );
-
-                  const ctx: PerformContext = {
-                    key,
-                    cellId,
-                    notebookCell,
-                    controller,
-                    notebook: editor.notebook,
-                  };
-                  for (const action of result.actions) {
-                    if (
-                      renderIndex.get(cellId) !== index &&
-                      (action._tag === "EmitOutputs" ||
-                        action._tag === "FinalizeOutputs")
-                    ) {
-                      continue;
-                    }
-                    // oxlint-disable-next-line eslint/no-await-in-loop --
-                    // actions are ordered (FinalizeOutputs before EndExecution)
-                    yield* perform(action, ctx);
-                  }
-                }).pipe(
-                  Effect.catchTag("NotebookCellNotFoundError", () =>
-                    Effect.logWarning(
-                      "Notebook cell not found for cell operation",
-                    ),
-                  ),
-                  Effect.catchTag("InvalidCellError", (error) =>
-                    Effect.logWarning(
-                      "Cell is no longer valid, skipping execution",
-                    ).pipe(
-                      Effect.annotateLogs({ cause: Cause.fail(error.cause) }),
-                    ),
-                  ),
-                  Effect.annotateLogs({
-                    cellId: extractCellIdFromCellMessage(msg),
-                  }),
-                ),
-              { discard: true },
+            interruptRecords(
+              EffectArray.fromIterable(records).filter(
+                ([cell]) => cell.notebookId === notebookId,
+              ),
+              { remove: false },
+            ),
+          CellsRemoved: ({ notebookId, cellIds }) => {
+            const removed = new Set(cellIds);
+            const targets = EffectArray.fromIterable(records).filter(
+              ([cell]) =>
+                cell.notebookId === notebookId && removed.has(cell.cellId),
             );
+            return Effect.all([
+              interruptRecords(targets, { remove: true }),
+              SubscriptionRef.update(acceptedSourceRef, (map) => {
+                const notebook = HashMap.get(map, notebookId);
+                if (Option.isNone(notebook)) return map;
+                const updated = cellIds.reduce(
+                  (cells, cellId) => HashMap.remove(cells, cellId),
+                  notebook.value,
+                );
+                return HashMap.isEmpty(updated)
+                  ? HashMap.remove(map, notebookId)
+                  : HashMap.set(map, notebookId, updated);
+              }),
+            ]).pipe(Effect.asVoid);
           },
         }),
     };
   }),
 }) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide([NotebookEditorRegistry.layer]),
-  );
-}
-
-/**
- * Convert CellOperationNotification(s) to VSCode NotebookCellOutput.
- *
- * Returns None if no outputs, Some if there are outputs.
- */
-export function scratchCellNotificationsToVsCodeOutput(
-  notifications:
-    | CellOperationNotification
-    | ReadonlyArray<CellOperationNotification>,
-  code: VsCodeService,
-) {
-  const arr = EffectArray.ensure(notifications);
-  const outputs = buildCellOutputs(
-    SCRATCH_CELL_ID,
-    arr.reduce(transitionCell, createCellRuntimeState()),
-    code,
-  );
-  const items = outputs.flatMap((o) => o.items);
-  if (items.length === 0) {
-    return Option.none<vscode.NotebookCellOutput>();
-  }
-  return Option.some(new code.NotebookCellOutput(items));
-}
-
-/**
- * Builds VSCode NotebookCellOutput items from CellRuntimeState
- * Separates outputs by channel (stdout, stderr, marimo-error, etc.)
- */
-export function buildCellOutputs(
-  cellId: NotebookCellId,
-  state: CellRuntimeState,
-  code: VsCodeService,
-  notebook?: vscode.NotebookDocument,
-): vscode.NotebookCellOutput[] {
-  return buildKeyedCellOutputs(cellId, state, code, notebook).map(
-    (keyed) => keyed.output,
-  );
-}
-
-/**
- * Like {@link buildCellOutputs}, but each output carries a stable {@link
- * KeyedCellOutput.key}.
- *
- * Outputs are emitted in **arrival order** — console streams (`stdout`,
- * `stderr`) first, then the cell's result / error / traceback — mirroring
- * Jupyter rather than marimo's historical result-first layout. Combined with
- * the append-based reconcile in {@link CellOutputProjection}, this means each
- * slot is created once, in the order it first appears, and tall built-in
- * outputs (a traceback) are measured once instead of on every cell-op.
- */
-function buildKeyedCellOutputs(
-  cellId: NotebookCellId,
-  state: CellRuntimeState,
-  code: VsCodeService,
-  notebook?: vscode.NotebookDocument,
-): KeyedCellOutput[] {
-  const outputs: KeyedCellOutput[] = [];
-
-  // Collect items by channel
-  const stdoutItems: vscode.NotebookCellOutputItem[] = [];
-  const stderrItems: vscode.NotebookCellOutputItem[] = [];
-  const stdinItems: vscode.NotebookCellOutputItem[] = [];
-  const errorItems: vscode.NotebookCellOutputItem[] = [];
-  const outputItems: vscode.NotebookCellOutputItem[] = [];
-  // Tracebacks share the stderr channel with plain log text but must stay in
-  // their own NotebookCellOutput: VS Code reads the items of one output as
-  // alternative MIME representations of a single value and renders only one.
-  const tracebackItems: vscode.NotebookCellOutputItem[] = [];
-
-  // Process console outputs (stdout, stderr, stdin)
-  if (state.consoleOutputs) {
-    for (const output of state.consoleOutputs) {
-      // Remove main output so it is not displayed in the console output location
-      const stateWithoutOutputs = { ...state, output: null };
-      const item = buildOutputItem(
-        output,
-        cellId,
-        stateWithoutOutputs,
-        code,
-        notebook,
-      );
-      if (!item) continue;
-
-      if (output.mimetype === TRACEBACK_MIME) {
-        tracebackItems.push(item);
-        continue;
-      }
-
-      switch (output.channel) {
-        case "stdout":
-          stdoutItems.push(item);
-          break;
-        case "stderr":
-          stderrItems.push(item);
-          break;
-        case "stdin":
-          stdinItems.push(item);
-          break;
-        case "media":
-          stdoutItems.push(item);
-          break;
-        case "output":
-        case "marimo-error":
-        case "pdb":
-          // PDB, output, and pdb not expected from console outputs
-          break;
-        default:
-          logUnreachable(output.channel);
-      }
-    }
-  }
-
-  // Process main output and errors
-  if (state.output && !isOutputEmpty(state.output)) {
-    // Remove console outputs so they are not displayed in the cell output location
-    const stateWithoutConsoleOutputs = { ...state, consoleOutputs: [] };
-    const item = buildOutputItem(
-      state.output,
-      cellId,
-      stateWithoutConsoleOutputs,
-      code,
-      notebook,
-    );
-    if (item) {
-      if (state.output.channel === "marimo-error") {
-        errorItems.push(item);
-      } else {
-        outputItems.push(item);
-      }
-    }
-  }
-
-  // Create keyed NotebookCellOutputs in arrival order: console streams first,
-  // then the cell's result / error / traceback. Each `key` is the logical slot
-  // the output reconciler tracks across cell-ops, so it must be stable for a
-  // given channel within a run.
-  if (stdoutItems.length > 0) {
-    outputs.push({
-      key: "stdout",
-      output: new code.NotebookCellOutput(stdoutItems, { channel: "stdout" }),
-    });
-  }
-
-  if (stderrItems.length > 0) {
-    outputs.push({
-      key: "stderr",
-      output: new code.NotebookCellOutput(stderrItems, { channel: "stderr" }),
-    });
-  }
-
-  // Result, error, and (when the error is redundant with a traceback) the
-  // traceback all share one stable `"main"` key, so "error box, then traceback
-  // supersedes it" is an in-place swap rather than a remove+append. The
-  // marimo-error item is dropped when a traceback is present — the traceback
-  // already renders `<Type>: <message>` as its header.
-  const errorShown = errorItems.length > 0 && !shouldSuppressMarimoError(state);
-  let mainSlotTaken = false;
-  if (errorShown) {
-    outputs.push({
-      key: "main",
-      output: new code.NotebookCellOutput(errorItems, {
-        channel: "marimo-error",
-      }),
-    });
-    mainSlotTaken = true;
-  } else if (outputItems.length > 0) {
-    outputs.push({
-      key: "main",
-      output: new code.NotebookCellOutput(outputItems),
-    });
-    mainSlotTaken = true;
-  }
-
-  tracebackItems.forEach((tracebackItem, index) => {
-    // The first traceback claims the `"main"` slot when nothing else does (the
-    // suppressed-error case), so an error box already shown there is swapped to
-    // the traceback in place rather than removed.
-    const key = !mainSlotTaken && index === 0 ? "main" : `traceback:${index}`;
-    if (key === "main") mainSlotTaken = true;
-    outputs.push({
-      key,
-      output: new code.NotebookCellOutput([tracebackItem], {
-        channel: "stderr",
-      }),
-    });
-  });
-
-  if (stdinItems.length > 0) {
-    outputs.push({
-      key: "stdin",
-      output: new code.NotebookCellOutput(stdinItems, { channel: "stdin" }),
-    });
-  }
-
-  return outputs;
-}
-
-const TRACEBACK_MIME = "application/vnd.marimo+traceback";
-
-function hasTraceback(state: CellRuntimeState): boolean {
-  if (state.output?.mimetype === TRACEBACK_MIME) return true;
-  return (state.consoleOutputs ?? []).some(
-    (o) => o?.mimetype === TRACEBACK_MIME,
-  );
-}
-
-/**
- * Innermost traceback frame inside `cellId` — i.e. the line in this cell where
- * the exception surfaced. Returns undefined when the cell has no traceback
- * (e.g. a structural marimo error) or the exception was raised entirely in
- * library/other-cell code, in which case there's no line here to underline.
- */
-function cellTracebackFrame(
-  state: CellRuntimeState,
-  cellId: NotebookCellId,
-): TracebackCellFrame | undefined {
-  const traceback = (state.consoleOutputs ?? []).find(
-    (o) => o?.mimetype === TRACEBACK_MIME,
-  );
-  if (!traceback) return undefined;
-  const text =
-    typeof traceback.data === "object"
-      ? JSON.stringify(traceback.data)
-      : traceback.data;
-  return extractCellFrames(text)
-    .filter((frame) => frame.cellId === cellId)
-    .at(-1);
-}
-
-/** Human-readable message for the runtime-error diagnostic. */
-function diagnosticMessage(state: CellRuntimeState): string {
-  const data = state.output?.data;
-  if (Array.isArray(data) && data.length > 0) {
-    return prettyErrorMessage(data[0]);
-  }
-  return "Cell execution failed";
-}
-
-// Only suppress when every item is a plain `exception` without `raising_cell`:
-// `strict-exception` carries `ref` and `blamed_cell`, and `exception` with
-// `raising_cell` carries the "raised in cell" pointer — neither appears in the
-// Python traceback, so the marimo-error block stays in those cases.
-function shouldSuppressMarimoError(state: CellRuntimeState): boolean {
-  const out = state.output;
-  if (!out || out.channel !== "marimo-error" || !Array.isArray(out.data)) {
-    return false;
-  }
-  const everyRedundant = out.data.every((e) => {
-    if (e == null || typeof e !== "object") return false;
-    if (!("type" in e) || e.type !== "exception") return false;
-    return !("raising_cell" in e) || !e.raising_cell;
-  });
-  return everyRedundant && hasTraceback(state);
-}
-
-/**
- * Creates a mapper function that converts cell URIs to clickable HTML links.
- *
- * Transforms error message cell references like "vscode-notebook-cell://...#W1sZmlsZQ%3D%3D"
- * into human-readable, clickable links like "<a ...>cell-2</a>".
- *
- * The links use onclick handlers to post messages to window.parent, which the renderer
- * catches and forwards to the extension. See types.ts for the full navigation flow.
- *
- * @param notebook - The notebook document containing the cells
- * @returns A function that maps cell URIs to HTML link strings
- */
-function createCellIdMapper(
-  notebook: MarimoNotebookDocument,
-): (cellId: NotebookCellId) => string | undefined {
-  return (cellId: NotebookCellId) => {
-    // Find the cell by matching its URI to get the visual index (0-based)
-    const cellIndex = notebook.getCells().findIndex((cell) =>
-      Option.match(cell.id, {
-        onSome: (id) => id === cellId,
-        onNone: () => false,
-      }),
-    );
-    if (cellIndex === -1) {
-      return undefined;
-    }
-    return createCellNavigationLink(cellId, cellIndex + 1);
-  };
-}
-
-function createCellIdToIndex(
-  notebook: MarimoNotebookDocument,
-): (cellId: string) => number | undefined {
-  return (cellId: string) => {
-    const cellIndex = notebook.getCells().findIndex((cell) =>
-      Option.match(cell.id, {
-        onSome: (id) => id === cellId,
-        onNone: () => false,
-      }),
-    );
-    return cellIndex === -1 ? undefined : cellIndex;
-  };
-}
-
-/**
- * Builds a single NotebookCellOutputItem from a CellOutput
- */
-function buildOutputItem(
-  output: CellOutput,
-  cellId: NotebookCellId,
-  state: CellRuntimeState,
-  code: VsCodeService,
-  notebook?: vscode.NotebookDocument,
-): vscode.NotebookCellOutputItem | null {
-  // Handle stdout/stderr with proper VSCode helpers
-  if (output.mimetype === "text/plain") {
-    const text =
-      typeof output.data === "object"
-        ? JSON.stringify(output.data)
-        : // oxlint-disable-next-line typescript-eslint/no-unnecessary-type-conversion
-          String(output.data);
-    if (!text) {
-      return null;
-    }
-
-    switch (output.channel) {
-      case "stdout":
-        return code.NotebookCellOutputItem.stdout(text);
-      case "stderr":
-        return code.NotebookCellOutputItem.stderr(text);
-      case "stdin":
-        return code.NotebookCellOutputItem.text(text, "text/plain");
-    }
-  }
-
-  // Handle traceback — emit as a structured error so VS Code's built-in
-  // notebook error renderer applies its red-bordered styling. We rewrite
-  // each frame: cell-temp paths become `Cell cell-<N>, line <M>`, and real
-  // file paths get an inline `<a href>` anchor so VS Code's webview
-  // opener turns them into clickable links.
-  if (output.mimetype === "application/vnd.marimo+traceback") {
-    const text =
-      typeof output.data === "object"
-        ? JSON.stringify(output.data)
-        : // oxlint-disable-next-line typescript-eslint/no-unnecessary-type-conversion
-          String(output.data);
-    if (!text) {
-      return null;
-    }
-    const cellIdToIndex = notebook
-      ? createCellIdToIndex(MarimoNotebookDocument.from(notebook))
-      : undefined;
-    return code.NotebookCellOutputItem.error(
-      parseTraceback(text, cellIdToIndex),
-    );
-  }
-
-  // Handle marimo errors
-  if (output.channel === "marimo-error" && Array.isArray(output.data)) {
-    // Convert marimo errors to VSCode Error objects
-    const cellIdMapper = notebook
-      ? createCellIdMapper(MarimoNotebookDocument.from(notebook))
-      : undefined;
-    const errors = output.data.map((error) => {
-      const errorMessage = prettyErrorMessage(error, cellIdMapper);
-      // If the error message contains HTML (links), use text/html mime type
-      if (errorMessage.includes("<a href=")) {
-        return code.NotebookCellOutputItem.text(errorMessage, "text/html");
-      }
-      return code.NotebookCellOutputItem.stderr(errorMessage);
-    });
-    return errors[0] || null;
-  }
-
-  if (isOutputEmpty(output)) {
-    return null;
-  }
-
-  // Default pass to our renderer
-  return code.NotebookCellOutputItem.json(
-    { cellId, state },
-    "application/vnd.marimo.ui+json",
-  );
-}
-
-function isOutputEmpty(output: OutputMessage | undefined | null): boolean {
-  if (output == null) {
-    return true;
-  }
-
-  if (output.data == null || output.data === "") {
-    return true;
-  }
-
-  return false;
+  static readonly layer = Layer.effect(this, this.make);
 }

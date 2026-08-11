@@ -12,12 +12,13 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import {
-  buildCellOutputs,
-  CellRunInput,
-  CellRuns,
-} from "../../kernel/CellRuns.ts";
+import { CellRunInput, CellRuns } from "../../kernel/CellRuns.ts";
 import { PythonController } from "../../kernel/PythonController.ts";
+import { buildCellOutputs } from "../../kernel/VsCodeCellOutputs.ts";
+import {
+  type VsCodeCellRunBinding,
+  VsCodeCellRunPresentation,
+} from "../../kernel/VsCodeCellRunPresentation.ts";
 import {
   cellId,
   UNSAFE_castForNegativeTest,
@@ -26,6 +27,7 @@ import { VsCode } from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
+  type NotebookCellId,
 } from "../../schemas/MarimoNotebookDocument.ts";
 import type {
   CellOperationNotification,
@@ -40,11 +42,41 @@ const withTestCtx = Effect.fn(function* (
   const vscode = yield* TestVsCode.make(options);
   const layer = Layer.empty.pipe(
     Layer.merge(CellRuns.layer),
+    Layer.merge(VsCodeCellRunPresentation.layer),
     Layer.provide(TestNotebookRuntime),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
   );
   return { vscode, layer };
+});
+
+const acceptOperations = Effect.fn(function* (
+  operations: ReadonlyArray<CellOperationNotification>,
+  binding: VsCodeCellRunBinding,
+) {
+  const cellRuns = yield* CellRuns;
+  const presentations = yield* VsCodeCellRunPresentation;
+  const notebook = MarimoNotebookDocument.from(binding.editor.notebook);
+  const sourceByCell = new Map<NotebookCellId, string>();
+  for (const cell of notebook.getCells()) {
+    if (Option.isSome(cell.id)) {
+      sourceByCell.set(cell.id.value, cell.document.getText());
+    }
+  }
+  yield* cellRuns.accept(
+    CellRunInput.Operations({
+      notebookId: notebook.id,
+      operations,
+      sourceByCell,
+      presentation: presentations.bind(binding),
+    }),
+  );
+});
+
+const cellSnapshot = (cell: MarimoNotebookCell) => ({
+  notebookId: cell.notebook.id,
+  cellId: Option.getOrThrow(cell.id),
+  source: cell.document.getText(),
 });
 
 const CELL_ID = cellId("test-cell-id");
@@ -1104,7 +1136,6 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const executions = yield* CellRuns;
       const code = yield* VsCode;
       const vscodeController = yield* code.notebooks.createNotebookController(
         "test-controller",
@@ -1127,20 +1158,14 @@ it.effect(
         run_id: "shared-run",
       };
 
-      yield* executions.accept(
-        CellRunInput.Operations({
-          operations: [message],
-          editor: firstEditor,
-          controller,
-        }),
-      );
-      yield* executions.accept(
-        CellRunInput.Operations({
-          operations: [message],
-          editor: secondEditor,
-          controller,
-        }),
-      );
+      yield* acceptOperations([message], {
+        editor: firstEditor,
+        controller,
+      });
+      yield* acceptOperations([message], {
+        editor: secondEditor,
+        controller,
+      });
 
       expect(createdFor.toSorted((a, b) => a.localeCompare(b))).toEqual(
         [
@@ -1175,7 +1200,6 @@ it.effect(
     const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
 
     yield* Effect.gen(function* () {
-      const executions = yield* CellRuns;
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cell = notebook.cellAt(0);
       const cid = Option.getOrThrow(cell.id);
@@ -1207,46 +1231,43 @@ it.effect(
         },
       };
 
-      yield* executions.accept(
-        CellRunInput.Operations({
-          operations: [
-            {
-              op: "cell-op",
-              cell_id: cid,
-              status: "queued",
-              run_id: "run",
+      yield* acceptOperations(
+        [
+          {
+            op: "cell-op",
+            cell_id: cid,
+            status: "queued",
+            run_id: "run",
+          },
+          {
+            op: "cell-op",
+            cell_id: cid,
+            status: "running",
+            output: {
+              channel: "output",
+              mimetype: "text/plain",
+              data: "superseded",
+              timestamp: 0,
             },
-            {
-              op: "cell-op",
-              cell_id: cid,
-              status: "running",
-              output: {
-                channel: "output",
-                mimetype: "text/plain",
-                data: "superseded",
-                timestamp: 0,
-              },
+          },
+          {
+            op: "cell-op",
+            cell_id: cid,
+            status: "running",
+            output: {
+              channel: "output",
+              mimetype: "text/plain",
+              data: "latest",
+              timestamp: 1,
             },
-            {
-              op: "cell-op",
-              cell_id: cid,
-              status: "running",
-              output: {
-                channel: "output",
-                mimetype: "text/plain",
-                data: "latest",
-                timestamp: 1,
-              },
-            },
-            {
-              op: "cell-op",
-              cell_id: cid,
-              serialization: "state-only trailer",
-            },
-          ],
-          editor,
-          controller,
-        }),
+          },
+          {
+            op: "cell-op",
+            cell_id: cid,
+            serialization: "state-only trailer",
+          },
+        ],
+        { editor, controller },
       );
 
       expect(projectionCalls).toEqual(["clear", "append"]);
@@ -1305,36 +1326,34 @@ it.effect(
         stale_inputs: true,
       };
 
-      yield* executions.accept(
-        CellRunInput.Operations({
-          operations: [message],
-          editor,
-          controller: new PythonController(
-            controller,
-            "test-controller",
-            Stream.never,
-          ),
-        }),
+      const pythonController = new PythonController(
+        controller,
+        "test-controller",
+        Stream.never,
       );
+      yield* acceptOperations([message], {
+        editor,
+        controller: pythonController,
+      });
 
       // Check that CellRuns tracked the cell as stale
-      expect(
-        yield* executions.isCellStale(
-          MarimoNotebookCell.from(cell.rawNotebookCell),
-        ),
-      ).toBe(true);
+      expect(yield* executions.isStale(cellSnapshot(cell))).toBe(true);
 
-      // Record execution to clear stale
-      yield* executions.recordExecution(
-        MarimoNotebookCell.from(cell.rawNotebookCell),
+      // A queue notification records the source accepted by the kernel.
+      yield* acceptOperations(
+        [
+          {
+            op: "cell-op",
+            cell_id: Option.getOrThrow(cell.id),
+            status: "queued",
+            run_id: "accepted-run",
+          },
+        ],
+        { editor, controller: pythonController },
       );
 
       // Check that the cell is no longer stale
-      expect(
-        yield* executions.isCellStale(
-          MarimoNotebookCell.from(cell.rawNotebookCell),
-        ),
-      ).toBe(false);
+      expect(yield* executions.isStale(cellSnapshot(cell))).toBe(false);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
@@ -1373,24 +1392,24 @@ it.effect(
       // Wait for NotebookEditorRegistry to process the change
       yield* TestClock.adjust("10 millis");
 
-      // First, invalidate the cell in CellRuns
-      yield* executions.invalidateCell(
-        MarimoNotebookCell.from(cell.rawNotebookCell),
-      );
-
-      // Verify cell is tracked as stale
-      expect(
-        yield* executions.isCellStale(
-          MarimoNotebookCell.from(cell.rawNotebookCell),
-        ),
-      ).toBe(true);
-
-      // Create a mock controller
       const controller = yield* code.notebooks.createNotebookController(
         "test-controller",
         NOTEBOOK_TYPE,
         "test-controller",
       );
+      const pythonController = new PythonController(
+        controller,
+        "test-controller",
+        Stream.never,
+      );
+
+      yield* acceptOperations(
+        [{ op: "cell-op", cell_id: cellId, stale_inputs: true }],
+        { editor, controller: pythonController },
+      );
+
+      // Verify cell is tracked as stale
+      expect(yield* executions.isStale(cellSnapshot(cell))).toBe(true);
 
       // Send a queued message
       const message: CellOperationNotification = {
@@ -1400,24 +1419,13 @@ it.effect(
         run_id: "test-run-id",
       };
 
-      yield* executions.accept(
-        CellRunInput.Operations({
-          operations: [message],
-          editor,
-          controller: new PythonController(
-            controller,
-            "test-controller",
-            Stream.never,
-          ),
-        }),
-      );
+      yield* acceptOperations([message], {
+        editor,
+        controller: pythonController,
+      });
 
       // Check that the cell's stale state was cleared
-      expect(
-        yield* executions.isCellStale(
-          MarimoNotebookCell.from(cell.rawNotebookCell),
-        ),
-      ).toBe(false);
+      expect(yield* executions.isStale(cellSnapshot(cell))).toBe(false);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
@@ -1452,21 +1460,23 @@ it.effect(
       yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
       yield* TestClock.adjust("10 millis");
 
-      // Mark the cell stale so we can prove the bail happens before recordExecution
-      yield* executions.invalidateCell(
-        MarimoNotebookCell.from(cell.rawNotebookCell),
-      );
-      expect(
-        yield* executions.isCellStale(
-          MarimoNotebookCell.from(cell.rawNotebookCell),
-        ),
-      ).toBe(true);
-
       const controller = yield* code.notebooks.createNotebookController(
         "test-controller",
         NOTEBOOK_TYPE,
         "test-controller",
       );
+      const pythonController = new PythonController(
+        controller,
+        "test-controller",
+        Stream.never,
+      );
+
+      // Mark the cell stale so we can prove the invalid queue cannot record it.
+      yield* acceptOperations(
+        [{ op: "cell-op", cell_id: cellId, stale_inputs: true }],
+        { editor, controller: pythonController },
+      );
+      expect(yield* executions.isStale(cellSnapshot(cell))).toBe(true);
 
       // Pre-fix this would die via Option.getOrThrow on a None.
       const message: CellOperationNotification = {
@@ -1476,24 +1486,13 @@ it.effect(
         run_id: null,
       };
 
-      yield* executions.accept(
-        CellRunInput.Operations({
-          operations: [message],
-          editor,
-          controller: new PythonController(
-            controller,
-            "test-controller",
-            Stream.never,
-          ),
-        }),
-      );
+      yield* acceptOperations([message], {
+        editor,
+        controller: pythonController,
+      });
 
-      // Stale state preserved because we bail before recordExecution
-      expect(
-        yield* executions.isCellStale(
-          MarimoNotebookCell.from(cell.rawNotebookCell),
-        ),
-      ).toBe(true);
+      // Stale state preserved because we bail before acceptSource
+      expect(yield* executions.isStale(cellSnapshot(cell))).toBe(true);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
@@ -1546,8 +1545,6 @@ it.effect(
     const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
 
     yield* Effect.gen(function* () {
-      const executions = yield* CellRuns;
-
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cell = notebook.cellAt(0);
       const cellId = Option.getOrThrow(cell.id);
@@ -1565,13 +1562,7 @@ it.effect(
         run_id: "test-run-id",
       };
 
-      yield* executions.accept(
-        CellRunInput.Operations({
-          operations: [message],
-          editor,
-          controller,
-        }),
-      );
+      yield* acceptOperations([message], { editor, controller });
 
       // If we get here, the error was handled gracefully
       expect(true).toBe(true);
@@ -1603,8 +1594,6 @@ it.effect(
     const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
 
     yield* Effect.gen(function* () {
-      const executions = yield* CellRuns;
-
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cell = notebook.cellAt(0);
       const cellId = Option.getOrThrow(cell.id);
@@ -1629,13 +1618,7 @@ it.effect(
         },
       };
 
-      yield* executions.accept(
-        CellRunInput.Operations({
-          operations: [message],
-          editor,
-          controller,
-        }),
-      );
+      yield* acceptOperations([message], { editor, controller });
 
       // If we get here, the error was handled gracefully
       expect(true).toBe(true);
