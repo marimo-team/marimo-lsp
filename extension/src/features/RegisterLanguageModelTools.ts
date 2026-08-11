@@ -1,5 +1,6 @@
 import {
   Array as EffectArray,
+  Context,
   Effect,
   Formatter,
   Layer,
@@ -25,6 +26,8 @@ import type { CellOperationNotification } from "../types.ts";
  * entry in package.json — VS Code requires both to match.
  */
 const EXECUTE_CODE_TOOL = "marimo_executeCode";
+
+type VsCodeService = Context.Service.Shape<typeof VsCode>;
 
 /**
  * Extract a cell-op's stdout/stderr text
@@ -57,6 +60,39 @@ export const ExecuteCodeInput = Schema.Struct({
   /** Python to run in that notebook's live kernel (scratchpad). */
   code: Schema.String,
 });
+/**
+ * Render a scratchpad run as the text the agent sees.
+ *
+ * This is the same as the marimo SSE `/execute` endpoint. It gives the
+ * output of the scratch cell first. Then it gives the console output of the
+ * cells that a code mode cascade ran again.
+ */
+export function scratchpadResultText(
+  ops: ReadonlyArray<CellOperationNotification>,
+  code: VsCodeService,
+  decoder = new TextDecoder(),
+): string {
+  // `partition` returns the excluded items first. The cascade ops are the
+  // `Result.fail` arm.
+  const [cascadeOps, scratchOps] = EffectArray.partition(ops, (op) =>
+    extractCellIdFromCellMessage(op) === SCRATCH_CELL_ID
+      ? Result.succeed(op)
+      : Result.fail(op),
+  );
+
+  const scratchText = scratchCellNotificationsToVsCodeOutput(
+    scratchOps,
+    code,
+  ).pipe(
+    Option.map((cellOutput) =>
+      cellOutput.items.map((item) => decoder.decode(item.data)).join(""),
+    ),
+    Option.getOrElse(() => ""),
+  );
+
+  return scratchText + cascadeOps.map(consoleText).join("");
+}
+
 /**
  * Registers the `execute_code` Language Model Tool: the single channel an agent
  * uses to run Python in a marimo notebook's kernel. Exploration stays in the
@@ -113,30 +149,7 @@ export const RegisterLanguageModelToolsLive = Layer.effectDiscard(
         .executeScratchpad(input.code)
         .pipe(Stream.runCollect);
 
-      // Mirror marimo's SSE `/execute` endpoint (`ScratchCellListener.stream`):
-      // surface the scratch cell's own output PLUS console (stdout/stderr) from
-      // any cells a code-mode cascade re-ran
-      const [scratchOps, cascadeOps] = EffectArray.partition(ops, (op) =>
-        extractCellIdFromCellMessage(op) === SCRATCH_CELL_ID
-          ? Result.succeed(op)
-          : Result.fail(op),
-      );
-
-      // The scratch cell's own output (its console + rendered value).
-      const scratchText = scratchCellNotificationsToVsCodeOutput(
-        scratchOps,
-        code,
-      ).pipe(
-        Option.map((cellOutput) =>
-          cellOutput.items.map((item) => decoder.decode(item.data)).join(""),
-        ),
-        Option.getOrElse(() => ""),
-      );
-
-      // Console from cascade cells, concatenated in arrival order
-      const cascadeText = cascadeOps.map(consoleText).join("");
-
-      const text = scratchText + cascadeText;
+      const text = scratchpadResultText(ops, code, decoder);
 
       return result(text.trim() === "" ? "(no output)" : text);
     });
