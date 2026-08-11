@@ -53,8 +53,8 @@ describe("Api", () => {
       const kernel = yield* Effect.gen(function* () {
         const api = yield* Api;
         const code = yield* VsCode;
-        const fakeUri = yield* code.utils.parseUri(
-          "file:///non-existent-notebook.py",
+        const fakeUri = yield* Effect.fromResult(
+          code.utils.parseUri("file:///non-existent-notebook.py"),
         );
 
         return yield* Effect.promise(() =>
@@ -92,7 +92,9 @@ describe("Api", () => {
       const kernel = yield* Effect.gen(function* () {
         const api = yield* Api;
         const code = yield* VsCode;
-        const uri = yield* code.utils.parseUri("file:///test/notebook_mo.py");
+        const uri = yield* Effect.fromResult(
+          code.utils.parseUri("file:///test/notebook_mo.py"),
+        );
         return yield* Effect.promise(() =>
           api.experimental.kernels.getKernel(uri),
         );

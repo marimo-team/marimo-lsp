@@ -1,5 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Schema } from "effect";
+import { Effect, Layer, Option, Result, Schema } from "effect";
 
 import { Memento } from "../../__mocks__/TestExtensionContext.ts";
 import { TestVsCode, Uri } from "../../__mocks__/TestVsCode.ts";
@@ -167,8 +167,8 @@ it.effect(
       const storage = yield* Storage;
       const result = yield* Effect.result(storage.workspace.get(key));
 
-      assert(result._tag === "Left", "Expected to fail decoding");
-      assert(result.left._tag === "StorageDecodeError");
+      assert(Result.isFailure(result), "Expected to fail decoding");
+      assert(result.failure._tag === "StorageDecodeError");
     }).pipe(Effect.provide(layer));
   }),
 );
