@@ -469,8 +469,9 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                 notebookSessions.current(message.notebookUri) ===
                 message.session,
             );
-            const first = messages[0];
+            const [first, ...rest] = messages;
             if (first === undefined) return;
+            const currentMessages = [first, ...rest] as const;
             const operationTypes = messages.map(
               (message) => message.operation.op,
             );
@@ -479,22 +480,10 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
               operationTypes.join(","),
             );
             yield* Effect.raceFirst(
-              processOperationBatch(messages, {
+              processOperationBatch(currentMessages, {
                 forNotebook,
                 session: first.session,
               }).pipe(
-                Effect.catchCause(
-                  Effect.fn(function* (cause) {
-                    yield* Effect.logError(
-                      "Failed to process marimo operation",
-                    ).pipe(Effect.annotateLogs({ cause }));
-                    yield* Effect.forkChild(
-                      showErrorAndPromptLogs(
-                        "Failed to process marimo operation.",
-                      ),
-                    );
-                  }),
-                ),
                 Effect.annotateLogs({
                   "operation.types": operationTypes,
                 }),
@@ -794,32 +783,58 @@ function isValueUpdateEcho(
 }
 
 function processOperationBatch(
-  messages: ReadonlyArray<SessionOperation>,
+  messages: EffectArray.NonEmptyReadonlyArray<SessionOperation>,
   options: {
     forNotebook: (notebookId: NotebookId) => NotebookHandle;
     readonly session: OpenNotebookSession;
   },
 ) {
   return Effect.gen(function* () {
-    const cellOperations = messages.flatMap(({ operation }) =>
-      operation.op === "cell-op" ? [operation] : [],
-    );
-    let acceptedCellOperations = false;
+    const processSafely = <E, R>(
+      operationTypes: ReadonlyArray<MarimoOperation["operation"]["op"]>,
+      effect: Effect.Effect<void, E, R>,
+    ) =>
+      effect.pipe(
+        Effect.catchCause(
+          Effect.fn(function* (cause) {
+            yield* Effect.logError("Failed to process marimo operation").pipe(
+              Effect.annotateLogs({ cause }),
+            );
+            yield* Effect.forkChild(
+              showErrorAndPromptLogs("Failed to process marimo operation."),
+            );
+          }),
+        ),
+        Effect.annotateLogs({
+          "operation.types": operationTypes,
+        }),
+      );
 
-    for (const message of messages) {
-      if (message.operation.op === "cell-op") {
-        if (!acceptedCellOperations) {
-          acceptedCellOperations = true;
-          yield* processNotebookCellOperations(
-            message.notebookUri,
-            cellOperations,
-            options,
-          );
-        }
+    const segments = EffectArray.groupWith(messages, (left, right) =>
+      left.operation.op === "cell-op"
+        ? right.operation.op === "cell-op"
+        : right.operation.op !== "cell-op",
+    );
+
+    for (const segment of segments) {
+      const first = segment[0];
+      if (first.operation.op === "cell-op") {
+        const operations = segment.flatMap(({ operation }) =>
+          operation.op === "cell-op" ? [operation] : [],
+        );
+        yield* processSafely(
+          ["cell-op"],
+          processNotebookCellOperations(first.notebookUri, operations, options),
+        );
         continue;
       }
 
-      yield* processOperation(message, options);
+      for (const message of segment) {
+        yield* processSafely(
+          [message.operation.op],
+          processOperation(message, options),
+        );
+      }
     }
   });
 }
