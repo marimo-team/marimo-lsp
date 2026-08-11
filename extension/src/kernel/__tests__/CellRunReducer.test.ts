@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { cellId } from "../../lib/__tests__/branded.ts";
 import type { CellRuntimeState } from "../../types.ts";
 import {
+  AcceptedSource,
   Action,
   type CellRunEntry,
   Op,
@@ -19,6 +20,7 @@ const entry = (phase: RunPhase): CellRunEntry => ({
   id: ID,
   state: createCellRuntimeState(),
   phase,
+  acceptedSource: AcceptedSource.Unknown(),
 });
 
 const okState = (): CellRuntimeState => createCellRuntimeState();
@@ -43,13 +45,15 @@ describe("cell run reducer", () => {
   it("drives a normal run: queue → start → update → settle", () => {
     let e = entry(RunPhase.Idle());
 
-    const queued = step(e, Op.Queue({ runId: RUN, next: okState() }));
+    const queued = step(e, Op.Queue({ runId: RUN, next: okState() }), "x = 1");
     expect(tags(queued.actions)).toEqual([
-      "RecordExecution",
       "ClearRuntimeError",
       "CreateExecution",
     ]);
     expect(queued.entry.phase).toEqual(RunPhase.Queued({ runId: RUN }));
+    expect(queued.entry.acceptedSource).toEqual(
+      AcceptedSource.Accepted({ source: "x = 1" }),
+    );
     e = queued.entry;
 
     const started = step(e, Op.Start({ startTime: 5, next: okState() }));
@@ -92,7 +96,6 @@ describe("cell run reducer", () => {
       Op.Queue({ runId: RunId("run-2"), next: okState() }),
     );
     expect(tags(actions)).toEqual([
-      "RecordExecution",
       "ClearRuntimeError",
       "EndExecution",
       "CreateExecution",
@@ -141,11 +144,22 @@ describe("cell run reducer", () => {
     expect(tags(actions)).toEqual(["ApplyRuntimeError"]);
   });
 
-  it("invalidates the cell when an op carries stale inputs", () => {
-    const { actions } = step(
+  it("invalidates the accepted source when an op carries stale inputs", () => {
+    const { entry: next } = step(
       entry(RunPhase.Running({ runId: RUN })),
       Op.Update({ next: staleState() }),
     );
-    expect(actions[0]).toEqual(Action.InvalidateCell());
+    expect(next.acceptedSource).toEqual(AcceptedSource.Invalidated());
+  });
+
+  it("records a queued source even when the operation carries stale inputs", () => {
+    const { entry: next } = step(
+      entry(RunPhase.Idle()),
+      Op.Queue({ runId: RUN, next: staleState() }),
+      "x = 1",
+    );
+    expect(next.acceptedSource).toEqual(
+      AcceptedSource.Accepted({ source: "x = 1" }),
+    );
   });
 });

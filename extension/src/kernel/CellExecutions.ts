@@ -8,7 +8,6 @@ import {
   Context,
   Data,
   Effect,
-  HashMap,
   Layer,
   MutableHashMap,
   Option,
@@ -50,6 +49,7 @@ import {
   type KeyedCellOutput,
 } from "./CellOutputProjection.ts";
 import {
+  AcceptedSource,
   Action,
   type CellRunEntry,
   makeCellRunEntry,
@@ -105,7 +105,7 @@ const cellExecutionKey = (
  */
 interface RunRecord {
   readonly entry: CellRunEntry;
-  readonly editor: vscode.NotebookEditor;
+  readonly editor: vscode.NotebookEditor | undefined;
   readonly resource: Option.Option<RunResource>;
 }
 
@@ -141,12 +141,16 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
       // walks the RunRecord by structure. The RunRecord holds a live
       // vscode.NotebookCellExecution. It is not safe to hash its getters.
       const records = MutableHashMap.empty<CellExecutionKey, RunRecord>();
-      const lastExecutedCodeRef = yield* SubscriptionRef.make(
-        HashMap.empty<
-          NotebookId,
-          HashMap.HashMap<NotebookCellId, Option.Option<string>>
-        >(),
-      );
+      const revision = yield* SubscriptionRef.make(0);
+
+      const emptyRecord = (
+        cellId: NotebookCellId,
+        editor?: vscode.NotebookEditor,
+      ): RunRecord => ({
+        entry: makeCellRunEntry(cellId),
+        editor,
+        resource: Option.none(),
+      });
 
       const isCellStale = (cell: MarimoNotebookCell) => {
         const cellId = cell.id;
@@ -156,21 +160,21 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         const notebookId = cell.notebook.id;
         const currentCode = cell.document.getText();
 
-        return SubscriptionRef.get(lastExecutedCodeRef).pipe(
-          Effect.map((map) =>
-            Option.match(
-              HashMap.get(map, notebookId).pipe(
-                Option.flatMap(HashMap.get(cellId.value)),
-              ),
-              {
-                onNone: () => false,
-                onSome: (lastExecutedCode) =>
-                  Option.match(lastExecutedCode, {
-                    onNone: () => true,
-                    onSome: (executedCode) => executedCode !== currentCode,
-                  }),
-              },
+        return Effect.sync(() =>
+          Option.match(
+            MutableHashMap.get(
+              records,
+              cellExecutionKey(notebookId, cellId.value),
             ),
+            {
+              onNone: () => false,
+              onSome: ({ entry }) =>
+                AcceptedSource.$match(entry.acceptedSource, {
+                  Unknown: () => false,
+                  Invalidated: () => true,
+                  Accepted: ({ source }) => source !== currentCode,
+                }),
+            },
           ),
         );
       };
@@ -213,7 +217,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
       );
 
       yield* Effect.forkScoped(
-        SubscriptionRef.changes(lastExecutedCodeRef).pipe(
+        SubscriptionRef.changes(revision).pipe(
           Stream.runForEach(updateStaleContext),
         ),
       );
@@ -229,40 +233,37 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         ),
       );
 
-      const recordExecution = (cell: MarimoNotebookCell) => {
+      const updateAcceptedSource = (
+        cell: MarimoNotebookCell,
+        acceptedSource: AcceptedSource,
+      ) => {
         const cellId = cell.id;
         if (Option.isNone(cellId)) return Effect.void;
-        const notebookId = cell.notebook.id;
-        const currentCode = cell.document.getText();
-        return SubscriptionRef.update(lastExecutedCodeRef, (map) => {
-          const notebookMap = Option.getOrElse(
-            HashMap.get(map, notebookId),
-            () => HashMap.empty<NotebookCellId, Option.Option<string>>(),
+        const key = cellExecutionKey(cell.notebook.id, cellId.value);
+        return Effect.sync(() => {
+          const record = Option.getOrElse(
+            MutableHashMap.get(records, key),
+            () => emptyRecord(cellId.value),
           );
-          return HashMap.set(
-            map,
-            notebookId,
-            HashMap.set(notebookMap, cellId.value, Option.some(currentCode)),
-          );
-        });
+          MutableHashMap.set(records, key, {
+            ...record,
+            entry: { ...record.entry, acceptedSource },
+          });
+        }).pipe(
+          Effect.andThen(
+            SubscriptionRef.update(revision, (value) => value + 1),
+          ),
+        );
       };
 
-      const invalidateCell = (cell: MarimoNotebookCell) => {
-        const cellId = cell.id;
-        if (Option.isNone(cellId)) return Effect.void;
-        const notebookId = cell.notebook.id;
-        return SubscriptionRef.update(lastExecutedCodeRef, (map) => {
-          const notebookMap = Option.getOrElse(
-            HashMap.get(map, notebookId),
-            () => HashMap.empty<NotebookCellId, Option.Option<string>>(),
-          );
-          return HashMap.set(
-            map,
-            notebookId,
-            HashMap.set(notebookMap, cellId.value, Option.none()),
-          );
-        });
-      };
+      const recordExecution = (cell: MarimoNotebookCell) =>
+        updateAcceptedSource(
+          cell,
+          AcceptedSource.Accepted({ source: cell.document.getText() }),
+        );
+
+      const invalidateCell = (cell: MarimoNotebookCell) =>
+        updateAcceptedSource(cell, AcceptedSource.Invalidated());
 
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
@@ -443,20 +444,6 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             );
             return clearErrorDiagnostic(ctx.notebookCell.document.uri);
           },
-          RecordExecution: () => {
-            assert(
-              ctx.notebookCell !== undefined,
-              "RecordExecution requires a notebook cell",
-            );
-            return recordExecution(ctx.notebookCell);
-          },
-          InvalidateCell: () => {
-            assert(
-              ctx.notebookCell !== undefined,
-              "InvalidateCell requires a notebook cell",
-            );
-            return invalidateCell(ctx.notebookCell);
-          },
         });
 
       return {
@@ -464,18 +451,29 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         recordExecution,
         invalidateCell,
         forgetCell(notebookId: NotebookId, cellId: NotebookCellId) {
-          return SubscriptionRef.update(lastExecutedCodeRef, (map) => {
-            const notebookMap = HashMap.get(map, notebookId);
-            if (Option.isNone(notebookMap)) return map;
-            const updated = HashMap.remove(notebookMap.value, cellId);
-            return HashMap.isEmpty(updated)
-              ? HashMap.remove(map, notebookId)
-              : HashMap.set(map, notebookId, updated);
-          });
+          const key = cellExecutionKey(notebookId, cellId);
+          return Effect.sync(() => {
+            const record = MutableHashMap.get(records, key);
+            if (Option.isNone(record)) return false;
+            MutableHashMap.set(records, key, {
+              ...record.value,
+              entry: {
+                ...record.value.entry,
+                acceptedSource: AcceptedSource.Unknown(),
+              },
+            });
+            return true;
+          }).pipe(
+            Effect.flatMap((changed) =>
+              changed
+                ? SubscriptionRef.update(revision, (value) => value + 1)
+                : Effect.void,
+            ),
+          );
         },
         get changes(): Stream.Stream<void> {
           return Stream.merge(
-            Stream.map(SubscriptionRef.changes(lastExecutedCodeRef), constVoid),
+            Stream.map(SubscriptionRef.changes(revision), constVoid),
             Stream.map(contentChanges, constVoid),
           );
         },
@@ -518,11 +516,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
 
             const record = Option.getOrElse(
               MutableHashMap.get(records, key),
-              () => ({
-                entry: makeCellRunEntry(cellId),
-                editor,
-                resource: Option.none<RunResource>(),
-              }),
+              () => emptyRecord(cellId, editor),
             );
 
             const notebookCell = yield* findNotebookCell(notebook, cellId);
@@ -538,19 +532,28 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               yield* Effect.sync(() =>
                 MutableHashMap.set(records, key, {
                   ...record,
+                  editor,
                   entry: { ...record.entry, state: next },
                 }),
               );
               return;
             }
 
-            const result = step(record.entry, op.value);
+            const result = step(
+              record.entry,
+              op.value,
+              notebookCell.document.getText(),
+            );
             yield* Effect.sync(() =>
               MutableHashMap.set(records, key, {
                 ...record,
+                editor,
                 entry: result.entry,
               }),
             );
+            if (result.entry.acceptedSource !== record.entry.acceptedSource) {
+              yield* SubscriptionRef.update(revision, (value) => value + 1);
+            }
 
             const ctx: PerformContext = {
               key,
