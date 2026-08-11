@@ -61,11 +61,7 @@ Tests, types, and lints are pedantic on purpose: they're load-bearing tools, not
 
 **Treat Effect as part of this codebase, not a third-party library.** The extension is built on Effect top-to-bottom — services, layers, fibers, scopes, schemas, streams — and writing idiomatic extension code means reaching for the right Effect primitive instead of reinventing it. Before adding a new abstraction (a queue, a cache, a retry wrapper, a resource lifecycle), ask whether Effect already has it.
 
-For repo-specific patterns, start with the `/effect-ts` skill ([`.claude/skills/effect-ts/SKILL.md`](.claude/skills/effect-ts/SKILL.md)) — it indexes per-module pattern files under `patterns/`.
-
-When writing Effect code, inspect `repos/effect/` for examples of idiomatic usage, tests, module structure, and API design. Treat it as the source of truth for Effect patterns; the upstream's own agent guidance lives at `repos/effect/AGENTS.md`. Run `just vendor-effect` to populate the directory (gitignored, pinned to the version this repo resolves).
-
-Treat `repos/` as read-only reference — never edit files there, and never import from it. Application code continues to import from the normal `effect` and `@effect/*` packages.
+When you need to learn an Effect API or idiom, read the source that ships with the package: `extension/node_modules/effect/src`. It always matches the version this repo resolves, so prefer it over a separate checkout. If you do clone reference repositories, put them in `.repos/` (gitignored) and treat them as read-only — never import from them. Application code imports from the normal `effect` and `@effect/*` packages.
 
 ### Local Effect conventions (from `CONTRIBUTING.md`)
 
