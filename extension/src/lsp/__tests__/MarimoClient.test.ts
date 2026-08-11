@@ -46,7 +46,7 @@ it.effect(
         Ref.update(calls, (current) => [...current, request]).pipe(
           Effect.as(responses[request.method]),
         ),
-      operations: () => Stream.empty,
+      operations: Stream.empty,
     });
 
     yield* marimo.executeCells({
@@ -84,7 +84,7 @@ describe("generated api client", () => {
           Effect.succeed({
             tree: { name: "root", version: null, tags: [], dependencies: [] },
           }),
-        operations: () => Stream.empty,
+        operations: Stream.empty,
       });
 
       const response = yield* marimo.getDependencyTree({
@@ -103,7 +103,7 @@ describe("generated api client", () => {
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
         execute: () => Effect.succeed({ tree: "not-a-tree" }),
-        operations: () => Stream.empty,
+        operations: Stream.empty,
       });
 
       const exit = yield* marimo
@@ -115,7 +115,11 @@ describe("generated api client", () => {
         .pipe(Effect.exit);
 
       assert.isTrue(Exit.isFailure(exit));
-      assert.include(String(exit), "DependencyTreeResponse");
+      // v4's formatter names the failing field's schema and path, not the
+      // enclosing response type: `Expected DependencyTreeNode ... at ["tree"]`.
+      assert.include(String(exit), "SchemaError");
+      assert.include(String(exit), "DependencyTreeNode");
+      assert.include(String(exit), '["tree"]');
     }),
   );
 
@@ -124,7 +128,7 @@ describe("generated api client", () => {
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
         execute: () => Effect.die("should not reach the transport"),
-        operations: () => Stream.empty,
+        operations: Stream.empty,
       });
 
       const exit = yield* marimo
@@ -146,7 +150,7 @@ describe("generated api client", () => {
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
         execute: () => Effect.die("should not reach the transport"),
-        operations: () => Stream.empty,
+        operations: Stream.empty,
       });
 
       const exit = yield* marimo
@@ -281,13 +285,15 @@ it.effect(
     let requestedNotification: string | undefined;
     const marimo = makeMarimoCommands({
       execute: () => Effect.void,
-      operations: () => {
+      // Stream.suspend defers to subscription time, so the assertion below
+      // still observes that draining `operations` evaluated the transport.
+      operations: Stream.suspend(() => {
         requestedNotification = "marimo/operation";
         return Stream.empty;
-      },
+      }),
     });
 
-    yield* marimo.operations().pipe(Stream.runDrain);
+    yield* marimo.operations.pipe(Stream.runDrain);
 
     assert.strictEqual(requestedNotification, "marimo/operation");
   }),
@@ -310,8 +316,8 @@ it.effect(
     } as const;
     const [first, second] = yield* Effect.all(
       [
-        operations().pipe(Stream.take(1), Stream.runHead),
-        operations().pipe(Stream.take(1), Stream.runHead),
+        operations.pipe(Stream.take(1), Stream.runHead),
+        operations.pipe(Stream.take(1), Stream.runHead),
         Effect.gen(function* () {
           yield* Effect.yieldNow;
           assert.ok(notify);

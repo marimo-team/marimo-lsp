@@ -7,7 +7,18 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import type { VsCode } from "../platform/VsCode.ts";
 
-export function toVsCodeRange(code: VsCode, range: lsp.Range): vscode.Range {
+/**
+ * The VsCode service shape — what `yield* VsCode` produces.
+ *
+ * In Effect v4 the class type is the context key, not the service
+ * implementation, so converter signatures reference the shape explicitly.
+ */
+export type VsCodeService = VsCode["Service"];
+
+export function toVsCodeRange(
+  code: VsCodeService,
+  range: lsp.Range,
+): vscode.Range {
   return new code.Range(
     range.start.line,
     range.start.character,
@@ -16,7 +27,10 @@ export function toVsCodeRange(code: VsCode, range: lsp.Range): vscode.Range {
   );
 }
 
-export function toLocation(code: VsCode, loc: lsp.Location): vscode.Location {
+export function toLocation(
+  code: VsCodeService,
+  loc: lsp.Location,
+): vscode.Location {
   return new code.Location(
     code.Uri.parse(loc.uri),
     toVsCodeRange(code, loc.range),
@@ -24,7 +38,7 @@ export function toLocation(code: VsCode, loc: lsp.Location): vscode.Location {
 }
 
 export function toLocationLink(
-  code: VsCode,
+  code: VsCodeService,
   link: lsp.LocationLink,
 ): vscode.LocationLink {
   return {
@@ -43,7 +57,7 @@ export function toLocationLink(
  * Reference: protocolConverter.ts asLocationResult
  */
 export function toLocationResult(
-  code: VsCode,
+  code: VsCodeService,
   item: lsp.Definition | lsp.DefinitionLink[] | null,
 ): vscode.Location | vscode.Location[] | vscode.LocationLink[] | undefined {
   if (!item) return undefined;
@@ -62,7 +76,7 @@ export function toLocationResult(
 }
 
 export function toVsCodeDiagnosticSeverity(
-  code: VsCode,
+  code: VsCodeService,
   severity: lsp.DiagnosticSeverity,
 ): vscode.DiagnosticSeverity {
   switch (severity) {
@@ -93,7 +107,7 @@ export function toLspRange(range: vscode.Range): lsp.Range {
 }
 
 export function toLspDiagnosticSeverity(
-  code: VsCode,
+  code: VsCodeService,
   severity: vscode.DiagnosticSeverity,
 ): lsp.DiagnosticSeverity {
   switch (severity) {
@@ -113,7 +127,7 @@ export function toLspDiagnosticSeverity(
 }
 
 export function toLspDiagnostic(
-  code: VsCode,
+  code: VsCodeService,
   d: vscode.Diagnostic,
 ): lsp.Diagnostic {
   return {
@@ -129,7 +143,7 @@ export function toLspDiagnostic(
 }
 
 export function toDocumentation(
-  code: VsCode,
+  code: VsCodeService,
   doc: string | lsp.MarkupContent | undefined,
 ): string | vscode.MarkdownString | undefined {
   if (!doc) return undefined;
@@ -138,7 +152,7 @@ export function toDocumentation(
 }
 
 export function toWorkspaceEdit(
-  code: VsCode,
+  code: VsCodeService,
   edit: lsp.WorkspaceEdit,
 ): vscode.WorkspaceEdit {
   const ws = new code.WorkspaceEdit();
@@ -170,7 +184,7 @@ export function toWorkspaceEdit(
 }
 
 export function toCompletionItemKind(
-  code: VsCode,
+  code: VsCodeService,
   value: lsp.CompletionItemKind,
 ): vscode.CompletionItemKind {
   switch (value) {
@@ -232,7 +246,7 @@ export function toCompletionItemKind(
 }
 
 export function toLspCompletionItemKind(
-  code: VsCode,
+  code: VsCodeService,
   kind: vscode.CompletionItemKind,
 ): lsp.CompletionItemKind {
   switch (kind) {
@@ -298,7 +312,7 @@ export function toLspCompletionItemKind(
 }
 
 export function toLspCompletionTriggerKind(
-  code: VsCode,
+  code: VsCodeService,
   kind: vscode.CompletionTriggerKind,
 ): lsp.CompletionTriggerKind {
   switch (kind) {
@@ -413,7 +427,7 @@ export function toSymbolKind(kind: lsp.SymbolKind): vscode.SymbolKind {
 }
 
 export function toDocumentSymbol(
-  code: VsCode,
+  code: VsCodeService,
   sym: lsp.DocumentSymbol,
 ): vscode.DocumentSymbol {
   const result = new code.DocumentSymbol(
@@ -457,7 +471,7 @@ export function toDocumentHighlightKind(
 }
 
 export function toDocumentHighlight(
-  code: VsCode,
+  code: VsCodeService,
   item: lsp.DocumentHighlight,
 ): vscode.DocumentHighlight {
   return new code.DocumentHighlight(
@@ -476,7 +490,7 @@ export function toDocumentHighlight(
  * Reference: protocolConverter.ts asHoverContent
  */
 export function toHoverContent(
-  code: VsCode,
+  code: VsCodeService,
   contents: lsp.Hover["contents"],
 ): vscode.MarkdownString | vscode.MarkdownString[] {
   if (typeof contents === "string") {
@@ -505,7 +519,10 @@ export function toHoverContent(
 // Formatting converters
 // ---------------------------------------------------------------------------
 
-export function toTextEdit(code: VsCode, edit: lsp.TextEdit): vscode.TextEdit {
+export function toTextEdit(
+  code: VsCodeService,
+  edit: lsp.TextEdit,
+): vscode.TextEdit {
   return new code.TextEdit(toVsCodeRange(code, edit.range), edit.newText);
 }
 
@@ -519,7 +536,7 @@ export function toTextEdit(code: VsCode, edit: lsp.TextEdit): vscode.TextEdit {
  * LSP and VS Code use the same string values for folding range kinds.
  */
 export function toFoldingRange(
-  code: VsCode,
+  code: VsCodeService,
   r: lsp.FoldingRange,
 ): vscode.FoldingRange {
   return new code.FoldingRange(
@@ -534,7 +551,7 @@ export function toFoldingRange(
 // ---------------------------------------------------------------------------
 
 export function toSelectionRange(
-  code: VsCode,
+  code: VsCodeService,
   sr: lsp.SelectionRange,
 ): vscode.SelectionRange {
   return new code.SelectionRange(
@@ -548,7 +565,7 @@ export function toSelectionRange(
 // ---------------------------------------------------------------------------
 
 export function toSignatureHelp(
-  code: VsCode,
+  code: VsCodeService,
   item: lsp.SignatureHelp,
 ): vscode.SignatureHelp {
   const result = new code.SignatureHelp();
@@ -582,7 +599,7 @@ export function toSignatureHelp(
 export const inlayHintLspData = new WeakMap<vscode.InlayHint, unknown>();
 
 export function toTooltip(
-  code: VsCode,
+  code: VsCodeService,
   value: string | lsp.MarkupContent,
 ): string | vscode.MarkdownString {
   if (typeof value === "string") return value;
@@ -590,7 +607,7 @@ export function toTooltip(
 }
 
 export function toInlayHint(
-  code: VsCode,
+  code: VsCodeService,
   item: lsp.InlayHint,
 ): vscode.InlayHint {
   const label =
@@ -671,7 +688,7 @@ export function toLspInlayHint(hint: vscode.InlayHint): lsp.InlayHint {
 export const completionLspData = new WeakMap<vscode.CompletionItem, unknown>();
 
 export function toCompletionItem(
-  code: VsCode,
+  code: VsCodeService,
   item: lsp.CompletionItem,
 ): vscode.CompletionItem {
   const label =
@@ -749,7 +766,7 @@ export function toCompletionItem(
 }
 
 export function toLspCompletionItem(
-  code: VsCode,
+  code: VsCodeService,
   item: vscode.CompletionItem,
 ): lsp.CompletionItem {
   const label = typeof item.label === "string" ? item.label : item.label.label;
@@ -793,7 +810,7 @@ export const codeActionLspData = new WeakMap<vscode.CodeAction, unknown>();
  * Splits on "." and builds via CodeActionKind.Empty.append().
  */
 export function toCodeActionKind(
-  code: VsCode,
+  code: VsCodeService,
   kind: string,
 ): vscode.CodeActionKind {
   let result = code.CodeActionKind.Empty;
@@ -804,7 +821,7 @@ export function toCodeActionKind(
 }
 
 export function toLspCodeActionTriggerKind(
-  code: VsCode,
+  code: VsCodeService,
   kind: vscode.CodeActionTriggerKind,
 ): lsp.CodeActionTriggerKind {
   switch (kind) {
@@ -820,7 +837,7 @@ export function toLspCodeActionTriggerKind(
 }
 
 export function toLspCodeActionContext(
-  code: VsCode,
+  code: VsCodeService,
   ctx: vscode.CodeActionContext,
 ): lsp.CodeActionContext {
   // Reference: codeConverter.ts asCodeActionContextSync
@@ -837,7 +854,7 @@ export function toLspCodeActionContext(
 }
 
 export function toCodeAction(
-  code: VsCode,
+  code: VsCodeService,
   item: lsp.CodeAction,
 ): vscode.CodeAction {
   const result = new code.CodeAction(item.title);
@@ -878,7 +895,7 @@ export function toCodeAction(
 }
 
 export function toLspCodeAction(
-  code: VsCode,
+  code: VsCodeService,
   item: vscode.CodeAction,
 ): lsp.CodeAction {
   // Reference: codeConverter.ts asCodeActionSync
