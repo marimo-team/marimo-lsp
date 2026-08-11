@@ -89,7 +89,7 @@ it.effect(
         () => undefined,
         (error: unknown) => error,
       );
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* TestClock.adjust(Duration.seconds(120));
       const error = yield* Effect.promise(() => settled);
 

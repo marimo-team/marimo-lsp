@@ -313,7 +313,7 @@ it.effect(
         operations().pipe(Stream.take(1), Stream.runHead),
         operations().pipe(Stream.take(1), Stream.runHead),
         Effect.gen(function* () {
-          yield* Effect.yieldNow();
+          yield* Effect.yieldNow;
           assert.ok(notify);
           notify(message);
         }),

@@ -132,7 +132,7 @@ it.effect("merges child schemas at their parent path", () => {
     const load = yield* Effect.fork(
       service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", ["catalog"]),
     );
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     const call = calls[0];
     assert(call?.method === "list-sql-schemas");
 
@@ -176,7 +176,7 @@ it.effect("merges tables at a nested schema path", () => {
         "events",
       ]),
     );
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     const call = calls[0];
     assert(call?.method === "list-sql-tables");
 
@@ -219,7 +219,7 @@ it.effect("does not resolve deferred state after an error", () => {
         ]),
       ),
     );
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     const call = calls[0];
     assert(call?.method === "list-sql-tables");
 
@@ -294,7 +294,7 @@ it.effect("deduplicates concurrent schema expansion requests", () => {
     const second = yield* Effect.fork(
       service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
     );
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
 
     expect(calls).toHaveLength(1);
     const call = calls[0];
@@ -343,7 +343,7 @@ it.effect("retries nested table expansion after an error", () => {
         ]),
       ),
     );
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
 
     const call = calls[0];
     assert(call?.method === "list-sql-tables");
@@ -374,7 +374,7 @@ it.effect("retries nested table expansion after an error", () => {
         "events",
       ]),
     );
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     expect(calls).toHaveLength(2);
     yield* Fiber.interrupt(retry);
   }).pipe(Effect.provide(layer));
@@ -396,7 +396,7 @@ it.effect("shares one timeout deadline and retries after it expires", () => {
         service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
       ),
     );
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     expect(calls).toHaveLength(1);
 
     yield* TestClock.adjust("20 seconds");
@@ -405,7 +405,7 @@ it.effect("shares one timeout deadline and retries after it expires", () => {
         service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
       ),
     );
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     expect(calls).toHaveLength(1);
 
     yield* TestClock.adjust("10 seconds");
@@ -415,7 +415,7 @@ it.effect("shares one timeout deadline and retries after it expires", () => {
     const retry = yield* Effect.fork(
       service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
     );
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     expect(calls).toHaveLength(2);
     yield* Fiber.interrupt(retry);
   }).pipe(Effect.provide(layer));

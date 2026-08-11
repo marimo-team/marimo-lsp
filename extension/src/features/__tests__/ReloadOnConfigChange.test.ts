@@ -119,7 +119,7 @@ it.effect(
 
     yield* watchForConfigurationChanges().pipe(Effect.provide(services));
     yield* Deferred.await(prompted);
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
 
     expect(yield* Ref.get(vscode.executions)).toContainEqual({
       command: "workbench.action.reloadWindow",

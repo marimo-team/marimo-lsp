@@ -84,19 +84,19 @@ describe("TestVsCode", () => {
           .activeNotebookEditorChanges()
           .pipe(Stream.take(5), Stream.runCollect, Effect.fork);
 
-        yield* Effect.yieldNow();
+        yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.some(editors[0]));
 
-        yield* Effect.yieldNow();
+        yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.some(editors[1]));
 
-        yield* Effect.yieldNow();
+        yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.some(editors[2]));
 
-        yield* Effect.yieldNow();
+        yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.some(editors[2]));
 
-        yield* Effect.yieldNow();
+        yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.none());
 
         const chunk = yield* Fiber.join(fiber);

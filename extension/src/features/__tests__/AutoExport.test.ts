@@ -304,7 +304,7 @@ describe("AutoExport", () => {
         yield* Deferred.await(exportStarted);
 
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
-        yield* Effect.yieldNow();
+        yield* Effect.yieldNow;
         const reopened = TestVsCode.makeNotebookEditor("/test/report.py", {
           data: {
             metadata: MarimoNotebookDocument.createMetadata({
@@ -324,7 +324,7 @@ describe("AutoExport", () => {
           },
         });
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(reopened));
-        yield* Effect.yieldNow();
+        yield* Effect.yieldNow;
 
         yield* Deferred.succeed(releaseExport, undefined);
         yield* Fiber.join(firstTick);

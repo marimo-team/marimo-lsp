@@ -153,7 +153,7 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
           );
 
           yield* vscode.closeNotebook(editor.notebook);
-          yield* Effect.yieldNow();
+          yield* Effect.yieldNow;
           expect(yield* runtime.getRuntimeSession(id)).toEqual(
             Option.some({
               executable: "/python-one",
@@ -294,7 +294,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime;
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
       const contexts = yield* eventually(
@@ -330,7 +330,7 @@ it.effect(
     yield* Effect.gen(function* () {
       yield* NotebookRuntime;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* PubSub.publish(changes, {
         sessions: [
           {
@@ -371,12 +371,12 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime;
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* notebooks.attachController(id, controller);
       expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
 
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* vscode.closeNotebook(editor.notebook);
 
       // Pruning treats a controller as dead once no open notebook selects it,

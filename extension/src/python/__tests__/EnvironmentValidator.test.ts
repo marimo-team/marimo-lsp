@@ -402,7 +402,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         // until the subprocess is spawned again.
         let count = runCount(countFile);
         for (let i = 0; i < 100 && count < 2; i++) {
-          yield* Effect.yieldNow();
+          yield* Effect.yieldNow;
           yield* validator.validate(env);
           count = runCount(countFile);
         }
