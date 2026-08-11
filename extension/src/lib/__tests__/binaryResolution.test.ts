@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as semver from "@std/semver";
-import { Effect, Logger, LogLevel, Option } from "effect";
+import { Effect, Logger, Option, References } from "effect";
 
 import {
   BinarySource,
@@ -212,17 +212,18 @@ describe("resolveBinary", () => {
         [emptySource("tier-1"), userSource("/bin/ty")],
         uvSource("/fallback"),
       ).pipe(
-        Logger.withMinimumLogLevel(LogLevel.Debug),
+        Effect.provideService(References.MinimumLogLevel, "Debug"),
         Effect.provide(
-          Logger.replace(
-            Logger.defaultLogger,
-            Logger.make(({ message, annotations }) => {
+          Logger.layer([
+            Logger.make(({ message, fiber }) => {
               logs.push({
                 message: String(message),
-                annotations: Object.fromEntries(annotations),
+                annotations: {
+                  ...fiber.getRef(References.CurrentLogAnnotations),
+                },
               });
             }),
-          ),
+          ]),
         ),
       );
 

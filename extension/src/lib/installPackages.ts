@@ -98,7 +98,7 @@ export function installPackages(
           });
           return "installed" as const;
         }).pipe(
-          Effect.catchAllCause(
+          Effect.catchCause(
             Effect.fn(function* (cause) {
               yield* Effect.logError("Failed to install").pipe(
                 Effect.annotateLogs({ cause }),
@@ -233,7 +233,7 @@ export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
 
   {
     yield* Effect.sleep("10 millis");
-    const docs = yield* code.workspace.getNotebookDocuments();
+    const docs = yield* code.workspace.getNotebookDocuments;
     const doc = docs.find(
       (nb) => nb.uri.toString() === notebook.uri.toString(),
     );
@@ -253,7 +253,7 @@ export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
 
   {
     yield* Effect.sleep("10 millis");
-    const docs = yield* code.workspace.getNotebookDocuments();
+    const docs = yield* code.workspace.getNotebookDocuments;
     const doc = docs.find(
       (nb) => nb.uri.toString() === notebook.uri.toString(),
     );
@@ -267,7 +267,9 @@ export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
  * line of its stderr (typically the most actionable message).
  */
 function extractUvErrorDetail(cause: Cause.Cause<unknown>): string | null {
-  const failures = Cause.failures(cause);
+  const failures = cause.reasons
+    .filter(Cause.isFailReason)
+    .map((reason) => reason.error);
   for (const failure of failures) {
     if (failure instanceof UvUnknownError && failure.stderr) {
       const lines = failure.stderr.trim().split("\n");

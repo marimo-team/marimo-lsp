@@ -21,6 +21,6 @@ it.effect(
       Effect.provide(vscode.layer),
     );
 
-    expect(yield* opened).toEqual(["https://marimo.io/discord"]);
+    expect(yield* Ref.get(opened)).toEqual(["https://marimo.io/discord"]);
   }),
 );

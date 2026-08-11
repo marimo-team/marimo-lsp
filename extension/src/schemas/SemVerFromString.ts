@@ -1,32 +1,31 @@
 import * as semver from "@std/semver";
-import { ParseResult, Schema } from "effect";
+import { Effect, Schema, SchemaGetter, SchemaIssue } from "effect";
 
-export const SemVerFromString = Schema.transformOrFail(
-  Schema.String,
-  Schema.Struct({
-    major: Schema.Number,
-    minor: Schema.Number,
-    patch: Schema.Number,
-  }),
-  {
-    decode: (from) => {
-      const parsed = semver.tryParse(from);
-      if (parsed) {
-        return ParseResult.succeed(parsed);
-      }
-      // some PyPI versions aren't valid
-      const parsed2 = semver.tryParse(`${from}.0`);
-      if (parsed2) {
-        return ParseResult.succeed(parsed2);
-      }
-      return ParseResult.fail(
-        new ParseResult.Type(
-          Schema.String.ast,
-          from,
-          `Invalid semver string: ${from}`,
-        ),
-      );
+export const SemVerFromString = Schema.String.pipe(
+  Schema.decodeTo(
+    Schema.Struct({
+      major: Schema.Number,
+      minor: Schema.Number,
+      patch: Schema.Number,
+    }),
+    {
+      decode: SchemaGetter.transformOrFail((from: string) => {
+        const parsed = semver.tryParse(from);
+        if (parsed) {
+          return Effect.succeed(parsed);
+        }
+        // some PyPI versions aren't valid
+        const parsed2 = semver.tryParse(`${from}.0`);
+        if (parsed2) {
+          return Effect.succeed(parsed2);
+        }
+        return Effect.fail(
+          new SchemaIssue.InvalidValue({
+            message: `Invalid semver string: ${from}`,
+          }),
+        );
+      }),
+      encode: SchemaGetter.transform((to) => semver.format(to)),
     },
-    encode: (to) => ParseResult.succeed(semver.format(to)),
-  },
+  ),
 );

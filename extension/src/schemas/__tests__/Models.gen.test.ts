@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import {
   CellMetadata,
@@ -45,8 +45,8 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
     });
 
     expect(
-      Either.isLeft(
-        Schema.decodeUnknownEither(CellMetadata)({
+      Result.isFailure(
+        Schema.decodeUnknownResult(CellMetadata)({
           marimo: { name: "cell", misspelled: true },
         }),
       ),
@@ -55,7 +55,9 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
 
   it("keeps the canonical notebook marimo namespace required", () => {
     expect(
-      Either.isLeft(Schema.decodeUnknownEither(NotebookDocumentMetadata)({})),
+      Result.isFailure(
+        Schema.decodeUnknownResult(NotebookDocumentMetadata)({}),
+      ),
     ).toBe(true);
   });
 
@@ -66,22 +68,22 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
     });
     expect(venv).toEqual({ kind: "venv", executable: "/usr/bin/python3" });
 
-    const bad = Schema.decodeUnknownEither(PackageSource)({ kind: "conda" });
-    expect(Either.isLeft(bad)).toBe(true);
+    const bad = Schema.decodeUnknownResult(PackageSource)({ kind: "conda" });
+    expect(Result.isFailure(bad)).toBe(true);
 
     // msgspec accepts an omitted tag when decoding a concrete struct, but
     // requires it when decoding the tagged union used at this wire boundary.
-    const missing = Schema.decodeUnknownEither(PackageSource)({
+    const missing = Schema.decodeUnknownResult(PackageSource)({
       executable: "/usr/bin/python3",
     });
-    expect(Either.isLeft(missing)).toBe(true);
+    expect(Result.isFailure(missing)).toBe(true);
   });
 
   it("rejects payloads msgspec would reject", () => {
-    const missingCode = Schema.decodeUnknownEither(ExecuteScratchRequest)({
+    const missingCode = Schema.decodeUnknownResult(ExecuteScratchRequest)({
       runId: "abc",
     });
-    expect(Either.isLeft(missingCode)).toBe(true);
+    expect(Result.isFailure(missingCode)).toBe(true);
   });
 
   it("composes generic command wrappers around an inner schema", () => {
@@ -107,10 +109,12 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
   });
 
   it("names structs in parse errors via identifier annotations", () => {
-    const result = Schema.decodeUnknownEither(VenvSource)({ kind: "venv" });
-    expect(Either.isLeft(result)).toBe(true);
-    if (Either.isLeft(result)) {
-      expect(String(result.left)).toContain("VenvSource");
+    // v4's default formatter uses `identifier` as the expected label for
+    // type-level failures ("Expected VenvSource"), not for nested key issues.
+    const result = Schema.decodeUnknownResult(VenvSource)("not-an-object");
+    expect(Result.isFailure(result)).toBe(true);
+    if (Result.isFailure(result)) {
+      expect(String(result.failure)).toContain("VenvSource");
     }
   });
 
@@ -166,7 +170,7 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
       const result = yield* Effect.result(
         api.interrupt({ notebookUri: "file:///nb.py", inner: {} }),
       );
-      expect(Either.isLeft(result)).toBe(true);
+      expect(Result.isFailure(result)).toBe(true);
     }),
   );
 });

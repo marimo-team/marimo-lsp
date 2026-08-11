@@ -8,7 +8,7 @@
 import * as NodeNet from "node:net";
 
 import type { DebugProtocol } from "@vscode/debugprotocol";
-import { Chunk, Data, Deferred, Effect, Runtime, Stream } from "effect";
+import { Cause, Data, Deferred, Effect, Queue, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { VsCode } from "../platform/VsCode.ts";
@@ -143,7 +143,7 @@ export const makeDapProxy = Effect.fn("makeDapProxy")(function* (
   mapping: SourceMapping,
 ) {
   const code = yield* VsCode;
-  const runFork = Runtime.runFork(yield* Effect.runtime());
+  const runFork = Effect.runForkWith(yield* Effect.context());
   const configurationDone = yield* Deferred.make<void>();
   const socket = yield* Effect.acquireRelease(
     Effect.sync(() => NodeNet.createConnection({ host, port })),
@@ -156,24 +156,31 @@ export const makeDapProxy = Effect.fn("makeDapProxy")(function* (
   );
 
   // Stream of framed DAP messages from the socket
-  const dapMessages = Stream.async<unknown, SocketError>((emit) => {
-    let buffer = "";
-    socket.on("data", (chunk) => {
-      buffer += chunk.toString("utf-8");
-      const { messages, remaining, skipped } = extractDapMessages(buffer);
-      buffer = remaining;
-      if (skipped > 0) {
-        runFork(
-          Effect.logWarning("Skipped malformed DAP messages").pipe(
-            Effect.annotateLogs({ skipped }),
-          ),
-        );
-      }
-      return emit.chunk(Chunk.fromIterable(messages));
-    });
-    socket.on("end", () => emit.end());
-    socket.on("error", (err) => emit.fail(new SocketError({ cause: err })));
-  });
+  const dapMessages = Stream.callback<unknown, SocketError>((queue) =>
+    Effect.sync(() => {
+      let buffer = "";
+      socket.on("data", (chunk) => {
+        buffer += chunk.toString("utf-8");
+        const { messages, remaining, skipped } = extractDapMessages(buffer);
+        buffer = remaining;
+        if (skipped > 0) {
+          runFork(
+            Effect.logWarning("Skipped malformed DAP messages").pipe(
+              Effect.annotateLogs({ skipped }),
+            ),
+          );
+        }
+        Queue.offerAllUnsafe(queue, messages);
+      });
+      socket.on("end", () => Queue.endUnsafe(queue));
+      socket.on("error", (err) =>
+        Queue.failCauseUnsafe(
+          queue,
+          Cause.fail(new SocketError({ cause: err })),
+        ),
+      );
+    }),
+  );
 
   // Process incoming messages (debugpy -> VS Code) in a background fiber
   yield* dapMessages.pipe(
@@ -184,7 +191,7 @@ export const makeDapProxy = Effect.fn("makeDapProxy")(function* (
         emitter.fire(json);
       }),
     ),
-    Effect.catchAll((error) =>
+    Effect.catch((error) =>
       Effect.logError("Socket stream failed").pipe(
         Effect.annotateLogs({ error: String(error) }),
       ),

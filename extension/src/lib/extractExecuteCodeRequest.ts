@@ -1,4 +1,4 @@
-import { Option } from "effect";
+import { type Context, Option } from "effect";
 import type * as vscode from "vscode";
 
 import type { Constants } from "../platform/Constants.ts";
@@ -8,7 +8,7 @@ import { getCellExecutableCode } from "./getCellExecutableCode.ts";
 
 export function extractExecuteCodeRequest(
   rawCells: Array<vscode.NotebookCell>,
-  LanguageId: Constants["LanguageId"],
+  LanguageId: Context.Service.Shape<typeof Constants>["LanguageId"],
 ): Option.Option<{
   codes: Array<string>;
   cellIds: Array<NotebookCellId>;

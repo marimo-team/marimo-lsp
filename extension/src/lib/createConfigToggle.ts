@@ -92,8 +92,8 @@ export const createConfigToggle = <T extends string>({
       `${settingName} set to ${getDisplayName(newValue)}.`,
     );
   }).pipe(
-    Effect.tapErrorCause(Effect.logError),
-    Effect.catchAllCause(() =>
+    Effect.tapCause(Effect.logError),
+    Effect.catchCause(() =>
       showErrorAndPromptLogs(`Could not update ${settingName.toLowerCase()}.`),
     ),
   );

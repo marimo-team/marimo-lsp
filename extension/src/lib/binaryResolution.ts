@@ -29,7 +29,7 @@ export function getBinaryVersion(
       }
       return Option.fromNullishOr(semver.tryParse(version));
     }),
-    Effect.catchAll(() => Effect.succeed(Option.none<semver.SemVer>())),
+    Effect.catch(() => Effect.succeed(Option.none<semver.SemVer>())),
   );
 }
 
