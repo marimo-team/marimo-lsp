@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import { Effect, Layer, Option, TestClock } from "effect";
+import { Effect, Layer, Option } from "effect";
+import { TestClock } from "effect/testing";
 import type * as vscode from "vscode";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
