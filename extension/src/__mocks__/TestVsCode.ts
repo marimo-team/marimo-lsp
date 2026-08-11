@@ -23,6 +23,7 @@ import {
   Commands,
   Env,
   FileSystemError,
+  type NotebookLifecycleEvent,
   ParseUriError,
   VsCode,
   Window,
@@ -1532,6 +1533,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly documentChangesPubSub: PubSub.PubSub<vscode.NotebookDocumentChangeEvent>;
   readonly documentOpenedPubSub: PubSub.PubSub<vscode.NotebookDocument>;
   readonly documentClosedPubSub: PubSub.PubSub<vscode.NotebookDocument>;
+  readonly documentLifecyclePubSub: PubSub.PubSub<NotebookLifecycleEvent>;
   readonly setActiveNotebookEditor: (
     editor: Option.Option<vscode.NotebookEditor>,
   ) => Effect.Effect<void>;
@@ -1610,11 +1612,23 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   }
 
   openNotebook(doc: vscode.NotebookDocument) {
-    return PubSub.publish(this.documentOpenedPubSub, doc);
+    return Effect.andThen(
+      PubSub.publish(this.documentOpenedPubSub, doc),
+      PubSub.publish(this.documentLifecyclePubSub, {
+        type: "opened" as const,
+        document: doc,
+      }),
+    );
   }
 
   closeNotebook(doc: vscode.NotebookDocument) {
-    return PubSub.publish(this.documentClosedPubSub, doc);
+    return Effect.andThen(
+      PubSub.publish(this.documentClosedPubSub, doc),
+      PubSub.publish(this.documentLifecyclePubSub, {
+        type: "closed" as const,
+        document: doc,
+      }),
+    );
   }
 
   static make = Effect.fn(function* (
@@ -1654,6 +1668,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const documentOpened = yield* PubSub.unbounded<vscode.NotebookDocument>();
 
     const documentClosed = yield* PubSub.unbounded<vscode.NotebookDocument>();
+
+    const documentLifecycle = yield* PubSub.unbounded<NotebookLifecycleEvent>();
 
     const commands = yield* Ref.make(HashSet.empty<string>());
     const controllers = yield* Ref.make(
@@ -1969,6 +1985,22 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         notebookDocumentOpened: Stream.fromPubSub(documentOpened),
         notebookDocumentChanges: Stream.fromPubSub(documentChanges),
         notebookDocumentClosed: Stream.fromPubSub(documentClosed),
+        // Mirrors the real implementation's guarantee: the subscription is
+        // live and the snapshot captured before the effect completes, so an
+        // open or close published afterwards cannot be lost.
+        subscribeNotebookLifecycle: Effect.gen(function* () {
+          const subscription = yield* PubSub.subscribe(documentLifecycle);
+          const documents = yield* Ref.get(notebookDocuments);
+          return Stream.concat(
+            Stream.fromIterable(
+              Array.from(documents, (document) => ({
+                type: "opened" as const,
+                document,
+              })),
+            ),
+            Stream.fromSubscription(subscription),
+          );
+        }),
         fileRenames: Stream.never,
         fileDeletes: Stream.never,
         textDocumentChanges: Stream.never,
@@ -2333,6 +2365,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       documentChangesPubSub: documentChanges,
       documentOpenedPubSub: documentOpened,
       documentClosedPubSub: documentClosed,
+      documentLifecyclePubSub: documentLifecycle,
       affinityUpdates,
       setActiveNotebookEditor: (editor) =>
         Effect.gen(function* () {

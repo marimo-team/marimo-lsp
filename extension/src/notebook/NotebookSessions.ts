@@ -76,36 +76,37 @@ export function makeNotebookSessions<E, R>(
       }
     });
 
-    // Subscribe before the initial snapshot so an open cannot fall through
-    // the gap. Re-observing the same document object is idempotent.
+    const markClosed = Effect.fn(function* (document: vscode.NotebookDocument) {
+      const notebook = MarimoNotebookDocument.tryFrom(document);
+      if (Option.isNone(notebook)) return;
+
+      const current = sessions.get(notebook.value.id);
+      // A delayed close for an older document must not invalidate a
+      // replacement document opened at the same URI.
+      if (current?.document && current.document !== document) {
+        return;
+      }
+
+      sessions.delete(notebook.value.id);
+      if (current) {
+        yield* Deferred.succeed(current.invalidated, undefined);
+      }
+      yield* onInvalidate(notebook.value.id);
+    });
+
+    // The lifecycle subscription registers its listeners and replays the
+    // already-open documents atomically before this effect resumes, so an
+    // open or close can never fall between snapshot and subscription. A
+    // single ordered stream also keeps a close from overtaking the open it
+    // follows. Re-observing the same document object is idempotent.
+    const lifecycle = yield* code.workspace.subscribeNotebookLifecycle;
     yield* Effect.forkScoped(
-      code.workspace.notebookDocumentOpened.pipe(Stream.runForEach(markOpen)),
-    );
-    for (const document of yield* code.workspace.getNotebookDocuments) {
-      yield* markOpen(document);
-    }
-
-    yield* Effect.forkScoped(
-      code.workspace.notebookDocumentClosed.pipe(
-        Stream.runForEach((document) => {
-          const notebook = MarimoNotebookDocument.tryFrom(document);
-          if (Option.isNone(notebook)) return Effect.void;
-
-          const current = sessions.get(notebook.value.id);
-          // A delayed close for an older document must not invalidate a
-          // replacement document opened at the same URI.
-          if (current?.document && current.document !== document) {
-            return Effect.void;
-          }
-
-          sessions.delete(notebook.value.id);
-          return Effect.gen(function* () {
-            if (current) {
-              yield* Deferred.succeed(current.invalidated, undefined);
-            }
-            yield* onInvalidate(notebook.value.id);
-          });
-        }),
+      lifecycle.pipe(
+        Stream.runForEach((event) =>
+          event.type === "opened"
+            ? markOpen(event.document)
+            : markClosed(event.document),
+        ),
       ),
     );
 

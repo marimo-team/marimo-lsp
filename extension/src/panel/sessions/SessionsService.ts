@@ -58,8 +58,11 @@ export class SessionsService extends Context.Service<SessionsService>()(
         ),
       );
 
-      // Subscribe before pulling the initial snapshot so a concurrent server
-      // mutation cannot be lost between the list request and registration.
+      // The forked consumer's subscription attaches within microseconds,
+      // while the list request's round trip is still in flight. LSP delivers
+      // messages in order, so any change notification that could slip in
+      // before the subscription is live was emitted before the server built
+      // the snapshot — the snapshot below supersedes whatever was missed.
       yield* refresh().pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Failed to load initial live sessions").pipe(

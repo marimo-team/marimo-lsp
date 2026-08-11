@@ -676,13 +676,9 @@ describe("NotebookRuntime scratch stream", () => {
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime;
         yield* ctx.vscode.addNotebookDocument(otherEditor.notebook);
-        // Drain BEFORE publishing the open event: NotebookSessions' forked
-        // documentOpened consumer must subscribe to the mock PubSub first, or
-        // the open is dropped, the second notebook never gets a session, and
-        // its completed-run is filtered out (hanging this test). Production
-        // uses a vscode event listener registered during activation, so opens
-        // cannot outrun the subscription there.
-        yield* TestClock.adjust("1 millis");
+        // No drain needed before the open: NotebookSessions acquires its
+        // lifecycle subscription before its layer finishes building, so an
+        // open published this early is delivered rather than dropped.
         yield* ctx.vscode.openNotebook(otherEditor.notebook);
         yield* TestClock.adjust("1 millis");
         yield* runtime.attachController(otherNotebook.id, ctx.mockController);

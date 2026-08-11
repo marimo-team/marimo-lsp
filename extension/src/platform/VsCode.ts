@@ -463,6 +463,11 @@ export class Commands extends Context.Service<Commands>()("Commands", {
   );
 }
 
+export interface NotebookLifecycleEvent {
+  readonly type: "opened" | "closed";
+  readonly document: vscode.NotebookDocument;
+}
+
 export class Workspace extends Context.Service<Workspace>()("Workspace", {
   make: Effect.sync(() => {
     const api = vscode.workspace;
@@ -523,6 +528,35 @@ export class Workspace extends Context.Service<Workspace>()("Workspace", {
             ),
           ),
       ),
+      // Everything here — both listener registrations and the snapshot of
+      // already-open documents — runs before the effect completes, within one
+      // fiber turn, so no event can fall between snapshot and subscription. A
+      // document may be observed twice (snapshot and event) but never zero
+      // times; consumers must treat a re-observed open as idempotent.
+      subscribeNotebookLifecycle: Effect.gen(function* () {
+        const queue = yield* Effect.acquireRelease(
+          Queue.make<NotebookLifecycleEvent>(),
+          Queue.shutdown,
+        );
+        yield* acquireDisposable(() =>
+          api.onDidOpenNotebookDocument((document) =>
+            Queue.offerUnsafe(queue, { type: "opened", document }),
+          ),
+        );
+        yield* acquireDisposable(() =>
+          api.onDidCloseNotebookDocument((document) =>
+            Queue.offerUnsafe(queue, { type: "closed", document }),
+          ),
+        );
+        Queue.offerAllUnsafe(
+          queue,
+          api.notebookDocuments.map((document) => ({
+            type: "opened" as const,
+            document,
+          })),
+        );
+        return Stream.fromQueue(queue);
+      }),
       textDocumentChanges: Stream.callback<vscode.TextDocumentChangeEvent>(
         (queue) =>
           acquireDisposable(() =>
