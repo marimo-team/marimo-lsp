@@ -1,16 +1,16 @@
 import {
+  Cause,
   Context,
   Data,
   Effect,
   HashMap,
   Layer,
-  MutableHashMap,
   Option,
+  Ref,
+  Semaphore,
   Stream,
   SubscriptionRef,
-  Array as EffectArray,
 } from "effect";
-import { constVoid } from "effect/Function";
 
 import type {
   NotebookCellId,
@@ -70,6 +70,7 @@ export type CellRunInput = Data.TaggedEnum<{
     readonly notebookId: NotebookId;
     readonly cellIds: ReadonlyArray<NotebookCellId>;
   };
+  Invalidated: { readonly notebookId: NotebookId };
 }>;
 export const CellRunInput = Data.taggedEnum<CellRunInput>();
 
@@ -78,12 +79,39 @@ type CellRunOperationsInput = Extract<
   { readonly _tag: "Operations" }
 >;
 
+type AcceptedSource = Data.TaggedEnum<{
+  Unknown: {};
+  Invalidated: {};
+  Accepted: { readonly source: string };
+}>;
+const AcceptedSource = Data.taggedEnum<AcceptedSource>();
+
 interface CellRunRecord {
   readonly state: CellRunState;
+  readonly acceptedSource: AcceptedSource;
   readonly presentation: Option.Option<{
     readonly runId: CellRunId;
     readonly adapter: CellRunPresentation;
   }>;
+}
+
+interface NotebookRunEntry {
+  readonly records: Ref.Ref<HashMap.HashMap<NotebookCellId, CellRunRecord>>;
+  readonly serial: Semaphore.Semaphore;
+}
+
+type RunRelease = Data.TaggedEnum<{
+  RunsInterrupted: {};
+  CellsRemoved: { readonly cellIds: ReadonlySet<NotebookCellId> };
+  NotebookInvalidated: {};
+  ModuleFinalized: {};
+}>;
+const RunRelease = Data.taggedEnum<RunRelease>();
+
+interface PresentationWork {
+  readonly cell: CellRunRef;
+  readonly action: CellRunPresentationAction;
+  readonly presentation: Option.Option<CellRunPresentation>;
 }
 
 const cellRunRef = (
@@ -91,84 +119,57 @@ const cellRunRef = (
   cellId: NotebookCellId,
 ): CellRunRef => ({ notebookId, cellId });
 
+const isPresentationAction = (
+  action: Action,
+): action is CellRunPresentationAction =>
+  action._tag !== "RecordExecution" && action._tag !== "InvalidateCell";
+
 /**
- * Owns cell-run state, accepted source, batching, interruption, and cleanup.
+ * Owns cell-run state, accepted source, ordering, interruption, and cleanup.
  * Platform resources are private to the supplied presentation Adapter.
  */
 export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
   make: Effect.gen(function* () {
-    const records = MutableHashMap.empty<CellRunRef, CellRunRecord>();
-    const acceptedSourceRef = yield* SubscriptionRef.make(
-      HashMap.empty<
-        NotebookId,
-        HashMap.HashMap<NotebookCellId, Option.Option<string>>
-      >(),
-    );
+    // Entries are stable ordering lanes. Invalidation clears their records but
+    // retains the lane so a reopened notebook queues behind its cleanup.
+    const notebooks = new Map<NotebookId, NotebookRunEntry>();
+    // A revision, rather than a second state registry, gives subscribers an
+    // atomic initial event plus every later staleness change.
+    const revision = yield* SubscriptionRef.make(0);
 
-    const recordAcceptedSource = (cell: CellRunRef, source: string) =>
-      SubscriptionRef.update(acceptedSourceRef, (map) => {
-        const notebook = Option.getOrElse(
-          HashMap.get(map, cell.notebookId),
-          () => HashMap.empty<NotebookCellId, Option.Option<string>>(),
-        );
-        return HashMap.set(
-          map,
-          cell.notebookId,
-          HashMap.set(notebook, cell.cellId, Option.some(source)),
-        );
-      });
+    const makeEntry = (): NotebookRunEntry => ({
+      records: Ref.makeUnsafe(HashMap.empty<NotebookCellId, CellRunRecord>()),
+      serial: Semaphore.makeUnsafe(1),
+    });
 
-    const invalidate = (cell: CellRunRef) =>
-      SubscriptionRef.update(acceptedSourceRef, (map) => {
-        const notebook = Option.getOrElse(
-          HashMap.get(map, cell.notebookId),
-          () => HashMap.empty<NotebookCellId, Option.Option<string>>(),
-        );
-        return HashMap.set(
-          map,
-          cell.notebookId,
-          HashMap.set(notebook, cell.cellId, Option.none()),
-        );
-      });
-
-    const perform = (
-      action: Action,
-      options: {
-        readonly cell: CellRunRef;
-        readonly source: string | undefined;
-        readonly presentation: Option.Option<CellRunPresentation>;
-      },
-    ) => {
-      switch (action._tag) {
-        case "RecordExecution":
-          return options.source === undefined
-            ? Effect.logWarning(
-                "Cell source unavailable; accepted source was not recorded",
-              ).pipe(Effect.annotateLogs({ ...options.cell }))
-            : recordAcceptedSource(options.cell, options.source);
-        case "InvalidateCell":
-          return invalidate(options.cell);
-        default:
-          return Option.match(options.presentation, {
-            onNone: () =>
-              Effect.logWarning(
-                "Cell run has no presentation Adapter; skipping action",
-              ).pipe(
-                Effect.annotateLogs({
-                  ...options.cell,
-                  action: action._tag,
-                }),
-              ),
-            onSome: (presentation) => presentation.apply(options.cell, action),
-          });
-      }
+    const entryFor = (notebookId: NotebookId) => {
+      const existing = notebooks.get(notebookId);
+      if (existing !== undefined) return existing;
+      const entry = makeEntry();
+      notebooks.set(notebookId, entry);
+      return entry;
     };
+
+    const emptyRecord = (cellId: NotebookCellId): CellRunRecord => ({
+      state: makeCellRunState(cellId),
+      acceptedSource: AcceptedSource.Unknown(),
+      presentation: Option.none(),
+    });
+
+    const createdRunIds = (actions: ReadonlyArray<Action>) => {
+      const ids = new Set<CellRunId>();
+      for (const action of actions) {
+        if (action._tag === "CreateExecution") ids.add(action.runId);
+      }
+      return ids;
+    };
+    const noCreatedRuns = new Set<CellRunId>();
 
     const presentationFor = (
       action: Action,
       record: CellRunRecord,
       current: Option.Option<CellRunPresentation>,
-      createdRunIds: ReadonlySet<CellRunId>,
+      created: ReadonlySet<CellRunId>,
     ): Option.Option<CellRunPresentation> => {
       const forRun = (runId: CellRunId) =>
         Option.filter(
@@ -176,9 +177,7 @@ export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
           (binding) => binding.runId === runId,
         ).pipe(
           Option.map((binding) => binding.adapter),
-          Option.orElse(() =>
-            createdRunIds.has(runId) ? current : Option.none(),
-          ),
+          Option.orElse(() => (created.has(runId) ? current : Option.none())),
         );
 
       return Action.$match(action, {
@@ -198,13 +197,13 @@ export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
       state: CellRunState,
       record: CellRunRecord,
       current: CellRunPresentation,
-      createdRunIds: ReadonlySet<CellRunId>,
+      created: ReadonlySet<CellRunId>,
     ): CellRunRecord["presentation"] => {
       if (state.phase._tag !== "Queued" && state.phase._tag !== "Running") {
         return Option.none();
       }
       const runId = state.phase.runId;
-      if (createdRunIds.has(runId)) {
+      if (created.has(runId)) {
         return Option.some({ runId, adapter: current });
       }
       return Option.filter(
@@ -213,192 +212,316 @@ export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
       );
     };
 
-    const interruptRecords = (
-      targets: ReadonlyArray<readonly [CellRunRef, CellRunRecord]>,
-      options: { readonly remove: boolean },
-    ) =>
-      Effect.forEach(
-        targets,
-        Effect.fn(function* ([cell, record]) {
-          const { entry, actions } = step(record.state, Op.Interrupt());
-          if (options.remove) {
-            MutableHashMap.remove(records, cell);
-          } else {
-            MutableHashMap.set(records, cell, {
-              state: entry,
-              presentation: Option.none(),
-            });
-          }
-          yield* Effect.forEach(
-            actions,
-            (action) =>
-              perform(action, {
-                cell,
-                source: undefined,
-                presentation: presentationFor(
-                  action,
-                  record,
-                  Option.map(record.presentation, (binding) => binding.adapter),
-                  new Set(),
-                ),
-              }),
-            { discard: true },
-          );
-        }),
-        { discard: true },
-      );
+    const acceptedSourceAfter = (
+      record: CellRunRecord,
+      actions: ReadonlyArray<Action>,
+      source: string | undefined,
+    ) => {
+      let acceptedSource = record.acceptedSource;
+      let touched = false;
+      let missingSource = false;
 
-    yield* Effect.addFinalizer(() =>
-      interruptRecords(EffectArray.fromIterable(records), { remove: true }),
-    );
-
-    const acceptOperations = (input: CellRunOperationsInput) => {
-      // Every operation advances state. Only presentation writes coalesce:
-      // the newest renderable operation for each cell owns the output write.
-      // A trailing state-only operation therefore cannot suppress output.
-      const renderIndex = new Map<NotebookCellId, number>();
-      for (const [index, operation] of input.operations.entries()) {
-        if (
-          operation.status === "idle" ||
-          operation.output != null ||
-          operation.console != null
-        ) {
-          renderIndex.set(operation.cell_id, index);
-        }
+      for (const action of actions) {
+        Action.$match(action, {
+          RecordExecution: () => {
+            if (source === undefined) {
+              missingSource = true;
+              return;
+            }
+            acceptedSource = AcceptedSource.Accepted({ source });
+            touched = true;
+          },
+          InvalidateCell: () => {
+            acceptedSource = AcceptedSource.Invalidated();
+            touched = true;
+          },
+          CreateExecution: () => {},
+          StartExecution: () => {},
+          EmitOutputs: () => {},
+          FinalizeOutputs: () => {},
+          EndExecution: () => {},
+          ApplyRuntimeError: () => {},
+          ClearRuntimeError: () => {},
+        });
       }
 
-      return Effect.forEach(
-        input.operations,
-        (message, index) => {
-          const cell = cellRunRef(input.notebookId, message.cell_id);
-          const record = Option.getOrElse(
-            MutableHashMap.get(records, cell),
-            () => ({
-              state: makeCellRunState(cell.cellId),
-              presentation: Option.none(),
+      return { acceptedSource, touched, missingSource } as const;
+    };
+
+    const applyPresentation = ({
+      action,
+      cell,
+      presentation,
+    }: PresentationWork) =>
+      Option.match(presentation, {
+        onNone: () =>
+          Effect.logWarning(
+            "Cell run has no presentation Adapter; skipping action",
+          ).pipe(
+            Effect.annotateLogs({
+              ...cell,
+              action: action._tag,
+              ...("runId" in action ? { runId: action.runId } : {}),
             }),
-          );
+          ),
+        onSome: (adapter) =>
+          adapter.apply(cell, action).pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterrupts(cause)
+                ? Effect.failCause(cause)
+                : Effect.logWarning("Failed to present cell run action").pipe(
+                    Effect.annotateLogs({
+                      cause,
+                      ...cell,
+                      action: action._tag,
+                      ...("runId" in action ? { runId: action.runId } : {}),
+                    }),
+                  ),
+            ),
+          ),
+      });
 
-          const next = transitionCell(record.state.state, message);
-          const op = parseOp(next, message, CellRunId(crypto.randomUUID()));
-          if (Option.isNone(op)) {
-            MutableHashMap.set(records, cell, {
-              state: { ...record.state, state: next },
-              presentation: record.presentation,
-            });
-            return Effect.logWarning(
-              "Queued cell-op missing run_id; cannot track execution",
-            ).pipe(
-              Effect.annotateLogs({
-                ...cell,
-                status: message.status,
-              }),
-            );
-          }
+    const acceptOperations = (
+      entry: NotebookRunEntry,
+      input: CellRunOperationsInput,
+    ) =>
+      entry.serial.withPermit(
+        Effect.gen(function* () {
+          let records = yield* Ref.get(entry.records);
 
-          const result = step(record.state, op.value);
-          const createdRunIds = new Set<CellRunId>();
-          for (const action of result.actions) {
-            if (action._tag === "CreateExecution") {
-              createdRunIds.add(action.runId);
+          // Every operation advances state. Only presentation writes coalesce:
+          // the newest renderable operation for each cell owns the output write.
+          // A trailing state-only operation therefore cannot suppress output.
+          const renderIndex = new Map<NotebookCellId, number>();
+          for (const [index, operation] of input.operations.entries()) {
+            if (
+              operation.status === "idle" ||
+              operation.output != null ||
+              operation.console != null
+            ) {
+              renderIndex.set(operation.cell_id, index);
             }
           }
-          MutableHashMap.set(records, cell, {
-            state: result.entry,
-            presentation: presentationAfter(
-              result.entry,
-              record,
-              input.presentation,
-              createdRunIds,
-            ),
-          });
-          const source = input.sourceByCell.get(cell.cellId);
 
-          return Effect.forEach(
-            result.actions,
-            (action) => {
+          for (const [index, message] of input.operations.entries()) {
+            const cell = cellRunRef(input.notebookId, message.cell_id);
+            const record = Option.getOrElse(
+              HashMap.get(records, cell.cellId),
+              () => emptyRecord(cell.cellId),
+            );
+            const next = transitionCell(record.state.state, message);
+            const op = parseOp(next, message, CellRunId(crypto.randomUUID()));
+
+            if (Option.isNone(op)) {
+              records = HashMap.set(records, cell.cellId, {
+                ...record,
+                state: { ...record.state, state: next },
+              });
+              yield* Ref.set(entry.records, records);
+              yield* Effect.logWarning(
+                "Queued cell-op missing run_id; cannot track execution",
+              ).pipe(
+                Effect.annotateLogs({
+                  ...cell,
+                  status: message.status,
+                }),
+              );
+              continue;
+            }
+
+            const result = step(record.state, op.value);
+            const created = createdRunIds(result.actions);
+            const source = input.sourceByCell.get(cell.cellId);
+            const accepted = acceptedSourceAfter(
+              record,
+              result.actions,
+              source,
+            );
+            records = HashMap.set(records, cell.cellId, {
+              state: result.entry,
+              acceptedSource: accepted.acceptedSource,
+              presentation: presentationAfter(
+                result.entry,
+                record,
+                input.presentation,
+                created,
+              ),
+            });
+
+            // Kernel facts become observable before their platform projection.
+            yield* Ref.set(entry.records, records);
+            if (accepted.touched) {
+              yield* SubscriptionRef.update(revision, (value) => value + 1);
+            }
+            if (accepted.missingSource) {
+              yield* Effect.logWarning(
+                "Cell source unavailable; accepted source was not recorded",
+              ).pipe(Effect.annotateLogs({ ...cell }));
+            }
+
+            for (const action of result.actions) {
+              if (!isPresentationAction(action)) continue;
               if (
                 renderIndex.get(cell.cellId) !== index &&
                 (action._tag === "EmitOutputs" ||
                   action._tag === "FinalizeOutputs")
               ) {
-                return Effect.void;
+                continue;
               }
-              return perform(action, {
+              yield* applyPresentation({
                 cell,
-                source,
+                action,
                 presentation: presentationFor(
                   action,
                   record,
                   Option.some(input.presentation),
-                  createdRunIds,
+                  created,
                 ),
               });
-            },
-            { discard: true },
-          );
-        },
-        { discard: true },
+            }
+          }
+        }),
       );
+
+    const releaseRuns = (
+      notebookId: NotebookId,
+      entry: NotebookRunEntry,
+      release: RunRelease,
+    ) =>
+      entry.serial.withPermit(
+        Effect.gen(function* () {
+          const behavior = RunRelease.$match(release, {
+            RunsInterrupted: () => ({
+              target: (_cellId: NotebookCellId) => true,
+              remove: false,
+              notify: false,
+            }),
+            CellsRemoved: ({ cellIds }) => ({
+              target: (cellId: NotebookCellId) => cellIds.has(cellId),
+              remove: true,
+              notify: true,
+            }),
+            NotebookInvalidated: () => ({
+              target: (_cellId: NotebookCellId) => true,
+              remove: true,
+              notify: true,
+            }),
+            ModuleFinalized: () => ({
+              target: (_cellId: NotebookCellId) => true,
+              remove: true,
+              notify: false,
+            }),
+          });
+
+          let records = yield* Ref.get(entry.records);
+          const work: PresentationWork[] = [];
+          let changed = false;
+
+          for (const [cellId, record] of records) {
+            if (!behavior.target(cellId)) continue;
+            changed = true;
+            const cell = cellRunRef(notebookId, cellId);
+            const result = step(record.state, Op.Interrupt());
+            const current = Option.map(
+              record.presentation,
+              (binding) => binding.adapter,
+            );
+            for (const action of result.actions) {
+              if (!isPresentationAction(action)) continue;
+              work.push({
+                cell,
+                action,
+                presentation: presentationFor(
+                  action,
+                  record,
+                  current,
+                  noCreatedRuns,
+                ),
+              });
+            }
+            records = behavior.remove
+              ? HashMap.remove(records, cellId)
+              : HashMap.set(records, cellId, {
+                  ...record,
+                  state: result.entry,
+                  presentation: Option.none(),
+                });
+          }
+
+          yield* Ref.set(entry.records, records);
+          if (changed && behavior.notify) {
+            yield* SubscriptionRef.update(revision, (value) => value + 1);
+          }
+          yield* Effect.forEach(work, applyPresentation, { discard: true });
+        }),
+      );
+
+    yield* Effect.addFinalizer(() =>
+      Effect.forEach(
+        Array.from(notebooks),
+        ([notebookId, entry]) =>
+          releaseRuns(notebookId, entry, RunRelease.ModuleFinalized()),
+        { discard: true },
+      ),
+    );
+
+    const withExistingEntry = (
+      notebookId: NotebookId,
+      use: (entry: NotebookRunEntry) => Effect.Effect<void>,
+    ) => {
+      const entry = notebooks.get(notebookId);
+      return entry === undefined ? Effect.void : use(entry);
     };
 
     return {
       isStale: (cell: CellRunSnapshot) =>
-        SubscriptionRef.get(acceptedSourceRef).pipe(
-          Effect.map((map) =>
-            Option.match(
-              HashMap.get(map, cell.notebookId).pipe(
-                Option.flatMap(HashMap.get(cell.cellId)),
-              ),
-              {
+        Effect.suspend(() => {
+          const entry = notebooks.get(cell.notebookId);
+          if (entry === undefined) return Effect.succeed(false);
+          return Ref.get(entry.records).pipe(
+            Effect.map((records) =>
+              Option.match(HashMap.get(records, cell.cellId), {
                 onNone: () => false,
-                onSome: (acceptedSource) =>
-                  Option.match(acceptedSource, {
-                    onNone: () => true,
-                    onSome: (source) => source !== cell.source,
+                onSome: (record) =>
+                  AcceptedSource.$match(record.acceptedSource, {
+                    Unknown: () => false,
+                    Invalidated: () => true,
+                    Accepted: ({ source }) => source !== cell.source,
                   }),
-              },
+              }),
             ),
-          ),
-        ),
+          );
+        }),
       get changes(): Stream.Stream<void> {
-        return Stream.map(
-          SubscriptionRef.changes(acceptedSourceRef),
-          constVoid,
-        );
+        return Stream.map(SubscriptionRef.changes(revision), () => undefined);
       },
       accept: (input: CellRunInput) =>
-        CellRunInput.$match(input, {
-          Operations: acceptOperations,
-          Interrupted: ({ notebookId }) =>
-            interruptRecords(
-              EffectArray.fromIterable(records).filter(
-                ([cell]) => cell.notebookId === notebookId,
+        Effect.suspend(() =>
+          CellRunInput.$match(input, {
+            Operations: (operations) =>
+              acceptOperations(entryFor(operations.notebookId), operations),
+            Interrupted: ({ notebookId }) =>
+              withExistingEntry(notebookId, (entry) =>
+                releaseRuns(notebookId, entry, RunRelease.RunsInterrupted()),
               ),
-              { remove: false },
-            ),
-          CellsRemoved: ({ notebookId, cellIds }) => {
-            const removed = new Set(cellIds);
-            const targets = EffectArray.fromIterable(records).filter(
-              ([cell]) =>
-                cell.notebookId === notebookId && removed.has(cell.cellId),
-            );
-            return Effect.all([
-              interruptRecords(targets, { remove: true }),
-              SubscriptionRef.update(acceptedSourceRef, (map) => {
-                const notebook = HashMap.get(map, notebookId);
-                if (Option.isNone(notebook)) return map;
-                const updated = cellIds.reduce(
-                  (cells, cellId) => HashMap.remove(cells, cellId),
-                  notebook.value,
-                );
-                return HashMap.isEmpty(updated)
-                  ? HashMap.remove(map, notebookId)
-                  : HashMap.set(map, notebookId, updated);
-              }),
-            ]).pipe(Effect.asVoid);
-          },
-        }),
+            CellsRemoved: ({ notebookId, cellIds }) =>
+              withExistingEntry(notebookId, (entry) =>
+                releaseRuns(
+                  notebookId,
+                  entry,
+                  RunRelease.CellsRemoved({ cellIds: new Set(cellIds) }),
+                ),
+              ),
+            Invalidated: ({ notebookId }) =>
+              withExistingEntry(notebookId, (entry) =>
+                releaseRuns(
+                  notebookId,
+                  entry,
+                  RunRelease.NotebookInvalidated(),
+                ),
+              ),
+          }),
+        ),
     };
   }),
 }) {

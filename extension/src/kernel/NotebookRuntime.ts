@@ -435,6 +435,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         code,
         Effect.fn("NotebookRuntime.releaseNotebook")(function* (notebookId) {
           notebooks.delete(notebookId);
+          yield* executions.accept(CellRunInput.Invalidated({ notebookId }));
           yield* variables.clearNotebook(notebookId);
           yield* datasources.clearNotebook(notebookId);
           yield* updateKernelContext();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import { Effect, Layer, Option, Ref } from "effect";
+import { Effect, Fiber, Latch, Layer, Option, Ref } from "effect";
 import { TestClock } from "effect/testing";
 import type * as vscode from "vscode";
 
@@ -26,6 +26,7 @@ import {
 } from "../../kernel/VsCodeCellRunPresentation.ts";
 import {
   cellId,
+  notebookId,
   UNSAFE_castForNegativeTest,
 } from "../../lib/__tests__/branded.ts";
 import { VsCode } from "../../platform/VsCode.ts";
@@ -33,6 +34,7 @@ import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
   type NotebookCellId,
+  type NotebookId,
 } from "../../schemas/MarimoNotebookDocument.ts";
 import type {
   CellOperationNotification,
@@ -1366,6 +1368,212 @@ it.effect(
       ]);
     }).pipe(Effect.provide(ctx.layer));
   }),
+);
+
+it.effect("serializes one notebook without blocking another", () =>
+  Effect.gen(function* () {
+    const cellRuns = yield* CellRuns;
+    const firstNotebook = notebookId("first-notebook");
+    const secondNotebook = notebookId("second-notebook");
+    const cid = cellId("cell-1");
+    const firstEntered = yield* Latch.make();
+    const releaseFirst = yield* Latch.make();
+    const sameNotebookStarted = yield* Latch.make();
+    const otherNotebookStarted = yield* Latch.make();
+
+    const accept = (
+      notebookId: NotebookId,
+      runId: string,
+      presentation: CellRunPresentation,
+    ) =>
+      cellRuns.accept(
+        CellRunInput.Operations({
+          notebookId,
+          operations: [
+            {
+              op: "cell-op",
+              cell_id: cid,
+              status: "queued",
+              run_id: runId,
+            },
+          ],
+          sourceByCell: new Map([[cid, "x = 1"]]),
+          presentation,
+        }),
+      );
+
+    const first = yield* Effect.forkChild(
+      accept(firstNotebook, "run-1", {
+        apply: (_cell, action) =>
+          action._tag === "CreateExecution"
+            ? firstEntered.open.pipe(Effect.andThen(releaseFirst.await))
+            : Effect.void,
+      }),
+    );
+    yield* firstEntered.await;
+
+    const sameNotebook = yield* Effect.forkChild(
+      accept(firstNotebook, "run-2", {
+        apply: (_cell, action) =>
+          action._tag === "CreateExecution"
+            ? sameNotebookStarted.open.pipe(Effect.asVoid)
+            : Effect.void,
+      }),
+    );
+    yield* TestClock.adjust("1 millis");
+    expect(sameNotebookStarted.isOpen()).toBe(false);
+
+    yield* accept(secondNotebook, "other-run", {
+      apply: (_cell, action) =>
+        action._tag === "CreateExecution"
+          ? otherNotebookStarted.open.pipe(Effect.asVoid)
+          : Effect.void,
+    });
+    expect(otherNotebookStarted.isOpen()).toBe(true);
+
+    // Domain state commits before the blocked presentation completes.
+    expect(
+      yield* cellRuns.isStale({
+        notebookId: firstNotebook,
+        cellId: cid,
+        source: "x = 2",
+      }),
+    ).toBe(true);
+
+    yield* releaseFirst.open;
+    yield* Fiber.join(first);
+    yield* Fiber.join(sameNotebook);
+    expect(sameNotebookStarted.isOpen()).toBe(true);
+  }).pipe(Effect.provide(CellRuns.layer)),
+);
+
+it.effect("ends and forgets runs when a notebook is invalidated", () =>
+  Effect.gen(function* () {
+    const cellRuns = yield* CellRuns;
+    const notebook = notebookId("notebook");
+    const cid = cellId("cell-1");
+    const actions = yield* Ref.make<ReadonlyArray<CellRunPresentationAction>>(
+      [],
+    );
+    const presentation: CellRunPresentation = {
+      apply: (_cell, action) =>
+        Ref.update(actions, (current) => [...current, action]),
+    };
+
+    yield* cellRuns.accept(
+      CellRunInput.Operations({
+        notebookId: notebook,
+        operations: [
+          {
+            op: "cell-op",
+            cell_id: cid,
+            status: "queued",
+            run_id: "run-1",
+          },
+        ],
+        sourceByCell: new Map([[cid, "x = 1"]]),
+        presentation,
+      }),
+    );
+    expect(
+      yield* cellRuns.isStale({
+        notebookId: notebook,
+        cellId: cid,
+        source: "x = 2",
+      }),
+    ).toBe(true);
+
+    yield* cellRuns.accept(CellRunInput.Invalidated({ notebookId: notebook }));
+
+    expect(yield* Ref.get(actions)).toContainEqual(
+      Action.EndExecution({
+        runId: CellRunId("run-1"),
+        success: false,
+        endTime: undefined,
+      }),
+    );
+    expect(
+      yield* cellRuns.isStale({
+        notebookId: notebook,
+        cellId: cid,
+        source: "x = 2",
+      }),
+    ).toBe(false);
+  }).pipe(Effect.provide(CellRuns.layer)),
+);
+
+it.effect("queues a reopened notebook behind invalidation", () =>
+  Effect.gen(function* () {
+    const cellRuns = yield* CellRuns;
+    const notebook = notebookId("notebook");
+    const cid = cellId("cell-1");
+    const cleanupEntered = yield* Latch.make();
+    const releaseCleanup = yield* Latch.make();
+    const reopenedCreated = yield* Latch.make();
+
+    yield* cellRuns.accept(
+      CellRunInput.Operations({
+        notebookId: notebook,
+        operations: [
+          {
+            op: "cell-op",
+            cell_id: cid,
+            status: "queued",
+            run_id: "old-run",
+          },
+        ],
+        sourceByCell: new Map([[cid, "x = 1"]]),
+        presentation: {
+          apply: (_cell, action) =>
+            action._tag === "EndExecution"
+              ? cleanupEntered.open.pipe(Effect.andThen(releaseCleanup.await))
+              : Effect.void,
+        },
+      }),
+    );
+
+    const invalidation = yield* Effect.forkChild(
+      cellRuns.accept(CellRunInput.Invalidated({ notebookId: notebook })),
+    );
+    yield* cleanupEntered.await;
+
+    const reopened = yield* Effect.forkChild(
+      cellRuns.accept(
+        CellRunInput.Operations({
+          notebookId: notebook,
+          operations: [
+            {
+              op: "cell-op",
+              cell_id: cid,
+              status: "queued",
+              run_id: "new-run",
+            },
+          ],
+          sourceByCell: new Map([[cid, "x = 2"]]),
+          presentation: {
+            apply: (_cell, action) =>
+              action._tag === "CreateExecution"
+                ? reopenedCreated.open.pipe(Effect.asVoid)
+                : Effect.void,
+          },
+        }),
+      ),
+    );
+    yield* TestClock.adjust("1 millis");
+    expect(reopenedCreated.isOpen()).toBe(false);
+
+    yield* releaseCleanup.open;
+    yield* Fiber.join(invalidation);
+    yield* Fiber.join(reopened);
+    expect(reopenedCreated.isOpen()).toBe(true);
+    expect(
+      yield* cellRuns.isStale({
+        notebookId: notebook,
+        cellId: cid,
+        source: "x = 3",
+      }),
+    ).toBe(true);
+  }).pipe(Effect.provide(CellRuns.layer)),
 );
 
 it.effect(
