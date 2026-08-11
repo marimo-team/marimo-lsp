@@ -20,7 +20,7 @@ interface VariableTreeItem {
  * - When variables change: add/remove variables from the view
  * - When values change: update individual variable entries
  */
-export const VariablesViewLive = Layer.scopedDiscard(
+export const VariablesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const treeView = yield* TreeView;
     const variablesService = yield* VariablesService;
@@ -53,7 +53,7 @@ export const VariablesViewLive = Layer.scopedDiscard(
 
     // Helper to rebuild the variables list from current state
     const refreshVariables = Effect.fn(function* () {
-      const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
+      const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri;
 
       yield* Effect.logDebug("Refreshing variables").pipe(
         Effect.annotateLogs({
@@ -105,7 +105,7 @@ export const VariablesViewLive = Layer.scopedDiscard(
 
     // Subscribe to active notebook changes
     yield* Effect.forkScoped(
-      editorRegistry.streamActiveNotebookChanges().pipe(
+      editorRegistry.streamActiveNotebookChanges.pipe(
         Stream.runForEach(() => {
           return refreshVariables();
         }),
@@ -114,18 +114,18 @@ export const VariablesViewLive = Layer.scopedDiscard(
 
     // Subscribe to variable declarations changes
     yield* Effect.forkScoped(
-      variablesService
-        .streamVariablesChanges()
-        .pipe(Stream.runForEach(() => refreshVariables())),
+      variablesService.streamVariablesChanges.pipe(
+        Stream.runForEach(() => refreshVariables()),
+      ),
     );
 
     // Subscribe to variable values changes
     yield* Effect.forkScoped(
-      variablesService.streamVariableValuesChanges().pipe(
+      variablesService.streamVariableValuesChanges.pipe(
         Stream.runForEach(
           Effect.fn(function* (valuesMap) {
             const activeNotebookUri =
-              yield* editorRegistry.getActiveNotebookUri();
+              yield* editorRegistry.getActiveNotebookUri;
 
             if (Option.isNone(activeNotebookUri)) {
               return;

@@ -5,7 +5,7 @@ import { VsCode } from "../../platform/VsCode.ts";
 import { NotebookIdFromString } from "../../schemas/MarimoNotebookDocument.ts";
 import { SessionsService } from "./SessionsService.ts";
 
-const decodeNotebookId = Schema.decodeUnknown(NotebookIdFromString);
+const decodeNotebookId = Schema.decodeUnknownEffect(NotebookIdFromString);
 
 function descendantSuffix(
   root: vscode.Uri,
@@ -54,20 +54,20 @@ export function containsNotebookUri(
 }
 
 /** Keeps live sessions aligned with notebook file rename and deletion events. */
-export const SessionFileLifecycleLive = Layer.scopedDiscard(
+export const SessionFileLifecycleLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const sessions = yield* SessionsService;
     const deletedWhileOpen = new Set<string>();
 
     yield* Effect.forkScoped(
-      code.workspace.fileRenames().pipe(
+      code.workspace.fileRenames.pipe(
         Stream.runForEach((event) =>
           Effect.forEach(
             event.files,
             ({ oldUri, newUri }) =>
               Effect.gen(function* () {
-                const live = yield* sessions.get();
+                const live = yield* sessions.get;
                 for (const session of live) {
                   const rebased = rebaseNotebookUri(
                     code.Uri.parse(session.notebookUri),
@@ -89,14 +89,14 @@ export const SessionFileLifecycleLive = Layer.scopedDiscard(
     );
 
     yield* Effect.forkScoped(
-      code.workspace.fileDeletes().pipe(
+      code.workspace.fileDeletes.pipe(
         Stream.runForEach((event) =>
           Effect.forEach(
             event.files,
             (uri) =>
               Effect.gen(function* () {
-                const live = yield* sessions.get();
-                const open = yield* code.workspace.getNotebookDocuments();
+                const live = yield* sessions.get;
+                const open = yield* code.workspace.getNotebookDocuments;
                 for (const session of live) {
                   if (
                     !containsNotebookUri(
@@ -125,7 +125,7 @@ export const SessionFileLifecycleLive = Layer.scopedDiscard(
     );
 
     yield* Effect.forkScoped(
-      code.workspace.notebookDocumentClosed().pipe(
+      code.workspace.notebookDocumentClosed.pipe(
         Stream.runForEach((document) =>
           Effect.gen(function* () {
             const uri = document.uri.toString();

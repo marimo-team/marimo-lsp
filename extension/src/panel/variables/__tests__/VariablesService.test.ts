@@ -1,5 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, Stream, TestClock } from "effect";
+import { Effect, Layer, Option, Ref, Stream } from "effect";
+import { TestClock } from "effect/testing";
 
 import { notebookId } from "../../../lib/__tests__/branded.ts";
 import type {
@@ -10,9 +11,7 @@ import { VariablesService } from "../VariablesService.ts";
 
 const withTestCtx = () =>
   Effect.sync(() => {
-    const layer = Layer.empty.pipe(
-      Layer.provideMerge(VariablesService.layer),
-    );
+    const layer = Layer.empty.pipe(Layer.provideMerge(VariablesService.layer));
     return { layer };
   });
 
@@ -245,8 +244,8 @@ it.effect(
       const collected = yield* Ref.make(0);
 
       // Subscribe to stream and count changes
-      yield* Effect.fork(
-        service.streamVariablesChanges().pipe(
+      yield* Effect.forkChild(
+        service.streamVariablesChanges.pipe(
           Stream.mapEffect(() => Ref.update(collected, (n) => n + 1)),
           Stream.runDrain,
         ),
@@ -302,8 +301,8 @@ it.effect(
       const collected = yield* Ref.make(0);
 
       // Subscribe to stream and count changes
-      yield* Effect.fork(
-        service.streamVariableValuesChanges().pipe(
+      yield* Effect.forkChild(
+        service.streamVariableValuesChanges.pipe(
           Stream.mapEffect(() => Ref.update(collected, (n) => n + 1)),
           Stream.runDrain,
         ),

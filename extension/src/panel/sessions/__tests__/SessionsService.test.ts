@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Either, Layer } from "effect";
+import { Effect, Layer, Result } from "effect";
 
 import { makeTestMarimoClient } from "../../../__tests__/__utils__/TestMarimoClient.ts";
 import { notebookId } from "../../../lib/__tests__/branded.ts";
@@ -43,7 +43,7 @@ it.effect(
 
     const live = yield* Effect.gen(function* () {
       const sessions = yield* SessionsService;
-      return yield* sessions.get();
+      return yield* sessions.get;
     }).pipe(Effect.provide(makeLayer(recorded)));
 
     expect(live).toEqual(SNAPSHOT.sessions);
@@ -90,9 +90,9 @@ it.effect(
       return yield* Effect.result(sessions.restart(NOTEBOOK_URI));
     }).pipe(Effect.provide(makeLayer(recorded, { sessions: [] })));
 
-    expect(Either.isLeft(result)).toBe(true);
-    if (Either.isLeft(result)) {
-      expect(result.left).toEqual(
+    expect(Result.isFailure(result)).toBe(true);
+    if (Result.isFailure(result)) {
+      expect(result.failure).toEqual(
         new SessionNotFoundError({ notebookUri: NOTEBOOK_URI }),
       );
     }

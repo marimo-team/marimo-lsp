@@ -1,9 +1,11 @@
 import {
+  Context,
   Data,
   Deferred,
   Effect,
   Fiber,
   HashMap,
+  Layer,
   SubscriptionRef,
 } from "effect";
 
@@ -65,7 +67,7 @@ export class DatasourceExpansionError extends Data.TaggedError(
 interface PendingExpansion {
   readonly notebookUri: NotebookId;
   readonly deferred: Deferred.Deferred<void, DatasourceExpansionError>;
-  readonly fiber: Fiber.RuntimeFiber<void, DatasourceExpansionError>;
+  readonly fiber: Fiber.Fiber<void, DatasourceExpansionError>;
 }
 
 const EXPANSION_TIMEOUT = "30 seconds";
@@ -80,10 +82,10 @@ const EXPANSION_TIMEOUT = "30 seconds";
  * Uses SubscriptionRef for reactive state management.
  * Converts list-based data to Maps for efficient lookups.
  */
-export class DatasourcesService extends Effect.Service<DatasourcesService>()(
+export class DatasourcesService extends Context.Service<DatasourcesService>()(
   "DatasourcesService",
   {
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
       const serviceScope = yield* Effect.scope;
 
@@ -121,12 +123,14 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         const requestId = crypto.randomUUID();
         const deferred = yield* Deferred.make<void, DatasourceExpansionError>();
         const fiber = yield* Deferred.await(deferred).pipe(
-          Effect.timeoutFail({
+          Effect.timeoutOrElse({
             duration: EXPANSION_TIMEOUT,
-            onTimeout: () =>
-              new DatasourceExpansionError({
-                message: "Timed out while loading datasource metadata",
-              }),
+            orElse: () =>
+              Effect.fail(
+                new DatasourceExpansionError({
+                  message: "Timed out while loading datasource metadata",
+                }),
+              ),
           }),
           Effect.ensuring(
             Effect.sync(() => {
@@ -149,7 +153,7 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
         pendingByRequest.set(requestId, pending);
 
         yield* send(requestId).pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             Deferred.fail(
               deferred,
               new DatasourceExpansionError({ message: String(cause) }),
@@ -580,19 +584,17 @@ export class DatasourcesService extends Effect.Service<DatasourcesService>()(
          *
          * Emits the current value on subscription, then all subsequent changes.
          */
-        streamConnectionsChanges() {
-          return connectionsRef.changes;
-        },
+        streamConnectionsChanges: SubscriptionRef.changes(connectionsRef),
 
         /**
          * Stream of dataset changes.
          *
          * Emits the current value on subscription, then all subsequent changes.
          */
-        streamDatasetsChanges() {
-          return datasetsRef.changes;
-        },
+        streamDatasetsChanges: SubscriptionRef.changes(datasetsRef),
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make);
+}

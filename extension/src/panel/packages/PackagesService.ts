@@ -1,4 +1,11 @@
-import { Effect, HashMap, Option, SubscriptionRef } from "effect";
+import {
+  Context,
+  Effect,
+  HashMap,
+  Layer,
+  Option,
+  SubscriptionRef,
+} from "effect";
 
 import {
   type NotebookController,
@@ -39,10 +46,10 @@ interface DependencyTreeState {
  * Stores dependency trees (NotebookUri -> DependencyTreeState) in a
  * SubscriptionRef for reactive state management.
  */
-export class PackagesService extends Effect.Service<PackagesService>()(
+export class PackagesService extends Context.Service<PackagesService>()(
   "PackagesService",
   {
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
       const notebooks = yield* NotebookRuntime;
       const editors = yield* NotebookEditorRegistry;
@@ -111,7 +118,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
             // Get the active controller; its `target` describes how to ask
             // the server about the env (`venv` with an executable, or `script`).
             const activeNotebook = Option.flatMap(
-              yield* editors.getActiveNotebookEditor(),
+              yield* editors.getActiveNotebookEditor,
               (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
             );
             if (Option.isNone(activeNotebook)) {
@@ -119,9 +126,9 @@ export class PackagesService extends Effect.Service<PackagesService>()(
               return null;
             }
 
-            const activeController = yield* notebooks
-              .forNotebook(activeNotebook.value.id)
-              .getController();
+            const activeController = yield* notebooks.forNotebook(
+              activeNotebook.value.id,
+            ).getController;
             if (Option.isNone(activeController)) {
               yield* updateIfCurrent((map) =>
                 HashMap.set(map, notebookUri, {
@@ -165,7 +172,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                     Effect.annotateLogs({ notebookUri, result }),
                   ),
                 ),
-                Effect.catchAll((error) =>
+                Effect.catch((error) =>
                   Effect.gen(function* () {
                     const errorMsg = String(error);
 
@@ -203,7 +210,7 @@ export class PackagesService extends Effect.Service<PackagesService>()(
                         inner: {},
                       })
                       .pipe(
-                        Effect.catchAll((fallbackError) =>
+                        Effect.catch((fallbackError) =>
                           Effect.gen(function* () {
                             const fallbackErrorMsg = String(fallbackError);
                             yield* updateIfCurrent((map) =>
@@ -273,10 +280,11 @@ export class PackagesService extends Effect.Service<PackagesService>()(
          *
          * Emits the current value on subscription, then all subsequent changes.
          */
-        streamDependencyTreeChanges() {
-          return dependencyTreesRef.changes;
-        },
+        streamDependencyTreeChanges:
+          SubscriptionRef.changes(dependencyTreesRef),
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make);
+}

@@ -140,7 +140,7 @@ const itemId = (item: DatasourceTreeItem): string => {
  * Displays recursive SQL schemas and loads deferred schemas/tables when their
  * parent is expanded. In-memory datasets remain an eager synthetic branch.
  */
-export const DatasourcesViewLive = Layer.scopedDiscard(
+export const DatasourcesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const treeView = yield* TreeView;
     const datasources = yield* DatasourcesService;
@@ -156,7 +156,7 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
 
     const ignoreExpansionError = <A, E>(effect: Effect.Effect<A, E>) =>
       effect.pipe(
-        Effect.catchAllCause((cause) =>
+        Effect.catchCause((cause) =>
           Effect.logWarning("Failed to expand datasource tree").pipe(
             Effect.annotateLogs({ cause }),
           ),
@@ -265,7 +265,7 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
       getChildren: (element?: DatasourceTreeItem) =>
         Effect.gen(function* () {
           if (element === undefined) {
-            const active = yield* editors.getActiveNotebookUri();
+            const active = yield* editors.getActiveNotebookUri;
             if (Option.isNone(active)) return [];
             const notebookUri = active.value;
             const connections = yield* datasources.getConnections(notebookUri);
@@ -399,19 +399,19 @@ export const DatasourcesViewLive = Layer.scopedDiscard(
     });
 
     yield* Effect.forkScoped(
-      editors
-        .streamActiveNotebookChanges()
-        .pipe(Stream.runForEach(() => provider.refresh())),
+      editors.streamActiveNotebookChanges.pipe(
+        Stream.runForEach(() => provider.refresh()),
+      ),
     );
     yield* Effect.forkScoped(
-      datasources
-        .streamConnectionsChanges()
-        .pipe(Stream.runForEach(() => provider.refresh())),
+      datasources.streamConnectionsChanges.pipe(
+        Stream.runForEach(() => provider.refresh()),
+      ),
     );
     yield* Effect.forkScoped(
-      datasources
-        .streamDatasetsChanges()
-        .pipe(Stream.runForEach(() => provider.refresh())),
+      datasources.streamDatasetsChanges.pipe(
+        Stream.runForEach(() => provider.refresh()),
+      ),
     );
 
     yield* Effect.logDebug("Datasources view initialized");
