@@ -24,9 +24,9 @@ export const ThemeSyncLive = Layer.effectDiscard(
     const marimo = yield* MarimoClient;
     const editorRegistry = yield* NotebookEditorRegistry;
 
-    // Funnel both sources into one queue through per-source fibers (rather
-    // than `Stream.zipLatest`, whose inner subscriptions only attach several
-    // scheduler ticks after the layer is built) so no update is missed.
+    // Each source has its own fiber that writes to one queue. A
+    // `Stream.zipLatest` attaches its inner subscriptions too late and loses
+    // updates.
     const updates = yield* Queue.unbounded<ThemeSyncUpdate>();
     yield* Effect.forkScoped(
       code.window.colorThemeChanges.pipe(
@@ -58,28 +58,26 @@ export const ThemeSyncLive = Layer.effectDiscard(
       );
     });
 
-    // A single consumer tracks the latest theme and whether a marimo notebook
-    // is active: theme changes re-sync an active session, and a notebook
-    // becoming active receives the current theme.
+    // One consumer keeps the latest theme. It sends the theme again when a
+    // notebook becomes active.
     yield* Effect.forkScoped(
       Effect.gen(function* () {
         let theme = Option.none<"light" | "dark">();
-        let hasActiveNotebook = false;
         yield* Stream.fromQueue(updates).pipe(
           Stream.runForEach((update) =>
             ThemeSyncUpdate.$match(update, {
+              // `set-display-theme` updates all running sessions and has no
+              // notebook URI. Send it even if no notebook is focused.
               Theme: (updated) => {
                 theme = Option.some(updated.theme);
-                return hasActiveNotebook
-                  ? sendTheme(updated.theme)
-                  : Effect.void;
+                return sendTheme(updated.theme);
               },
-              ActiveNotebook: ({ notebook }) => {
-                hasActiveNotebook = Option.isSome(notebook);
-                return hasActiveNotebook && Option.isSome(theme)
+              // A new active notebook can have a session without the current
+              // theme. Send the theme again.
+              ActiveNotebook: ({ notebook }) =>
+                Option.isSome(notebook) && Option.isSome(theme)
                   ? sendTheme(theme.value)
-                  : Effect.void;
-              },
+                  : Effect.void,
             }),
           ),
         );

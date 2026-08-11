@@ -88,11 +88,40 @@ describe("ThemeSync", () => {
             {
               "method": "set-display-theme",
               "params": {
+                "theme": "light",
+              },
+            },
+            {
+              "method": "set-display-theme",
+              "params": {
                 "theme": "dark",
               },
             },
           ]
         `);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "sends set-display-theme while no marimo notebook is active",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx("light");
+
+      yield* Effect.gen(function* () {
+        // The focus is on a text editor. The registry has no notebook.
+        yield* ctx.vscode.setActiveNotebookEditor(Option.none());
+        yield* TestClock.adjust("1 millis");
+
+        yield* SubscriptionRef.set(ctx.themeRef, "dark");
+        yield* TestClock.adjust("1 millis");
+
+        // set-display-theme updates all running sessions. The kernels must
+        // get the change when no notebook is focused.
+        expect(yield* Ref.get(ctx.executions)).toContainEqual({
+          method: "set-display-theme",
+          params: { theme: "dark" },
+        });
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -108,6 +137,12 @@ describe("ThemeSync", () => {
 
         expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
           [
+            {
+              "method": "set-display-theme",
+              "params": {
+                "theme": "dark",
+              },
+            },
             {
               "method": "set-display-theme",
               "params": {
