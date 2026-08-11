@@ -607,7 +607,7 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
         },
         getRuntimeSession(notebookId: NotebookId) {
           return Effect.sync(() =>
-            Option.fromNullable(runtimeSessions.get(notebookId)),
+            Option.fromNullishOr(runtimeSessions.get(notebookId)),
           );
         },
         getRuntimeSessions() {
@@ -627,7 +627,7 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
             if (Option.isNone(activeNotebook)) {
               return Option.none<RuntimeSession>();
             }
-            return Option.fromNullable(
+            return Option.fromNullishOr(
               runtimeSessions.get(activeNotebook.value.id),
             );
           });

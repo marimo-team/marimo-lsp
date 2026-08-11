@@ -186,7 +186,7 @@ export class MarimoNotebookCell {
   get id() {
     return this.metadata.pipe(
       Option.flatMap((meta) =>
-        Option.fromNullable(meta.marimoRuntime.stableId),
+        Option.fromNullishOr(meta.marimoRuntime.stableId),
       ),
       Option.map((stableId) => NotebookCellId(stableId)),
     );
@@ -259,7 +259,7 @@ export class MarimoNotebookCell {
   get sourceProjections() {
     return this.metadata.pipe(
       Option.flatMap((meta) =>
-        Option.fromNullable(meta.marimo.sourceProjections),
+        Option.fromNullishOr(meta.marimo.sourceProjections),
       ),
     );
   }
@@ -274,7 +274,7 @@ export class MarimoNotebookCell {
   get stableId() {
     return this.metadata.pipe(
       Option.flatMap((meta) =>
-        Option.fromNullable(meta.marimoRuntime.stableId),
+        Option.fromNullishOr(meta.marimoRuntime.stableId),
       ),
     );
   }
@@ -384,7 +384,7 @@ export class MarimoNotebookDocument {
 
   get header() {
     return this.#meta.pipe(
-      Option.flatMap((meta) => Option.fromNullable(meta.header)),
+      Option.flatMap((meta) => Option.fromNullishOr(meta.header)),
       Option.getOrElse(() => ""),
     );
   }

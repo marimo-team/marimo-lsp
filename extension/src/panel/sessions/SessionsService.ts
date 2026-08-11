@@ -63,7 +63,7 @@ export class SessionsService extends Effect.Service<SessionsService>()(
 
       const find = (notebookUri: NotebookId) =>
         Effect.map(SubscriptionRef.get(sessions), (items) =>
-          Option.fromNullable(
+          Option.fromNullishOr(
             items.find((item) => item.notebookUri === notebookUri),
           ),
         );

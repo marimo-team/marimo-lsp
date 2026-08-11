@@ -249,7 +249,7 @@ const resolveTyBinary = Effect.fn(function* () {
 
   const tyExtConfiguredPath = Effect.gen(function* () {
     const tyExtConfig = yield* code.workspace.getConfiguration("ty");
-    return Option.fromNullable(tyExtConfig.get<string[]>("path")).pipe(
+    return Option.fromNullishOr(tyExtConfig.get<string[]>("path")).pipe(
       Option.filter((p) => p.length > 0),
       Option.map((p) => p[0]),
     );

@@ -205,7 +205,7 @@ it.effect(
           const notebookEdits = getNotebookEdits(edit, editor.notebook.uri);
           return Ref.set(
             updatedMetadata,
-            Option.fromNullable(notebookEdits[0]?.newNotebookMetadata),
+            Option.fromNullishOr(notebookEdits[0]?.newNotebookMetadata),
           ).pipe(Effect.as(true));
         },
       },

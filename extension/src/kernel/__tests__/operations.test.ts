@@ -42,7 +42,7 @@ const withTestCtx = Effect.fn(function* (options: {
         Ref.update(prompts, (count) => count + 1).pipe(
           Effect.as(
             options.installAll
-              ? Option.fromNullable(messageOptions.items?.[0])
+              ? Option.fromNullishOr(messageOptions.items?.[0])
               : Option.none(),
           ),
         ),

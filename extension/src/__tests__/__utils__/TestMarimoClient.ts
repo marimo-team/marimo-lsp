@@ -64,7 +64,7 @@ export function makeTestNotebookRuntime(options: Options = {}) {
             id: notebookId,
             getController: () =>
               Effect.sync(() =>
-                Option.fromNullable(controllers.get(notebookId)),
+                Option.fromNullishOr(controllers.get(notebookId)),
               ),
             executeCells: (inner, executable) =>
               client.executeCells({
@@ -105,11 +105,11 @@ export function makeTestNotebookRuntime(options: Options = {}) {
             }),
           controllerChanges: () => Stream.fromPubSub(selections),
           getRuntimeSession: () =>
-            Effect.succeed(Option.fromNullable(options.runtimeSession)),
+            Effect.succeed(Option.fromNullishOr(options.runtimeSession)),
           getRuntimeSessions: () =>
             Effect.succeed([...(options.runtimeSessions ?? [])]),
           activeRuntimeSession: () =>
-            Effect.succeed(Option.fromNullable(options.runtimeSession)),
+            Effect.succeed(Option.fromNullishOr(options.runtimeSession)),
           forNotebook,
         });
       }),

@@ -133,7 +133,7 @@ const notebookForUri = Effect.fn(function* (uri: vscode.Uri) {
   const editor = (yield* code.window.getVisibleNotebookEditors()).find(
     (candidate) => candidate.notebook.uri.toString() === target,
   );
-  return Option.flatMap(Option.fromNullable(editor), notebookFromEditor);
+  return Option.flatMap(Option.fromNullishOr(editor), notebookFromEditor);
 });
 
 const notebookFromToolbarContext = Effect.fn(function* (
@@ -153,7 +153,7 @@ const activeNotebookCell = Effect.gen(function* () {
   if (Option.isNone(editor)) return Option.none<MarimoNotebookCell>();
   const notebook = MarimoNotebookDocument.tryFrom(editor.value.notebook);
   if (Option.isNone(notebook)) return Option.none<MarimoNotebookCell>();
-  return Option.fromNullable(
+  return Option.fromNullishOr(
     notebook.value.getCells()[editor.value.selection.start],
   );
 });

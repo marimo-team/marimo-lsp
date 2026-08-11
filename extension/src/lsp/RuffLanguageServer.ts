@@ -182,7 +182,7 @@ const resolveRuffBinary = Effect.fn(function* () {
 
   const ruffExtConfiguredPath = Effect.gen(function* () {
     const ruffExtConfig = yield* code.workspace.getConfiguration("ruff");
-    return Option.fromNullable(ruffExtConfig.get<string>("path")).pipe(
+    return Option.fromNullishOr(ruffExtConfig.get<string>("path")).pipe(
       Option.filter((p) => p.length > 0),
     );
   });

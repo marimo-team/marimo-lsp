@@ -48,7 +48,7 @@ export class PythonExtension extends Effect.Service<PythonExtension>()(
         resolveEnvironment(path: string | py.EnvironmentPath) {
           return Effect.promise(() =>
             api.environments.resolveEnvironment(path),
-          ).pipe(Effect.map(Option.fromNullable));
+          ).pipe(Effect.map(Option.fromNullishOr));
         },
       };
     }),

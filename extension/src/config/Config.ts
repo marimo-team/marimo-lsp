@@ -146,7 +146,7 @@ export class Config extends Effect.Service<Config>()("Config", {
           return Effect.map(
             code.value.workspace.getConfiguration("marimo.uv"),
             (config) =>
-              Option.fromNullable(config.get<string>("path")).pipe(
+              Option.fromNullishOr(config.get<string>("path")).pipe(
                 Option.filter((p) => p.length > 0),
               ),
           );
@@ -163,7 +163,7 @@ export class Config extends Effect.Service<Config>()("Config", {
           return Effect.map(
             code.value.workspace.getConfiguration("marimo.ruff"),
             (config) =>
-              Option.fromNullable(config.get<string>("path")).pipe(
+              Option.fromNullishOr(config.get<string>("path")).pipe(
                 Option.filter((p) => p.length > 0),
               ),
           );
@@ -174,7 +174,7 @@ export class Config extends Effect.Service<Config>()("Config", {
           return Effect.map(
             code.value.workspace.getConfiguration("marimo.ty"),
             (config) =>
-              Option.fromNullable(config.get<string>("path")).pipe(
+              Option.fromNullishOr(config.get<string>("path")).pipe(
                 Option.filter((p) => p.length > 0),
               ),
           );

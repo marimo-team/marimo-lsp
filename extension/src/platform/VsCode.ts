@@ -90,7 +90,7 @@ export class Window extends Effect.Service<Window>()("Window", {
       showSaveDialog(options?: vscode.SaveDialogOptions) {
         return Effect.map(
           Effect.promise(() => api.showSaveDialog(options)),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showInputBox(
@@ -100,7 +100,7 @@ export class Window extends Effect.Service<Window>()("Window", {
           Effect.promise((signal) =>
             api.showInputBox(options, tokenFromSignal(signal)),
           ),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showInformationMessage<T extends string>(
@@ -112,7 +112,7 @@ export class Window extends Effect.Service<Window>()("Window", {
           Effect.promise(() =>
             api.showInformationMessage(message, rest, ...items),
           ),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showWarningMessage<T extends string>(
@@ -122,7 +122,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         const { items = [], ...rest } = options;
         return Effect.map(
           Effect.promise(() => api.showWarningMessage(message, rest, ...items)),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showErrorMessage<T extends string>(
@@ -132,7 +132,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         const { items = [], ...rest } = options;
         return Effect.map(
           Effect.promise(() => api.showErrorMessage(message, rest, ...items)),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showQuickPick(
@@ -143,7 +143,7 @@ export class Window extends Effect.Service<Window>()("Window", {
           Effect.promise((signal) =>
             api.showQuickPick(items, options, tokenFromSignal(signal)),
           ),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showQuickPickItems<T extends vscode.QuickPickItem>(
@@ -154,7 +154,7 @@ export class Window extends Effect.Service<Window>()("Window", {
           Effect.promise((signal) =>
             api.showQuickPick(items, options, tokenFromSignal(signal)),
           ),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showQuickPickItemsMany<T extends vscode.QuickPickItem>(
@@ -169,7 +169,7 @@ export class Window extends Effect.Service<Window>()("Window", {
               tokenFromSignal(signal),
             ),
           ),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       createOutputChannel(name: string) {
@@ -181,7 +181,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         );
       },
       getActiveNotebookEditor() {
-        return Effect.succeed(Option.fromNullable(api.activeNotebookEditor));
+        return Effect.succeed(Option.fromNullishOr(api.activeNotebookEditor));
       },
       getVisibleNotebookEditors() {
         return Effect.succeed(api.visibleNotebookEditors);
@@ -190,10 +190,10 @@ export class Window extends Effect.Service<Window>()("Window", {
         return Effect.succeed(api.visibleTextEditors);
       },
       getActiveTextEditor() {
-        return Effect.succeed(Option.fromNullable(api.activeTextEditor));
+        return Effect.succeed(Option.fromNullishOr(api.activeTextEditor));
       },
       closeTextEditorTab(uri: vscode.Uri) {
-        return Option.fromNullable(
+        return Option.fromNullishOr(
           api.tabGroups.all
             .flatMap((group) => group.tabs)
             .find(
@@ -229,7 +229,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         return Stream.asyncPush((emit) =>
           acquireDisposable(() =>
             api.onDidChangeActiveNotebookEditor((e) =>
-              emit.single(Option.fromNullable(e)),
+              emit.single(Option.fromNullishOr(e)),
             ),
           ),
         );
@@ -258,7 +258,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         return Stream.asyncPush((emit) =>
           acquireDisposable(() =>
             api.onDidChangeActiveTextEditor((e) =>
-              emit.single(Option.fromNullable(e)),
+              emit.single(Option.fromNullishOr(e)),
             ),
           ),
         );
@@ -500,7 +500,7 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
         return Effect.succeed(api.getConfiguration(section, scope));
       },
       getWorkspaceFolders() {
-        return Effect.succeed(Option.fromNullable(api.workspaceFolders));
+        return Effect.succeed(Option.fromNullishOr(api.workspaceFolders));
       },
       isTrusted() {
         return api.isTrusted;
@@ -789,7 +789,7 @@ export class Auth extends Effect.Service<Auth>()("Auth", {
             try: () => api.getSession(providerId, scopes, options),
             catch: (cause) => new AuthError({ cause }),
           }),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
     };
@@ -1338,7 +1338,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       version: vscode.version,
       extensions: {
         getExtension<T = unknown>(extensionId: string) {
-          return Option.fromNullable(
+          return Option.fromNullishOr(
             vscode.extensions.getExtension<T>(extensionId),
           );
         },

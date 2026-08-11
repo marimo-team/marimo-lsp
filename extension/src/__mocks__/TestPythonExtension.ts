@@ -91,7 +91,7 @@ export class TestPythonExtension extends Data.TaggedClass(
             return Effect.gen(function* () {
               const pathStr = typeof path === "string" ? path : path.path;
               const knownSet = yield* Ref.get(known);
-              return Option.fromNullable(
+              return Option.fromNullishOr(
                 Array.from(knownSet).find((e) => e.path === pathStr),
               );
             });

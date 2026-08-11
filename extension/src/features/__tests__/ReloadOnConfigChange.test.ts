@@ -21,7 +21,7 @@ it.effect(
         showInformationMessage: (_message, options = {}) =>
           Effect.succeed(
             acceptRestart
-              ? Option.fromNullable(
+              ? Option.fromNullishOr(
                   options.items?.find((item) => item === "Restart Kernel"),
                 )
               : Option.none(),
@@ -62,7 +62,7 @@ it.effect(
             "Changing telemetry requires reloading the window to take effect.",
           );
           const selection = acceptReload
-            ? Option.fromNullable(
+            ? Option.fromNullishOr(
                 options.items?.find((item) => item === "Reload Window"),
               )
             : Option.none<T>();
@@ -103,7 +103,7 @@ it.effect(
           );
           return Ref.update(prompts, (count) => count + 1).pipe(
             Effect.andThen(Deferred.succeed(prompted, undefined)),
-            Effect.as(Option.fromNullable(options.items?.[0])),
+            Effect.as(Option.fromNullishOr(options.items?.[0])),
           );
         },
       },

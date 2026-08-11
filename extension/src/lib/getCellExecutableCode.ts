@@ -29,7 +29,7 @@ export function getCellExecutableCode(
       // Either stored on the cell, or we fallback to default ...
       meta.pipe(
         Option.flatMap((x) =>
-          Option.fromNullable(x.marimo.sourceProjections?.sql),
+          Option.fromNullishOr(x.marimo.sourceProjections?.sql),
         ),
         Option.getOrElse(() => sqlParser.defaultMetadata),
       ),

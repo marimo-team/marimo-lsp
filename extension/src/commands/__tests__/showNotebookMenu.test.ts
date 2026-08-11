@@ -129,7 +129,7 @@ describe("showNotebookMenu", () => {
         window: {
           showQuickPickItems: (items) =>
             Effect.succeed(
-              Option.fromNullable(
+              Option.fromNullishOr(
                 items.find((item) => item.label.includes("Create setup cell")),
               ),
             ),
@@ -155,7 +155,7 @@ describe("showNotebookMenu", () => {
         window: {
           showQuickPickItems: (items) =>
             Effect.succeed(
-              Option.fromNullable(
+              Option.fromNullishOr(
                 items.find((item) => item.label.includes("Publish notebook")),
               ),
             ),
@@ -202,7 +202,7 @@ describe("showNotebookMenu", () => {
         window: {
           showQuickPickItems: (items) =>
             Effect.succeed(
-              Option.fromNullable(
+              Option.fromNullishOr(
                 items.find((item) => item.label.includes("Automatic exports")),
               ),
             ),
@@ -236,7 +236,7 @@ describe("showNotebookMenu", () => {
             showQuickPickItems: (items, options) => {
               if (options?.title === "marimo notebook") {
                 return Effect.succeed(
-                  Option.fromNullable(
+                  Option.fromNullishOr(
                     items.find((item) => item.label.includes("Reactivity")),
                   ),
                 );
