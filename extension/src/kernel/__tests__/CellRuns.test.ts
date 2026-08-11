@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import { Effect, Layer, Option, Stream } from "effect";
+import { Effect, Layer, Option } from "effect";
 import { TestClock } from "effect/testing";
 import type * as vscode from "vscode";
 
@@ -13,7 +13,6 @@ import {
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { CellRunInput, CellRuns } from "../../kernel/CellRuns.ts";
-import { PythonController } from "../../kernel/PythonController.ts";
 import { buildCellOutputs } from "../../kernel/VsCodeCellOutputs.ts";
 import {
   type VsCodeCellRunBinding,
@@ -52,7 +51,10 @@ const withTestCtx = Effect.fn(function* (
 
 const acceptOperations = Effect.fn(function* (
   operations: ReadonlyArray<CellOperationNotification>,
-  binding: VsCodeCellRunBinding,
+  binding: {
+    readonly editor: vscode.NotebookEditor;
+    readonly controller: VsCodeCellRunBinding["controller"];
+  },
 ) {
   const cellRuns = yield* CellRuns;
   const presentations = yield* VsCodeCellRunPresentation;
@@ -68,9 +70,19 @@ const acceptOperations = Effect.fn(function* (
       notebookId: notebook.id,
       operations,
       sourceByCell,
-      presentation: presentations.bind(binding),
+      presentation: presentations.bind({
+        notebook,
+        controller: binding.controller,
+      }),
     }),
   );
+});
+
+const asCellRunController = (
+  controller: Omit<vscode.NotebookController, "dispose">,
+): VsCodeCellRunBinding["controller"] => ({
+  createNotebookCellExecution: (cell) =>
+    controller.createNotebookCellExecution(cell.rawNotebookCell),
 });
 
 const cellSnapshot = (cell: MarimoNotebookCell) => ({
@@ -1326,14 +1338,10 @@ it.effect(
         stale_inputs: true,
       };
 
-      const pythonController = new PythonController(
-        controller,
-        "test-controller",
-        Stream.never,
-      );
+      const cellRunController = asCellRunController(controller);
       yield* acceptOperations([message], {
         editor,
-        controller: pythonController,
+        controller: cellRunController,
       });
 
       // Check that CellRuns tracked the cell as stale
@@ -1349,7 +1357,7 @@ it.effect(
             run_id: "accepted-run",
           },
         ],
-        { editor, controller: pythonController },
+        { editor, controller: cellRunController },
       );
 
       // Check that the cell is no longer stale
@@ -1397,15 +1405,11 @@ it.effect(
         NOTEBOOK_TYPE,
         "test-controller",
       );
-      const pythonController = new PythonController(
-        controller,
-        "test-controller",
-        Stream.never,
-      );
+      const cellRunController = asCellRunController(controller);
 
       yield* acceptOperations(
         [{ op: "cell-op", cell_id: cellId, stale_inputs: true }],
-        { editor, controller: pythonController },
+        { editor, controller: cellRunController },
       );
 
       // Verify cell is tracked as stale
@@ -1421,7 +1425,7 @@ it.effect(
 
       yield* acceptOperations([message], {
         editor,
-        controller: pythonController,
+        controller: cellRunController,
       });
 
       // Check that the cell's stale state was cleared
@@ -1465,16 +1469,12 @@ it.effect(
         NOTEBOOK_TYPE,
         "test-controller",
       );
-      const pythonController = new PythonController(
-        controller,
-        "test-controller",
-        Stream.never,
-      );
+      const cellRunController = asCellRunController(controller);
 
       // Mark the cell stale so we can prove the invalid queue cannot record it.
       yield* acceptOperations(
         [{ op: "cell-op", cell_id: cellId, stale_inputs: true }],
-        { editor, controller: pythonController },
+        { editor, controller: cellRunController },
       );
       expect(yield* executions.isStale(cellSnapshot(cell))).toBe(true);
 
@@ -1488,7 +1488,7 @@ it.effect(
 
       yield* acceptOperations([message], {
         editor,
-        controller: pythonController,
+        controller: cellRunController,
       });
 
       // Stale state preserved because we bail before acceptSource
@@ -1498,10 +1498,10 @@ it.effect(
 );
 
 /**
- * Creates a PythonController whose `createNotebookCellExecution` throws,
+ * Creates a cell-run presentation controller whose execution factory throws,
  * simulating VS Code's "invalid cell" error when a cell is deleted.
  */
-function makeThrowingController(): PythonController {
+function makeThrowingController(): VsCodeCellRunBinding["controller"] {
   const inner: Omit<vscode.NotebookController, "dispose"> = {
     id: "throwing-controller",
     notebookType: NOTEBOOK_TYPE,
@@ -1518,7 +1518,7 @@ function makeThrowingController(): PythonController {
       throw new Error("invalid cell");
     },
   };
-  return new PythonController(inner, "/usr/bin/python3", Stream.never);
+  return asCellRunController(inner);
 }
 
 it.effect(

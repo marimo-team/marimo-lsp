@@ -220,9 +220,7 @@ it.effect(
     const { layer } = yield* makeTestLayer();
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
-      createNotebookCellExecution() {
-        throw new Error("not used");
-      },
+      cellRunPresentation: () => ({ apply: () => Effect.void }),
       resolveExecutable: () => Effect.succeed("/usr/bin/python"),
     };
 
@@ -245,9 +243,7 @@ it.effect(
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
-      createNotebookCellExecution() {
-        throw new Error("not used");
-      },
+      cellRunPresentation: () => ({ apply: () => Effect.void }),
       resolveExecutable: () => Effect.succeed("/usr/bin/python"),
     };
 
@@ -370,9 +366,7 @@ it.effect(
     const id = notebookId(editor.notebook.uri.toString());
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
-      createNotebookCellExecution() {
-        throw new Error("not used");
-      },
+      cellRunPresentation: () => ({ apply: () => Effect.void }),
       resolveExecutable: () => Effect.succeed("/usr/bin/python"),
     };
 

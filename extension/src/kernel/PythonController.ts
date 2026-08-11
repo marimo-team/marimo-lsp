@@ -16,12 +16,11 @@ import { VsCode } from "../platform/VsCode.ts";
 import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
 import { Uv } from "../python/Uv.ts";
-import {
-  type MarimoNotebookCell,
-  MarimoNotebookDocument,
-} from "../schemas/MarimoNotebookDocument.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import type { CellRunPresentation } from "./CellRuns.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import { NotebookRuntime } from "./NotebookRuntime.ts";
+import { VsCodeCellRunPresentation } from "./VsCodeCellRunPresentation.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
 export type NotebookControllerId = Brand.Branded<string, "ControllerId">;
@@ -34,6 +33,7 @@ export const createPythonController = Effect.fn("createPythonController")(
   }) {
     const uv = yield* Uv;
     const code = yield* VsCode;
+    const presentations = yield* VsCodeCellRunPresentation;
     const config = yield* Config;
     const notebooks = yield* NotebookRuntime;
     const validator = yield* EnvironmentValidator;
@@ -246,6 +246,14 @@ export const createPythonController = Effect.fn("createPythonController")(
       controller,
       options.env.path,
       selectedNotebookChanges,
+      (notebook) =>
+        presentations.bind({
+          notebook,
+          controller: {
+            createNotebookCellExecution: (cell) =>
+              controller.createNotebookCellExecution(cell.rawNotebookCell),
+          },
+        }),
     );
   },
 );
@@ -264,6 +272,9 @@ export class PythonController {
     notebook: vscode.NotebookDocument;
     selected: boolean;
   }>;
+  readonly cellRunPresentation: (
+    notebook: MarimoNotebookDocument,
+  ) => CellRunPresentation;
   constructor(
     inner: Omit<vscode.NotebookController, "dispose">,
     executable: string,
@@ -271,10 +282,14 @@ export class PythonController {
       notebook: vscode.NotebookDocument;
       selected: boolean;
     }>,
+    cellRunPresentation: (
+      notebook: MarimoNotebookDocument,
+    ) => CellRunPresentation,
   ) {
     this.#inner = inner;
     this.executable = executable;
     this.selectedNotebookChanges = selectedNotebookChanges;
+    this.cellRunPresentation = cellRunPresentation;
   }
   static getId(env: py.Environment) {
     return NotebookControllerId(`marimo-${env.path}`);
@@ -291,9 +306,6 @@ export class PythonController {
       this.#inner.description = description;
       return this;
     });
-  }
-  createNotebookCellExecution(cell: MarimoNotebookCell) {
-    return this.#inner.createNotebookCellExecution(cell.rawNotebookCell);
   }
   resolveExecutable(_notebook: MarimoNotebookDocument) {
     return Effect.succeed(this.executable);

@@ -28,9 +28,7 @@ import {
 
 const controller: NotebookController = {
   id: "test-controller",
-  createNotebookCellExecution() {
-    throw new Error("not used");
-  },
+  cellRunPresentation: () => ({ apply: () => Effect.void }),
   resolveExecutable: () => Effect.succeed("/usr/bin/python"),
 };
 

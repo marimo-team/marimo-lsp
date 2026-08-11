@@ -16,10 +16,7 @@ import { VsCode } from "../platform/VsCode.ts";
 import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
-import {
-  type MarimoNotebookCell,
-  MarimoNotebookDocument,
-} from "../schemas/MarimoNotebookDocument.ts";
+import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import {
@@ -27,11 +24,13 @@ import {
   NotebookRuntime,
   UnsavedNotebookError,
 } from "./NotebookRuntime.ts";
+import { VsCodeCellRunPresentation } from "./VsCodeCellRunPresentation.ts";
 
 export const createSandboxController = Effect.fn("createSandboxController")(
   function* () {
     const uv = yield* Uv;
     const code = yield* VsCode;
+    const presentations = yield* VsCodeCellRunPresentation;
     const marimo = yield* MarimoClient;
     const notebooks = yield* NotebookRuntime;
     const python = yield* PythonExtension;
@@ -228,8 +227,14 @@ export const createSandboxController = Effect.fn("createSandboxController")(
                 }),
           ),
         ),
-      createNotebookCellExecution(cell: MarimoNotebookCell) {
-        return controller.createNotebookCellExecution(cell.rawNotebookCell);
+      cellRunPresentation(notebook: MarimoNotebookDocument) {
+        return presentations.bind({
+          notebook,
+          controller: {
+            createNotebookCellExecution: (cell) =>
+              controller.createNotebookCellExecution(cell.rawNotebookCell),
+          },
+        });
       },
       selectedNotebookChanges,
       updateNotebookAffinity(

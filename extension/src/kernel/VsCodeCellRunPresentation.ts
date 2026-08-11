@@ -30,7 +30,7 @@ interface CellRunController {
 }
 
 export interface VsCodeCellRunBinding {
-  readonly editor: vscode.NotebookEditor;
+  readonly notebook: MarimoNotebookDocument;
   readonly controller: CellRunController;
 }
 
@@ -93,7 +93,7 @@ export class VsCodeCellRunPresentation extends Context.Service<VsCodeCellRunPres
 
       const resolveCell = (cell: CellRunRef, binding: VsCodeCellRunBinding) =>
         Effect.gen(function* () {
-          const notebook = MarimoNotebookDocument.from(binding.editor.notebook);
+          const notebook = binding.notebook;
           if (notebook.id !== cell.notebookId) {
             return yield* new InvalidCellError({
               cellId: cell.cellId,
@@ -193,7 +193,7 @@ export class VsCodeCellRunPresentation extends Context.Service<VsCodeCellRunPres
                 resources.set(resourceKey(cell), {
                   execution,
                   projection: new CellOutputProjection(execution),
-                  notebook: binding.editor.notebook,
+                  notebook: binding.notebook.rawNotebookDocument,
                 });
               });
             case "StartExecution":
