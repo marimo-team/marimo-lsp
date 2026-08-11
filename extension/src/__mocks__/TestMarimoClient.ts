@@ -1,6 +1,6 @@
 import * as NodeChildProcess from "node:child_process";
 
-import { Effect, Layer, Redacted, Stream } from "effect";
+import { type Context, Effect, Layer, Queue, Redacted, Stream } from "effect";
 import * as rpc from "vscode-jsonrpc/node";
 
 import { MarimoLspServer } from "../config/Config.ts";
@@ -19,7 +19,7 @@ import {
  * Unit tests should use `makeTestMarimoClient` instead. Constructing this
  * Layer starts a real `marimo-lsp` process and performs an LSP handshake.
  */
-export const TestMarimoClientProcess = Layer.scoped(
+export const TestMarimoClientProcess = Layer.effect(
   MarimoClient,
   Effect.gen(function* () {
     const { conn } = yield* Effect.acquireRelease(
@@ -48,13 +48,13 @@ export const TestMarimoClientProcess = Layer.scoped(
           proc.kill();
         }),
     );
-    return MarimoClient.make({
+    const service: Context.Service.Shape<typeof MarimoClient> = {
       server: MarimoLspServer.Python(),
       channel: {
         name: "marimo-lsp",
         show() {},
       },
-      restart: () => Effect.void,
+      restart: Effect.void,
       ...makeMarimoCommands({
         execute(request) {
           const command = {
@@ -75,25 +75,22 @@ export const TestMarimoClientProcess = Layer.scoped(
               }),
           });
         },
-        operations() {
-          return Stream.asyncPush((emit) =>
-            acquireDisposable(() =>
-              conn.onNotification("marimo/operation", (message) => {
-                emit.single(message);
-              }),
-            ),
-          );
-        },
-        sessionChanges() {
-          return Stream.asyncPush((emit) =>
-            acquireDisposable(() =>
-              conn.onNotification("marimo/sessionsChanged", (message) => {
-                emit.single(message);
-              }),
-            ),
-          );
-        },
+        operations: Stream.callback((queue) =>
+          acquireDisposable(() =>
+            conn.onNotification("marimo/operation", (message) => {
+              Queue.offerUnsafe(queue, message);
+            }),
+          ),
+        ),
+        sessionChanges: Stream.callback((queue) =>
+          acquireDisposable(() =>
+            conn.onNotification("marimo/sessionsChanged", (message) => {
+              Queue.offerUnsafe(queue, message);
+            }),
+          ),
+        ),
       }),
-    });
+    };
+    return service;
   }),
 );

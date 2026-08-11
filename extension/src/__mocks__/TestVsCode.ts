@@ -2,16 +2,15 @@ import * as NodeEvents from "node:events";
 import * as NodePath from "node:path";
 
 import {
+  Context,
   Data,
   Effect,
-  Either,
   HashSet,
   Layer,
   Option,
   PubSub,
-  Queue,
   Ref,
-  Runtime,
+  Result,
   Stream,
   SubscriptionRef,
 } from "effect";
@@ -21,14 +20,10 @@ import { commandId, decodeCommandResult } from "../commands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import {
-  Auth,
   Commands,
-  Debug,
   Env,
   FileSystemError,
-  Notebooks,
   ParseUriError,
-  Languages,
   VsCode,
   Window,
   Workspace,
@@ -1572,21 +1567,21 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     return createTestNotebookEditor(createTestNotebookDocument(uri, options));
   }
   snapshot() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       return {
         views: yield* Effect.map(Ref.get(this.views), (map) =>
-          HashSet.toValues(map).toSorted(),
+          Array.from(map).toSorted(),
         ),
         commands: yield* Effect.map(Ref.get(this.commands), (map) =>
-          HashSet.toValues(map).toSorted(),
+          Array.from(map).toSorted(),
         ),
         serializers: yield* Effect.map(Ref.get(this.serializers), (map) =>
-          HashSet.toValues(map)
+          Array.from(map)
             .map((s) => s.notebookType)
             .toSorted(),
         ),
         controllers: yield* Effect.map(Ref.get(this.controllers), (map) =>
-          HashSet.toValues(map)
+          Array.from(map)
             .map((c) => c.id)
             .toSorted(),
         ),
@@ -1628,10 +1623,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       visibleNotebookEditors?: Array<vscode.NotebookEditor>;
       version?: string;
       fileSystem?: Map<string, Uint8Array | Error>;
-      window?: Partial<Window>;
-      commands?: Partial<Commands>;
-      workspace?: Partial<Workspace>;
-      env?: Partial<Env>;
+      window?: Partial<Context.Service.Shape<typeof Window>>;
+      commands?: Partial<Context.Service.Shape<typeof Commands>>;
+      workspace?: Partial<Context.Service.Shape<typeof Workspace>>;
+      env?: Partial<Context.Service.Shape<typeof Env>>;
     } = {},
   ) {
     const activeTextEditor = yield* SubscriptionRef.make(
@@ -1700,668 +1695,632 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       }>
     >([]);
 
-    const runtime = yield* Effect.runtime();
+    const context = yield* Effect.context();
 
-    const layer = Layer.succeed(
-      VsCode,
-      VsCode.make({
-        // namespaces
-        window: Window.make({
-          showSaveDialog() {
-            return Effect.succeed(Option.none());
-          },
-          showInputBox:
-            options.window?.showInputBox ??
-            (() => Effect.succeed(Option.none())),
-          showInformationMessage:
-            options.window?.showInformationMessage ??
-            (() => Effect.succeed(Option.none())),
-          showWarningMessage:
-            options.window?.showWarningMessage ??
-            (() => Effect.succeed(Option.none())),
-          showErrorMessage:
-            options.window?.showErrorMessage ??
-            (() => Effect.succeed(Option.none())),
-          showQuickPick:
-            options.window?.showQuickPick ??
-            (() => Effect.succeed(Option.none())),
-          showQuickPickItems() {
-            return Effect.succeed(Option.none());
-          },
-          showQuickPickItemsMany() {
-            return Effect.succeed(Option.none());
-          },
-          createOutputChannel(name) {
-            return Effect.succeed({
+    const commandResultsPubSub =
+      yield* PubSub.unbounded<Result.Result<string, string>>();
+
+    const layer = Layer.succeed(VsCode, {
+      // namespaces
+      window: {
+        showSaveDialog() {
+          return Effect.succeed(Option.none());
+        },
+        showInputBox:
+          options.window?.showInputBox ?? (() => Effect.succeed(Option.none())),
+        showInformationMessage:
+          options.window?.showInformationMessage ??
+          (() => Effect.succeed(Option.none())),
+        showWarningMessage:
+          options.window?.showWarningMessage ??
+          (() => Effect.succeed(Option.none())),
+        showErrorMessage:
+          options.window?.showErrorMessage ??
+          (() => Effect.succeed(Option.none())),
+        showQuickPick:
+          options.window?.showQuickPick ??
+          (() => Effect.succeed(Option.none())),
+        showQuickPickItems() {
+          return Effect.succeed(Option.none());
+        },
+        showQuickPickItemsMany() {
+          return Effect.succeed(Option.none());
+        },
+        createOutputChannel(name) {
+          return Effect.succeed({
+            name,
+            dispose() {},
+            append() {},
+            appendLine() {},
+            replace() {},
+            clear() {},
+            show() {},
+            hide() {},
+          });
+        },
+        createTerminal() {
+          return Effect.succeed({
+            sendText() {},
+            show() {},
+          });
+        },
+        createLogOutputChannel(name) {
+          return acquireDisposable(() => {
+            const emitter = new EventEmitter<vscode.LogLevel>();
+            return {
               name,
-              dispose() {},
+              logLevel: 0,
+              onDidChangeLogLevel: emitter.event,
+              dispose() {
+                emitter.dispose();
+              },
               append() {},
               appendLine() {},
               replace() {},
               clear() {},
               show() {},
               hide() {},
-            });
-          },
-          createTerminal() {
-            return Effect.succeed({
-              sendText() {},
-              show() {},
-            });
-          },
-          createLogOutputChannel(name) {
-            return acquireDisposable(() => {
-              const emitter = new EventEmitter<vscode.LogLevel>();
-              return {
-                name,
-                logLevel: 0,
-                onDidChangeLogLevel: emitter.event,
-                dispose() {
-                  emitter.dispose();
-                },
-                append() {},
-                appendLine() {},
-                replace() {},
-                clear() {},
-                show() {},
-                hide() {},
-                trace() {},
-                debug() {},
-                info() {},
-                warn() {},
-                error() {},
-              };
-            });
-          },
-          getVisibleNotebookEditors() {
-            return SubscriptionRef.get(visibleNotebookEditors);
-          },
-          getVisibleTextEditors() {
-            return SubscriptionRef.get(visibleTextEditors);
-          },
-          getActiveNotebookEditor() {
-            return Ref.get(activeNotebookEditor);
-          },
-          activeNotebookEditorChanges() {
-            return activeNotebookEditor.changes;
-          },
-          visibleNotebookEditorsChanges() {
-            return visibleNotebookEditors.changes;
-          },
-          visibleTextEditorsChanges() {
-            return visibleTextEditors.changes;
-          },
-          getActiveTextEditor() {
-            return Ref.get(activeTextEditor);
-          },
-          activeTextEditorChanges() {
-            return activeTextEditor.changes;
-          },
-          colorThemeChanges:
-            options.window?.colorThemeChanges ??
-            (() => Stream.make("light" as const)),
-          closeTextEditorTab: () => Effect.void,
-          // oxlint-disable-next-line typescript-eslint/no-unnecessary-type-parameters
-          createTreeView<T>(viewId: string) {
-            return Effect.acquireRelease(
-              Effect.gen(function* () {
-                yield* Ref.update(views, HashSet.add(viewId));
-                const expandElement = new EventEmitter<
-                  vscode.TreeViewExpansionEvent<T>
-                >();
-                const collapseElement = new EventEmitter<
-                  vscode.TreeViewExpansionEvent<T>
-                >();
-                const changeSelection = new EventEmitter<
-                  vscode.TreeViewSelectionChangeEvent<T>
-                >();
-                const changeVisibility =
-                  new EventEmitter<vscode.TreeViewVisibilityChangeEvent>();
-                const changeCheckboxState = new EventEmitter<
-                  vscode.TreeCheckboxChangeEvent<T>
-                >();
-                return {
-                  onDidExpandElement: expandElement.event,
-                  onDidCollapseElement: collapseElement.event,
-                  selection: [],
-                  onDidChangeSelection: changeSelection.event,
-                  visible: false,
-                  onDidChangeVisibility: changeVisibility.event,
-                  onDidChangeCheckboxState: changeCheckboxState.event,
-                  async reveal(): Promise<void> {},
-                  dispose() {
-                    expandElement.dispose();
-                    collapseElement.dispose();
-                    changeSelection.dispose();
-                    changeVisibility.dispose();
-                    changeCheckboxState.dispose();
-                  },
-                };
-              }),
-              (disposable) =>
-                Effect.gen(function* () {
-                  yield* Ref.update(views, HashSet.remove(viewId));
-                  yield* Effect.sync(() => disposable.dispose());
-                }),
-            );
-          },
-          createStatusBarItem(
-            id: string,
-            alignment: vscode.StatusBarAlignment,
-            priority?: number,
-          ) {
-            return acquireDisposable(() => ({
-              id,
-              alignment,
-              priority,
-              text: "",
-              name: undefined,
-              tooltip: undefined,
-              color: undefined,
-              backgroundColor: undefined,
-              command: undefined,
-              accessibilityInformation: undefined,
-              show() {},
-              hide() {},
-              dispose() {},
-            }));
-          },
-          showNotebookDocument(
-            doc: vscode.NotebookDocument,
-            options?: vscode.NotebookDocumentShowOptions,
-          ) {
-            return Effect.succeed({
-              notebook: doc,
-              visibleRanges: [],
-              selection: new NotebookRange(0, 0),
-              selections: options?.selections ?? [],
-              viewColumn: options?.viewColumn,
-              revealRange() {},
-            });
-          },
-          showTextDocument() {
-            return Effect.void;
-          },
-          withProgress(_options, fn) {
-            return Effect.orDie(fn({ report() {} }));
-          },
-          ...options.window,
-        }),
-        commands: Commands.make({
-          subscribeToCommands() {
-            return Queue.unbounded();
-          },
-          setContext(key, value) {
-            return Ref.update(executions, (arr) => [
-              ...arr,
-              { command: "setContext", args: [key, value] },
-            ]);
-          },
-          execute(command, ...args) {
-            return Ref.update(executions, (arr) => [
-              ...arr,
-              { command: commandId(command), args },
-            ]).pipe(Effect.zipRight(decodeCommandResult(command, undefined)));
-          },
-          executeVSCode(command, ...args) {
-            return Ref.update(executions, (arr) => [...arr, { command, args }]);
-          },
-          bind(command, title, ...args) {
-            return {
-              command: commandId(command),
-              title,
-              arguments: [...args],
+              trace() {},
+              debug() {},
+              info() {},
+              warn() {},
+              error() {},
             };
-          },
-          register(definition) {
-            const name = commandId(definition.command);
-            return Effect.gen(function* () {
-              yield* Ref.update(commands, HashSet.add<string>(name));
-              yield* Effect.addFinalizer(() =>
-                Ref.update(commands, HashSet.remove<string>(name)),
-              );
-            });
-          },
-          ...options.commands,
-        }),
-        workspace: Workspace.make({
-          fs: {
-            createDirectory() {
-              return Effect.void;
-            },
-            readFile(uri: vscode.Uri) {
-              const fileSystem: Map<string, Uint8Array | Error> =
-                options.fileSystem ?? new Map();
-
-              const key = uri.toString();
-              const entry = fileSystem.get(key);
-
-              if (entry instanceof Error) {
-                return Effect.fail(new FileSystemError({ cause: entry }));
-              }
-
-              if (entry !== undefined) {
-                return Effect.succeed(entry);
-              }
-
-              // File not in map - return error for missing file
-              return Effect.fail(
-                new FileSystemError({ cause: new Error(`ENOENT: ${key}`) }),
-              );
-            },
-            writeFile() {
-              return Effect.succeed(true);
-            },
-          },
-          getNotebookDocuments() {
-            return Effect.map(Ref.get(notebookDocuments), HashSet.toValues);
-          },
-          getTextDocuments() {
-            return Effect.map(
-              SubscriptionRef.get(visibleTextEditors),
-              (editors) => editors.map((editor) => editor.document),
-            );
-          },
-          configurationChanges() {
-            return Stream.never;
-          },
-          getConfiguration() {
-            return Effect.succeed({
-              get: () => undefined,
-              has: () => false,
-              inspect: () => undefined,
-              async update() {},
-            });
-          },
-          getWorkspaceFolders() {
-            return Effect.succeed(Option.none());
-          },
-          isTrusted() {
-            return true;
-          },
-          registerNotebookSerializer(notebookType, impl, options) {
-            return Effect.acquireRelease(
+          });
+        },
+        getVisibleNotebookEditors: SubscriptionRef.get(visibleNotebookEditors),
+        getVisibleTextEditors: SubscriptionRef.get(visibleTextEditors),
+        getActiveNotebookEditor: SubscriptionRef.get(activeNotebookEditor),
+        activeNotebookEditorChanges:
+          SubscriptionRef.changes(activeNotebookEditor),
+        visibleNotebookEditorsChanges: SubscriptionRef.changes(
+          visibleNotebookEditors,
+        ),
+        visibleTextEditorsChanges: SubscriptionRef.changes(visibleTextEditors),
+        getActiveTextEditor: SubscriptionRef.get(activeTextEditor),
+        activeTextEditorChanges: SubscriptionRef.changes(activeTextEditor),
+        colorThemeChanges:
+          options.window?.colorThemeChanges ?? Stream.make("light" as const),
+        closeTextEditorTab: () => Effect.void,
+        // oxlint-disable-next-line typescript-eslint/no-unnecessary-type-parameters
+        createTreeView<T>(viewId: string) {
+          return Effect.acquireRelease(
+            Effect.gen(function* () {
+              yield* Ref.update(views, HashSet.add(viewId));
+              const expandElement = new EventEmitter<
+                vscode.TreeViewExpansionEvent<T>
+              >();
+              const collapseElement = new EventEmitter<
+                vscode.TreeViewExpansionEvent<T>
+              >();
+              const changeSelection = new EventEmitter<
+                vscode.TreeViewSelectionChangeEvent<T>
+              >();
+              const changeVisibility =
+                new EventEmitter<vscode.TreeViewVisibilityChangeEvent>();
+              const changeCheckboxState = new EventEmitter<
+                vscode.TreeCheckboxChangeEvent<T>
+              >();
+              return {
+                onDidExpandElement: expandElement.event,
+                onDidCollapseElement: collapseElement.event,
+                selection: [],
+                onDidChangeSelection: changeSelection.event,
+                visible: false,
+                onDidChangeVisibility: changeVisibility.event,
+                onDidChangeCheckboxState: changeCheckboxState.event,
+                async reveal(): Promise<void> {},
+                dispose() {
+                  expandElement.dispose();
+                  collapseElement.dispose();
+                  changeSelection.dispose();
+                  changeVisibility.dispose();
+                  changeCheckboxState.dispose();
+                },
+              };
+            }),
+            (disposable) =>
               Effect.gen(function* () {
-                const serializer = {
-                  notebookType,
-                  serializer: impl,
-                  options: options ?? undefined,
-                };
-                yield* Ref.update(serializers, HashSet.add(serializer));
-                return serializer;
+                yield* Ref.update(views, HashSet.remove(viewId));
+                yield* Effect.sync(() => disposable.dispose());
               }),
-              (serializer) =>
-                Ref.update(serializers, HashSet.remove(serializer)),
+          );
+        },
+        createStatusBarItem(
+          id: string,
+          alignment: vscode.StatusBarAlignment,
+          priority?: number,
+        ) {
+          return acquireDisposable(() => ({
+            id,
+            alignment,
+            priority,
+            text: "",
+            name: undefined,
+            tooltip: undefined,
+            color: undefined,
+            backgroundColor: undefined,
+            command: undefined,
+            accessibilityInformation: undefined,
+            show() {},
+            hide() {},
+            dispose() {},
+          }));
+        },
+        showNotebookDocument(
+          doc: vscode.NotebookDocument,
+          options?: vscode.NotebookDocumentShowOptions,
+        ) {
+          return Effect.succeed({
+            notebook: doc,
+            visibleRanges: [],
+            selection: new NotebookRange(0, 0),
+            selections: options?.selections ?? [],
+            viewColumn: options?.viewColumn,
+            revealRange() {},
+          });
+        },
+        showTextDocument() {
+          return Effect.void;
+        },
+        withProgress(_options, fn) {
+          return Effect.orDie(fn({ report() {} }));
+        },
+        ...options.window,
+      },
+      commands: {
+        subscribeToCommands: PubSub.subscribe(commandResultsPubSub),
+        setContext(key, value) {
+          return Ref.update(executions, (arr) => [
+            ...arr,
+            { command: "setContext", args: [key, value] },
+          ]);
+        },
+        execute(command, ...args) {
+          return Ref.update(executions, (arr) => [
+            ...arr,
+            { command: commandId(command), args },
+          ]).pipe(Effect.andThen(decodeCommandResult(command, undefined)));
+        },
+        executeVSCode(command, ...args) {
+          return Ref.update(executions, (arr) => [...arr, { command, args }]);
+        },
+        bind(command, title, ...args) {
+          return {
+            command: commandId(command),
+            title,
+            arguments: [...args],
+          };
+        },
+        register(definition) {
+          const name = commandId(definition.command);
+          return Effect.gen(function* () {
+            yield* Ref.update(commands, HashSet.add<string>(name));
+            yield* Effect.addFinalizer(() =>
+              Ref.update(commands, HashSet.remove<string>(name)),
             );
-          },
-          notebookDocumentOpened() {
-            return Stream.fromPubSub(documentOpened);
-          },
-          notebookDocumentChanges() {
-            return Stream.fromPubSub(documentChanges);
-          },
-          notebookDocumentClosed() {
-            return Stream.fromPubSub(documentClosed);
-          },
-          fileRenames() {
-            return Stream.never;
-          },
-          fileDeletes() {
-            return Stream.never;
-          },
-          textDocumentChanges() {
-            return Stream.never;
-          },
-          createFileSystemWatcher() {
-            return Stream.never;
-          },
-          applyEdit() {
-            return Effect.succeed(true);
-          },
-          openNotebookDocument(uri: vscode.Uri) {
-            return Effect.succeed(new NotebookDocument("marimo-notebook", uri));
-          },
-          openUntitledNotebookDocument(
-            notebookType: string,
-            content?: vscode.NotebookData,
-          ) {
-            return Effect.succeed(
-              new NotebookDocument(
-                notebookType,
-                Uri.file("/mocks/foo.py"),
-                content,
-              ),
-            );
-          },
-          openUntitledTextDocument(options: {
-            content?: string;
-            language?: string;
-          }) {
-            const version = 1;
-            return Effect.succeed(
-              new TextDocument(
-                Uri.file("/mocks/foo.txt"),
-                options.language ?? "plaintext",
-                version,
-                options.content ?? "",
-              ),
-            );
-          },
-          ...options.workspace,
-        }),
-        env: Env.make({
-          appName: "Marimo Test",
-          appRoot: "/mocks",
-          appHost: "desktop",
-          machineId: "mock-machine-id",
-          createTelemetryLogger(sender, loggerOptions) {
-            const withCommon = (data: Record<string, unknown> = {}) => ({
-              ...data,
-              ...loggerOptions?.additionalCommonProperties,
-            });
-            return acquireDisposable(() => ({
-              isUsageEnabled: true,
-              isErrorsEnabled: true,
-              onDidChangeEnableStates: () => ({ dispose() {} }),
-              logUsage(eventName, data) {
-                sender.sendEventData(eventName, withCommon(data));
-              },
-              logError(eventNameOrError, data) {
-                if (typeof eventNameOrError === "string") {
-                  sender.sendEventData(eventNameOrError, withCommon(data));
-                } else {
-                  sender.sendErrorData(eventNameOrError, withCommon(data));
-                }
-              },
-              dispose() {},
-            }));
-          },
-          openExternal() {
-            return Effect.succeed(true);
-          },
-          ...options.env,
-        }),
-        debug: Debug.make({
-          registerDebugConfigurationProvider() {
-            return Effect.acquireRelease(Effect.void, () => Effect.void);
-          },
-          registerDebugAdapterDescriptorFactory() {
-            return Effect.acquireRelease(Effect.void, () => Effect.void);
-          },
-          startDebugging() {
-            return Effect.succeed(true);
-          },
-          stopDebugging(_sessionId?: string) {
+          });
+        },
+        ...options.commands,
+      },
+      workspace: {
+        fs: {
+          createDirectory() {
             return Effect.void;
           },
-          onDidTerminateDebugSession() {
-            return Effect.acquireRelease(Effect.void, () => Effect.void);
-          },
-        }),
-        notebooks: Notebooks.make({
-          createNotebookController(id, notebookType, label) {
-            return Effect.acquireRelease(
-              Effect.gen(function* () {
-                const emitter = new EventEmitter();
-                const controller: vscode.NotebookController = {
-                  id,
-                  notebookType,
-                  label,
-                  onDidChangeSelectedNotebooks: emitter.event,
-                  dispose: () => emitter.dispose(),
-                  createNotebookCellExecution() {
-                    return {
-                      start() {},
-                      end() {},
-                      async appendOutput() {},
-                      async clearOutput() {},
-                      async appendOutputItems() {},
-                      executionOrder: undefined,
-                      token: {
-                        isCancellationRequested: false,
-                        onCancellationRequested() {
-                          return { dispose: () => {} };
-                        },
-                      },
-                      async replaceOutput() {},
-                      async replaceOutputItems() {},
-                      get cell(): vscode.NotebookCell {
-                        throw new Error(
-                          "CellExecution.cell not implemented in TestVsCode.",
-                        );
-                      },
-                    };
-                  },
-                  executeHandler() {},
-                  updateNotebookAffinity(
-                    notebook: vscode.NotebookDocument,
-                    affinity: vscode.NotebookControllerAffinity,
-                  ) {
-                    Runtime.runSync(runtime)(
-                      Ref.update(affinityUpdates, (updates) => [
-                        ...updates,
-                        {
-                          controllerId: id,
-                          notebookUri: notebook.uri.toString(),
-                          affinity,
-                        },
-                      ]),
-                    );
-                  },
-                };
-                controllerSelectionEmitters.set(id, emitter);
-                yield* Ref.update(controllers, HashSet.add(controller));
-                return controller;
-              }),
-              (controller) =>
-                Effect.gen(function* () {
-                  controllerSelectionEmitters.delete(controller.id);
-                  yield* Effect.sync(() => controller.dispose());
-                  yield* Ref.update(controllers, HashSet.remove(controller));
-                }),
+          readFile(uri: vscode.Uri) {
+            const fileSystem: Map<string, Uint8Array | Error> =
+              options.fileSystem ?? new Map();
+
+            const key = uri.toString();
+            const entry = fileSystem.get(key);
+
+            if (entry instanceof Error) {
+              return Effect.fail(new FileSystemError({ cause: entry }));
+            }
+
+            if (entry !== undefined) {
+              return Effect.succeed(entry);
+            }
+
+            // File not in map - return error for missing file
+            return Effect.fail(
+              new FileSystemError({ cause: new Error(`ENOENT: ${key}`) }),
             );
           },
-          createRendererMessaging() {
-            const emitter = new EventEmitter<{
-              editor: vscode.NotebookEditor;
-              message: unknown;
-            }>();
-            return Effect.succeed({
-              postMessage: () => Promise.resolve(true),
-              onDidReceiveMessage: emitter.event,
-            });
+          writeFile() {
+            return Effect.succeed(true);
           },
-          registerNotebookCellStatusBarItemProvider(
-            notebookType: string,
-            impl: {
-              provideCellStatusBarItems(
-                cell: vscode.NotebookCell,
-              ): Effect.Effect<vscode.NotebookCellStatusBarItem[]>;
-              changes: Stream.Stream<void>;
-            },
-          ) {
-            return Effect.gen(function* () {
-              const registration = {
+        },
+        getNotebookDocuments: Effect.map(Ref.get(notebookDocuments), (docs) =>
+          Array.from(docs),
+        ),
+        getTextDocuments: Effect.map(
+          SubscriptionRef.get(visibleTextEditors),
+          (editors) => editors.map((editor) => editor.document),
+        ),
+        configurationChanges: Stream.never,
+        getConfiguration() {
+          return Effect.succeed({
+            get: () => undefined,
+            has: () => false,
+            inspect: () => undefined,
+            async update() {},
+          });
+        },
+        getWorkspaceFolders: Effect.succeed(Option.none()),
+        isTrusted() {
+          return true;
+        },
+        registerNotebookSerializer(notebookType, impl, options) {
+          return Effect.acquireRelease(
+            Effect.gen(function* () {
+              const serializer = {
                 notebookType,
-                provideCellStatusBarItems: (cell: vscode.NotebookCell) =>
-                  impl.provideCellStatusBarItems(cell),
+                serializer: impl,
+                options: options ?? undefined,
               };
-              yield* Ref.update(statusBarProviders, (providers) => [
-                ...providers,
-                registration,
-              ]);
-              yield* Effect.addFinalizer(() =>
-                Ref.update(statusBarProviders, (providers) =>
-                  providers.filter((p) => p !== registration),
-                ),
-              );
-            });
+              yield* Ref.update(serializers, HashSet.add(serializer));
+              return serializer;
+            }),
+            (serializer) => Ref.update(serializers, HashSet.remove(serializer)),
+          );
+        },
+        notebookDocumentOpened: Stream.fromPubSub(documentOpened),
+        notebookDocumentChanges: Stream.fromPubSub(documentChanges),
+        notebookDocumentClosed: Stream.fromPubSub(documentClosed),
+        fileRenames: Stream.never,
+        fileDeletes: Stream.never,
+        textDocumentChanges: Stream.never,
+        createFileSystemWatcher() {
+          return Stream.never;
+        },
+        applyEdit() {
+          return Effect.succeed(true);
+        },
+        openNotebookDocument(uri: vscode.Uri) {
+          return Effect.succeed(new NotebookDocument("marimo-notebook", uri));
+        },
+        openUntitledNotebookDocument(
+          notebookType: string,
+          content?: vscode.NotebookData,
+        ) {
+          return Effect.succeed(
+            new NotebookDocument(
+              notebookType,
+              Uri.file("/mocks/foo.py"),
+              content,
+            ),
+          );
+        },
+        openUntitledTextDocument(options: {
+          content?: string;
+          language?: string;
+        }) {
+          const version = 1;
+          return Effect.succeed(
+            new TextDocument(
+              Uri.file("/mocks/foo.txt"),
+              options.language ?? "plaintext",
+              version,
+              options.content ?? "",
+            ),
+          );
+        },
+        ...options.workspace,
+      },
+      env: {
+        appName: "Marimo Test",
+        appRoot: "/mocks",
+        appHost: "desktop",
+        machineId: "mock-machine-id",
+        createTelemetryLogger(sender, loggerOptions) {
+          const withCommon = (data: Record<string, unknown> = {}) => ({
+            ...data,
+            ...loggerOptions?.additionalCommonProperties,
+          });
+          return acquireDisposable(() => ({
+            isUsageEnabled: true,
+            isErrorsEnabled: true,
+            onDidChangeEnableStates: () => ({ dispose() {} }),
+            logUsage(eventName, data) {
+              sender.sendEventData(eventName, withCommon(data));
+            },
+            logError(eventNameOrError, data) {
+              if (typeof eventNameOrError === "string") {
+                sender.sendEventData(eventNameOrError, withCommon(data));
+              } else {
+                sender.sendErrorData(eventNameOrError, withCommon(data));
+              }
+            },
+            dispose() {},
+          }));
+        },
+        openExternal() {
+          return Effect.succeed(true);
+        },
+        ...options.env,
+      },
+      debug: {
+        registerDebugConfigurationProvider() {
+          return Effect.acquireRelease(Effect.void, () => Effect.void);
+        },
+        registerDebugAdapterDescriptorFactory() {
+          return Effect.acquireRelease(Effect.void, () => Effect.void);
+        },
+        startDebugging() {
+          return Effect.succeed(true);
+        },
+        stopDebugging(_sessionId?: string) {
+          return Effect.void;
+        },
+        onDidTerminateDebugSession() {
+          return Effect.acquireRelease(Effect.void, () => Effect.void);
+        },
+      },
+      notebooks: {
+        createNotebookController(id, notebookType, label) {
+          return Effect.acquireRelease(
+            Effect.gen(function* () {
+              const emitter = new EventEmitter();
+              const controller: vscode.NotebookController = {
+                id,
+                notebookType,
+                label,
+                onDidChangeSelectedNotebooks: emitter.event,
+                dispose: () => emitter.dispose(),
+                createNotebookCellExecution() {
+                  return {
+                    start() {},
+                    end() {},
+                    async appendOutput() {},
+                    async clearOutput() {},
+                    async appendOutputItems() {},
+                    executionOrder: undefined,
+                    token: {
+                      isCancellationRequested: false,
+                      onCancellationRequested() {
+                        return { dispose: () => {} };
+                      },
+                    },
+                    async replaceOutput() {},
+                    async replaceOutputItems() {},
+                    get cell(): vscode.NotebookCell {
+                      throw new Error(
+                        "CellExecution.cell not implemented in TestVsCode.",
+                      );
+                    },
+                  };
+                },
+                executeHandler() {},
+                updateNotebookAffinity(
+                  notebook: vscode.NotebookDocument,
+                  affinity: vscode.NotebookControllerAffinity,
+                ) {
+                  Effect.runSyncWith(context)(
+                    Ref.update(affinityUpdates, (updates) => [
+                      ...updates,
+                      {
+                        controllerId: id,
+                        notebookUri: notebook.uri.toString(),
+                        affinity,
+                      },
+                    ]),
+                  );
+                },
+              };
+              controllerSelectionEmitters.set(id, emitter);
+              yield* Ref.update(controllers, HashSet.add(controller));
+              return controller;
+            }),
+            (controller) =>
+              Effect.gen(function* () {
+                controllerSelectionEmitters.delete(controller.id);
+                yield* Effect.sync(() => controller.dispose());
+                yield* Ref.update(controllers, HashSet.remove(controller));
+              }),
+          );
+        },
+        createRendererMessaging() {
+          const emitter = new EventEmitter<{
+            editor: vscode.NotebookEditor;
+            message: unknown;
+          }>();
+          return Effect.succeed({
+            postMessage: () => Promise.resolve(true),
+            onDidReceiveMessage: emitter.event,
+          });
+        },
+        registerNotebookCellStatusBarItemProvider(
+          notebookType: string,
+          impl: {
+            provideCellStatusBarItems(
+              cell: vscode.NotebookCell,
+            ): Effect.Effect<vscode.NotebookCellStatusBarItem[]>;
+            changes: Stream.Stream<void>;
           },
-        }),
-        auth: Auth.make({
-          getSession() {
-            return Effect.succeed(Option.none());
-          },
-        }),
-        NotebookData,
-        NotebookCellData,
-        NotebookCellKind: {
-          Markup: 1,
-          Code: 2,
+        ) {
+          return Effect.gen(function* () {
+            const registration = {
+              notebookType,
+              provideCellStatusBarItems: (cell: vscode.NotebookCell) =>
+                impl.provideCellStatusBarItems(cell),
+            };
+            yield* Ref.update(statusBarProviders, (providers) => [
+              ...providers,
+              registration,
+            ]);
+            yield* Effect.addFinalizer(() =>
+              Ref.update(statusBarProviders, (providers) =>
+                providers.filter((p) => p !== registration),
+              ),
+            );
+          });
         },
-        NotebookCellOutput,
-        NotebookCellOutputItem,
-        NotebookEdit,
-        NotebookRange,
-        NotebookCellStatusBarItem,
-        NotebookCellStatusBarAlignment: {
-          Left: 1,
-          Right: 2,
+      },
+      auth: {
+        getSession() {
+          return Effect.succeed(Option.none());
         },
-        NotebookControllerAffinity: {
-          Default: 1,
-          Preferred: 2,
+      },
+      NotebookData,
+      NotebookCellData,
+      NotebookCellKind: {
+        Markup: 1,
+        Code: 2,
+      },
+      NotebookCellOutput,
+      NotebookCellOutputItem,
+      NotebookEdit,
+      NotebookRange,
+      NotebookCellStatusBarItem,
+      NotebookCellStatusBarAlignment: {
+        Left: 1,
+        Right: 2,
+      },
+      NotebookControllerAffinity: {
+        Default: 1,
+        Preferred: 2,
+      },
+      NotebookEditorRevealType: {
+        Default: 0,
+        InCenter: 1,
+        InCenterIfOutsideViewport: 2,
+        AtTop: 3,
+      },
+      WorkspaceEdit,
+      EventEmitter,
+      // oxlint-disable-next-line no-extraneous-class
+      DebugAdapterInlineImplementation: class {},
+      ProgressLocation: {
+        SourceControl: 1,
+        Window: 10,
+        Notification: 15,
+      },
+      ThemeIcon,
+      TreeItem,
+      TreeItemCollapsibleState: {
+        None: 0,
+        Collapsed: 1,
+        Expanded: 2,
+      },
+      ThemeColor,
+      StatusBarAlignment: {
+        Left: 1,
+        Right: 2,
+      },
+      Uri,
+      RelativePattern,
+      MarkdownString,
+      CompletionItem,
+      CompletionList,
+      Position,
+      Range,
+      Location,
+      Hover,
+      TextEdit,
+      SignatureHelp,
+      InlayHint,
+      InlayHintLabelPart,
+      SnippetString,
+      CodeAction,
+      CodeActionKind,
+      SignatureInformation,
+      ParameterInformation,
+      CodeLens,
+      DocumentHighlight,
+      DocumentSymbol,
+      FoldingRange,
+      SelectionRange,
+      SemanticTokensLegend,
+      SemanticTokens,
+      CompletionTriggerKind: {
+        Invoke: 0,
+        TriggerCharacter: 1,
+        TriggerForIncompleteCompletions: 2,
+      },
+      CompletionItemKind: {
+        Text: 0,
+        Method: 1,
+        Function: 2,
+        Constructor: 3,
+        Field: 4,
+        Variable: 5,
+        Class: 6,
+        Interface: 7,
+        Module: 8,
+        Property: 9,
+        Unit: 10,
+        Value: 11,
+        Enum: 12,
+        Keyword: 13,
+        Snippet: 14,
+        Color: 15,
+        File: 16,
+        Reference: 17,
+        Folder: 18,
+        EnumMember: 19,
+        Constant: 20,
+        Struct: 21,
+        Event: 22,
+        Operator: 23,
+        TypeParameter: 24,
+        User: 25,
+        Issue: 26,
+      },
+      version: options.version ?? "1.86.0",
+      extensions: {
+        getExtension: () => Option.none(),
+      },
+      lm: {
+        registerTool: () => Effect.succeed({ dispose: () => {} }),
+      },
+      LanguageModelToolResult,
+      LanguageModelTextPart,
+      languages: {
+        registerCodeLensProvider: () => Effect.void,
+        createDiagnosticCollection: (name: string) =>
+          new DiagnosticCollection(name),
+        registerHoverProvider: () => Effect.void,
+        registerDefinitionProvider: () => Effect.void,
+        registerDeclarationProvider: () => Effect.void,
+        registerTypeDefinitionProvider: () => Effect.void,
+        registerReferenceProvider: () => Effect.void,
+        registerDocumentHighlightProvider: () => Effect.void,
+        registerDocumentSymbolProvider: () => Effect.void,
+        registerFoldingRangeProvider: () => Effect.void,
+        registerSelectionRangeProvider: () => Effect.void,
+        registerDocumentFormattingEditProvider: () => Effect.void,
+        registerDocumentRangeFormattingEditProvider: () => Effect.void,
+        registerSignatureHelpProvider: () => Effect.void,
+        registerInlayHintsProvider: () => Effect.void,
+        registerCompletionItemProvider: () => Effect.void,
+        registerCodeActionsProvider: () => Effect.void,
+        registerRenameProvider: () => Effect.void,
+        registerDocumentSemanticTokensProvider: () => Effect.void,
+        registerDocumentRangeSemanticTokensProvider: () => Effect.void,
+      },
+      Diagnostic,
+      DiagnosticSeverity: {
+        Error: 0,
+        Warning: 1,
+        Information: 2,
+        Hint: 3,
+      },
+      CodeActionTriggerKind: {
+        Invoke: 1,
+        Automatic: 2,
+      },
+      // helper
+      utils: {
+        parseUri(value: string) {
+          return Result.try({
+            try: () => Uri.parse(value, /* strict */ true),
+            catch: (cause) => new ParseUriError({ cause }),
+          });
         },
-        NotebookEditorRevealType: {
-          Default: 0,
-          InCenter: 1,
-          InCenterIfOutsideViewport: 2,
-          AtTop: 3,
-        },
-        WorkspaceEdit,
-        EventEmitter,
-        // oxlint-disable-next-line no-extraneous-class
-        DebugAdapterInlineImplementation: class {},
-        ProgressLocation: {
-          SourceControl: 1,
-          Window: 10,
-          Notification: 15,
-        },
-        ThemeIcon,
-        TreeItem,
-        TreeItemCollapsibleState: {
-          None: 0,
-          Collapsed: 1,
-          Expanded: 2,
-        },
-        ThemeColor,
-        StatusBarAlignment: {
-          Left: 1,
-          Right: 2,
-        },
-        Uri,
-        RelativePattern,
-        MarkdownString,
-        CompletionItem,
-        CompletionList,
-        Position,
-        Range,
-        Location,
-        Hover,
-        TextEdit,
-        SignatureHelp,
-        InlayHint,
-        InlayHintLabelPart,
-        SnippetString,
-        CodeAction,
-        CodeActionKind,
-        SignatureInformation,
-        ParameterInformation,
-        CodeLens,
-        DocumentHighlight,
-        DocumentSymbol,
-        FoldingRange,
-        SelectionRange,
-        SemanticTokensLegend,
-        SemanticTokens,
-        CompletionTriggerKind: {
-          Invoke: 0,
-          TriggerCharacter: 1,
-          TriggerForIncompleteCompletions: 2,
-        },
-        CompletionItemKind: {
-          Text: 0,
-          Method: 1,
-          Function: 2,
-          Constructor: 3,
-          Field: 4,
-          Variable: 5,
-          Class: 6,
-          Interface: 7,
-          Module: 8,
-          Property: 9,
-          Unit: 10,
-          Value: 11,
-          Enum: 12,
-          Keyword: 13,
-          Snippet: 14,
-          Color: 15,
-          File: 16,
-          Reference: 17,
-          Folder: 18,
-          EnumMember: 19,
-          Constant: 20,
-          Struct: 21,
-          Event: 22,
-          Operator: 23,
-          TypeParameter: 24,
-          User: 25,
-          Issue: 26,
-        },
-        version: options.version ?? "1.86.0",
-        extensions: {
-          getExtension: () => Option.none(),
-        },
-        lm: {
-          registerTool: () => Effect.succeed({ dispose: () => {} }),
-        },
-        LanguageModelToolResult,
-        LanguageModelTextPart,
-        languages: Languages.make({
-          registerCodeLensProvider: () => Effect.void,
-          createDiagnosticCollection: (name: string) =>
-            new DiagnosticCollection(name),
-          registerHoverProvider: () => Effect.void,
-          registerDefinitionProvider: () => Effect.void,
-          registerDeclarationProvider: () => Effect.void,
-          registerTypeDefinitionProvider: () => Effect.void,
-          registerReferenceProvider: () => Effect.void,
-          registerDocumentHighlightProvider: () => Effect.void,
-          registerDocumentSymbolProvider: () => Effect.void,
-          registerFoldingRangeProvider: () => Effect.void,
-          registerSelectionRangeProvider: () => Effect.void,
-          registerDocumentFormattingEditProvider: () => Effect.void,
-          registerDocumentRangeFormattingEditProvider: () => Effect.void,
-          registerSignatureHelpProvider: () => Effect.void,
-          registerInlayHintsProvider: () => Effect.void,
-          registerCompletionItemProvider: () => Effect.void,
-          registerCodeActionsProvider: () => Effect.void,
-          registerRenameProvider: () => Effect.void,
-          registerDocumentSemanticTokensProvider: () => Effect.void,
-          registerDocumentRangeSemanticTokensProvider: () => Effect.void,
-        }),
-        Diagnostic,
-        DiagnosticSeverity: {
-          Error: 0,
-          Warning: 1,
-          Information: 2,
-          Hint: 3,
-        },
-        CodeActionTriggerKind: {
-          Invoke: 1,
-          Automatic: 2,
-        },
-        // helper
-        utils: {
-          parseUri(value: string) {
-            return Either.try({
-              try: () => Uri.parse(value, /* strict */ true),
-              catch: (cause) => new ParseUriError({ cause }),
-            });
-          },
-        },
-      }),
-    );
+      },
+    });
 
     return new TestVsCode({
       layer,
@@ -2416,9 +2375,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     });
   });
 
-  static Default = TestVsCode.make().pipe(
+  static layer = TestVsCode.make().pipe(
     Effect.map((test) => test.layer),
     Effect.scoped,
-    Layer.unwrapEffect,
+    Layer.unwrap,
   );
 }

@@ -18,15 +18,14 @@ export const TestTyLanguageServerLive = Layer.effect(
     yield* Effect.logWarning(
       "Using test mock for TyLanguageServer - skipping actual server startup",
     );
-    return TyLanguageServer.make({
-      getHealthStatus: () =>
-        Effect.succeed(
-          TyLanguageServerStatus.Running({
-            serverVersion: "0.0.0-test",
-            binarySource: BinarySource.UvInstalled({ path: "/test/ty" }),
-            pythonEnvironment: Option.none(),
-          }),
-        ),
-    });
+    return {
+      getHealthStatus: Effect.succeed(
+        TyLanguageServerStatus.Running({
+          serverVersion: "0.0.0-test",
+          binarySource: BinarySource.UvInstalled({ path: "/test/ty" }),
+          pythonEnvironment: Option.none(),
+        }),
+      ),
+    };
   }),
 );

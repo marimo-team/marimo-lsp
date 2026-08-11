@@ -1,5 +1,5 @@
 import { describe, assert, expect, it } from "@effect/vitest";
-import { Effect, Layer, LogLevel, Ref } from "effect";
+import { Effect, Layer, Ref } from "effect";
 
 import * as pkg from "../../package.json";
 import { getTestExtensionContext } from "../__mocks__/TestExtensionContext.ts";
@@ -32,7 +32,7 @@ const withTestCtx = Effect.fn(function* (
   );
   return {
     vscode,
-    extension: makeExtension(layer, LogLevel.Error),
+    extension: makeExtension(layer, "Error"),
   };
 });
 
@@ -42,7 +42,7 @@ describe("extension.activate", () => {
     Effect.fn(function* () {
       const { extension } = yield* withTestCtx();
 
-      const context = yield* getTestExtensionContext();
+      const context = yield* getTestExtensionContext;
       const api = yield* Effect.promise(() => extension.activate(context));
 
       expect(api).toMatchInlineSnapshot(`
@@ -67,7 +67,7 @@ describe("extension.activate", () => {
       const { vscode, extension } = yield* withTestCtx();
 
       // activate the extension
-      const context = yield* getTestExtensionContext();
+      const context = yield* getTestExtensionContext;
       yield* Effect.promise(() => extension.activate(context));
 
       const snapshot = yield* vscode.snapshot();
@@ -104,12 +104,12 @@ describe("extension.activate", () => {
     "should dispose the runtime exactly once",
     Effect.fn(function* () {
       const disposals = yield* Ref.make(0);
-      const finalizer = Layer.scopedDiscard(
+      const finalizer = Layer.effectDiscard(
         Effect.addFinalizer(() => Ref.update(disposals, (count) => count + 1)),
       );
       const { extension } = yield* withTestCtx(finalizer);
 
-      const context = yield* getTestExtensionContext();
+      const context = yield* getTestExtensionContext;
       yield* Effect.promise(() => extension.activate(context));
       yield* Effect.promise(() => extension.deactivate());
       yield* Effect.promise(() => extension.deactivate());

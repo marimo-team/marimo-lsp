@@ -37,6 +37,4 @@ export const TestExtensionContextLive = Layer.succeed(
   testExtensionContext,
 );
 
-export function getTestExtensionContext() {
-  return Effect.succeed(testExtensionContext);
-}
+export const getTestExtensionContext = Effect.succeed(testExtensionContext);

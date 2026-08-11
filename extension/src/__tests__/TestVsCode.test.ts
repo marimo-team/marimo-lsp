@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Chunk, Effect, Fiber, Option, Stream } from "effect";
+import { Effect, Fiber, Option, Stream } from "effect";
 
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -13,7 +13,7 @@ describe("TestVsCode", () => {
 
       const editor = yield* Effect.gen(function* () {
         const code = yield* VsCode;
-        const editor = yield* code.window.getActiveNotebookEditor();
+        const editor = yield* code.window.getActiveNotebookEditor;
         return editor;
       }).pipe(Effect.provide(vscode.layer));
 
@@ -32,7 +32,7 @@ describe("TestVsCode", () => {
 
       const documents = yield* Effect.gen(function* () {
         const code = yield* VsCode;
-        const documents = yield* code.workspace.getNotebookDocuments();
+        const documents = yield* code.workspace.getNotebookDocuments;
         return documents.map((doc) => doc.uri.toString()).toSorted();
       }).pipe(Effect.provide(vscode.layer));
 
@@ -57,7 +57,7 @@ describe("TestVsCode", () => {
 
       const activeEditor = yield* Effect.gen(function* () {
         const code = yield* VsCode;
-        return yield* code.window.getActiveNotebookEditor();
+        return yield* code.window.getActiveNotebookEditor;
       }).pipe(Effect.provide(vscode.layer));
 
       assert(activeEditor._tag === "Some");
@@ -80,9 +80,13 @@ describe("TestVsCode", () => {
       const result = yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
-        const fiber = yield* code.window
-          .activeNotebookEditorChanges()
-          .pipe(Stream.take(5), Stream.runCollect, Effect.fork);
+        // v4 SubscriptionRef.changes emits the current value on subscription,
+        // so we expect the initial None plus the five updates below.
+        const fiber = yield* code.window.activeNotebookEditorChanges.pipe(
+          Stream.take(6),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
 
         yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.some(editors[0]));
@@ -99,14 +103,13 @@ describe("TestVsCode", () => {
         yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.none());
 
-        const chunk = yield* Fiber.join(fiber);
-        return Chunk.toReadonlyArray(chunk).map(
-          Option.map((n) => n.notebook.uri.toString()),
-        );
+        const collected = yield* Fiber.join(fiber);
+        return collected.map(Option.map((n) => n.notebook.uri.toString()));
       }).pipe(Effect.provide(vscode.layer));
 
       expect(result.map(Option.getOrNull)).toMatchInlineSnapshot(`
         [
+          null,
           "file:///test/foo_mo1.py",
           "file:///test/foo_mo2.py",
           "file:///test/foo_mo3.py",

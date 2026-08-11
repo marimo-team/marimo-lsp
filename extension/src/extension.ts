@@ -1,4 +1,4 @@
-import { Layer, LogLevel } from "effect";
+import { Layer } from "effect";
 
 import { LoggerLive } from "./features/Logger.ts";
 import { makeExtension } from "./features/Main.ts";
@@ -23,5 +23,5 @@ export const { activate, deactivate } = makeExtension(
     Layer.provideMerge(Telemetry.layer),
     Layer.provideMerge(VsCode.layer),
   ),
-  LogLevel.All,
+  "All",
 );
