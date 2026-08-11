@@ -69,7 +69,7 @@ export const acquireSentryAdapter = Effect.fn("telemetry.acquireSentryAdapter")(
       }),
       (client) =>
         Effect.promise(() => client.close(2000)).pipe(
-          Effect.catchAllCause(() => Effect.void),
+          Effect.catchCause(() => Effect.void),
         ),
     );
 

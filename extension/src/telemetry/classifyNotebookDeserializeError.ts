@@ -46,12 +46,12 @@ export function classifyNotebookDeserializeError(
     };
   }
 
-  if (Cause.isTimeoutException(error)) {
+  if (Cause.isTimeoutError(error)) {
     return {
       report: true,
       domain: "notebook.deserialize",
       kind: "transport.timeout",
-      safeContext: { "error.exception_class": "TimeoutException" },
+      safeContext: { "error.exception_class": "TimeoutError" },
     };
   }
 

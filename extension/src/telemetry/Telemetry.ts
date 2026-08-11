@@ -1,11 +1,12 @@
 import {
   Cause,
+  Context,
   Effect,
-  HashMap,
   Inspectable,
+  Layer,
   Logger,
-  LogLevel,
   Option,
+  References,
   Schema,
   Array as ReadonlyArray,
 } from "effect";
@@ -53,9 +54,8 @@ const NOOP_POSTHOG: PostHogAdapter = {
  * responsible for its global usage/error gates and for cleaning all caller
  * data before the private PostHog and Sentry adapters receive it.
  */
-export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
-  dependencies: [Storage.layer],
-  scoped: Effect.gen(function* () {
+export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
+  make: Effect.gen(function* () {
     const code = yield* VsCode;
     const config = yield* code.workspace.getConfiguration("marimo");
     const enabled = config.get<boolean>("telemetry") ?? true;
@@ -88,7 +88,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       })
       .pipe(
         Effect.map(Option.some),
-        Effect.catchAllCause((cause) =>
+        Effect.catchCause((cause) =>
           Effect.logWarning("Failed to initialize VS Code telemetry").pipe(
             Effect.annotateLogs({ cause }),
             Effect.as(Option.none<vscode.TelemetryLogger>()),
@@ -104,7 +104,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       machineId: code.env.machineId,
       extensionVersion,
     }).pipe(
-      Effect.catchAllCause((cause) =>
+      Effect.catchCause((cause) =>
         Effect.logWarning("Failed to initialize Sentry telemetry").pipe(
           Effect.annotateLogs({ cause }),
           Effect.as(NOOP_SENTRY),
@@ -112,7 +112,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       ),
     );
     adapters.posthog = yield* acquirePostHogAdapter.pipe(
-      Effect.catchAllCause((cause) =>
+      Effect.catchCause((cause) =>
         Effect.logWarning("Failed to initialize PostHog telemetry").pipe(
           Effect.annotateLogs({ cause }),
           Effect.as(NOOP_POSTHOG),
@@ -167,7 +167,7 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
     return {
       commandExecuted: (command: string, success: boolean) =>
         usage("executed_command", { command, success }),
-      notebookCreated: () => usage("new_notebook_created"),
+      notebookCreated: usage("new_notebook_created"),
       notebookOpened: (cellCount: number) =>
         usage("notebook_opened", { cellCount }),
       tutorialOpened: (tutorial: string) =>
@@ -175,29 +175,33 @@ export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
       uvMissing: (
         binType: "Default" | "Configured" | "Discovered" | "Bundled",
       ) => usage("uv_missing", { binType }),
-      uvInstallClicked: () => usage("uv_install_clicked"),
+      uvInstallClicked: usage("uv_install_clicked"),
       binaryResolved,
       lspModeSelected,
       lspStarted,
       errorLogger,
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(Storage.layer),
+  );
+}
 
 function disabledTelemetry() {
   return {
     commandExecuted: (_command: string, _success: boolean) => Effect.void,
-    notebookCreated: () => Effect.void,
+    notebookCreated: Effect.void,
     notebookOpened: (_cellCount: number) => Effect.void,
     tutorialOpened: (_tutorial: string) => Effect.void,
     uvMissing: (
       _binType: "Default" | "Configured" | "Discovered" | "Bundled",
     ) => Effect.void,
-    uvInstallClicked: () => Effect.void,
+    uvInstallClicked: Effect.void,
     binaryResolved: (_binary: ResolvedBinary) => Effect.void,
     lspModeSelected: (_mode: "wasm" | "uv" | "configured") => Effect.void,
     lspStarted: (_mode: "wasm" | "uv" | "configured") => Effect.void,
-    errorLogger: Logger.none,
+    errorLogger: Logger.make<unknown, void>(() => undefined),
   };
 }
 
@@ -292,72 +296,78 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function makeEffectErrorLogger(logger: vscode.TelemetryLogger) {
-  return Logger.make((options) => {
+  return Logger.make<unknown, void>((options) => {
     try {
+      if (
+        options.logLevel !== "Info" &&
+        options.logLevel !== "Warn" &&
+        options.logLevel !== "Error" &&
+        options.logLevel !== "Fatal"
+      ) {
+        return;
+      }
       const messages = ReadonlyArray.ensure(options.message);
       const message = messages
         .filter((item): item is string => typeof item === "string")
         .join("\n");
-      const cause = findCause(options.cause, options.annotations, messages);
-      if (!Cause.isEmpty(cause) && Cause.isInterruptedOnly(cause)) return;
+      const annotations = options.fiber.getRef(
+        References.CurrentLogAnnotations,
+      );
+      const cause = findCause(options.cause, annotations, messages);
+      if (cause.reasons.length > 0 && Cause.hasInterruptsOnly(cause)) return;
 
-      if (
-        options.logLevel === LogLevel.Error ||
-        options.logLevel === LogLevel.Fatal
-      ) {
-        const data = logData(options.annotations, cause);
+      if (options.logLevel === "Error" || options.logLevel === "Fatal") {
+        const data = logData(annotations, cause);
         logger.logError(errorFromCause(cause, message), {
           ...data,
-          "error.level":
-            options.logLevel === LogLevel.Fatal ? "fatal" : "error",
+          "error.level": options.logLevel === "Fatal" ? "fatal" : "error",
         });
-      } else if (options.logLevel === LogLevel.Warning) {
+      } else if (options.logLevel === "Warn") {
         logger.logError("marimo.log.warning", { message });
-      } else if (options.logLevel === LogLevel.Info) {
+      } else if (options.logLevel === "Info") {
         logger.logError("marimo.log.info", { message });
       }
     } catch {
       // Logging must not be able to fail an application fiber.
     }
-  }).pipe(
-    Logger.filterLogLevel(
-      (level) =>
-        level === LogLevel.Info ||
-        level === LogLevel.Warning ||
-        level === LogLevel.Error ||
-        level === LogLevel.Fatal,
-    ),
-    Logger.map((): void => undefined),
-  );
+  });
 }
 
 function findCause(
   loggerCause: Cause.Cause<unknown>,
-  annotations: HashMap.HashMap<string, unknown>,
+  annotations: Readonly<Record<string, unknown>>,
   messages: ReadonlyArray<unknown>,
 ): Cause.Cause<unknown> {
-  if (!Cause.isEmpty(loggerCause)) return loggerCause;
-  for (const [key, value] of HashMap.toEntries(annotations)) {
+  if (loggerCause.reasons.length > 0) return loggerCause;
+  for (const [key, value] of Object.entries(annotations)) {
     if (key === "cause" && Cause.isCause(value)) return value;
   }
   return messages.find(Cause.isCause) ?? Cause.empty;
 }
 
 function logData(
-  annotations: HashMap.HashMap<string, unknown>,
+  annotations: Readonly<Record<string, unknown>>,
   cause: Cause.Cause<unknown>,
 ): Record<string, unknown> {
   const data: Record<string, unknown> = {};
-  for (const [key, value] of HashMap.toEntries(annotations)) {
+  for (const [key, value] of Object.entries(annotations)) {
     if (key === "cause" && Cause.isCause(value)) continue;
     data[key] = diagnosticValue(value);
   }
-  if (!Cause.isEmpty(cause)) data.cause = summarizeCause(cause);
+  if (cause.reasons.length > 0) data.cause = summarizeCause(cause);
   return data;
 }
 
+function causeFailures(cause: Cause.Cause<unknown>): ReadonlyArray<unknown> {
+  return cause.reasons.filter(Cause.isFailReason).map((reason) => reason.error);
+}
+
+function causeDefects(cause: Cause.Cause<unknown>): ReadonlyArray<unknown> {
+  return cause.reasons.filter(Cause.isDieReason).map((reason) => reason.defect);
+}
+
 function errorFromCause(cause: Cause.Cause<unknown>, message: string): Error {
-  const values = [...Cause.failures(cause), ...Cause.defects(cause)];
+  const values = [...causeFailures(cause), ...causeDefects(cause)];
   const error = values.find((value): value is Error => value instanceof Error);
   if (error) {
     const needsMessage =
@@ -380,10 +390,10 @@ function errorFromCause(cause: Cause.Cause<unknown>, message: string): Error {
 
 function summarizeCause(cause: Cause.Cause<unknown>) {
   return {
-    pretty: Cause.pretty(cause, { renderErrorCause: true }),
-    interrupted: Cause.isInterrupted(cause),
-    failures: [...Cause.failures(cause)].slice(0, 5).map(summarizeFailure),
-    defects: [...Cause.defects(cause)].slice(0, 5).map(summarizeFailure),
+    pretty: Cause.pretty(cause),
+    interrupted: Cause.hasInterrupts(cause),
+    failures: causeFailures(cause).slice(0, 5).map(summarizeFailure),
+    defects: causeDefects(cause).slice(0, 5).map(summarizeFailure),
   };
 }
 
@@ -412,7 +422,7 @@ function diagnosticValue(value: unknown, depth = 0): unknown {
   if (Cause.isCause(value)) return summarizeCause(value);
   if (depth >= 4) return describeUnknown(value);
   try {
-    return Inspectable.toJSON(value);
+    return Inspectable.toJson(value);
   } catch {
     return describeUnknown(value);
   }
@@ -445,7 +455,7 @@ function ignoreTelemetryError(action: () => void): void {
   }
 }
 
-function anonymousId(storage: Storage): Effect.Effect<string> {
+function anonymousId(storage: typeof Storage.Service): Effect.Effect<string> {
   return Effect.gen(function* () {
     const maybeId = yield* storage.global.get(ANONYMOUS_ID_KEY);
     if (Option.isSome(maybeId)) return maybeId.value;

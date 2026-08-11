@@ -41,7 +41,7 @@ it.effect(
       ),
     );
 
-    yield* telemetry.notebookCreated();
+    yield* telemetry.notebookCreated;
     yield* telemetry.lspStarted("wasm");
   }),
 );
