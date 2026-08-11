@@ -87,7 +87,7 @@ it.effect(
     const recorded: MarimoApiCall[] = [];
     const result = yield* Effect.gen(function* () {
       const sessions = yield* SessionsService;
-      return yield* Effect.either(sessions.restart(NOTEBOOK_URI));
+      return yield* Effect.result(sessions.restart(NOTEBOOK_URI));
     }).pipe(Effect.provide(makeLayer(recorded, { sessions: [] })));
 
     expect(Either.isLeft(result)).toBe(true);

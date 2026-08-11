@@ -64,7 +64,7 @@ const handler = Effect.fn("command.exportNotebookAsHtml")(function* (
         })
         .pipe(
           Effect.andThen(Schema.decodeUnknown(Schema.String)),
-          Effect.either,
+          Effect.result,
         );
 
       if (Either.isLeft(result)) {

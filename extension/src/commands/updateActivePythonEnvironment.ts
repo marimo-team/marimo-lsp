@@ -41,7 +41,7 @@ const handler = Effect.fn("command.updateActivePythonEnvironment")(function* (
     executable = controller.value.executable;
   } else {
     const script = editor.notebook.uri.fsPath;
-    const venvResult = yield* uv.syncScript({ script }).pipe(Effect.either);
+    const venvResult = yield* uv.syncScript({ script }).pipe(Effect.result);
 
     if (Either.isLeft(venvResult)) {
       yield* showErrorAndPromptLogs(

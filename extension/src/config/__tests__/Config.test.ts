@@ -1,5 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Either, Layer } from "effect";
+import { Effect, Layer, Result } from "effect";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Config, resolveMarimoLspServer } from "../../config/Config.ts";
@@ -82,15 +82,15 @@ it.effect(
 it.effect(
   "rejects custom mode without a command before it reaches MarimoClient",
   Effect.fn(function* () {
-    const result = yield* Effect.either(
+    const result = yield* Effect.result(
       resolveMarimoLspServer({
         server: "custom",
         path: [],
       }),
     );
 
-    assert(Either.isLeft(result));
-    expect(result.left).toMatchObject({
+    assert(Result.isFailure(result));
+    expect(result.failure).toMatchObject({
       _tag: "InvalidMarimoLspConfiguration",
       setting: "marimo.lsp.path",
     });
@@ -100,15 +100,15 @@ it.effect(
 it.effect(
   "rejects an unsupported language-server mode at the configuration boundary",
   Effect.fn(function* () {
-    const result = yield* Effect.either(
+    const result = yield* Effect.result(
       resolveMarimoLspServer({
         server: "auto",
         path: [],
       }),
     );
 
-    assert(Either.isLeft(result));
-    expect(result.left).toMatchObject({
+    assert(Result.isFailure(result));
+    expect(result.failure).toMatchObject({
       _tag: "InvalidMarimoLspConfiguration",
       setting: "marimo.lsp.server",
     });
@@ -118,15 +118,15 @@ it.effect(
 it.effect(
   "rejects a custom command with a blank executable",
   Effect.fn(function* () {
-    const result = yield* Effect.either(
+    const result = yield* Effect.result(
       resolveMarimoLspServer({
         server: "custom",
         path: ["   ", "--stdio"],
       }),
     );
 
-    assert(Either.isLeft(result));
-    expect(result.left).toMatchObject({
+    assert(Result.isFailure(result));
+    expect(result.failure).toMatchObject({
       _tag: "InvalidMarimoLspConfiguration",
       setting: "marimo.lsp.path",
     });

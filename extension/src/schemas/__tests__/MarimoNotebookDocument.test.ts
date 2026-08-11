@@ -100,7 +100,7 @@ describe("MarimoNotebookCell metadata updates", () => {
       const notebook = MarimoNotebookDocument.from(raw);
 
       expect(
-        Either.isLeft(Effect.runSync(Effect.either(notebook.parseMetadata()))),
+        Either.isLeft(Effect.runSync(Effect.result(notebook.parseMetadata()))),
       ).toBe(true);
     },
   );
@@ -144,7 +144,7 @@ describe("MarimoNotebookDocument app config", () => {
     });
 
     const result = Effect.runSync(
-      Effect.either(MarimoNotebookDocument.from(raw).parseMetadata()),
+      Effect.result(MarimoNotebookDocument.from(raw).parseMetadata()),
     );
     expect(Either.isLeft(result)).toBe(true);
   });

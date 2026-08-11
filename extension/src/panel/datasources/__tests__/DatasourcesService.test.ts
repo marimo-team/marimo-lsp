@@ -213,7 +213,7 @@ it.effect("does not resolve deferred state after an error", () => {
     );
 
     const load = yield* Effect.fork(
-      Effect.either(
+      Effect.result(
         service.loadTables(NOTEBOOK_URI, "warehouse", "analytics", "public", [
           "public",
         ]),
@@ -336,7 +336,7 @@ it.effect("retries nested table expansion after an error", () => {
     );
 
     const first = yield* Effect.fork(
-      Effect.either(
+      Effect.result(
         service.loadTables(NOTEBOOK_URI, "warehouse", "analytics", "events", [
           "catalog",
           "events",
@@ -392,7 +392,7 @@ it.effect("shares one timeout deadline and retries after it expires", () => {
     yield* service.updateConnections(NOTEBOOK_URI, connections([], false));
 
     const first = yield* Effect.fork(
-      Effect.either(
+      Effect.result(
         service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
       ),
     );
@@ -401,7 +401,7 @@ it.effect("shares one timeout deadline and retries after it expires", () => {
 
     yield* TestClock.adjust("20 seconds");
     const joined = yield* Effect.fork(
-      Effect.either(
+      Effect.result(
         service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
       ),
     );

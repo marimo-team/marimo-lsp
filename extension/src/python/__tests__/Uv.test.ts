@@ -60,7 +60,7 @@ describe("Uv", () => {
       Effect.fn(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           uv.addProject({ directory: tmpdir.path, packages: ["httpx"] }),
         );
         assert(Either.isLeft(result), "Expected failure");
@@ -187,7 +187,7 @@ print("This should fail to sync")
         );
 
         // Attempt to sync the script, which should fail with resolution error
-        const result = yield* Effect.either(uv.syncScript({ script }));
+        const result = yield* Effect.result(uv.syncScript({ script }));
 
         assert(Either.isLeft(result), "Expected failure");
         assert.strictEqual(result.left._tag, "UvResolutionError");
@@ -214,7 +214,7 @@ print("This script has no PEP 723 metadata")
         );
 
         // Attempt to get current deps, which should fail
-        const result = yield* Effect.either(uv.currentDeps({ script }));
+        const result = yield* Effect.result(uv.currentDeps({ script }));
 
         assert(Either.isLeft(result), "Expected failure");
         assert.strictEqual(result.left._tag, "UvMissingPep723MetadataError");

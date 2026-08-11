@@ -55,7 +55,7 @@ export const publishMarimoNotebookGist = Effect.fn(
         notebookUri: notebook.id,
         inner: {},
       })
-      .pipe(Effect.andThen(Schema.decodeUnknown(Schema.String)), Effect.either);
+      .pipe(Effect.andThen(Schema.decodeUnknown(Schema.String)), Effect.result);
 
     if (Either.isRight(ipynbResult)) {
       files[ipynbFilename] = { content: ipynbResult.right };

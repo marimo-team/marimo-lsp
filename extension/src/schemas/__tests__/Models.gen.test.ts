@@ -163,7 +163,7 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
   it.effect("requires JSON null for fire-and-forget responses", () =>
     Effect.gen(function* () {
       const api = makeApiClient(() => Effect.succeed(undefined));
-      const result = yield* Effect.either(
+      const result = yield* Effect.result(
         api.interrupt({ notebookUri: "file:///nb.py", inner: {} }),
       );
       expect(Either.isLeft(result)).toBe(true);

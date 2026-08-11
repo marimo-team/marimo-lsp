@@ -42,7 +42,7 @@ const openTutorial = Effect.fn("command.openTutorial")(function* () {
   const bytes = yield* code.workspace.fs.readFile(
     code.Uri.joinPath(context.extensionUri, "tutorials", filename),
   );
-  const result = yield* Effect.either(
+  const result = yield* Effect.result(
     Effect.gen(function* () {
       const tempFilePath = NodePath.join(
         NodeOs.tmpdir(),

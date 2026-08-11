@@ -165,7 +165,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const storage = yield* Storage;
-      const result = yield* Effect.either(storage.workspace.get(key));
+      const result = yield* Effect.result(storage.workspace.get(key));
 
       assert(result._tag === "Left", "Expected to fail decoding");
       assert(result.left._tag === "StorageDecodeError");

@@ -68,7 +68,7 @@ describe("restartKernel invocation", () => {
   it.effect("rejects unrelated UI metadata", () =>
     Effect.gen(function* () {
       const vscode = yield* TestVsCode.make();
-      const result = yield* Effect.either(
+      const result = yield* Effect.result(
         decodeCommandArguments(restartKernel.command, [
           { ui: true, source: "editorToolbar", notebookEditor: {} },
         ]).pipe(Effect.provide(vscode.layer)),
@@ -85,7 +85,7 @@ describe("restartKernel invocation", () => {
         { kind: 2, value: "x = 1", languageId: "python" },
         0,
       );
-      const result = yield* Effect.either(
+      const result = yield* Effect.result(
         decodeCommandArguments(restartKernel.command, [cell]).pipe(
           Effect.provide(vscode.layer),
         ),

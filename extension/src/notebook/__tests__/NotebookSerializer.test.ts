@@ -166,7 +166,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
         const serializer = yield* NotebookSerializer;
-        const invalidCell = yield* Effect.either(
+        const invalidCell = yield* Effect.result(
           serializer.serializeEffect({
             cells: [
               {
@@ -178,7 +178,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
             ],
           }),
         );
-        const invalidNotebook = yield* Effect.either(
+        const invalidNotebook = yield* Effect.result(
           serializer.serializeEffect({
             cells: [],
             metadata: { marimo: { misspelled: true } },
@@ -352,7 +352,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       "rejects a present null notebook metadata namespace",
       Effect.fn(function* () {
         const serializer = yield* NotebookSerializer;
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           serializer.serializeEffect({
             cells: [],
             metadata: { marimo: null },
@@ -367,7 +367,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       "returns a typed source error for non-marimo Python",
       Effect.fn(function* () {
         const serializer = yield* NotebookSerializer;
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           serializer.deserializeEffect(
             new TextEncoder().encode("print('hello')\n"),
           ),

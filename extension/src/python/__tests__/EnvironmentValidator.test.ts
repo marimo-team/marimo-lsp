@@ -66,7 +66,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       const venv = NodePath.join(tmpdir.path, ".venv-missing");
       yield* uv.venv(venv, { python, clear: true });
 
-      const result = yield* Effect.either(
+      const result = yield* Effect.result(
         validator.validate(
           TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
         ),
@@ -102,7 +102,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       yield* uv.venv(venv, { python, clear: true });
       yield* uv.pipInstall(["marimo<0.16.0"], { venv });
 
-      const result = yield* Effect.either(
+      const result = yield* Effect.result(
         validator.validate(
           TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
         ),
@@ -146,7 +146,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       yield* uv.venv(venv, { python, clear: true });
       yield* uv.pipInstall(["marimo"], { venv });
 
-      const result = yield* Effect.either(
+      const result = yield* Effect.result(
         validator.validate(
           TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
         ),
@@ -167,7 +167,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       const venv = NodePath.join(tmpdir.path, ".venv-nonexistent");
       NodeFs.rmSync(venv, { recursive: true, force: true });
 
-      const result = yield* Effect.either(
+      const result = yield* Effect.result(
         validator.validate(
           TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
         ),
@@ -192,7 +192,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           exitCode: 0,
         });
 
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
@@ -211,7 +211,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           exitCode: 0,
         });
 
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
@@ -235,7 +235,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           exitCode: 1,
         });
 
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
@@ -258,7 +258,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           exitCode: 0,
         });
 
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
@@ -277,7 +277,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           exitCode: 0,
         });
 
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
@@ -297,7 +297,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           exitCode: 0,
         });
 
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
@@ -317,7 +317,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           exitCode: 0,
         });
 
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
@@ -369,8 +369,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         });
         const env = TestPythonExtension.makeGlobalEnv(script);
 
-        const first = yield* Effect.either(validator.validate(env));
-        const second = yield* Effect.either(validator.validate(env));
+        const first = yield* Effect.result(validator.validate(env));
+        const second = yield* Effect.result(validator.validate(env));
 
         assert(Either.isLeft(first), "Expected first validation to fail");
         assert(Either.isLeft(second), "Expected second validation to fail");
@@ -421,7 +421,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           exitCode: 0,
         });
 
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
