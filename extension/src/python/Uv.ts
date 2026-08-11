@@ -3,19 +3,20 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
-import { Command, CommandExecutor } from "@effect/platform";
-import { NodeContext } from "@effect/platform-node";
-import type { PlatformError } from "@effect/platform/Error";
+import { NodeServices } from "@effect/platform-node";
 import {
+  Context,
   Data,
   Effect,
-  Function,
+  Layer,
   Option,
   Schema,
   Scope,
   Stream,
   String,
 } from "effect";
+import type { PlatformError } from "effect/PlatformError";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
@@ -59,13 +60,13 @@ const BUNDLED_UV_PATH = NodePath.join(
 
 export class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
   bin: UvBin;
-  command: Command.Command;
+  command: ChildProcess.Command;
   cause: PlatformError;
 }> {}
 
 export class UvUnknownError extends Data.TaggedError("UvUnknownError")<{
-  command: Command.Command;
-  exitCode?: CommandExecutor.ExitCode;
+  command: ChildProcess.Command;
+  exitCode?: ChildProcessSpawner.ExitCode;
   stderr: string;
 }> {}
 
@@ -182,13 +183,12 @@ export class LanguageServerInstallError extends Data.TaggedError(
   }
 }
 
-export class Uv extends Effect.Service<Uv>()("Uv", {
-  dependencies: [NodeContext.layer, Config.layer],
-  scoped: Effect.gen(function* () {
+export class Uv extends Context.Service<Uv>()("Uv", {
+  make: Effect.gen(function* () {
     const code = yield* VsCode;
     const config = yield* Config;
     const telemetry = yield* Telemetry;
-    const executor = yield* CommandExecutor.CommandExecutor;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const scope = yield* Effect.scope;
     const channel = yield* code.window.createOutputChannel("marimo (uv)");
 
@@ -220,20 +220,21 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         return bin;
       }).pipe(
         Effect.provideService(VsCode, code),
-        Effect.provideService(CommandExecutor.CommandExecutor, executor),
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.provideService(Scope.Scope, scope),
       ),
     );
 
     const uv = (options: Parameters<ReturnType<typeof createUv>>[0]) =>
       Effect.flatMap(uvBinary, (bin) =>
-        createUv(bin, executor, channel)(options),
+        createUv(bin, spawner, channel)(options),
       );
 
     return {
       bin: uvBinary,
-      getCacheDir: () =>
-        Effect.map(uv({ args: ["cache", "dir"] }), (e) => e.stdout.trim()),
+      getCacheDir: Effect.map(uv({ args: ["cache", "dir"] }), (e) =>
+        e.stdout.trim(),
+      ),
       channel: {
         name: channel.name,
         show: channel.show.bind(channel),
@@ -277,7 +278,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
         );
       },
       syncScript(options: { script: string }) {
-        return Effect.andThen(
+        return Effect.map(
           uv({ args: ["sync", "--script", options.script] }),
           ({ stderr }) => resolveScriptEnvironmentPath(stderr),
         ).pipe(
@@ -404,14 +405,14 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
                 const newAttempts = [...attempts, { strategy, error }];
                 return Option.match(policy.next(strategy, error), {
                   onSome: (next) =>
-                    Effect.zipRight(
+                    Effect.andThen(
                       Effect.logDebug(
                         `Strategy "${strategy}" failed, retrying with "${next}"`,
                       ),
                       loop(newAttempts, next),
                     ),
                   onNone: () =>
-                    Effect.zipRight(
+                    Effect.andThen(
                       Effect.logDebug(
                         `Strategy "${strategy}" failed, no more strategies to try`,
                       ),
@@ -432,7 +433,7 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
                     attempts: [...attempts, { strategy, error }],
                   }),
               ),
-              Effect.andThen(() =>
+              Effect.map(() =>
                 NodePath.resolve(
                   options.targetPath,
                   "bin",
@@ -446,11 +447,17 @@ export class Uv extends Effect.Service<Uv>()("Uv", {
       },
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide([NodeServices.layer, Config.layer]),
+  );
+}
 
 function createUv(
   bin: UvBin,
-  executor: CommandExecutor.CommandExecutor,
+  spawner: Context.Service.Shape<
+    typeof ChildProcessSpawner.ChildProcessSpawner
+  >,
   channel: vscode.OutputChannel,
 ) {
   return Effect.fn("uv")(function* (options: {
@@ -458,30 +465,31 @@ function createUv(
     readonly env?: Record<string, string>;
     readonly cwd?: string;
   }) {
-    const command = Command.make(bin.executable, ...options.args).pipe(
-      Command.env({ NO_COLOR: "1", ...options.env }),
-      options.cwd ? Command.workingDirectory(options.cwd) : Function.identity,
-    );
+    // `extendEnv: true` preserves v3 semantics, where the child inherited the
+    // parent environment merged with the command-specific env vars.
+    const command = ChildProcess.make(bin.executable, options.args, {
+      env: { NO_COLOR: "1", ...options.env },
+      extendEnv: true,
+      cwd: options.cwd,
+    });
     yield* Effect.annotateCurrentSpan("args", options.args);
     const [exitCode, stdout, stderr] = yield* command.pipe(
-      Command.start,
-      Effect.provideService(CommandExecutor.CommandExecutor, executor),
-      Effect.flatMap((process) =>
+      Effect.flatMap((handle) =>
         Effect.all(
           [
             // Waits for the process to exit and returns
             // the ExitCode of the command that was run
-            process.exitCode,
-            runString(process.stdout, channel),
-            runString(process.stderr, channel),
+            handle.exitCode,
+            runString(handle.stdout, channel),
+            runString(handle.stderr, channel),
           ],
           { concurrency: 3 },
         ),
       ),
       Effect.scoped,
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.catchTag(
-        "BadArgument",
-        "SystemError",
+        "PlatformError",
         (cause) => new UvExecutionError({ bin, command, cause }),
       ),
     );
@@ -517,7 +525,7 @@ function runString<E, R>(
       channel.append(text);
       return Effect.void;
     }),
-    Stream.runFold(String.empty, String.concat),
+    Stream.runFold(() => String.empty, String.concat),
   );
 }
 
@@ -568,7 +576,7 @@ const findUvBin = Effect.fn("findUvBin")(function* (
     let found: UvBin | null = null;
     for (const path of defaultPaths) {
       const exists = yield* Effect.try(() => NodeFs.existsSync(path)).pipe(
-        Effect.orElse(() => Effect.succeed(false)),
+        Effect.catch(() => Effect.succeed(false)),
       );
       if (exists) {
         found = UvBin.Discovered({
@@ -631,19 +639,18 @@ class VersionInfo extends Schema.Class<VersionInfo>("VersionInfo")({
   }
 }
 
-function getUvVersion(bin: UvBin) {
+const getUvVersion = Effect.fn("getUvVersion")(function* (bin: UvBin) {
   const args = ["self", "version", "--output-format", "json"];
-  const command = Command.make(bin.executable, ...args);
-  return command.pipe(
-    Command.string,
-    Effect.map(Schema.decodeOption(Schema.parseJson(VersionInfo))),
+  const command = ChildProcess.make(bin.executable, args);
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  return yield* spawner.string(command).pipe(
+    Effect.map(Schema.decodeOption(Schema.fromJsonString(VersionInfo))),
     Effect.catchTag(
-      "BadArgument",
-      "SystemError",
+      "PlatformError",
       (cause) => new UvExecutionError({ bin, command, cause }),
     ),
   );
-}
+});
 
 /**
  * Handles UvNotInstalledError by showing a modal dialog with options.
@@ -651,8 +658,8 @@ function getUvVersion(bin: UvBin) {
  */
 const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   error: UvExecutionError,
-  code: VsCode,
-  telemetry: Telemetry,
+  code: Context.Service.Shape<typeof VsCode>,
+  telemetry: Context.Service.Shape<typeof Telemetry>,
 ) {
   yield* telemetry.uvMissing(error.bin._tag);
 
@@ -676,7 +683,7 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   });
 
   if (Option.isSome(choice) && choice.value === "Install uv") {
-    yield* telemetry.uvInstallClicked();
+    yield* telemetry.uvInstallClicked;
 
     // Create hidden terminal so Python extension doesn't auto-activate environments
     const terminal = yield* code.window.createTerminal({

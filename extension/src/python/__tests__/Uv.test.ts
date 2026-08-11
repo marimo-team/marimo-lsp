@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Effect, Either, Layer, Option } from "effect";
+import { Context, Effect, Layer, Option, Result } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -16,8 +16,8 @@ const python = "3.13";
 const timeout = 30_000;
 const isWindows = NodeProcess.platform === "win32";
 
-class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
-  scoped: Effect.gen(function* () {
+class TmpDir extends Context.Service<TmpDir>()("TmpDir", {
+  make: Effect.gen(function* () {
     const disposable = yield* Effect.acquireRelease(
       Effect.sync(() => {
         return NodeFs.mkdtempDisposableSync(
@@ -30,7 +30,9 @@ class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
       path: disposable.path,
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
 
 const UvLive = Layer.empty.pipe(
   Layer.merge(Uv.layer),
@@ -63,8 +65,8 @@ describe("Uv", () => {
         const result = yield* Effect.result(
           uv.addProject({ directory: tmpdir.path, packages: ["httpx"] }),
         );
-        assert(Either.isLeft(result), "Expected failure");
-        assert.strictEqual(result.left._tag, "UvMissingPyProjectError");
+        assert(Result.isFailure(result), "Expected failure");
+        assert.strictEqual(result.failure._tag, "UvMissingPyProjectError");
       }),
       { timeout },
     );
@@ -189,8 +191,8 @@ print("This should fail to sync")
         // Attempt to sync the script, which should fail with resolution error
         const result = yield* Effect.result(uv.syncScript({ script }));
 
-        assert(Either.isLeft(result), "Expected failure");
-        assert.strictEqual(result.left._tag, "UvResolutionError");
+        assert(Result.isFailure(result), "Expected failure");
+        assert.strictEqual(result.failure._tag, "UvResolutionError");
       }),
       { timeout },
     );
@@ -216,8 +218,8 @@ print("This script has no PEP 723 metadata")
         // Attempt to get current deps, which should fail
         const result = yield* Effect.result(uv.currentDeps({ script }));
 
-        assert(Either.isLeft(result), "Expected failure");
-        assert.strictEqual(result.left._tag, "UvMissingPep723MetadataError");
+        assert(Result.isFailure(result), "Expected failure");
+        assert.strictEqual(result.failure._tag, "UvMissingPep723MetadataError");
       }),
       { timeout },
     );

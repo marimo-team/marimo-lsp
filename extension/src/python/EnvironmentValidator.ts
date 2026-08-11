@@ -1,21 +1,23 @@
-import { Command, CommandExecutor, FileSystem } from "@effect/platform";
-import { NodeContext } from "@effect/platform-node";
-import type { PlatformError } from "@effect/platform/Error";
+import { NodeServices } from "@effect/platform-node";
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
 import {
   Cache,
+  Context,
   Data,
   Duration,
   Effect,
   Equal,
+  FileSystem,
   Hash,
+  Layer,
   Option,
-  type SchemaError,
   Schema,
   Stream,
   String,
 } from "effect";
+import type { PlatformError } from "effect/PlatformError";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -32,10 +34,7 @@ class EnvironmentInspectionError extends Data.TaggedError(
   "EnvironmentInspectionError",
 )<{
   readonly env: py.Environment;
-  readonly cause?:
-    | PlatformError
-    | SchemaError.SchemaError
-    | InvalidExecutableError;
+  readonly cause?: PlatformError | Schema.SchemaError | InvalidExecutableError;
   readonly stdout?: string;
   readonly stderr?: string;
 }> {}
@@ -95,12 +94,11 @@ class EnvironmentRequirementError extends Data.TaggedError(
  * warning, so a slow environment pays the wait once instead of on every
  * run.
  */
-export class EnvironmentValidator extends Effect.Service<EnvironmentValidator>()(
+export class EnvironmentValidator extends Context.Service<EnvironmentValidator>()(
   "EnvironmentValidator",
   {
-    dependencies: [NodeContext.layer, PythonEnvInvalidation.layer],
-    scoped: Effect.gen(function* () {
-      const executor = yield* CommandExecutor.CommandExecutor;
+    make: Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const fs = yield* FileSystem.FileSystem;
       const code = yield* VsCode;
       const invalidation = yield* PythonEnvInvalidation;
@@ -113,8 +111,7 @@ export class EnvironmentValidator extends Effect.Service<EnvironmentValidator>()
       );
 
       const inspect = Effect.fnUntraced(function* (env: py.Environment) {
-        const packages = yield* Command.make(
-          env.path,
+        const packages = yield* ChildProcess.make(env.path, [
           "-c",
           `\
 import json, sys, io
@@ -136,14 +133,13 @@ except Exception:
 # Restore stdout and emit the result
 sys.stdout = _real_stdout
 print(json.dumps(packages), flush=True)`,
-        ).pipe(
-          Command.start,
-          Effect.flatMap((process) =>
+        ]).pipe(
+          Effect.flatMap((handle) =>
             Effect.all(
               [
-                process.exitCode,
-                collectString(process.stdout),
-                collectString(process.stderr),
+                handle.exitCode,
+                collectString(handle.stdout),
+                collectString(handle.stderr),
               ],
               { concurrency: 3 },
             ),
@@ -155,10 +151,10 @@ print(json.dumps(packages), flush=True)`,
                 new EnvironmentInspectionError({ env, stdout, stderr }),
               );
             }
-            return Schema.decodeUnknown(Schema.parseJson(EnvCheck))(
+            return Schema.decodeUnknownEffect(Schema.fromJsonString(EnvCheck))(
               stdout,
             ).pipe(
-              Effect.catchAll(
+              Effect.catch(
                 (cause) =>
                   new EnvironmentInspectionError({
                     env,
@@ -170,7 +166,7 @@ print(json.dumps(packages), flush=True)`,
             );
           }),
           Effect.catchTag(
-            "SystemError",
+            "PlatformError",
             Effect.fn(function* (error) {
               const exists = yield* fs.exists(env.path);
               return yield* exists
@@ -178,29 +174,23 @@ print(json.dumps(packages), flush=True)`,
                 : new InvalidExecutableError({ env });
             }),
           ),
-          Effect.catchTag(
-            "BadArgument",
-            Effect.fn(function* (error) {
-              const exists = yield* fs.exists(env.path);
-              return yield* exists
-                ? error
-                : new InvalidExecutableError({ env });
-            }),
-          ),
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             cause._tag === "EnvironmentInspectionError"
               ? cause
               : new EnvironmentInspectionError({ env, cause }),
           ),
           Effect.timeoutOption(INSPECTION_TIMEOUT),
-          Effect.provideService(CommandExecutor.CommandExecutor, executor),
+          Effect.provideService(
+            ChildProcessSpawner.ChildProcessSpawner,
+            spawner,
+          ),
         );
 
         if (Option.isNone(packages)) {
           yield* Effect.logWarning(
             "Environment inspection timed out; running without verification",
           ).pipe(Effect.annotateLogs({ executable: env.path }));
-          yield* Effect.forkDaemon(
+          yield* Effect.forkDetach(
             code.window.showWarningMessage(
               `Could not verify marimo in ${env.path} (timed out); running anyway. ` +
                 `This can happen when the environment lives on a slow filesystem (e.g. a Windows drive mounted in WSL2).`,
@@ -244,16 +234,14 @@ print(json.dumps(packages), flush=True)`,
       });
 
       yield* Effect.forkScoped(
-        invalidation
-          .changes()
-          .pipe(
-            Stream.runForEach((reason) =>
-              Effect.logDebug("Invalidating environment validation cache").pipe(
-                Effect.annotateLogs({ reason }),
-                Effect.andThen(cache.invalidateAll),
-              ),
+        invalidation.changes.pipe(
+          Stream.runForEach((reason) =>
+            Effect.logDebug("Invalidating environment validation cache").pipe(
+              Effect.annotateLogs({ reason }),
+              Effect.andThen(Cache.invalidateAll(cache)),
             ),
           ),
+        ),
       );
 
       return {
@@ -265,14 +253,18 @@ print(json.dumps(packages), flush=True)`,
           // environment (e.g. marimo installed in a terminal) is re-checked
           // on the next run. Concurrent lookups for the same key still
           // dedupe while the inspection is in flight.
-          return yield* cache
-            .get(key)
-            .pipe(Effect.tapError(() => cache.invalidate(key)));
+          return yield* Cache.get(cache, key).pipe(
+            Effect.tapError(() => Cache.invalidate(cache, key)),
+          );
         }),
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide([NodeServices.layer, PythonEnvInvalidation.layer]),
+  );
+}
 
 /**
  * A validated `py.Environment`. Cached by interpreter path, so only expose
@@ -305,6 +297,6 @@ function collectString<E, R>(
 ): Effect.Effect<string, E, R> {
   return stream.pipe(
     Stream.decodeText(),
-    Stream.runFold(String.empty, String.concat),
+    Stream.runFold(() => String.empty, String.concat),
   );
 }

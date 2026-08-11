@@ -4,7 +4,7 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Effect, Either, Layer, Schema } from "effect";
+import { Context, Effect, Exit, Layer, Result, Schema } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
@@ -17,8 +17,8 @@ import { SemVerFromString } from "../../schemas/SemVerFromString.ts";
 
 const isWindows = NodeProcess.platform === "win32";
 
-class TempDir extends Effect.Service<TempDir>()("TempDir", {
-  scoped: Effect.gen(function* () {
+class TempDir extends Context.Service<TempDir>()("TempDir", {
+  make: Effect.gen(function* () {
     const disposable = yield* Effect.acquireRelease(
       Effect.sync(() => {
         return NodeFs.mkdtempDisposableSync(
@@ -31,7 +31,9 @@ class TempDir extends Effect.Service<TempDir>()("TempDir", {
       path: disposable.path,
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
 
 const EnvironmentValidatorLive = Layer.empty.pipe(
   Layer.provideMerge(TempDir.layer),
@@ -72,12 +74,12 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         ),
       );
 
-      assert(Either.isLeft(result), "Expected validation to fail");
+      assert(Result.isFailure(result), "Expected validation to fail");
       assert(
-        result.left._tag === "EnvironmentRequirementError",
-        `Expected EnvironmentRequirementError, got ${result.left._tag}`,
+        result.failure._tag === "EnvironmentRequirementError",
+        `Expected EnvironmentRequirementError, got ${result.failure._tag}`,
       );
-      expect(result.left.diagnostics).toMatchInlineSnapshot(`
+      expect(result.failure.diagnostics).toMatchInlineSnapshot(`
         [
           {
             "kind": "missing",
@@ -108,12 +110,12 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         ),
       );
 
-      assert(Either.isLeft(result), "Expected validation to fail");
+      assert(Result.isFailure(result), "Expected validation to fail");
       assert(
-        result.left._tag === "EnvironmentRequirementError",
-        `Expected EnvironmentRequirementError, got ${result.left._tag}`,
+        result.failure._tag === "EnvironmentRequirementError",
+        `Expected EnvironmentRequirementError, got ${result.failure._tag}`,
       );
-      expect(result.left.diagnostics).toMatchInlineSnapshot(`
+      expect(result.failure.diagnostics).toMatchInlineSnapshot(`
       	[
       	  {
       	    "currentVersion": {
@@ -152,8 +154,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         ),
       );
 
-      assert(Either.isRight(result), "Expected validation to succeed");
-      assert.strictEqual(result.right._tag, "ValidPythonEnvironment");
+      assert(Result.isSuccess(result), "Expected validation to succeed");
+      assert.strictEqual(result.success._tag, "ValidPythonEnvironment");
     }),
     { timeout: 60_000 },
   );
@@ -172,8 +174,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
         ),
       );
-      assert(Either.isLeft(result), "Expected validation to fail");
-      assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
+      assert(Result.isFailure(result), "Expected validation to fail");
+      assert.strictEqual(result.failure._tag, "EnvironmentInspectionError");
     }),
     { timeout: 30_000 },
   );
@@ -196,8 +198,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Either.isLeft(result), "Expected validation to fail");
-        assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
+        assert(Result.isFailure(result), "Expected validation to fail");
+        assert.strictEqual(result.failure._tag, "EnvironmentInspectionError");
       }),
     );
 
@@ -215,12 +217,12 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Either.isLeft(result), "Expected validation to fail");
+        assert(Result.isFailure(result), "Expected validation to fail");
         assert(
-          result.left._tag === "EnvironmentInspectionError",
-          `Expected EnvironmentInspectionError, got ${result.left._tag}`,
+          result.failure._tag === "EnvironmentInspectionError",
+          `Expected EnvironmentInspectionError, got ${result.failure._tag}`,
         );
-        expect(result.left.stdout).toContain("WARNING");
+        expect(result.failure.stdout).toContain("WARNING");
       }),
     );
 
@@ -239,12 +241,12 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Either.isLeft(result), "Expected validation to fail");
+        assert(Result.isFailure(result), "Expected validation to fail");
         assert(
-          result.left._tag === "EnvironmentInspectionError",
-          `Expected EnvironmentInspectionError, got ${result.left._tag}`,
+          result.failure._tag === "EnvironmentInspectionError",
+          `Expected EnvironmentInspectionError, got ${result.failure._tag}`,
         );
-        expect(result.left.stderr).toContain("SyntaxError");
+        expect(result.failure.stderr).toContain("SyntaxError");
       }),
     );
 
@@ -262,8 +264,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Either.isLeft(result), "Expected validation to fail");
-        assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
+        assert(Result.isFailure(result), "Expected validation to fail");
+        assert.strictEqual(result.failure._tag, "EnvironmentInspectionError");
       }),
     );
 
@@ -281,8 +283,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Either.isLeft(result), "Expected validation to fail");
-        assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
+        assert(Result.isFailure(result), "Expected validation to fail");
+        assert.strictEqual(result.failure._tag, "EnvironmentInspectionError");
       }),
     );
 
@@ -301,8 +303,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Either.isRight(result), "Expected validation to succeed");
-        assert.strictEqual(result.right._tag, "ValidPythonEnvironment");
+        assert(Result.isSuccess(result), "Expected validation to succeed");
+        assert.strictEqual(result.success._tag, "ValidPythonEnvironment");
       }),
     );
 
@@ -321,12 +323,12 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Either.isLeft(result), "Expected validation to fail");
+        assert(Result.isFailure(result), "Expected validation to fail");
         assert(
-          result.left._tag === "EnvironmentRequirementError",
-          `Expected EnvironmentRequirementError, got ${result.left._tag}`,
+          result.failure._tag === "EnvironmentRequirementError",
+          `Expected EnvironmentRequirementError, got ${result.failure._tag}`,
         );
-        expect(result.left.diagnostics).toEqual([
+        expect(result.failure.diagnostics).toEqual([
           { kind: "missing", package: "marimo" },
         ]);
       }),
@@ -372,8 +374,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         const first = yield* Effect.result(validator.validate(env));
         const second = yield* Effect.result(validator.validate(env));
 
-        assert(Either.isLeft(first), "Expected first validation to fail");
-        assert(Either.isLeft(second), "Expected second validation to fail");
+        assert(Result.isFailure(first), "Expected first validation to fail");
+        assert(Result.isFailure(second), "Expected second validation to fail");
         expect(runCount(countFile)).toBe(2);
       }),
     );
@@ -425,8 +427,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Either.isLeft(result), "Expected validation to fail");
-        assert.strictEqual(result.left._tag, "EnvironmentInspectionError");
+        assert(Result.isFailure(result), "Expected validation to fail");
+        assert.strictEqual(result.failure._tag, "EnvironmentInspectionError");
       }),
     );
   });
@@ -476,15 +478,15 @@ function shellEscape(s: string): string {
 
 // -- SemVerFromString schema edge cases --
 
-const decodeSemVer = Schema.decodeUnknownEither(SemVerFromString);
+const decodeSemVer = Schema.decodeUnknownExit(SemVerFromString);
 
 it.effect(
   "SemVerFromString: parses standard semver",
   Effect.fn(function* () {
     yield* Effect.void;
     const result = decodeSemVer("1.2.3");
-    assert(Either.isRight(result));
-    expect(result.right).toEqual({ major: 1, minor: 2, patch: 3 });
+    assert(Exit.isSuccess(result));
+    expect(result.value).toEqual({ major: 1, minor: 2, patch: 3 });
   }),
 );
 
@@ -493,8 +495,8 @@ it.effect(
   Effect.fn(function* () {
     yield* Effect.void;
     const result = decodeSemVer("26.2");
-    assert(Either.isRight(result));
-    expect(result.right).toEqual({ major: 26, minor: 2, patch: 0 });
+    assert(Exit.isSuccess(result));
+    expect(result.value).toEqual({ major: 26, minor: 2, patch: 0 });
   }),
 );
 
@@ -503,8 +505,8 @@ it.effect(
   Effect.fn(function* () {
     yield* Effect.void;
     const result = decodeSemVer("0.21.0-rc1");
-    assert(Either.isRight(result));
-    expect(result.right).toEqual({ major: 0, minor: 21, patch: 0 });
+    assert(Exit.isSuccess(result));
+    expect(result.value).toEqual({ major: 0, minor: 21, patch: 0 });
   }),
 );
 
@@ -513,7 +515,7 @@ it.effect(
   Effect.fn(function* () {
     yield* Effect.void;
     const result = decodeSemVer("not-a-version");
-    assert(Either.isLeft(result));
+    assert(Exit.isFailure(result));
   }),
 );
 
@@ -522,6 +524,6 @@ it.effect(
   Effect.fn(function* () {
     yield* Effect.void;
     const result = decodeSemVer("");
-    assert(Either.isLeft(result));
+    assert(Exit.isFailure(result));
   }),
 );
