@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { CellRuns } from "../kernel/CellRuns.ts";
+import { CellRunInput, CellRuns } from "../kernel/CellRuns.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -13,7 +13,7 @@ const handler = Effect.fn("command.restartKernel")(function* (
 ) {
   const code = yield* VsCode;
   const sessions = yield* SessionsService;
-  const executions = yield* CellRuns;
+  const cellRuns = yield* CellRuns;
 
   if (Option.isNone(target)) {
     yield* code.window.showInformationMessage(
@@ -22,7 +22,7 @@ const handler = Effect.fn("command.restartKernel")(function* (
     return;
   }
 
-  const { document: notebook, editor } = target.value;
+  const { document: notebook } = target.value;
 
   if (Option.isNone(yield* sessions.find(notebook.id))) {
     yield* code.window.showInformationMessage(
@@ -55,7 +55,9 @@ const handler = Effect.fn("command.restartKernel")(function* (
 
       if (!succeeded) return false;
 
-      yield* executions.handleInterrupt(editor);
+      yield* cellRuns.accept(
+        CellRunInput.Interrupted({ notebookId: notebook.id }),
+      );
 
       progress.report({ message: "Kernel restarted." });
       yield* Effect.sleep("500 millis");

@@ -65,11 +65,26 @@ import {
  */
 type VsCodeService = Context.Service.Shape<typeof VsCode>;
 
-interface CellExecutionController {
+interface CellRunController {
   readonly createNotebookCellExecution: (
     cell: MarimoNotebookCell,
   ) => vscode.NotebookCellExecution;
 }
+
+/** Inputs accepted by the Cell Runs Module. */
+export type CellRunInput = Data.TaggedEnum<{
+  Operations: {
+    readonly operations: ReadonlyArray<CellOperationNotification>;
+    readonly editor: vscode.NotebookEditor;
+    readonly controller: CellRunController;
+  };
+  Interrupted: { readonly notebookId: NotebookId };
+  CellsRemoved: {
+    readonly notebookId: NotebookId;
+    readonly cellIds: ReadonlyArray<NotebookCellId>;
+  };
+}>;
+export const CellRunInput = Data.taggedEnum<CellRunInput>();
 
 /**
  * Thrown when VS Code's `createNotebookCellExecution` fails because the cell
@@ -118,7 +133,7 @@ interface PerformContext {
   readonly key: CellExecutionKey;
   readonly cellId: NotebookCellId;
   readonly notebookCell: MarimoNotebookCell | undefined;
-  readonly controller: CellExecutionController | undefined;
+  readonly controller: CellRunController | undefined;
   readonly notebook: vscode.NotebookDocument | undefined;
 }
 
@@ -459,125 +474,153 @@ export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
       isCellStale,
       recordExecution,
       invalidateCell,
-      forgetCell(notebookId: NotebookId, cellId: NotebookCellId) {
-        return SubscriptionRef.update(lastExecutedCodeRef, (map) => {
-          const notebookMap = HashMap.get(map, notebookId);
-          if (Option.isNone(notebookMap)) return map;
-          const updated = HashMap.remove(notebookMap.value, cellId);
-          return HashMap.isEmpty(updated)
-            ? HashMap.remove(map, notebookId)
-            : HashMap.set(map, notebookId, updated);
-        });
-      },
       get changes(): Stream.Stream<void> {
         return Stream.merge(
           Stream.map(SubscriptionRef.changes(lastExecutedCodeRef), constVoid),
           Stream.map(contentChanges, constVoid),
         );
       },
-      handleInterrupt: (editor: vscode.NotebookEditor) =>
-        Effect.gen(function* () {
-          const targets = EffectArray.fromIterable(records).filter(
-            ([, record]) => record.editor === editor,
-          );
-          for (const [key, record] of targets) {
-            const { entry, actions } = step(record.entry, Op.Interrupt());
-            yield* Effect.sync(() =>
-              MutableHashMap.set(records, key, { ...record, entry }),
-            );
-            const ctx: PerformContext = {
-              key,
-              cellId: key.cellId,
-              notebookCell: undefined,
-              controller: undefined,
-              notebook: undefined,
-            };
-            for (const action of actions) {
-              // oxlint-disable-next-line eslint/no-await-in-loop -- ordered
-              yield* perform(action, ctx);
+      accept: (input: CellRunInput) =>
+        CellRunInput.$match(input, {
+          CellsRemoved: ({ notebookId, cellIds }) =>
+            SubscriptionRef.update(lastExecutedCodeRef, (map) => {
+              const notebookMap = HashMap.get(map, notebookId);
+              if (Option.isNone(notebookMap)) return map;
+              const updated = cellIds.reduce(
+                (cells, cellId) => HashMap.remove(cells, cellId),
+                notebookMap.value,
+              );
+              return HashMap.isEmpty(updated)
+                ? HashMap.remove(map, notebookId)
+                : HashMap.set(map, notebookId, updated);
+            }),
+          Interrupted: ({ notebookId }) =>
+            Effect.gen(function* () {
+              const targets = EffectArray.fromIterable(records).filter(
+                ([key]) => key.notebookId === notebookId,
+              );
+              for (const [key, record] of targets) {
+                const { entry, actions } = step(record.entry, Op.Interrupt());
+                yield* Effect.sync(() =>
+                  MutableHashMap.set(records, key, { ...record, entry }),
+                );
+                const ctx: PerformContext = {
+                  key,
+                  cellId: key.cellId,
+                  notebookCell: undefined,
+                  controller: undefined,
+                  notebook: undefined,
+                };
+                for (const action of actions) {
+                  // oxlint-disable-next-line eslint/no-await-in-loop -- ordered
+                  yield* perform(action, ctx);
+                }
+              }
+            }),
+          Operations: ({ operations: messages, editor, controller }) => {
+            // Every notification still advances the run state. Only
+            // presentation writes are coalesced: for each cell, the newest
+            // notification in the batch that can actually render owns the
+            // output write. A trailing state-only notification must not
+            // suppress a terminal output.
+            const renderIndex = new Map<NotebookCellId, number>();
+            for (const [index, message] of messages.entries()) {
+              if (
+                message.status === "idle" ||
+                message.output != null ||
+                message.console != null
+              ) {
+                renderIndex.set(message.cell_id, index);
+              }
             }
-          }
+
+            return Effect.forEach(
+              messages,
+              (msg, index) =>
+                Effect.gen(function* () {
+                  const cellId = extractCellIdFromCellMessage(msg);
+                  const notebook = MarimoNotebookDocument.from(editor.notebook);
+                  const key = cellExecutionKey(notebook.id, cellId);
+
+                  const record = Option.getOrElse(
+                    MutableHashMap.get(records, key),
+                    () => ({
+                      entry: makeCellRunState(cellId),
+                      editor,
+                      resource: Option.none<RunResource>(),
+                    }),
+                  );
+
+                  const notebookCell = yield* findNotebookCell(
+                    notebook,
+                    cellId,
+                  );
+
+                  // Fold the cell-op into the run state once, up front, so the
+                  // folded state is persisted even for an op we drop.
+                  const next = transitionCell(record.entry.state, msg);
+                  const op = parseOp(next, msg);
+                  if (Option.isNone(op)) {
+                    yield* Effect.logWarning(
+                      "Queued cell-op missing run_id; cannot track execution",
+                    ).pipe(Effect.annotateLogs({ cellId, status: msg.status }));
+                    yield* Effect.sync(() =>
+                      MutableHashMap.set(records, key, {
+                        ...record,
+                        entry: { ...record.entry, state: next },
+                      }),
+                    );
+                    return;
+                  }
+
+                  const result = step(record.entry, op.value);
+                  yield* Effect.sync(() =>
+                    MutableHashMap.set(records, key, {
+                      ...record,
+                      entry: result.entry,
+                    }),
+                  );
+
+                  const ctx: PerformContext = {
+                    key,
+                    cellId,
+                    notebookCell,
+                    controller,
+                    notebook: editor.notebook,
+                  };
+                  for (const action of result.actions) {
+                    if (
+                      renderIndex.get(cellId) !== index &&
+                      (action._tag === "EmitOutputs" ||
+                        action._tag === "FinalizeOutputs")
+                    ) {
+                      continue;
+                    }
+                    // oxlint-disable-next-line eslint/no-await-in-loop --
+                    // actions are ordered (FinalizeOutputs before EndExecution)
+                    yield* perform(action, ctx);
+                  }
+                }).pipe(
+                  Effect.catchTag("NotebookCellNotFoundError", () =>
+                    Effect.logWarning(
+                      "Notebook cell not found for cell operation",
+                    ),
+                  ),
+                  Effect.catchTag("InvalidCellError", (error) =>
+                    Effect.logWarning(
+                      "Cell is no longer valid, skipping execution",
+                    ).pipe(
+                      Effect.annotateLogs({ cause: Cause.fail(error.cause) }),
+                    ),
+                  ),
+                  Effect.annotateLogs({
+                    cellId: extractCellIdFromCellMessage(msg),
+                  }),
+                ),
+              { discard: true },
+            );
+          },
         }),
-      handleOperation: (
-        msg: CellOperationNotification,
-        options: {
-          editor: vscode.NotebookEditor;
-          controller: CellExecutionController;
-          renderOutput?: boolean;
-        },
-      ) =>
-        Effect.gen(function* () {
-          const { editor, controller } = options;
-          const cellId = extractCellIdFromCellMessage(msg);
-          const notebook = MarimoNotebookDocument.from(editor.notebook);
-          const key = cellExecutionKey(notebook.id, cellId);
-
-          const record = Option.getOrElse(
-            MutableHashMap.get(records, key),
-            () => ({
-              entry: makeCellRunState(cellId),
-              editor,
-              resource: Option.none<RunResource>(),
-            }),
-          );
-
-          const notebookCell = yield* findNotebookCell(notebook, cellId);
-
-          // Fold the cell-op into the run state once, up front, so the folded
-          // state is persisted even for an op we end up dropping.
-          const next = transitionCell(record.entry.state, msg);
-          const op = parseOp(next, msg);
-          if (Option.isNone(op)) {
-            yield* Effect.logWarning(
-              "Queued cell-op missing run_id; cannot track execution",
-            ).pipe(Effect.annotateLogs({ cellId, status: msg.status }));
-            yield* Effect.sync(() =>
-              MutableHashMap.set(records, key, {
-                ...record,
-                entry: { ...record.entry, state: next },
-              }),
-            );
-            return;
-          }
-
-          const result = step(record.entry, op.value);
-          yield* Effect.sync(() =>
-            MutableHashMap.set(records, key, {
-              ...record,
-              entry: result.entry,
-            }),
-          );
-
-          const ctx: PerformContext = {
-            key,
-            cellId,
-            notebookCell,
-            controller,
-            notebook: editor.notebook,
-          };
-          for (const action of result.actions) {
-            if (
-              options.renderOutput === false &&
-              (action._tag === "EmitOutputs" ||
-                action._tag === "FinalizeOutputs")
-            ) {
-              continue;
-            }
-            // oxlint-disable-next-line eslint/no-await-in-loop -- actions are
-            // ordered (e.g. FinalizeOutputs must land before EndExecution)
-            yield* perform(action, ctx);
-          }
-        }).pipe(
-          Effect.catchTag("NotebookCellNotFoundError", () =>
-            Effect.logWarning("Notebook cell not found for cell operation"),
-          ),
-          Effect.catchTag("InvalidCellError", (error) =>
-            Effect.logWarning(
-              "Cell is no longer valid, skipping execution",
-            ).pipe(Effect.annotateLogs({ cause: Cause.fail(error.cause) })),
-          ),
-          Effect.annotateLogs({ cellId: extractCellIdFromCellMessage(msg) }),
-        ),
     };
   }),
 }) {

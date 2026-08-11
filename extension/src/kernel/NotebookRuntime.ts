@@ -56,7 +56,7 @@ import type {
   MarimoOperation,
   NotificationOf,
 } from "../types.ts";
-import { CellRuns } from "./CellRuns.ts";
+import { CellRunInput, CellRuns } from "./CellRuns.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import {
   NotebookFileRootError,
@@ -455,48 +455,49 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
             .pipe(
               Stream.tap((operation) => PubSub.publish(operations, operation)),
             ),
-          Effect.fn("NotebookRuntime.processOperation")(
-            function* (message, options) {
-              // The session is captured when the operation enters the runtime,
-              // not when its per-notebook worker eventually processes it.
-              // This keeps queued operations from an old session out of a
-              // rapidly reopened notebook with the same URI.
-              if (
-                notebookSessions.current(message.notebookUri) !==
-                message.session
-              ) {
-                return;
-              }
-              yield* Effect.annotateCurrentSpan(
-                "operation.type",
-                message.operation.op,
-              );
-              yield* Effect.raceFirst(
-                processOperation(message, {
-                  forNotebook,
-                  session: message.session,
-                  ...options,
-                }).pipe(
-                  Effect.catchCause(
-                    Effect.fn(function* (cause) {
-                      yield* Effect.logError(
-                        "Failed to process marimo operation",
-                      ).pipe(Effect.annotateLogs({ cause }));
-                      yield* Effect.forkChild(
-                        showErrorAndPromptLogs(
-                          "Failed to process marimo operation.",
-                        ),
-                      );
-                    }),
-                  ),
-                  Effect.annotateLogs({
-                    "operation.type": message.operation.op,
+          Effect.fn("NotebookRuntime.processOperations")(function* (batch) {
+            // The session is captured when the operation enters the runtime,
+            // not when its per-notebook worker eventually processes it.
+            // This keeps queued operations from an old session out of a
+            // rapidly reopened notebook with the same URI.
+            const messages = batch.filter(
+              (message) =>
+                notebookSessions.current(message.notebookUri) ===
+                message.session,
+            );
+            const first = messages[0];
+            if (first === undefined) return;
+            const operationTypes = messages.map(
+              (message) => message.operation.op,
+            );
+            yield* Effect.annotateCurrentSpan(
+              "operation.types",
+              operationTypes.join(","),
+            );
+            yield* Effect.raceFirst(
+              processOperationBatch(messages, {
+                forNotebook,
+                session: first.session,
+              }).pipe(
+                Effect.catchCause(
+                  Effect.fn(function* (cause) {
+                    yield* Effect.logError(
+                      "Failed to process marimo operation",
+                    ).pipe(Effect.annotateLogs({ cause }));
+                    yield* Effect.forkChild(
+                      showErrorAndPromptLogs(
+                        "Failed to process marimo operation.",
+                      ),
+                    );
                   }),
                 ),
-                Deferred.await(message.session.invalidated),
-              );
-            },
-          ),
+                Effect.annotateLogs({
+                  "operation.types": operationTypes,
+                }),
+              ),
+              Deferred.await(first.session.invalidated),
+            );
+          }),
         ),
       );
 
@@ -712,8 +713,8 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
  * Processes operations in order with one worker per notebook.
  *
  * Operations received while a worker is busy form the next batch. Every
- * operation updates runtime state, but only the newest renderable output for
- * each cell in that batch is projected into VS Code.
+ * operation updates runtime state. The consumer owns the meaning of a batch;
+ * this scheduler only guarantees ordering and per-notebook independence.
  */
 export function processRuntimeOperations<
   Operation extends MarimoOperation,
@@ -721,48 +722,13 @@ export function processRuntimeOperations<
   R,
 >(
   operations: Stream.Stream<Operation>,
-  process: (
-    operation: Operation,
-    options: { readonly renderCellOutput: boolean },
-  ) => Effect.Effect<void, E, R>,
+  process: (operations: ReadonlyArray<Operation>) => Effect.Effect<void, E, R>,
 ): Effect.Effect<void, E, Exclude<R, Scope.Scope>> {
   return Effect.scoped(
     Effect.gen(function* () {
       type Work = Option.Option<Operation>;
       const queues = new Map<NotebookId, Queue.Queue<Work>>();
       const workers: Array<Fiber.Fiber<void, E>> = [];
-
-      const processBatch = (batch: ReadonlyArray<Operation>) => {
-        // The newest op for a cell may carry no payload at all — marimo sends
-        // state-only cell-ops (`stale_inputs`, `serialization`) that trail the
-        // terminal `idle` op. Project the newest op that can actually render,
-        // so a payload-less trailer never costs the cell its output.
-        const renderIndex = new Map<NotebookCellId, number>();
-        for (const [index, message] of batch.entries()) {
-          const operation = message.operation;
-          if (operation.op !== "cell-op") continue;
-          if (
-            operation.status === "idle" ||
-            operation.output != null ||
-            operation.console != null
-          ) {
-            renderIndex.set(operation.cell_id, index);
-          }
-        }
-
-        return Effect.forEach(
-          batch,
-          (message, index) => {
-            const operation = message.operation;
-            return process(message, {
-              renderCellOutput:
-                operation.op !== "cell-op" ||
-                renderIndex.get(operation.cell_id) === index,
-            });
-          },
-          { discard: true },
-        );
-      };
 
       const runWorker = (queue: Queue.Queue<Work>) =>
         Effect.gen(function* () {
@@ -782,7 +748,7 @@ export function processRuntimeOperations<
                 }),
               ),
             ];
-            yield* processBatch(batch);
+            yield* process(batch);
 
             if (waiting.some(Option.isNone)) return;
           }
@@ -823,12 +789,42 @@ function isValueUpdateEcho(
   );
 }
 
+function processOperationBatch(
+  messages: ReadonlyArray<SessionOperation>,
+  options: {
+    forNotebook: (notebookId: NotebookId) => NotebookHandle;
+    readonly session: OpenNotebookSession;
+  },
+) {
+  return Effect.gen(function* () {
+    const cellOperations = messages.flatMap(({ operation }) =>
+      operation.op === "cell-op" ? [operation] : [],
+    );
+    let acceptedCellOperations = false;
+
+    for (const message of messages) {
+      if (message.operation.op === "cell-op") {
+        if (!acceptedCellOperations) {
+          acceptedCellOperations = true;
+          yield* processNotebookCellOperations(
+            message.notebookUri,
+            cellOperations,
+            options,
+          );
+        }
+        continue;
+      }
+
+      yield* processOperation(message, options);
+    }
+  });
+}
+
 function processOperation(
   { notebookUri, operation }: MarimoOperation,
   options: {
     forNotebook: (notebookId: NotebookId) => NotebookHandle;
     readonly session: OpenNotebookSession;
-    readonly renderCellOutput: boolean;
   },
 ) {
   return Effect.gen(function* () {
@@ -862,6 +858,8 @@ function processOperation(
         );
         break;
       case "cell-op":
+        yield* processNotebookCellOperations(notebookUri, [operation], options);
+        break;
       case "interrupted":
       case "missing-package-alert":
       case "remove-ui-elements":
@@ -926,10 +924,65 @@ function applyTransactionToEditor(
   });
 }
 
+function processNotebookCellOperations(
+  notebookUri: NotebookId,
+  operations: ReadonlyArray<CellOperationNotification>,
+  options: {
+    forNotebook: (notebookId: NotebookId) => NotebookHandle;
+    readonly session: OpenNotebookSession;
+  },
+) {
+  return Effect.gen(function* () {
+    const editors = yield* NotebookEditorRegistry;
+    const cellRuns = yield* CellRuns;
+    const editor = yield* editors.getLastNotebookEditor(notebookUri);
+    if (Option.isNone(editor)) {
+      yield* Effect.logWarning(
+        "No active notebook editor, skipping cell operations",
+      );
+      return;
+    }
+    if (editor.value.notebook !== options.session.document) return;
+
+    const controller = yield* options.forNotebook(notebookUri).getController;
+    if (Option.isNone(controller)) {
+      yield* Effect.logWarning(
+        "No active controller, skipping cell operations",
+      );
+      return;
+    }
+
+    const accepted = operations.filter(
+      (operation) =>
+        extractCellIdFromCellMessage(operation) !== SCRATCH_CELL_ID,
+    );
+    if (accepted.length === 0) return;
+
+    yield* cellRuns.accept(
+      CellRunInput.Operations({
+        operations: accepted,
+        editor: editor.value,
+        controller: controller.value,
+      }),
+    );
+
+    yield* Effect.forEach(
+      accepted,
+      (operation) =>
+        Effect.forkDetach(
+          Effect.raceFirst(
+            handleStdinPrompt(operation, options.forNotebook(notebookUri)),
+            Deferred.await(options.session.invalidated),
+          ).pipe(Effect.asVoid),
+        ),
+      { discard: true },
+    );
+  });
+}
+
 function processNotebookOperation(
   notebookUri: NotebookId,
   operation:
-    | CellOperationNotification
     | NotificationOf<"interrupted">
     | NotificationOf<"missing-package-alert">
     | NotificationOf<"remove-ui-elements">
@@ -939,7 +992,6 @@ function processNotebookOperation(
   options: {
     forNotebook: (notebookId: NotebookId) => NotebookHandle;
     readonly session: OpenNotebookSession;
-    readonly renderCellOutput: boolean;
   },
 ) {
   return Effect.gen(function* () {
@@ -971,22 +1023,10 @@ function processNotebookOperation(
     const notebook = MarimoNotebookDocument.from(editor.value.notebook);
 
     switch (operation.op) {
-      case "cell-op": {
-        if (extractCellIdFromCellMessage(operation) === SCRATCH_CELL_ID) {
-          break;
-        }
-        yield* executions.handleOperation(operation, {
-          editor: editor.value,
-          controller: controller.value,
-          renderOutput: options.renderCellOutput,
-        });
-        yield* forkForSession(
-          handleStdinPrompt(operation, options.forNotebook(notebookUri)),
-        );
-        break;
-      }
       case "interrupted":
-        yield* executions.handleInterrupt(editor.value);
+        yield* executions.accept(
+          CellRunInput.Interrupted({ notebookId: notebookUri }),
+        );
         break;
       case "missing-package-alert":
         yield* forkForSession(
@@ -1088,10 +1128,17 @@ function syncCellIdentity(
       yield* options.code.workspace.applyEdit(edit);
     }
 
-    for (const cellId of removedCellIds) {
-      if (addedCellIds.has(cellId)) continue;
+    const removed = [...removedCellIds].filter(
+      (cellId) => !addedCellIds.has(cellId),
+    );
+    yield* options.executions.accept(
+      CellRunInput.CellsRemoved({
+        notebookId: event.notebook.id,
+        cellIds: removed,
+      }),
+    );
 
-      yield* options.executions.forgetCell(event.notebook.id, cellId);
+    for (const cellId of removed) {
       yield* options.notebook.deleteCell({ cellId }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning(

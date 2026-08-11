@@ -12,7 +12,11 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import { buildCellOutputs, CellRuns } from "../../kernel/CellRuns.ts";
+import {
+  buildCellOutputs,
+  CellRunInput,
+  CellRuns,
+} from "../../kernel/CellRuns.ts";
 import { PythonController } from "../../kernel/PythonController.ts";
 import {
   cellId,
@@ -1123,14 +1127,20 @@ it.effect(
         run_id: "shared-run",
       };
 
-      yield* executions.handleOperation(message, {
-        editor: firstEditor,
-        controller,
-      });
-      yield* executions.handleOperation(message, {
-        editor: secondEditor,
-        controller,
-      });
+      yield* executions.accept(
+        CellRunInput.Operations({
+          operations: [message],
+          editor: firstEditor,
+          controller,
+        }),
+      );
+      yield* executions.accept(
+        CellRunInput.Operations({
+          operations: [message],
+          editor: secondEditor,
+          controller,
+        }),
+      );
 
       expect(createdFor.toSorted((a, b) => a.localeCompare(b))).toEqual(
         [
@@ -1143,7 +1153,7 @@ it.effect(
 );
 
 it.effect(
-  "updates cell state without projecting skipped outputs",
+  "projects only the latest renderable output in a batch",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(
       "file:///test/notebook_mo.py",
@@ -1197,45 +1207,46 @@ it.effect(
         },
       };
 
-      yield* executions.handleOperation(
-        {
-          op: "cell-op",
-          cell_id: cid,
-          status: "queued",
-          run_id: "run",
-        },
-        { editor, controller },
-      );
-      yield* executions.handleOperation(
-        {
-          op: "cell-op",
-          cell_id: cid,
-          status: "running",
-          output: {
-            channel: "output",
-            mimetype: "text/plain",
-            data: "superseded",
-            timestamp: 0,
-          },
-        },
-        { editor, controller, renderOutput: false },
-      );
-
-      expect(projectionCalls).toEqual([]);
-
-      yield* executions.handleOperation(
-        {
-          op: "cell-op",
-          cell_id: cid,
-          status: "running",
-          output: {
-            channel: "output",
-            mimetype: "text/plain",
-            data: "latest",
-            timestamp: 1,
-          },
-        },
-        { editor, controller, renderOutput: true },
+      yield* executions.accept(
+        CellRunInput.Operations({
+          operations: [
+            {
+              op: "cell-op",
+              cell_id: cid,
+              status: "queued",
+              run_id: "run",
+            },
+            {
+              op: "cell-op",
+              cell_id: cid,
+              status: "running",
+              output: {
+                channel: "output",
+                mimetype: "text/plain",
+                data: "superseded",
+                timestamp: 0,
+              },
+            },
+            {
+              op: "cell-op",
+              cell_id: cid,
+              status: "running",
+              output: {
+                channel: "output",
+                mimetype: "text/plain",
+                data: "latest",
+                timestamp: 1,
+              },
+            },
+            {
+              op: "cell-op",
+              cell_id: cid,
+              serialization: "state-only trailer",
+            },
+          ],
+          editor,
+          controller,
+        }),
       );
 
       expect(projectionCalls).toEqual(["clear", "append"]);
@@ -1294,14 +1305,17 @@ it.effect(
         stale_inputs: true,
       };
 
-      yield* executions.handleOperation(message, {
-        editor,
-        controller: new PythonController(
-          controller,
-          "test-controller",
-          Stream.never,
-        ),
-      });
+      yield* executions.accept(
+        CellRunInput.Operations({
+          operations: [message],
+          editor,
+          controller: new PythonController(
+            controller,
+            "test-controller",
+            Stream.never,
+          ),
+        }),
+      );
 
       // Check that CellRuns tracked the cell as stale
       expect(
@@ -1386,14 +1400,17 @@ it.effect(
         run_id: "test-run-id",
       };
 
-      yield* executions.handleOperation(message, {
-        editor,
-        controller: new PythonController(
-          controller,
-          "test-controller",
-          Stream.never,
-        ),
-      });
+      yield* executions.accept(
+        CellRunInput.Operations({
+          operations: [message],
+          editor,
+          controller: new PythonController(
+            controller,
+            "test-controller",
+            Stream.never,
+          ),
+        }),
+      );
 
       // Check that the cell's stale state was cleared
       expect(
@@ -1459,14 +1476,17 @@ it.effect(
         run_id: null,
       };
 
-      yield* executions.handleOperation(message, {
-        editor,
-        controller: new PythonController(
-          controller,
-          "test-controller",
-          Stream.never,
-        ),
-      });
+      yield* executions.accept(
+        CellRunInput.Operations({
+          operations: [message],
+          editor,
+          controller: new PythonController(
+            controller,
+            "test-controller",
+            Stream.never,
+          ),
+        }),
+      );
 
       // Stale state preserved because we bail before recordExecution
       expect(
@@ -1545,10 +1565,13 @@ it.effect(
         run_id: "test-run-id",
       };
 
-      yield* executions.handleOperation(message, {
-        editor,
-        controller,
-      });
+      yield* executions.accept(
+        CellRunInput.Operations({
+          operations: [message],
+          editor,
+          controller,
+        }),
+      );
 
       // If we get here, the error was handled gracefully
       expect(true).toBe(true);
@@ -1606,10 +1629,13 @@ it.effect(
         },
       };
 
-      yield* executions.handleOperation(message, {
-        editor,
-        controller,
-      });
+      yield* executions.accept(
+        CellRunInput.Operations({
+          operations: [message],
+          editor,
+          controller,
+        }),
+      );
 
       // If we get here, the error was handled gracefully
       expect(true).toBe(true);

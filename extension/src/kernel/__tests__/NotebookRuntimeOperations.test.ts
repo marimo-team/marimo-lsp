@@ -165,34 +165,32 @@ function makeIdleCellOperation(
 
 describe("NotebookRuntime operation processing", () => {
   it.effect(
-    "projects only the latest cell output received during a pending projection",
+    "batches operations received while a notebook worker is busy",
     Effect.fn(function* () {
       const source =
         yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
       const firstStarted = yield* Latch.make();
       const releaseFirst = yield* Latch.make();
       const latestProcessed = yield* Latch.make();
-      const processed = yield* Ref.make<
-        ReadonlyArray<{ runId: string | null | undefined; project: boolean }>
-      >([]);
+      const processed = yield* Ref.make<ReadonlyArray<ReadonlyArray<string>>>(
+        [],
+      );
       const notebook = notebookId("notebook");
 
       const fiber = yield* processRuntimeOperations(
         Stream.fromPubSub(source),
-        Effect.fn(function* ({ operation }, options) {
-          assert(operation.op === "cell-op");
-          yield* Ref.update(processed, (items) => [
-            ...items,
-            {
-              runId: operation.run_id,
-              project: options.renderCellOutput,
-            },
-          ]);
-          if (operation.run_id === "one") {
+        Effect.fn(function* (batch) {
+          const runIds = batch.map(({ operation }) => {
+            assert(operation.op === "cell-op");
+            assert(typeof operation.run_id === "string");
+            return operation.run_id;
+          });
+          yield* Ref.update(processed, (items) => [...items, runIds]);
+          if (runIds.includes("one")) {
             yield* firstStarted.open;
             yield* releaseFirst.await;
           }
-          if (operation.run_id === "three") {
+          if (runIds.includes("three")) {
             yield* latestProcessed.open;
           }
         }),
@@ -218,41 +216,38 @@ describe("NotebookRuntime operation processing", () => {
       yield* Fiber.interrupt(fiber);
 
       assert.deepStrictEqual(yield* Ref.get(processed), [
-        { runId: "one", project: true },
-        { runId: "two", project: false },
-        { runId: "three", project: true },
+        ["one"],
+        ["two", "three"],
       ]);
     }),
   );
 
   it.effect(
-    "projects the newest renderable output when a state-only cell-op trails it",
+    "preserves pending operation order within a batch",
     Effect.fn(function* () {
       const source =
         yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
       const blockerStarted = yield* Latch.make();
       const releaseBlocker = yield* Latch.make();
       const trailerProcessed = yield* Latch.make();
-      const processed = yield* Ref.make<
-        ReadonlyArray<{ label: string; project: boolean }>
-      >([]);
+      const processed = yield* Ref.make<ReadonlyArray<ReadonlyArray<string>>>(
+        [],
+      );
       const notebook = notebookId("notebook");
 
       const fiber = yield* processRuntimeOperations(
         Stream.fromPubSub(source),
-        Effect.fn(function* ({ operation }, options) {
-          assert(operation.op === "cell-op");
-          const label =
-            operation.serialization ?? operation.run_id ?? "unlabelled";
-          yield* Ref.update(processed, (items) => [
-            ...items,
-            { label, project: options.renderCellOutput },
-          ]);
-          if (label === "blocker") {
+        Effect.fn(function* (batch) {
+          const labels = batch.map(({ operation }) => {
+            assert(operation.op === "cell-op");
+            return operation.serialization ?? operation.run_id ?? "unlabelled";
+          });
+          yield* Ref.update(processed, (items) => [...items, labels]);
+          if (labels.includes("blocker")) {
             yield* blockerStarted.open;
             yield* releaseBlocker.await;
           }
-          if (label === "serialization") yield* trailerProcessed.open;
+          if (labels.includes("serialization")) yield* trailerProcessed.open;
         }),
       ).pipe(Effect.forkChild);
       yield* TestClock.adjust("1 millis");
@@ -294,9 +289,8 @@ describe("NotebookRuntime operation processing", () => {
       yield* Fiber.interrupt(fiber);
 
       assert.deepStrictEqual(yield* Ref.get(processed), [
-        { label: "blocker", project: true },
-        { label: "settle", project: true },
-        { label: "serialization", project: false },
+        ["blocker"],
+        ["settle", "serialization"],
       ]);
     }),
   );
@@ -316,17 +310,19 @@ describe("NotebookRuntime operation processing", () => {
 
       const fiber = yield* processRuntimeOperations(
         Stream.fromPubSub(source),
-        Effect.fn(function* ({ operation }) {
-          assert(operation.op === "cell-op");
-          const runId = operation.run_id;
-          assert(typeof runId === "string");
-          if (runId === "a-1") {
-            yield* firstStarted.open;
-            yield* releaseFirst.await;
+        Effect.fn(function* (batch) {
+          for (const { operation } of batch) {
+            assert(operation.op === "cell-op");
+            const runId = operation.run_id;
+            assert(typeof runId === "string");
+            if (runId === "a-1") {
+              yield* firstStarted.open;
+              yield* releaseFirst.await;
+            }
+            yield* Ref.update(processed, (items) => [...items, runId]);
+            if (runId === "b-1") yield* otherProcessed.open;
+            if (runId === "a-2") yield* secondProcessed.open;
           }
-          yield* Ref.update(processed, (items) => [...items, runId]);
-          if (runId === "b-1") yield* otherProcessed.open;
-          if (runId === "a-2") yield* secondProcessed.open;
         }),
       ).pipe(Effect.forkChild);
       yield* TestClock.adjust("1 millis");
