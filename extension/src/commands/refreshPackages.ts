@@ -8,7 +8,7 @@ import { MarimoCommands } from "./MarimoCommands.ts";
 const handler = Effect.fn("command.refreshPackages")(function* () {
   const editorRegistry = yield* NotebookEditorRegistry;
   const packages = yield* PackagesService;
-  const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
+  const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri;
   if (Option.isNone(activeNotebookUri)) {
     yield* Effect.logWarning("No active notebook to refresh packages");
     return;

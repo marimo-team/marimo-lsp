@@ -45,8 +45,8 @@ const handler = Effect.fn("command.runStale")(
     });
   },
   flow(
-    Effect.tapErrorCause(Effect.logError),
-    Effect.catchAllCause(() =>
+    Effect.tapCause(Effect.logError),
+    Effect.catchCause(() =>
       showErrorAndPromptLogs("Failed to run stale cells."),
     ),
   ),

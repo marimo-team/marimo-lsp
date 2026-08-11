@@ -20,14 +20,14 @@ const handler = Effect.fn("command.debugCell")(
     yield* debugAdapter.debugCell(cell.value);
   },
   flow(
-    Effect.tapErrorCause(Effect.logError),
+    Effect.tapCause(Effect.logError),
     Effect.catchTags({
       DebugSessionStartError: () =>
         showErrorAndPromptLogs(
           "Failed to start debug session. Is the kernel running?",
         ),
     }),
-    Effect.catchAllCause(() => showErrorAndPromptLogs("Failed to debug cell.")),
+    Effect.catchCause(() => showErrorAndPromptLogs("Failed to debug cell.")),
   ),
 );
 

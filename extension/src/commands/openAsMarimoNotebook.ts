@@ -1,4 +1,4 @@
-import { Effect, Either, Option } from "effect";
+import { Effect, Option, Result } from "effect";
 import type * as vscode from "vscode";
 
 import { defineCommand } from "../commands.ts";
@@ -14,15 +14,15 @@ const handler = Effect.fn("command.openAsMarimoNotebook")(function* (
   let uri: vscode.Uri;
   if (typeof resource === "string") {
     const result = code.utils.parseUri(resource);
-    if (Either.isLeft(result)) {
+    if (Result.isFailure(result)) {
       yield* code.window.showInformationMessage(
         `Failed to parse notebook URI: ${JSON.stringify(resource)}`,
       );
       return;
     }
-    uri = result.right;
+    uri = result.success;
   } else if (resource === undefined) {
-    const editor = yield* code.window.getActiveTextEditor();
+    const editor = yield* code.window.getActiveTextEditor;
     if (Option.isNone(editor)) {
       yield* code.window.showInformationMessage(
         "No active file to open as notebook",
@@ -34,7 +34,7 @@ const handler = Effect.fn("command.openAsMarimoNotebook")(function* (
     uri = resource;
   }
 
-  const documents = yield* code.workspace.getTextDocuments();
+  const documents = yield* code.workspace.getTextDocuments;
   const document = documents.find(
     (document) => document.uri.toString() === uri.toString(),
   );

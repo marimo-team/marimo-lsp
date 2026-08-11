@@ -42,7 +42,7 @@ const handler = Effect.fn("command.restartKernel")(function* (
 
       const succeeded = yield* sessions.restart(notebook.id).pipe(
         Effect.as(true),
-        Effect.catchAllCause(
+        Effect.catchCause(
           Effect.fn(function* (cause) {
             yield* Effect.logError("Failed to restart kernel").pipe(
               Effect.annotateLogs({ cause }),

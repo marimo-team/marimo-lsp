@@ -1,4 +1,4 @@
-import { Effect, ParseResult, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import type * as vscode from "vscode";
 
 import builtinCommandCatalog from "../builtin-command-catalog.json";
@@ -16,7 +16,7 @@ export interface CommandInvocation<
   readonly contributedSurfaces: ReadonlyArray<string>;
   readonly decode: (
     args: ReadonlyArray<unknown>,
-  ) => Effect.Effect<HandlerArgs, SchemaError.SchemaError, Requirements>;
+  ) => Effect.Effect<HandlerArgs, Schema.SchemaError, Requirements>;
 }
 
 export interface MarimoCommand<
@@ -31,10 +31,10 @@ export interface MarimoCommand<
     readonly contributedSurfaces: ReadonlyArray<string>;
     readonly decodeArguments: (
       args: ReadonlyArray<unknown>,
-    ) => Effect.Effect<HandlerArgs, SchemaError.SchemaError, DecodeRequirements>;
+    ) => Effect.Effect<HandlerArgs, Schema.SchemaError, DecodeRequirements>;
     readonly decodeResult: (
       result: unknown,
-    ) => Effect.Effect<Result, SchemaError.SchemaError>;
+    ) => Effect.Effect<Result, Schema.SchemaError>;
   };
 }
 
@@ -101,14 +101,14 @@ export function marimoCommand<
 >(
   id: string,
   invocation: CommandInvocation<CallArgs, HandlerArgs, DecodeRequirements>,
-  result: Schema.Schema<Result, ResultEncoded>,
+  result: Schema.Codec<Result, ResultEncoded>,
 ): MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements> {
   return {
     [MarimoCommandTypeId]: {
       id,
       contributedSurfaces: invocation.contributedSurfaces,
       decodeArguments: invocation.decode,
-      decodeResult: Schema.decodeUnknown(result),
+      decodeResult: Schema.decodeUnknownEffect(result),
     },
   };
 }
@@ -146,7 +146,7 @@ export function decodeCommandArguments<
 >(
   command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
   args: ReadonlyArray<unknown>,
-): Effect.Effect<HandlerArgs, SchemaError.SchemaError, DecodeRequirements> {
+): Effect.Effect<HandlerArgs, Schema.SchemaError, DecodeRequirements> {
   return command[MarimoCommandTypeId].decodeArguments(args);
 }
 
@@ -158,7 +158,7 @@ export function decodeCommandResult<
 >(
   command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
   result: unknown,
-): Effect.Effect<Result, SchemaError.SchemaError> {
+): Effect.Effect<Result, Schema.SchemaError> {
   return command[MarimoCommandTypeId].decodeResult(result);
 }
 

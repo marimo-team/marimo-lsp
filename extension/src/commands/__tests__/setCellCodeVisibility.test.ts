@@ -60,7 +60,7 @@ it.effect.each([
       MarimoNotebookCell.decodeMetadata(replacement?.metadata),
     );
     expect(metadata.marimo.options.hide_code).toBe(hidden);
-    expect(yield* vscode.executions).toEqual([
+    expect(yield* Ref.get(vscode.executions)).toEqual([
       {
         command,
         args: [
@@ -112,7 +112,7 @@ it.effect.each([
       MarimoNotebookCell.decodeMetadata(replacement?.metadata),
     );
     expect(metadata.marimo.options.hide_code).toBe(test.hidden);
-    expect(yield* vscode.executions).toEqual([
+    expect(yield* Ref.get(vscode.executions)).toEqual([
       {
         command: "notebook.cell.expandCellInput",
         args: [

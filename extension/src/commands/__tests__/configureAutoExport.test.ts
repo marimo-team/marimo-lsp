@@ -84,8 +84,8 @@ it.effect(
       Effect.provide(vscode.layer),
     );
 
-    expect(yield* applied).toBe(true);
-    expect(yield* information).toEqual(
+    expect(yield* Ref.get(applied)).toBe(true);
+    expect(yield* Ref.get(information)).toEqual(
       Option.some("Automatic exports enabled for IPYNB."),
     );
   }),
@@ -125,7 +125,7 @@ it.effect(
       Effect.provide(vscode.layer),
     );
 
-    expect(yield* applied).toBe(false);
+    expect(yield* Ref.get(applied)).toBe(false);
   }),
 );
 
@@ -160,7 +160,7 @@ it.effect(
       Effect.provide(vscode.layer),
     );
 
-    expect(yield* information).toEqual(
+    expect(yield* Ref.get(information)).toEqual(
       Option.some("Automatic exports disabled."),
     );
   }),
@@ -216,7 +216,7 @@ it.effect(
       Effect.provide(vscode.layer),
     );
 
-    const metadata = Option.getOrThrow(yield* updatedMetadata);
+    const metadata = Option.getOrThrow(yield* Ref.get(updatedMetadata));
     const updated = TestVsCode.makeNotebookEditor("/test/report.py", {
       data: { cells: [], metadata },
     });
@@ -268,8 +268,8 @@ it.effect(
       Effect.provide(vscode.layer),
     );
 
-    expect(yield* information).toEqual(Option.none());
-    expect(yield* error).toEqual(
+    expect(yield* Ref.get(information)).toEqual(Option.none());
+    expect(yield* Ref.get(error)).toEqual(
       Option.some(
         "Export formats changed but the notebook could not be saved.",
       ),
@@ -317,8 +317,8 @@ it.effect(
       Effect.provide(vscode.layer),
     );
 
-    expect(yield* information).toEqual(Option.none());
-    expect(yield* error).toEqual(
+    expect(yield* Ref.get(information)).toEqual(Option.none());
+    expect(yield* Ref.get(error)).toEqual(
       Option.some(
         "Export formats changed but the notebook could not be saved.",
       ),

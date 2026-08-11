@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Option } from "effect";
+import { Effect, Option, Ref } from "effect";
 import { vi } from "vitest";
 
 import {
@@ -29,7 +29,7 @@ it.effect(
 
     yield* openAsMarimoNotebook.invoke(uri).pipe(provideCommand(vscode));
 
-    expect(yield* vscode.executions).toEqual([
+    expect(yield* Ref.get(vscode.executions)).toEqual([
       {
         command: "vscode.openWith",
         args: [uri, NOTEBOOK_TYPE],
@@ -54,7 +54,7 @@ it.effect(
       .invoke("file:///test/notebook.py")
       .pipe(provideCommand(vscode));
 
-    const executions = yield* vscode.executions;
+    const executions = yield* Ref.get(vscode.executions);
     expect(executions).toHaveLength(1);
     expect(executions[0]?.command).toBe("vscode.openWith");
     expect(executions[0]?.args[0]?.toString()).toBe("file:///test/notebook.py");
@@ -77,7 +77,7 @@ it.effect(
 
     yield* openAsMarimoNotebook.invoke().pipe(provideCommand(vscode));
 
-    expect(yield* vscode.executions).toEqual([
+    expect(yield* Ref.get(vscode.executions)).toEqual([
       {
         command: "vscode.openWith",
         args: [document.uri, NOTEBOOK_TYPE],
@@ -106,7 +106,7 @@ it.effect(
       .pipe(provideCommand(vscode));
 
     expect(save).toHaveBeenCalledOnce();
-    expect(yield* vscode.executions).toEqual([
+    expect(yield* Ref.get(vscode.executions)).toEqual([
       {
         command: "vscode.openWith",
         args: [document.uri, NOTEBOOK_TYPE],
@@ -153,6 +153,6 @@ it.effect(
     yield* openAsMarimoNotebook.invoke().pipe(provideCommand(vscode));
 
     expect(save).toHaveBeenCalledOnce();
-    expect(yield* vscode.executions).toEqual([]);
+    expect(yield* Ref.get(vscode.executions)).toEqual([]);
   }),
 );

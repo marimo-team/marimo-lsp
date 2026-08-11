@@ -73,7 +73,7 @@ describe("restartKernel invocation", () => {
           { ui: true, source: "editorToolbar", notebookEditor: {} },
         ]).pipe(Effect.provide(vscode.layer)),
       );
-      expect(result._tag).toBe("Left");
+      expect(result._tag).toBe("Failure");
     }),
   );
 
@@ -90,7 +90,7 @@ describe("restartKernel invocation", () => {
           Effect.provide(vscode.layer),
         ),
       );
-      expect(result._tag).toBe("Left");
+      expect(result._tag).toBe("Failure");
     }),
   );
 });
