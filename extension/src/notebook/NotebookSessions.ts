@@ -30,7 +30,7 @@ export function isOpenNotebookSession(
  * old Deferred before notifying the owner to discard its per-notebook state.
  */
 export function makeNotebookSessions<E, R>(
-  code: VsCode,
+  code: VsCode["Service"],
   onInvalidate: (notebookId: NotebookId) => Effect.Effect<void, E, R>,
 ) {
   return Effect.gen(function* () {
@@ -79,14 +79,14 @@ export function makeNotebookSessions<E, R>(
     // Subscribe before the initial snapshot so an open cannot fall through
     // the gap. Re-observing the same document object is idempotent.
     yield* Effect.forkScoped(
-      code.workspace.notebookDocumentOpened().pipe(Stream.runForEach(markOpen)),
+      code.workspace.notebookDocumentOpened.pipe(Stream.runForEach(markOpen)),
     );
-    for (const document of yield* code.workspace.getNotebookDocuments()) {
+    for (const document of yield* code.workspace.getNotebookDocuments) {
       yield* markOpen(document);
     }
 
     yield* Effect.forkScoped(
-      code.workspace.notebookDocumentClosed().pipe(
+      code.workspace.notebookDocumentClosed.pipe(
         Stream.runForEach((document) => {
           const notebook = MarimoNotebookDocument.tryFrom(document);
           if (Option.isNone(notebook)) return Effect.void;

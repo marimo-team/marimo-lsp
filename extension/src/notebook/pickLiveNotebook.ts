@@ -23,9 +23,9 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
  */
 export const pickLiveNotebook = Effect.fn("pickLiveNotebook")(function* (
   bytes: Uint8Array,
-  code: VsCode,
+  code: VsCode["Service"],
 ) {
-  const active = yield* code.window.getActiveNotebookEditor();
+  const active = yield* code.window.getActiveNotebookEditor;
   const activeMarimo = active.pipe(
     Option.flatMap((editor) => MarimoNotebookDocument.tryFrom(editor.notebook)),
   );
@@ -36,7 +36,7 @@ export const pickLiveNotebook = Effect.fn("pickLiveNotebook")(function* (
     if (matched) return Option.some(doc);
   }
 
-  const all = yield* code.workspace.getNotebookDocuments();
+  const all = yield* code.workspace.getNotebookDocuments;
   for (const doc of all) {
     if (Option.isNone(MarimoNotebookDocument.tryFrom(doc))) continue;
     if (
@@ -58,7 +58,7 @@ export const pickLiveNotebook = Effect.fn("pickLiveNotebook")(function* (
 const matchesOnDisk = Effect.fn(function* (
   bytes: Uint8Array,
   doc: vscode.NotebookDocument,
-  code: VsCode,
+  code: VsCode["Service"],
 ) {
   const disk = yield* code.workspace.fs.readFile(doc.uri).pipe(Effect.option);
   if (Option.isNone(disk)) return false;

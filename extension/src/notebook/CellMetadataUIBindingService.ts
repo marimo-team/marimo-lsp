@@ -1,4 +1,4 @@
-import { Effect, Option, Stream } from "effect";
+import { Context, Effect, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
@@ -101,15 +101,15 @@ export interface MetadataBinding {
  * 2. The service automatically creates status bar items and commands
  * 3. Updates flow bidirectionally between UI and metadata
  */
-export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIBindingService>()(
+export class CellMetadataUIBindingService extends Context.Service<CellMetadataUIBindingService>()(
   "CellMetadataUIBindingService",
   {
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const code = yield* VsCode;
       const bindings = new Map<string, MetadataBinding>();
 
       // Stream that fires when metadata changes on any marimo notebook cell
-      const metadataChanges = code.workspace.notebookDocumentChanges().pipe(
+      const metadataChanges = code.workspace.notebookDocumentChanges.pipe(
         Stream.filter((event) => {
           if (Option.isNone(MarimoNotebookDocument.tryFrom(event.notebook))) {
             return false;
@@ -118,6 +118,7 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
             (change) => change.metadata !== undefined,
           );
         }),
+        Stream.map(() => undefined),
       );
 
       /**
@@ -283,4 +284,6 @@ export class CellMetadataUIBindingService extends Effect.Service<CellMetadataUIB
       return { registerBinding, updateBinding } as const;
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make);
+}

@@ -62,7 +62,13 @@ export const updateMarimoCellMetadata = Effect.fn(
   }
   const currentCell = resolved.cell;
   const current = Option.match(currentCell.metadata, {
-    onNone: () => Api.MarimoCellMetadata.make(),
+    // Mirrors the schema's decoding defaults; v4 `make` requires every field.
+    onNone: () =>
+      Api.MarimoCellMetadata.make({
+        name: "_",
+        options: {},
+        sourceProjections: { markdown: null, sql: null },
+      }),
     onSome: (metadata) => metadata.marimo,
   });
 
