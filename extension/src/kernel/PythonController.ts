@@ -235,7 +235,28 @@ export const createPythonController = Effect.fn("createPythonController")(
         ),
       );
 
-    return new PythonController(controller, options.env.path);
+    // VS Code restores a persisted controller selection as soon as the
+    // controller is registered, which can happen before any subscriber fiber
+    // runs. Attach the listener in the same fiber turn as creation so a
+    // restored selection buffers in the queue instead of firing unheard.
+    const selections = yield* Effect.acquireRelease(
+      Queue.make<{
+        notebook: vscode.NotebookDocument;
+        selected: boolean;
+      }>(),
+      Queue.shutdown,
+    );
+    yield* acquireDisposable(() =>
+      controller.onDidChangeSelectedNotebooks((event) =>
+        Queue.offerUnsafe(selections, event),
+      ),
+    );
+
+    return new PythonController(
+      controller,
+      options.env.path,
+      Stream.fromQueue(selections),
+    );
   },
 );
 
@@ -244,12 +265,26 @@ export class PythonController {
   #inner: Omit<vscode.NotebookController, "dispose">;
   /** The python interpreter this controller's environment runs on. */
   executable: string;
+  /**
+   * Selection events buffered from the moment the controller was created
+   * (see createPythonController). Backed by a queue, so a single consumer
+   * receives every event, including ones fired before it subscribed.
+   */
+  readonly selectedNotebookChanges: Stream.Stream<{
+    notebook: vscode.NotebookDocument;
+    selected: boolean;
+  }>;
   constructor(
     inner: Omit<vscode.NotebookController, "dispose">,
     executable: string,
+    selectedNotebookChanges: Stream.Stream<{
+      notebook: vscode.NotebookDocument;
+      selected: boolean;
+    }>,
   ) {
     this.#inner = inner;
     this.executable = executable;
+    this.selectedNotebookChanges = selectedNotebookChanges;
   }
   static getId(env: py.Environment) {
     return NotebookControllerId(`marimo-${env.path}`);
@@ -273,19 +308,6 @@ export class PythonController {
   resolveExecutable(_notebook: MarimoNotebookDocument) {
     return Effect.succeed(this.executable);
   }
-  // This is a field initializer and not a method. Stream.callback is lazy.
-  // It reads `this.#inner` only at subscription, which is after the
-  // constructor.
-  readonly selectedNotebookChanges = Stream.callback<{
-    notebook: vscode.NotebookDocument;
-    selected: boolean;
-  }>((queue) =>
-    acquireDisposable(() =>
-      this.#inner.onDidChangeSelectedNotebooks((e) =>
-        Queue.offerUnsafe(queue, e),
-      ),
-    ),
-  );
   updateNotebookAffinity(
     notebook: vscode.NotebookDocument,
     affinity: vscode.NotebookControllerAffinity,

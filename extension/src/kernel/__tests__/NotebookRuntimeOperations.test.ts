@@ -100,7 +100,7 @@ const withTestCtx = Effect.fn(function* () {
       NOTEBOOK_TYPE,
       "Test Controller",
     );
-    return new PythonController(controller, "/usr/bin/python3");
+    return new PythonController(controller, "/usr/bin/python3", Stream.never);
   }).pipe(Effect.provide(vscode.layer));
 
   const layer = Layer.empty.pipe(

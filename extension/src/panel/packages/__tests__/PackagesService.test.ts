@@ -84,7 +84,7 @@ const makePythonController = Effect.fn(function* (executable: string) {
     NOTEBOOK_TYPE,
     "Test Python",
   );
-  return new PythonController(controller, executable);
+  return new PythonController(controller, executable, Stream.never);
 });
 
 function makeNonPythonController(): NotebookController {

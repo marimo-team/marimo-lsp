@@ -207,6 +207,23 @@ export const createSandboxController = Effect.fn("createSandboxController")(
         ),
       );
 
+    // VS Code restores a persisted controller selection as soon as the
+    // controller is registered, which can happen before any subscriber fiber
+    // runs. Attach the listener in the same fiber turn as creation so a
+    // restored selection buffers in the queue instead of firing unheard.
+    const selections = yield* Effect.acquireRelease(
+      Queue.make<{
+        notebook: vscode.NotebookDocument;
+        selected: boolean;
+      }>(),
+      Queue.shutdown,
+    );
+    yield* acquireDisposable(() =>
+      controller.onDidChangeSelectedNotebooks((event) =>
+        Queue.offerUnsafe(selections, event),
+      ),
+    );
+
     return {
       id: controller.id,
       resolveExecutable: (notebook: MarimoNotebookDocument) =>
@@ -224,16 +241,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
       createNotebookCellExecution(cell: MarimoNotebookCell) {
         return controller.createNotebookCellExecution(cell.rawNotebookCell);
       },
-      selectedNotebookChanges: Stream.callback<{
-        notebook: vscode.NotebookDocument;
-        selected: boolean;
-      }>((queue) =>
-        acquireDisposable(() =>
-          controller.onDidChangeSelectedNotebooks((e) =>
-            Queue.offerUnsafe(queue, e),
-          ),
-        ),
-      ),
+      selectedNotebookChanges: Stream.fromQueue(selections),
       updateNotebookAffinity(
         notebook: vscode.NotebookDocument,
         affinity: vscode.NotebookControllerAffinity,

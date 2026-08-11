@@ -92,14 +92,10 @@ it.effect(
         ),
       ).toBe(true);
 
-      // Drain the scheduler one time. The trackControllerSelections fiber
-      // is forked when the layer is built. It must register its
-      // onDidChangeSelectedNotebooks listener before the mock emitter fires.
-      // A forked fiber does not run until the current fiber yields. In
-      // production the listener registers during activation, long before a
-      // user can select a kernel.
-      yield* TestClock.adjust("1 millis");
-
+      // No drain before selecting: the controller's selection listener is
+      // acquired in the same fiber turn as its creation, so an event fired
+      // this early buffers until trackControllerSelections consumes it. This
+      // mirrors VS Code restoring a persisted selection right at creation.
       yield* ctx.vscode.selectNotebookController(
         `marimo-${executable}`,
         editor.notebook,
