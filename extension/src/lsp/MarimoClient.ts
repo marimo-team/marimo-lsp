@@ -9,6 +9,7 @@ import {
   Data,
   Effect,
   Layer,
+  Option,
   PubSub,
   Queue,
   Redacted,
@@ -32,6 +33,8 @@ import type {
 } from "../types.ts";
 
 const MAX_STDERR_LINES = 200;
+const CUSTOM_LSP_FAILURE_MESSAGE =
+  "The configured marimo-lsp command failed. Custom language servers are for extension development and may be incompatible with this extension build. Update marimo.lsp.path or switch to a bundled language server.";
 
 export type MarimoLspMode = "wasm" | "uv" | "configured";
 
@@ -164,6 +167,10 @@ export class MarimoClient extends Context.Service<MarimoClient>()(
 
       const outputChannel =
         yield* code.window.createLogOutputChannel("marimo-lsp");
+      const notifyCustomLspFailure = yield* makeCustomLspFailureNotifier({
+        mode,
+        channel: outputChannel,
+      });
 
       interface SpawnState {
         readonly stderrTail: string[];
@@ -340,6 +347,7 @@ export class MarimoClient extends Context.Service<MarimoClient>()(
                 mode,
               }),
           }).pipe(
+            Effect.tapError(() => Effect.forkDetach(notifyCustomLspFailure)),
             Effect.withSpan("lsp.executeCommand", {
               attributes: {
                 command: command.command,
@@ -374,6 +382,37 @@ export class MarimoClient extends Context.Service<MarimoClient>()(
     Layer.provide([Config.layer, Uv.layer]),
   );
 }
+
+export const makeCustomLspFailureNotifier = Effect.fn(
+  "MarimoClient.makeCustomLspFailureNotifier",
+)(function* ({
+  mode,
+  channel,
+}: {
+  readonly mode: MarimoLspMode;
+  readonly channel: { readonly name: string; show(): void };
+}) {
+  const code = yield* VsCode;
+  return yield* Effect.cached(
+    Effect.gen(function* () {
+      if (mode !== "configured") return;
+      const selection = yield* code.window.showErrorMessage(
+        CUSTOM_LSP_FAILURE_MESSAGE,
+        { items: ["Open Logs", "Open Settings"] },
+      );
+      if (Option.isNone(selection)) return;
+
+      if (selection.value === "Open Logs") {
+        channel.show();
+        return;
+      }
+      yield* code.commands.executeVSCode(
+        "workbench.action.openSettings",
+        "marimo.lsp",
+      );
+    }),
+  );
+});
 
 function marimoLspMode(selection: MarimoLspExecutable): MarimoLspMode {
   return MarimoLspExecutable.$match(selection, {
