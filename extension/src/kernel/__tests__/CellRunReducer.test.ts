@@ -6,7 +6,7 @@ import type { CellRuntimeState } from "../../types.ts";
 import {
   AcceptedSource,
   CellCommand,
-  type CellRunEntry,
+  type CellRunState,
   Op,
   RunId,
   RunPhase,
@@ -17,7 +17,7 @@ const ID = cellId("cell-1");
 const RUN = RunId("run-1");
 const EPHEMERAL_RUN = RunId("ephemeral-run");
 
-const entry = (phase: RunPhase): CellRunEntry => ({
+const entry = (phase: RunPhase): CellRunState => ({
   id: ID,
   state: createCellRuntimeState(),
   phase,

@@ -58,7 +58,7 @@ import type {
   MarimoOperation,
   NotificationOf,
 } from "../types.ts";
-import { CellExecutions, type Drive } from "./CellExecutions.ts";
+import { CellExecutions, CellInput, type Drive } from "./CellExecutions.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import {
   NotebookFileRootError,
@@ -441,6 +441,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         code,
         Effect.fn("NotebookRuntime.releaseNotebook")(function* (notebookId) {
           notebooks.delete(notebookId);
+          yield* executions.accept(CellInput.Invalidated({ notebookId }));
           yield* variables.clearNotebook(notebookId);
           yield* datasources.clearNotebook(notebookId);
           yield* updateKernelContext();
@@ -995,18 +996,23 @@ function processNotebookOperation(
           ).pipe(Effect.annotateLogs({ cellId }));
           break;
         }
-        yield* executions.handleOperation(operation, {
-          notebookId: notebook.id,
-          drive: controller.value.drive(notebook),
-          renderOutput: options.renderCellOutput,
-        });
+        yield* executions.accept(
+          CellInput.Operation({
+            notebookId: notebook.id,
+            operation,
+            drive: controller.value.drive(notebook),
+            renderOutput: options.renderCellOutput,
+          }),
+        );
         yield* forkForSession(
           handleStdinPrompt(operation, options.forNotebook(notebookUri)),
         );
         break;
       }
       case "interrupted":
-        yield* executions.handleInterrupt(notebook.id);
+        yield* executions.accept(
+          CellInput.Interrupted({ notebookId: notebook.id }),
+        );
         break;
       case "missing-package-alert":
         yield* forkForSession(
@@ -1108,10 +1114,17 @@ function syncCellIdentity(
       yield* options.code.workspace.applyEdit(edit);
     }
 
-    for (const cellId of removedCellIds) {
-      if (addedCellIds.has(cellId)) continue;
+    const removed = [...removedCellIds].filter(
+      (cellId) => !addedCellIds.has(cellId),
+    );
+    yield* options.executions.accept(
+      CellInput.CellsRemoved({
+        notebookId: event.notebook.id,
+        cellIds: removed,
+      }),
+    );
 
-      yield* options.executions.removeCell(event.notebook.id, cellId);
+    for (const cellId of removed) {
       yield* options.notebook.deleteCell({ cellId }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning(

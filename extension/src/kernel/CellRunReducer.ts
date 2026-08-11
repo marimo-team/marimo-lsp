@@ -74,14 +74,14 @@ export type CellCommand = Data.TaggedEnum<{
 export const CellCommand = Data.taggedEnum<CellCommand>();
 
 /** Pure, vscode-free per-cell reducer state. */
-export interface CellRunEntry {
+export interface CellRunState {
   readonly id: NotebookCellId;
   readonly state: CellRuntimeState;
   readonly phase: RunPhase;
   readonly acceptedSource: AcceptedSource;
 }
 
-export function makeCellRunEntry(id: NotebookCellId): CellRunEntry {
+export function makeCellRunState(id: NotebookCellId): CellRunState {
   return {
     id,
     state: createCellRuntimeState(),
@@ -152,11 +152,11 @@ const isError = (state: CellRuntimeState): boolean =>
  * The one place that decides what a cell-op *means*.
  */
 export function step(
-  entry: CellRunEntry,
+  entry: CellRunState,
   op: Op,
   source?: string,
 ): {
-  readonly entry: CellRunEntry;
+  readonly entry: CellRunState;
   readonly commands: ReadonlyArray<CellCommand>;
 } {
   return Op.$match(op, {

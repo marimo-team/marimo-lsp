@@ -7,17 +7,22 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { CellStatusBarProviderLive } from "../../features/CellStatusBarProvider.ts";
 import { CellExecutions } from "../../kernel/CellExecutions.ts";
+import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../../schemas/MarimoNotebookDocument.ts";
+import { makeCellHarness } from "./CellExecutionsHarness.ts";
 
 const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
-    Layer.merge(CellExecutions.layer),
+    Layer.provideMerge(CellStatusBarProviderLive),
+    Layer.provideMerge(CellExecutions.layer),
+    Layer.provide(NotebookEditorRegistry.layer),
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
   );
@@ -85,6 +90,7 @@ describe("CellExecutions staleness", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
         const executions = yield* CellExecutions;
+        const cells = makeCellHarness(executions);
 
         const cellData0 = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -107,14 +113,14 @@ describe("CellExecutions staleness", () => {
         const cell = notebook.cellAt(0);
 
         // Execute the cell, then invalidate (simulates staleInputs)
-        yield* executions.recordExecution(cell);
+        yield* cells.acceptSource(cell);
         yield* TestClock.adjust("10 millis");
 
         // Clear previous context updates
         yield* Ref.update(ctx.vscode.executions, () => []);
 
         // Invalidate → cell becomes stale → hasStaleCells should be true
-        yield* executions.invalidateCell(cell);
+        yield* cells.markStale(cell);
         yield* TestClock.adjust("10 millis");
       }).pipe(Effect.provide(ctx.layer));
 
@@ -135,6 +141,7 @@ describe("CellExecutions staleness", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
         const executions = yield* CellExecutions;
+        const cells = makeCellHarness(executions);
 
         // Cell B, depends on a slow cell A elsewhere. Starts with original code.
         const cellDataB = new code.NotebookCellData(
@@ -159,9 +166,9 @@ describe("CellExecutions staleness", () => {
 
         // 1. B is queued as a reactive descendant of slow cell A — the kernel
         //    acks "queued" for B with the original code.
-        yield* executions.recordExecution(cellB);
+        yield* cells.acceptSource(cellB);
         yield* TestClock.adjust("10 millis");
-        expect(yield* executions.isCellStale(cellB)).toBe(false);
+        expect(yield* cells.isStale(cellB)).toBe(false);
 
         // 2. User edits B while it is still queued waiting for A to finish.
         //    The document text changes; fire a notebookChange so derivations run.
@@ -183,16 +190,16 @@ describe("CellExecutions staleness", () => {
         yield* TestClock.adjust("10 millis");
 
         // Editor code now differs from what the kernel last ran → stale.
-        expect(yield* executions.isCellStale(cellB)).toBe(true);
+        expect(yield* cells.isStale(cellB)).toBe(true);
 
         // 3. User presses Ctrl+Enter on B. Extension sends a new run request
-        //    with the new code; kernel acks "queued" → recordExecution fires.
-        yield* executions.recordExecution(cellB);
+        //    with the new code; the kernel's queued ack accepts the new source.
+        yield* cells.acceptSource(cellB);
         yield* TestClock.adjust("10 millis");
 
         // 4. Stale should clear immediately — regardless of whether the kernel
         //    happens to run B once more with the old code under the hood.
-        expect(yield* executions.isCellStale(cellB)).toBe(false);
+        expect(yield* cells.isStale(cellB)).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -205,6 +212,7 @@ describe("CellExecutions staleness", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
         const executions = yield* CellExecutions;
+        const cells = makeCellHarness(executions);
 
         const cellData = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -222,19 +230,20 @@ describe("CellExecutions staleness", () => {
         yield* TestClock.adjust("10 millis");
 
         const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
-        expect(yield* executions.isCellStale(cell)).toBe(false);
+        expect(yield* cells.isStale(cell)).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
 
   it.effect(
-    "re-executing after invalidateCell clears stale",
+    "re-executing after invalidation clears stale",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
         const executions = yield* CellExecutions;
+        const cells = makeCellHarness(executions);
 
         const cellData = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -253,14 +262,14 @@ describe("CellExecutions staleness", () => {
 
         const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
 
-        yield* executions.recordExecution(cell);
-        yield* executions.invalidateCell(cell);
+        yield* cells.acceptSource(cell);
+        yield* cells.markStale(cell);
         yield* TestClock.adjust("10 millis");
-        expect(yield* executions.isCellStale(cell)).toBe(true);
+        expect(yield* cells.isStale(cell)).toBe(true);
 
-        yield* executions.recordExecution(cell);
+        yield* cells.acceptSource(cell);
         yield* TestClock.adjust("10 millis");
-        expect(yield* executions.isCellStale(cell)).toBe(false);
+        expect(yield* cells.isStale(cell)).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -273,6 +282,7 @@ describe("CellExecutions staleness", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
         const executions = yield* CellExecutions;
+        const cells = makeCellHarness(executions);
 
         const cellData = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -291,7 +301,7 @@ describe("CellExecutions staleness", () => {
 
         const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
 
-        yield* executions.recordExecution(cell);
+        yield* cells.acceptSource(cell);
         yield* TestClock.adjust("10 millis");
 
         // Edit away — cell becomes stale.
@@ -311,7 +321,7 @@ describe("CellExecutions staleness", () => {
           contentChanges: [],
         });
         yield* TestClock.adjust("10 millis");
-        expect(yield* executions.isCellStale(cell)).toBe(true);
+        expect(yield* cells.isStale(cell)).toBe(true);
 
         // Undo back to the executed text — stale clears without re-running.
         cellData.value = "x = 1";
@@ -330,7 +340,7 @@ describe("CellExecutions staleness", () => {
           contentChanges: [],
         });
         yield* TestClock.adjust("10 millis");
-        expect(yield* executions.isCellStale(cell)).toBe(false);
+        expect(yield* cells.isStale(cell)).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -343,6 +353,7 @@ describe("CellExecutions staleness", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
         const executions = yield* CellExecutions;
+        const cells = makeCellHarness(executions);
 
         const cellDataA = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -371,8 +382,8 @@ describe("CellExecutions staleness", () => {
         const cellA = notebook.cellAt(0);
         const cellB = notebook.cellAt(1);
 
-        yield* executions.recordExecution(cellA);
-        yield* executions.recordExecution(cellB);
+        yield* cells.acceptSource(cellA);
+        yield* cells.acceptSource(cellB);
         yield* TestClock.adjust("10 millis");
 
         // Edit A only; B must remain not-stale.
@@ -393,13 +404,13 @@ describe("CellExecutions staleness", () => {
         });
         yield* TestClock.adjust("10 millis");
 
-        expect(yield* executions.isCellStale(cellA)).toBe(true);
-        expect(yield* executions.isCellStale(cellB)).toBe(false);
+        expect(yield* cells.isStale(cellA)).toBe(true);
+        expect(yield* cells.isStale(cellB)).toBe(false);
 
         // Invalidating A must also not touch B.
-        yield* executions.invalidateCell(cellA);
+        yield* cells.markStale(cellA);
         yield* TestClock.adjust("10 millis");
-        expect(yield* executions.isCellStale(cellB)).toBe(false);
+        expect(yield* cells.isStale(cellB)).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -426,6 +437,7 @@ describe("CellExecutions staleness", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
         const executions = yield* CellExecutions;
+        const cells = makeCellHarness(executions);
 
         const cellData = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -446,12 +458,12 @@ describe("CellExecutions staleness", () => {
         const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
 
         // Start from a clean slate, then record the initial execution.
-        yield* executions.recordExecution(cell);
+        yield* cells.acceptSource(cell);
         yield* TestClock.adjust("10 millis");
         yield* Ref.update(ctx.vscode.executions, () => []);
 
         // Invalidate → stale → context must flip to true.
-        yield* executions.invalidateCell(cell);
+        yield* cells.markStale(cell);
         yield* TestClock.adjust("10 millis");
         expect(
           hasStaleCellsContextValues(yield* Ref.get(ctx.vscode.executions)).at(
@@ -460,7 +472,7 @@ describe("CellExecutions staleness", () => {
         ).toBe(true);
 
         // Re-execute → stale clears → context must flip back to false.
-        yield* executions.recordExecution(cell);
+        yield* cells.acceptSource(cell);
         yield* TestClock.adjust("10 millis");
         expect(
           hasStaleCellsContextValues(yield* Ref.get(ctx.vscode.executions)).at(
@@ -479,6 +491,7 @@ describe("CellExecutions staleness", () => {
       yield* Effect.gen(function* () {
         const code = yield* VsCode;
         const executions = yield* CellExecutions;
+        const cells = makeCellHarness(executions);
 
         const cellData0 = new code.NotebookCellData(
           code.NotebookCellKind.Code,
@@ -500,8 +513,8 @@ describe("CellExecutions staleness", () => {
         const notebook = MarimoNotebookDocument.from(editor.notebook);
         const cell0 = notebook.cellAt(0);
 
-        // Simulate execution: recordExecution stores content as "last executed"
-        yield* executions.recordExecution(cell0);
+        // A queued ack stores the source accepted by the kernel.
+        yield* cells.acceptSource(cell0);
         yield* TestClock.adjust("10 millis");
 
         // Clear previous executions to check fresh state
@@ -527,7 +540,7 @@ describe("CellExecutions staleness", () => {
         yield* TestClock.adjust("10 millis");
 
         // Should NOT be stale since content matches last executed
-        expect(yield* executions.isCellStale(cell0)).toBe(false);
+        expect(yield* cells.isStale(cell0)).toBe(false);
 
         // The hasStaleCells context should NOT have been set to true
         const commandExecutions = yield* Ref.get(ctx.vscode.executions);

@@ -12,7 +12,12 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import { CellExecutions, type Drive } from "../../kernel/CellExecutions.ts";
+import { makeCellHarness } from "../../kernel/__tests__/CellExecutionsHarness.ts";
+import {
+  CellExecutions,
+  CellInput,
+  type Drive,
+} from "../../kernel/CellExecutions.ts";
 import {
   VsCodeCellDrive,
   type VsCodeDriveBinding,
@@ -58,12 +63,15 @@ const acceptCell = (
   controller: VsCodeDriveBinding["controller"],
   renderOutput?: boolean,
 ) =>
-  executions.handleOperation(message, {
-    notebookId: cell.notebook.id,
-    source: cell.document.getText(),
-    drive: host.bind({ notebook: cell.notebook, controller }),
-    renderOutput,
-  });
+  executions.accept(
+    CellInput.Operation({
+      notebookId: cell.notebook.id,
+      operation: message,
+      source: cell.document.getText(),
+      drive: host.bind({ notebook: cell.notebook, controller }),
+      renderOutput,
+    }),
+  );
 
 // Convert Uint8Array data to strings for readable snapshots
 function normalizeOutputsForSnapshot(
@@ -1210,21 +1218,31 @@ it.effect(
       const drive: Drive = (_cell, command) =>
         Effect.sync(() => commands.push(command._tag));
 
-      yield* executions.handleOperation(
-        {
-          op: "cell-op",
-          cell_id: cellId,
-          status: "queued",
-          run_id: "run-1",
-        },
-        {
+      yield* executions.accept(
+        CellInput.Operation({
           notebookId: cell.notebook.id,
+          operation: {
+            op: "cell-op",
+            cell_id: cellId,
+            status: "queued",
+            run_id: "run-1",
+          },
           source: cell.document.getText(),
           drive,
-        },
+        }),
       );
-      yield* executions.removeCell(cell.notebook.id, cellId);
-      yield* executions.removeCell(cell.notebook.id, cellId);
+      yield* executions.accept(
+        CellInput.CellsRemoved({
+          notebookId: cell.notebook.id,
+          cellIds: [cellId],
+        }),
+      );
+      yield* executions.accept(
+        CellInput.CellsRemoved({
+          notebookId: cell.notebook.id,
+          cellIds: [cellId],
+        }),
+      );
 
       expect(commands).toEqual(["SetDiagnostic", "OpenRun", "CloseRun"]);
     }).pipe(Effect.provide(ctx.layer));
@@ -1266,11 +1284,14 @@ it.effect(
       const first = namedDrive("first");
       const second = namedDrive("second");
       const accept = (message: CellOperationNotification, drive: Drive) =>
-        executions.handleOperation(message, {
-          notebookId: cell.notebook.id,
-          source: cell.document.getText(),
-          drive,
-        });
+        executions.accept(
+          CellInput.Operation({
+            notebookId: cell.notebook.id,
+            operation: message,
+            source: cell.document.getText(),
+            drive,
+          }),
+        );
 
       yield* accept(
         {
@@ -1553,43 +1574,42 @@ it.effect(
         Effect.sync(() => {
           if (command._tag === "OpenRun") created += 1;
         });
-      const options = { notebookId: cell.notebook.id, drive };
+      const accept = (operation: CellOperationNotification) =>
+        executions.accept(
+          CellInput.Operation({
+            notebookId: cell.notebook.id,
+            operation,
+            source: cell.document.getText(),
+            drive,
+          }),
+        );
 
-      yield* executions.handleOperation(
-        {
-          op: "cell-op",
-          cell_id: cid,
-          status: "queued",
-          run_id: "run-1",
-        },
-        options,
-      );
-      yield* executions.handleOperation(
-        {
-          op: "cell-op",
-          cell_id: cid,
-          status: "idle",
-          run_id: "run-1",
-          timestamp: 1,
-        },
-        options,
-      );
+      yield* accept({
+        op: "cell-op",
+        cell_id: cid,
+        status: "queued",
+        run_id: "run-1",
+      });
+      yield* accept({
+        op: "cell-op",
+        cell_id: cid,
+        status: "idle",
+        run_id: "run-1",
+        timestamp: 1,
+      });
       expect(created).toBe(1);
 
-      yield* executions.handleOperation(
-        {
-          op: "cell-op",
-          cell_id: cid,
-          status: "idle",
-          run_id: "run-1",
-          output: {
-            mimetype: "application/vnd.marimo+error",
-            channel: "marimo-error",
-            data: [{ type: "syntax", msg: "late error" }],
-          },
+      yield* accept({
+        op: "cell-op",
+        cell_id: cid,
+        status: "idle",
+        run_id: "run-1",
+        output: {
+          mimetype: "application/vnd.marimo+error",
+          channel: "marimo-error",
+          data: [{ type: "syntax", msg: "late error" }],
         },
-        options,
-      );
+      });
 
       expect(created).toBe(1);
     }).pipe(Effect.provide(ctx.layer));
@@ -1621,6 +1641,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const cells = makeCellHarness(executions);
       const host = yield* VsCodeCellDrive;
       const code = yield* VsCode;
 
@@ -1655,21 +1676,15 @@ it.effect(
 
       // Check that CellExecutions tracked the cell as stale
       expect(
-        yield* executions.isCellStale(
-          MarimoNotebookCell.from(cell.rawNotebookCell),
-        ),
+        yield* cells.isStale(MarimoNotebookCell.from(cell.rawNotebookCell)),
       ).toBe(true);
 
       // Record execution to clear stale
-      yield* executions.recordExecution(
-        MarimoNotebookCell.from(cell.rawNotebookCell),
-      );
+      yield* cells.acceptSource(MarimoNotebookCell.from(cell.rawNotebookCell));
 
       // Check that the cell is no longer stale
       expect(
-        yield* executions.isCellStale(
-          MarimoNotebookCell.from(cell.rawNotebookCell),
-        ),
+        yield* cells.isStale(MarimoNotebookCell.from(cell.rawNotebookCell)),
       ).toBe(false);
     }).pipe(Effect.provide(ctx.layer));
   }),
@@ -1702,19 +1717,28 @@ it.effect(
         [{ cellId, source: "x = 1" }],
         Effect.gen(function* () {
           cellData.value = "x = 2";
-          yield* executions.handleOperation(
-            {
-              op: "cell-op",
-              cell_id: cellId,
-              status: "queued",
-              run_id: "run-1",
-            },
-            { notebookId: cell.notebook.id, drive },
+          yield* executions.accept(
+            CellInput.Operation({
+              notebookId: cell.notebook.id,
+              operation: {
+                op: "cell-op",
+                cell_id: cellId,
+                status: "queued",
+                run_id: "run-1",
+              },
+              drive,
+            }),
           );
         }),
       );
 
-      expect(yield* executions.isCellStale(cell)).toBe(true);
+      expect(
+        yield* executions.isStale({
+          notebookId: cell.notebook.id,
+          cellId,
+          source: cell.document.getText(),
+        }),
+      ).toBe(true);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
@@ -1751,18 +1775,27 @@ it.effect(
       yield* executions.submit(
         cell.notebook.id,
         [{ cellId, source: "x = 2" }],
-        executions.handleOperation(
-          {
-            op: "cell-op",
-            cell_id: cellId,
-            status: "queued",
-            run_id: "run-1",
-          },
-          { notebookId: cell.notebook.id, drive },
+        executions.accept(
+          CellInput.Operation({
+            notebookId: cell.notebook.id,
+            operation: {
+              op: "cell-op",
+              cell_id: cellId,
+              status: "queued",
+              run_id: "run-1",
+            },
+            drive,
+          }),
         ),
       );
 
-      expect(yield* executions.isCellStale(cell)).toBe(false);
+      expect(
+        yield* executions.isStale({
+          notebookId: cell.notebook.id,
+          cellId,
+          source: cell.document.getText(),
+        }),
+      ).toBe(false);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
@@ -1794,22 +1827,34 @@ it.effect(
         [{ cellId, source: "x = 1" }],
         Effect.void,
       );
-      yield* executions.handleInterrupt(cell.notebook.id);
+      yield* executions.accept(
+        CellInput.Interrupted({ notebookId: cell.notebook.id }),
+      );
       yield* executions.submit(
         cell.notebook.id,
         [{ cellId, source: "x = 2" }],
-        executions.handleOperation(
-          {
-            op: "cell-op",
-            cell_id: cellId,
-            status: "queued",
-            run_id: "run-1",
-          },
-          { notebookId: cell.notebook.id, drive },
+        executions.accept(
+          CellInput.Operation({
+            notebookId: cell.notebook.id,
+            source: cell.document.getText(),
+            drive,
+            operation: {
+              op: "cell-op",
+              cell_id: cellId,
+              status: "queued",
+              run_id: "run-1",
+            },
+          }),
         ),
       );
 
-      expect(yield* executions.isCellStale(cell)).toBe(false);
+      expect(
+        yield* executions.isStale({
+          notebookId: cell.notebook.id,
+          cellId,
+          source: cell.document.getText(),
+        }),
+      ).toBe(false);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
@@ -1835,39 +1880,48 @@ it.effect(
       const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
       const cellId = Option.getOrThrow(cell.id);
       const drive: Drive = () => Effect.void;
+      const operation = (message: CellOperationNotification) =>
+        executions.accept(
+          CellInput.Operation({
+            notebookId: cell.notebook.id,
+            operation: message,
+            source: cell.document.getText(),
+            drive,
+          }),
+        );
 
       yield* executions.submit(
         cell.notebook.id,
         [{ cellId, source: "x = 1" }],
-        executions.handleOperation(
-          {
-            op: "cell-op",
-            cell_id: cellId,
-            status: "idle",
-            output: {
-              mimetype: "application/vnd.marimo+error",
-              channel: "marimo-error",
-              data: [{ type: "syntax", msg: "invalid syntax" }],
-            },
+        operation({
+          op: "cell-op",
+          cell_id: cellId,
+          status: "idle",
+          output: {
+            mimetype: "application/vnd.marimo+error",
+            channel: "marimo-error",
+            data: [{ type: "syntax", msg: "invalid syntax" }],
           },
-          { notebookId: cell.notebook.id, drive },
-        ),
+        }),
       );
       yield* executions.submit(
         cell.notebook.id,
         [{ cellId, source: "x = 2" }],
-        executions.handleOperation(
-          {
-            op: "cell-op",
-            cell_id: cellId,
-            status: "queued",
-            run_id: "run-1",
-          },
-          { notebookId: cell.notebook.id, drive },
-        ),
+        operation({
+          op: "cell-op",
+          cell_id: cellId,
+          status: "queued",
+          run_id: "run-1",
+        }),
       );
 
-      expect(yield* executions.isCellStale(cell)).toBe(false);
+      expect(
+        yield* executions.isStale({
+          notebookId: cell.notebook.id,
+          cellId,
+          source: cell.document.getText(),
+        }),
+      ).toBe(false);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
@@ -1879,6 +1933,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const cells = makeCellHarness(executions);
       const host = yield* VsCodeCellDrive;
 
       // Create a test notebook with a stale cell
@@ -1908,15 +1963,11 @@ it.effect(
       yield* TestClock.adjust("10 millis");
 
       // First, invalidate the cell in CellExecutions
-      yield* executions.invalidateCell(
-        MarimoNotebookCell.from(cell.rawNotebookCell),
-      );
+      yield* cells.markStale(MarimoNotebookCell.from(cell.rawNotebookCell));
 
       // Verify cell is tracked as stale
       expect(
-        yield* executions.isCellStale(
-          MarimoNotebookCell.from(cell.rawNotebookCell),
-        ),
+        yield* cells.isStale(MarimoNotebookCell.from(cell.rawNotebookCell)),
       ).toBe(true);
 
       // Create a mock controller
@@ -1941,9 +1992,7 @@ it.effect(
 
       // Check that the cell's stale state was cleared
       expect(
-        yield* executions.isCellStale(
-          MarimoNotebookCell.from(cell.rawNotebookCell),
-        ),
+        yield* cells.isStale(MarimoNotebookCell.from(cell.rawNotebookCell)),
       ).toBe(false);
     }).pipe(Effect.provide(ctx.layer));
   }),
@@ -1956,6 +2005,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const cells = makeCellHarness(executions);
       const host = yield* VsCodeCellDrive;
 
       const cellData = {
@@ -1980,14 +2030,10 @@ it.effect(
       yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
       yield* TestClock.adjust("10 millis");
 
-      // Mark the cell stale so we can prove the bail happens before recordExecution
-      yield* executions.invalidateCell(
-        MarimoNotebookCell.from(cell.rawNotebookCell),
-      );
+      // Mark the cell stale so we can prove the rejected ack changes nothing.
+      yield* cells.markStale(MarimoNotebookCell.from(cell.rawNotebookCell));
       expect(
-        yield* executions.isCellStale(
-          MarimoNotebookCell.from(cell.rawNotebookCell),
-        ),
+        yield* cells.isStale(MarimoNotebookCell.from(cell.rawNotebookCell)),
       ).toBe(true);
 
       const controller = yield* code.notebooks.createNotebookController(
@@ -2009,11 +2055,9 @@ it.effect(
           controller.createNotebookCellExecution(value.rawNotebookCell),
       });
 
-      // Stale state preserved because we bail before recordExecution
+      // Stale state is preserved because the queued ack is rejected.
       expect(
-        yield* executions.isCellStale(
-          MarimoNotebookCell.from(cell.rawNotebookCell),
-        ),
+        yield* cells.isStale(MarimoNotebookCell.from(cell.rawNotebookCell)),
       ).toBe(true);
     }).pipe(Effect.provide(ctx.layer));
   }),
