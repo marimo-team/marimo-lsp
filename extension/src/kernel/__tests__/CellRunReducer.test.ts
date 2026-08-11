@@ -14,6 +14,7 @@ import {
 
 const ID = cellId("cell-1");
 const RUN = CellRunId("run-1");
+const EPHEMERAL_RUN = CellRunId("ephemeral-run");
 
 const entry = (phase: RunPhase): CellRunState => ({
   id: ID,
@@ -52,18 +53,33 @@ describe("cell run reducer", () => {
     expect(queued.entry.phase).toEqual(RunPhase.Queued({ runId: RUN }));
     e = queued.entry;
 
-    const started = step(e, Op.Start({ startTime: 5, next: okState() }));
+    const started = step(
+      e,
+      Op.Start({
+        startTime: 5,
+        next: okState(),
+        ephemeralRunId: EPHEMERAL_RUN,
+      }),
+    );
     expect(tags(started.actions)).toEqual(["StartExecution", "EmitOutputs"]);
     expect(started.entry.phase).toEqual(RunPhase.Running({ runId: RUN }));
     e = started.entry;
 
-    const updated = step(e, Op.Update({ next: okState() }));
+    const updated = step(
+      e,
+      Op.Update({ next: okState(), ephemeralRunId: EPHEMERAL_RUN }),
+    );
     expect(tags(updated.actions)).toEqual(["EmitOutputs"]);
     e = updated.entry;
 
     const settled = step(
       e,
-      Op.Settle({ success: true, endTime: 9, next: okState() }),
+      Op.Settle({
+        success: true,
+        endTime: 9,
+        next: okState(),
+        ephemeralRunId: EPHEMERAL_RUN,
+      }),
     );
     expect(tags(settled.actions)).toEqual([
       "FinalizeOutputs",
@@ -77,11 +93,20 @@ describe("cell run reducer", () => {
     const running = entry(RunPhase.Running({ runId: RUN }));
     const { actions } = step(
       running,
-      Op.Settle({ success: false, endTime: undefined, next: errorState() }),
+      Op.Settle({
+        success: false,
+        endTime: undefined,
+        next: errorState(),
+        ephemeralRunId: EPHEMERAL_RUN,
+      }),
     );
     const end = actions.find((a) => a._tag === "EndExecution");
     expect(end).toEqual(
-      Action.EndExecution({ success: false, endTime: undefined }),
+      Action.EndExecution({
+        runId: RUN,
+        success: false,
+        endTime: undefined,
+      }),
     );
   });
 
@@ -100,7 +125,11 @@ describe("cell run reducer", () => {
     // The prior run is ended as a success — it's superseded, not failed.
     const end = actions.find((a) => a._tag === "EndExecution");
     expect(end).toEqual(
-      Action.EndExecution({ success: true, endTime: undefined }),
+      Action.EndExecution({
+        runId: RUN,
+        success: true,
+        endTime: undefined,
+      }),
     );
   });
 
@@ -120,7 +149,12 @@ describe("cell run reducer", () => {
   it("renders a compile error with no prior run via an ephemeral execution", () => {
     const { actions, entry: next } = step(
       entry(RunPhase.Idle()),
-      Op.Settle({ success: false, endTime: undefined, next: errorState() }),
+      Op.Settle({
+        success: false,
+        endTime: undefined,
+        next: errorState(),
+        ephemeralRunId: EPHEMERAL_RUN,
+      }),
     );
     expect(tags(actions)).toEqual([
       "CreateExecution",
@@ -129,6 +163,9 @@ describe("cell run reducer", () => {
       "ApplyRuntimeError",
       "EndExecution",
     ]);
+    expect(
+      actions.flatMap((action) => ("runId" in action ? [action.runId] : [])),
+    ).toEqual([EPHEMERAL_RUN, EPHEMERAL_RUN, EPHEMERAL_RUN, EPHEMERAL_RUN]);
     // The cell never entered a tracked run, so it stays Idle.
     expect(next.phase).toEqual(RunPhase.Idle());
   });
@@ -136,7 +173,12 @@ describe("cell run reducer", () => {
   it("reconciles the squiggle on an idle with nothing to render", () => {
     const { actions } = step(
       entry(RunPhase.Idle()),
-      Op.Settle({ success: true, endTime: undefined, next: okState() }),
+      Op.Settle({
+        success: true,
+        endTime: undefined,
+        next: okState(),
+        ephemeralRunId: EPHEMERAL_RUN,
+      }),
     );
     expect(tags(actions)).toEqual(["ApplyRuntimeError"]);
   });
@@ -144,7 +186,7 @@ describe("cell run reducer", () => {
   it("invalidates the cell when an op carries stale inputs", () => {
     const { actions } = step(
       entry(RunPhase.Running({ runId: RUN })),
-      Op.Update({ next: staleState() }),
+      Op.Update({ next: staleState(), ephemeralRunId: EPHEMERAL_RUN }),
     );
     expect(actions[0]).toEqual(Action.InvalidateCell());
   });

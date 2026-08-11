@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import { Effect, Layer, Option } from "effect";
+import { Effect, Layer, Option, Ref } from "effect";
 import { TestClock } from "effect/testing";
 import type * as vscode from "vscode";
 
@@ -12,7 +12,13 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import { CellRunInput, CellRuns } from "../../kernel/CellRuns.ts";
+import { Action, CellRunId } from "../../kernel/CellRunReducer.ts";
+import {
+  CellRunInput,
+  type CellRunPresentation,
+  type CellRunPresentationAction,
+  CellRuns,
+} from "../../kernel/CellRuns.ts";
 import { buildCellOutputs } from "../../kernel/VsCodeCellOutputs.ts";
 import {
   type VsCodeCellRunBinding,
@@ -1283,6 +1289,81 @@ it.effect(
       );
 
       expect(projectionCalls).toEqual(["clear", "append"]);
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
+  "keeps each run bound to the presentation that created it",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor(
+      "file:///test/notebook_mo.py",
+      {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      },
+    );
+    const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+    yield* Effect.gen(function* () {
+      const cellRuns = yield* CellRuns;
+      const notebook = MarimoNotebookDocument.from(editor.notebook);
+      const cid = Option.getOrThrow(notebook.cellAt(0).id);
+      const firstActions = yield* Ref.make<
+        ReadonlyArray<CellRunPresentationAction>
+      >([]);
+      const secondActions = yield* Ref.make<
+        ReadonlyArray<CellRunPresentationAction>
+      >([]);
+      const recordingPresentation = (
+        actions: Ref.Ref<ReadonlyArray<CellRunPresentationAction>>,
+      ): CellRunPresentation => ({
+        apply: (_cell, action) =>
+          Ref.update(actions, (current) => [...current, action]),
+      });
+      const accept = (runId: string, presentation: CellRunPresentation) =>
+        cellRuns.accept(
+          CellRunInput.Operations({
+            notebookId: notebook.id,
+            operations: [
+              {
+                op: "cell-op",
+                cell_id: cid,
+                status: "queued",
+                run_id: runId,
+              },
+            ],
+            sourceByCell: new Map([[cid, "x = 1"]]),
+            presentation,
+          }),
+        );
+
+      yield* accept("run-1", recordingPresentation(firstActions));
+      yield* accept("run-2", recordingPresentation(secondActions));
+
+      expect(yield* Ref.get(firstActions)).toEqual([
+        Action.ClearRuntimeError(),
+        Action.CreateExecution({ runId: CellRunId("run-1") }),
+        Action.EndExecution({
+          runId: CellRunId("run-1"),
+          success: true,
+          endTime: undefined,
+        }),
+      ]);
+      expect(yield* Ref.get(secondActions)).toEqual([
+        Action.ClearRuntimeError(),
+        Action.CreateExecution({ runId: CellRunId("run-2") }),
+      ]);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );

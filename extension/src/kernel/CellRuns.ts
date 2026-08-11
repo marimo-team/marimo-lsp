@@ -18,7 +18,8 @@ import type {
 } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellOperationNotification } from "../types.ts";
 import {
-  type Action,
+  Action,
+  CellRunId,
   type CellRunState,
   makeCellRunState,
   Op,
@@ -79,7 +80,10 @@ type CellRunOperationsInput = Extract<
 
 interface CellRunRecord {
   readonly state: CellRunState;
-  readonly presentation: CellRunPresentation;
+  readonly presentation: Option.Option<{
+    readonly runId: CellRunId;
+    readonly adapter: CellRunPresentation;
+  }>;
 }
 
 const cellRunRef = (
@@ -132,7 +136,7 @@ export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
       options: {
         readonly cell: CellRunRef;
         readonly source: string | undefined;
-        readonly presentation: CellRunPresentation;
+        readonly presentation: Option.Option<CellRunPresentation>;
       },
     ) => {
       switch (action._tag) {
@@ -145,8 +149,68 @@ export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
         case "InvalidateCell":
           return invalidate(options.cell);
         default:
-          return options.presentation.apply(options.cell, action);
+          return Option.match(options.presentation, {
+            onNone: () =>
+              Effect.logWarning(
+                "Cell run has no presentation Adapter; skipping action",
+              ).pipe(
+                Effect.annotateLogs({
+                  ...options.cell,
+                  action: action._tag,
+                }),
+              ),
+            onSome: (presentation) => presentation.apply(options.cell, action),
+          });
       }
+    };
+
+    const presentationFor = (
+      action: Action,
+      record: CellRunRecord,
+      current: Option.Option<CellRunPresentation>,
+      createdRunIds: ReadonlySet<CellRunId>,
+    ): Option.Option<CellRunPresentation> => {
+      const forRun = (runId: CellRunId) =>
+        Option.filter(
+          record.presentation,
+          (binding) => binding.runId === runId,
+        ).pipe(
+          Option.map((binding) => binding.adapter),
+          Option.orElse(() =>
+            createdRunIds.has(runId) ? current : Option.none(),
+          ),
+        );
+
+      return Action.$match(action, {
+        CreateExecution: () => current,
+        StartExecution: ({ runId }) => forRun(runId),
+        EmitOutputs: ({ runId }) => forRun(runId),
+        FinalizeOutputs: ({ runId }) => forRun(runId),
+        EndExecution: ({ runId }) => forRun(runId),
+        ApplyRuntimeError: () => current,
+        ClearRuntimeError: () => current,
+        RecordExecution: () => Option.none(),
+        InvalidateCell: () => Option.none(),
+      });
+    };
+
+    const presentationAfter = (
+      state: CellRunState,
+      record: CellRunRecord,
+      current: CellRunPresentation,
+      createdRunIds: ReadonlySet<CellRunId>,
+    ): CellRunRecord["presentation"] => {
+      if (state.phase._tag !== "Queued" && state.phase._tag !== "Running") {
+        return Option.none();
+      }
+      const runId = state.phase.runId;
+      if (createdRunIds.has(runId)) {
+        return Option.some({ runId, adapter: current });
+      }
+      return Option.filter(
+        record.presentation,
+        (binding) => binding.runId === runId,
+      );
     };
 
     const interruptRecords = (
@@ -160,7 +224,10 @@ export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
           if (options.remove) {
             MutableHashMap.remove(records, cell);
           } else {
-            MutableHashMap.set(records, cell, { ...record, state: entry });
+            MutableHashMap.set(records, cell, {
+              state: entry,
+              presentation: Option.none(),
+            });
           }
           yield* Effect.forEach(
             actions,
@@ -168,7 +235,12 @@ export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
               perform(action, {
                 cell,
                 source: undefined,
-                presentation: record.presentation,
+                presentation: presentationFor(
+                  action,
+                  record,
+                  Option.map(record.presentation, (binding) => binding.adapter),
+                  new Set(),
+                ),
               }),
             { discard: true },
           );
@@ -203,16 +275,16 @@ export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
             MutableHashMap.get(records, cell),
             () => ({
               state: makeCellRunState(cell.cellId),
-              presentation: input.presentation,
+              presentation: Option.none(),
             }),
           );
 
           const next = transitionCell(record.state.state, message);
-          const op = parseOp(next, message);
+          const op = parseOp(next, message, CellRunId(crypto.randomUUID()));
           if (Option.isNone(op)) {
             MutableHashMap.set(records, cell, {
               state: { ...record.state, state: next },
-              presentation: input.presentation,
+              presentation: record.presentation,
             });
             return Effect.logWarning(
               "Queued cell-op missing run_id; cannot track execution",
@@ -225,9 +297,20 @@ export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
           }
 
           const result = step(record.state, op.value);
+          const createdRunIds = new Set<CellRunId>();
+          for (const action of result.actions) {
+            if (action._tag === "CreateExecution") {
+              createdRunIds.add(action.runId);
+            }
+          }
           MutableHashMap.set(records, cell, {
             state: result.entry,
-            presentation: input.presentation,
+            presentation: presentationAfter(
+              result.entry,
+              record,
+              input.presentation,
+              createdRunIds,
+            ),
           });
           const source = input.sourceByCell.get(cell.cellId);
 
@@ -244,7 +327,12 @@ export class CellRuns extends Context.Service<CellRuns>()("CellRuns", {
               return perform(action, {
                 cell,
                 source,
-                presentation: input.presentation,
+                presentation: presentationFor(
+                  action,
+                  record,
+                  Option.some(input.presentation),
+                  createdRunIds,
+                ),
               });
             },
             { discard: true },

@@ -12,6 +12,7 @@ import {
 import type { NotebookCellId } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellRuntimeState } from "../types.ts";
 import { CellOutputProjection } from "./CellOutputProjection.ts";
+import type { CellRunId } from "./CellRunReducer.ts";
 import type {
   CellRunPresentation,
   CellRunPresentationAction,
@@ -45,8 +46,8 @@ interface PresentedRun {
   readonly notebook: vscode.NotebookDocument;
 }
 
-const resourceKey = (cell: CellRunRef): string =>
-  JSON.stringify([cell.notebookId, cell.cellId]);
+const resourceKey = (cell: CellRunRef, runId: CellRunId): string =>
+  JSON.stringify([cell.notebookId, cell.cellId, runId]);
 
 /**
  * VS Code Adapter for Cell Runs.
@@ -54,7 +55,7 @@ const resourceKey = (cell: CellRunRef): string =>
  * This is the only Module that owns the token-like
  * `vscode.NotebookCellExecution` returned by VS Code. A bound presentation
  * closes over the selected controller, while live run resources remain
- * private here and are addressed by domain cell identity.
+ * private here and are addressed by exact domain run identity.
  */
 export class VsCodeCellRunPresentation extends Context.Service<VsCodeCellRunPresentation>()(
   "VsCodeCellRunPresentation",
@@ -81,12 +82,13 @@ export class VsCodeCellRunPresentation extends Context.Service<VsCodeCellRunPres
 
       const withResource = (
         cell: CellRunRef,
+        runId: CellRunId,
         apply: (resource: PresentedRun) => Effect.Effect<void>,
       ) => {
-        const resource = resources.get(resourceKey(cell));
+        const resource = resources.get(resourceKey(cell, runId));
         return resource === undefined
           ? Effect.logDebug("No live presentation for cell run").pipe(
-              Effect.annotateLogs({ ...cell }),
+              Effect.annotateLogs({ ...cell, runId }),
             )
           : apply(resource);
       };
@@ -107,10 +109,11 @@ export class VsCodeCellRunPresentation extends Context.Service<VsCodeCellRunPres
 
       const emitOutputs = (
         cell: CellRunRef,
+        runId: CellRunId,
         state: CellRuntimeState,
         final: boolean,
       ) =>
-        withResource(cell, ({ notebook, projection }) => {
+        withResource(cell, runId, ({ notebook, projection }) => {
           const keyed = buildKeyedCellOutputs(
             cell.cellId,
             state,
@@ -122,7 +125,7 @@ export class VsCodeCellRunPresentation extends Context.Service<VsCodeCellRunPres
           ).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("Failed to update cell output").pipe(
-                Effect.annotateLogs({ cause, ...cell }),
+                Effect.annotateLogs({ cause, ...cell, runId }),
               ),
             ),
           );
@@ -190,27 +193,27 @@ export class VsCodeCellRunPresentation extends Context.Service<VsCodeCellRunPres
                   catch: (cause) =>
                     new InvalidCellError({ cellId: cell.cellId, cause }),
                 });
-                resources.set(resourceKey(cell), {
+                resources.set(resourceKey(cell, action.runId), {
                   execution,
                   projection: new CellOutputProjection(execution),
                   notebook: binding.notebook.rawNotebookDocument,
                 });
               });
             case "StartExecution":
-              return withResource(cell, ({ execution }) =>
+              return withResource(cell, action.runId, ({ execution }) =>
                 Effect.sync(() => execution.start(action.startTime)),
               );
             case "EmitOutputs":
-              return emitOutputs(cell, action.state, false);
+              return emitOutputs(cell, action.runId, action.state, false);
             case "FinalizeOutputs":
-              return emitOutputs(cell, action.state, true);
+              return emitOutputs(cell, action.runId, action.state, true);
             case "EndExecution":
-              return withResource(cell, ({ execution }) =>
+              return withResource(cell, action.runId, ({ execution }) =>
                 Effect.gen(function* () {
                   yield* Effect.try(() =>
                     execution.end(action.success, action.endTime),
                   ).pipe(Effect.ignore);
-                  resources.delete(resourceKey(cell));
+                  resources.delete(resourceKey(cell, action.runId));
                 }),
               );
             case "ApplyRuntimeError":

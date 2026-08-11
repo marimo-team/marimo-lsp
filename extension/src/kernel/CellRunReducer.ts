@@ -27,17 +27,27 @@ export const RunPhase = Data.taggedEnum<RunPhase>();
  * A `cell-op`, normalized for the reducer.
  *
  * {@link parseOp} folds the raw op into `CellRuntimeState` and pulls out the run
- * id and timings, so the reducer never sees marimo's nullable wire status.
+ * id and timings, so the reducer never sees marimo's nullable wire status. The
+ * caller supplies an identity for one-off error presentations that have no
+ * upstream run.
  */
 export type Op = Data.TaggedEnum<{
   Queue: { readonly runId: CellRunId; readonly next: CellRuntimeState };
-  Start: { readonly startTime: number; readonly next: CellRuntimeState };
+  Start: {
+    readonly startTime: number;
+    readonly next: CellRuntimeState;
+    readonly ephemeralRunId: CellRunId;
+  };
   Settle: {
     readonly success: boolean;
     readonly endTime: number | undefined;
     readonly next: CellRuntimeState;
+    readonly ephemeralRunId: CellRunId;
   };
-  Update: { readonly next: CellRuntimeState };
+  Update: {
+    readonly next: CellRuntimeState;
+    readonly ephemeralRunId: CellRunId;
+  };
   Interrupt: {};
 }>;
 export const Op = Data.taggedEnum<Op>();
@@ -46,11 +56,21 @@ export const Op = Data.taggedEnum<Op>();
  * One side effect the reducer wants done, as data. The interpreter performs it.
  */
 export type Action = Data.TaggedEnum<{
-  CreateExecution: {};
-  StartExecution: { readonly startTime: number | undefined };
-  EmitOutputs: { readonly state: CellRuntimeState };
-  FinalizeOutputs: { readonly state: CellRuntimeState };
+  CreateExecution: { readonly runId: CellRunId };
+  StartExecution: {
+    readonly runId: CellRunId;
+    readonly startTime: number | undefined;
+  };
+  EmitOutputs: {
+    readonly runId: CellRunId;
+    readonly state: CellRuntimeState;
+  };
+  FinalizeOutputs: {
+    readonly runId: CellRunId;
+    readonly state: CellRuntimeState;
+  };
   EndExecution: {
+    readonly runId: CellRunId;
     readonly success: boolean;
     readonly endTime: number | undefined;
   };
@@ -90,6 +110,7 @@ export function transitionCell(
 export function parseOp(
   next: CellRuntimeState,
   msg: CellOperationNotification,
+  ephemeralRunId: CellRunId,
 ): Option.Option<Op> {
   switch (msg.status) {
     case "queued": {
@@ -100,7 +121,11 @@ export function parseOp(
     }
     case "running":
       return Option.some(
-        Op.Start({ startTime: (msg.timestamp ?? 0) * 1000, next }),
+        Op.Start({
+          startTime: (msg.timestamp ?? 0) * 1000,
+          next,
+          ephemeralRunId,
+        }),
       );
     case "idle":
       return Option.some(
@@ -110,15 +135,16 @@ export function parseOp(
           success: next.output?.channel !== "marimo-error",
           endTime: msg.timestamp == null ? undefined : msg.timestamp * 1000,
           next,
+          ephemeralRunId,
         }),
       );
     default:
-      return Option.some(Op.Update({ next }));
+      return Option.some(Op.Update({ next, ephemeralRunId }));
   }
 }
 
-const hasExecution = (phase: RunPhase): boolean =>
-  phase._tag === "Queued" || phase._tag === "Running";
+const activeRunId = (phase: RunPhase): CellRunId | undefined =>
+  phase._tag === "Queued" || phase._tag === "Running" ? phase.runId : undefined;
 
 const isError = (state: CellRuntimeState): boolean =>
   state.output?.channel === "marimo-error";
@@ -134,10 +160,17 @@ export function step(
 ): { readonly entry: CellRunState; readonly actions: ReadonlyArray<Action> } {
   return Op.$match(op, {
     Interrupt: () => {
-      if (!hasExecution(entry.phase)) return { entry, actions: [] };
+      const runId = activeRunId(entry.phase);
+      if (runId === undefined) return { entry, actions: [] };
       return {
         entry: { ...entry, phase: RunPhase.Completed() },
-        actions: [Action.EndExecution({ success: false, endTime: undefined })],
+        actions: [
+          Action.EndExecution({
+            runId,
+            success: false,
+            endTime: undefined,
+          }),
+        ],
       };
     },
 
@@ -147,53 +180,71 @@ export function step(
       // Record clears stale; clear any prior runtime-error squiggle.
       actions.push(Action.RecordExecution(), Action.ClearRuntimeError());
       // End any still-running prior execution before creating the new one.
-      if (hasExecution(entry.phase)) {
+      const previousRunId = activeRunId(entry.phase);
+      if (previousRunId !== undefined) {
         actions.push(
-          Action.EndExecution({ success: true, endTime: undefined }),
+          Action.EndExecution({
+            runId: previousRunId,
+            success: true,
+            endTime: undefined,
+          }),
         );
       }
-      actions.push(Action.CreateExecution());
+      actions.push(Action.CreateExecution({ runId }));
       return {
         entry: { ...entry, state: next, phase: RunPhase.Queued({ runId }) },
         actions,
       };
     },
 
-    Start: ({ startTime, next }) => {
+    Start: ({ ephemeralRunId, startTime, next }) => {
       const actions: Action[] = [];
       if (next.staleInputs) actions.push(Action.InvalidateCell());
       let phase = entry.phase;
       if (entry.phase._tag === "Queued") {
-        actions.push(Action.StartExecution({ startTime }));
+        actions.push(
+          Action.StartExecution({ runId: entry.phase.runId, startTime }),
+        );
         phase = RunPhase.Running({ runId: entry.phase.runId });
       }
-      if (hasExecution(phase)) {
-        actions.push(Action.EmitOutputs({ state: next }));
+      const runId = activeRunId(phase);
+      if (runId !== undefined) {
+        actions.push(Action.EmitOutputs({ runId, state: next }));
       } else if (isError(next)) {
-        actions.push(...ephemeralError(next, { applyDiagnostic: false }));
+        actions.push(
+          ...ephemeralError(ephemeralRunId, next, {
+            applyDiagnostic: false,
+          }),
+        );
       }
       return { entry: { ...entry, state: next, phase }, actions };
     },
 
-    Update: ({ next }) => {
+    Update: ({ ephemeralRunId, next }) => {
       const actions: Action[] = [];
       if (next.staleInputs) actions.push(Action.InvalidateCell());
-      if (hasExecution(entry.phase)) {
-        actions.push(Action.EmitOutputs({ state: next }));
+      const runId = activeRunId(entry.phase);
+      if (runId !== undefined) {
+        actions.push(Action.EmitOutputs({ runId, state: next }));
       } else if (isError(next)) {
-        actions.push(...ephemeralError(next, { applyDiagnostic: false }));
+        actions.push(
+          ...ephemeralError(ephemeralRunId, next, {
+            applyDiagnostic: false,
+          }),
+        );
       }
       return { entry: { ...entry, state: next, phase: entry.phase }, actions };
     },
 
-    Settle: ({ success, endTime, next }) => {
+    Settle: ({ success, endTime, ephemeralRunId, next }) => {
       const actions: Action[] = [];
       if (next.staleInputs) actions.push(Action.InvalidateCell());
-      if (hasExecution(entry.phase)) {
+      const runId = activeRunId(entry.phase);
+      if (runId !== undefined) {
         actions.push(
-          Action.FinalizeOutputs({ state: next }),
+          Action.FinalizeOutputs({ runId, state: next }),
           Action.ApplyRuntimeError({ state: next }),
-          Action.EndExecution({ success, endTime }),
+          Action.EndExecution({ runId, success, endTime }),
         );
         return {
           entry: { ...entry, state: next, phase: RunPhase.Completed() },
@@ -203,7 +254,9 @@ export function step(
       // No live execution: show a one-off execution for an error, and always
       // reconcile the squiggle (clears it when there's no in-cell frame).
       if (isError(next)) {
-        actions.push(...ephemeralError(next, { applyDiagnostic: true }));
+        actions.push(
+          ...ephemeralError(ephemeralRunId, next, { applyDiagnostic: true }),
+        );
       } else {
         actions.push(Action.ApplyRuntimeError({ state: next }));
       }
@@ -219,16 +272,17 @@ export function step(
  * terminal `idle` op does.
  */
 function ephemeralError(
+  runId: CellRunId,
   next: CellRuntimeState,
   opts: { readonly applyDiagnostic: boolean },
 ): Action[] {
   return [
-    Action.CreateExecution(),
-    Action.StartExecution({ startTime: undefined }),
-    Action.FinalizeOutputs({ state: next }),
+    Action.CreateExecution({ runId }),
+    Action.StartExecution({ runId, startTime: undefined }),
+    Action.FinalizeOutputs({ runId, state: next }),
     ...(opts.applyDiagnostic
       ? [Action.ApplyRuntimeError({ state: next })]
       : []),
-    Action.EndExecution({ success: false, endTime: undefined }),
+    Action.EndExecution({ runId, success: false, endTime: undefined }),
   ];
 }
