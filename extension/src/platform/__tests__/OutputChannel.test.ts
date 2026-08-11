@@ -5,8 +5,8 @@ import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { OutputChannel } from "../OutputChannel.ts";
 
 const OutputChannelLive = Layer.empty.pipe(
-  Layer.provideMerge(OutputChannel.Default),
-  Layer.provide(TestVsCode.Default),
+  Layer.provideMerge(OutputChannel.layer),
+  Layer.provide(TestVsCode.layer),
 );
 
 it.layer(OutputChannelLive)("OutputChannel", (it) => {

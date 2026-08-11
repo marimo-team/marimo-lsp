@@ -5,8 +5,8 @@ import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Config, resolveMarimoLspServer } from "../../config/Config.ts";
 
 const ConfigLive = Layer.empty.pipe(
-  Layer.provideMerge(Config.Default),
-  Layer.provide(TestVsCode.Default),
+  Layer.provideMerge(Config.layer),
+  Layer.provide(TestVsCode.layer),
 );
 
 it.layer(ConfigLive)("Config", (it) => {
@@ -22,7 +22,7 @@ it.layer(ConfigLive)("Config", (it) => {
 it.effect(
   "defaults to the WASM language server without the VS Code API",
   Effect.fn(function* () {
-    const config = yield* Config.pipe(Effect.provide(Config.Default));
+    const config = yield* Config.pipe(Effect.provide(Config.layer));
 
     expect(yield* config.lsp.server).toEqual({ _tag: "Wasm" });
   }),

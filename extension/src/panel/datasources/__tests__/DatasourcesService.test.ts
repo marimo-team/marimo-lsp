@@ -20,7 +20,7 @@ const makeLayer = (
     Effect.succeed(null),
 ) =>
   Layer.empty.pipe(
-    Layer.provideMerge(DatasourcesService.Default),
+    Layer.provideMerge(DatasourcesService.layer),
     Layer.provide(makeTestMarimoClient({ execute })),
   );
 

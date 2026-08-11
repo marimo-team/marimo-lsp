@@ -51,7 +51,7 @@ function makeNotebookWithCells(
 }
 
 const withTestLayer = () =>
-  Layer.empty.pipe(Layer.provideMerge(VariablesService.Default));
+  Layer.empty.pipe(Layer.provideMerge(VariablesService.layer));
 
 const stableId = (cell: { metadata?: unknown }) =>
   Option.getOrUndefined(MarimoNotebookCell.decodeMetadata(cell.metadata))

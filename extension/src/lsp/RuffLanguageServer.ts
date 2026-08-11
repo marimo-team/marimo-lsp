@@ -52,10 +52,10 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
   "RuffLanguageServer",
   {
     dependencies: [
-      Uv.Default,
-      Config.Default,
-      OutputChannel.Default,
-      VariablesService.Default,
+      Uv.layer,
+      Config.layer,
+      OutputChannel.layer,
+      VariablesService.layer,
     ],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;

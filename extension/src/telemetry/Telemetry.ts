@@ -54,7 +54,7 @@ const NOOP_POSTHOG: PostHogAdapter = {
  * data before the private PostHog and Sentry adapters receive it.
  */
 export class Telemetry extends Effect.Service<Telemetry>()("Telemetry", {
-  dependencies: [Storage.Default],
+  dependencies: [Storage.layer],
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const config = yield* code.workspace.getConfiguration("marimo");

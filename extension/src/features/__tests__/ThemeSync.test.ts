@@ -39,7 +39,7 @@ const withTestCtx = Effect.fn(function* (
 
   const layer = Layer.empty.pipe(
     Layer.provideMerge(ThemeSyncLive),
-    Layer.provide(NotebookEditorRegistry.Default),
+    Layer.provide(NotebookEditorRegistry.layer),
     Layer.provide(
       makeTestMarimoClient({
         execute(request) {

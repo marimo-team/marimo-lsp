@@ -10,8 +10,8 @@ const withTestCtx = Effect.fn(function* (
 ) {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(Storage.Default),
-    Layer.provide(TestVsCode.Default),
+    Layer.provideMerge(Storage.layer),
+    Layer.provide(TestVsCode.layer),
     Layer.provideMerge(
       Layer.succeed(ExtensionContext, {
         globalState: ctx.globalState ?? new Memento(),

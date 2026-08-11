@@ -151,12 +151,12 @@ export const NotebookControllersLive = Layer.scopedDiscard(
     );
   }),
 ).pipe(
-  Layer.provide(Uv.Default),
-  Layer.provide(OutputChannel.Default),
-  Layer.provide(Config.Default),
-  Layer.provide(Constants.Default),
-  Layer.provide(EnvironmentValidator.Default),
-  Layer.provide(NotebookSerializer.Default),
+  Layer.provide(Uv.layer),
+  Layer.provide(OutputChannel.layer),
+  Layer.provide(Config.layer),
+  Layer.provide(Constants.layer),
+  Layer.provide(EnvironmentValidator.layer),
+  Layer.provide(NotebookSerializer.layer),
 );
 
 const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(

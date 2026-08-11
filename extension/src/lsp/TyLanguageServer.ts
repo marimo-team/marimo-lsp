@@ -54,11 +54,11 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
   "TyLanguageServer",
   {
     dependencies: [
-      Uv.Default,
-      Config.Default,
-      OutputChannel.Default,
-      VariablesService.Default,
-      PythonEnvInvalidation.Default,
+      Uv.layer,
+      Config.layer,
+      OutputChannel.layer,
+      VariablesService.layer,
+      PythonEnvInvalidation.layer,
     ],
     scoped: Effect.gen(function* () {
       const pyExt = yield* PythonExtension;

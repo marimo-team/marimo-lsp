@@ -75,7 +75,7 @@ const makeContext = Effect.fn(function* (options: {
   );
 
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(PackagesService.Default),
+    Layer.provideMerge(PackagesService.layer),
     Layer.provide(runtime),
     Layer.provide(editorMock),
     Layer.provideMerge(vscode.layer),

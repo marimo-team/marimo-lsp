@@ -11,7 +11,7 @@ import { VariablesService } from "../VariablesService.ts";
 const withTestCtx = () =>
   Effect.sync(() => {
     const layer = Layer.empty.pipe(
-      Layer.provideMerge(VariablesService.Default),
+      Layer.provideMerge(VariablesService.layer),
     );
     return { layer };
   });

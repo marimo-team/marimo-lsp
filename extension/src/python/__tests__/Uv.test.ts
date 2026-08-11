@@ -33,10 +33,10 @@ class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
 }) {}
 
 const UvLive = Layer.empty.pipe(
-  Layer.merge(Uv.Default),
-  Layer.merge(TmpDir.Default),
+  Layer.merge(Uv.layer),
+  Layer.merge(TmpDir.layer),
   Layer.provide(TestTelemetryLive),
-  Layer.provide(TestVsCode.Default),
+  Layer.provide(TestVsCode.layer),
 );
 
 describe("Uv", () => {

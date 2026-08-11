@@ -25,7 +25,7 @@ const withTestCtx = Effect.fn(function* (
   const controllers = NotebookControllersLive.pipe(Layer.provide(runtime));
 
   const layer = Layer.merge(runtime, controllers).pipe(
-    Layer.provide(Constants.Default),
+    Layer.provide(Constants.layer),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
     Layer.provideMerge(python.layer),

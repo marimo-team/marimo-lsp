@@ -27,7 +27,7 @@ import { Uv, UvBin } from "../python/Uv.ts";
 export class HealthService extends Effect.Service<HealthService>()(
   "HealthService",
   {
-    dependencies: [Uv.Default],
+    dependencies: [Uv.layer],
     scoped: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;

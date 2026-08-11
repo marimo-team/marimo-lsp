@@ -70,7 +70,7 @@ const withTestCtx = Effect.fn(function* (options: {
   const notebook = MarimoNotebookDocument.from(editor.notebook);
   const layer = Layer.mergeAll(
     vscode.layer,
-    Config.Default.pipe(Layer.provide(vscode.layer)),
+    Config.layer.pipe(Layer.provide(vscode.layer)),
     Layer.succeed(
       PythonEnvInvalidation,
       PythonEnvInvalidation.make({

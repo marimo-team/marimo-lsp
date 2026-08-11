@@ -122,7 +122,7 @@ interface PerformContext {
 export class CellExecutions extends Effect.Service<CellExecutions>()(
   "CellExecutions",
   {
-    dependencies: [NotebookEditorRegistry.Default],
+    dependencies: [NotebookEditorRegistry.layer],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const editorRegistry = yield* NotebookEditorRegistry;

@@ -12,16 +12,16 @@ import { Telemetry } from "./telemetry/Telemetry.ts";
 
 export const { activate, deactivate } = makeExtension(
   Layer.empty.pipe(
-    Layer.provideMerge(TyLanguageServer.Default),
-    Layer.provideMerge(RuffLanguageServer.Default),
-    Layer.provideMerge(PythonExtension.Default),
-    Layer.provideMerge(MarimoClient.Default),
+    Layer.provideMerge(TyLanguageServer.layer),
+    Layer.provideMerge(RuffLanguageServer.layer),
+    Layer.provideMerge(PythonExtension.layer),
+    Layer.provideMerge(MarimoClient.layer),
     Layer.provide(LoggerLive),
-    Layer.provide(OutputChannel.Default),
+    Layer.provide(OutputChannel.layer),
     // Below LoggerLive so the logger's error sink can come from Telemetry;
     // Telemetry's own construction therefore logs without it.
-    Layer.provideMerge(Telemetry.Default),
-    Layer.provideMerge(VsCode.Default),
+    Layer.provideMerge(Telemetry.layer),
+    Layer.provideMerge(VsCode.layer),
   ),
   LogLevel.All,
 );

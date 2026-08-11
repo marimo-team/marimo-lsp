@@ -23,7 +23,7 @@ const SNAPSHOT = {
 } as const;
 
 function makeLayer(recorded: MarimoApiCall[], snapshot: unknown = SNAPSHOT) {
-  return SessionsService.Default.pipe(
+  return SessionsService.layer.pipe(
     Layer.provide(
       makeTestMarimoClient({
         execute: (request) =>

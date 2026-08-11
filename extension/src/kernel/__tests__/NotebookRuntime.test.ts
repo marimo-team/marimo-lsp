@@ -26,10 +26,10 @@ const makeTestLayer = Effect.fn(function* (
   return {
     vscode,
     layer: Layer.empty.pipe(
-      Layer.provideMerge(NotebookRuntime.Default),
+      Layer.provideMerge(NotebookRuntime.layer),
       Layer.provide(makeTestMarimoClient(options)),
       Layer.provide(TestTelemetryLive),
-      Layer.provide(TestPythonExtension.Default),
+      Layer.provide(TestPythonExtension.layer),
       Layer.provideMerge(vscode.layer),
     ),
   };

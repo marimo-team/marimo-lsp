@@ -53,8 +53,8 @@ const withTestCtx = Effect.fn(function* (
   const vscode = yield* TestVsCode.make();
   const { configStore = new Map<string, MarimoConfig>() } = options;
 
-  const layer = MarimoConfigurationService.Default.pipe(
-    Layer.provide(NotebookEditorRegistry.Default),
+  const layer = MarimoConfigurationService.layer.pipe(
+    Layer.provide(NotebookEditorRegistry.layer),
     Layer.provide(
       makeTestMarimoClient({
         execute: Effect.fn(function* (request) {

@@ -215,17 +215,17 @@ export class NotebookRuntime extends Effect.Service<NotebookRuntime>()(
   "NotebookRuntime",
   {
     dependencies: [
-      Uv.Default,
-      Config.Default,
-      Constants.Default,
-      OutputChannel.Default,
-      VariablesService.Default,
-      NotebookRenderer.Default,
-      CellExecutions.Default,
-      DatasourcesService.Default,
-      NotebookEditorRegistry.Default,
-      PythonEnvInvalidation.Default,
-      SessionsService.Default,
+      Uv.layer,
+      Config.layer,
+      Constants.layer,
+      OutputChannel.layer,
+      VariablesService.layer,
+      NotebookRenderer.layer,
+      CellExecutions.layer,
+      DatasourcesService.layer,
+      NotebookEditorRegistry.layer,
+      PythonEnvInvalidation.layer,
+      SessionsService.layer,
     ],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;

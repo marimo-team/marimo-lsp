@@ -25,7 +25,7 @@ const withTestCtx = Effect.fn(function* (
     Layer.merge(additionalLayer),
     Layer.provideMerge(vscode.layer),
     Layer.provideMerge(makeTestMarimoClient()),
-    Layer.provideMerge(TestPythonExtension.Default),
+    Layer.provideMerge(TestPythonExtension.layer),
     Layer.provideMerge(TestTyLanguageServerLive),
     Layer.provideMerge(TestRuffLanguageServerLive),
     Layer.provideMerge(TestTelemetryLive),

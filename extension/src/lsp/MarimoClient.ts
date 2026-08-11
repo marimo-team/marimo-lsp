@@ -107,7 +107,7 @@ export const makeMarimoOperationStream = Effect.fn(function* (
 export class MarimoClient extends Effect.Service<MarimoClient>()(
   "MarimoClient",
   {
-    dependencies: [Config.Default, Uv.Default],
+    dependencies: [Config.layer, Uv.layer],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const config = yield* Config;

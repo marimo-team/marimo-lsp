@@ -20,10 +20,10 @@ const withTestCtx = Effect.fn(function* (
   return {
     vscode: testVsCode,
     layer: Layer.empty.pipe(
-      Layer.merge(Api.Default),
+      Layer.merge(Api.layer),
       Layer.provide(makeTestNotebookRuntime()),
       Layer.provide(TestTelemetryLive),
-      Layer.provide(TestPythonExtension.Default),
+      Layer.provide(TestPythonExtension.layer),
       Layer.provide(TestExtensionContextLive),
       Layer.provideMerge(testVsCode.layer),
     ),

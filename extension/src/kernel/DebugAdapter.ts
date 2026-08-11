@@ -88,7 +88,7 @@ const MarimoDebugConfiguration = Schema.Struct({
 export class DebugAdapter extends Effect.Service<DebugAdapter>()(
   "DebugAdapter",
   {
-    dependencies: [NotebookSerializer.Default, OutputChannel.Default],
+    dependencies: [NotebookSerializer.layer, OutputChannel.layer],
     scoped: Effect.gen(function* () {
       const code = yield* VsCode;
       const notebooks = yield* NotebookRuntime;

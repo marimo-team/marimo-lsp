@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { Config } from "../config/Config.ts";
 
 export class Constants extends Effect.Service<Constants>()("Constants", {
-  dependencies: [Config.Default],
+  dependencies: [Config.layer],
   effect: Effect.gen(function* () {
     const config = yield* Config;
     const useManagedLanguageFeatures =

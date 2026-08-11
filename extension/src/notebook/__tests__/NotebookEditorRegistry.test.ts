@@ -12,7 +12,7 @@ import { VsCode } from "../../platform/VsCode.ts";
 
 function makeRegistryLayer(vscode: TestVsCode) {
   return Layer.empty.pipe(
-    Layer.provideMerge(NotebookEditorRegistry.Default),
+    Layer.provideMerge(NotebookEditorRegistry.layer),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
   );

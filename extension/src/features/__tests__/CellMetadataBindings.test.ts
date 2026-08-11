@@ -23,10 +23,10 @@ const withTestCtx = Effect.gen(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
     Layer.provideMerge(CellMetadataBindingsLive),
-    Layer.provide(CellMetadataUIBindingService.Default),
-    Layer.provide(DatasourcesService.Default),
+    Layer.provide(CellMetadataUIBindingService.layer),
+    Layer.provide(DatasourcesService.layer),
     Layer.provide(makeTestMarimoClient()),
-    Layer.provide(Constants.Default),
+    Layer.provide(Constants.layer),
     Layer.provide(vscode.layer),
   );
   return { vscode, layer };

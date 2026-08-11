@@ -92,7 +92,7 @@ const testLayer = (vscode: TestVsCode) =>
     marimoLayer,
     serializerLayer,
     githubLayer,
-    OutputChannel.Default.pipe(Layer.provide(vscode.layer)),
+    OutputChannel.layer.pipe(Layer.provide(vscode.layer)),
   );
 
 describe("showNotebookMenu", () => {

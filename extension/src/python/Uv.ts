@@ -183,7 +183,7 @@ export class LanguageServerInstallError extends Data.TaggedError(
 }
 
 export class Uv extends Effect.Service<Uv>()("Uv", {
-  dependencies: [NodeContext.layer, Config.Default],
+  dependencies: [NodeContext.layer, Config.layer],
   scoped: Effect.gen(function* () {
     const code = yield* VsCode;
     const config = yield* Config;

@@ -83,7 +83,7 @@ const withTestCtx = Effect.fn(function* (
       "127.0.0.1",
       yield* Deferred.await(port),
       mapping,
-    ).pipe(Effect.provide(TestVsCode.Default)),
+    ).pipe(Effect.provide(TestVsCode.layer)),
     conn: yield* Deferred.await(connection),
   };
 });

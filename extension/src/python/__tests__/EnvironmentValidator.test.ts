@@ -34,13 +34,13 @@ class TempDir extends Effect.Service<TempDir>()("TempDir", {
 }) {}
 
 const EnvironmentValidatorLive = Layer.empty.pipe(
-  Layer.provideMerge(TempDir.Default),
-  Layer.provideMerge(Uv.Default),
-  Layer.provideMerge(EnvironmentValidator.Default),
-  Layer.provideMerge(PythonEnvInvalidation.Default),
-  Layer.provide(TestPythonExtension.Default),
+  Layer.provideMerge(TempDir.layer),
+  Layer.provideMerge(Uv.layer),
+  Layer.provideMerge(EnvironmentValidator.layer),
+  Layer.provideMerge(PythonEnvInvalidation.layer),
+  Layer.provide(TestPythonExtension.layer),
   Layer.provide(TestTelemetryLive),
-  Layer.provide(TestVsCode.Default),
+  Layer.provide(TestVsCode.layer),
 );
 
 it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {

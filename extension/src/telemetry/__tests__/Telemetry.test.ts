@@ -34,7 +34,7 @@ it.effect(
     });
     const telemetry = yield* Telemetry.pipe(
       Effect.provide(
-        Telemetry.Default.pipe(
+        Telemetry.layer.pipe(
           Layer.provide(code.layer),
           Layer.provide(TestExtensionContextLive),
         ),

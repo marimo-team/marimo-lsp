@@ -339,7 +339,7 @@ export const withCommandContext = (command: MarimoCommand) => {
 };
 
 export class Commands extends Effect.Service<Commands>()("Commands", {
-  dependencies: [Window.Default],
+  dependencies: [Window.layer],
   scoped: Effect.gen(function* () {
     const win = yield* Window;
     const api = vscode.commands;
@@ -1368,13 +1368,13 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
     };
   }),
   dependencies: [
-    Window.Default,
-    Workspace.Default,
-    Commands.Default,
-    Env.Default,
-    Debug.Default,
-    Notebooks.Default,
-    Auth.Default,
-    Languages.Default,
+    Window.layer,
+    Workspace.layer,
+    Commands.layer,
+    Env.layer,
+    Debug.layer,
+    Notebooks.layer,
+    Auth.layer,
+    Languages.layer,
   ],
 }) {}

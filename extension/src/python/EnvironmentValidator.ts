@@ -98,7 +98,7 @@ class EnvironmentRequirementError extends Data.TaggedError(
 export class EnvironmentValidator extends Effect.Service<EnvironmentValidator>()(
   "EnvironmentValidator",
   {
-    dependencies: [NodeContext.layer, PythonEnvInvalidation.Default],
+    dependencies: [NodeContext.layer, PythonEnvInvalidation.layer],
     scoped: Effect.gen(function* () {
       const executor = yield* CommandExecutor.CommandExecutor;
       const fs = yield* FileSystem.FileSystem;

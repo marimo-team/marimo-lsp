@@ -104,11 +104,11 @@ const withTestCtx = Effect.fn(function* () {
   }).pipe(Effect.provide(vscode.layer));
 
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(NotebookRuntime.Default),
+    Layer.provideMerge(NotebookRuntime.layer),
     // Merged out (not just provided) so tests can observe the same service
     // instances NotebookRuntime writes to.
-    Layer.provideMerge(VariablesService.Default),
-    Layer.provideMerge(DatasourcesService.Default),
+    Layer.provideMerge(VariablesService.layer),
+    Layer.provideMerge(DatasourcesService.layer),
     Layer.provide(
       makeTestMarimoClient({
         execute(request) {
@@ -121,7 +121,7 @@ const withTestCtx = Effect.fn(function* () {
       }),
     ),
     Layer.provide(TestTelemetryLive),
-    Layer.provide(TestPythonExtension.Default),
+    Layer.provide(TestPythonExtension.layer),
     Layer.provideMerge(vscode.layer),
   );
 

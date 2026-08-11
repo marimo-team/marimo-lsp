@@ -61,7 +61,7 @@ describe("getCellExecutableCode", () => {
       expect(code).toContain("my_results = mo.sql(");
       // Should not use default _df
       expect(code).not.toContain("_df = mo.sql(");
-    }).pipe(Effect.provide(Constants.Default)),
+    }).pipe(Effect.provide(Constants.layer)),
   );
 
   it.effect("should use default metadata when SQL cell has no metadata", () =>
@@ -77,7 +77,7 @@ describe("getCellExecutableCode", () => {
 
       // Should use default _df when no metadata
       expect(code).toContain("_df = mo.sql(");
-    }).pipe(Effect.provide(Constants.Default)),
+    }).pipe(Effect.provide(Constants.layer)),
   );
 
   it.effect("should pass through Python cells unchanged", () =>
@@ -92,7 +92,7 @@ describe("getCellExecutableCode", () => {
       const code = getCellExecutableCode(cell, LanguageId);
 
       expect(code).toBe(pythonCode);
-    }).pipe(Effect.provide(Constants.Default)),
+    }).pipe(Effect.provide(Constants.layer)),
   );
 
   it.effect("should handle SQL metadata with output=False", () =>
@@ -119,7 +119,7 @@ describe("getCellExecutableCode", () => {
 
       expect(code).toContain("result = mo.sql(");
       expect(code).toContain("output=False");
-    }).pipe(Effect.provide(Constants.Default)),
+    }).pipe(Effect.provide(Constants.layer)),
   );
 
   it.effect("should handle SQL metadata with custom engine", () =>
@@ -146,6 +146,6 @@ describe("getCellExecutableCode", () => {
 
       expect(code).toContain("df = mo.sql(");
       expect(code).toContain("engine=postgres_conn");
-    }).pipe(Effect.provide(Constants.Default)),
+    }).pipe(Effect.provide(Constants.layer)),
   );
 });

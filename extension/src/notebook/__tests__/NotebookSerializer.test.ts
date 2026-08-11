@@ -26,19 +26,19 @@ import {
 import { Constants } from "../../platform/Constants.ts";
 
 const NotebookSerializerLive = Layer.empty.pipe(
-  Layer.provideMerge(NotebookSerializer.Default),
+  Layer.provideMerge(NotebookSerializer.layer),
   // These tests intentionally cover the cross-language serialization contract.
   Layer.provideMerge(TestMarimoClientProcess),
-  Layer.provideMerge(Constants.Default),
+  Layer.provideMerge(Constants.layer),
 );
 
 it.effect(
   "bounds a deserialize request that never completes",
   Effect.fn(function* () {
     const layer = Layer.empty.pipe(
-      Layer.provideMerge(NotebookSerializer.Default),
+      Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(makeTestMarimoClient({ execute: () => Effect.never })),
-      Layer.provideMerge(Constants.Default),
+      Layer.provideMerge(Constants.layer),
     );
 
     const exit = yield* Effect.gen(function* () {
@@ -64,9 +64,9 @@ it.effect(
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
     const layer = Layer.empty.pipe(
-      Layer.provideMerge(NotebookSerializer.Default),
+      Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(makeTestMarimoClient({ execute: () => Effect.never })),
-      Layer.provideMerge(Constants.Default),
+      Layer.provideMerge(Constants.layer),
       Layer.provideMerge(vscode.layer),
     );
 
@@ -106,7 +106,7 @@ it.effect(
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
     const layer = Layer.empty.pipe(
-      Layer.provideMerge(NotebookSerializer.Default),
+      Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(
         makeTestMarimoClient({
           execute: () =>
@@ -115,7 +115,7 @@ it.effect(
             }),
         }),
       ),
-      Layer.provideMerge(Constants.Default),
+      Layer.provideMerge(Constants.layer),
       Layer.provideMerge(vscode.layer),
     );
 

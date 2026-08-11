@@ -16,7 +16,7 @@ import {
 const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
-    Layer.merge(CellExecutions.Default),
+    Layer.merge(CellExecutions.layer),
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
   );

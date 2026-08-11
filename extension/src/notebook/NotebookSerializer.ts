@@ -71,7 +71,7 @@ const NotebookCellKind = {
 export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
   "NotebookSerializer",
   {
-    dependencies: [Constants.Default],
+    dependencies: [Constants.layer],
     scoped: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
       const constants = yield* Constants;
