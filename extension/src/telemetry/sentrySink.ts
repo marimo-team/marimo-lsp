@@ -1,6 +1,8 @@
 import * as SentrySDK from "@sentry/node";
 import { Effect } from "effect";
 
+import { nestedErrorClassName } from "../lib/errorClassification.ts";
+
 // Public DSN (not a secret)
 const SENTRY_DSN =
   "https://717e07e6f9831ef39f872ab4a7a63dc2@o4505919839862784.ingest.us.sentry.io/4510382050770944";
@@ -75,7 +77,7 @@ export const acquireSentryAdapter = Effect.fn("telemetry.acquireSentryAdapter")(
 
     const captureError: SentryAdapter["captureError"] = (error, data) => {
       try {
-        const classification = classify(data);
+        const classification = classifySentryError(error, data);
         scope.captureException(error, {
           captureContext: {
             ...(data ? { extra: data } : {}),
@@ -126,7 +128,10 @@ export const acquireSentryAdapter = Effect.fn("telemetry.acquireSentryAdapter")(
   },
 );
 
-function classify(data: Record<string, unknown> | undefined) {
+export function classifySentryError(
+  error: Error,
+  data: Record<string, unknown> | undefined,
+) {
   const tags: Record<string, string> = {};
   for (const key of [
     "error.domain",
@@ -143,13 +148,23 @@ function classify(data: Record<string, unknown> | undefined) {
     }
   }
 
+  const commandCause = classifyMarimoCommandCause(error);
+  const useCommandCause =
+    commandCause !== undefined &&
+    (tags["error.kind"] === undefined || tags["error.kind"] === "rpc.internal");
+  if (useCommandCause) {
+    tags["error.exception_class"] = commandCause.exceptionClass;
+    tags["error.kind"] = `marimo-command.${commandCause.kind}`;
+  }
+
   const domain = tags["error.domain"];
   const kind = tags["error.kind"];
   const code = tags["rpc.code"];
   const exceptionClass = tags["error.exception_class"];
   const errorTag = tags["error.tag"];
-  const fingerprint =
-    domain && kind
+  const fingerprint = useCommandCause
+    ? ["marimo command error", commandCause.kind]
+    : domain && kind
       ? [
           domain,
           kind,
@@ -160,4 +175,49 @@ function classify(data: Record<string, unknown> | undefined) {
         ? ["marimo extension error", errorTag]
         : undefined;
   return { tags, fingerprint };
+}
+
+function classifyMarimoCommandCause(
+  error: Error,
+): { readonly exceptionClass: string; readonly kind: string } | undefined {
+  if (error.name !== "MarimoCommandError") {
+    return undefined;
+  }
+
+  const causes = errorCauseChain(error.cause);
+  if (causes.length === 0) return undefined;
+
+  const message = causes.map((cause) => cause.message).join("\n");
+  let exceptionClass = "Error";
+  for (let index = causes.length - 1; index >= 0; index--) {
+    const candidate = nestedErrorClassName(causes[index]);
+    if (candidate !== "Error") {
+      exceptionClass = candidate;
+      break;
+    }
+  }
+  if (message.includes("Kernel bridge exited unexpectedly")) {
+    return { exceptionClass, kind: "kernel-bridge-exit" };
+  }
+  if (
+    exceptionClass === "DuplicateCellIdError" ||
+    /Cell\s+['"`][^'"`]+['"`]\s+already exists/i.test(message)
+  ) {
+    return { exceptionClass, kind: "duplicate-cell-id" };
+  }
+  if (exceptionClass !== "Error") {
+    return { exceptionClass, kind: exceptionClass };
+  }
+  return { exceptionClass, kind: "rpc-error" };
+}
+
+function errorCauseChain(value: unknown): Error[] {
+  const causes: Error[] = [];
+  const seen = new Set<Error>();
+  while (value instanceof Error && !seen.has(value)) {
+    causes.push(value);
+    seen.add(value);
+    value = value.cause;
+  }
+  return causes;
 }

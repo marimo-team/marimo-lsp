@@ -1,5 +1,6 @@
 import { Cause, Redacted } from "effect";
 
+import { safeErrorClassName } from "../lib/errorClassification.ts";
 import {
   MarimoClientStartError,
   MarimoCommandError,
@@ -58,7 +59,7 @@ export function classifyNotebookDeserializeError(
   if (error instanceof MarimoCommandError) {
     const method = commandMethod(error);
     const code = rpcCode(error.cause);
-    const exceptionClass = safeClassName(error.cause);
+    const exceptionClass = safeErrorClassName(error.cause);
     const kind = isClientNotRunning(error.cause)
       ? "transport.client-not-running"
       : "rpc.internal";
@@ -75,7 +76,7 @@ export function classifyNotebookDeserializeError(
     };
   }
 
-  const exceptionClass = safeClassName(error);
+  const exceptionClass = safeErrorClassName(error);
   return {
     report: true,
     domain: "notebook.deserialize",
@@ -101,19 +102,6 @@ function isClientNotRunning(error: unknown): boolean {
     typeof error.message === "string" &&
     error.message.toLowerCase().includes("client is not running")
   );
-}
-
-function safeClassName(value: unknown): string {
-  if (!isRecord(value)) return typeof value;
-  for (const candidate of [value._tag, value.name, value.constructor?.name]) {
-    if (
-      typeof candidate === "string" &&
-      /^[A-Za-z_$][\w$.-]{0,79}$/.test(candidate)
-    ) {
-      return candidate;
-    }
-  }
-  return "Error";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
