@@ -39,33 +39,39 @@ export const AcceptedSource = Data.taggedEnum<AcceptedSource>();
  */
 export type Op = Data.TaggedEnum<{
   Queue: { readonly runId: RunId; readonly next: CellRuntimeState };
-  Start: { readonly startTime: number; readonly next: CellRuntimeState };
+  Start: {
+    readonly startTime: number;
+    readonly next: CellRuntimeState;
+    readonly ephemeralRunId: RunId;
+  };
   Settle: {
     readonly success: boolean;
     readonly endTime: number | undefined;
     readonly next: CellRuntimeState;
+    readonly ephemeralRunId: RunId;
   };
-  Update: { readonly next: CellRuntimeState };
+  Update: { readonly next: CellRuntimeState; readonly ephemeralRunId: RunId };
   Interrupt: {};
 }>;
 export const Op = Data.taggedEnum<Op>();
 
-/**
- * One side effect the reducer wants done, as data. The interpreter performs it.
- */
-export type Action = Data.TaggedEnum<{
-  CreateExecution: {};
-  StartExecution: { readonly startTime: number | undefined };
-  EmitOutputs: { readonly state: CellRuntimeState };
-  FinalizeOutputs: { readonly state: CellRuntimeState };
-  EndExecution: {
-    readonly success: boolean;
-    readonly endTime: number | undefined;
+/** One host effect requested by the reducer. */
+export type CellCommand = Data.TaggedEnum<{
+  OpenRun: { readonly runId: RunId };
+  StartRun: { readonly runId: RunId; readonly at: number | undefined };
+  RenderOutputs: {
+    readonly runId: RunId;
+    readonly state: CellRuntimeState;
+    readonly final: boolean;
   };
-  ApplyRuntimeError: { readonly state: CellRuntimeState };
-  ClearRuntimeError: {};
+  CloseRun: {
+    readonly runId: RunId;
+    readonly success: boolean;
+    readonly at: number | undefined;
+  };
+  SetDiagnostic: { readonly state: Option.Option<CellRuntimeState> };
 }>;
-export const Action = Data.taggedEnum<Action>();
+export const CellCommand = Data.taggedEnum<CellCommand>();
 
 /** Pure, vscode-free per-cell reducer state. */
 export interface CellRunEntry {
@@ -102,6 +108,7 @@ export function transitionCell(
 export function parseOp(
   next: CellRuntimeState,
   msg: CellOperationNotification,
+  ephemeralRunId: RunId,
 ): Option.Option<Op> {
   switch (msg.status) {
     case "queued": {
@@ -110,7 +117,11 @@ export function parseOp(
     }
     case "running":
       return Option.some(
-        Op.Start({ startTime: (msg.timestamp ?? 0) * 1000, next }),
+        Op.Start({
+          startTime: (msg.timestamp ?? 0) * 1000,
+          next,
+          ephemeralRunId,
+        }),
       );
     case "idle":
       return Option.some(
@@ -120,54 +131,67 @@ export function parseOp(
           success: next.output?.channel !== "marimo-error",
           endTime: msg.timestamp == null ? undefined : msg.timestamp * 1000,
           next,
+          ephemeralRunId,
         }),
       );
     default:
-      return Option.some(Op.Update({ next }));
+      return Option.some(Op.Update({ next, ephemeralRunId }));
   }
 }
 
-const hasExecution = (phase: RunPhase): boolean =>
-  phase._tag === "Queued" || phase._tag === "Running";
+const activeRunId = (phase: RunPhase): RunId | undefined =>
+  phase._tag === "Queued" || phase._tag === "Running" ? phase.runId : undefined;
 
 const isError = (state: CellRuntimeState): boolean =>
   state.output?.channel === "marimo-error";
 
 /**
  * The cell run reducer: pure, total, vscode-free. Decides the next
- * {@link RunPhase} and the ordered {@link Action}s a single {@link Op} causes.
+ * {@link RunPhase} and the ordered {@link CellCommand}s a single
+ * {@link Op} causes.
  * The one place that decides what a cell-op *means*.
  */
 export function step(
   entry: CellRunEntry,
   op: Op,
   source?: string,
-): { readonly entry: CellRunEntry; readonly actions: ReadonlyArray<Action> } {
+): {
+  readonly entry: CellRunEntry;
+  readonly commands: ReadonlyArray<CellCommand>;
+} {
   return Op.$match(op, {
     Interrupt: () => {
-      if (!hasExecution(entry.phase)) return { entry, actions: [] };
+      const runId = activeRunId(entry.phase);
+      if (runId === undefined) return { entry, commands: [] };
       return {
         entry: { ...entry, phase: RunPhase.Completed() },
-        actions: [Action.EndExecution({ success: false, endTime: undefined })],
+        commands: [
+          CellCommand.CloseRun({ runId, success: false, at: undefined }),
+        ],
       };
     },
 
     Queue: ({ runId, next }) => {
-      const actions: Action[] = [];
+      const commands: CellCommand[] = [];
       // Queue is the kernel's acknowledgement that it accepted this source.
       // It wins over `staleInputs` when both arrive on the same operation.
       const acceptedSource =
         source === undefined
           ? entry.acceptedSource
           : AcceptedSource.Accepted({ source });
-      actions.push(Action.ClearRuntimeError());
+      commands.push(CellCommand.SetDiagnostic({ state: Option.none() }));
       // End any still-running prior execution before creating the new one.
-      if (hasExecution(entry.phase)) {
-        actions.push(
-          Action.EndExecution({ success: true, endTime: undefined }),
+      const previousRunId = activeRunId(entry.phase);
+      if (previousRunId !== undefined) {
+        commands.push(
+          CellCommand.CloseRun({
+            runId: previousRunId,
+            success: true,
+            at: undefined,
+          }),
         );
       }
-      actions.push(Action.CreateExecution());
+      commands.push(CellCommand.OpenRun({ runId }));
       return {
         entry: {
           ...entry,
@@ -175,21 +199,33 @@ export function step(
           phase: RunPhase.Queued({ runId }),
           acceptedSource,
         },
-        actions,
+        commands,
       };
     },
 
-    Start: ({ startTime, next }) => {
-      const actions: Action[] = [];
+    Start: ({ startTime, next, ephemeralRunId }) => {
+      const commands: CellCommand[] = [];
       let phase = entry.phase;
       if (entry.phase._tag === "Queued") {
-        actions.push(Action.StartExecution({ startTime }));
+        commands.push(
+          CellCommand.StartRun({
+            runId: entry.phase.runId,
+            at: startTime,
+          }),
+        );
         phase = RunPhase.Running({ runId: entry.phase.runId });
       }
-      if (hasExecution(phase)) {
-        actions.push(Action.EmitOutputs({ state: next }));
+      const runId = activeRunId(phase);
+      if (runId !== undefined) {
+        commands.push(
+          CellCommand.RenderOutputs({ runId, state: next, final: false }),
+        );
       } else if (isError(next)) {
-        actions.push(...ephemeralError(next, { applyDiagnostic: false }));
+        commands.push(
+          ...ephemeralError(ephemeralRunId, next, {
+            applyDiagnostic: false,
+          }),
+        );
       }
       return {
         entry: {
@@ -200,16 +236,23 @@ export function step(
             ? AcceptedSource.Invalidated()
             : entry.acceptedSource,
         },
-        actions,
+        commands,
       };
     },
 
-    Update: ({ next }) => {
-      const actions: Action[] = [];
-      if (hasExecution(entry.phase)) {
-        actions.push(Action.EmitOutputs({ state: next }));
+    Update: ({ next, ephemeralRunId }) => {
+      const commands: CellCommand[] = [];
+      const runId = activeRunId(entry.phase);
+      if (runId !== undefined) {
+        commands.push(
+          CellCommand.RenderOutputs({ runId, state: next, final: false }),
+        );
       } else if (isError(next)) {
-        actions.push(...ephemeralError(next, { applyDiagnostic: false }));
+        commands.push(
+          ...ephemeralError(ephemeralRunId, next, {
+            applyDiagnostic: false,
+          }),
+        );
       }
       return {
         entry: {
@@ -219,20 +262,21 @@ export function step(
             ? AcceptedSource.Invalidated()
             : entry.acceptedSource,
         },
-        actions,
+        commands,
       };
     },
 
-    Settle: ({ success, endTime, next }) => {
-      const actions: Action[] = [];
+    Settle: ({ success, endTime, next, ephemeralRunId }) => {
+      const commands: CellCommand[] = [];
       const acceptedSource = next.staleInputs
         ? AcceptedSource.Invalidated()
         : entry.acceptedSource;
-      if (hasExecution(entry.phase)) {
-        actions.push(
-          Action.FinalizeOutputs({ state: next }),
-          Action.ApplyRuntimeError({ state: next }),
-          Action.EndExecution({ success, endTime }),
+      const runId = activeRunId(entry.phase);
+      if (runId !== undefined) {
+        commands.push(
+          CellCommand.RenderOutputs({ runId, state: next, final: true }),
+          CellCommand.SetDiagnostic({ state: Option.some(next) }),
+          CellCommand.CloseRun({ runId, success, at: endTime }),
         );
         return {
           entry: {
@@ -241,41 +285,46 @@ export function step(
             phase: RunPhase.Completed(),
             acceptedSource,
           },
-          actions,
+          commands,
         };
       }
       // No live execution: show a one-off execution for an error, and always
       // reconcile the squiggle (clears it when there's no in-cell frame).
       if (isError(next)) {
-        actions.push(...ephemeralError(next, { applyDiagnostic: true }));
+        commands.push(
+          ...ephemeralError(ephemeralRunId, next, {
+            applyDiagnostic: true,
+          }),
+        );
       } else {
-        actions.push(Action.ApplyRuntimeError({ state: next }));
+        commands.push(CellCommand.SetDiagnostic({ state: Option.some(next) }));
       }
       return {
         entry: { ...entry, state: next, acceptedSource },
-        actions,
+        commands,
       };
     },
   });
 }
 
 /**
- * Actions to render an error from a cell that never queued (e.g. a compile
+ * Commands to render an error from a cell that never queued (e.g. a compile
  * error), which has no live execution: spin up a one-off execution, emit the
  * error, end it. `applyDiagnostic` also reconciles the squiggle, which only the
  * terminal `idle` op does.
  */
 function ephemeralError(
+  runId: RunId,
   next: CellRuntimeState,
   opts: { readonly applyDiagnostic: boolean },
-): Action[] {
+): CellCommand[] {
   return [
-    Action.CreateExecution(),
-    Action.StartExecution({ startTime: undefined }),
-    Action.FinalizeOutputs({ state: next }),
+    CellCommand.OpenRun({ runId }),
+    CellCommand.StartRun({ runId, at: undefined }),
+    CellCommand.RenderOutputs({ runId, state: next, final: true }),
     ...(opts.applyDiagnostic
-      ? [Action.ApplyRuntimeError({ state: next })]
+      ? [CellCommand.SetDiagnostic({ state: Option.some(next) })]
       : []),
-    Action.EndExecution({ success: false, endTime: undefined }),
+    CellCommand.CloseRun({ runId, success: false, at: undefined }),
   ];
 }

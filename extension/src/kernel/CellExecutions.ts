@@ -51,11 +51,12 @@ import {
 } from "./CellOutputProjection.ts";
 import {
   AcceptedSource,
-  Action,
+  CellCommand,
   type CellRunEntry,
   makeCellRunEntry,
   Op,
   parseOp,
+  RunId,
   step,
   transitionCell,
 } from "./CellRunReducer.ts";
@@ -84,6 +85,7 @@ class InvalidCellError extends Data.TaggedError("InvalidCellError")<{
 
 /** A run's live VS Code execution and the projection driving its outputs. */
 interface RunResource {
+  readonly runId: RunId;
   readonly execution: vscode.NotebookCellExecution;
   readonly projection: CellOutputProjection;
 }
@@ -111,9 +113,9 @@ interface RunRecord {
 }
 
 /**
- * What the {@link Action} interpreter needs to perform a single op's actions.
+ * What the {@link CellCommand} interpreter needs to drive a single command.
  * `notebookCell` / `controller` are absent for interrupts (which only end
- * executions); actions that require them assert their presence.
+ * runs); commands that require them assert their presence.
  */
 interface PerformContext {
   readonly key: CellExecutionKey;
@@ -354,19 +356,22 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
       // none (a benign race: the execution was ended concurrently).
       const withResource = (
         key: CellExecutionKey,
+        runId: RunId,
         f: (resource: RunResource) => Effect.Effect<void>,
       ) =>
         getResource(key).pipe(
+          Effect.map(Option.filter((resource) => resource.runId === runId)),
           Effect.flatMap(
             Option.match({
               onSome: f,
               onNone: () =>
                 Effect.logDebug(
-                  "No live execution for cell; skipping action",
+                  "No live execution for cell run; skipping command",
                 ).pipe(
                   Effect.annotateLogs({
                     notebookId: key.notebookId,
                     cellId: key.cellId,
+                    runId,
                   }),
                 ),
             }),
@@ -375,10 +380,11 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
 
       const emitOutputs = (
         ctx: PerformContext,
+        runId: RunId,
         state: CellRuntimeState,
         final: boolean,
       ) =>
-        withResource(ctx.key, ({ projection }) => {
+        withResource(ctx.key, runId, ({ projection }) => {
           const keyed = buildKeyedCellOutputs(
             ctx.cellId,
             state,
@@ -397,14 +403,14 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           );
         });
 
-      // The operation interpreter: perform one Action against the real world.
-      const perform = (action: Action, ctx: PerformContext) =>
-        Action.$match(action, {
-          CreateExecution: () =>
+      // The operation interpreter: drive one command against the real world.
+      const drive = (command: CellCommand, ctx: PerformContext) =>
+        CellCommand.$match(command, {
+          OpenRun: ({ runId }) =>
             Effect.gen(function* () {
               assert(
                 ctx.notebookCell !== undefined && ctx.controller !== undefined,
-                "CreateExecution requires a notebook cell and controller",
+                "OpenRun requires a notebook cell and controller",
               );
               const notebookCell = ctx.notebookCell;
               const controller = ctx.controller;
@@ -416,40 +422,39 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               yield* setResource(
                 ctx.key,
                 Option.some({
+                  runId,
                   execution,
                   projection: new CellOutputProjection(execution),
                 }),
               );
             }),
-          StartExecution: ({ startTime }) =>
-            withResource(ctx.key, ({ execution }) =>
-              Effect.sync(() => execution.start(startTime)),
+          StartRun: ({ runId, at }) =>
+            withResource(ctx.key, runId, ({ execution }) =>
+              Effect.sync(() => execution.start(at)),
             ),
-          EmitOutputs: ({ state }) => emitOutputs(ctx, state, false),
-          FinalizeOutputs: ({ state }) => emitOutputs(ctx, state, true),
-          EndExecution: ({ success, endTime }) =>
-            withResource(ctx.key, ({ execution }) =>
+          RenderOutputs: ({ runId, state, final }) =>
+            emitOutputs(ctx, runId, state, final),
+          CloseRun: ({ runId, success, at }) =>
+            withResource(ctx.key, runId, ({ execution }) =>
               Effect.gen(function* () {
                 // `end` throws if already ended (a race); swallow it.
-                yield* Effect.try(() => execution.end(success, endTime)).pipe(
+                yield* Effect.try(() => execution.end(success, at)).pipe(
                   Effect.ignore,
                 );
                 yield* setResource(ctx.key, Option.none());
               }),
             ),
-          ApplyRuntimeError: ({ state }) => {
+          SetDiagnostic: ({ state }) => {
             assert(
               ctx.notebookCell !== undefined,
-              "ApplyRuntimeError requires a notebook cell",
+              "SetDiagnostic requires a notebook cell",
             );
-            return applyErrorDiagnostic(ctx.notebookCell, ctx.cellId, state);
-          },
-          ClearRuntimeError: () => {
-            assert(
-              ctx.notebookCell !== undefined,
-              "ClearRuntimeError requires a notebook cell",
-            );
-            return clearErrorDiagnostic(ctx.notebookCell.document.uri);
+            const notebookCell = ctx.notebookCell;
+            return Option.match(state, {
+              onNone: () => clearErrorDiagnostic(notebookCell.document.uri),
+              onSome: (runtime) =>
+                applyErrorDiagnostic(notebookCell, ctx.cellId, runtime),
+            });
           },
         });
 
@@ -490,7 +495,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               ([, record]) => record.editor === editor,
             );
             for (const [key, record] of targets) {
-              const { entry, actions } = step(record.entry, Op.Interrupt());
+              const { entry, commands } = step(record.entry, Op.Interrupt());
               yield* Effect.sync(() =>
                 MutableHashMap.set(records, key, { ...record, entry }),
               );
@@ -501,9 +506,9 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                 controller: undefined,
                 notebook: undefined,
               };
-              for (const action of actions) {
+              for (const command of commands) {
                 // oxlint-disable-next-line eslint/no-await-in-loop -- ordered
-                yield* perform(action, ctx);
+                yield* drive(command, ctx);
               }
             }
           }),
@@ -531,7 +536,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             // Fold the cell-op into the run state once, up front, so the folded
             // state is persisted even for an op we end up dropping.
             const next = transitionCell(record.entry.state, msg);
-            const op = parseOp(next, msg);
+            const op = parseOp(next, msg, RunId(crypto.randomUUID()));
             if (Option.isNone(op)) {
               yield* Effect.logWarning(
                 "Queued cell-op missing run_id; cannot track execution",
@@ -574,17 +579,16 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               controller,
               notebook: editor.notebook,
             };
-            for (const action of result.actions) {
+            for (const command of result.commands) {
               if (
                 options.renderOutput === false &&
-                (action._tag === "EmitOutputs" ||
-                  action._tag === "FinalizeOutputs")
+                command._tag === "RenderOutputs"
               ) {
                 continue;
               }
-              // oxlint-disable-next-line eslint/no-await-in-loop -- actions are
-              // ordered (e.g. FinalizeOutputs must land before EndExecution)
-              yield* perform(action, ctx);
+              // oxlint-disable-next-line eslint/no-await-in-loop -- commands
+              // are ordered (e.g. RenderOutputs lands before CloseRun)
+              yield* drive(command, ctx);
             }
           }).pipe(
             Effect.catchTag("NotebookCellNotFoundError", () =>
