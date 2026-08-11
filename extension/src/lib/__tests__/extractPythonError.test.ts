@@ -78,6 +78,21 @@ describe("extractPythonError", () => {
     expect(extractPythonError(error)).toEqual(Option.none());
   });
 
+  it("skips continuation labels below the exception line", () => {
+    const error = new Error("An error has occurred", {
+      cause: new Error(
+        "Traceback (most recent call last):\n" +
+          "  RuntimeError: kernel startup failed\n" +
+          "  Note: this environment may be misconfigured\n" +
+          "  Hint: check the selected interpreter",
+      ),
+    });
+
+    expect(extractPythonError(error)).toEqual(
+      Option.some("RuntimeError: kernel startup failed"),
+    );
+  });
+
   it("extracts AttributeError for file name shadowing", () => {
     const error = new Error("An error has occurred", {
       cause: new Error(

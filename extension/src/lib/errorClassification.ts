@@ -1,6 +1,15 @@
 const SAFE_CLASS_NAME = /^[A-Za-z_$][\w$.-]{0,79}$/;
-const EXCEPTION_CLASS =
-  /^\s*(?:[A-Za-z_$][\w$]*\.)*((?!Traceback\b)[A-Za-z_$][\w$]*):/m;
+const EXCEPTION_CLASS = /^\s*((?:[A-Za-z_$][\w$]*\.)*)([A-Za-z_$][\w$]*):/m;
+const EXCEPTION_SUFFIX = /(?:Error|Exception|Warning)$/;
+const NON_SUFFIX_BUILTIN_EXCEPTIONS = new Set([
+  "BaseExceptionGroup",
+  "ExceptionGroup",
+  "GeneratorExit",
+  "KeyboardInterrupt",
+  "StopAsyncIteration",
+  "StopIteration",
+  "SystemExit",
+]);
 
 export function safeErrorClassName(value: unknown): string {
   if (!isRecord(value)) return typeof value;
@@ -18,13 +27,13 @@ export function safeErrorClassName(value: unknown): string {
 }
 
 export function exceptionClassFromMessage(text: string): string | undefined {
-  const match = text.match(EXCEPTION_CLASS);
-  return match && SAFE_CLASS_NAME.test(match[1]) ? match[1] : undefined;
+  const candidate = likelyExceptionClass(text);
+  return candidate && SAFE_CLASS_NAME.test(candidate) ? candidate : undefined;
 }
 
 /** Whether text starts a Python-style exception line, without telemetry bounds. */
 export function hasExceptionClassPrefix(text: string): boolean {
-  return EXCEPTION_CLASS.test(text);
+  return likelyExceptionClass(text) !== undefined;
 }
 
 export function nestedErrorClassName(error: Error): string {
@@ -36,4 +45,16 @@ export function nestedErrorClassName(error: Error): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function likelyExceptionClass(text: string): string | undefined {
+  const match = text.match(EXCEPTION_CLASS);
+  if (!match) return undefined;
+
+  const [, qualifier, className] = match;
+  const isRecognizable =
+    Boolean(qualifier) ||
+    EXCEPTION_SUFFIX.test(className) ||
+    NON_SUFFIX_BUILTIN_EXCEPTIONS.has(className);
+  return isRecognizable ? className : undefined;
 }

@@ -27,11 +27,22 @@ describe("errorClassification", () => {
     expect(
       exceptionClassFromMessage("builtins.KeyboardInterrupt: stopped"),
     ).toBe("KeyboardInterrupt");
+    expect(exceptionClassFromMessage("KeyboardInterrupt: stopped")).toBe(
+      "KeyboardInterrupt",
+    );
+    expect(exceptionClassFromMessage("my_package.Abort: stopped")).toBe(
+      "Abort",
+    );
   });
 
-  it("excludes traceback headers", () => {
+  it("excludes traceback headers and continuation labels", () => {
     expect(exceptionClassFromMessage("Traceback: unavailable")).toBeUndefined();
     expect(hasExceptionClassPrefix("Traceback: unavailable")).toBe(false);
+    expect(exceptionClassFromMessage("Hint: rename this file")).toBeUndefined();
+    expect(hasExceptionClassPrefix("Note: retrying may help")).toBe(false);
+    expect(nestedErrorClassName(new Error("Hint: rename this file"))).toBe(
+      "Error",
+    );
   });
 
   it("keeps user-facing detection separate from telemetry bounds", () => {
