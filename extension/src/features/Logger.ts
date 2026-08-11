@@ -116,30 +116,31 @@ const makeVsCodeLogger = (
 };
 
 /**
- * Merges the current tracing span's attributes into the log annotations the
- * wrapped logger observes, mirroring v3's `Logger.withSpanAnnotations`.
+ * Adds the identity and the attributes of the current span to the log
+ * annotations that the wrapped logger reads.
  *
- * In v4 loggers read annotations from the fiber (`References.CurrentLogAnnotations`)
- * rather than from `Logger.Options`, so the merge temporarily swaps the fiber's
- * context around the inner `log` call and restores it afterwards.
+ * A logger reads its annotations from the fiber and not from
+ * `Logger.Options`. This function changes the fiber context before the inner
+ * `log` call. It puts the old context back after that call.
  */
-const withSpanAnnotations = <Message, Output>(
+export const withSpanAnnotations = <Message, Output>(
   logger: Logger.Logger<Message, Output>,
 ): Logger.Logger<Message, Output> =>
   Logger.make((options) => {
     const fiber = options.fiber;
     const span = fiber.currentSpan;
-    if (
-      span === undefined ||
-      span._tag !== "Span" ||
-      span.attributes.size === 0
-    ) {
+    if (span === undefined) {
       return logger.log(options);
     }
     const previous = fiber.context;
     const merged = {
-      ...Object.fromEntries(span.attributes),
+      ...(span._tag === "Span" ? Object.fromEntries(span.attributes) : {}),
       ...fiber.getRef(References.CurrentLogAnnotations),
+      // The identity is set last. It replaces a user annotation that has
+      // the same name. An `ExternalSpan` has ids but no name.
+      "effect.traceId": span.traceId,
+      "effect.spanId": span.spanId,
+      ...(span._tag === "Span" ? { "effect.spanName": span.name } : {}),
     };
     fiber.setContext(
       Context.add(previous, References.CurrentLogAnnotations, merged),
@@ -163,8 +164,8 @@ export const LoggerLive = Layer.unwrap(
     return Logger.layer([
       vscodeLogger,
       withSpanAnnotations(telemetry.errorLogger),
-      // v3 replaced only `Logger.defaultLogger`; keep span events flowing to
-      // the tracer just like the v3 default logger set did.
+      // Keep the tracer logger. Span events must continue to reach the
+      // tracer.
       Logger.tracerLogger,
     ]);
   }),
