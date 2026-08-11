@@ -1,6 +1,8 @@
 import * as SentrySDK from "@sentry/node";
 import { Effect } from "effect";
 
+import { nestedErrorClassName } from "../lib/errorClassification.ts";
+
 // Public DSN (not a secret)
 const SENTRY_DSN =
   "https://717e07e6f9831ef39f872ab4a7a63dc2@o4505919839862784.ingest.us.sentry.io/4510382050770944";
@@ -146,18 +148,23 @@ export function classifySentryError(
     }
   }
 
+  const commandCause = classifyMarimoCommandCause(error);
+  const useCommandCause =
+    commandCause !== undefined &&
+    (tags["error.kind"] === undefined || tags["error.kind"] === "rpc.internal");
+  if (useCommandCause) {
+    tags["error.exception_class"] = commandCause.exceptionClass;
+    tags["error.kind"] = `marimo-command.${commandCause.kind}`;
+  }
+
   const domain = tags["error.domain"];
   const kind = tags["error.kind"];
   const code = tags["rpc.code"];
   const exceptionClass = tags["error.exception_class"];
   const errorTag = tags["error.tag"];
-  const commandCause = classifyMarimoCommandCause(error);
-  if (commandCause) {
-    tags["error.exception_class"] ??= commandCause.exceptionClass;
-    tags["error.kind"] ??= `marimo-command.${commandCause.kind}`;
-  }
-  const fingerprint =
-    domain && kind
+  const fingerprint = useCommandCause
+    ? ["marimo command error", commandCause.kind]
+    : domain && kind
       ? [
           domain,
           kind,
@@ -166,9 +173,7 @@ export function classifySentryError(
         ]
       : errorTag
         ? ["marimo extension error", errorTag]
-        : commandCause
-          ? ["marimo command error", commandCause.kind]
-          : undefined;
+        : undefined;
   return { tags, fingerprint };
 }
 
@@ -185,7 +190,7 @@ function classifyMarimoCommandCause(
   const message = causes.map((cause) => cause.message).join("\n");
   let exceptionClass = "Error";
   for (let index = causes.length - 1; index >= 0; index--) {
-    const candidate = nestedExceptionClass(causes[index]);
+    const candidate = nestedErrorClassName(causes[index]);
     if (candidate !== "Error") {
       exceptionClass = candidate;
       break;
@@ -215,16 +220,4 @@ function errorCauseChain(value: unknown): Error[] {
     value = value.cause;
   }
   return causes;
-}
-
-function nestedExceptionClass(error: Error): string {
-  if (error.name !== "Error" && isSafeClassName(error.name)) return error.name;
-  const match = error.message.match(
-    /(?:^|\.)\s*([A-Za-z_$][\w$]*(?:Error|Exception)):/,
-  );
-  return match && isSafeClassName(match[1]) ? match[1] : "Error";
-}
-
-function isSafeClassName(value: string): boolean {
-  return /^[A-Za-z_$][\w$.-]{0,79}$/.test(value);
 }
