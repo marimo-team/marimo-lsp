@@ -2,6 +2,7 @@ const SAFE_CLASS_NAME = /^[A-Za-z_$][\w$.-]{0,79}$/;
 const EXCEPTION_CLASS = /^\s*((?:[A-Za-z_$][\w$]*\.)*)([A-Za-z_$][\w$]*):/m;
 const EXCEPTION_SUFFIX = /(?:Error|Exception|Warning)$/;
 const NON_SUFFIX_BUILTIN_EXCEPTIONS = new Set([
+  "BaseException",
   "BaseExceptionGroup",
   "ExceptionGroup",
   "GeneratorExit",

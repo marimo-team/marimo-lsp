@@ -30,6 +30,9 @@ describe("errorClassification", () => {
     expect(exceptionClassFromMessage("KeyboardInterrupt: stopped")).toBe(
       "KeyboardInterrupt",
     );
+    expect(exceptionClassFromMessage("BaseException: stopped")).toBe(
+      "BaseException",
+    );
     expect(exceptionClassFromMessage("my_package.Abort: stopped")).toBe(
       "Abort",
     );
