@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, TestClock } from "effect";
+import { Effect, Layer, Option, Ref } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {

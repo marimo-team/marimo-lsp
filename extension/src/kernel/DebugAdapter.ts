@@ -1,7 +1,17 @@
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 
-import { Data, Effect, HashMap, Option, Ref, Schema, Stream } from "effect";
+import {
+  Context,
+  Data,
+  Effect,
+  HashMap,
+  Layer,
+  Option,
+  Ref,
+  Schema,
+  Stream,
+} from "effect";
 
 import { createSourceMapping, makeDapProxy } from "../lib/dap-proxy.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
@@ -33,7 +43,7 @@ print(_json.dumps({"port": _sys._marimo_debugpy_port, "tmpdir": _tmpdir}))
 }
 
 /** Resolve the bundled debugpy libs path from the ms-python.debugpy extension. */
-const resolveDebugpyPath = Effect.fn(function* (code: VsCode) {
+const resolveDebugpyPath = Effect.fn(function* (code: VsCode["Service"]) {
   const ext = code.extensions.getExtension("ms-python.debugpy");
   if (Option.isNone(ext)) {
     yield* Effect.logWarning("ms-python.debugpy extension not found");
@@ -70,10 +80,7 @@ const MarimoDebugConfiguration = Schema.Struct({
     notebookUri: NotebookIdFromString,
     port: Schema.Number,
     cellIndex: Schema.Number,
-    cellMappings: Schema.Record({
-      key: Schema.String,
-      value: Schema.String,
-    }),
+    cellMappings: Schema.Record(Schema.String, Schema.String),
   }),
 });
 
@@ -85,11 +92,10 @@ const MarimoDebugConfiguration = Schema.Struct({
  * and debugpy, rewriting source paths so that notebook cell URIs map
  * to the temp file paths debugpy knows about.
  */
-export class DebugAdapter extends Effect.Service<DebugAdapter>()(
+export class DebugAdapter extends Context.Service<DebugAdapter>()(
   "DebugAdapter",
   {
-    dependencies: [NotebookSerializer.layer, OutputChannel.layer],
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const code = yield* VsCode;
       const notebooks = yield* NotebookRuntime;
 
@@ -267,14 +273,18 @@ export class DebugAdapter extends Effect.Service<DebugAdapter>()(
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide([NotebookSerializer.layer, OutputChannel.layer]),
+  );
+}
 
 /**
  * Activate debugpy in the kernel by running a scratchpad snippet
  * and parsing the port + tmpdir from stdout.
  */
 function activateDebugpy(
-  notebooks: NotebookRuntime,
+  notebooks: NotebookRuntime["Service"],
   notebookUri: NotebookId,
   debugpyLibsPath: string,
 ) {

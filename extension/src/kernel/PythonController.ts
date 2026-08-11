@@ -1,14 +1,6 @@
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import {
-  Brand,
-  Cause,
-  Effect,
-  Option,
-  Redacted,
-  Runtime,
-  Stream,
-} from "effect";
+import { Brand, Cause, Effect, Option, Queue, Redacted, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { unreachable } from "../assert.ts";
@@ -47,7 +39,7 @@ export const createPythonController = Effect.fn("createPythonController")(
     const validator = yield* EnvironmentValidator;
     const serializer = yield* NotebookSerializer;
     const { LanguageId } = yield* Constants;
-    const runPromise = Runtime.runPromise(yield* Effect.runtime());
+    const runPromise = Effect.runPromiseWith(yield* Effect.context());
 
     yield* Effect.annotateCurrentSpan("controllerId", options.id);
     const controller = yield* code.notebooks.createNotebookController(
@@ -222,7 +214,7 @@ export const createPythonController = Effect.fn("createPythonController")(
       runPromise(
         Effect.gen(function* () {
           const notebook = MarimoNotebookDocument.from(rawNotebook);
-          yield* notebooks.forNotebook(notebook.id).interrupt();
+          yield* notebooks.forNotebook(notebook.id).interrupt;
         }).pipe(
           Effect.withSpan("PythonController.interrupt", {
             attributes: {
@@ -230,7 +222,7 @@ export const createPythonController = Effect.fn("createPythonController")(
               notebook: rawNotebook.uri.toString(),
             },
           }),
-          Effect.catchAllCause((cause) =>
+          Effect.catchCause((cause) =>
             Effect.gen(function* () {
               yield* Effect.logError("Failed to interrupt execution").pipe(
                 Effect.annotateLogs({ cause }),
@@ -281,16 +273,18 @@ export class PythonController {
   resolveExecutable(_notebook: MarimoNotebookDocument) {
     return Effect.succeed(this.executable);
   }
-  selectedNotebookChanges() {
-    return Stream.asyncPush<{
-      notebook: vscode.NotebookDocument;
-      selected: boolean;
-    }>((emit) =>
-      acquireDisposable(() =>
-        this.#inner.onDidChangeSelectedNotebooks((e) => emit.single(e)),
+  // Field initializer, not a method: Stream.callback is lazy, so `this.#inner`
+  // is only read when the stream is subscribed (after construction).
+  readonly selectedNotebookChanges = Stream.callback<{
+    notebook: vscode.NotebookDocument;
+    selected: boolean;
+  }>((queue) =>
+    acquireDisposable(() =>
+      this.#inner.onDidChangeSelectedNotebooks((e) =>
+        Queue.offerUnsafe(queue, e),
       ),
-    );
-  }
+    ),
+  );
   updateNotebookAffinity(
     notebook: vscode.NotebookDocument,
     affinity: vscode.NotebookControllerAffinity,

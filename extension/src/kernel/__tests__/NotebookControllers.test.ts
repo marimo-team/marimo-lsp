@@ -1,6 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import type * as py from "@vscode/python-extension";
-import { Effect, Layer, Option, TestClock } from "effect";
+import { Effect, Layer, Option } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
@@ -85,11 +86,18 @@ it.effect(
 
       expect(
         Option.isNone(
-          yield* notebooks
-            .forNotebook(notebookId(editor.notebook.uri.toString()))
-            .getController(),
+          yield* notebooks.forNotebook(
+            notebookId(editor.notebook.uri.toString()),
+          ).getController,
         ),
       ).toBe(true);
+
+      // One scheduler drain so the trackControllerSelections fiber (forked
+      // while the layer was built) registers its onDidChangeSelectedNotebooks
+      // listener before the mock emitter fires. v4 forked fibers do not run
+      // until the current fiber yields; in production the listener registers
+      // during activation, long before a user can select a kernel.
+      yield* TestClock.adjust("1 millis");
 
       yield* ctx.vscode.selectNotebookController(
         `marimo-${executable}`,
@@ -98,9 +106,9 @@ it.effect(
       );
       yield* TestClock.adjust("10 millis");
 
-      const selected = yield* notebooks
-        .forNotebook(notebookId(editor.notebook.uri.toString()))
-        .getController();
+      const selected = yield* notebooks.forNotebook(
+        notebookId(editor.notebook.uri.toString()),
+      ).getController;
       assert(Option.isSome(selected));
       expect(selected.value.id).toBe(`marimo-${executable}`);
     }).pipe(Effect.provide(ctx.layer));
@@ -118,6 +126,12 @@ it.effect(
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime;
+
+      // Drain once so the forked environmentChanges consumer subscribes to
+      // the mock PubSub before we publish; the PubSub has no replay, so an
+      // event published before the fork first runs would be silently lost.
+      // Production wraps a vscode event listener registered at activation.
+      yield* TestClock.adjust("1 millis");
 
       yield* ctx.python.addEnvironment(second);
       yield* TestClock.adjust("10 millis");
@@ -148,6 +162,10 @@ it.effect(
       yield* NotebookRuntime;
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
       yield* ctx.vscode.addNotebookDocument(editor.notebook);
+      // Drain so the selection listener and the environmentChanges consumer
+      // (both forked during layer construction) are attached before the mock
+      // events below fire; see the comments in the two tests above.
+      yield* TestClock.adjust("1 millis");
       yield* ctx.vscode.selectNotebookController(
         `marimo-${executable}`,
         editor.notebook,

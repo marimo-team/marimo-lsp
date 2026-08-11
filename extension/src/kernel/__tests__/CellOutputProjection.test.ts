@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect } from "effect";
+import { type Context, Effect } from "effect";
 import type * as vscode from "vscode";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -45,7 +45,7 @@ class FakeExecution implements OutputExecution {
 }
 
 /** Keyed-output builders bound to the test's VS Code value constructors. */
-const builders = (code: VsCode) => ({
+const builders = (code: Context.Service.Shape<typeof VsCode>) => ({
   stdout: (text: string): KeyedCellOutput => ({
     key: "stdout",
     output: new code.NotebookCellOutput([

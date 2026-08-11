@@ -71,18 +71,14 @@ const withTestCtx = Effect.fn(function* (options: {
   const layer = Layer.mergeAll(
     vscode.layer,
     Config.layer.pipe(Layer.provide(vscode.layer)),
-    Layer.succeed(
-      PythonEnvInvalidation,
-      PythonEnvInvalidation.make({
-        invalidate: () =>
-          Ref.update(invalidations, (count) => count + 1).pipe(Effect.as(true)),
-        changes: () => Stream.empty,
-      }),
-    ),
+    Layer.succeed(PythonEnvInvalidation, {
+      invalidate: () =>
+        Ref.update(invalidations, (count) => count + 1).pipe(Effect.as(true)),
+      changes: Stream.empty,
+    }),
     // Cancellation happens before invoking uv; any Uv method call is a defect.
     // Layer.mock still requires the non-method properties.
     Layer.mock(Uv, {
-      _tag: "Uv",
       bin: Effect.succeed(
         UvBin.Bundled({
           executable: "uv",
