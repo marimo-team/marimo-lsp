@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, SubscriptionRef, TestClock } from "effect";
+import { Effect, Layer, Option, Ref, SubscriptionRef } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -33,7 +34,7 @@ const withTestCtx = Effect.fn(function* (
   const vscode = yield* TestVsCode.make({
     initialDocuments: [editor.notebook],
     window: {
-      colorThemeChanges: () => themeRef.changes,
+      colorThemeChanges: SubscriptionRef.changes(themeRef),
     },
   });
 
@@ -76,7 +77,7 @@ describe("ThemeSync", () => {
         yield* SubscriptionRef.set(ctx.themeRef, "dark");
         yield* TestClock.adjust("1 millis");
 
-        expect(yield* ctx.executions).toMatchInlineSnapshot(`
+        expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
           [
             {
               "method": "set-display-theme",
@@ -105,7 +106,7 @@ describe("ThemeSync", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
 
-        expect(yield* ctx.executions).toMatchInlineSnapshot(`
+        expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
           [
             {
               "method": "set-display-theme",

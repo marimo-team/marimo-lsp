@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, TestClock } from "effect";
+import { Effect, Layer, Option, Ref } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -22,24 +23,21 @@ const withTestCtx = Effect.gen(function* () {
   ]);
 
   const visible = yield* Ref.make(false);
-  const statusBarLayer = Layer.succeed(
-    StatusBar,
-    StatusBar.make({
-      createSimpleStatusBarItem() {
-        return Effect.die("Not implemented in test");
-      },
-      createStatusBarItem: () =>
-        Effect.succeed({
-          setText: () => Effect.void,
-          setTooltip: () => Effect.void,
-          setColor: () => Effect.void,
-          setBackgroundColor: () => Effect.void,
-          setCommand: () => Effect.void,
-          show: () => Ref.set(visible, true),
-          hide: () => Ref.set(visible, false),
-        }),
-    }),
-  );
+  const statusBarLayer = Layer.succeed(StatusBar, {
+    createSimpleStatusBarItem() {
+      return Effect.die("Not implemented in test");
+    },
+    createStatusBarItem: () =>
+      Effect.succeed({
+        setText: () => Effect.void,
+        setTooltip: () => Effect.void,
+        setColor: () => Effect.void,
+        setBackgroundColor: () => Effect.void,
+        setCommand: () => Effect.void,
+        show: () => Ref.set(visible, true),
+        hide: () => Ref.set(visible, false),
+      }),
+  });
 
   return {
     vscode,

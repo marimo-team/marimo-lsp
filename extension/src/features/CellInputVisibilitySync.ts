@@ -2,9 +2,11 @@ import {
   Cause,
   Data,
   Effect,
+  Filter,
   HashMap,
   Layer,
   Option,
+  Queue,
   Ref,
   Stream,
 } from "effect";
@@ -146,7 +148,7 @@ function visibilityChanges(
  * cell ID and apply only `hide_code` transitions. Refocusing and unrelated
  * edits therefore do not override a user's temporary manual expansion.
  */
-export const CellInputVisibilitySyncLive = Layer.scopedDiscard(
+export const CellInputVisibilitySyncLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
 
@@ -193,8 +195,8 @@ export const CellInputVisibilitySyncLive = Layer.scopedDiscard(
       initialize: boolean,
     ) =>
       synchronize(notebook, initialize).pipe(
-        Effect.catchAllCause((cause) =>
-          Cause.isInterruptedOnly(cause)
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
             ? Effect.failCause(cause)
             : Effect.logWarning(
                 "Failed to synchronize hidden cell inputs",
@@ -205,15 +207,17 @@ export const CellInputVisibilitySyncLive = Layer.scopedDiscard(
     // Prepend the currently-active editor: onDidChangeActiveNotebookEditor
     // only emits future changes, so this covers a notebook open at startup.
     const activations = Stream.concat(
-      Stream.fromEffect(code.window.getActiveNotebookEditor()),
-      code.window.activeNotebookEditorChanges(),
+      Stream.fromEffect(code.window.getActiveNotebookEditor),
+      code.window.activeNotebookEditorChanges,
     ).pipe(
       // The current-editor read can race with the first change event. Keep the
       // intervening `none` states so a real tab refocus still re-synchronizes.
       Stream.changes,
-      Stream.filterMap((editor) =>
-        Option.filterMap(editor, (editor) =>
-          MarimoNotebookDocument.tryFrom(editor.notebook),
+      Stream.filterMap(
+        Filter.fromPredicateOption((editor) =>
+          Option.flatMap(editor, (editor) =>
+            MarimoNotebookDocument.tryFrom(editor.notebook),
+          ),
         ),
       ),
       Stream.map(
@@ -225,9 +229,11 @@ export const CellInputVisibilitySyncLive = Layer.scopedDiscard(
       ),
     );
 
-    const changes = code.workspace.notebookDocumentChanges().pipe(
-      Stream.filterMap((event) =>
-        MarimoNotebookDocument.tryFrom(event.notebook),
+    const changes = code.workspace.notebookDocumentChanges.pipe(
+      Stream.filterMap(
+        Filter.fromPredicateOption((event) =>
+          MarimoNotebookDocument.tryFrom(event.notebook),
+        ),
       ),
       Stream.map(
         (notebook): CellInputVisibilitySyncEvent =>
@@ -238,19 +244,33 @@ export const CellInputVisibilitySyncLive = Layer.scopedDiscard(
       ),
     );
 
-    const closures = code.workspace.notebookDocumentClosed().pipe(
-      Stream.filterMap((notebook) => MarimoNotebookDocument.tryFrom(notebook)),
+    const closures = code.workspace.notebookDocumentClosed.pipe(
+      Stream.filterMap(
+        Filter.fromPredicateOption((notebook) =>
+          MarimoNotebookDocument.tryFrom(notebook),
+        ),
+      ),
       Stream.map(
         (notebook): CellInputVisibilitySyncEvent =>
           CellInputVisibilitySyncEvent.Close({ notebookId: notebook.id }),
       ),
     );
 
+    // Funnel every source into one queue through per-source fibers. Merging
+    // the streams with `Stream.mergeAll` would subscribe to the underlying
+    // PubSubs lazily (several scheduler ticks after the layer is built), and
+    // events fired in that window would be dropped; a direct fork per source
+    // subscribes as soon as the fiber first runs.
+    const events = yield* Queue.unbounded<CellInputVisibilitySyncEvent>();
+    for (const source of [activations, changes, closures]) {
+      yield* Effect.forkScoped(
+        source.pipe(Stream.runForEach((event) => Queue.offer(events, event))),
+      );
+    }
+
     // A single consumer serializes activation, document-change, and close state.
     yield* Effect.forkScoped(
-      Stream.mergeAll([activations, changes, closures], {
-        concurrency: "unbounded",
-      }).pipe(
+      Stream.fromQueue(events).pipe(
         Stream.runForEach((event) =>
           CellInputVisibilitySyncEvent.$match(event, {
             Close: ({ notebookId }) =>
