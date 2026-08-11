@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, SubscriptionRef, TestClock } from "effect";
+import { Effect, Layer, Option, Ref, SubscriptionRef } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -33,13 +34,13 @@ const withTestCtx = Effect.fn(function* (
   const vscode = yield* TestVsCode.make({
     initialDocuments: [editor.notebook],
     window: {
-      colorThemeChanges: () => themeRef.changes,
+      colorThemeChanges: SubscriptionRef.changes(themeRef),
     },
   });
 
   const layer = Layer.empty.pipe(
     Layer.provideMerge(ThemeSyncLive),
-    Layer.provide(NotebookEditorRegistry.Default),
+    Layer.provide(NotebookEditorRegistry.layer),
     Layer.provide(
       makeTestMarimoClient({
         execute(request) {
@@ -64,7 +65,7 @@ const withTestCtx = Effect.fn(function* (
 });
 
 describe("ThemeSync", () => {
-  it.scoped(
+  it.effect(
     "sends set-display-theme on theme change",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx("light");
@@ -76,8 +77,14 @@ describe("ThemeSync", () => {
         yield* SubscriptionRef.set(ctx.themeRef, "dark");
         yield* TestClock.adjust("1 millis");
 
-        expect(yield* ctx.executions).toMatchInlineSnapshot(`
+        expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
           [
+            {
+              "method": "set-display-theme",
+              "params": {
+                "theme": "light",
+              },
+            },
             {
               "method": "set-display-theme",
               "params": {
@@ -96,7 +103,30 @@ describe("ThemeSync", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
+    "sends set-display-theme while no marimo notebook is active",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx("light");
+
+      yield* Effect.gen(function* () {
+        // The focus is on a text editor. The registry has no notebook.
+        yield* ctx.vscode.setActiveNotebookEditor(Option.none());
+        yield* TestClock.adjust("1 millis");
+
+        yield* SubscriptionRef.set(ctx.themeRef, "dark");
+        yield* TestClock.adjust("1 millis");
+
+        // set-display-theme updates all running sessions. The kernels must
+        // get the change when no notebook is focused.
+        expect(yield* Ref.get(ctx.executions)).toContainEqual({
+          method: "set-display-theme",
+          params: { theme: "dark" },
+        });
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
     "syncs theme when a new notebook becomes active",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx("dark");
@@ -105,8 +135,14 @@ describe("ThemeSync", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
 
-        expect(yield* ctx.executions).toMatchInlineSnapshot(`
+        expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
           [
+            {
+              "method": "set-display-theme",
+              "params": {
+                "theme": "dark",
+              },
+            },
             {
               "method": "set-display-theme",
               "params": {

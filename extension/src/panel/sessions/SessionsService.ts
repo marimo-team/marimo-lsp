@@ -1,4 +1,13 @@
-import { Data, Effect, Option, Schema, Stream, SubscriptionRef } from "effect";
+import {
+  Context,
+  Data,
+  Effect,
+  Layer,
+  Option,
+  Schema,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 
 import { MarimoClient } from "../../lsp/MarimoClient.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -14,10 +23,10 @@ export type SessionViewItem = Omit<SessionInfo, "status"> & {
 };
 
 /** Authoritative live-session state shared by the tree and future renderers. */
-export class SessionsService extends Effect.Service<SessionsService>()(
+export class SessionsService extends Context.Service<SessionsService>()(
   "SessionsService",
   {
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
       const sessions = yield* SubscriptionRef.make<
         ReadonlyArray<SessionViewItem>
@@ -26,7 +35,7 @@ export class SessionsService extends Effect.Service<SessionsService>()(
       const applySnapshot = Effect.fn("SessionsService.applySnapshot")(
         function* (snapshot: unknown) {
           const decoded =
-            yield* Schema.decodeUnknown(SessionsSnapshot)(snapshot);
+            yield* Schema.decodeUnknownEffect(SessionsSnapshot)(snapshot);
           yield* SubscriptionRef.set(sessions, decoded.sessions);
         },
       );
@@ -36,25 +45,26 @@ export class SessionsService extends Effect.Service<SessionsService>()(
       });
 
       yield* Effect.forkScoped(
-        marimo
-          .sessionChanges()
-          .pipe(
-            Stream.runForEach((snapshot) =>
-              applySnapshot(snapshot).pipe(
-                Effect.catchAllCause((cause) =>
-                  Effect.logWarning(
-                    "Ignored invalid live-session snapshot",
-                  ).pipe(Effect.annotateLogs({ cause })),
+        marimo.sessionChanges.pipe(
+          Stream.runForEach((snapshot) =>
+            applySnapshot(snapshot).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Ignored invalid live-session snapshot").pipe(
+                  Effect.annotateLogs({ cause }),
                 ),
               ),
             ),
           ),
+        ),
       );
 
-      // Subscribe before pulling the initial snapshot so a concurrent server
-      // mutation cannot be lost between the list request and registration.
+      // The forked consumer's subscription attaches within microseconds,
+      // while the list request's round trip is still in flight. LSP delivers
+      // messages in order, so any change notification that could slip in
+      // before the subscription is live was emitted before the server built
+      // the snapshot — the snapshot below supersedes whatever was missed.
       yield* refresh().pipe(
-        Effect.catchAllCause((cause) =>
+        Effect.catchCause((cause) =>
           Effect.logWarning("Failed to load initial live sessions").pipe(
             Effect.annotateLogs({ cause }),
           ),
@@ -63,7 +73,7 @@ export class SessionsService extends Effect.Service<SessionsService>()(
 
       const find = (notebookUri: NotebookId) =>
         Effect.map(SubscriptionRef.get(sessions), (items) =>
-          Option.fromNullable(
+          Option.fromNullishOr(
             items.find((item) => item.notebookUri === notebookUri),
           ),
         );
@@ -107,7 +117,7 @@ export class SessionsService extends Effect.Service<SessionsService>()(
           ),
         );
         yield* refresh().pipe(
-          Effect.catchAllCause((cause) =>
+          Effect.catchCause((cause) =>
             Effect.logWarning(
               "Failed to reconcile live sessions after restart",
             ).pipe(Effect.annotateLogs({ cause, notebookUri })),
@@ -135,8 +145,8 @@ export class SessionsService extends Effect.Service<SessionsService>()(
       });
 
       return {
-        get: () => SubscriptionRef.get(sessions),
-        changes: () => sessions.changes,
+        get: SubscriptionRef.get(sessions),
+        changes: SubscriptionRef.changes(sessions),
         find,
         refresh,
         restart,
@@ -164,4 +174,6 @@ export class SessionsService extends Effect.Service<SessionsService>()(
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make);
+}

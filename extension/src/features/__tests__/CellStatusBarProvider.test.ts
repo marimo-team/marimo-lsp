@@ -21,7 +21,7 @@ const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
     Layer.provideMerge(CellStatusBarProviderLive),
-    Layer.provideMerge(CellExecutions.Default),
+    Layer.provideMerge(CellExecutions.layer),
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
     Layer.provide(makeTestNotebookRuntime()),

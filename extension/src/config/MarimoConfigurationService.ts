@@ -1,4 +1,12 @@
-import { Effect, HashMap, Option, Stream, SubscriptionRef } from "effect";
+import {
+  Context,
+  Effect,
+  HashMap,
+  Layer,
+  Option,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 
 import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
@@ -14,10 +22,10 @@ import type { MarimoConfig } from "../types.ts";
  * state management. Configurations are fetched from the LSP server, updated
  * both locally and remotely, and evicted when the notebook closes.
  */
-export class MarimoConfigurationService extends Effect.Service<MarimoConfigurationService>()(
+export class MarimoConfigurationService extends Context.Service<MarimoConfigurationService>()(
   "MarimoConfigurationService",
   {
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const code = yield* VsCode;
       const marimo = yield* MarimoClient;
       const editorRegistry = yield* NotebookEditorRegistry;
@@ -47,8 +55,8 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
        */
       const streamActiveConfigChanges = () =>
         Stream.zipLatest(
-          configRef.changes,
-          editorRegistry.streamActiveNotebookChanges(),
+          SubscriptionRef.changes(configRef),
+          editorRegistry.streamActiveNotebookChanges,
         ).pipe(
           Stream.map(([map, activeNotebookUri]) => {
             if (Option.isNone(activeNotebookUri)) {
@@ -161,4 +169,6 @@ export class MarimoConfigurationService extends Effect.Service<MarimoConfigurati
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make);
+}

@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Stream, TestClock } from "effect";
+import { Effect, Fiber, Layer, Option, Stream } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -12,7 +13,7 @@ import { VsCode } from "../../platform/VsCode.ts";
 
 function makeRegistryLayer(vscode: TestVsCode) {
   return Layer.empty.pipe(
-    Layer.provideMerge(NotebookEditorRegistry.Default),
+    Layer.provideMerge(NotebookEditorRegistry.layer),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
   );
@@ -27,10 +28,10 @@ it.effect(
       Effect.gen(function* () {
         const registry = yield* NotebookEditorRegistry;
 
-        const activeUri = yield* registry.getActiveNotebookUri();
+        const activeUri = yield* registry.getActiveNotebookUri;
         expect(Option.isNone(activeUri)).toBe(true);
 
-        const activeEditor = yield* registry.getActiveNotebookEditor();
+        const activeEditor = yield* registry.getActiveNotebookEditor;
         expect(Option.isNone(activeEditor)).toBe(true);
       }),
       makeRegistryLayer(vscode),
@@ -57,7 +58,7 @@ it.effect(
         const mockEditor = createTestNotebookEditor(notebook);
 
         // Initially, no active editor
-        const initialActive = yield* registry.getActiveNotebookUri();
+        const initialActive = yield* registry.getActiveNotebookUri;
         expect(Option.isNone(initialActive)).toBe(true);
 
         // Set active notebook editor
@@ -67,14 +68,14 @@ it.effect(
         yield* TestClock.adjust("10 millis");
 
         // Verify the registry tracked the change
-        const activeUri = yield* registry.getActiveNotebookUri();
+        const activeUri = yield* registry.getActiveNotebookUri;
         expect(Option.isSome(activeUri)).toBe(true);
         if (Option.isSome(activeUri)) {
           expect(activeUri.value).toBe(notebook.uri.toString());
         }
 
         // Verify we can get the editor back
-        const editor = yield* registry.getActiveNotebookEditor();
+        const editor = yield* registry.getActiveNotebookEditor;
         expect(Option.isSome(editor)).toBe(true);
         if (Option.isSome(editor)) {
           expect(editor.value.notebook.uri.toString()).toBe(
@@ -86,7 +87,7 @@ it.effect(
         yield* vscode.setActiveNotebookEditor(Option.none());
         yield* TestClock.adjust("10 millis");
 
-        const clearedActive = yield* registry.getActiveNotebookUri();
+        const clearedActive = yield* registry.getActiveNotebookUri;
         expect(Option.isNone(clearedActive)).toBe(true);
       }),
       makeRegistryLayer(vscode),
@@ -104,7 +105,7 @@ it.effect(
         const code = yield* VsCode;
         const registry = yield* NotebookEditorRegistry;
 
-        const stream = registry.streamActiveNotebookChanges();
+        const stream = registry.streamActiveNotebookChanges;
         const mockEditor = createTestNotebookEditor(
           createTestNotebookDocument(
             code.Uri.file("file:///test/notebook_mo.py"),
@@ -117,7 +118,7 @@ it.effect(
         );
 
         // Create a stream and fork
-        const streamResult = yield* Effect.fork(
+        const streamResult = yield* Effect.forkChild(
           stream.pipe(Stream.take(4)).pipe(Stream.runCollect),
         );
 
@@ -134,32 +135,29 @@ it.effect(
           yield* TestClock.adjust("10 millis");
         }
 
-        const collected = yield* streamResult;
+        const collected = yield* Fiber.join(streamResult);
         expect(collected).toMatchInlineSnapshot(`
-          {
-            "_id": "Chunk",
-            "values": [
-              {
-                "_id": "Option",
-                "_tag": "Some",
-                "value": "file:///file:///test/notebook_mo.py",
-              },
-              {
-                "_id": "Option",
-                "_tag": "None",
-              },
-              {
-                "_id": "Option",
-                "_tag": "Some",
-                "value": "file:///file:///test/notebook_other.py",
-              },
-              {
-                "_id": "Option",
-                "_tag": "Some",
-                "value": "file:///file:///test/notebook_mo.py",
-              },
-            ],
-          }
+          [
+            {
+              "_id": "Option",
+              "_tag": "Some",
+              "value": "file:///file:///test/notebook_mo.py",
+            },
+            {
+              "_id": "Option",
+              "_tag": "None",
+            },
+            {
+              "_id": "Option",
+              "_tag": "Some",
+              "value": "file:///file:///test/notebook_other.py",
+            },
+            {
+              "_id": "Option",
+              "_tag": "Some",
+              "value": "file:///file:///test/notebook_mo.py",
+            },
+          ]
         `);
       }),
       makeRegistryLayer(vscode),

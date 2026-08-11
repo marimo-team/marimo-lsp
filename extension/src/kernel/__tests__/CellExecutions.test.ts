@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import { Effect, Layer, Option, TestClock } from "effect";
+import { Effect, Layer, Option, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import type * as vscode from "vscode";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
@@ -37,7 +38,7 @@ const withTestCtx = Effect.fn(function* (
 ) {
   const vscode = yield* TestVsCode.make(options);
   const layer = Layer.empty.pipe(
-    Layer.merge(CellExecutions.Default),
+    Layer.merge(CellExecutions.layer),
     Layer.provide(TestNotebookRuntime),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
@@ -1077,7 +1078,7 @@ describe("buildCellOutputs", () => {
   );
 });
 
-it.scoped(
+it.effect(
   "tracks equal cell IDs independently across notebooks",
   Effect.fn(function* () {
     const makeEditor = (path: string) =>
@@ -1144,7 +1145,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "updates cell state without projecting skipped outputs",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(
@@ -1245,7 +1246,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "marks cell as stale when message has staleInputs",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(
@@ -1298,7 +1299,11 @@ it.scoped(
 
       yield* executions.handleOperation(message, {
         editor,
-        controller: new PythonController(controller, "test-controller"),
+        controller: new PythonController(
+          controller,
+          "test-controller",
+          Stream.never,
+        ),
       });
 
       // Check that CellExecutions tracked the cell as stale
@@ -1323,7 +1328,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "clears stale state when cell is queued for execution",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
@@ -1386,7 +1391,11 @@ it.scoped(
 
       yield* executions.handleOperation(message, {
         editor,
-        controller: new PythonController(controller, "test-controller"),
+        controller: new PythonController(
+          controller,
+          "test-controller",
+          Stream.never,
+        ),
       });
 
       // Check that the cell's stale state was cleared
@@ -1399,7 +1408,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "logs and skips when queued message has no run_id",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
@@ -1455,7 +1464,11 @@ it.scoped(
 
       yield* executions.handleOperation(message, {
         editor,
-        controller: new PythonController(controller, "test-controller"),
+        controller: new PythonController(
+          controller,
+          "test-controller",
+          Stream.never,
+        ),
       });
 
       // Stale state preserved because we bail before recordExecution
@@ -1489,10 +1502,10 @@ function makeThrowingController(): PythonController {
       throw new Error("invalid cell");
     },
   };
-  return new PythonController(inner, "/usr/bin/python3");
+  return new PythonController(inner, "/usr/bin/python3", Stream.never);
 }
 
-it.scoped(
+it.effect(
   "handles InvalidCellError when createNotebookCellExecution throws on queued",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(
@@ -1546,7 +1559,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "handles InvalidCellError on ephemeral execution for marimo error",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(

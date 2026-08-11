@@ -1,13 +1,13 @@
 import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import {
   Cause,
+  Context,
   Data,
   Duration,
   Effect,
   Fiber,
+  Layer,
   Option,
-  type ParseResult,
-  Runtime,
   Schema,
 } from "effect";
 import type * as vscode from "vscode";
@@ -54,7 +54,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 const parseNotebookDocumentMetadata = (value: unknown) => {
   const root = asRecord(value);
-  return Schema.decodeUnknown(Api.MarimoNotebookMetadata)(
+  return Schema.decodeUnknownEffect(Api.MarimoNotebookMetadata)(
     Object.hasOwn(root, "marimo") ? root.marimo : {},
   );
 };
@@ -68,11 +68,10 @@ const NotebookCellKind = {
  * Handles serialization and deserialization of marimo notebooks,
  * converting between VS Code's notebook format and marimo's Python format.
  */
-export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
+export class NotebookSerializer extends Context.Service<NotebookSerializer>()(
   "NotebookSerializer",
   {
-    dependencies: [Constants.Default],
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
       const constants = yield* Constants;
       const code = yield* Effect.serviceOption(VsCode);
@@ -152,7 +151,7 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
 
       if (Option.isSome(code)) {
         // Register with VS Code if present
-        const runPromise = Runtime.runPromise(yield* Effect.runtime());
+        const runPromise = Effect.runPromiseWith(yield* Effect.context());
 
         yield* code.value.workspace.registerNotebookSerializer(
           NOTEBOOK_TYPE,
@@ -160,13 +159,15 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
             serializeNotebook(notebook, token) {
               return runPromise(
                 Effect.gen(function* () {
-                  const fiber = yield* Effect.fork(serializeEffect(notebook));
+                  const fiber = yield* Effect.forkChild(
+                    serializeEffect(notebook),
+                  );
                   token.onCancellationRequested(() =>
                     runPromise(Fiber.interrupt(fiber)),
                   );
                   return yield* Fiber.join(fiber);
                 }).pipe(
-                  Effect.tapErrorCause((cause) =>
+                  Effect.tapCause((cause) =>
                     Effect.logError(`Notebook serialize failed`).pipe(
                       Effect.annotateLogs({
                         cause,
@@ -187,19 +188,21 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
             deserializeNotebook(bytes, token) {
               return runPromise(
                 Effect.gen(function* () {
-                  const fiber = yield* Effect.fork(deserializeEffect(bytes));
+                  const fiber = yield* Effect.forkChild(
+                    deserializeEffect(bytes),
+                  );
                   token.onCancellationRequested(() =>
                     runPromise(Fiber.interrupt(fiber)),
                   );
                   return yield* Fiber.join(fiber);
                 }).pipe(
-                  Effect.tapErrorCause(logDeserializeFailure),
+                  Effect.tapCause(logDeserializeFailure),
                   Effect.mapError((error) =>
                     error instanceof NotebookSourceError
                       ? new NotebookSerializerError({
                           message: notebookSourceFailureMessage(error.failure),
                         })
-                      : Cause.isTimeoutException(error)
+                      : Cause.isTimeoutError(error)
                         ? new NotebookSerializerError({
                             message: `Timed out after ${Duration.toSeconds(DESERIALIZE_TIMEOUT)} seconds while opening the notebook. See marimo logs for details.`,
                           })
@@ -240,13 +243,17 @@ export class NotebookSerializer extends Effect.Service<NotebookSerializer>()(
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide([Constants.layer]),
+  );
+}
 
 function logDeserializeFailure(cause: Cause.Cause<unknown>) {
-  if (Cause.isInterruptedOnly(cause)) return Effect.void;
+  if (Cause.hasInterruptsOnly(cause)) return Effect.void;
 
-  const failure = Option.getOrUndefined(Cause.failureOption(cause));
-  const defect = [...Cause.defects(cause)][0];
+  const failure = Option.getOrUndefined(Cause.findErrorOption(cause));
+  const defect = cause.reasons.find(Cause.isDieReason)?.defect;
   const classification = classifyNotebookDeserializeError(failure ?? defect);
   const annotations = {
     "error.domain": classification.domain,
@@ -276,11 +283,11 @@ function hasStringTag(value: unknown): value is { _tag: string } {
 }
 
 function causeTag(cause: Cause.Cause<unknown>): string {
-  return Option.match(Cause.failureOption(cause), {
+  return Option.match(Cause.findErrorOption(cause), {
     onSome: (failure) => (hasStringTag(failure) ? failure._tag : "Unknown"),
     onNone: () => {
-      if (Cause.isDie(cause)) return "Die";
-      if (Cause.isInterruptedOnly(cause)) return "Interrupt";
+      if (Cause.hasDies(cause)) return "Die";
+      if (Cause.hasInterruptsOnly(cause)) return "Interrupt";
       return "Empty";
     },
   });
@@ -293,9 +300,9 @@ function notebookDataToNotebookDocument(
   {
     LanguageId,
   }: {
-    LanguageId: Constants["LanguageId"];
+    LanguageId: Constants["Service"]["LanguageId"];
   },
-): Effect.Effect<typeof Api.SerializePayload.Encoded, ParseResult.ParseError> {
+): Effect.Effect<typeof Api.SerializePayload.Encoded, Schema.SchemaError> {
   const { cells, metadata = {} } = notebook;
   const sqlParser = new SQLParser();
   const markdownParser = new MarkdownParser();
@@ -307,7 +314,9 @@ function notebookDataToNotebookDocument(
         isRecord(rawMarimoMetadata) &&
         Object.hasOwn(rawMarimoMetadata, "options") &&
         rawMarimoMetadata.options !== undefined;
-      return Schema.decodeUnknown(Api.CellMetadata)(cell.metadata ?? {}).pipe(
+      return Schema.decodeUnknownEffect(Api.CellMetadata)(
+        cell.metadata ?? {},
+      ).pipe(
         Effect.map((cellMetadata) => ({
           cell,
           cellMetadata,
@@ -409,7 +418,7 @@ ${code}
  */
 function snapshotLiveNotebook(
   doc: vscode.NotebookDocument,
-  code: VsCode,
+  code: VsCode["Service"],
 ): vscode.NotebookData {
   return {
     metadata: doc.metadata,

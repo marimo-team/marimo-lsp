@@ -1,4 +1,4 @@
-import { Effect, Either, Layer, Stream } from "effect";
+import { Effect, Layer, Result, Stream } from "effect";
 
 import createSetupCell from "../commands/createSetupCell.ts";
 import debugCell from "../commands/debugCell.ts";
@@ -25,7 +25,7 @@ import { Telemetry } from "../telemetry/Telemetry.ts";
 /**
  * Registers VS Code commands for the marimo extension.
  */
-export const RegisterCommandsLive = Layer.scopedDiscard(
+export const RegisterCommandsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const telemetry = yield* Telemetry;
@@ -51,19 +51,18 @@ export const RegisterCommandsLive = Layer.scopedDiscard(
     yield* code.commands.register(updateCellMetadata);
 
     // Telemetry for commands
-    const queue = yield* code.commands.subscribeToCommands();
+    const subscription = yield* code.commands.subscribeToCommands;
     yield* Effect.forkScoped(
-      queue.pipe(
+      Stream.fromSubscription(subscription).pipe(
         Stream.runForEach(
           Effect.fn(function* (result) {
-            if (Either.isLeft(result)) {
-              yield* telemetry.commandExecuted(result.left, false);
+            if (Result.isFailure(result)) {
+              yield* telemetry.commandExecuted(result.failure, false);
             } else {
-              yield* telemetry.commandExecuted(result.right, true);
+              yield* telemetry.commandExecuted(result.success, true);
             }
           }),
         ),
-        Stream.runDrain,
       ),
     );
   }),

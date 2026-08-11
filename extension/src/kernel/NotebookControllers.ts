@@ -5,6 +5,7 @@ import {
   Cause,
   Effect,
   Exit,
+  Filter,
   HashMap,
   Layer,
   Option,
@@ -37,7 +38,7 @@ import {
 import { createSandboxController } from "./SandboxController.ts";
 
 export interface NotebookController extends RuntimeNotebookController {
-  readonly selectedNotebookChanges: () => Stream.Stream<{
+  readonly selectedNotebookChanges: Stream.Stream<{
     notebook: vscode.NotebookDocument;
     selected: boolean;
   }>;
@@ -49,14 +50,14 @@ export interface NotebookController extends RuntimeNotebookController {
 
 interface NotebookControllerHandle {
   readonly controller: PythonController;
-  readonly scope: Scope.CloseableScope;
+  readonly scope: Scope.Closeable;
 }
 
 /**
  * Creates the VS Code controllers available to marimo notebooks and attaches
  * controller selections to NotebookRuntime.
  */
-export const NotebookControllersLive = Layer.scopedDiscard(
+export const NotebookControllersLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const uv = yield* Uv;
     const code = yield* VsCode;
@@ -64,7 +65,7 @@ export const NotebookControllersLive = Layer.scopedDiscard(
     const notebooks = yield* NotebookRuntime;
     const sandboxController = yield* createSandboxController();
 
-    const uvCacheDir = yield* uv.getCacheDir().pipe(
+    const uvCacheDir = yield* uv.getCacheDir.pipe(
       Effect.map((path) => code.Uri.file(path)),
       Effect.tapError((err) =>
         Effect.logError("Failed to get uv cache directory").pipe(
@@ -93,7 +94,7 @@ export const NotebookControllersLive = Layer.scopedDiscard(
     );
 
     const refresh = Effect.fn("NotebookControllers.refresh")(function* () {
-      const envs = yield* pyExt.knownEnvironments();
+      const envs = yield* pyExt.knownEnvironments;
       const filteredEnvs = envs.filter(
         (env) =>
           // Uv sandbox environments are handled by the sandbox controller and live
@@ -124,15 +125,19 @@ export const NotebookControllersLive = Layer.scopedDiscard(
 
     yield* refresh();
     yield* Effect.forkScoped(
-      pyExt.environmentChanges().pipe(Stream.runForEach(refresh)),
+      pyExt.environmentChanges.pipe(Stream.runForEach(refresh)),
     );
 
     // Subscribe to notebook editor changes to update affinity
     yield* Effect.forkScoped(
-      code.window.activeNotebookEditorChanges().pipe(
-        Stream.filterMap((maybeEditor) => maybeEditor),
-        Stream.filterMap(({ notebook }) =>
-          MarimoNotebookDocument.tryFrom(notebook),
+      code.window.activeNotebookEditorChanges.pipe(
+        Stream.filterMap(
+          Filter.fromPredicateOption((maybeEditor) => maybeEditor),
+        ),
+        Stream.filterMap(
+          Filter.fromPredicateOption(({ notebook }) =>
+            MarimoNotebookDocument.tryFrom(notebook),
+          ),
         ),
         Stream.runForEach((notebook) =>
           updateNotebookAffinityEffect({
@@ -151,12 +156,12 @@ export const NotebookControllersLive = Layer.scopedDiscard(
     );
   }),
 ).pipe(
-  Layer.provide(Uv.Default),
-  Layer.provide(OutputChannel.Default),
-  Layer.provide(Config.Default),
-  Layer.provide(Constants.Default),
-  Layer.provide(EnvironmentValidator.Default),
-  Layer.provide(NotebookSerializer.Default),
+  Layer.provide(Uv.layer),
+  Layer.provide(OutputChannel.layer),
+  Layer.provide(Config.layer),
+  Layer.provide(Constants.layer),
+  Layer.provide(EnvironmentValidator.layer),
+  Layer.provide(NotebookSerializer.layer),
 );
 
 const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(
@@ -166,7 +171,7 @@ const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(
     handlesRef: SynchronizedRef.SynchronizedRef<
       HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
     >;
-    code: VsCode;
+    code: VsCode["Service"];
   }) {
     const { notebook, sandboxController, handlesRef, code } = options;
     const handles = yield* SynchronizedRef.get(handlesRef);
@@ -228,9 +233,9 @@ const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(
 
 const trackControllerSelections = (
   controller: NotebookController,
-  notebooks: NotebookRuntime,
+  notebooks: NotebookRuntime["Service"],
 ) =>
-  controller.selectedNotebookChanges().pipe(
+  controller.selectedNotebookChanges.pipe(
     Stream.runForEach(
       Effect.fn(function* (e) {
         if (!e.selected) {
@@ -257,7 +262,7 @@ const createOrUpdateController = Effect.fn(
   handlesRef: SynchronizedRef.SynchronizedRef<
     HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
   >;
-  notebooks: NotebookRuntime;
+  notebooks: NotebookRuntime["Service"];
 }) {
   const { env, handlesRef, notebooks } = options;
   const code = yield* VsCode;
@@ -280,7 +285,7 @@ const createOrUpdateController = Effect.fn(
 
       // Create a disposable scope
       const scope = yield* Scope.make();
-      const controller = yield* Scope.extend(
+      const controller = yield* Scope.provide(
         Effect.gen(function* () {
           const controller = yield* createPythonController({
             env,
@@ -310,7 +315,7 @@ const pruneStaleControllers = Effect.fn("pruneStaleControllers")(
     handlesRef: SynchronizedRef.SynchronizedRef<
       HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
     >;
-    notebooks: NotebookRuntime;
+    notebooks: NotebookRuntime["Service"];
   }) {
     const { envs, handlesRef, notebooks } = options;
     yield* Effect.logTrace("Checking for stale controllers");
@@ -319,13 +324,12 @@ const pruneStaleControllers = Effect.fn("pruneStaleControllers")(
     );
     const code = yield* VsCode;
     const selectedControllerIds = new Set<string>();
-    const documents = yield* code.workspace.getNotebookDocuments();
+    const documents = yield* code.workspace.getNotebookDocuments;
     for (const rawDocument of documents) {
       const notebook = MarimoNotebookDocument.tryFrom(rawDocument);
       if (Option.isNone(notebook)) continue;
-      const controller = yield* notebooks
-        .forNotebook(notebook.value.id)
-        .getController();
+      const controller = yield* notebooks.forNotebook(notebook.value.id)
+        .getController;
       if (Option.isSome(controller)) {
         selectedControllerIds.add(controller.value.id);
       }
@@ -389,7 +393,7 @@ const pruneStaleControllers = Effect.fn("pruneStaleControllers")(
 function isInUvCache(
   env: py.Environment,
   options: {
-    code: VsCode;
+    code: VsCode["Service"];
     uvCacheDir: Option.Option<vscode.Uri>;
   },
 ) {

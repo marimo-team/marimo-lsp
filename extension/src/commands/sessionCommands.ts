@@ -13,7 +13,7 @@ const openSessionNotebook = Effect.fn("command.openSessionNotebook")(function* (
   notebookUri: NotebookId,
 ) {
   const code = yield* VsCode;
-  const openNotebooks = yield* code.workspace.getNotebookDocuments();
+  const openNotebooks = yield* code.workspace.getNotebookDocuments;
   const existing = openNotebooks.find(
     (document) =>
       document.notebookType === NOTEBOOK_TYPE &&
@@ -52,7 +52,7 @@ export const restartSession = Effect.fn("command.restartSession")(function* ({
   const sessions = yield* SessionsService;
   yield* sessions.restart(notebookUri).pipe(
     Effect.tap(() => endExecutions(notebookUri)),
-    Effect.catchAllCause(
+    Effect.catchCause(
       Effect.fn(function* (cause) {
         yield* Effect.logError("Failed to restart kernel").pipe(
           Effect.annotateLogs({ cause, notebookUri }),
@@ -91,7 +91,7 @@ export const shutdownAllSessions = Effect.fn("command.shutdownAllSessions")(
   function* () {
     const code = yield* VsCode;
     const sessions = yield* SessionsService;
-    const live = yield* sessions.get();
+    const live = yield* sessions.get;
     if (live.length === 0) return;
     if (live.length > 1) {
       const choice = yield* code.window.showWarningMessage(

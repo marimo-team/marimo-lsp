@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, TestClock } from "effect";
+import { Effect, Layer, Option, Ref } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -16,7 +17,7 @@ import {
 const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
-    Layer.merge(CellExecutions.Default),
+    Layer.merge(CellExecutions.layer),
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
   );

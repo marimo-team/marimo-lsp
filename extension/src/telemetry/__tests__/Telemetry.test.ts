@@ -5,7 +5,7 @@ import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.t
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Telemetry } from "../Telemetry.ts";
 
-it.scoped(
+it.effect(
   "is inert when telemetry is disabled",
   Effect.fn(function* () {
     const code = yield* TestVsCode.make({
@@ -34,14 +34,14 @@ it.scoped(
     });
     const telemetry = yield* Telemetry.pipe(
       Effect.provide(
-        Telemetry.Default.pipe(
+        Telemetry.layer.pipe(
           Layer.provide(code.layer),
           Layer.provide(TestExtensionContextLive),
         ),
       ),
     );
 
-    yield* telemetry.notebookCreated();
+    yield* telemetry.notebookCreated;
     yield* telemetry.lspStarted("wasm");
   }),
 );

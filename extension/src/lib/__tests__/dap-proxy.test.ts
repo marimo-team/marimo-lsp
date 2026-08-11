@@ -2,10 +2,11 @@ import * as NodeNet from "node:net";
 
 import { describe, expect, it } from "@effect/vitest";
 import {
+  Cause,
   Deferred,
   Effect,
   Array as EffectArray,
-  Runtime,
+  Queue,
   Stream,
 } from "effect";
 import type * as vscode from "vscode";
@@ -52,7 +53,7 @@ type Connection = {
 const withTestCtx = Effect.fn(function* (
   mapping: ReturnType<typeof createSourceMapping>,
 ) {
-  const runSync = Runtime.runSync(yield* Effect.runtime());
+  const runSync = Effect.runSyncWith(yield* Effect.context());
   const port = yield* Deferred.make<number, Error>();
   const connection = yield* Deferred.make<Connection, Error>();
 
@@ -60,11 +61,15 @@ const withTestCtx = Effect.fn(function* (
     runSync(
       Deferred.succeed(connection, {
         dispatch: (msg) => socket.write(encodeDap(msg)),
-        messages: Stream.async<Uint8Array, Error>((emit) => {
-          socket.on("data", (chunk) => emit.single(chunk));
-          socket.on("end", () => emit.end());
-          socket.on("error", (err) => emit.fail(err));
-        }),
+        messages: Stream.callback<Uint8Array, Error>((queue) =>
+          Effect.sync(() => {
+            socket.on("data", (chunk) => Queue.offerUnsafe(queue, chunk));
+            socket.on("end", () => Queue.endUnsafe(queue));
+            socket.on("error", (err) =>
+              Queue.failCauseUnsafe(queue, Cause.fail(err)),
+            );
+          }),
+        ),
       }),
     ),
   );
@@ -83,7 +88,7 @@ const withTestCtx = Effect.fn(function* (
       "127.0.0.1",
       yield* Deferred.await(port),
       mapping,
-    ).pipe(Effect.provide(TestVsCode.Default)),
+    ).pipe(Effect.provide(TestVsCode.layer)),
     conn: yield* Deferred.await(connection),
   };
 });
@@ -99,14 +104,17 @@ const TEMP_FILE = "/tmp/marimo_12345/__marimo__cell_abc123_.py";
 function takeFirstMessage(conn: Connection) {
   return conn.messages.pipe(
     Stream.take(1),
-    Stream.runFold("", (acc, chunk) => acc + chunk.toString()),
+    Stream.runFold(
+      () => "",
+      (acc, chunk) => acc + chunk.toString(),
+    ),
     Effect.map(parseDapMessages),
-    Effect.flatMap(EffectArray.head),
+    Effect.flatMap((messages) => Effect.fromOption(EffectArray.head(messages))),
   );
 }
 
 describe("makeDapProxy", () => {
-  it.scoped(
+  it.effect(
     "rewrites source.path in setBreakpoints (cell URI -> temp file)",
     Effect.fn(function* () {
       const { conn, proxy } = yield* withTestCtx(
@@ -143,7 +151,7 @@ describe("makeDapProxy", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "signals ready and forwards configurationDone message",
     Effect.fn(function* () {
       const { proxy, conn } = yield* withTestCtx(createSourceMapping({}));
@@ -165,7 +173,7 @@ describe("makeDapProxy", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "rewrites source.path in responses from debugpy (temp file -> cell URI)",
     Effect.fn(function* () {
       const { proxy, conn } = yield* withTestCtx(
@@ -174,7 +182,7 @@ describe("makeDapProxy", () => {
 
       // Subscribe to proxy's outgoing messages (debugpy -> VS Code)
       const received = yield* Deferred.make<vscode.DebugProtocolMessage>();
-      const runFork = Runtime.runFork(yield* Effect.runtime());
+      const runFork = Effect.runForkWith(yield* Effect.context());
       proxy.adapter.onDidSendMessage((msg) => {
         runFork(Deferred.succeed(received, msg));
       });
@@ -205,7 +213,7 @@ describe("makeDapProxy", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "forwards unrecognized messages unchanged",
     Effect.fn(function* () {
       const { proxy, conn } = yield* withTestCtx(

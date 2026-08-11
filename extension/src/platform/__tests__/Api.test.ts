@@ -20,10 +20,10 @@ const withTestCtx = Effect.fn(function* (
   return {
     vscode: testVsCode,
     layer: Layer.empty.pipe(
-      Layer.merge(Api.Default),
+      Layer.merge(Api.layer),
       Layer.provide(makeTestNotebookRuntime()),
       Layer.provide(TestTelemetryLive),
-      Layer.provide(TestPythonExtension.Default),
+      Layer.provide(TestPythonExtension.layer),
       Layer.provide(TestExtensionContextLive),
       Layer.provideMerge(testVsCode.layer),
     ),
@@ -31,7 +31,7 @@ const withTestCtx = Effect.fn(function* (
 });
 
 describe("Api", () => {
-  it.scoped(
+  it.effect(
     "has experimental.kernels namespace",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -45,7 +45,7 @@ describe("Api", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "getKernel returns undefined for non-existent notebook",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -53,8 +53,8 @@ describe("Api", () => {
       const kernel = yield* Effect.gen(function* () {
         const api = yield* Api;
         const code = yield* VsCode;
-        const fakeUri = yield* code.utils.parseUri(
-          "file:///non-existent-notebook.py",
+        const fakeUri = yield* Effect.fromResult(
+          code.utils.parseUri("file:///non-existent-notebook.py"),
         );
 
         return yield* Effect.promise(() =>
@@ -66,7 +66,7 @@ describe("Api", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "getKernel returns undefined when notebook exists but no controller",
     Effect.fn(function* () {
       const notebookDoc = createTestNotebookDocument(
@@ -92,7 +92,9 @@ describe("Api", () => {
       const kernel = yield* Effect.gen(function* () {
         const api = yield* Api;
         const code = yield* VsCode;
-        const uri = yield* code.utils.parseUri("file:///test/notebook_mo.py");
+        const uri = yield* Effect.fromResult(
+          code.utils.parseUri("file:///test/notebook_mo.py"),
+        );
         return yield* Effect.promise(() =>
           api.experimental.kernels.getKernel(uri),
         );

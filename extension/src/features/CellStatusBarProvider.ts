@@ -18,22 +18,24 @@ const DEFAULT_NAME = "_";
  *
  * Listens to stale state changes and cell metadata changes to update the status bar.
  */
-export const CellStatusBarProviderLive = Layer.scopedDiscard(
+export const CellStatusBarProviderLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const executions = yield* CellExecutions;
 
     // Stream that fires when metadata changes on any marimo notebook cell
-    const metadataChanges = code.workspace.notebookDocumentChanges().pipe(
-      Stream.filter((event) => {
-        if (Option.isNone(MarimoNotebookDocument.tryFrom(event.notebook))) {
-          return false;
-        }
-        return event.cellChanges.some(
-          (change) => change.metadata !== undefined,
-        );
-      }),
-    );
+    const metadataChanges: Stream.Stream<void> =
+      code.workspace.notebookDocumentChanges.pipe(
+        Stream.filter((event) => {
+          if (Option.isNone(MarimoNotebookDocument.tryFrom(event.notebook))) {
+            return false;
+          }
+          return event.cellChanges.some(
+            (change) => change.metadata !== undefined,
+          );
+        }),
+        Stream.map(() => undefined),
+      );
 
     // Staleness provider — derived from CellExecutions records
     yield* code.notebooks.registerNotebookCellStatusBarItemProvider(

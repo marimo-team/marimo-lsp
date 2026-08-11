@@ -60,13 +60,13 @@ it("separates LSP startup failures", () => {
 });
 
 it("separates deserialize timeouts from internal RPC failures", () => {
-  const result = classifyNotebookDeserializeError(new Cause.TimeoutException());
+  const result = classifyNotebookDeserializeError(new Cause.TimeoutError());
 
   expect(result).toEqual({
     report: true,
     domain: "notebook.deserialize",
     kind: "transport.timeout",
-    safeContext: { "error.exception_class": "TimeoutException" },
+    safeContext: { "error.exception_class": "TimeoutError" },
   });
 });
 

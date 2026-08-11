@@ -5,15 +5,18 @@ import type {
 } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
 import {
   Cause,
+  Context,
   Data,
   Effect,
   HashMap,
+  Layer,
+  MutableHashMap,
   Option,
-  Ref,
   Stream,
   SubscriptionRef,
   Array as EffectArray,
 } from "effect";
+import { constVoid } from "effect/Function";
 import type * as vscode from "vscode";
 
 import { assert, logUnreachable } from "../assert.ts";
@@ -55,6 +58,13 @@ import {
   step,
   transitionCell,
 } from "./CellRunReducer.ts";
+
+/**
+ * The VS Code API service shape. A `Context.Service` class is the context
+ * key. Use `Context.Service.Shape` to get the type of the service value.
+ */
+type VsCodeService = Context.Service.Shape<typeof VsCode>;
+
 interface CellExecutionController {
   readonly createNotebookCellExecution: (
     cell: MarimoNotebookCell,
@@ -82,10 +92,11 @@ interface CellExecutionKey {
   readonly cellId: NotebookCellId;
 }
 
+// A plain object is sufficient. HashMap compares plain objects by structure.
 const cellExecutionKey = (
   notebookId: NotebookId,
   cellId: NotebookCellId,
-): CellExecutionKey => Data.struct({ notebookId, cellId });
+): CellExecutionKey => ({ notebookId, cellId });
 
 /**
  * Everything the registry tracks for one cell: the pure {@link CellRunEntry},
@@ -119,16 +130,17 @@ interface PerformContext {
  * kernel, which is used to derive whether the cell is stale. Interrupts end
  * every active execution for an editor.
  */
-export class CellExecutions extends Effect.Service<CellExecutions>()(
+export class CellExecutions extends Context.Service<CellExecutions>()(
   "CellExecutions",
   {
-    dependencies: [NotebookEditorRegistry.Default],
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const code = yield* VsCode;
       const editorRegistry = yield* NotebookEditorRegistry;
-      const records = yield* Ref.make(
-        HashMap.empty<CellExecutionKey, RunRecord>(),
-      );
+      // MutableHashMap hashes and compares only the keys. HashMap.set also
+      // compares the old value and the new value when the key exists. That
+      // walks the RunRecord by structure. The RunRecord holds a live
+      // vscode.NotebookCellExecution. It is not safe to hash its getters.
+      const records = MutableHashMap.empty<CellExecutionKey, RunRecord>();
       const lastExecutedCodeRef = yield* SubscriptionRef.make(
         HashMap.empty<
           NotebookId,
@@ -164,7 +176,7 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
       };
 
       const updateStaleContext = Effect.fn(function* () {
-        const activeNotebook = yield* editorRegistry.getActiveNotebookUri();
+        const activeNotebook = yield* editorRegistry.getActiveNotebookUri;
         const hasStaleCells = yield* Option.match(activeNotebook, {
           onNone: () => Effect.succeed(false),
           onSome: (notebookId) =>
@@ -189,7 +201,7 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
         );
       });
 
-      const contentChanges = code.workspace.notebookDocumentChanges().pipe(
+      const contentChanges = code.workspace.notebookDocumentChanges.pipe(
         Stream.filter((event) => {
           if (Option.isNone(MarimoNotebookDocument.tryFrom(event.notebook))) {
             return false;
@@ -201,12 +213,14 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
       );
 
       yield* Effect.forkScoped(
-        lastExecutedCodeRef.changes.pipe(Stream.runForEach(updateStaleContext)),
+        SubscriptionRef.changes(lastExecutedCodeRef).pipe(
+          Stream.runForEach(updateStaleContext),
+        ),
       );
       yield* Effect.forkScoped(
-        editorRegistry
-          .streamActiveNotebookChanges()
-          .pipe(Stream.runForEach(updateStaleContext)),
+        editorRegistry.streamActiveNotebookChanges.pipe(
+          Stream.runForEach(updateStaleContext),
+        ),
       );
       yield* Effect.forkScoped(
         contentChanges.pipe(
@@ -251,8 +265,8 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
       };
 
       yield* Effect.addFinalizer(() =>
-        Ref.update(records, (map) => {
-          HashMap.forEach(map, (record) => {
+        Effect.sync(() => {
+          MutableHashMap.forEach(records, (record) => {
             if (Option.isSome(record.resource)) {
               // Ensure all in-flight executions are ended on shutdown. `end`
               // throws if one was already ended (a benign race); swallow it so
@@ -264,7 +278,7 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
               }
             }
           });
-          return HashMap.empty();
+          MutableHashMap.clear(records);
         }),
       );
 
@@ -314,19 +328,17 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
         key: CellExecutionKey,
         resource: Option.Option<RunResource>,
       ) =>
-        Ref.update(records, (map) =>
-          Option.match(HashMap.get(map, key), {
-            onSome: (record) => HashMap.set(map, key, { ...record, resource }),
-            onNone: () => map,
-          }),
-        );
+        Effect.sync(() => {
+          MutableHashMap.modify(records, key, (record) => ({
+            ...record,
+            resource,
+          }));
+        });
 
       const getResource = (key: CellExecutionKey) =>
-        Ref.get(records).pipe(
-          Effect.map((map) =>
-            HashMap.get(map, key).pipe(
-              Option.flatMap((record) => record.resource),
-            ),
+        Effect.sync(() =>
+          MutableHashMap.get(records, key).pipe(
+            Option.flatMap((record) => record.resource),
           ),
         );
 
@@ -369,7 +381,7 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
             final ? projection.commit(keyed) : projection.project(keyed),
           ).pipe(
             // A concurrent op may have ended the execution; not actionable.
-            Effect.catchAllCause((cause) =>
+            Effect.catchCause((cause) =>
               Effect.logWarning("Failed to update cell output").pipe(
                 Effect.annotateLogs({ cause, cellId: ctx.cellId }),
               ),
@@ -462,18 +474,20 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
           });
         },
         get changes(): Stream.Stream<void> {
-          return Stream.merge(lastExecutedCodeRef.changes, contentChanges);
+          return Stream.merge(
+            Stream.map(SubscriptionRef.changes(lastExecutedCodeRef), constVoid),
+            Stream.map(contentChanges, constVoid),
+          );
         },
         handleInterrupt: (editor: vscode.NotebookEditor) =>
           Effect.gen(function* () {
-            const map = yield* Ref.get(records);
-            const targets = EffectArray.fromIterable(
-              HashMap.entries(map),
-            ).filter(([, record]) => record.editor === editor);
+            const targets = EffectArray.fromIterable(records).filter(
+              ([, record]) => record.editor === editor,
+            );
             for (const [key, record] of targets) {
               const { entry, actions } = step(record.entry, Op.Interrupt());
-              yield* Ref.update(records, (m) =>
-                HashMap.set(m, key, { ...record, entry }),
+              yield* Effect.sync(() =>
+                MutableHashMap.set(records, key, { ...record, entry }),
               );
               const ctx: PerformContext = {
                 key,
@@ -502,12 +516,14 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
             const notebook = MarimoNotebookDocument.from(editor.notebook);
             const key = cellExecutionKey(notebook.id, cellId);
 
-            const map = yield* Ref.get(records);
-            const record = Option.getOrElse(HashMap.get(map, key), () => ({
-              entry: makeCellRunEntry(cellId),
-              editor,
-              resource: Option.none<RunResource>(),
-            }));
+            const record = Option.getOrElse(
+              MutableHashMap.get(records, key),
+              () => ({
+                entry: makeCellRunEntry(cellId),
+                editor,
+                resource: Option.none<RunResource>(),
+              }),
+            );
 
             const notebookCell = yield* findNotebookCell(notebook, cellId);
 
@@ -519,8 +535,8 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
               yield* Effect.logWarning(
                 "Queued cell-op missing run_id; cannot track execution",
               ).pipe(Effect.annotateLogs({ cellId, status: msg.status }));
-              yield* Ref.update(records, (m) =>
-                HashMap.set(m, key, {
+              yield* Effect.sync(() =>
+                MutableHashMap.set(records, key, {
                   ...record,
                   entry: { ...record.entry, state: next },
                 }),
@@ -529,8 +545,11 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
             }
 
             const result = step(record.entry, op.value);
-            yield* Ref.update(records, (m) =>
-              HashMap.set(m, key, { ...record, entry: result.entry }),
+            yield* Effect.sync(() =>
+              MutableHashMap.set(records, key, {
+                ...record,
+                entry: result.entry,
+              }),
             );
 
             const ctx: PerformContext = {
@@ -566,7 +585,11 @@ export class CellExecutions extends Effect.Service<CellExecutions>()(
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide([NotebookEditorRegistry.layer]),
+  );
+}
 
 /**
  * Convert CellOperationNotification(s) to VSCode NotebookCellOutput.
@@ -577,7 +600,7 @@ export function scratchCellNotificationsToVsCodeOutput(
   notifications:
     | CellOperationNotification
     | ReadonlyArray<CellOperationNotification>,
-  code: VsCode,
+  code: VsCodeService,
 ) {
   const arr = EffectArray.ensure(notifications);
   const outputs = buildCellOutputs(
@@ -599,7 +622,7 @@ export function scratchCellNotificationsToVsCodeOutput(
 export function buildCellOutputs(
   cellId: NotebookCellId,
   state: CellRuntimeState,
-  code: VsCode,
+  code: VsCodeService,
   notebook?: vscode.NotebookDocument,
 ): vscode.NotebookCellOutput[] {
   return buildKeyedCellOutputs(cellId, state, code, notebook).map(
@@ -621,7 +644,7 @@ export function buildCellOutputs(
 function buildKeyedCellOutputs(
   cellId: NotebookCellId,
   state: CellRuntimeState,
-  code: VsCode,
+  code: VsCodeService,
   notebook?: vscode.NotebookDocument,
 ): KeyedCellOutput[] {
   const outputs: KeyedCellOutput[] = [];
@@ -874,7 +897,7 @@ function buildOutputItem(
   output: CellOutput,
   cellId: NotebookCellId,
   state: CellRuntimeState,
-  code: VsCode,
+  code: VsCodeService,
   notebook?: vscode.NotebookDocument,
 ): vscode.NotebookCellOutputItem | null {
   // Handle stdout/stderr with proper VSCode helpers

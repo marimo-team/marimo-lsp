@@ -20,7 +20,7 @@
  * @see https://github.com/microsoft/vscode-python/blob/main/src/client/interpreter/interpreterService.ts
  */
 
-import { Effect, Layer, Option, Stream } from "effect";
+import { Effect, Function, Layer, Option, Queue, Stream } from "effect";
 
 import { formatPythonStatusBarLabel } from "../lib/formatControllerLabel.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -41,7 +41,7 @@ const STATUS_BAR_ITEM_PRIORITY = 100.09999;
  * Implementation closely follows:
  * https://github.com/microsoft/vscode-python/blob/main/src/client/interpreter/display/index.ts
  */
-export const PythonEnvironmentStatusBarLive = Layer.scopedDiscard(
+export const PythonEnvironmentStatusBarLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const statusBar = yield* StatusBar;
@@ -54,29 +54,45 @@ export const PythonEnvironmentStatusBarLive = Layer.scopedDiscard(
     );
     yield* item.setCommand("python.setInterpreter");
 
-    const visibilityTriggers = Stream.mergeAll<void, never, never>(
-      [
-        code.window.activeNotebookEditorChanges(),
-        code.window.activeTextEditorChanges(),
-        code.workspace
-          .configurationChanges()
-          .pipe(
-            Stream.filter((e) =>
-              e.affectsConfiguration("python.interpreter.infoVisibility"),
-            ),
-          ),
-      ],
-      { concurrency: "unbounded" },
+    const visibilityTriggerSources: ReadonlyArray<Stream.Stream<void>> = [
+      code.window.activeNotebookEditorChanges.pipe(
+        Stream.map(Function.constVoid),
+      ),
+      code.window.activeTextEditorChanges.pipe(Stream.map(Function.constVoid)),
+      code.workspace.configurationChanges.pipe(
+        Stream.filter((e) =>
+          e.affectsConfiguration("python.interpreter.infoVisibility"),
+        ),
+        Stream.map(Function.constVoid),
+      ),
+    ];
+
+    // Each trigger source has its own fiber that writes to one queue. A
+    // `Stream.mergeAll` attaches its inner subscriptions too late and loses
+    // the events in that time. One fork for each source subscribes as soon
+    // as the fiber runs. Only the latest trigger matters because every update
+    // re-reads the complete current editor/configuration state.
+    const visibilityTriggers = yield* Effect.acquireRelease(
+      Queue.sliding<void>(1),
+      Queue.shutdown,
     );
+    for (const source of visibilityTriggerSources) {
+      yield* Effect.forkScoped(
+        source.pipe(
+          Stream.runForEach(() => Queue.offer(visibilityTriggers, void 0)),
+        ),
+      );
+    }
 
     // Update visibility when relevant events occur
-    yield* visibilityTriggers.pipe(
-      Stream.runForEach(() => updateVisibility(item)),
-      Effect.forkScoped,
+    yield* Effect.forkScoped(
+      Stream.fromQueue(visibilityTriggers).pipe(
+        Stream.runForEach(() => updateVisibility(item)),
+      ),
     );
 
     // Listen for environment changes and update the status bar
-    yield* pythonExtension.activeEnvironmentPathChanges().pipe(
+    yield* pythonExtension.activeEnvironmentPathChanges.pipe(
       Stream.runForEach(
         Effect.fn(function* (event) {
           yield* updateDisplay(item, Option.some(event.path));
@@ -153,7 +169,7 @@ const updateVisibility = Effect.fn(function* (item: StatusBarItem) {
 
   // "onPythonRelated" (default): show when a marimo notebook is active
   const marimoNotebook = Option.flatMap(
-    yield* code.window.getActiveNotebookEditor(),
+    yield* code.window.getActiveNotebookEditor,
     (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
   );
 

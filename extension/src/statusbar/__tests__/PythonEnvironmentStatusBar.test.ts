@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, TestClock } from "effect";
+import { Effect, Layer, Option, Ref } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -22,24 +23,21 @@ const withTestCtx = Effect.gen(function* () {
   ]);
 
   const visible = yield* Ref.make(false);
-  const statusBarLayer = Layer.succeed(
-    StatusBar,
-    StatusBar.make({
-      createSimpleStatusBarItem() {
-        return Effect.die("Not implemented in test");
-      },
-      createStatusBarItem: () =>
-        Effect.succeed({
-          setText: () => Effect.void,
-          setTooltip: () => Effect.void,
-          setColor: () => Effect.void,
-          setBackgroundColor: () => Effect.void,
-          setCommand: () => Effect.void,
-          show: () => Ref.set(visible, true),
-          hide: () => Ref.set(visible, false),
-        }),
-    }),
-  );
+  const statusBarLayer = Layer.succeed(StatusBar, {
+    createSimpleStatusBarItem() {
+      return Effect.die("Not implemented in test");
+    },
+    createStatusBarItem: () =>
+      Effect.succeed({
+        setText: () => Effect.void,
+        setTooltip: () => Effect.void,
+        setColor: () => Effect.void,
+        setBackgroundColor: () => Effect.void,
+        setCommand: () => Effect.void,
+        show: () => Ref.set(visible, true),
+        hide: () => Ref.set(visible, false),
+      }),
+  });
 
   return {
     vscode,
@@ -52,7 +50,7 @@ const withTestCtx = Effect.gen(function* () {
   };
 });
 
-it.scoped(
+it.effect(
   "should show status bar when marimo notebook is active",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx;
@@ -71,7 +69,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "should hide status bar when Jupyter notebook becomes active",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx;
@@ -102,7 +100,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "should hide status bar when no notebook is active",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx;
@@ -126,7 +124,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "should hide status bar initially when no marimo notebook is open",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx;

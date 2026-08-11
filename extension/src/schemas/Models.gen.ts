@@ -3,7 +3,7 @@
 // Generated from `src/marimo_lsp/models.py` and the `marimo.api` registry
 // (`API_METHODS` in `src/marimo_lsp/api.py`) by `scripts.codegen`.
 // Regenerate with `just codegen`.
-import { Effect, ParseResult, Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 /**
  * The notebook's environment is a concrete venv with a known python executable.
@@ -11,7 +11,7 @@ import { Effect, ParseResult, Schema } from "effect";
 export const VenvSource = Schema.Struct({
   kind: Schema.Literal("venv"),
   executable: Schema.String,
-}).annotations({ identifier: "VenvSource" });
+}).annotate({ identifier: "VenvSource" });
 export type VenvSource = typeof VenvSource.Type;
 
 /**
@@ -22,12 +22,12 @@ export type VenvSource = typeof VenvSource.Type;
  */
 export const ScriptSource = Schema.Struct({
   kind: Schema.Literal("script"),
-}).annotations({ identifier: "ScriptSource" });
+}).annotate({ identifier: "ScriptSource" });
 export type ScriptSource = typeof ScriptSource.Type;
 
-export const PackageSource = Schema.Union(VenvSource, ScriptSource).annotations(
-  { identifier: "PackageSource" },
-);
+export const PackageSource = Schema.Union([VenvSource, ScriptSource]).annotate({
+  identifier: "PackageSource",
+});
 export type PackageSource = typeof PackageSource.Type;
 
 /**
@@ -37,12 +37,12 @@ export type PackageSource = typeof PackageSource.Type;
  * subset never discards options belonging to marimo or a future extension.
  */
 export const OwnedAppConfig = Schema.Struct({
-  auto_download: Schema.optionalWith(Schema.Array(Schema.String), {
-    default: () => [],
-  }),
-}).annotations({
+  auto_download: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => [])),
+  ),
+}).annotate({
   identifier: "OwnedAppConfig",
-  parseOptions: { onExcessProperty: "preserve" as const },
+  parseOptions: { onExcessProperty: "preserve" },
 });
 export type OwnedAppConfig = typeof OwnedAppConfig.Type;
 
@@ -53,19 +53,19 @@ export const NotebookCellConfig = Schema.Struct({
   column: Schema.optional(Schema.NullOr(Schema.Int)),
   disabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
   hide_code: Schema.optional(Schema.NullOr(Schema.Boolean)),
-}).annotations({ identifier: "NotebookCellConfig" });
+}).annotate({ identifier: "NotebookCellConfig" });
 export type NotebookCellConfig = typeof NotebookCellConfig.Type;
 
 /**
  * Projection state for displaying a Python markdown cell.
  */
 export const MarkdownCellProjection = Schema.Struct({
-  quotePrefix: Schema.optionalWith(Schema.Literal("", "f", "fr", "r", "rf"), {
-    default: () => "r",
-  }),
-}).annotations({
+  quotePrefix: Schema.Literals(["", "f", "fr", "r", "rf"]).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => "r")),
+  ),
+}).annotate({
   identifier: "MarkdownCellProjection",
-  parseOptions: { onExcessProperty: "error" as const },
+  parseOptions: { onExcessProperty: "error" },
 });
 export type MarkdownCellProjection = typeof MarkdownCellProjection.Type;
 
@@ -73,20 +73,24 @@ export type MarkdownCellProjection = typeof MarkdownCellProjection.Type;
  * Projection state for displaying a Python SQL cell.
  */
 export const SqlCellProjection = Schema.Struct({
-  dataframeName: Schema.optionalWith(Schema.String, { default: () => "_df" }),
-  quotePrefix: Schema.optionalWith(Schema.Literal("", "f", "fr", "r", "rf"), {
-    default: () => "f",
-  }),
-  commentLines: Schema.optionalWith(Schema.Array(Schema.String), {
-    default: () => [],
-  }),
-  showOutput: Schema.optionalWith(Schema.Boolean, { default: () => true }),
-  engine: Schema.optionalWith(Schema.String, {
-    default: () => "__marimo_duckdb",
-  }),
-}).annotations({
+  dataframeName: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.sync(() => "_df")),
+  ),
+  quotePrefix: Schema.Literals(["", "f", "fr", "r", "rf"]).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => "f")),
+  ),
+  commentLines: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => [])),
+  ),
+  showOutput: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.sync(() => true)),
+  ),
+  engine: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.sync(() => "__marimo_duckdb")),
+  ),
+}).annotate({
   identifier: "SqlCellProjection",
-  parseOptions: { onExcessProperty: "error" as const },
+  parseOptions: { onExcessProperty: "error" },
 });
 export type SqlCellProjection = typeof SqlCellProjection.Type;
 
@@ -98,15 +102,15 @@ export type SqlCellProjection = typeof SqlCellProjection.Type;
  * user switches the cell back later.
  */
 export const CellSourceProjections = Schema.Struct({
-  markdown: Schema.optionalWith(Schema.NullOr(MarkdownCellProjection), {
-    default: () => null,
-  }),
-  sql: Schema.optionalWith(Schema.NullOr(SqlCellProjection), {
-    default: () => null,
-  }),
-}).annotations({
+  markdown: Schema.NullOr(MarkdownCellProjection).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+  sql: Schema.NullOr(SqlCellProjection).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({
   identifier: "CellSourceProjections",
-  parseOptions: { onExcessProperty: "error" as const },
+  parseOptions: { onExcessProperty: "error" },
 });
 export type CellSourceProjections = typeof CellSourceProjections.Type;
 
@@ -114,14 +118,16 @@ export type CellSourceProjections = typeof CellSourceProjections.Type;
  * Persisted marimo cell metadata used to serialize Python source.
  */
 export const MarimoCellMetadata = Schema.Struct({
-  name: Schema.optionalWith(Schema.String, { default: () => "_" }),
-  options: Schema.optionalWith(NotebookCellConfig, { default: () => ({}) }),
-  sourceProjections: Schema.optionalWith(CellSourceProjections, {
-    default: () => CellSourceProjections.make(),
-  }),
-}).annotations({
+  name: Schema.String.pipe(Schema.withDecodingDefault(Effect.sync(() => "_"))),
+  options: NotebookCellConfig.pipe(
+    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+  ),
+  sourceProjections: CellSourceProjections.pipe(
+    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+  ),
+}).annotate({
   identifier: "MarimoCellMetadata",
-  parseOptions: { onExcessProperty: "error" as const },
+  parseOptions: { onExcessProperty: "error" },
 });
 export type MarimoCellMetadata = typeof MarimoCellMetadata.Type;
 
@@ -129,16 +135,15 @@ export type MarimoCellMetadata = typeof MarimoCellMetadata.Type;
  * Transient per-open cell metadata shared with the LSP server.
  */
 export const MarimoCellRuntimeMetadata = Schema.Struct({
-  stableId: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
-  state: Schema.optionalWith(
-    Schema.NullOr(Schema.Literal("idle", "queued", "running", "stale")),
-    { default: () => null },
+  stableId: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
   ),
-}).annotations({
+  state: Schema.NullOr(
+    Schema.Literals(["idle", "queued", "running", "stale"]),
+  ).pipe(Schema.withDecodingDefault(Effect.sync(() => null))),
+}).annotate({
   identifier: "MarimoCellRuntimeMetadata",
-  parseOptions: { onExcessProperty: "error" as const },
+  parseOptions: { onExcessProperty: "error" },
 });
 export type MarimoCellRuntimeMetadata = typeof MarimoCellRuntimeMetadata.Type;
 
@@ -146,15 +151,15 @@ export type MarimoCellRuntimeMetadata = typeof MarimoCellRuntimeMetadata.Type;
  * Namespaced metadata synchronized on an LSP notebook cell.
  */
 export const CellMetadata = Schema.Struct({
-  marimo: Schema.optionalWith(MarimoCellMetadata, {
-    default: () => MarimoCellMetadata.make(),
-  }),
-  marimoRuntime: Schema.optionalWith(MarimoCellRuntimeMetadata, {
-    default: () => MarimoCellRuntimeMetadata.make(),
-  }),
-}).annotations({
+  marimo: MarimoCellMetadata.pipe(
+    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+  ),
+  marimoRuntime: MarimoCellRuntimeMetadata.pipe(
+    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+  ),
+}).annotate({
   identifier: "CellMetadata",
-  parseOptions: { onExcessProperty: "preserve" as const },
+  parseOptions: { onExcessProperty: "preserve" },
 });
 export type CellMetadata = typeof CellMetadata.Type;
 
@@ -163,26 +168,25 @@ export type CellMetadata = typeof CellMetadata.Type;
  */
 export const NotebookMetadata = Schema.Struct({
   marimo_version: Schema.optional(Schema.NullOr(Schema.String)),
-}).annotations({ identifier: "NotebookMetadata" });
+}).annotate({ identifier: "NotebookMetadata" });
 export type NotebookMetadata = typeof NotebookMetadata.Type;
 
 /**
  * Persisted marimo-owned metadata on an LSP notebook document.
  */
 export const MarimoNotebookMetadata = Schema.Struct({
-  appConfig: Schema.optionalWith(
-    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-    { default: () => ({}) },
+  appConfig: Schema.Record(Schema.String, Schema.Unknown).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => ({}))),
   ),
-  header: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
-  notebookMetadata: Schema.optionalWith(NotebookMetadata, {
-    default: () => ({}),
-  }),
-}).annotations({
+  header: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+  notebookMetadata: NotebookMetadata.pipe(
+    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+  ),
+}).annotate({
   identifier: "MarimoNotebookMetadata",
-  parseOptions: { onExcessProperty: "error" as const },
+  parseOptions: { onExcessProperty: "error" },
 });
 export type MarimoNotebookMetadata = typeof MarimoNotebookMetadata.Type;
 
@@ -191,9 +195,9 @@ export type MarimoNotebookMetadata = typeof MarimoNotebookMetadata.Type;
  */
 export const NotebookDocumentMetadata = Schema.Struct({
   marimo: MarimoNotebookMetadata,
-}).annotations({
+}).annotate({
   identifier: "NotebookDocumentMetadata",
-  parseOptions: { onExcessProperty: "preserve" as const },
+  parseOptions: { onExcessProperty: "preserve" },
 });
 export type NotebookDocumentMetadata = typeof NotebookDocumentMetadata.Type;
 
@@ -206,7 +210,7 @@ export const NotebookCell = Schema.Struct({
   config: NotebookCellConfig,
   id: Schema.NullOr(Schema.String),
   name: Schema.NullOr(Schema.String),
-}).annotations({ identifier: "NotebookCell" });
+}).annotate({ identifier: "NotebookCell" });
 export type NotebookCell = typeof NotebookCell.Type;
 
 /**
@@ -216,7 +220,7 @@ export const NotebookV1 = Schema.Struct({
   cells: Schema.Array(NotebookCell),
   metadata: NotebookMetadata,
   version: Schema.Literal("1"),
-}).annotations({ identifier: "NotebookV1" });
+}).annotate({ identifier: "NotebookV1" });
 export type NotebookV1 = typeof NotebookV1.Type;
 
 /**
@@ -224,14 +228,13 @@ export type NotebookV1 = typeof NotebookV1.Type;
  */
 export const NotebookDocument = Schema.Struct({
   notebook: NotebookV1,
-  appConfig: Schema.optionalWith(
-    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-    { default: () => ({}) },
+  appConfig: Schema.Record(Schema.String, Schema.Unknown).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => ({}))),
   ),
-  header: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
-}).annotations({ identifier: "NotebookDocument" });
+  header: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({ identifier: "NotebookDocument" });
 export type NotebookDocument = typeof NotebookDocument.Type;
 
 /**
@@ -241,7 +244,7 @@ export type NotebookDocument = typeof NotebookDocument.Type;
  */
 export const DeserializeRequest = Schema.Struct({
   source: Schema.String,
-}).annotations({ identifier: "DeserializeRequest" });
+}).annotate({ identifier: "DeserializeRequest" });
 export type DeserializeRequest = typeof DeserializeRequest.Type;
 
 /**
@@ -250,7 +253,7 @@ export type DeserializeRequest = typeof DeserializeRequest.Type;
 export const DeserializeSuccess = Schema.Struct({
   kind: Schema.Literal("success"),
   notebook: NotebookDocument,
-}).annotations({ identifier: "DeserializeSuccess" });
+}).annotate({ identifier: "DeserializeSuccess" });
 export type DeserializeSuccess = typeof DeserializeSuccess.Type;
 
 /**
@@ -258,11 +261,13 @@ export type DeserializeSuccess = typeof DeserializeSuccess.Type;
  */
 export const DeserializeInvalidSyntax = Schema.Struct({
   kind: Schema.Literal("invalid-syntax"),
-  line: Schema.optionalWith(Schema.NullOr(Schema.Int), { default: () => null }),
-  column: Schema.optionalWith(Schema.NullOr(Schema.Int), {
-    default: () => null,
-  }),
-}).annotations({ identifier: "DeserializeInvalidSyntax" });
+  line: Schema.NullOr(Schema.Int).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+  column: Schema.NullOr(Schema.Int).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({ identifier: "DeserializeInvalidSyntax" });
 export type DeserializeInvalidSyntax = typeof DeserializeInvalidSyntax.Type;
 
 /**
@@ -270,14 +275,14 @@ export type DeserializeInvalidSyntax = typeof DeserializeInvalidSyntax.Type;
  */
 export const DeserializeConvertible = Schema.Struct({
   kind: Schema.Literal("convertible"),
-}).annotations({ identifier: "DeserializeConvertible" });
+}).annotate({ identifier: "DeserializeConvertible" });
 export type DeserializeConvertible = typeof DeserializeConvertible.Type;
 
-export const DeserializeResult = Schema.Union(
+export const DeserializeResult = Schema.Union([
   DeserializeSuccess,
   DeserializeInvalidSyntax,
   DeserializeConvertible,
-).annotations({ identifier: "DeserializeResult" });
+]).annotate({ identifier: "DeserializeResult" });
 export type DeserializeResult = typeof DeserializeResult.Type;
 
 /**
@@ -285,21 +290,23 @@ export type DeserializeResult = typeof DeserializeResult.Type;
  */
 export const ConvertRequest = Schema.Struct({
   uri: Schema.String,
-}).annotations({ identifier: "ConvertRequest" });
+}).annotate({ identifier: "ConvertRequest" });
 export type ConvertRequest = typeof ConvertRequest.Type;
 
 /**
  * A request to interrupt the kernel execution.
  */
-export const InterruptRequest = Schema.Struct({}).annotations({
-  identifier: "InterruptRequest",
-});
+export const InterruptRequest = Schema.Struct({
+  runId: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({ identifier: "InterruptRequest" });
 export type InterruptRequest = typeof InterruptRequest.Type;
 
 /**
  * A request to list installed packages in the kernel environment.
  */
-export const ListPackagesRequest = Schema.Struct({}).annotations({
+export const ListPackagesRequest = Schema.Struct({}).annotate({
   identifier: "ListPackagesRequest",
 });
 export type ListPackagesRequest = typeof ListPackagesRequest.Type;
@@ -307,7 +314,7 @@ export type ListPackagesRequest = typeof ListPackagesRequest.Type;
 /**
  * A request to get the dependency tree of installed packages.
  */
-export const DependencyTreeRequest = Schema.Struct({}).annotations({
+export const DependencyTreeRequest = Schema.Struct({}).annotate({
   identifier: "DependencyTreeRequest",
 });
 export type DependencyTreeRequest = typeof DependencyTreeRequest.Type;
@@ -315,7 +322,7 @@ export type DependencyTreeRequest = typeof DependencyTreeRequest.Type;
 /**
  * A request to get the current configuration.
  */
-export const GetConfigurationRequest = Schema.Struct({}).annotations({
+export const GetConfigurationRequest = Schema.Struct({}).annotate({
   identifier: "GetConfigurationRequest",
 });
 export type GetConfigurationRequest = typeof GetConfigurationRequest.Type;
@@ -323,7 +330,7 @@ export type GetConfigurationRequest = typeof GetConfigurationRequest.Type;
 /**
  * A request to close the current session.
  */
-export const CloseSessionRequest = Schema.Struct({}).annotations({
+export const CloseSessionRequest = Schema.Struct({}).annotate({
   identifier: "CloseSessionRequest",
 });
 export type CloseSessionRequest = typeof CloseSessionRequest.Type;
@@ -331,7 +338,7 @@ export type CloseSessionRequest = typeof CloseSessionRequest.Type;
 /**
  * A request to export the notebook as ipynb.
  */
-export const ExportAsIpynbRequest = Schema.Struct({}).annotations({
+export const ExportAsIpynbRequest = Schema.Struct({}).annotate({
   identifier: "ExportAsIpynbRequest",
 });
 export type ExportAsIpynbRequest = typeof ExportAsIpynbRequest.Type;
@@ -341,26 +348,26 @@ export type ExportAsIpynbRequest = typeof ExportAsIpynbRequest.Type;
  */
 export const ExecuteScratchRequest = Schema.Struct({
   code: Schema.String,
-  runId: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
-}).annotations({ identifier: "ExecuteScratchRequest" });
+  runId: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({ identifier: "ExecuteScratchRequest" });
 export type ExecuteScratchRequest = typeof ExecuteScratchRequest.Type;
 
 /**
  * A request to update the user configuration.
  */
 export const UpdateConfigurationRequest = Schema.Struct({
-  config: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-}).annotations({ identifier: "UpdateConfigurationRequest" });
+  config: Schema.Record(Schema.String, Schema.Unknown),
+}).annotate({ identifier: "UpdateConfigurationRequest" });
 export type UpdateConfigurationRequest = typeof UpdateConfigurationRequest.Type;
 
 /**
  * A request to set the display theme without persisting to disk.
  */
 export const SetDisplayThemeRequest = Schema.Struct({
-  theme: Schema.Literal("dark", "light"),
-}).annotations({ identifier: "SetDisplayThemeRequest" });
+  theme: Schema.Literals(["dark", "light"]),
+}).annotate({ identifier: "SetDisplayThemeRequest" });
 export type SetDisplayThemeRequest = typeof SetDisplayThemeRequest.Type;
 
 /**
@@ -370,7 +377,7 @@ export type SetDisplayThemeRequest = typeof SetDisplayThemeRequest.Type;
  * it should operate on, enabling proper routing in multi-notebook
  * environments.
  */
-export const NotebookCommand = <S extends Schema.Schema.Any>(inner: S) =>
+export const NotebookCommand = <S extends Schema.Top>(inner: S) =>
   Schema.Struct({
     notebookUri: Schema.String,
     inner,
@@ -379,7 +386,7 @@ export const NotebookCommand = <S extends Schema.Schema.Any>(inner: S) =>
 /**
  * A notebook command that is further routed to a specific runtime/session.
  */
-export const SessionCommand = <S extends Schema.Schema.Any>(inner: S) =>
+export const SessionCommand = <S extends Schema.Top>(inner: S) =>
   Schema.Struct({
     notebookUri: Schema.String,
     inner,
@@ -394,7 +401,7 @@ export const SessionCommand = <S extends Schema.Schema.Any>(inner: S) =>
  * marimo kernel — they shell out to `uv` — and sandbox notebooks have no
  * pre-resolved python executable for the client to send.
  */
-export const PackageCommand = <S extends Schema.Schema.Any>(inner: S) =>
+export const PackageCommand = <S extends Schema.Top>(inner: S) =>
   Schema.Struct({
     notebookUri: Schema.String,
     inner,
@@ -418,27 +425,24 @@ export const PackageCommand = <S extends Schema.Schema.Any>(inner: S) =>
  *     user: User info from authentication middleware (e.g., is_authenticated, username).
  */
 export const HTTPRequest = Schema.Struct({
-  url: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-  base_url: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-  headers: Schema.Record({ key: Schema.String, value: Schema.String }),
-  query_params: Schema.Record({
-    key: Schema.String,
-    value: Schema.Array(Schema.String),
-  }),
-  path_params: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-  cookies: Schema.Record({ key: Schema.String, value: Schema.String }),
-  meta: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  url: Schema.Record(Schema.String, Schema.Unknown),
+  base_url: Schema.Record(Schema.String, Schema.Unknown),
+  headers: Schema.Record(Schema.String, Schema.String),
+  query_params: Schema.Record(Schema.String, Schema.Array(Schema.String)),
+  path_params: Schema.Record(Schema.String, Schema.Unknown),
+  cookies: Schema.Record(Schema.String, Schema.String),
+  meta: Schema.Record(Schema.String, Schema.Unknown),
   user: Schema.Unknown,
-}).annotations({ identifier: "HTTPRequest" });
+}).annotate({ identifier: "HTTPRequest" });
 export type HTTPRequest = typeof HTTPRequest.Type;
 
 export const ExecuteCellsRequest = Schema.Struct({
   cellIds: Schema.Array(Schema.String),
   codes: Schema.Array(Schema.String),
-  request: Schema.optionalWith(Schema.NullOr(HTTPRequest), {
-    default: () => null,
-  }),
-}).annotations({ identifier: "ExecuteCellsRequest" });
+  request: Schema.NullOr(HTTPRequest).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({ identifier: "ExecuteCellsRequest" });
 export type ExecuteCellsRequest = typeof ExecuteCellsRequest.Type;
 
 export const ExecuteCellsPayload = Schema.Struct({
@@ -451,11 +455,11 @@ export const ExecuteCellsPayload = Schema.Struct({
 export const UpdateUIElementRequest = Schema.Struct({
   objectIds: Schema.Array(Schema.String),
   values: Schema.Array(Schema.Unknown),
-  request: Schema.optionalWith(Schema.NullOr(HTTPRequest), {
-    default: () => null,
-  }),
+  request: Schema.NullOr(HTTPRequest).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
   token: Schema.optional(Schema.String),
-}).annotations({ identifier: "UpdateUIElementRequest" });
+}).annotate({ identifier: "UpdateUIElementRequest" });
 export type UpdateUIElementRequest = typeof UpdateUIElementRequest.Type;
 
 export const UpdateUiElementPayload = Schema.Struct({
@@ -472,11 +476,11 @@ export const UpdateUiElementPayload = Schema.Struct({
  */
 export const ModelUpdateMessage = Schema.Struct({
   method: Schema.Literal("update"),
-  state: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  state: Schema.Record(Schema.String, Schema.Unknown),
   bufferPaths: Schema.Array(
-    Schema.Array(Schema.Union(Schema.String, Schema.Int)),
+    Schema.Array(Schema.Union([Schema.String, Schema.Int])),
   ),
-}).annotations({ identifier: "ModelUpdateMessage" });
+}).annotate({ identifier: "ModelUpdateMessage" });
 export type ModelUpdateMessage = typeof ModelUpdateMessage.Type;
 
 /**
@@ -488,7 +492,7 @@ export type ModelUpdateMessage = typeof ModelUpdateMessage.Type;
 export const ModelCustomMessage = Schema.Struct({
   method: Schema.Literal("custom"),
   content: Schema.Unknown,
-}).annotations({ identifier: "ModelCustomMessage" });
+}).annotate({ identifier: "ModelCustomMessage" });
 export type ModelCustomMessage = typeof ModelCustomMessage.Type;
 
 /**
@@ -503,10 +507,10 @@ export type Base64String = typeof Base64String.Type;
 
 export const ModelRequest = Schema.Struct({
   modelId: Schema.String,
-  message: Schema.Union(ModelUpdateMessage, ModelCustomMessage),
+  message: Schema.Union([ModelUpdateMessage, ModelCustomMessage]),
   buffers: Schema.Array(Base64String),
   token: Schema.optional(Schema.String),
-}).annotations({ identifier: "ModelRequest" });
+}).annotate({ identifier: "ModelRequest" });
 export type ModelRequest = typeof ModelRequest.Type;
 
 export const SetModelValuePayload = Schema.Struct({
@@ -530,8 +534,8 @@ export const InvokeFunctionCommand = Schema.Struct({
   functionCallId: Schema.String,
   namespace: Schema.String,
   functionName: Schema.String,
-  args: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-}).annotations({ identifier: "InvokeFunctionCommand" });
+  args: Schema.Record(Schema.String, Schema.Unknown),
+}).annotate({ identifier: "InvokeFunctionCommand" });
 export type InvokeFunctionCommand = typeof InvokeFunctionCommand.Type;
 
 export const InvokeFunctionPayload = Schema.Struct({
@@ -546,7 +550,7 @@ export const InterruptPayload = Schema.Struct({
 
 export const DeleteCellRequest = Schema.Struct({
   cellId: Schema.String,
-}).annotations({ identifier: "DeleteCellRequest" });
+}).annotate({ identifier: "DeleteCellRequest" });
 export type DeleteCellRequest = typeof DeleteCellRequest.Type;
 
 export const DeleteCellPayload = Schema.Struct({
@@ -558,10 +562,10 @@ export const ListSQLSchemasRequest = Schema.Struct({
   requestId: Schema.String,
   engine: Schema.String,
   database: Schema.String,
-  schemaPath: Schema.optionalWith(Schema.Array(Schema.String), {
-    default: () => [],
-  }),
-}).annotations({ identifier: "ListSQLSchemasRequest" });
+  schemaPath: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => [])),
+  ),
+}).annotate({ identifier: "ListSQLSchemasRequest" });
 export type ListSQLSchemasRequest = typeof ListSQLSchemasRequest.Type;
 
 export const ListSqlSchemasPayload = Schema.Struct({
@@ -574,10 +578,10 @@ export const ListSQLTablesRequest = Schema.Struct({
   engine: Schema.String,
   database: Schema.String,
   schema: Schema.String,
-  schemaPath: Schema.optionalWith(Schema.Array(Schema.String), {
-    default: () => [],
-  }),
-}).annotations({ identifier: "ListSQLTablesRequest" });
+  schemaPath: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => [])),
+  ),
+}).annotate({ identifier: "ListSQLTablesRequest" });
 export type ListSQLTablesRequest = typeof ListSQLTablesRequest.Type;
 
 export const ListSqlTablesPayload = Schema.Struct({
@@ -587,7 +591,7 @@ export const ListSqlTablesPayload = Schema.Struct({
 
 export const StdinRequest = Schema.Struct({
   text: Schema.String,
-}).annotations({ identifier: "StdinRequest" });
+}).annotate({ identifier: "StdinRequest" });
 export type StdinRequest = typeof StdinRequest.Type;
 
 export const SendStdinPayload = Schema.Struct({
@@ -606,10 +610,10 @@ export const CloseSessionPayload = Schema.Struct({
 export const RestartSessionRequest = Schema.Struct({
   executable: Schema.String,
   workingDirectory: Schema.String,
-  createIfMissing: Schema.optionalWith(Schema.Boolean, {
-    default: () => false,
-  }),
-}).annotations({ identifier: "RestartSessionRequest" });
+  createIfMissing: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.sync(() => false)),
+  ),
+}).annotate({ identifier: "RestartSessionRequest" });
 export type RestartSessionRequest = typeof RestartSessionRequest.Type;
 
 export const RestartSessionPayload = Schema.Struct({
@@ -622,7 +626,7 @@ export const RestartSessionPayload = Schema.Struct({
  */
 export const MoveSessionRequest = Schema.Struct({
   newNotebookUri: Schema.String,
-}).annotations({ identifier: "MoveSessionRequest" });
+}).annotate({ identifier: "MoveSessionRequest" });
 export type MoveSessionRequest = typeof MoveSessionRequest.Type;
 
 export const MoveSessionPayload = Schema.Struct({
@@ -640,9 +644,9 @@ export const SessionInfo = Schema.Struct({
   executable: Schema.String,
   workingDirectory: Schema.String,
   startedAt: Schema.Number,
-  status: Schema.Literal("idle", "running"),
+  status: Schema.Literals(["idle", "running"]),
   attached: Schema.Boolean,
-}).annotations({ identifier: "SessionInfo" });
+}).annotate({ identifier: "SessionInfo" });
 export type SessionInfo = typeof SessionInfo.Type;
 
 /**
@@ -650,7 +654,7 @@ export type SessionInfo = typeof SessionInfo.Type;
  */
 export const ListSessionsResponse = Schema.Struct({
   sessions: Schema.Array(SessionInfo),
-}).annotations({ identifier: "ListSessionsResponse" });
+}).annotate({ identifier: "ListSessionsResponse" });
 export type ListSessionsResponse = typeof ListSessionsResponse.Type;
 
 export const ListSessionsPayload = Schema.Struct({});
@@ -667,7 +671,7 @@ export const ExecuteScratchpadPayload = Schema.Struct({
 export const PackageDescription = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
-}).annotations({ identifier: "PackageDescription" });
+}).annotate({ identifier: "PackageDescription" });
 export type PackageDescription = typeof PackageDescription.Type;
 
 /**
@@ -675,7 +679,7 @@ export type PackageDescription = typeof PackageDescription.Type;
  */
 export const ListPackagesResponse = Schema.Struct({
   packages: Schema.Array(PackageDescription),
-}).annotations({ identifier: "ListPackagesResponse" });
+}).annotate({ identifier: "ListPackagesResponse" });
 export type ListPackagesResponse = typeof ListPackagesResponse.Type;
 
 export const GetPackageListPayload = Schema.Struct({
@@ -687,7 +691,7 @@ export const GetPackageListPayload = Schema.Struct({
 export const DependencyTag = Schema.Struct({
   kind: Schema.String,
   value: Schema.String,
-}).annotations({ identifier: "DependencyTag" });
+}).annotate({ identifier: "DependencyTag" });
 export type DependencyTag = typeof DependencyTag.Type;
 
 export interface DependencyTreeNode {
@@ -696,26 +700,23 @@ export interface DependencyTreeNode {
   readonly tags: ReadonlyArray<DependencyTag>;
   readonly dependencies: ReadonlyArray<DependencyTreeNode>;
 }
-export const DependencyTreeNode: Schema.Schema<DependencyTreeNode> =
-  Schema.Struct({
-    name: Schema.String,
-    version: Schema.NullOr(Schema.String),
-    tags: Schema.Array(DependencyTag),
-    dependencies: Schema.Array(
-      Schema.suspend(
-        (): Schema.Schema<DependencyTreeNode> => DependencyTreeNode,
-      ),
-    ),
-  }).annotations({ identifier: "DependencyTreeNode" });
+export const DependencyTreeNode = Schema.Struct({
+  name: Schema.String,
+  version: Schema.NullOr(Schema.String),
+  tags: Schema.Array(DependencyTag),
+  dependencies: Schema.Array(
+    Schema.suspend((): Schema.Codec<DependencyTreeNode> => DependencyTreeNode),
+  ),
+}).annotate({ identifier: "DependencyTreeNode" });
 
 /**
  * Response for ``get-dependency-tree``.
  */
 export const DependencyTreeResponse = Schema.Struct({
-  tree: Schema.optionalWith(Schema.NullOr(DependencyTreeNode), {
-    default: () => null,
-  }),
-}).annotations({ identifier: "DependencyTreeResponse" });
+  tree: Schema.NullOr(DependencyTreeNode).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({ identifier: "DependencyTreeResponse" });
 export type DependencyTreeResponse = typeof DependencyTreeResponse.Type;
 
 export const GetDependencyTreePayload = Schema.Struct({
@@ -729,18 +730,17 @@ export const GetDependencyTreePayload = Schema.Struct({
  */
 export const SerializeResponse = Schema.Struct({
   source: Schema.String,
-}).annotations({ identifier: "SerializeResponse" });
+}).annotate({ identifier: "SerializeResponse" });
 export type SerializeResponse = typeof SerializeResponse.Type;
 
 export const SerializePayload = Schema.Struct({
   notebook: NotebookV1,
-  appConfig: Schema.optionalWith(
-    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-    { default: () => ({}) },
+  appConfig: Schema.Record(Schema.String, Schema.Unknown).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => ({}))),
   ),
-  header: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
+  header: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
 });
 
 export const DeserializePayload = Schema.Struct({
@@ -756,7 +756,7 @@ export const DeserializePayload = Schema.Struct({
  */
 export const AnthropicConfig = Schema.Struct({
   api_key: Schema.optional(Schema.String),
-}).annotations({ identifier: "AnthropicConfig" });
+}).annotate({ identifier: "AnthropicConfig" });
 export type AnthropicConfig = typeof AnthropicConfig.Type;
 
 /**
@@ -777,13 +777,11 @@ export const OpenAiConfig = Schema.Struct({
   base_url: Schema.optional(Schema.String),
   ca_bundle_path: Schema.optional(Schema.String),
   client_pem: Schema.optional(Schema.String),
-  extra_headers: Schema.optional(
-    Schema.Record({ key: Schema.String, value: Schema.String }),
-  ),
+  extra_headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   model: Schema.optional(Schema.String),
   project: Schema.optional(Schema.String),
   ssl_verify: Schema.optional(Schema.Boolean),
-}).annotations({ identifier: "OpenAiConfig" });
+}).annotate({ identifier: "OpenAiConfig" });
 export type OpenAiConfig = typeof OpenAiConfig.Type;
 
 /**
@@ -801,7 +799,7 @@ export const BedrockConfig = Schema.Struct({
   aws_secret_access_key: Schema.optional(Schema.String),
   profile_name: Schema.optional(Schema.String),
   region_name: Schema.optional(Schema.String),
-}).annotations({ identifier: "BedrockConfig" });
+}).annotate({ identifier: "BedrockConfig" });
 export type BedrockConfig = typeof BedrockConfig.Type;
 
 /**
@@ -819,9 +817,9 @@ export const GitHubConfig = Schema.Struct({
   api_key: Schema.optional(Schema.String),
   base_url: Schema.optional(Schema.String),
   copilot_settings: Schema.optional(
-    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+    Schema.Record(Schema.String, Schema.Unknown),
   ),
-}).annotations({ identifier: "GitHubConfig" });
+}).annotate({ identifier: "GitHubConfig" });
 export type GitHubConfig = typeof GitHubConfig.Type;
 
 /**
@@ -833,7 +831,7 @@ export type GitHubConfig = typeof GitHubConfig.Type;
  */
 export const GoogleAiConfig = Schema.Struct({
   api_key: Schema.optional(Schema.String),
-}).annotations({ identifier: "GoogleAiConfig" });
+}).annotate({ identifier: "GoogleAiConfig" });
 export type GoogleAiConfig = typeof GoogleAiConfig.Type;
 
 /**
@@ -853,7 +851,7 @@ export const AiModelConfig = Schema.Struct({
   custom_models: Schema.Array(Schema.String),
   displayed_models: Schema.Array(Schema.String),
   edit_model: Schema.optional(Schema.String),
-}).annotations({ identifier: "AiModelConfig" });
+}).annotate({ identifier: "AiModelConfig" });
 export type AiModelConfig = typeof AiModelConfig.Type;
 
 /**
@@ -884,15 +882,15 @@ export const AiConfig = Schema.Struct({
   anthropic: Schema.optional(AnthropicConfig),
   azure: Schema.optional(OpenAiConfig),
   bedrock: Schema.optional(BedrockConfig),
-  custom_providers: Schema.optional(
-    Schema.Record({ key: Schema.String, value: OpenAiConfig }),
-  ),
+  custom_providers: Schema.optional(Schema.Record(Schema.String, OpenAiConfig)),
   enabled: Schema.optional(Schema.Boolean),
   github: Schema.optional(GitHubConfig),
   google: Schema.optional(GoogleAiConfig),
   inline_tooltip: Schema.optional(Schema.Boolean),
   max_tokens: Schema.optional(Schema.Int),
-  mode: Schema.optional(Schema.Literal("agent", "ask", "code_mode", "manual")),
+  mode: Schema.optional(
+    Schema.Literals(["agent", "ask", "code_mode", "manual"]),
+  ),
   models: Schema.optional(AiModelConfig),
   ollama: Schema.optional(OpenAiConfig),
   open_ai: Schema.optional(OpenAiConfig),
@@ -901,7 +899,7 @@ export const AiConfig = Schema.Struct({
   openrouter: Schema.optional(OpenAiConfig),
   rules: Schema.optional(Schema.String),
   wandb: Schema.optional(OpenAiConfig),
-}).annotations({ identifier: "AiConfig" });
+}).annotate({ identifier: "AiConfig" });
 export type AiConfig = typeof AiConfig.Type;
 
 /**
@@ -926,13 +924,13 @@ export const CompletionConfig = Schema.Struct({
   auto_close_pairs: Schema.optional(Schema.Boolean),
   base_url: Schema.optional(Schema.NullOr(Schema.String)),
   codeium_api_key: Schema.optional(Schema.NullOr(Schema.String)),
-  copilot: Schema.Union(
+  copilot: Schema.Union([
     Schema.Boolean,
-    Schema.Literal("codeium", "custom", "github"),
-  ),
+    Schema.Literals(["codeium", "custom", "github"]),
+  ]),
   model: Schema.optional(Schema.NullOr(Schema.String)),
   signature_hint_on_typing: Schema.Boolean,
-}).annotations({ identifier: "CompletionConfig" });
+}).annotate({ identifier: "CompletionConfig" });
 export type CompletionConfig = typeof CompletionConfig.Type;
 
 /**
@@ -946,15 +944,15 @@ export type CompletionConfig = typeof CompletionConfig.Type;
  */
 export const DatasourcesConfig = Schema.Struct({
   auto_discover_columns: Schema.optional(
-    Schema.Union(Schema.Boolean, Schema.Literal("auto")),
+    Schema.Union([Schema.Boolean, Schema.Literal("auto")]),
   ),
   auto_discover_schemas: Schema.optional(
-    Schema.Union(Schema.Boolean, Schema.Literal("auto")),
+    Schema.Union([Schema.Boolean, Schema.Literal("auto")]),
   ),
   auto_discover_tables: Schema.optional(
-    Schema.Union(Schema.Boolean, Schema.Literal("auto")),
+    Schema.Union([Schema.Boolean, Schema.Literal("auto")]),
   ),
-}).annotations({ identifier: "DatasourcesConfig" });
+}).annotate({ identifier: "DatasourcesConfig" });
 export type DatasourcesConfig = typeof DatasourcesConfig.Type;
 
 /**
@@ -968,7 +966,7 @@ export type DatasourcesConfig = typeof DatasourcesConfig.Type;
 export const DiagnosticsConfig = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
   sql_linter: Schema.optional(Schema.Boolean),
-}).annotations({ identifier: "DiagnosticsConfig" });
+}).annotate({ identifier: "DiagnosticsConfig" });
 export type DiagnosticsConfig = typeof DiagnosticsConfig.Type;
 
 /**
@@ -987,23 +985,23 @@ export type DiagnosticsConfig = typeof DiagnosticsConfig.Type;
  * - `locale`: locale for date formatting and internationalization (e.g., "en-US", "en-GB", "de-DE")
  */
 export const DisplayConfig = Schema.Struct({
-  cell_output: Schema.Literal("above", "below"),
+  cell_output: Schema.Literals(["above", "below"]),
   code_editor_font_size: Schema.Int,
   custom_css: Schema.optional(Schema.Array(Schema.String)),
-  dataframes: Schema.Literal("plain", "rich"),
+  dataframes: Schema.Literals(["plain", "rich"]),
   default_table_max_columns: Schema.Int,
   default_table_page_size: Schema.Int,
-  default_width: Schema.Literal(
+  default_width: Schema.Literals([
     "columns",
     "compact",
     "full",
     "medium",
     "normal",
-  ),
+  ]),
   locale: Schema.optional(Schema.NullOr(Schema.String)),
   reference_highlighting: Schema.optional(Schema.Boolean),
-  theme: Schema.Literal("dark", "light", "system"),
-}).annotations({ identifier: "DisplayConfig" });
+  theme: Schema.Literals(["dark", "light", "system"]),
+}).annotate({ identifier: "DisplayConfig" });
 export type DisplayConfig = typeof DisplayConfig.Type;
 
 /**
@@ -1015,7 +1013,7 @@ export type DisplayConfig = typeof DisplayConfig.Type;
  */
 export const FormattingConfig = Schema.Struct({
   line_length: Schema.Int,
-}).annotations({ identifier: "FormattingConfig" });
+}).annotate({ identifier: "FormattingConfig" });
 export type FormattingConfig = typeof FormattingConfig.Type;
 
 /**
@@ -1030,12 +1028,10 @@ export type FormattingConfig = typeof FormattingConfig.Type;
  */
 export const KeymapConfig = Schema.Struct({
   destructive_delete: Schema.optional(Schema.Boolean),
-  overrides: Schema.optional(
-    Schema.Record({ key: Schema.String, value: Schema.String }),
-  ),
-  preset: Schema.Literal("default", "vim"),
+  overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  preset: Schema.Literals(["default", "vim"]),
   vimrc: Schema.optional(Schema.NullOr(Schema.String)),
-}).annotations({ identifier: "KeymapConfig" });
+}).annotate({ identifier: "KeymapConfig" });
 export type KeymapConfig = typeof KeymapConfig.Type;
 
 /**
@@ -1046,7 +1042,7 @@ export type KeymapConfig = typeof KeymapConfig.Type;
  */
 export const BasedpyrightServerConfig = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
-}).annotations({ identifier: "BasedpyrightServerConfig" });
+}).annotate({ identifier: "BasedpyrightServerConfig" });
 export type BasedpyrightServerConfig = typeof BasedpyrightServerConfig.Type;
 
 /**
@@ -1062,7 +1058,7 @@ export const PythonLanguageServerConfig = Schema.Struct({
   enable_pylint: Schema.optional(Schema.Boolean),
   enable_ruff: Schema.optional(Schema.Boolean),
   enabled: Schema.optional(Schema.Boolean),
-}).annotations({ identifier: "PythonLanguageServerConfig" });
+}).annotate({ identifier: "PythonLanguageServerConfig" });
 export type PythonLanguageServerConfig = typeof PythonLanguageServerConfig.Type;
 
 /**
@@ -1072,7 +1068,7 @@ export type PythonLanguageServerConfig = typeof PythonLanguageServerConfig.Type;
  */
 export const PyreflyLanguageServerConfig = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
-}).annotations({ identifier: "PyreflyLanguageServerConfig" });
+}).annotate({ identifier: "PyreflyLanguageServerConfig" });
 export type PyreflyLanguageServerConfig =
   typeof PyreflyLanguageServerConfig.Type;
 
@@ -1084,7 +1080,7 @@ export type PyreflyLanguageServerConfig =
  */
 export const TyLanguageServerConfig = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
-}).annotations({ identifier: "TyLanguageServerConfig" });
+}).annotate({ identifier: "TyLanguageServerConfig" });
 export type TyLanguageServerConfig = typeof TyLanguageServerConfig.Type;
 
 /**
@@ -1102,7 +1098,7 @@ export const LanguageServersConfig = Schema.Struct({
   pylsp: Schema.optional(PythonLanguageServerConfig),
   pyrefly: Schema.optional(PyreflyLanguageServerConfig),
   ty: Schema.optional(TyLanguageServerConfig),
-}).annotations({ identifier: "LanguageServersConfig" });
+}).annotate({ identifier: "LanguageServersConfig" });
 export type LanguageServersConfig = typeof LanguageServersConfig.Type;
 
 /**
@@ -1122,7 +1118,7 @@ export type LanguageServersConfig = typeof LanguageServersConfig.Type;
 export const LintConfig = Schema.Struct({
   ignore: Schema.optional(Schema.Array(Schema.String)),
   select: Schema.optional(Schema.Array(Schema.String)),
-}).annotations({ identifier: "LintConfig" });
+}).annotate({ identifier: "LintConfig" });
 export type LintConfig = typeof LintConfig.Type;
 
 /**
@@ -1132,12 +1128,14 @@ export type LintConfig = typeof LintConfig.Type;
  * config conventions used by popular AI applications (e.g. Cursor, Claude Desktop, etc.)
  */
 export const MCPConfig = Schema.Struct({
-  mcpServers: Schema.Record({
-    key: Schema.String,
-    value: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-  }),
-  presets: Schema.optional(Schema.Array(Schema.Literal("context7", "marimo"))),
-}).annotations({ identifier: "MCPConfig" });
+  mcpServers: Schema.Record(
+    Schema.String,
+    Schema.Record(Schema.String, Schema.Unknown),
+  ),
+  presets: Schema.optional(
+    Schema.Array(Schema.Literals(["context7", "marimo"])),
+  ),
+}).annotate({ identifier: "MCPConfig" });
 export type MCPConfig = typeof MCPConfig.Type;
 
 /**
@@ -1148,8 +1146,8 @@ export type MCPConfig = typeof MCPConfig.Type;
  * - `manager`: the package manager to use
  */
 export const PackageManagementConfig = Schema.Struct({
-  manager: Schema.Literal("pip", "pixi", "poetry", "rye", "uv"),
-}).annotations({ identifier: "PackageManagementConfig" });
+  manager: Schema.Literals(["pip", "pixi", "poetry", "rye", "uv"]),
+}).annotate({ identifier: "PackageManagementConfig" });
 export type PackageManagementConfig = typeof PackageManagementConfig.Type;
 
 /**
@@ -1201,28 +1199,28 @@ export type PackageManagementConfig = typeof PackageManagementConfig.Type;
  */
 export const RuntimeConfig = Schema.Struct({
   auto_instantiate: Schema.Boolean,
-  auto_reload: Schema.Literal("autorun", "lazy", "off"),
+  auto_reload: Schema.Literals(["autorun", "lazy", "off"]),
   default_auto_download: Schema.optional(
-    Schema.Array(Schema.Literal("html", "ipynb", "markdown")),
+    Schema.Array(Schema.Literals(["html", "ipynb", "markdown"])),
   ),
   default_csv_encoding: Schema.optional(Schema.String),
-  default_sql_output: Schema.Literal(
+  default_sql_output: Schema.Literals([
     "auto",
     "lazy-polars",
     "native",
     "pandas",
     "polars",
-  ),
+  ]),
   dotenv: Schema.optional(Schema.Array(Schema.String)),
-  on_cell_change: Schema.Literal("autorun", "lazy"),
+  on_cell_change: Schema.Literals(["autorun", "lazy"]),
   output_max_bytes: Schema.Int,
   pythonpath: Schema.optional(Schema.Array(Schema.String)),
   reactive_tests: Schema.Boolean,
   serve_cached_sessions_in_apps: Schema.optional(Schema.Boolean),
   show_tracebacks: Schema.optional(Schema.Boolean),
   std_stream_max_bytes: Schema.Int,
-  watcher_on_save: Schema.Literal("autorun", "lazy"),
-}).annotations({ identifier: "RuntimeConfig" });
+  watcher_on_save: Schema.Literals(["autorun", "lazy"]),
+}).annotate({ identifier: "RuntimeConfig" });
 export type RuntimeConfig = typeof RuntimeConfig.Type;
 
 /**
@@ -1235,10 +1233,10 @@ export type RuntimeConfig = typeof RuntimeConfig.Type;
  * - `format_on_save`: if `True`, format the code on save
  */
 export const SaveConfig = Schema.Struct({
-  autosave: Schema.Literal("after_delay", "off"),
+  autosave: Schema.Literals(["after_delay", "off"]),
   autosave_delay: Schema.Int,
   format_on_save: Schema.Boolean,
-}).annotations({ identifier: "SaveConfig" });
+}).annotate({ identifier: "SaveConfig" });
 export type SaveConfig = typeof SaveConfig.Type;
 
 /**
@@ -1262,11 +1260,11 @@ export type SaveConfig = typeof SaveConfig.Type;
  *     when using `"sse"`.
  */
 export const ServerConfig = Schema.Struct({
-  browser: Schema.Union(Schema.Literal("default"), Schema.String),
+  browser: Schema.Union([Schema.Literal("default"), Schema.String]),
   disable_file_downloads: Schema.optional(Schema.Boolean),
   follow_symlink: Schema.Boolean,
-  transport: Schema.optional(Schema.Literal("sse", "websocket")),
-}).annotations({ identifier: "ServerConfig" });
+  transport: Schema.optional(Schema.Literals(["sse", "websocket"])),
+}).annotate({ identifier: "ServerConfig" });
 export type ServerConfig = typeof ServerConfig.Type;
 
 /**
@@ -1282,7 +1280,7 @@ export const SharingConfig = Schema.Struct({
   html: Schema.optional(Schema.Boolean),
   molab: Schema.optional(Schema.Boolean),
   wasm: Schema.optional(Schema.Boolean),
-}).annotations({ identifier: "SharingConfig" });
+}).annotate({ identifier: "SharingConfig" });
 export type SharingConfig = typeof SharingConfig.Type;
 
 /**
@@ -1295,7 +1293,7 @@ export type SharingConfig = typeof SharingConfig.Type;
 export const SnippetsConfig = Schema.Struct({
   custom_paths: Schema.optional(Schema.Array(Schema.String)),
   include_default_snippets: Schema.optional(Schema.Boolean),
-}).annotations({ identifier: "SnippetsConfig" });
+}).annotate({ identifier: "SnippetsConfig" });
 export type SnippetsConfig = typeof SnippetsConfig.Type;
 
 /**
@@ -1314,7 +1312,7 @@ export type SnippetsConfig = typeof SnippetsConfig.Type;
 export const VenvConfig = Schema.Struct({
   path: Schema.optional(Schema.String),
   writable: Schema.optional(Schema.Boolean),
-}).annotations({ identifier: "VenvConfig" });
+}).annotate({ identifier: "VenvConfig" });
 export type VenvConfig = typeof VenvConfig.Type;
 
 /**
@@ -1326,9 +1324,7 @@ export const MarimoConfig = Schema.Struct({
   datasources: Schema.optional(DatasourcesConfig),
   diagnostics: Schema.optional(DiagnosticsConfig),
   display: DisplayConfig,
-  experimental: Schema.optional(
-    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-  ),
+  experimental: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   formatting: FormattingConfig,
   keymap: KeymapConfig,
   language_servers: Schema.optional(LanguageServersConfig),
@@ -1341,7 +1337,7 @@ export const MarimoConfig = Schema.Struct({
   sharing: Schema.optional(SharingConfig),
   snippets: Schema.optional(SnippetsConfig),
   venv: Schema.optional(VenvConfig),
-}).annotations({ identifier: "MarimoConfig" });
+}).annotate({ identifier: "MarimoConfig" });
 export type MarimoConfig = typeof MarimoConfig.Type;
 
 /**
@@ -1349,7 +1345,7 @@ export type MarimoConfig = typeof MarimoConfig.Type;
  */
 export const GetConfigurationResponse = Schema.Struct({
   config: MarimoConfig,
-}).annotations({ identifier: "GetConfigurationResponse" });
+}).annotate({ identifier: "GetConfigurationResponse" });
 export type GetConfigurationResponse = typeof GetConfigurationResponse.Type;
 
 export const GetConfigurationPayload = Schema.Struct({
@@ -1367,21 +1363,21 @@ export const UpdateConfigurationPayload = Schema.Struct({
  */
 export const SetDisplayThemeResponse = Schema.Struct({
   success: Schema.Boolean,
-}).annotations({ identifier: "SetDisplayThemeResponse" });
+}).annotate({ identifier: "SetDisplayThemeResponse" });
 export type SetDisplayThemeResponse = typeof SetDisplayThemeResponse.Type;
 
 export const SetDisplayThemePayload = Schema.Struct({
-  theme: Schema.Literal("dark", "light"),
+  theme: Schema.Literals(["dark", "light"]),
 });
 
 export const ExportAsHTMLRequest = Schema.Struct({
   download: Schema.Boolean,
   files: Schema.Array(Schema.String),
   includeCode: Schema.Boolean,
-  assetUrl: Schema.optionalWith(Schema.NullOr(Schema.String), {
-    default: () => null,
-  }),
-}).annotations({ identifier: "ExportAsHTMLRequest" });
+  assetUrl: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({ identifier: "ExportAsHTMLRequest" });
 export type ExportAsHTMLRequest = typeof ExportAsHTMLRequest.Type;
 
 export const ExportAsHtmlPayload = Schema.Struct({
@@ -1397,7 +1393,7 @@ export const ExportAsIpynbPayload = Schema.Struct({
 /**
  * A request to export the notebook as Markdown.
  */
-export const ExportAsMarkdownRequest = Schema.Struct({}).annotations({
+export const ExportAsMarkdownRequest = Schema.Struct({}).annotate({
   identifier: "ExportAsMarkdownRequest",
 });
 export type ExportAsMarkdownRequest = typeof ExportAsMarkdownRequest.Type;
@@ -1522,15 +1518,19 @@ type Execute<E, R> = (call: MarimoApiCall) => Effect.Effect<unknown, E, R>;
  * side, so defaulted fields stay omittable), send them verbatim, and parse
  * the response against the method's success schema.
  */
-const dispatch = <PA, PI, PR, A, I, R2, E, R>(
+const dispatch = <Payload extends Schema.Top, Success extends Schema.Top, E, R>(
   execute: Execute<E, R>,
-  call: MarimoApiCall & { readonly params: PI },
-  payload: Schema.Schema<PA, PI, PR>,
-  success: Schema.Schema<A, I, R2>,
-): Effect.Effect<A, E | ParseResult.ParseError, R | PR | R2> =>
-  Effect.zipRight(
-    Schema.decode(payload)(call.params),
-    Effect.flatMap(execute(call), Schema.decodeUnknown(success)),
+  call: MarimoApiCall & { readonly params: Payload["Encoded"] },
+  payload: Payload,
+  success: Success,
+): Effect.Effect<
+  Success["Type"],
+  E | Schema.SchemaError,
+  R | Payload["DecodingServices"] | Success["DecodingServices"]
+> =>
+  Effect.andThen(
+    Schema.decodeEffect(payload)(call.params),
+    Effect.flatMap(execute(call), Schema.decodeUnknownEffect(success)),
   );
 
 /**

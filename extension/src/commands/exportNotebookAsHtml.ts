@@ -1,4 +1,4 @@
-import { Effect, Either, Option, Schema } from "effect";
+import { Effect, Option, Result, Schema } from "effect";
 
 import { defineCommand } from "../commands.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
@@ -36,7 +36,7 @@ const handler = Effect.fn("command.exportNotebookAsHtml")(function* (
     filters: { HTML: ["html"] },
     defaultUri: code.utils
       .parseUri(notebook.uri.toString().replace(/\.py$/, ".html"))
-      .pipe(Either.getOrUndefined),
+      .pipe(Result.getOrUndefined),
   });
 
   if (Option.isNone(saveUri)) {
@@ -63,19 +63,19 @@ const handler = Effect.fn("command.exportNotebookAsHtml")(function* (
           },
         })
         .pipe(
-          Effect.andThen(Schema.decodeUnknown(Schema.String)),
-          Effect.either,
+          Effect.andThen(Schema.decodeUnknownEffect(Schema.String)),
+          Effect.result,
         );
 
-      if (Either.isLeft(result)) {
-        yield* Effect.logFatal("Failed to export notebook", result.left);
+      if (Result.isFailure(result)) {
+        yield* Effect.logFatal("Failed to export notebook", result.failure);
         yield* showErrorAndPromptLogs("Failed to export notebook as HTML.");
         return;
       }
 
       // Write the HTML to the file
       yield* code.workspace.fs
-        .writeFile(saveUri.value, new TextEncoder().encode(result.right))
+        .writeFile(saveUri.value, new TextEncoder().encode(result.success))
         .pipe(
           Effect.tap(() =>
             Effect.logInfo("Exported notebook as HTML").pipe(

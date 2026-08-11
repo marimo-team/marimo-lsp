@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, TestClock } from "effect";
+import { Effect, Layer, Option, Ref } from "effect";
+import { TestClock } from "effect/testing";
 
 import {
   createNotebookCell,
@@ -140,7 +141,7 @@ const withTestCtx = Effect.fn(function* (hideCode: ReadonlyArray<boolean>) {
 });
 
 describe("CellInputVisibilitySync", () => {
-  it.scoped(
+  it.effect(
     "collapses hide_code cells when a notebook first becomes active",
     Effect.fn(function* () {
       const { vscode, editor, layer } = yield* withTestCtx([false, true, true]);
@@ -161,7 +162,7 @@ describe("CellInputVisibilitySync", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "expands markup cells while collapsing hidden code cells on activation",
     Effect.fn(function* () {
       const initial = [
@@ -190,7 +191,7 @@ describe("CellInputVisibilitySync", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "re-expands markup cells whenever the notebook becomes active",
     Effect.fn(function* () {
       const initial = [
@@ -219,7 +220,7 @@ describe("CellInputVisibilitySync", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "collapses once and does not re-collapse on tab refocus",
     Effect.fn(function* () {
       const { vscode, editor, layer } = yield* withTestCtx([true]);
@@ -239,7 +240,7 @@ describe("CellInputVisibilitySync", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "collapses hidden cells again after the notebook is closed and reopened",
     Effect.fn(function* () {
       const { vscode, editor, layer } = yield* withTestCtx([true]);
@@ -261,7 +262,7 @@ describe("CellInputVisibilitySync", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "collapses a cell when hide_code changes to true",
     Effect.fn(function* () {
       const { vscode, editor, layer } = yield* withTestCtx([false]);
@@ -279,7 +280,7 @@ describe("CellInputVisibilitySync", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "expands a cell when hide_code changes to false",
     Effect.fn(function* () {
       const { vscode, editor, layer } = yield* withTestCtx([true]);
@@ -297,7 +298,7 @@ describe("CellInputVisibilitySync", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "tracks cells by stable ID across structural reordering",
     Effect.fn(function* () {
       const { vscode, editor, layer } = yield* withTestCtx([false, true]);
@@ -321,7 +322,7 @@ describe("CellInputVisibilitySync", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "expands a hidden code cell when it becomes markup",
     Effect.fn(function* () {
       const before = [{ stableId: "cell", hideCode: true }];
@@ -347,7 +348,7 @@ describe("CellInputVisibilitySync", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "continues synchronizing after a visibility command defects",
     Effect.fn(function* () {
       const attempts = yield* Ref.make(0);

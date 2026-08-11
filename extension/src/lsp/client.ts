@@ -29,7 +29,6 @@ import {
   Option,
   PubSub,
   Ref,
-  Runtime,
   Stream,
   SubscriptionRef,
 } from "effect";
@@ -278,7 +277,7 @@ function makeDynamicRegistrations(conn: rpc.MessageConnection) {
     const ref = yield* SubscriptionRef.make(
       HashMap.empty<string, ReadonlyArray<lsp.Registration>>(),
     );
-    const runFork = Runtime.runFork(yield* Effect.runtime());
+    const runFork = Effect.runForkWith(yield* Effect.context());
 
     conn.onRequest(
       lsp.RegistrationRequest.method,
@@ -335,7 +334,7 @@ function makeDynamicRegistrations(conn: rpc.MessageConnection) {
        * registrations. Completes immediately if already registered.
        */
       await: (method: string) =>
-        ref.changes.pipe(
+        SubscriptionRef.changes(ref).pipe(
           Stream.map(HashMap.get(method)),
           Stream.filter(Option.isSome),
           Stream.take(1),
@@ -613,7 +612,7 @@ function clientCapabilities(): lsp.ClientCapabilities {
 export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
   function* (config: InternalLspClientConfig) {
     const out = config.outputChannel;
-    const runPromise = Runtime.runPromise(yield* Effect.runtime());
+    const runPromise = Effect.runPromiseWith(yield* Effect.context());
 
     // -- 1. Spawn process ---------------------------------------------------
 
@@ -704,7 +703,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
       Effect.gen(function* () {
         yield* Effect.promise(() => conn.sendRequest("shutdown")).pipe(
           Effect.timeout("5 seconds"),
-          Effect.catchAll(() => Effect.void),
+          Effect.catch(() => Effect.void),
         );
         yield* Effect.tryPromise(() => conn.sendNotification("exit")).pipe(
           Effect.ignore,
@@ -801,7 +800,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
     // -- 8. Variable subscription → reorder ---------------------------------
 
     yield* Effect.forkScoped(
-      variables.notebookUpdates().pipe(
+      variables.notebookUpdates.pipe(
         Stream.filter((evt) => evt.kind === "declaration"),
         Stream.mapEffect(
           Effect.fnUntraced(function* (evt) {
@@ -936,6 +935,6 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
   },
 );
 
-export type NotebookLspClient = Effect.Effect.Success<
+export type NotebookLspClient = Effect.Success<
   ReturnType<typeof makeNotebookLspClient>
 >;

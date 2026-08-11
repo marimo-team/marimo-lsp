@@ -33,7 +33,7 @@ HEADER = """\
 // Generated from `src/marimo_lsp/models.py` and the `marimo.api` registry
 // (`API_METHODS` in `src/marimo_lsp/api.py`) by `scripts.codegen`.
 // Regenerate with `just codegen`.
-import { Effect, ParseResult, Schema } from "effect";
+import { Effect, Schema } from "effect";
 """
 
 
@@ -115,6 +115,13 @@ def _ts_literal(value: object) -> str:
     raise NotImplementedError(msg)
 
 
+def _literal_expr(rendered: list[str]) -> str:
+    """Render literal members as `Schema.Literal` (one) or `Schema.Literals` (many)."""
+    if len(rendered) == 1:
+        return f"Schema.Literal({rendered[0]})"
+    return f"Schema.Literals([{', '.join(rendered)}])"
+
+
 def _jsdoc(doc: str | None, indent: str = "") -> str:
     if not doc:
         return ""
@@ -127,19 +134,19 @@ def _annotations(cls: type, name: str) -> str:
     """Emit identity and excess-property policy for an owned wire struct."""
     annotations = [f"identifier: {_ts_string(name)}"]
     if getattr(cls, "__preserve_unknown_fields__", False):
-        annotations.append('parseOptions: { onExcessProperty: "preserve" as const }')
+        annotations.append('parseOptions: { onExcessProperty: "preserve" }')
     elif (
         isinstance(cls, type)
         and issubclass(cls, msgspec.Struct)
         and cls.__struct_config__.forbid_unknown_fields
     ):
-        annotations.append('parseOptions: { onExcessProperty: "error" as const }')
-    return f".annotations({{ {', '.join(annotations)} }})"
+        annotations.append('parseOptions: { onExcessProperty: "error" }')
+    return f".annotate({{ {', '.join(annotations)} }})"
 
 
 def _identifier(name: str) -> str:
     """Annotate a non-struct schema with its generated name."""
-    return f".annotations({{ identifier: {_ts_string(name)} }})"
+    return f".annotate({{ identifier: {_ts_string(name)} }})"
 
 
 class Emitter:
@@ -174,17 +181,11 @@ class Emitter:
             case mi.BytesType() | mi.ByteArrayType():
                 return self.base64_ref()
             case mi.LiteralType(values=values):
-                args = ", ".join(_ts_string(str(v)) for v in values)
-                return f"Schema.Literal({args})"
+                return _literal_expr([_ts_string(str(v)) for v in values])
             case mi.EnumType(cls=cls):
-                args = ", ".join(_ts_string(member.value) for member in cls)
-                return f"Schema.Literal({args})"
+                return _literal_expr([_ts_string(member.value) for member in cls])
             case mi.DictType(key_type=key, value_type=value):
-                return (
-                    "Schema.Record({ "
-                    f"key: {self.type_expr(key)}, value: {self.type_expr(value)}"
-                    " })"
-                )
+                return f"Schema.Record({self.type_expr(key)}, {self.type_expr(value)})"
             case (
                 mi.ListType(item_type=item)
                 | mi.SetType(item_type=item)
@@ -193,7 +194,7 @@ class Emitter:
                 return f"Schema.Array({self.type_expr(item)})"
             case mi.TupleType(item_types=items):
                 args = ", ".join(self.type_expr(i) for i in items)
-                return f"Schema.Tuple({args})"
+                return f"Schema.Tuple([{args}])"
             case mi.Metadata(type=inner):
                 # `typing.Annotated[..., msgspec.Meta(...)]`; constraints are
                 # already folded into the inner node.
@@ -212,7 +213,7 @@ class Emitter:
         inner = (
             self.type_expr(rest[0])
             if len(rest) == 1
-            else f"Schema.Union({', '.join(self.type_expr(t) for t in rest)})"
+            else f"Schema.Union([{', '.join(self.type_expr(t) for t in rest)}])"
         )
         inner = self.alias_by_expr.get(inner, inner)
         return f"Schema.NullOr({inner})" if nullable else inner
@@ -246,7 +247,7 @@ class Emitter:
                 # A cycle back into a definition we're still emitting: defer
                 # the reference so the const can close over itself.
                 self.recursive.add(cls)
-                return f"Schema.suspend((): Schema.Schema<{name}> => {name})"
+                return f"Schema.suspend((): Schema.Codec<{name}> => {name})"
             return name
         name = cls.__name__
         self.emitted[cls] = name
@@ -259,11 +260,13 @@ class Emitter:
         annotations = _annotations(cls, name)
         if cls in self.recursive:
             # Recursive schemas need an explicit type: `typeof X.Type` cannot
-            # refer to itself, so emit a structural interface alongside.
+            # refer to itself, so emit a structural interface alongside. The
+            # const's own type stays inferred; the annotated `Schema.suspend`
+            # closure breaks the reference cycle (see the v4 `suspend` docs).
             self.definitions.append(
                 f"{_jsdoc(cls.__doc__)}"
                 f"export interface {name} {{\n{self.interface_fields(t)}}}\n"
-                f"export const {name}: Schema.Schema<{name}> = {struct}{annotations};\n"
+                f"export const {name} = {struct}{annotations};\n"
             )
         else:
             self.definitions.append(
@@ -355,7 +358,16 @@ class Emitter:
                 if default is None:
                     rendered = f"{prop}: Schema.optional({expr})"
                 else:
-                    rendered = f"{prop}: Schema.optionalWith({expr}, {{ default: () => {default} }})"
+                    # v3 `Schema.optionalWith(S, { default })`: the key stays
+                    # omittable on the wire; a missing/undefined field decodes
+                    # to the default. The default is an *Encoded* value, so
+                    # nested struct defaults are filled by the inner decode —
+                    # matching msgspec's default_factory semantics.
+                    rendered = (
+                        f"{prop}: {expr}.pipe("
+                        f"Schema.withDecodingDefault(Effect.sync(() => {default}))"
+                        f")"
+                    )
             lines.append(f"{indent}{rendered},")
         return "\n".join(lines) + "\n" if lines else ""
 
@@ -374,7 +386,10 @@ class Emitter:
                 isinstance(field.type, _StructLike)
                 and field.default_factory is field.type.cls
             ):
-                return f"{self.struct_ref(field.type)}.make()"
+                # Zero-arg struct construction: every field of the inner
+                # struct has a default, so decoding the empty *Encoded*
+                # object fills them (see `withDecodingDefault` above).
+                return "({})"
         return None
 
     def emit_named(self, name: str, t: type | object) -> None:
@@ -400,7 +415,7 @@ class Emitter:
         fields = self.fields_src(info, indent="    ")
         self.definitions.append(
             f"{_jsdoc(cls.__doc__)}"
-            f"export const {cls.__name__} = <S extends Schema.Schema.Any>(inner: S) =>\n"
+            f"export const {cls.__name__} = <S extends Schema.Top>(inner: S) =>\n"
             f"  Schema.Struct({{\n{fields}  }});\n"
         )
 
@@ -431,17 +446,26 @@ type Execute<E, R> = (call: MarimoApiCall) => Effect.Effect<unknown, E, R>;
  * side, so defaulted fields stay omittable), send them verbatim, and parse
  * the response against the method's success schema.
  */
-const dispatch = <PA, PI, PR, A, I, R2, E, R>(
+const dispatch = <
+  Payload extends Schema.Top,
+  Success extends Schema.Top,
+  E,
+  R,
+>(
   execute: Execute<E, R>,
-  call: MarimoApiCall & { readonly params: PI },
-  payload: Schema.Schema<PA, PI, PR>,
-  success: Schema.Schema<A, I, R2>,
-): Effect.Effect<A, E | ParseResult.ParseError, R | PR | R2> =>
-  Effect.zipRight(
-    Schema.decode(payload)(call.params),
+  call: MarimoApiCall & { readonly params: Payload["Encoded"] },
+  payload: Payload,
+  success: Success,
+): Effect.Effect<
+  Success["Type"],
+  E | Schema.SchemaError,
+  R | Payload["DecodingServices"] | Success["DecodingServices"]
+> =>
+  Effect.andThen(
+    Schema.decodeEffect(payload)(call.params),
     Effect.flatMap(
       execute(call),
-      Schema.decodeUnknown(success),
+      Schema.decodeUnknownEffect(success),
     ),
   );
 """

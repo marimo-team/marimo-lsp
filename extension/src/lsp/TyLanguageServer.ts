@@ -1,6 +1,15 @@
 import * as NodePath from "node:path";
 
-import { Cause, Data, Effect, Option, Ref, Stream } from "effect";
+import {
+  Cause,
+  Context,
+  Data,
+  Effect,
+  Layer,
+  Option,
+  Ref,
+  Stream,
+} from "effect";
 
 import { Config } from "../config/Config.ts";
 import {
@@ -50,17 +59,10 @@ type TyLanguageServerStatus = Data.TaggedEnum<{
  * the official ty-vscode extension behavior (ty doesn't support
  * `workspace/didChangeConfiguration` — a full restart is required).
  */
-export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
+export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
   "TyLanguageServer",
   {
-    dependencies: [
-      Uv.Default,
-      Config.Default,
-      OutputChannel.Default,
-      VariablesService.Default,
-      PythonEnvInvalidation.Default,
-    ],
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const pyExt = yield* PythonExtension;
       const envInvalidation = yield* PythonEnvInvalidation;
       const telemetry = yield* Effect.serviceOption(Telemetry);
@@ -192,9 +194,10 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
 
             // Block until env invalidation, then return to let
             // Effect.scoped clean up and the loop restart.
-            yield* envInvalidation
-              .changes()
-              .pipe(Stream.take(1), Stream.runDrain);
+            yield* envInvalidation.changes.pipe(
+              Stream.take(1),
+              Stream.runDrain,
+            );
 
             yield* Effect.logInfo("Restarting language server").pipe(
               Effect.annotateLogs({ server: TY_SERVER.name }),
@@ -202,11 +205,11 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
           }).pipe(Effect.scoped);
 
           // Run the server in a loop: start → invalidation → restart.
-          // On failure, the error propagates to catchAllCause and stops.
+          // On failure, the error propagates to catchCause and stops.
           yield* Effect.forever(serverCycle).pipe(
-            Effect.catchAllCause((cause) =>
+            Effect.catchCause((cause) =>
               Effect.gen(function* () {
-                if (Cause.isInterruptedOnly(cause)) return;
+                if (Cause.hasInterruptsOnly(cause)) return;
                 const message = "Failed to start language server";
                 yield* Ref.set(
                   statusRef,
@@ -227,11 +230,21 @@ export class TyLanguageServer extends Effect.Service<TyLanguageServer>()(
       );
 
       return {
-        getHealthStatus: () => Ref.get(statusRef),
+        getHealthStatus: Ref.get(statusRef),
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide([
+      Uv.layer,
+      Config.layer,
+      OutputChannel.layer,
+      VariablesService.layer,
+      PythonEnvInvalidation.layer,
+    ]),
+  );
+}
 
 /**
  * Resolves the ty binary path using a 3-tier strategy:
@@ -249,7 +262,7 @@ const resolveTyBinary = Effect.fn(function* () {
 
   const tyExtConfiguredPath = Effect.gen(function* () {
     const tyExtConfig = yield* code.workspace.getConfiguration("ty");
-    return Option.fromNullable(tyExtConfig.get<string[]>("path")).pipe(
+    return Option.fromNullishOr(tyExtConfig.get<string[]>("path")).pipe(
       Option.filter((p) => p.length > 0),
       Option.map((p) => p[0]),
     );
@@ -298,7 +311,7 @@ const getTyDisabledReason = Effect.fn(function* () {
   const config = yield* Config;
 
   const managedFeaturesEnabled =
-    yield* config.getManagedLanguageFeaturesEnabled();
+    yield* config.getManagedLanguageFeaturesEnabled;
 
   if (!managedFeaturesEnabled) {
     yield* Effect.logInfo(

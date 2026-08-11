@@ -25,25 +25,27 @@ const VariableName = (name: string) => name as VariableName;
 const decodeCellMetadata = Schema.decodeUnknownOption(Api.CellMetadata);
 const decodeCellMetadataSync = Schema.decodeUnknownSync(Api.CellMetadata);
 const encodeCellMetadata = Schema.encodeSync(Api.CellMetadata);
-const marimoCellMetadataEquivalence = Schema.equivalence(
+const marimoCellMetadataEquivalence = Schema.toEquivalence(
   Api.MarimoCellMetadata,
 );
-const runtimeMetadataEquivalence = Schema.equivalence(
+const runtimeMetadataEquivalence = Schema.toEquivalence(
   Api.MarimoCellRuntimeMetadata,
 );
 const decodeNotebookMetadata = Schema.decodeUnknownOption(
   Api.MarimoNotebookMetadata,
 );
-const parseNotebookMetadata = Schema.decodeUnknown(Api.MarimoNotebookMetadata);
+const parseNotebookMetadata = Schema.decodeUnknownEffect(
+  Api.MarimoNotebookMetadata,
+);
 const decodeNotebookMetadataSync = Schema.decodeUnknownSync(
   Api.MarimoNotebookMetadata,
 );
 const encodeNotebookMetadata = Schema.encodeSync(Api.MarimoNotebookMetadata);
-const notebookMetadataEquivalence = Schema.equivalence(
+const notebookMetadataEquivalence = Schema.toEquivalence(
   Api.MarimoNotebookMetadata,
 );
 
-const parseOwnedAppConfig = Schema.decodeUnknown(Api.OwnedAppConfig);
+const parseOwnedAppConfig = Schema.decodeUnknownEffect(Api.OwnedAppConfig);
 const MARKUP_CELL_KIND: vscode.NotebookCellKind = 1;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -62,7 +64,7 @@ function asRecord(value: unknown): Record<string, unknown> {
  * from {@link MarimoNotebookDocument.id} in normal code paths.
  */
 export const NotebookIdFromString = Schema.String.pipe(
-  Schema.fromBrand(NotebookId),
+  Schema.fromBrand("NotebookId", NotebookId),
 );
 
 export function extractCellIdFromCellMessage(msg: CellOperationNotification) {
@@ -186,7 +188,7 @@ export class MarimoNotebookCell {
   get id() {
     return this.metadata.pipe(
       Option.flatMap((meta) =>
-        Option.fromNullable(meta.marimoRuntime.stableId),
+        Option.fromNullishOr(meta.marimoRuntime.stableId),
       ),
       Option.map((stableId) => NotebookCellId(stableId)),
     );
@@ -259,7 +261,7 @@ export class MarimoNotebookCell {
   get sourceProjections() {
     return this.metadata.pipe(
       Option.flatMap((meta) =>
-        Option.fromNullable(meta.marimo.sourceProjections),
+        Option.fromNullishOr(meta.marimo.sourceProjections),
       ),
     );
   }
@@ -274,7 +276,7 @@ export class MarimoNotebookCell {
   get stableId() {
     return this.metadata.pipe(
       Option.flatMap((meta) =>
-        Option.fromNullable(meta.marimoRuntime.stableId),
+        Option.fromNullishOr(meta.marimoRuntime.stableId),
       ),
     );
   }
@@ -384,7 +386,7 @@ export class MarimoNotebookDocument {
 
   get header() {
     return this.#meta.pipe(
-      Option.flatMap((meta) => Option.fromNullable(meta.header)),
+      Option.flatMap((meta) => Option.fromNullishOr(meta.header)),
       Option.getOrElse(() => ""),
     );
   }

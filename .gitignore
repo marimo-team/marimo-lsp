@@ -14,7 +14,8 @@ extension/.vscode-test/
 .claude/settings.local.json
 .pnpm-store
 
-# Vendored reference source (populated by `just vendor-effect`)
+# Reference checkouts (read-only; never imported)
+.repos/
 repos/
 
 # Coverage

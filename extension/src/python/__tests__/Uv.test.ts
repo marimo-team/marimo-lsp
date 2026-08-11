@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Effect, Either, Layer, Option } from "effect";
+import { Context, Effect, Layer, Option, Result } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -16,8 +16,8 @@ const python = "3.13";
 const timeout = 30_000;
 const isWindows = NodeProcess.platform === "win32";
 
-class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
-  scoped: Effect.gen(function* () {
+class TmpDir extends Context.Service<TmpDir>()("TmpDir", {
+  make: Effect.gen(function* () {
     const disposable = yield* Effect.acquireRelease(
       Effect.sync(() => {
         return NodeFs.mkdtempDisposableSync(
@@ -30,18 +30,20 @@ class TmpDir extends Effect.Service<TmpDir>()("TmpDir", {
       path: disposable.path,
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
 
 const UvLive = Layer.empty.pipe(
-  Layer.merge(Uv.Default),
-  Layer.merge(TmpDir.Default),
+  Layer.merge(Uv.layer),
+  Layer.merge(TmpDir.layer),
   Layer.provide(TestTelemetryLive),
-  Layer.provide(TestVsCode.Default),
+  Layer.provide(TestVsCode.layer),
 );
 
 describe("Uv", () => {
   it.layer(Layer.fresh(UvLive))((it) => {
-    it.scoped(
+    it.effect(
       "should create a new python venv",
       Effect.fn(function* () {
         const uv = yield* Uv;
@@ -55,23 +57,23 @@ describe("Uv", () => {
   });
 
   it.layer(Layer.fresh(UvLive))((it) => {
-    it.scoped(
+    it.effect(
       "should fail `uv add` without pyproject.toml",
       Effect.fn(function* () {
         const uv = yield* Uv;
         const tmpdir = yield* TmpDir;
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           uv.addProject({ directory: tmpdir.path, packages: ["httpx"] }),
         );
-        assert(Either.isLeft(result), "Expected failure");
-        assert.strictEqual(result.left._tag, "UvMissingPyProjectError");
+        assert(Result.isFailure(result), "Expected failure");
+        assert.strictEqual(result.failure._tag, "UvMissingPyProjectError");
       }),
       { timeout },
     );
   });
 
   it.layer(Layer.fresh(UvLive))((it) => {
-    it.scoped(
+    it.effect(
       "should preserve custom dependency-group placement with `uv add`",
       Effect.fn(function* () {
         const uv = yield* Uv;
@@ -97,7 +99,7 @@ describe("Uv", () => {
   });
 
   it.layer(Layer.fresh(UvLive))((it) => {
-    it.scoped(
+    it.effect(
       "should preserve optional-dependency placement with `uv add`",
       Effect.fn(function* () {
         const uv = yield* Uv;
@@ -123,7 +125,7 @@ describe("Uv", () => {
   });
 
   it.layer(Layer.fresh(UvLive))((it) => {
-    it.scoped(
+    it.effect(
       "should `uv pip install` into venv",
       Effect.fn(function* () {
         const uv = yield* Uv;
@@ -148,7 +150,7 @@ describe("Uv", () => {
   });
 
   it.layer(Layer.fresh(UvLive))((it) => {
-    it.scoped(
+    it.effect(
       "should `uv init` a new project",
       Effect.fn(function* () {
         const uv = yield* Uv;
@@ -165,7 +167,7 @@ describe("Uv", () => {
   });
 
   it.layer(Layer.fresh(UvLive))((it) => {
-    it.scoped(
+    it.effect(
       "should fail with UvResolutionError on conflicting dependencies",
       Effect.fn(function* () {
         const uv = yield* Uv;
@@ -187,17 +189,17 @@ print("This should fail to sync")
         );
 
         // Attempt to sync the script, which should fail with resolution error
-        const result = yield* Effect.either(uv.syncScript({ script }));
+        const result = yield* Effect.result(uv.syncScript({ script }));
 
-        assert(Either.isLeft(result), "Expected failure");
-        assert.strictEqual(result.left._tag, "UvResolutionError");
+        assert(Result.isFailure(result), "Expected failure");
+        assert.strictEqual(result.failure._tag, "UvResolutionError");
       }),
       { timeout },
     );
   });
 
   it.layer(Layer.fresh(UvLive))((it) => {
-    it.scoped(
+    it.effect(
       "should fail with UvMissingPep723MetadataError when script has no metadata",
       Effect.fn(function* () {
         const uv = yield* Uv;
@@ -214,10 +216,10 @@ print("This script has no PEP 723 metadata")
         );
 
         // Attempt to get current deps, which should fail
-        const result = yield* Effect.either(uv.currentDeps({ script }));
+        const result = yield* Effect.result(uv.currentDeps({ script }));
 
-        assert(Either.isLeft(result), "Expected failure");
-        assert.strictEqual(result.left._tag, "UvMissingPep723MetadataError");
+        assert(Result.isFailure(result), "Expected failure");
+        assert.strictEqual(result.failure._tag, "UvMissingPep723MetadataError");
       }),
       { timeout },
     );
@@ -240,7 +242,7 @@ print("This script has no PEP 723 metadata")
     });
 
     it.layer(Layer.fresh(UvLive))((it) => {
-      it.scoped(
+      it.effect(
         "installs with default strategy",
         Effect.fn(function* () {
           const uv = yield* Uv;
@@ -257,7 +259,7 @@ print("This script has no PEP 723 metadata")
         { timeout },
       );
 
-      it.scoped(
+      it.effect(
         "installs with native-tls strategy",
         Effect.fn(function* () {
           const uv = yield* Uv;
@@ -274,7 +276,7 @@ print("This script has no PEP 723 metadata")
         { timeout },
       );
 
-      it.scoped(
+      it.effect(
         "installs with offline strategy",
         Effect.fn(function* () {
           const uv = yield* Uv;
@@ -300,7 +302,7 @@ print("This script has no PEP 723 metadata")
       // Simulate a broken .venv in the parent directory (the scenario
       // from VSCODE-MARIMO-2KT where a wrong-arch python.exe causes
       // uv to fail with OS error 193 on Windows).
-      it.scoped.skipIf(isWindows)(
+      it.effect.skipIf(isWindows)(
         "installs even when a broken .venv exists in a parent directory (unix)",
         Effect.fn(function* () {
           const uv = yield* Uv;
@@ -330,7 +332,7 @@ print("This script has no PEP 723 metadata")
         { timeout },
       );
 
-      it.scoped.skipIf(!isWindows)(
+      it.effect.skipIf(!isWindows)(
         "installs even when a broken .venv exists in a parent directory (windows)",
         Effect.fn(function* () {
           const uv = yield* Uv;
@@ -359,7 +361,7 @@ print("This script has no PEP 723 metadata")
         { timeout },
       );
 
-      it.scoped(
+      it.effect(
         "reinstalling with a new version replaces the binary",
         Effect.fn(function* () {
           const uv = yield* Uv;

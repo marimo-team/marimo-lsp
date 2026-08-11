@@ -55,7 +55,7 @@ describe("extractExecuteCodeRequest", () => {
       const { codes, cellIds } = Option.getOrThrow(request);
       expect(cellIds).toEqual(["cell-a", "cell-b"]);
       expect(codes).toEqual(["x = 1", "y = x + 1"]);
-    }).pipe(Effect.provide(Constants.Default)),
+    }).pipe(Effect.provide(Constants.layer)),
   );
 
   it.effect("skips cells without a stable id", () =>
@@ -77,7 +77,7 @@ describe("extractExecuteCodeRequest", () => {
       expect(Option.isSome(request)).toBe(true);
       const { cellIds } = Option.getOrThrow(request);
       expect(cellIds).toEqual(["cell-a"]);
-    }).pipe(Effect.provide(Constants.Default)),
+    }).pipe(Effect.provide(Constants.layer)),
   );
 
   // Disabled cells still submit edited code to marimo. The runtime updates its
@@ -109,7 +109,7 @@ describe("extractExecuteCodeRequest", () => {
         codes: ["x = 1", 'print("RAN")'],
         cellIds: ["cell-enabled", "cell-disabled"],
       });
-    }).pipe(Effect.provide(Constants.Default)),
+    }).pipe(Effect.provide(Constants.layer)),
   );
 
   it.effect("submits a selection containing only a disabled cell", () =>
@@ -131,6 +131,6 @@ describe("extractExecuteCodeRequest", () => {
         codes: ['print("RAN")'],
         cellIds: ["cell-disabled"],
       });
-    }).pipe(Effect.provide(Constants.Default)),
+    }).pipe(Effect.provide(Constants.layer)),
   );
 });

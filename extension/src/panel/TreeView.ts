@@ -1,4 +1,4 @@
-import { Effect, Runtime } from "effect";
+import { Context, Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
 import type { MarimoView } from "../constants.ts";
@@ -26,8 +26,8 @@ import { VsCode } from "../platform/VsCode.ts";
  * });
  * ```
  */
-export class TreeView extends Effect.Service<TreeView>()("TreeView", {
-  scoped: Effect.gen(function* () {
+export class TreeView extends Context.Service<TreeView>()("TreeView", {
+  make: Effect.gen(function* () {
     const code = yield* VsCode;
 
     return {
@@ -42,9 +42,9 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
         getTreeItem: (element: T) => Effect.Effect<TreeItem>;
         showCollapseAll?: boolean;
       }) {
-        const runtime = yield* Effect.runtime();
-        const runPromise = Runtime.runPromise(runtime);
-        const runSync = Runtime.runSync(runtime);
+        const context = yield* Effect.context();
+        const runPromise = Effect.runPromiseWith(context);
+        const runSync = Effect.runSyncWith(context);
         // Create event emitter for refresh events
         const eventEmitter = yield* Effect.acquireRelease(
           Effect.sync(() => new code.EventEmitter<T | undefined | null>()),
@@ -89,7 +89,9 @@ export class TreeView extends Effect.Service<TreeView>()("TreeView", {
       }),
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
 
 /**
  * Configuration for a tree item.
@@ -114,11 +116,19 @@ export interface TreeItem {
 }
 
 /**
+ * The service value's type, extracted with `Context.Service.Shape`.
+ */
+type VsCodeService = Context.Service.Shape<typeof VsCode>;
+
+/**
  * Converts our TreeItem to VS Code's TreeItem.
  *
  * TODO: should this be an Effect?
  */
-function toVSCodeTreeItem(vscode: VsCode, item: TreeItem): vscode.TreeItem {
+function toVSCodeTreeItem(
+  vscode: VsCodeService,
+  item: TreeItem,
+): vscode.TreeItem {
   const treeItem = new vscode.TreeItem(
     item.label,
     item.collapsibleState === "Collapsed"

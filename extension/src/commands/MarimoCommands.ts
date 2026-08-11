@@ -143,7 +143,7 @@ export const MarimoCommands = {
     CommandIds.updateCellMetadata,
     Invocation.withArguments(
       Invocation.NotebookCellStatusBar.notebookCell,
-      Schema.Tuple(CellMetadataBindingId),
+      Schema.Tuple([CellMetadataBindingId]),
       1,
     ),
   ),

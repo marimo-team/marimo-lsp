@@ -1,5 +1,14 @@
 import { expect, it } from "@effect/vitest";
-import { Deferred, Effect, Layer, Option, Queue, Ref, Stream } from "effect";
+import {
+  Deferred,
+  Effect,
+  Layer,
+  Option,
+  Queue,
+  Ref,
+  Schedule,
+  Stream,
+} from "effect";
 import type * as vscode from "vscode";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -12,7 +21,7 @@ import {
   watchForConfigurationChanges,
 } from "../ReloadOnConfigChange.ts";
 
-it.scoped(
+it.effect(
   "runs the restart command only when selected",
   Effect.fn(function* () {
     let acceptRestart = true;
@@ -21,7 +30,7 @@ it.scoped(
         showInformationMessage: (_message, options = {}) =>
           Effect.succeed(
             acceptRestart
-              ? Option.fromNullable(
+              ? Option.fromNullishOr(
                   options.items?.find((item) => item === "Restart Kernel"),
                 )
               : Option.none(),
@@ -44,7 +53,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "reloads after telemetry changes only when selected",
   Effect.fn(function* () {
     const prompted = yield* Queue.unbounded<void>();
@@ -62,7 +71,7 @@ it.scoped(
             "Changing telemetry requires reloading the window to take effect.",
           );
           const selection = acceptReload
-            ? Option.fromNullable(
+            ? Option.fromNullishOr(
                 options.items?.find((item) => item === "Reload Window"),
               )
             : Option.none<T>();
@@ -71,8 +80,10 @@ it.scoped(
         },
       },
       workspace: {
-        configurationChanges: () =>
-          Stream.make(configurationChange, configurationChange),
+        configurationChanges: Stream.make(
+          configurationChange,
+          configurationChange,
+        ),
       },
     });
     const services = Layer.merge(vscode.layer, makeTestNotebookRuntime());
@@ -90,7 +101,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.live(
   "prompts to reload after changing the language-server runtime",
   Effect.fn(function* () {
     const prompted = yield* Deferred.make<void>();
@@ -103,25 +114,37 @@ it.scoped(
           );
           return Ref.update(prompts, (count) => count + 1).pipe(
             Effect.andThen(Deferred.succeed(prompted, undefined)),
-            Effect.as(Option.fromNullable(options.items?.[0])),
+            Effect.as(Option.fromNullishOr(options.items?.[0])),
           );
         },
       },
       workspace: {
-        configurationChanges: () =>
-          Stream.make({
-            affectsConfiguration: (section: string) =>
-              ["marimo.lsp.server", "marimo.lsp.path"].includes(section),
-          }),
+        configurationChanges: Stream.make({
+          affectsConfiguration: (section: string) =>
+            ["marimo.lsp.server", "marimo.lsp.path"].includes(section),
+        }),
       },
     });
     const services = Layer.merge(vscode.layer, makeTestNotebookRuntime());
 
     yield* watchForConfigurationChanges().pipe(Effect.provide(services));
     yield* Deferred.await(prompted);
-    yield* Effect.yieldNow();
-
-    expect(yield* Ref.get(vscode.executions)).toContainEqual({
+    const executions = yield* Ref.get(vscode.executions).pipe(
+      Effect.filterOrFail(
+        (current) =>
+          current.some(
+            ({ command }) => command === "workbench.action.reloadWindow",
+          ),
+        () => "reload command not recorded" as const,
+      ),
+      Effect.retry(
+        Schedule.recurs(100).pipe(
+          Schedule.addDelay(() => Effect.succeed("10 millis")),
+        ),
+      ),
+      Effect.catch(() => Ref.get(vscode.executions)),
+    );
+    expect(executions).toContainEqual({
       command: "workbench.action.reloadWindow",
       args: [],
     });
@@ -129,7 +152,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "prompts when an affected inactive RuntimeSession becomes active",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor("/project/notebook.py");
@@ -159,14 +182,13 @@ it.scoped(
     };
     const vscode = yield* TestVsCode.make({
       window: {
-        getActiveNotebookEditor: () => Ref.get(activeEditor),
-        activeNotebookEditorChanges: () =>
-          Stream.fromEffect(
-            Effect.promise(() => resourceChecked).pipe(
-              Effect.andThen(Ref.set(activeEditor, Option.some(editor))),
-              Effect.as(Option.some(editor)),
-            ),
+        getActiveNotebookEditor: Ref.get(activeEditor),
+        activeNotebookEditorChanges: Stream.fromEffect(
+          Effect.promise(() => resourceChecked).pipe(
+            Effect.andThen(Ref.set(activeEditor, Option.some(editor))),
+            Effect.as(Option.some(editor)),
           ),
+        ),
         showInformationMessage: <T extends string>() =>
           Ref.update(prompts, (count) => count + 1).pipe(
             Effect.andThen(Deferred.succeed(prompted, undefined)),
@@ -174,7 +196,7 @@ it.scoped(
           ),
       },
       workspace: {
-        configurationChanges: () => Stream.make(configurationChange),
+        configurationChanges: Stream.make(configurationChange),
       },
     });
     const session = {

@@ -1,19 +1,10 @@
 import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
-import {
-  Brand,
-  Cause,
-  Effect,
-  Option,
-  Redacted,
-  Runtime,
-  Stream,
-} from "effect";
+import { Brand, Cause, Effect, Option, Redacted, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { unreachable } from "../assert.ts";
 import { Config } from "../config/Config.ts";
-import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../lib/extractExecuteCodeRequest.ts";
 import { extractPythonError } from "../lib/extractPythonError.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
@@ -29,6 +20,7 @@ import {
   type MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
+import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import { NotebookRuntime } from "./NotebookRuntime.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
@@ -47,7 +39,7 @@ export const createPythonController = Effect.fn("createPythonController")(
     const validator = yield* EnvironmentValidator;
     const serializer = yield* NotebookSerializer;
     const { LanguageId } = yield* Constants;
-    const runPromise = Runtime.runPromise(yield* Effect.runtime());
+    const runPromise = Effect.runPromiseWith(yield* Effect.context());
 
     yield* Effect.annotateCurrentSpan("controllerId", options.id);
     const controller = yield* code.notebooks.createNotebookController(
@@ -222,7 +214,7 @@ export const createPythonController = Effect.fn("createPythonController")(
       runPromise(
         Effect.gen(function* () {
           const notebook = MarimoNotebookDocument.from(rawNotebook);
-          yield* notebooks.forNotebook(notebook.id).interrupt();
+          yield* notebooks.forNotebook(notebook.id).interrupt;
         }).pipe(
           Effect.withSpan("PythonController.interrupt", {
             attributes: {
@@ -230,7 +222,7 @@ export const createPythonController = Effect.fn("createPythonController")(
               notebook: rawNotebook.uri.toString(),
             },
           }),
-          Effect.catchAllCause((cause) =>
+          Effect.catchCause((cause) =>
             Effect.gen(function* () {
               yield* Effect.logError("Failed to interrupt execution").pipe(
                 Effect.annotateLogs({ cause }),
@@ -243,7 +235,18 @@ export const createPythonController = Effect.fn("createPythonController")(
         ),
       );
 
-    return new PythonController(controller, options.env.path);
+    // VS Code restores a persisted controller selection as soon as the
+    // controller is registered, which can happen before any subscriber fiber
+    // runs. Attach the listener in the same fiber turn as creation so a
+    // restored selection buffers in the queue instead of firing unheard.
+    const selectedNotebookChanges =
+      yield* makeControllerSelectionChanges(controller);
+
+    return new PythonController(
+      controller,
+      options.env.path,
+      selectedNotebookChanges,
+    );
   },
 );
 
@@ -252,12 +255,26 @@ export class PythonController {
   #inner: Omit<vscode.NotebookController, "dispose">;
   /** The python interpreter this controller's environment runs on. */
   executable: string;
+  /**
+   * Selection events buffered from the moment the controller was created
+   * (see createPythonController). Backed by a queue, so a single consumer
+   * receives every event, including ones fired before it subscribed.
+   */
+  readonly selectedNotebookChanges: Stream.Stream<{
+    notebook: vscode.NotebookDocument;
+    selected: boolean;
+  }>;
   constructor(
     inner: Omit<vscode.NotebookController, "dispose">,
     executable: string,
+    selectedNotebookChanges: Stream.Stream<{
+      notebook: vscode.NotebookDocument;
+      selected: boolean;
+    }>,
   ) {
     this.#inner = inner;
     this.executable = executable;
+    this.selectedNotebookChanges = selectedNotebookChanges;
   }
   static getId(env: py.Environment) {
     return NotebookControllerId(`marimo-${env.path}`);
@@ -280,16 +297,6 @@ export class PythonController {
   }
   resolveExecutable(_notebook: MarimoNotebookDocument) {
     return Effect.succeed(this.executable);
-  }
-  selectedNotebookChanges() {
-    return Stream.asyncPush<{
-      notebook: vscode.NotebookDocument;
-      selected: boolean;
-    }>((emit) =>
-      acquireDisposable(() =>
-        this.#inner.onDidChangeSelectedNotebooks((e) => emit.single(e)),
-      ),
-    );
   }
   updateNotebookAffinity(
     notebook: vscode.NotebookDocument,

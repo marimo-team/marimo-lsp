@@ -1,7 +1,7 @@
 import * as NodeProcess from "node:process";
 
 import * as semver from "@std/semver";
-import { Effect, Option } from "effect";
+import { Context, Effect, Layer, Option } from "effect";
 
 import { Config, MarimoLspServer } from "../config/Config.ts";
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
@@ -24,11 +24,10 @@ import { Uv, UvBin } from "../python/Uv.ts";
 /**
  * Provides health check and diagnostic information for the marimo extension.
  */
-export class HealthService extends Effect.Service<HealthService>()(
+export class HealthService extends Context.Service<HealthService>()(
   "HealthService",
   {
-    dependencies: [Uv.Default],
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config;
@@ -99,12 +98,12 @@ export class HealthService extends Effect.Service<HealthService>()(
 
           // Python Language Server (ty) - only show if managed language features enabled
           const managedLanguageFeaturesEnabled =
-            yield* config.getManagedLanguageFeaturesEnabled();
+            yield* config.getManagedLanguageFeaturesEnabled;
 
           if (managedLanguageFeaturesEnabled) {
             lines.push("Python Language Server (ty):");
 
-            TyLanguageServerStatus.$match(yield* tyLsp.getHealthStatus(), {
+            TyLanguageServerStatus.$match(yield* tyLsp.getHealthStatus, {
               Disabled: ({ reason }) => {
                 lines.push("\tStatus: disabled");
                 lines.push(`\tReason: ${reason}`);
@@ -134,7 +133,7 @@ export class HealthService extends Effect.Service<HealthService>()(
 
             // Ruff Language Server
             lines.push("Ruff Language Server:");
-            RuffLanguageServerStatus.$match(yield* ruffLsp.getHealthStatus(), {
+            RuffLanguageServerStatus.$match(yield* ruffLsp.getHealthStatus, {
               Disabled: ({ reason }) => {
                 lines.push("\tStatus: disabled");
                 lines.push(`\tReason: ${reason}`);
@@ -162,13 +161,13 @@ export class HealthService extends Effect.Service<HealthService>()(
             `\tVersion: ${Option.getOrElse(extVersion, () => "unknown")} `,
           );
           lines.push(`\tUV integration disabled: ${uvDisabled} `);
-          const activeEditor = yield* code.window.getActiveNotebookEditor();
+          const activeEditor = yield* code.window.getActiveNotebookEditor;
           const configuredRoot = yield* config.notebookFileRoot(
             Option.isSome(activeEditor)
               ? activeEditor.value.notebook.uri
               : undefined,
           );
-          const runtimeSession = yield* notebooks.activeRuntimeSession();
+          const runtimeSession = yield* notebooks.activeRuntimeSession;
           lines.push(
             ...formatNotebookFileRootDiagnostics(
               configuredRoot,
@@ -245,7 +244,11 @@ export class HealthService extends Effect.Service<HealthService>()(
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(Uv.layer),
+  );
+}
 
 function formatBinarySource(source: BinarySource): string {
   return BinarySource.$match(source, {

@@ -1,6 +1,15 @@
 import * as NodePath from "node:path";
 
-import { type Cause, Data, Effect, Exit, Option, Ref } from "effect";
+import {
+  type Cause,
+  Context,
+  Data,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Ref,
+} from "effect";
 import type * as vscode from "vscode";
 
 import { Config } from "../config/Config.ts";
@@ -48,16 +57,10 @@ type RuffLanguageServerStatus = Data.TaggedEnum<{
  * Uses NotebookLspClient (custom Effect-based LSP client) instead of
  * vscode-languageclient, giving us full control over notebook cell ordering.
  */
-export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
+export class RuffLanguageServer extends Context.Service<RuffLanguageServer>()(
   "RuffLanguageServer",
   {
-    dependencies: [
-      Uv.Default,
-      Config.Default,
-      OutputChannel.Default,
-      VariablesService.Default,
-    ],
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const code = yield* VsCode;
       const telemetry = yield* Effect.serviceOption(Telemetry);
 
@@ -92,7 +95,7 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
 
           // Build initializationOptions from ruff.* settings
           const ruffConfig = yield* code.workspace.getConfiguration("ruff");
-          const workspaceFolders = yield* code.workspace.getWorkspaceFolders();
+          const workspaceFolders = yield* code.workspace.getWorkspaceFolders;
           const settings = Option.getOrElse(workspaceFolders, () => []).map(
             (folder) => getRuffSettings(ruffConfig, folder),
           );
@@ -160,11 +163,20 @@ export class RuffLanguageServer extends Effect.Service<RuffLanguageServer>()(
       );
 
       return {
-        getHealthStatus: () => Ref.get(statusRef),
+        getHealthStatus: Ref.get(statusRef),
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide([
+      Uv.layer,
+      Config.layer,
+      OutputChannel.layer,
+      VariablesService.layer,
+    ]),
+  );
+}
 
 /**
  * Resolves the ruff binary path using a 3-tier strategy:
@@ -182,7 +194,7 @@ const resolveRuffBinary = Effect.fn(function* () {
 
   const ruffExtConfiguredPath = Effect.gen(function* () {
     const ruffExtConfig = yield* code.workspace.getConfiguration("ruff");
-    return Option.fromNullable(ruffExtConfig.get<string>("path")).pipe(
+    return Option.fromNullishOr(ruffExtConfig.get<string>("path")).pipe(
       Option.filter((p) => p.length > 0),
     );
   });
@@ -311,7 +323,7 @@ const getRuffDisabledReason = Effect.fn(function* () {
   const config = yield* Config;
 
   const managedFeaturesEnabled =
-    yield* config.getManagedLanguageFeaturesEnabled();
+    yield* config.getManagedLanguageFeaturesEnabled;
 
   if (!managedFeaturesEnabled) {
     yield* Effect.logInfo(

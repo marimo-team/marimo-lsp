@@ -65,7 +65,7 @@ const withVsCode = Effect.gen(function* () {
 });
 
 describe("toVsCodeRange", () => {
-  it.scoped(
+  it.effect(
     "converts LSP range to VS Code range",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -90,7 +90,7 @@ describe("toVsCodeRange", () => {
 });
 
 describe("toHoverContent", () => {
-  it.scoped(
+  it.effect(
     "converts plain string",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -107,7 +107,7 @@ describe("toHoverContent", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts MarkupContent",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -127,7 +127,7 @@ describe("toHoverContent", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts MarkedString array",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -162,7 +162,7 @@ describe("toHoverContent", () => {
 });
 
 describe("toLocationResult", () => {
-  it.scoped(
+  it.effect(
     "returns undefined for null",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -170,7 +170,7 @@ describe("toLocationResult", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts single Location",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -205,7 +205,7 @@ describe("toLocationResult", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts Location array",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -270,7 +270,7 @@ describe("toLocationResult", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts LocationLink array",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -324,7 +324,7 @@ describe("toLocationResult", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "returns empty array for empty input",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -335,7 +335,7 @@ describe("toLocationResult", () => {
 });
 
 describe("toDocumentHighlight", () => {
-  it.scoped(
+  it.effect(
     "converts with kind",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -364,7 +364,7 @@ describe("toDocumentHighlight", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts without kind",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -399,7 +399,7 @@ describe("toDocumentHighlight", () => {
 // in sync.
 
 describe("toSymbolKind", () => {
-  it.scoped("maps every lsp.SymbolKind", () =>
+  it.effect("maps every lsp.SymbolKind", () =>
     Effect.sync(() => {
       const mapping = Object.fromEntries(
         numericEntries(lsp.SymbolKind).map(([name, value]) => [
@@ -442,7 +442,7 @@ describe("toSymbolKind", () => {
 });
 
 describe("toCompletionItemKind", () => {
-  it.scoped(
+  it.effect(
     "maps every lsp.CompletionItemKind",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -488,7 +488,7 @@ describe("toCompletionItemKind", () => {
 describe("toLspCompletionItemKind", () => {
   // Iterate the VS Code side so User/Issue (no LSP equivalent) show up as
   // explicit rows collapsed to Text.
-  it.scoped(
+  it.effect(
     "maps every vscode.CompletionItemKind (User/Issue → Text)",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -534,7 +534,7 @@ describe("toLspCompletionItemKind", () => {
 });
 
 describe("toVsCodeDiagnosticSeverity", () => {
-  it.scoped(
+  it.effect(
     "maps every lsp.DiagnosticSeverity",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -557,7 +557,7 @@ describe("toVsCodeDiagnosticSeverity", () => {
 });
 
 describe("toLspDiagnosticSeverity", () => {
-  it.scoped(
+  it.effect(
     "maps every vscode.DiagnosticSeverity",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -580,7 +580,7 @@ describe("toLspDiagnosticSeverity", () => {
 });
 
 describe("toDocumentHighlightKind", () => {
-  it.scoped("maps every lsp.DocumentHighlightKind", () =>
+  it.effect("maps every lsp.DocumentHighlightKind", () =>
     Effect.sync(() => {
       const mapping = Object.fromEntries(
         numericEntries(lsp.DocumentHighlightKind).map(([name, value]) => [
@@ -602,7 +602,7 @@ describe("toDocumentHighlightKind", () => {
 describe("toLspFoldingRangeKind", () => {
   // LSP FoldingRangeKind is a string namespace, extensible by servers.
   // Iterate the known values plus one unknown to lock in the undefined fallback.
-  it.scoped("maps every lsp.FoldingRangeKind plus an unknown fallback", () =>
+  it.effect("maps every lsp.FoldingRangeKind plus an unknown fallback", () =>
     Effect.sync(() => {
       const mapping: Record<string, unknown> = {};
       for (const [name, value] of stringEntries(lsp.FoldingRangeKind)) {
@@ -622,7 +622,7 @@ describe("toLspFoldingRangeKind", () => {
 });
 
 describe("toLspCompletionTriggerKind", () => {
-  it.scoped(
+  it.effect(
     "maps every vscode.CompletionTriggerKind",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -644,7 +644,7 @@ describe("toLspCompletionTriggerKind", () => {
 });
 
 describe("toLspCodeActionTriggerKind", () => {
-  it.scoped(
+  it.effect(
     "maps every vscode.CodeActionTriggerKind",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -665,7 +665,7 @@ describe("toLspCodeActionTriggerKind", () => {
 });
 
 describe("toDocumentSymbol", () => {
-  it.scoped(
+  it.effect(
     "converts with children",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -759,7 +759,7 @@ describe("toDocumentSymbol", () => {
 });
 
 describe("toFoldingRange", () => {
-  it.scoped(
+  it.effect(
     "converts with kind",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -780,7 +780,7 @@ describe("toFoldingRange", () => {
 });
 
 describe("toSelectionRange", () => {
-  it.scoped(
+  it.effect(
     "converts nested selection ranges",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -828,7 +828,7 @@ describe("toSelectionRange", () => {
 });
 
 describe("toTextEdit", () => {
-  it.scoped(
+  it.effect(
     "converts LSP TextEdit",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -860,7 +860,7 @@ describe("toTextEdit", () => {
 });
 
 describe("toSignatureHelp", () => {
-  it.scoped(
+  it.effect(
     "converts with signatures and parameters",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -925,7 +925,7 @@ describe("toSignatureHelp", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "defaults activeParameter to 0 when undefined",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -940,7 +940,7 @@ describe("toSignatureHelp", () => {
   // The LSP protocol allows null for activeParameter (meaning "no active
   // parameter") even though our TypeScript types don't model it. Servers
   // can send this at runtime.
-  it.scoped(
+  it.effect(
     "maps null activeParameter to -1",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -955,7 +955,7 @@ describe("toSignatureHelp", () => {
 });
 
 describe("toInlayHint", () => {
-  it.scoped(
+  it.effect(
     "converts string label",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -982,7 +982,7 @@ describe("toInlayHint", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts label parts with location",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1043,7 +1043,7 @@ describe("toInlayHint", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "stashes data for resolve round-trip",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1059,7 +1059,7 @@ describe("toInlayHint", () => {
 });
 
 describe("toCompletionItem", () => {
-  it.scoped(
+  it.effect(
     "converts basic item with kind offset",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1100,7 +1100,7 @@ describe("toCompletionItem", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts item with textEdit",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1120,7 +1120,7 @@ describe("toCompletionItem", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts snippet insertTextFormat",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1140,7 +1140,7 @@ describe("toCompletionItem", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts labelDetails",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1162,7 +1162,7 @@ describe("toCompletionItem", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts deprecated tag",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1180,7 +1180,7 @@ describe("toCompletionItem", () => {
 });
 
 describe("toCodeActionKind", () => {
-  it.scoped(
+  it.effect(
     "builds from dotted string",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1189,7 +1189,7 @@ describe("toCodeActionKind", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "builds simple kind",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1200,7 +1200,7 @@ describe("toCodeActionKind", () => {
 });
 
 describe("toCodeAction", () => {
-  it.scoped(
+  it.effect(
     "converts basic code action",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1224,7 +1224,7 @@ describe("toCodeAction", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts with edit and diagnostics",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1292,7 +1292,7 @@ describe("toCodeAction", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     // LSP 3.18 widened Diagnostic.message to `string | MarkupContent`; we
     // normalize to the plain string for VS Code's Diagnostic constructor.
     "normalizes a MarkupContent diagnostic message to plain text",
@@ -1320,7 +1320,7 @@ describe("toCodeAction", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts disabled action",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1337,7 +1337,7 @@ describe("toCodeAction", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "stashes data for resolve",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1356,7 +1356,7 @@ describe("toCodeAction", () => {
 // ---------------------------------------------------------------------------
 
 describe("toLspPosition", () => {
-  it.scoped(
+  it.effect(
     "extracts line and character",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1371,7 +1371,7 @@ describe("toLspPosition", () => {
 });
 
 describe("toLspRange", () => {
-  it.scoped(
+  it.effect(
     "extracts start and end",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1392,7 +1392,7 @@ describe("toLspRange", () => {
 });
 
 describe("toLocation", () => {
-  it.scoped(
+  it.effect(
     "parses uri and converts range",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1429,7 +1429,7 @@ describe("toLocation", () => {
 });
 
 describe("toLocationLink", () => {
-  it.scoped(
+  it.effect(
     "converts with originSelectionRange",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1492,7 +1492,7 @@ describe("toLocationLink", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "omits originSelectionRange when absent",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1544,7 +1544,7 @@ describe("toLocationLink", () => {
 });
 
 describe("toDocumentPositionParams", () => {
-  it.scoped(
+  it.effect(
     "serializes uri and position",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1570,7 +1570,7 @@ describe("toDocumentPositionParams", () => {
 // ---------------------------------------------------------------------------
 
 describe("toDocumentation", () => {
-  it.scoped(
+  it.effect(
     "returns undefined for undefined",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1578,7 +1578,7 @@ describe("toDocumentation", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "passes through strings unchanged",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1586,7 +1586,7 @@ describe("toDocumentation", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "wraps MarkupContent in MarkdownString",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1608,7 +1608,7 @@ describe("toDocumentation", () => {
 });
 
 describe("toTooltip", () => {
-  it.scoped(
+  it.effect(
     "passes through strings",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1616,7 +1616,7 @@ describe("toTooltip", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "wraps MarkupContent",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1638,7 +1638,7 @@ describe("toTooltip", () => {
 });
 
 describe("toWorkspaceEdit", () => {
-  it.scoped(
+  it.effect(
     "converts changes map",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1659,7 +1659,7 @@ describe("toWorkspaceEdit", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts documentChanges with textDocument",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1685,7 +1685,7 @@ describe("toWorkspaceEdit", () => {
 });
 
 describe("toLspDiagnostic", () => {
-  it.scoped(
+  it.effect(
     "maps scalar string code, severity, source",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1717,7 +1717,7 @@ describe("toLspDiagnostic", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "maps numeric code",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1748,7 +1748,7 @@ describe("toLspDiagnostic", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "unwraps object code via .value",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1781,7 +1781,7 @@ describe("toLspDiagnostic", () => {
 });
 
 describe("toLspCodeActionContext", () => {
-  it.scoped(
+  it.effect(
     "maps trigger kind, diagnostics, and single `only` kind",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1825,7 +1825,7 @@ describe("toLspCodeActionContext", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "omits `only` when absent",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1849,7 +1849,7 @@ describe("toLspCodeActionContext", () => {
 // ---------------------------------------------------------------------------
 
 describe("toFoldingRange without kind", () => {
-  it.scoped(
+  it.effect(
     "leaves kind undefined",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1866,7 +1866,7 @@ describe("toFoldingRange without kind", () => {
 });
 
 describe("toSelectionRange leaf", () => {
-  it.scoped(
+  it.effect(
     "converts range without parent",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1896,7 +1896,7 @@ describe("toSelectionRange leaf", () => {
 });
 
 describe("toCompletionItem additional branches", () => {
-  it.scoped(
+  it.effect(
     "converts InsertReplaceEdit textEdit into insert/replace range",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -1957,7 +1957,7 @@ describe("toCompletionItem additional branches", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "maps additionalTextEdits, commitCharacters, filterText, sortText, preselect, command",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -2025,7 +2025,7 @@ describe("toCompletionItem additional branches", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "maps legacy deprecated boolean to Deprecated tag",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -2043,7 +2043,7 @@ describe("toCompletionItem additional branches", () => {
 });
 
 describe("toInlayHint additional branches", () => {
-  it.scoped(
+  it.effect(
     "maps tooltip, paddingRight, label part command",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -2097,7 +2097,7 @@ describe("toInlayHint additional branches", () => {
 });
 
 describe("toCodeAction additional branches", () => {
-  it.scoped(
+  it.effect(
     "maps command and passes through scalar diagnostic code",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -2162,7 +2162,7 @@ describe("toCodeAction additional branches", () => {
 // ---------------------------------------------------------------------------
 
 describe("inlay hint round-trip", () => {
-  it.scoped(
+  it.effect(
     "preserves data and core fields",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -2195,7 +2195,7 @@ describe("inlay hint round-trip", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "round-trips label parts with command",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -2235,7 +2235,7 @@ describe("inlay hint round-trip", () => {
 });
 
 describe("completion item round-trip", () => {
-  it.scoped(
+  it.effect(
     "preserves data and flattens labelDetails/markdown docs",
     Effect.fn(function* () {
       const code = yield* withVsCode;
@@ -2276,7 +2276,7 @@ describe("completion item round-trip", () => {
 });
 
 describe("code action round-trip", () => {
-  it.scoped(
+  it.effect(
     "preserves data, kind, command, diagnostics, isPreferred, disabled",
     Effect.fn(function* () {
       const code = yield* withVsCode;

@@ -59,61 +59,52 @@ export class TestPythonExtension extends Data.TaggedClass(
     });
 
     return new TestPythonExtension({
-      layer: Layer.succeed(
-        PythonExtension,
-        PythonExtension.make({
-          updateActiveEnvironmentPath(executable: string) {
-            return Effect.gen(function* () {
-              const envPath: py.EnvironmentPath = {
-                id: executable,
-                path: executable,
-              };
-              yield* Ref.set(activeEnv, envPath);
-              yield* activePathPubsub.publish({
-                ...envPath,
-                resource: undefined,
-              });
+      layer: Layer.succeed(PythonExtension, {
+        updateActiveEnvironmentPath(executable: string) {
+          return Effect.gen(function* () {
+            const envPath: py.EnvironmentPath = {
+              id: executable,
+              path: executable,
+            };
+            yield* Ref.set(activeEnv, envPath);
+            yield* PubSub.publish(activePathPubsub, {
+              ...envPath,
+              resource: undefined,
             });
-          },
-          knownEnvironments() {
-            return Effect.map(Ref.get(known), (set) => HashSet.toValues(set));
-          },
-          environmentChanges() {
-            return Stream.fromPubSub(pubsub);
-          },
-          activeEnvironmentPathChanges() {
-            return Stream.fromPubSub(activePathPubsub);
-          },
-          getActiveEnvironmentPath(_resource?: py.Resource) {
-            return Ref.get(activeEnv);
-          },
-          resolveEnvironment(path: string | py.EnvironmentPath) {
-            return Effect.gen(function* () {
-              const pathStr = typeof path === "string" ? path : path.path;
-              const knownSet = yield* Ref.get(known);
-              return Option.fromNullable(
-                Array.from(knownSet).find((e) => e.path === pathStr),
-              );
-            });
-          },
-        }),
-      ),
+          });
+        },
+        knownEnvironments: Effect.map(Ref.get(known), (set) => Array.from(set)),
+        environmentChanges: Stream.fromPubSub(pubsub),
+        activeEnvironmentPathChanges: Stream.fromPubSub(activePathPubsub),
+        getActiveEnvironmentPath(_resource?: py.Resource) {
+          return Ref.get(activeEnv);
+        },
+        resolveEnvironment(path: string | py.EnvironmentPath) {
+          return Effect.gen(function* () {
+            const pathStr = typeof path === "string" ? path : path.path;
+            const knownSet = yield* Ref.get(known);
+            return Option.fromNullishOr(
+              Array.from(knownSet).find((e) => e.path === pathStr),
+            );
+          });
+        },
+      }),
       addEnvironment: (env) =>
         Effect.gen(function* () {
           yield* Ref.update(known, HashSet.add(env));
-          yield* pubsub.publish({ type: "add", env });
+          yield* PubSub.publish(pubsub, { type: "add", env });
         }),
       removeEnvironment: (env) =>
         Effect.gen(function* () {
           yield* Ref.update(known, HashSet.remove(env));
-          yield* pubsub.publish({ type: "remove", env });
+          yield* PubSub.publish(pubsub, { type: "remove", env });
         }),
     });
   });
 
-  static Default = TestPythonExtension.make([]).pipe(
+  static layer = TestPythonExtension.make([]).pipe(
     Effect.map((py) => py.layer),
     Effect.scoped,
-    Layer.unwrapEffect,
+    Layer.unwrap,
   );
 }

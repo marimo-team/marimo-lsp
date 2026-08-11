@@ -3,7 +3,17 @@ import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
-import { Cause, Data, Effect, PubSub, Redacted, Runtime, Stream } from "effect";
+import {
+  Cause,
+  Context,
+  Data,
+  Effect,
+  Layer,
+  PubSub,
+  Queue,
+  Redacted,
+  Stream,
+} from "effect";
 import * as lsp from "vscode-languageclient/node";
 
 import { Config, MarimoLspServer } from "../config/Config.ts";
@@ -66,14 +76,14 @@ export class MarimoCommandError extends Data.TaggedError("MarimoCommandError")<{
  */
 interface MarimoTransport<Error = never> {
   readonly execute: (request: MarimoApiCall) => Effect.Effect<unknown, Error>;
-  readonly operations: () => Stream.Stream<MarimoOperation>;
-  readonly sessionChanges?: () => Stream.Stream<MarimoSessionsChanged>;
+  readonly operations: Stream.Stream<MarimoOperation>;
+  readonly sessionChanges?: Stream.Stream<MarimoSessionsChanged>;
 }
 
 export function makeMarimoCommands<Error>(transport: MarimoTransport<Error>) {
   return {
     operations: transport.operations,
-    sessionChanges: transport.sessionChanges ?? (() => Stream.never),
+    sessionChanges: transport.sessionChanges ?? Stream.never,
     ...Api.makeApiClient(transport.execute),
   };
 }
@@ -84,18 +94,18 @@ export const makeMarimoOperationStream = Effect.fn(function* (
   },
 ) {
   const operationPubSub = yield* PubSub.unbounded<MarimoOperation>();
-  const runSync = Runtime.runSync(yield* Effect.runtime());
+  const runSync = Effect.runSyncWith(yield* Effect.context());
   yield* Effect.addFinalizer(() => PubSub.shutdown(operationPubSub));
 
   // vscode-languageclient stores one notification handler per method, so
-  // register once and fan out to every operations() consumer.
+  // register once and fan out to every `operations` consumer.
   yield* acquireDisposable(() =>
     register((message) => {
       runSync(PubSub.publish(operationPubSub, message));
     }),
   );
 
-  return () => Stream.fromPubSub(operationPubSub);
+  return Stream.fromPubSub(operationPubSub);
 });
 
 /**
@@ -104,11 +114,10 @@ export const makeMarimoOperationStream = Effect.fn(function* (
  * This module owns the marimo-lsp process, LSP transport, named commands,
  * and operation stream.
  */
-export class MarimoClient extends Effect.Service<MarimoClient>()(
+export class MarimoClient extends Context.Service<MarimoClient>()(
   "MarimoClient",
   {
-    dependencies: [Config.Default, Uv.Default],
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const code = yield* VsCode;
       const config = yield* Config;
       const telemetry = yield* Telemetry;
@@ -271,41 +280,40 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
         }),
       );
 
-      const restart = () =>
-        code.window.withProgress(
-          {
-            location: code.ProgressLocation.Notification,
-            title: "Restarting marimo-lsp",
-            cancellable: true,
-          },
-          Effect.fn(function* (progress) {
-            if (client.isRunning()) {
-              progress.report({ message: "Stopping..." });
-              yield* stopClient();
-            }
-            progress.report({ message: "Starting..." });
-            yield* startClient().pipe(
-              Effect.tap(() =>
-                Effect.sync(() => progress.report({ message: "Done." })),
-              ),
-              Effect.catchTag(
-                "MarimoClientStartError",
-                Effect.fn(function* (error) {
-                  const message = "Failed to restart marimo-lsp.";
-                  yield* Effect.logError(message).pipe(
-                    Effect.annotateLogs({
-                      cause: Cause.fail(error),
-                      "lsp.mode": mode,
-                    }),
-                  );
-                  yield* showErrorAndPromptLogs(message, {
-                    channel: outputChannel,
-                  });
-                }),
-              ),
-            );
-          }),
-        );
+      const restart = code.window.withProgress(
+        {
+          location: code.ProgressLocation.Notification,
+          title: "Restarting marimo-lsp",
+          cancellable: true,
+        },
+        Effect.fn(function* (progress) {
+          if (client.isRunning()) {
+            progress.report({ message: "Stopping..." });
+            yield* stopClient();
+          }
+          progress.report({ message: "Starting..." });
+          yield* startClient().pipe(
+            Effect.tap(() =>
+              Effect.sync(() => progress.report({ message: "Done." })),
+            ),
+            Effect.catchTag(
+              "MarimoClientStartError",
+              Effect.fn(function* (error) {
+                const message = "Failed to restart marimo-lsp.";
+                yield* Effect.logError(message).pipe(
+                  Effect.annotateLogs({
+                    cause: Cause.fail(error),
+                    "lsp.mode": mode,
+                  }),
+                );
+                yield* showErrorAndPromptLogs(message, {
+                  channel: outputChannel,
+                });
+              }),
+            ),
+          );
+        }),
+      );
 
       const transport: MarimoTransport<
         MarimoClientStartError | MarimoCommandError
@@ -341,14 +349,13 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
           );
         }),
         operations,
-        sessionChanges: () =>
-          Stream.asyncPush<MarimoSessionsChanged>((emit) =>
-            acquireDisposable(() =>
-              client.onNotification("marimo/sessionsChanged", (message) => {
-                emit.single(message);
-              }),
-            ),
+        sessionChanges: Stream.callback<MarimoSessionsChanged>((queue) =>
+          acquireDisposable(() =>
+            client.onNotification("marimo/sessionsChanged", (message) => {
+              Queue.offerUnsafe(queue, message);
+            }),
           ),
+        ),
       };
 
       return {
@@ -362,7 +369,11 @@ export class MarimoClient extends Effect.Service<MarimoClient>()(
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide([Config.layer, Uv.layer]),
+  );
+}
 
 function marimoLspMode(selection: MarimoLspExecutable): MarimoLspMode {
   return MarimoLspExecutable.$match(selection, {

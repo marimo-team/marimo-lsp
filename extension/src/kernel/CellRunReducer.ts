@@ -93,7 +93,7 @@ export function parseOp(
 ): Option.Option<Op> {
   switch (msg.status) {
     case "queued": {
-      const runId = Option.fromNullable(msg.run_id).pipe(Option.map(RunId));
+      const runId = Option.fromNullishOr(msg.run_id).pipe(Option.map(RunId));
       return Option.map(runId, (id) => Op.Queue({ runId: id, next }));
     }
     case "running":

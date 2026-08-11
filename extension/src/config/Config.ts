@@ -1,14 +1,16 @@
-import { Data, Effect, Option, Schema } from "effect";
+import { Context, Data, Effect, Layer, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 
 import { DEFAULT_NOTEBOOK_FILE_ROOT } from "../kernel/NotebookFileRoot.ts";
 import { VsCode } from "../platform/VsCode.ts";
 
-const MarimoLspServerSetting = Schema.Literal("wasm", "python", "custom");
-const MarimoLspCommand = Schema.NonEmptyArray(Schema.String).pipe(
-  Schema.filter(([command]) => command.trim().length > 0, {
-    message: () => "The marimo-lsp command must not be empty",
-  }),
+const MarimoLspServerSetting = Schema.Literals(["wasm", "python", "custom"]);
+const MarimoLspCommand = Schema.NonEmptyArray(Schema.String).check(
+  Schema.makeFilter(([command]) =>
+    command.trim().length > 0
+      ? undefined
+      : "The marimo-lsp command must not be empty",
+  ),
 );
 
 export type MarimoLspCommand = typeof MarimoLspCommand.Type;
@@ -29,7 +31,7 @@ export class InvalidMarimoLspConfiguration extends Data.TaggedError(
 }> {}
 
 const decodeServerSetting = (value: unknown) =>
-  Schema.decodeUnknown(MarimoLspServerSetting)(value).pipe(
+  Schema.decodeUnknownEffect(MarimoLspServerSetting)(value).pipe(
     Effect.mapError(
       (cause) =>
         new InvalidMarimoLspConfiguration({
@@ -42,7 +44,7 @@ const decodeServerSetting = (value: unknown) =>
   );
 
 const decodeCommand = (value: unknown) =>
-  Schema.decodeUnknown(MarimoLspCommand)(value).pipe(
+  Schema.decodeUnknownEffect(MarimoLspCommand)(value).pipe(
     Effect.mapError(
       (cause) =>
         new InvalidMarimoLspConfiguration({
@@ -102,14 +104,14 @@ interface ConfigService {
   readonly notebookFileRoot: (
     scope?: vscode.ConfigurationScope,
   ) => Effect.Effect<string>;
-  readonly getManagedLanguageFeaturesEnabled: () => Effect.Effect<boolean>;
+  readonly getManagedLanguageFeaturesEnabled: Effect.Effect<boolean>;
 }
 
 /**
  * Provides access to the extension configuration settings.
  */
-export class Config extends Effect.Service<Config>()("Config", {
-  effect: Effect.gen(function* () {
+export class Config extends Context.Service<Config>()("Config", {
+  make: Effect.gen(function* () {
     const code = yield* Effect.serviceOption(VsCode);
 
     if (Option.isNone(code)) {
@@ -133,9 +135,7 @@ export class Config extends Effect.Service<Config>()("Config", {
         notebookFileRoot() {
           return Effect.succeed(DEFAULT_NOTEBOOK_FILE_ROOT);
         },
-        getManagedLanguageFeaturesEnabled() {
-          return Effect.succeed(false);
-        },
+        getManagedLanguageFeaturesEnabled: Effect.succeed(false),
       };
       return defaults;
     }
@@ -146,13 +146,13 @@ export class Config extends Effect.Service<Config>()("Config", {
           return Effect.map(
             code.value.workspace.getConfiguration("marimo.uv"),
             (config) =>
-              Option.fromNullable(config.get<string>("path")).pipe(
+              Option.fromNullishOr(config.get<string>("path")).pipe(
                 Option.filter((p) => p.length > 0),
               ),
           );
         },
         get enabled() {
-          return Effect.andThen(
+          return Effect.map(
             code.value.workspace.getConfiguration("marimo"),
             (config) => !config.get("disableUvIntegration", false),
           );
@@ -163,7 +163,7 @@ export class Config extends Effect.Service<Config>()("Config", {
           return Effect.map(
             code.value.workspace.getConfiguration("marimo.ruff"),
             (config) =>
-              Option.fromNullable(config.get<string>("path")).pipe(
+              Option.fromNullishOr(config.get<string>("path")).pipe(
                 Option.filter((p) => p.length > 0),
               ),
           );
@@ -174,7 +174,7 @@ export class Config extends Effect.Service<Config>()("Config", {
           return Effect.map(
             code.value.workspace.getConfiguration("marimo.ty"),
             (config) =>
-              Option.fromNullable(config.get<string>("path")).pipe(
+              Option.fromNullishOr(config.get<string>("path")).pipe(
                 Option.filter((p) => p.length > 0),
               ),
           );
@@ -200,8 +200,10 @@ export class Config extends Effect.Service<Config>()("Config", {
             DEFAULT_NOTEBOOK_FILE_ROOT,
         );
       },
-      getManagedLanguageFeaturesEnabled() {
-        return Effect.andThen(
+      // This is a getter and not a plain property. getConfiguration makes a
+      // snapshot of the config. Read it again at each access to see a change.
+      get getManagedLanguageFeaturesEnabled() {
+        return Effect.map(
           code.value.workspace.getConfiguration("marimo"),
           (config) => !config.get("disableManagedLanguageFeatures", false),
         );
@@ -209,4 +211,6 @@ export class Config extends Effect.Service<Config>()("Config", {
     };
     return configured;
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}

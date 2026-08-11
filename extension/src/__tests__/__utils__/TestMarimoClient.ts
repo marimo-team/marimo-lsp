@@ -1,9 +1,10 @@
 import {
+  type Context,
   Effect,
   Layer,
   Option,
-  type ParseResult,
   PubSub,
+  type Schema,
   Stream,
 } from "effect";
 
@@ -27,9 +28,9 @@ import type {
 interface Options {
   readonly execute?: (
     request: MarimoApiCall,
-  ) => Effect.Effect<unknown, ParseResult.ParseError>;
-  readonly operations?: () => Stream.Stream<MarimoOperation>;
-  readonly sessionChanges?: () => Stream.Stream<MarimoSessionsChanged>;
+  ) => Effect.Effect<unknown, Schema.SchemaError>;
+  readonly operations?: Stream.Stream<MarimoOperation>;
+  readonly sessionChanges?: Stream.Stream<MarimoSessionsChanged>;
   readonly initialControllers?: ReadonlyArray<NotebookControllerSelection>;
   readonly runtimeSession?: RuntimeSession;
   readonly runtimeSessions?: ReadonlyArray<RuntimeSessionEntry>;
@@ -43,7 +44,7 @@ export function makeTestNotebookRuntime(options: Options = {}) {
   const client = makeTestMarimoClientValue(options);
   return Layer.merge(
     Layer.succeed(MarimoClient, client),
-    Layer.scoped(
+    Layer.effect(
       NotebookRuntime,
       Effect.gen(function* () {
         const handles = new Map<NotebookId, NotebookHandle>();
@@ -62,10 +63,9 @@ export function makeTestNotebookRuntime(options: Options = {}) {
           if (existing !== undefined) return existing;
           const handle: NotebookHandle = {
             id: notebookId,
-            getController: () =>
-              Effect.sync(() =>
-                Option.fromNullable(controllers.get(notebookId)),
-              ),
+            getController: Effect.sync(() =>
+              Option.fromNullishOr(controllers.get(notebookId)),
+            ),
             executeCells: (inner, executable) =>
               client.executeCells({
                 notebookUri: notebookId,
@@ -85,16 +85,14 @@ export function makeTestNotebookRuntime(options: Options = {}) {
               client.deleteCell({ notebookUri: notebookId, inner }),
             sendStdin: (inner) =>
               client.sendStdin({ notebookUri: notebookId, inner }),
-            interrupt: () =>
-              client.interrupt({ notebookUri: notebookId, inner: {} }),
-            close: () =>
-              client.closeSession({ notebookUri: notebookId, inner: {} }),
+            interrupt: client.interrupt({ notebookUri: notebookId, inner: {} }),
+            close: client.closeSession({ notebookUri: notebookId, inner: {} }),
           };
           handles.set(notebookId, handle);
           return handle;
         };
 
-        return NotebookRuntime.make({
+        const runtime: Context.Service.Shape<typeof NotebookRuntime> = {
           attachController: (notebookId, controller) =>
             Effect.gen(function* () {
               controllers.set(notebookId, controller);
@@ -103,29 +101,34 @@ export function makeTestNotebookRuntime(options: Options = {}) {
                 controller,
               });
             }),
-          controllerChanges: () => Stream.fromPubSub(selections),
+          controllerChanges: Stream.fromPubSub(selections),
           getRuntimeSession: () =>
-            Effect.succeed(Option.fromNullable(options.runtimeSession)),
-          getRuntimeSessions: () =>
-            Effect.succeed([...(options.runtimeSessions ?? [])]),
-          activeRuntimeSession: () =>
-            Effect.succeed(Option.fromNullable(options.runtimeSession)),
+            Effect.succeed(Option.fromNullishOr(options.runtimeSession)),
+          getRuntimeSessions: Effect.succeed([
+            ...(options.runtimeSessions ?? []),
+          ]),
+          activeRuntimeSession: Effect.succeed(
+            Option.fromNullishOr(options.runtimeSession),
+          ),
           forNotebook,
-        });
+        };
+        return runtime;
       }),
     ),
   );
 }
 
-function makeTestMarimoClientValue(options: Options) {
-  return MarimoClient.make({
+function makeTestMarimoClientValue(
+  options: Options,
+): Context.Service.Shape<typeof MarimoClient> {
+  return {
     server: MarimoLspServer.Python(),
     channel: { name: "marimo-lsp-test", show() {} },
-    restart: () => Effect.void,
+    restart: Effect.void,
     ...makeMarimoCommands({
       execute: options.execute ?? (() => Effect.succeed(null)),
-      operations: options.operations ?? (() => Stream.never),
-      sessionChanges: options.sessionChanges ?? (() => Stream.never),
+      operations: options.operations ?? Stream.never,
+      sessionChanges: options.sessionChanges ?? Stream.never,
     }),
-  });
+  };
 }

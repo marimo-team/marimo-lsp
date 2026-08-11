@@ -96,7 +96,7 @@ export const configureAutoExport = Effect.fn("command.configureAutoExport")(
     const saved = yield* notebook.value
       .save()
       .pipe(
-        Effect.catchAllCause((cause) =>
+        Effect.catchCause((cause) =>
           Effect.logError("Failed to save automatic export settings").pipe(
             Effect.annotateLogs({ cause, notebook: notebook.value.id }),
             Effect.as(false),

@@ -1,7 +1,7 @@
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
-import { Cause, Effect, Either, Option } from "effect";
+import { Cause, Effect, Option, Result } from "effect";
 
 import { defineCommand } from "../commands.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
@@ -42,7 +42,7 @@ const openTutorial = Effect.fn("command.openTutorial")(function* () {
   const bytes = yield* code.workspace.fs.readFile(
     code.Uri.joinPath(context.extensionUri, "tutorials", filename),
   );
-  const result = yield* Effect.either(
+  const result = yield* Effect.result(
     Effect.gen(function* () {
       const tempFilePath = NodePath.join(
         NodeOs.tmpdir(),
@@ -58,10 +58,10 @@ const openTutorial = Effect.fn("command.openTutorial")(function* () {
     }),
   );
 
-  if (Either.isLeft(result)) {
+  if (Result.isFailure(result)) {
     yield* Effect.logWarning(
       "Failed to create temp file, opening as untitled",
-    ).pipe(Effect.annotateLogs({ tutorial: filename, error: result.left }));
+    ).pipe(Effect.annotateLogs({ tutorial: filename, error: result.failure }));
     const notebookData = yield* serializer.deserializeEffect(bytes);
     const notebook = yield* code.workspace.openUntitledNotebookDocument(
       serializer.notebookType,
@@ -77,7 +77,7 @@ const openTutorial = Effect.fn("command.openTutorial")(function* () {
 
 const handler = () =>
   openTutorial().pipe(
-    Effect.catchAll(
+    Effect.catch(
       Effect.fn(function* (error) {
         const code = yield* VsCode;
         yield* Effect.logError("Failed to open tutorial").pipe(

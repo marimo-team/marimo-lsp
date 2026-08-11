@@ -21,8 +21,8 @@ import type * as Api from "../../schemas/Models.gen.ts";
 
 const withTestCtx = Effect.gen(function* () {
   const vscode = yield* TestVsCode.make();
-  const layer = CellMetadataUIBindingService.Default.pipe(
-    Layer.provideMerge(Constants.Default),
+  const layer = CellMetadataUIBindingService.layer.pipe(
+    Layer.provideMerge(Constants.layer),
     Layer.provide(vscode.layer),
   );
   return { vscode, layer };
@@ -76,7 +76,7 @@ it.effect("should register a binding and create status bar provider", () =>
   ),
 );
 
-it.scoped(
+it.effect(
   "should show status bar item based on shouldShow predicate",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx;

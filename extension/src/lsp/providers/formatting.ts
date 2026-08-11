@@ -13,14 +13,17 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import { VsCode } from "../../platform/VsCode.ts";
 import type { NotebookLspClient } from "../client.ts";
-import { toLspRange, toTextEdit } from "../converters.ts";
+import { toLspRange, toTextEdit, type VsCodeService } from "../converters.ts";
 
 /**
  * Read file-level formatting options from workspace config.
  *
  * Reference: formatting.ts FileFormattingOptions.fromConfiguration
  */
-function getFileFormattingOptions(code: VsCode, doc: vscode.TextDocument) {
+function getFileFormattingOptions(
+  code: VsCodeService,
+  doc: vscode.TextDocument,
+) {
   return Effect.map(code.workspace.getConfiguration("files", doc), (cfg) => ({
     trimTrailingWhitespace:
       cfg.get<boolean>("trimTrailingWhitespace") || undefined,

@@ -1,13 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  Deferred,
-  Effect,
-  Fiber,
-  Layer,
-  Option,
-  Stream,
-  TestClock,
-} from "effect";
+import { Deferred, Effect, Fiber, Layer, Option, Stream } from "effect";
+import { TestClock } from "effect/testing";
 
 import {
   createTestNotebookDocument,
@@ -40,42 +33,42 @@ const makeContext = Effect.fn(function* (options: {
   const recorded: ExecutedCommand[] = [];
 
   const runtime = makeTestNotebookRuntime({
-    execute(request) {
-      recorded.push({ command: "marimo.api", params: request });
-      return (
-        options.treeEffect ??
-        Effect.succeed(options.treeResponse ?? { tree: null })
-      );
-    },
+    // Record inside Effect.suspend so only commands that actually run are
+    // captured — client effects are now built eagerly (e.g. a notebook
+    // handle's `interrupt`/`close` properties) but executed lazily.
+    execute: (request) =>
+      Effect.suspend(() => {
+        recorded.push({ command: "marimo.api", params: request });
+        return (
+          options.treeEffect ??
+          Effect.succeed(options.treeResponse ?? { tree: null })
+        );
+      }),
     initialControllers: Option.match(options.controller, {
       onNone: () => [],
       onSome: (controller) => [{ notebookUri: NOTEBOOK_URI, controller }],
     }),
   });
 
-  const editorMock = Layer.succeed(
-    NotebookEditorRegistry,
-    NotebookEditorRegistry.make({
-      getNotebookEditors: () => Effect.succeed([]),
-      getLastNotebookEditor: () => Effect.succeed(Option.none()),
-      getActiveNotebookUri: () => Effect.succeed(Option.some(NOTEBOOK_URI)),
-      getNotebookEditor: () => Effect.succeed(Option.none()),
-      getActiveNotebookEditor: () =>
-        Effect.succeed(
-          Option.some(
-            createTestNotebookEditor(
-              createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
-                notebookType: "marimo-notebook",
-              }),
-            ),
-          ),
+  const editorMock = Layer.succeed(NotebookEditorRegistry, {
+    getNotebookEditors: Effect.succeed([]),
+    getLastNotebookEditor: () => Effect.succeed(Option.none()),
+    getActiveNotebookUri: Effect.succeed(Option.some(NOTEBOOK_URI)),
+    getNotebookEditor: () => Effect.succeed(Option.none()),
+    getActiveNotebookEditor: Effect.succeed(
+      Option.some(
+        createTestNotebookEditor(
+          createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+            notebookType: "marimo-notebook",
+          }),
         ),
-      streamActiveNotebookChanges: () => Stream.empty,
-    }),
-  );
+      ),
+    ),
+    streamActiveNotebookChanges: Stream.empty,
+  });
 
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(PackagesService.Default),
+    Layer.provideMerge(PackagesService.layer),
     Layer.provide(runtime),
     Layer.provide(editorMock),
     Layer.provideMerge(vscode.layer),
@@ -91,7 +84,7 @@ const makePythonController = Effect.fn(function* (executable: string) {
     NOTEBOOK_TYPE,
     "Test Python",
   );
-  return new PythonController(controller, executable);
+  return new PythonController(controller, executable, Stream.never);
 });
 
 function makeNonPythonController(): NotebookController {
@@ -279,7 +272,7 @@ describe("PackagesService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "does not let an invalidated request overwrite a newer fetch",
     Effect.fn(function* () {
       const firstRequestStarted = yield* Deferred.make<void>();
@@ -317,7 +310,7 @@ describe("PackagesService", () => {
 
       yield* Effect.gen(function* () {
         const svc = yield* PackagesService;
-        const olderFetch = yield* Effect.fork(
+        const olderFetch = yield* Effect.forkChild(
           svc.fetchDependencyTree(NOTEBOOK_URI),
         );
         yield* Deferred.await(firstRequestStarted);
@@ -339,7 +332,7 @@ describe("PackagesService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "evicts the dependency tree when its notebook closes",
     Effect.fn(function* () {
       const { layer, recorded, vscode } = yield* makeContext({
@@ -367,7 +360,7 @@ describe("PackagesService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "does not restore package state from a request invalidated by close",
     Effect.fn(function* () {
       const requestStarted = yield* Deferred.make<void>();
@@ -392,7 +385,7 @@ describe("PackagesService", () => {
 
       yield* Effect.gen(function* () {
         const svc = yield* PackagesService;
-        const pending = yield* Effect.fork(
+        const pending = yield* Effect.forkChild(
           svc.fetchDependencyTree(NOTEBOOK_URI),
         );
         yield* Deferred.await(requestStarted);
@@ -408,7 +401,7 @@ describe("PackagesService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "ignores a delayed close from a replaced document at the same URI",
     Effect.fn(function* () {
       const { layer, recorded, vscode } = yield* makeContext({

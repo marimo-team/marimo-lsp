@@ -1,14 +1,16 @@
 import {
   Cause,
+  Context,
   Data,
   Effect,
-  Either,
   Exit,
   Fiber,
+  Layer,
   Option,
-  ParseResult,
   PubSub,
-  Runtime,
+  Queue,
+  Result,
+  type Schema,
   Scope,
   Stream,
   SubscriptionRef,
@@ -59,10 +61,10 @@ export class DebugSessionStartError extends Data.TaggedError(
   readonly configuration: string | vscode.DebugConfiguration;
 }> {}
 
-export class Window extends Effect.Service<Window>()("Window", {
-  effect: Effect.gen(function* () {
+export class Window extends Context.Service<Window>()("Window", {
+  make: Effect.gen(function* () {
     const api = vscode.window;
-    const runSync = Runtime.runSync(yield* Effect.runtime());
+    const runSync = Effect.runSyncWith(yield* Effect.context());
 
     const resolve = (kind: vscode.ColorThemeKind): "light" | "dark" =>
       kind === vscode.ColorThemeKind.Dark ||
@@ -90,7 +92,7 @@ export class Window extends Effect.Service<Window>()("Window", {
       showSaveDialog(options?: vscode.SaveDialogOptions) {
         return Effect.map(
           Effect.promise(() => api.showSaveDialog(options)),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showInputBox(
@@ -100,7 +102,7 @@ export class Window extends Effect.Service<Window>()("Window", {
           Effect.promise((signal) =>
             api.showInputBox(options, tokenFromSignal(signal)),
           ),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showInformationMessage<T extends string>(
@@ -112,7 +114,7 @@ export class Window extends Effect.Service<Window>()("Window", {
           Effect.promise(() =>
             api.showInformationMessage(message, rest, ...items),
           ),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showWarningMessage<T extends string>(
@@ -122,7 +124,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         const { items = [], ...rest } = options;
         return Effect.map(
           Effect.promise(() => api.showWarningMessage(message, rest, ...items)),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showErrorMessage<T extends string>(
@@ -132,7 +134,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         const { items = [], ...rest } = options;
         return Effect.map(
           Effect.promise(() => api.showErrorMessage(message, rest, ...items)),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showQuickPick(
@@ -143,7 +145,7 @@ export class Window extends Effect.Service<Window>()("Window", {
           Effect.promise((signal) =>
             api.showQuickPick(items, options, tokenFromSignal(signal)),
           ),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showQuickPickItems<T extends vscode.QuickPickItem>(
@@ -154,7 +156,7 @@ export class Window extends Effect.Service<Window>()("Window", {
           Effect.promise((signal) =>
             api.showQuickPick(items, options, tokenFromSignal(signal)),
           ),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       showQuickPickItemsMany<T extends vscode.QuickPickItem>(
@@ -169,7 +171,7 @@ export class Window extends Effect.Service<Window>()("Window", {
               tokenFromSignal(signal),
             ),
           ),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
       createOutputChannel(name: string) {
@@ -180,20 +182,16 @@ export class Window extends Effect.Service<Window>()("Window", {
           api.createOutputChannel(name, { log: true }),
         );
       },
-      getActiveNotebookEditor() {
-        return Effect.succeed(Option.fromNullable(api.activeNotebookEditor));
-      },
-      getVisibleNotebookEditors() {
-        return Effect.succeed(api.visibleNotebookEditors);
-      },
-      getVisibleTextEditors() {
-        return Effect.succeed(api.visibleTextEditors);
-      },
-      getActiveTextEditor() {
-        return Effect.succeed(Option.fromNullable(api.activeTextEditor));
-      },
+      getActiveNotebookEditor: Effect.sync(() =>
+        Option.fromNullishOr(api.activeNotebookEditor),
+      ),
+      getVisibleNotebookEditors: Effect.sync(() => api.visibleNotebookEditors),
+      getVisibleTextEditors: Effect.sync(() => api.visibleTextEditors),
+      getActiveTextEditor: Effect.sync(() =>
+        Option.fromNullishOr(api.activeTextEditor),
+      ),
       closeTextEditorTab(uri: vscode.Uri) {
-        return Option.fromNullable(
+        return Option.fromNullishOr(
           api.tabGroups.all
             .flatMap((group) => group.tabs)
             .find(
@@ -220,49 +218,41 @@ export class Window extends Effect.Service<Window>()("Window", {
           api.createStatusBarItem(id, alignment, priority),
         );
       },
-      colorThemeChanges(): Stream.Stream<"light" | "dark"> {
-        return colorThemeRef.changes;
-      },
-      activeNotebookEditorChanges(): Stream.Stream<
+      colorThemeChanges: SubscriptionRef.changes(colorThemeRef),
+      activeNotebookEditorChanges: Stream.callback<
         Option.Option<vscode.NotebookEditor>
-      > {
-        return Stream.asyncPush((emit) =>
-          acquireDisposable(() =>
-            api.onDidChangeActiveNotebookEditor((e) =>
-              emit.single(Option.fromNullable(e)),
-            ),
+      >((queue) =>
+        acquireDisposable(() =>
+          api.onDidChangeActiveNotebookEditor((e) =>
+            Queue.offerUnsafe(queue, Option.fromNullishOr(e)),
           ),
-        );
-      },
-      visibleNotebookEditorsChanges(): Stream.Stream<
+        ),
+      ),
+      visibleNotebookEditorsChanges: Stream.callback<
         ReadonlyArray<vscode.NotebookEditor>
-      > {
-        return Stream.asyncPush((emit) =>
-          acquireDisposable(() =>
-            api.onDidChangeVisibleNotebookEditors((e) => emit.single(e)),
+      >((queue) =>
+        acquireDisposable(() =>
+          api.onDidChangeVisibleNotebookEditors((e) =>
+            Queue.offerUnsafe(queue, e),
           ),
-        );
-      },
-      visibleTextEditorsChanges(): Stream.Stream<
+        ),
+      ),
+      visibleTextEditorsChanges: Stream.callback<
         ReadonlyArray<vscode.TextEditor>
-      > {
-        return Stream.asyncPush((emit) =>
-          acquireDisposable(() =>
-            api.onDidChangeVisibleTextEditors((e) => emit.single(e)),
-          ),
-        );
-      },
-      activeTextEditorChanges(): Stream.Stream<
+      >((queue) =>
+        acquireDisposable(() =>
+          api.onDidChangeVisibleTextEditors((e) => Queue.offerUnsafe(queue, e)),
+        ),
+      ),
+      activeTextEditorChanges: Stream.callback<
         Option.Option<vscode.TextEditor>
-      > {
-        return Stream.asyncPush((emit) =>
-          acquireDisposable(() =>
-            api.onDidChangeActiveTextEditor((e) =>
-              emit.single(Option.fromNullable(e)),
-            ),
+      >((queue) =>
+        acquireDisposable(() =>
+          api.onDidChangeActiveTextEditor((e) =>
+            Queue.offerUnsafe(queue, Option.fromNullishOr(e)),
           ),
-        );
-      },
+        ),
+      ),
       showNotebookDocument(
         doc: vscode.NotebookDocument,
         options?: vscode.NotebookDocumentShowOptions,
@@ -287,8 +277,8 @@ export class Window extends Effect.Service<Window>()("Window", {
         ) => Effect.Effect<A, E, R>,
       ) {
         return Effect.gen(function* () {
-          const runtime = yield* Effect.runtime<R>();
-          const runPromise = Runtime.runPromise(runtime);
+          const context = yield* Effect.context<R>();
+          const runPromise = Effect.runPromiseWith(context);
           return yield* Effect.promise((signal) =>
             api.withProgress(options, (progress, token) =>
               runPromise(
@@ -308,7 +298,9 @@ export class Window extends Effect.Service<Window>()("Window", {
       },
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
 
 type ContextMap = {
   "marimo.hasLiveSessions": boolean;
@@ -320,16 +312,20 @@ type ContextMap = {
 };
 
 const isExpectedCancellation = (cause: Cause.Cause<unknown>) =>
-  Cause.isInterruptedOnly(cause) ||
-  [...Cause.defects(cause)].some(
-    (defect: unknown) => defect instanceof Error && defect.name === "Canceled",
-  );
+  Cause.hasInterruptsOnly(cause) ||
+  cause.reasons
+    .filter(Cause.isDieReason)
+    .map((reason) => reason.defect)
+    .some(
+      (defect: unknown) =>
+        defect instanceof Error && defect.name === "Canceled",
+    );
 
 export const withCommandContext = (command: MarimoCommand) => {
   const wireId = commandId(command);
   return <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
-      Effect.tapErrorCause((cause) =>
+      Effect.tapCause((cause) =>
         isExpectedCancellation(cause) ? Effect.void : Effect.logError(cause),
       ),
       Effect.annotateLogs({
@@ -338,15 +334,14 @@ export const withCommandContext = (command: MarimoCommand) => {
     );
 };
 
-export class Commands extends Effect.Service<Commands>()("Commands", {
-  dependencies: [Window.Default],
-  scoped: Effect.gen(function* () {
+export class Commands extends Context.Service<Commands>()("Commands", {
+  make: Effect.gen(function* () {
     const win = yield* Window;
     const api = vscode.commands;
     // Pubsub of the commands run and their results
-    // Left is the command that failed, right is the command that succeeded
+    // Failure is the command that failed, success is the command that succeeded
     const commandPubSub =
-      yield* PubSub.unbounded<Either.Either<string, string>>();
+      yield* PubSub.unbounded<Result.Result<string, string>>();
 
     function execute<
       CallArgs extends CommandArguments,
@@ -356,7 +351,7 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
     >(
       command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
       ...args: CallArgs
-    ): Effect.Effect<Result, ParseResult.ParseError> {
+    ): Effect.Effect<Result, Schema.SchemaError> {
       return Effect.promise(() =>
         api.executeCommand(commandId(command), ...args),
       ).pipe(Effect.flatMap((result) => decodeCommandResult(command, result)));
@@ -376,22 +371,22 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
       invoke: (args: ReadonlyArray<unknown>) => Effect.Effect<A, E, R>,
     ) {
       return Effect.gen(function* () {
-        const runPromise = Runtime.runPromise(yield* Effect.runtime<R>());
+        const runPromise = Effect.runPromiseWith(yield* Effect.context<R>());
         const callback = (...args: unknown[]) =>
           invoke(args).pipe(
             Effect.tap(() =>
-              PubSub.publish(commandPubSub, Either.right(wireId)),
+              PubSub.publish(commandPubSub, Result.succeed(wireId)),
             ),
-            Effect.catchAllCause(
+            Effect.catchCause(
               Effect.fn(function* (cause) {
                 // Skip logging for interruptions/cancellations (e.g., user
                 // cancels a progress dialog, VS Code disposes resources
                 // during kernel restart). These are expected and not errors.
                 if (isExpectedCancellation(cause)) {
-                  yield* PubSub.publish(commandPubSub, Either.left(wireId));
+                  yield* PubSub.publish(commandPubSub, Result.fail(wireId));
                   return;
                 }
-                yield* PubSub.publish(commandPubSub, Either.left(wireId));
+                yield* PubSub.publish(commandPubSub, Result.fail(wireId));
                 yield* win.showWarningMessage(
                   `Something went wrong in ${JSON.stringify(wireId)}. See marimo logs for more info.`,
                 );
@@ -450,9 +445,7 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
     }
 
     return {
-      subscribeToCommands() {
-        return PubSub.subscribe(commandPubSub);
-      },
+      subscribeToCommands: PubSub.subscribe(commandPubSub),
       execute,
       executeVSCode,
       bind,
@@ -464,10 +457,73 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
       register,
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(Window.layer),
+  );
+}
 
-export class Workspace extends Effect.Service<Workspace>()("Workspace", {
-  sync: () => {
+export interface NotebookLifecycleEvent {
+  readonly type: "opened" | "closed";
+  readonly document: vscode.NotebookDocument;
+}
+
+type NotebookLifecycleSource = Pick<
+  typeof vscode.workspace,
+  | "notebookDocuments"
+  | "onDidOpenNotebookDocument"
+  | "onDidCloseNotebookDocument"
+>;
+
+/**
+ * Subscribe before taking the initial snapshot, then release both listeners
+ * with the stream's consumer. The enclosing scope is a fallback when the
+ * consumer never starts or remains active until extension shutdown.
+ */
+export const makeNotebookLifecycle = Effect.fn("makeNotebookLifecycle")(
+  function* (source: NotebookLifecycleSource) {
+    const queue = yield* Queue.make<NotebookLifecycleEvent>();
+    const [opened, closed] = yield* Effect.sync(() => {
+      const opened = source.onDidOpenNotebookDocument((document) =>
+        Queue.offerUnsafe(queue, { type: "opened", document }),
+      );
+      try {
+        return [
+          opened,
+          source.onDidCloseNotebookDocument((document) =>
+            Queue.offerUnsafe(queue, { type: "closed", document }),
+          ),
+        ] as const;
+      } catch (error) {
+        opened.dispose();
+        throw error;
+      }
+    });
+
+    let stopped = false;
+    const stop = Effect.suspend(() => {
+      if (stopped) return Effect.void;
+      stopped = true;
+      return Effect.sync(() => {
+        opened.dispose();
+        closed.dispose();
+      }).pipe(Effect.andThen(Queue.shutdown(queue)));
+    });
+    yield* Effect.addFinalizer(() => stop);
+
+    Queue.offerAllUnsafe(
+      queue,
+      source.notebookDocuments.map((document) => ({
+        type: "opened" as const,
+        document,
+      })),
+    );
+    return Stream.fromQueue(queue).pipe(Stream.ensuring(stop));
+  },
+);
+
+export class Workspace extends Context.Service<Workspace>()("Workspace", {
+  make: Effect.sync(() => {
     const api = vscode.workspace;
     return {
       fs: {
@@ -490,18 +546,14 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
           });
         },
       },
-      getNotebookDocuments() {
-        return Effect.succeed(api.notebookDocuments);
-      },
-      getTextDocuments() {
-        return Effect.succeed(api.textDocuments);
-      },
+      getNotebookDocuments: Effect.sync(() => api.notebookDocuments),
+      getTextDocuments: Effect.sync(() => api.textDocuments),
       getConfiguration(section: string, scope?: vscode.ConfigurationScope) {
         return Effect.succeed(api.getConfiguration(section, scope));
       },
-      getWorkspaceFolders() {
-        return Effect.succeed(Option.fromNullable(api.workspaceFolders));
-      },
+      getWorkspaceFolders: Effect.sync(() =>
+        Option.fromNullishOr(api.workspaceFolders),
+      ),
       isTrusted() {
         return api.isTrusted;
       },
@@ -514,55 +566,62 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
           api.registerNotebookSerializer(notebookType, impl, options),
         ).pipe(Effect.andThen(Effect.void));
       },
-      notebookDocumentChanges() {
-        return Stream.asyncPush<vscode.NotebookDocumentChangeEvent>((emit) =>
+      notebookDocumentChanges:
+        Stream.callback<vscode.NotebookDocumentChangeEvent>((queue) =>
           acquireDisposable(() =>
-            api.onDidChangeNotebookDocument((event) => emit.single(event)),
+            api.onDidChangeNotebookDocument((event) =>
+              Queue.offerUnsafe(queue, event),
+            ),
           ),
-        );
-      },
-      notebookDocumentOpened() {
-        return Stream.asyncPush<vscode.NotebookDocument>((emit) =>
+        ),
+      notebookDocumentOpened: Stream.callback<vscode.NotebookDocument>(
+        (queue) =>
           acquireDisposable(() =>
-            api.onDidOpenNotebookDocument((event) => emit.single(event)),
+            api.onDidOpenNotebookDocument((event) =>
+              Queue.offerUnsafe(queue, event),
+            ),
           ),
-        );
-      },
-      textDocumentChanges() {
-        return Stream.asyncPush<vscode.TextDocumentChangeEvent>((emit) =>
+      ),
+      // Everything here — both listener registrations and the snapshot of
+      // already-open documents — runs before the effect completes, within one
+      // fiber turn, so no event can fall between snapshot and subscription. A
+      // document may be observed twice (snapshot and event) but never zero
+      // times; consumers must treat a re-observed open as idempotent.
+      subscribeNotebookLifecycle: makeNotebookLifecycle(api),
+      textDocumentChanges: Stream.callback<vscode.TextDocumentChangeEvent>(
+        (queue) =>
           acquireDisposable(() =>
-            api.onDidChangeTextDocument((event) => emit.single(event)),
+            api.onDidChangeTextDocument((event) =>
+              Queue.offerUnsafe(queue, event),
+            ),
           ),
-        );
-      },
-      notebookDocumentClosed() {
-        return Stream.asyncPush<vscode.NotebookDocument>((emit) =>
+      ),
+      notebookDocumentClosed: Stream.callback<vscode.NotebookDocument>(
+        (queue) =>
           acquireDisposable(() =>
-            api.onDidCloseNotebookDocument((event) => emit.single(event)),
+            api.onDidCloseNotebookDocument((event) =>
+              Queue.offerUnsafe(queue, event),
+            ),
           ),
-        );
-      },
-      fileRenames() {
-        return Stream.asyncPush<vscode.FileRenameEvent>((emit) =>
+      ),
+      fileRenames: Stream.callback<vscode.FileRenameEvent>((queue) =>
+        acquireDisposable(() =>
+          api.onDidRenameFiles((event) => Queue.offerUnsafe(queue, event)),
+        ),
+      ),
+      fileDeletes: Stream.callback<vscode.FileDeleteEvent>((queue) =>
+        acquireDisposable(() =>
+          api.onDidDeleteFiles((event) => Queue.offerUnsafe(queue, event)),
+        ),
+      ),
+      configurationChanges: Stream.callback<vscode.ConfigurationChangeEvent>(
+        (queue) =>
           acquireDisposable(() =>
-            api.onDidRenameFiles((event) => emit.single(event)),
+            api.onDidChangeConfiguration((event) =>
+              Queue.offerUnsafe(queue, event),
+            ),
           ),
-        );
-      },
-      fileDeletes() {
-        return Stream.asyncPush<vscode.FileDeleteEvent>((emit) =>
-          acquireDisposable(() =>
-            api.onDidDeleteFiles((event) => emit.single(event)),
-          ),
-        );
-      },
-      configurationChanges() {
-        return Stream.asyncPush<vscode.ConfigurationChangeEvent>((emit) =>
-          acquireDisposable(() =>
-            api.onDidChangeConfiguration((event) => emit.single(event)),
-          ),
-        );
-      },
+      ),
       applyEdit(edit: vscode.WorkspaceEdit) {
         return Effect.promise(() => api.applyEdit(edit));
       },
@@ -584,22 +643,30 @@ export class Workspace extends Effect.Service<Workspace>()("Workspace", {
         return Effect.promise(() => api.openTextDocument(options));
       },
       createFileSystemWatcher(globPattern: vscode.GlobPattern) {
-        return Stream.asyncPush<{ uri: vscode.Uri; type: 1 | 2 | 3 }>((emit) =>
+        return Stream.callback<{ uri: vscode.Uri; type: 1 | 2 | 3 }>((queue) =>
           acquireDisposable(() => {
             const watcher = api.createFileSystemWatcher(globPattern);
-            watcher.onDidCreate((uri) => emit.single({ uri, type: 1 }));
-            watcher.onDidChange((uri) => emit.single({ uri, type: 2 }));
-            watcher.onDidDelete((uri) => emit.single({ uri, type: 3 }));
+            watcher.onDidCreate((uri) =>
+              Queue.offerUnsafe(queue, { uri, type: 1 }),
+            );
+            watcher.onDidChange((uri) =>
+              Queue.offerUnsafe(queue, { uri, type: 2 }),
+            );
+            watcher.onDidDelete((uri) =>
+              Queue.offerUnsafe(queue, { uri, type: 3 }),
+            );
             return watcher;
           }),
         );
       },
     };
-  },
-}) {}
+  }),
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
 
-export class Env extends Effect.Service<Env>()("Env", {
-  sync: () => {
+export class Env extends Context.Service<Env>()("Env", {
+  make: Effect.sync(() => {
     const api = vscode.env;
     return {
       appName: api.appName,
@@ -618,11 +685,13 @@ export class Env extends Effect.Service<Env>()("Env", {
         return Effect.promise(() => api.openExternal(target));
       },
     };
-  },
-}) {}
+  }),
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
 
-export class Debug extends Effect.Service<Debug>()("Debug", {
-  effect: Effect.sync(() => {
+export class Debug extends Context.Service<Debug>()("Debug", {
+  make: Effect.sync(() => {
     const api = vscode.debug;
     return {
       registerDebugConfigurationProvider(
@@ -647,9 +716,9 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
         },
       ): Effect.Effect<void, never, Scope.Scope | R> {
         return Effect.gen(function* () {
-          const runtime = yield* Effect.runtime<R>();
-          const runPromise = Runtime.runPromise(runtime);
-          const runFork = Runtime.runFork(runtime);
+          const context = yield* Effect.context<R>();
+          const runPromise = Effect.runPromiseWith(context);
+          const runFork = Effect.runForkWith(context);
 
           yield* acquireDisposable(() =>
             api.registerDebugAdapterDescriptorFactory(debugType, {
@@ -659,7 +728,7 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
                     const scope = yield* Scope.make();
                     const adapter = yield* factory
                       .createDebugAdapter(session, executable)
-                      .pipe(Scope.extend(scope));
+                      .pipe(Scope.provide(scope));
 
                     if (Option.isNone(adapter)) {
                       yield* Scope.close(scope, Exit.void);
@@ -715,12 +784,14 @@ export class Debug extends Effect.Service<Debug>()("Debug", {
       },
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
 
-export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
-  effect: Effect.gen(function* () {
+export class Notebooks extends Context.Service<Notebooks>()("Notebooks", {
+  make: Effect.gen(function* () {
     const api = vscode.notebooks;
-    const runPromise = Runtime.runPromise(yield* Effect.runtime());
+    const runPromise = Effect.runPromiseWith(yield* Effect.context());
     return {
       createRendererMessaging(rendererId: string) {
         return Effect.succeed(api.createRendererMessaging(rendererId));
@@ -769,14 +840,16 @@ export class Notebooks extends Effect.Service<Notebooks>()("Notebooks", {
       },
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
 
 export class AuthError extends Data.TaggedError("AuthError")<{
   cause: unknown;
 }> {}
 
-export class Auth extends Effect.Service<Auth>()("Auth", {
-  effect: Effect.sync(() => {
+export class Auth extends Context.Service<Auth>()("Auth", {
+  make: Effect.sync(() => {
     const api = vscode.authentication;
     return {
       getSession(
@@ -789,17 +862,19 @@ export class Auth extends Effect.Service<Auth>()("Auth", {
             try: () => api.getSession(providerId, scopes, options),
             catch: (cause) => new AuthError({ cause }),
           }),
-          Option.fromNullable,
+          Option.fromNullishOr,
         );
       },
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
 
-export class Languages extends Effect.Service<Languages>()("Languages", {
-  effect: Effect.gen(function* () {
+export class Languages extends Context.Service<Languages>()("Languages", {
+  make: Effect.gen(function* () {
     const api = vscode.languages;
-    const runPromise = Runtime.runPromise(yield* Effect.runtime());
+    const runPromise = Effect.runPromiseWith(yield* Effect.context());
     return {
       registerCodeLensProvider(
         selector: vscode.DocumentSelector,
@@ -1254,7 +1329,9 @@ export class Languages extends Effect.Service<Languages>()("Languages", {
       },
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
 
 export class ParseUriError extends Data.TaggedError("ParseUriError")<{
   cause: unknown;
@@ -1263,8 +1340,8 @@ export class ParseUriError extends Data.TaggedError("ParseUriError")<{
 /**
  * Wraps VS Code API functionality in Effect services
  */
-export class VsCode extends Effect.Service<VsCode>()("VsCode", {
-  effect: Effect.gen(function* () {
+export class VsCode extends Context.Service<VsCode>()("VsCode", {
+  make: Effect.gen(function* () {
     // Expose the raw vscode module for runtime inspection via --inspect-extensions.
     // Only active when MARIMO_DEBUG=1 (set by launch-dev.sh).
     if (process.env.MARIMO_DEBUG === "1") {
@@ -1338,7 +1415,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       version: vscode.version,
       extensions: {
         getExtension<T = unknown>(extensionId: string) {
-          return Option.fromNullable(
+          return Option.fromNullishOr(
             vscode.extensions.getExtension<T>(extensionId),
           );
         },
@@ -1359,7 +1436,7 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       // helper
       utils: {
         parseUri(value: string) {
-          return Either.try({
+          return Result.try({
             try: () => vscode.Uri.parse(value, /* strict*/ true),
             catch: (cause) => new ParseUriError({ cause }),
           });
@@ -1367,14 +1444,17 @@ export class VsCode extends Effect.Service<VsCode>()("VsCode", {
       },
     };
   }),
-  dependencies: [
-    Window.Default,
-    Workspace.Default,
-    Commands.Default,
-    Env.Default,
-    Debug.Default,
-    Notebooks.Default,
-    Auth.Default,
-    Languages.Default,
-  ],
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide([
+      Window.layer,
+      Workspace.layer,
+      Commands.layer,
+      Env.layer,
+      Debug.layer,
+      Notebooks.layer,
+      Auth.layer,
+      Languages.layer,
+    ]),
+  );
+}

@@ -7,10 +7,12 @@
  */
 
 import {
+  Context,
   Effect,
+  Filter,
+  Layer,
   Option,
   Array as ReadonlyArray,
-  Runtime,
   Stream,
 } from "effect";
 import type * as vscode from "vscode";
@@ -65,16 +67,16 @@ export interface MarimoApi {
   };
 }
 
-export class Api extends Effect.Service<Api>()("Api", {
-  scoped: Effect.gen(function* () {
+export class Api extends Context.Service<Api>()("Api", {
+  make: Effect.gen(function* () {
     const code = yield* VsCode;
     const notebooks = yield* NotebookRuntime;
 
-    const runtime = yield* Effect.runtime();
-    const runPromise = Runtime.runPromise(runtime);
+    const context = yield* Effect.context();
+    const runPromise = Effect.runPromiseWith(context);
 
     const findMarimoNotebookDocument = Effect.fn(function* (uri: vscode.Uri) {
-      const notebooks = yield* code.workspace.getNotebookDocuments();
+      const notebooks = yield* code.workspace.getNotebookDocuments;
       return ReadonlyArray.findFirst(
         ReadonlyArray.getSomes(
           notebooks.map((raw) => MarimoNotebookDocument.tryFrom(raw)),
@@ -96,7 +98,7 @@ export class Api extends Effect.Service<Api>()("Api", {
       // Just check if we have a controller.
       // TODO: Have proper statuses?
       const isKernelActive = Option.isSome(
-        yield* notebooks.forNotebook(doc.value.id).getController(),
+        yield* notebooks.forNotebook(doc.value.id).getController,
       );
 
       if (!isKernelActive) {
@@ -111,7 +113,7 @@ export class Api extends Effect.Service<Api>()("Api", {
         language: "python",
         executeCode(cellCode, token) {
           // TODO: Send "marimo.interrupt" to kernel on cancel?
-          const cancelled = Effect.async((resume) => {
+          const cancelled = Effect.callback<void>((resume) => {
             if (token?.isCancellationRequested) {
               resume(Effect.void);
             }
@@ -125,11 +127,13 @@ export class Api extends Effect.Service<Api>()("Api", {
             .forNotebook(doc.value.id)
             .executeScratchpad(cellCode)
             .pipe(
-              Stream.filterMap((op) =>
-                scratchCellNotificationsToVsCodeOutput(op, code),
+              Stream.filterMap(
+                Filter.fromPredicateOption((op) =>
+                  scratchCellNotificationsToVsCodeOutput(op, code),
+                ),
               ),
               Stream.interruptWhen(cancelled),
-              Stream.toAsyncIterableRuntime(runtime),
+              Stream.toAsyncIterableWith(context),
             );
         },
       };
@@ -146,4 +150,6 @@ export class Api extends Effect.Service<Api>()("Api", {
     };
     return api;
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}

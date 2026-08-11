@@ -52,7 +52,7 @@ const withTree = <A, E>(
     (temporary) => Effect.sync(() => temporary.remove()),
   );
 
-it.scoped("resolves all supported saved-notebook forms", () =>
+it.effect("resolves all supported saved-notebook forms", () =>
   withTree(({ root, nested, spaced, notebook }) =>
     Effect.gen(function* () {
       for (const [configuredValue, expected] of [
@@ -75,7 +75,7 @@ it.scoped("resolves all supported saved-notebook forms", () =>
   ),
 );
 
-it.scoped("uses the most specific containing workspace", () =>
+it.effect("uses the most specific containing workspace", () =>
   withTree(({ root, nested, notebook }) =>
     Effect.gen(function* () {
       const result = yield* resolveNotebookFileRoot({
@@ -88,7 +88,7 @@ it.scoped("uses the most specific containing workspace", () =>
   ),
 );
 
-it.scoped("rejects unsupported variables and invalid directories", () =>
+it.effect("rejects unsupported variables and invalid directories", () =>
   withTree(({ root, notebook, file }) =>
     Effect.gen(function* () {
       for (const configuredValue of [
@@ -112,7 +112,7 @@ it.scoped("rejects unsupported variables and invalid directories", () =>
   ),
 );
 
-it.scoped("handles saved notebooks outside workspace folders", () =>
+it.effect("handles saved notebooks outside workspace folders", () =>
   withTree(({ root, nested, notebook }) =>
     Effect.gen(function* () {
       const workspaceFolders = Option.some([
@@ -143,7 +143,7 @@ it.scoped("handles saved notebooks outside workspace folders", () =>
   ),
 );
 
-it.scoped("uses the documented untitled default fallbacks", () =>
+it.effect("uses the documented untitled default fallbacks", () =>
   withTree(({ root, nested }) =>
     Effect.gen(function* () {
       const untitled = Uri.from({ scheme: "untitled", path: "Untitled-1" });

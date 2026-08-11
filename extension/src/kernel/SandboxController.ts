@@ -1,10 +1,9 @@
 import * as semver from "@std/semver";
-import { Effect, Option, Runtime, Schema, Stream } from "effect";
+import { Effect, flow, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
-import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { extractExecuteCodeRequest } from "../lib/extractExecuteCodeRequest.ts";
 import { extractPythonError } from "../lib/extractPythonError.ts";
 import { uvAddScriptSafe } from "../lib/installPackages.ts";
@@ -22,6 +21,7 @@ import {
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
+import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import {
   ExecutableResolutionError,
   NotebookRuntime,
@@ -37,8 +37,8 @@ export const createSandboxController = Effect.fn("createSandboxController")(
     const python = yield* PythonExtension;
     const { LanguageId } = yield* Constants;
 
-    const runPromise = Runtime.runPromise(
-      yield* Effect.runtime<OutputChannel | VsCode>(),
+    const runPromise = Effect.runPromiseWith(
+      yield* Effect.context<OutputChannel | VsCode>(),
     );
 
     const controller = yield* code.notebooks.createNotebookController(
@@ -61,7 +61,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
           return yield* new UnsavedNotebookError({ notebookUri: notebook.id });
         }
 
-        const requirements = yield* findRequirements(uv, notebook);
+        const requirements = yield* findRequirements(notebook);
 
         if (requirements.length > 0) {
           yield* uvAddScriptSafe(requirements, notebook).pipe(
@@ -109,7 +109,9 @@ export const createSandboxController = Effect.fn("createSandboxController")(
 
           // resolveExecutable rejects unsaved notebooks (UnsavedNotebookError),
           // handled below with an interactive save prompt.
-          const executable = yield* resolveExecutable(notebook);
+          const executable = yield* resolveExecutable(notebook).pipe(
+            Effect.provideService(Uv, uv),
+          );
 
           yield* notebooks
             .forNotebook(notebook.id)
@@ -139,7 +141,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
             ),
           ),
           // Log everything else
-          Effect.tapErrorCause(Effect.logError),
+          Effect.tapCause(Effect.logError),
           Effect.catchTag("UvExecutionError", () =>
             showErrorAndPromptLogs(
               "Failed to execute uv. Ensure uv is installed and accessible in your PATH.",
@@ -172,7 +174,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
               "Failed to start marimo language server (marimo-lsp).",
             ),
           ),
-          Effect.catchTag("ParseError", (error) =>
+          Effect.catchTag("SchemaError", (error) =>
             showErrorAndPromptLogs(
               "marimo language server sent a response the extension could not parse.",
               { channel: marimo.channel },
@@ -186,7 +188,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
       runPromise(
         Effect.gen(function* () {
           const notebook = MarimoNotebookDocument.from(doc);
-          yield* notebooks.forNotebook(notebook.id).interrupt();
+          yield* notebooks.forNotebook(notebook.id).interrupt;
         }).pipe(
           Effect.withSpan("SandboxController.interrupt", {
             attributes: {
@@ -194,7 +196,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
               notebook: doc.uri.toString(),
             },
           }),
-          Effect.catchAllCause(
+          Effect.catchCause(
             Effect.fn(function* (cause) {
               yield* Effect.logError("Failed to interrupt execution").pipe(
                 Effect.annotateLogs({ cause }),
@@ -205,10 +207,18 @@ export const createSandboxController = Effect.fn("createSandboxController")(
         ),
       );
 
+    // VS Code restores a persisted controller selection as soon as the
+    // controller is registered, which can happen before any subscriber fiber
+    // runs. Attach the listener in the same fiber turn as creation so a
+    // restored selection buffers in the queue instead of firing unheard.
+    const selectedNotebookChanges =
+      yield* makeControllerSelectionChanges(controller);
+
     return {
       id: controller.id,
       resolveExecutable: (notebook: MarimoNotebookDocument) =>
         resolveExecutable(notebook).pipe(
+          Effect.provideService(Uv, uv),
           Effect.mapError((error) =>
             error._tag === "UnsavedNotebookError"
               ? error
@@ -221,16 +231,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
       createNotebookCellExecution(cell: MarimoNotebookCell) {
         return controller.createNotebookCellExecution(cell.rawNotebookCell);
       },
-      selectedNotebookChanges() {
-        return Stream.asyncPush<{
-          notebook: vscode.NotebookDocument;
-          selected: boolean;
-        }>((emit) =>
-          acquireDisposable(() =>
-            controller.onDidChangeSelectedNotebooks((e) => emit.single(e)),
-          ),
-        );
-      },
+      selectedNotebookChanges,
       updateNotebookAffinity(
         notebook: vscode.NotebookDocument,
         affinity: vscode.NotebookControllerAffinity,
@@ -243,8 +244,9 @@ export const createSandboxController = Effect.fn("createSandboxController")(
   },
 );
 
-const findRequirements = (uv: Uv, notebook: MarimoNotebookDocument) =>
-  Effect.gen(function* () {
+const findRequirements = Effect.fn(
+  function* (notebook: MarimoNotebookDocument) {
+    const uv = yield* Uv;
     const packages = yield* uv.currentDeps({
       script: notebook.uri.fsPath,
     });
@@ -274,7 +276,8 @@ const findRequirements = (uv: Uv, notebook: MarimoNotebookDocument) =>
     }
 
     return requirements satisfies ReadonlyArray<string>;
-  }).pipe(
+  },
+  flow(
     Effect.catchTag(
       "UvMissingPep723MetadataError",
       Effect.fn(function* () {
@@ -282,4 +285,5 @@ const findRequirements = (uv: Uv, notebook: MarimoNotebookDocument) =>
         return ["marimo"];
       }),
     ),
-  );
+  ),
+);

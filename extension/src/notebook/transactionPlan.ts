@@ -10,7 +10,7 @@
  *
  * This module is free of `vscode` so the logic is trivially unit-testable; the
  * applier turns a {@link ReplaceRange} into a `NotebookEdit`. `PlanCell` is a
- * `Schema` so its equality is *derived* (`Schema.equivalence`, see
+ * `Schema` so its equality is *derived* (`Schema.toEquivalence`, see
  * {@link cellEquivalence}) rather than hand-written, and the applier can decode
  * VS Code cells into it at the boundary.
  */
@@ -51,7 +51,7 @@ export type PlanCell = typeof PlanCell.Type;
  * Structural cell equality, derived from the schema. Used to find the stable
  * prefix/suffix so only genuinely-changed cells are replaced.
  */
-const cellEquivalence = Schema.equivalence(PlanCell);
+const cellEquivalence = Schema.toEquivalence(PlanCell);
 
 /** A minimal contiguous splice: replace `deleteCount` cells at `start` with `cells`. */
 export interface ReplaceRange {

@@ -47,7 +47,7 @@ def _():
       Effect.annotateLogs({ uri: notebook.uri.toString() }),
     );
 
-    yield* telemetry.notebookCreated();
+    yield* telemetry.notebookCreated;
   },
   flow(
     Effect.catchTag(

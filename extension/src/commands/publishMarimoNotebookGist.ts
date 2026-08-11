@@ -1,6 +1,6 @@
 import * as NodePath from "node:path";
 
-import { Cause, Chunk, Effect, Either, flow, Schema, Option } from "effect";
+import { Cause, Effect, flow, Option, Result, Schema } from "effect";
 
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { MarimoClient } from "../lsp/MarimoClient.ts";
@@ -55,16 +55,19 @@ export const publishMarimoNotebookGist = Effect.fn(
         notebookUri: notebook.id,
         inner: {},
       })
-      .pipe(Effect.andThen(Schema.decodeUnknown(Schema.String)), Effect.either);
+      .pipe(
+        Effect.andThen(Schema.decodeUnknownEffect(Schema.String)),
+        Effect.result,
+      );
 
-    if (Either.isRight(ipynbResult)) {
-      files[ipynbFilename] = { content: ipynbResult.right };
+    if (Result.isSuccess(ipynbResult)) {
+      files[ipynbFilename] = { content: ipynbResult.success };
     } else {
       yield* Effect.logWarning(
         "Could not export ipynb for gist — publishing .py only",
       ).pipe(
         Effect.annotateLogs({
-          cause: Cause.fail(ipynbResult.left),
+          cause: Cause.fail(ipynbResult.failure),
         }),
       );
     }
@@ -79,11 +82,11 @@ export const publishMarimoNotebookGist = Effect.fn(
     yield* Effect.logInfo("Published gist").pipe(Effect.annotateLogs({ gist }));
 
     // Update the gist with a molab badge in the ipynb
-    if (Either.isRight(ipynbResult)) {
-      const ipynb = JSON.parse(ipynbResult.right);
+    if (Result.isSuccess(ipynbResult)) {
+      const ipynb = JSON.parse(ipynbResult.success);
       ipynb.cells.unshift(createMolabMarkdownBadgeCell(gist));
       yield* gh.Gists.update({
-        path: { id: gist.id },
+        params: { id: gist.id },
         payload: {
           files: {
             [ipynbFilename]: { content: JSON.stringify(ipynb, null, 2) },
@@ -100,22 +103,23 @@ export const publishMarimoNotebookGist = Effect.fn(
     if (Option.isSome(selection)) {
       // Open the URL
       yield* code.env.openExternal(
-        Either.getOrThrow(code.utils.parseUri(gist.html_url)),
+        Result.getOrThrow(code.utils.parseUri(gist.html_url)),
       );
     }
   },
   flow(
-    Effect.tapErrorCause(Effect.logError),
-    Effect.catchTag("RequestError", (error) =>
+    Effect.tapCause(Effect.logError),
+    Effect.catchTag("HttpClientError", (error) =>
       showErrorAndPromptLogs(
-        `Failed to create Gist: ${error.description ?? "Network error"}.`,
+        `Failed to create Gist: ${error.reason.description ?? "Network error"}.`,
       ),
     ),
-    Effect.catchAllCause((cause) =>
+    Effect.catchCause((cause) =>
       showErrorAndPromptLogs(
-        `Failed to create Gist: ${Cause.failures(cause).pipe(
-          Chunk.get(0),
-          Option.map((fail) => fail.name),
+        `Failed to create Gist: ${Option.fromNullishOr(
+          cause.reasons.find(Cause.isFailReason),
+        ).pipe(
+          Option.map((reason) => reason.error.name),
           Option.getOrElse(() => "UnknownError"),
         )}`,
       ),

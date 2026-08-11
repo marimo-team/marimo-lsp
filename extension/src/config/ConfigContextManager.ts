@@ -10,7 +10,7 @@ import { MarimoConfigurationService } from "./MarimoConfigurationService.ts";
  *
  * Pure side effect: nothing consumes this as a service.
  */
-export const ConfigContextManagerLive = Layer.scopedDiscard(
+export const ConfigContextManagerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const configService = yield* MarimoConfigurationService;

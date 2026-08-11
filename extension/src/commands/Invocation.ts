@@ -1,4 +1,4 @@
-import { Effect, Option, ParseResult, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 
 import {
@@ -27,7 +27,7 @@ export interface InvocationAdapter<
   readonly consumedArguments: number;
   readonly decode: (
     args: ReadonlyArray<unknown>,
-  ) => Effect.Effect<HandlerArgs, ParseResult.ParseError, Requirements>;
+  ) => Effect.Effect<HandlerArgs, Schema.SchemaError, Requirements>;
 }
 
 type CallArgsOf<Adapter> =
@@ -55,8 +55,8 @@ const makeAdapter = <
 const noTarget = (surface: string, contributed: boolean) =>
   makeAdapter<[], [], never>(surface, contributed, 0, () => Effect.succeed([]));
 
-const decodeOptional = <A, I>(schema: Schema.Schema<A, I>) =>
-  Schema.decodeUnknown(Schema.UndefinedOr(schema));
+const decodeOptional = <A, I>(schema: Schema.Codec<A, I>) =>
+  Schema.decodeUnknownEffect(Schema.UndefinedOr(schema));
 
 const optionalArgument = <A>(value: A | undefined): [argument?: A] =>
   value === undefined ? [] : [value];
@@ -90,10 +90,10 @@ const NotebookToolbarInvocationShape = Schema.Struct({
   }),
 });
 
-const NotebookToolbarContextShape = Schema.Union(
+const NotebookToolbarContextShape = Schema.Union([
   NotebookToolbarTargetShape,
   NotebookToolbarInvocationShape,
-);
+]);
 
 export type NotebookToolbarContext = typeof NotebookToolbarContextShape.Type;
 
@@ -122,7 +122,7 @@ const notebookFromEditor = (
 const activeNotebook = Effect.gen(function* () {
   const code = yield* VsCode;
   return Option.flatMap(
-    yield* code.window.getActiveNotebookEditor(),
+    yield* code.window.getActiveNotebookEditor,
     notebookFromEditor,
   );
 });
@@ -130,10 +130,10 @@ const activeNotebook = Effect.gen(function* () {
 const notebookForUri = Effect.fn(function* (uri: vscode.Uri) {
   const code = yield* VsCode;
   const target = uri.toString();
-  const editor = (yield* code.window.getVisibleNotebookEditors()).find(
+  const editor = (yield* code.window.getVisibleNotebookEditors).find(
     (candidate) => candidate.notebook.uri.toString() === target,
   );
-  return Option.flatMap(Option.fromNullable(editor), notebookFromEditor);
+  return Option.flatMap(Option.fromNullishOr(editor), notebookFromEditor);
 });
 
 const notebookFromToolbarContext = Effect.fn(function* (
@@ -149,11 +149,11 @@ const notebookFromCell = Effect.fn(function* (cell: vscode.NotebookCell) {
 
 const activeNotebookCell = Effect.gen(function* () {
   const code = yield* VsCode;
-  const editor = yield* code.window.getActiveNotebookEditor();
+  const editor = yield* code.window.getActiveNotebookEditor;
   if (Option.isNone(editor)) return Option.none<MarimoNotebookCell>();
   const notebook = MarimoNotebookDocument.tryFrom(editor.value.notebook);
   if (Option.isNone(notebook)) return Option.none<MarimoNotebookCell>();
-  return Option.fromNullable(
+  return Option.fromNullishOr(
     notebook.value.getCells()[editor.value.selection.start],
   );
 });
@@ -167,7 +167,7 @@ const notebookCellFromTitle = Effect.fn(function* (value: unknown) {
   // VS Code may pass this context marker instead of the cell when a notebook
   // cell title command is invoked from the cell container. In that case the
   // targeted cell is the active editor's selected cell.
-  yield* Schema.decodeUnknown(NotebookCellContainerContext)(value);
+  yield* Schema.decodeUnknownEffect(NotebookCellContainerContext)(value);
   return yield* activeNotebookCell;
 });
 
@@ -178,7 +178,7 @@ const commandPalette = {
     true,
     0,
     (args) =>
-      Schema.decodeUnknown(Schema.Tuple())(args).pipe(
+      Schema.decodeUnknownEffect(Schema.Tuple([]))(args).pipe(
         Effect.andThen(activeNotebook),
         Effect.map((notebook) => [notebook]),
       ),
@@ -188,7 +188,7 @@ const commandPalette = {
     [cell: Option.Option<MarimoNotebookCell>],
     VsCode
   >("commandPalette", true, 0, (args) =>
-    Schema.decodeUnknown(Schema.Tuple())(args).pipe(
+    Schema.decodeUnknownEffect(Schema.Tuple([]))(args).pipe(
       Effect.andThen(activeNotebookCell),
       Effect.map((cell) => [cell]),
     ),
@@ -197,7 +197,8 @@ const commandPalette = {
     "commandPalette",
     true,
     0,
-    (args) => Schema.decodeUnknown(Schema.Tuple())(args).pipe(Effect.as([])),
+    (args) =>
+      Schema.decodeUnknownEffect(Schema.Tuple([]))(args).pipe(Effect.as([])),
   ),
 } as const;
 
@@ -246,7 +247,7 @@ const notebookCellStatusBar = {
     [notebook: Option.Option<NotebookTarget>],
     VsCode
   >("notebookCellStatusBar", false, 1, (args) =>
-    Schema.decodeUnknown(VscodeNotebookCellSchema)(args[0]).pipe(
+    Schema.decodeUnknownEffect(VscodeNotebookCellSchema)(args[0]).pipe(
       Effect.flatMap(notebookFromCell),
       Effect.map((notebook) => [notebook]),
     ),
@@ -256,7 +257,7 @@ const notebookCellStatusBar = {
     [cell: Option.Option<MarimoNotebookCell>],
     never
   >("notebookCellStatusBar", false, 1, (args) =>
-    Schema.decodeUnknown(VscodeNotebookCellSchema)(args[0]).pipe(
+    Schema.decodeUnknownEffect(VscodeNotebookCellSchema)(args[0]).pipe(
       Effect.map((cell) => [Option.some(MarimoNotebookCell.from(cell))]),
     ),
   ),
@@ -272,9 +273,9 @@ const optionalResource = (
     [resource?: string | vscode.Uri],
     never
   >(surface, contributed, consumedArguments, (args) =>
-    decodeOptional(Schema.Union(Schema.String, VscodeUriSchema))(args[0]).pipe(
-      Effect.map(optionalArgument),
-    ),
+    decodeOptional(Schema.Union([Schema.String, VscodeUriSchema]))(
+      args[0],
+    ).pipe(Effect.map(optionalArgument)),
   );
 
 const programmaticNoTarget = (surface: string) => noTarget(surface, false);
@@ -282,14 +283,14 @@ const programmaticNoTarget = (surface: string) => noTarget(surface, false);
 const argument = <A, I>(
   surface: string,
   contributed: boolean,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.Codec<A, I>,
 ) =>
   makeAdapter<[argument: A], [argument: A], never>(
     surface,
     contributed,
     1,
     (args) =>
-      Schema.decodeUnknown(schema)(args[0]).pipe(
+      Schema.decodeUnknownEffect(schema)(args[0]).pipe(
         Effect.map((value) => [value]),
       ),
   );
@@ -339,7 +340,7 @@ const withArguments = <
   ExtraEncoded extends CommandArguments,
 >(
   adapter: InvocationAdapter<CallArgs, HandlerArgs, Requirements>,
-  schema: Schema.Schema<ExtraArgs, ExtraEncoded>,
+  schema: Schema.Codec<ExtraArgs, ExtraEncoded>,
   extraArgumentCount: number,
 ): InvocationAdapter<
   Concat<CallArgs, ExtraArgs>,
@@ -353,7 +354,9 @@ const withArguments = <
     (args) =>
       Effect.all([
         adapter.decode(args),
-        Schema.decodeUnknown(schema)(args.slice(adapter.consumedArguments)),
+        Schema.decodeUnknownEffect(schema)(
+          args.slice(adapter.consumedArguments),
+        ),
       ]).pipe(
         Effect.map(
           ([target, extra]): Concat<HandlerArgs, ExtraArgs> => [
@@ -382,7 +385,7 @@ export const Invocation = {
     none: noTarget("viewTitle", true),
   },
   ViewItemContext: {
-    argument: <A, I>(schema: Schema.Schema<A, I>) =>
+    argument: <A, I>(schema: Schema.Codec<A, I>) =>
       argument("viewItemContext", true, schema),
   },
   StatusBar: {
@@ -390,7 +393,7 @@ export const Invocation = {
   },
   NotebookCellStatusBar: notebookCellStatusBar,
   TreeItem: {
-    argument: <A, I>(schema: Schema.Schema<A, I>) =>
+    argument: <A, I>(schema: Schema.Codec<A, I>) =>
       argument("treeItem", false, schema),
   },
   CodeLens: {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Logger, Option } from "effect";
+import { Effect, Logger, Option, Ref, References } from "effect";
 
 import { createNotebookCell, TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import {
@@ -104,7 +104,7 @@ describe("command definitions", () => {
 
       expect(Option.getOrThrow(target).index).toBe(0);
       yield* hideCellCode.invoke(target).pipe(Effect.provide(vscode.layer));
-      expect(yield* vscode.executions).toContainEqual({
+      expect(yield* Ref.get(vscode.executions)).toContainEqual({
         command: "notebook.cell.collapseCellInput",
         args: [
           {
@@ -128,7 +128,7 @@ describe("command definitions", () => {
 
       expect(Option.isNone(target)).toBe(true);
       yield* hideCellCode.invoke(target).pipe(Effect.provide(vscode.layer));
-      expect(yield* vscode.executions).toEqual([]);
+      expect(yield* Ref.get(vscode.executions)).toEqual([]);
     }),
   );
 
@@ -166,20 +166,21 @@ describe("command definitions", () => {
 
   it.effect("traces direct normalized invocation with the command ID", () => {
     const logs: Array<Record<string, unknown>> = [];
-    const logger = Logger.make(({ annotations }) => {
-      logs.push(Object.fromEntries(annotations));
+    const logger = Logger.make(({ fiber }) => {
+      const span = fiber.currentSpan;
+      logs.push({
+        ...fiber.getRef(References.CurrentLogAnnotations),
+        ...(span !== undefined && span._tag === "Span"
+          ? { "effect.spanName": span.name }
+          : {}),
+      });
     });
     const definition = defineCommand(MarimoCommands.restartLsp, () =>
       Effect.logInfo("invoked"),
     );
 
     return definition.invoke().pipe(
-      Effect.provide(
-        Logger.replace(
-          Logger.defaultLogger,
-          Logger.withSpanAnnotations(logger),
-        ),
-      ),
+      Effect.provide(Logger.layer([logger])),
       Effect.tap(() =>
         Effect.sync(() => {
           expect(logs).toHaveLength(1);

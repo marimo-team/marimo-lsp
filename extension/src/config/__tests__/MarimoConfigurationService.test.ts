@@ -1,14 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  Deferred,
-  Effect,
-  Fiber,
-  Layer,
-  Option,
-  Schema,
-  Stream,
-  TestClock,
-} from "effect";
+import { Deferred, Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -41,6 +33,30 @@ const LAZY_CONFIG = marimoConfigFixture({
   runtime: { on_cell_change: "lazy" },
 });
 
+/**
+ * Forks a collector on `stream` and waits until its subscription is live.
+ *
+ * The streams under test replay their current value on subscription (both
+ * zipLatest inputs are SubscriptionRef-backed), so observing the first
+ * element proves the subscription is attached and later events cannot be
+ * lost — without assuming how many scheduler drains the attachment takes.
+ */
+const forkCollecting = Effect.fn(function* <A, E, R>(
+  stream: Stream.Stream<A, E, R>,
+  take: number,
+) {
+  const subscribed = yield* Deferred.make<void>();
+  const fiber = yield* Effect.forkChild(
+    stream.pipe(
+      Stream.tap(() => Deferred.succeed(subscribed, undefined)),
+      Stream.take(take),
+      Stream.runCollect,
+    ),
+  );
+  yield* Deferred.await(subscribed);
+  return fiber;
+});
+
 const withTestCtx = Effect.fn(function* (
   // Keyed by plain string: the fake server looks up by the decoded wire
   // value, which carries no brand.
@@ -53,13 +69,13 @@ const withTestCtx = Effect.fn(function* (
   const vscode = yield* TestVsCode.make();
   const { configStore = new Map<string, MarimoConfig>() } = options;
 
-  const layer = MarimoConfigurationService.Default.pipe(
-    Layer.provide(NotebookEditorRegistry.Default),
+  const layer = MarimoConfigurationService.layer.pipe(
+    Layer.provide(NotebookEditorRegistry.layer),
     Layer.provide(
       makeTestMarimoClient({
         execute: Effect.fn(function* (request) {
           if (request.method === "get-configuration") {
-            const params = yield* Schema.decodeUnknown(
+            const params = yield* Schema.decodeUnknownEffect(
               Api.GetConfigurationPayload,
             )(request.params);
             const config = configStore.get(params.notebookUri);
@@ -75,7 +91,7 @@ const withTestCtx = Effect.fn(function* (
           }
 
           if (request.method === "update-configuration") {
-            const params = yield* Schema.decodeUnknown(
+            const params = yield* Schema.decodeUnknownEffect(
               Api.UpdateConfigurationPayload,
             )(request.params);
             const existing = configStore.get(params.notebookUri);
@@ -228,8 +244,9 @@ describe("MarimoConfigurationService", () => {
           code.Uri.parse(notebookUri, true),
         );
         yield* ctx.vscode.addNotebookDocument(doc);
-        // Let the service's close-subscription fiber attach before events fire
-        yield* TestClock.adjust("10 millis");
+        // No drain needed: the service's lifecycle subscription is live
+        // before its layer finishes building, so the close below cannot
+        // outrun it.
 
         const config1 = yield* service.getConfig(notebookUri);
         expect(config1.runtime?.on_cell_change).toBe("autorun");
@@ -246,7 +263,7 @@ describe("MarimoConfigurationService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "does not restore cache entries from requests invalidated while in flight",
     Effect.fn(function* () {
       const requestStarted = yield* Deferred.make<void>();
@@ -261,7 +278,9 @@ describe("MarimoConfigurationService", () => {
 
       yield* Effect.gen(function* () {
         const service = yield* MarimoConfigurationService;
-        const pending = yield* Effect.fork(service.getConfig(NOTEBOOK_URI));
+        const pending = yield* Effect.forkChild(
+          service.getConfig(NOTEBOOK_URI),
+        );
         yield* Deferred.await(requestStarted);
 
         yield* service.clearNotebook(NOTEBOOK_URI);
@@ -280,7 +299,7 @@ describe("MarimoConfigurationService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "ignores a delayed close from a replaced document at the same URI",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx({
@@ -348,11 +367,7 @@ describe("MarimoConfigurationService", () => {
           (config) => config.runtime?.on_cell_change,
         );
 
-        const collectedStreamed = yield* Effect.fork(
-          stream.pipe(Stream.take(4), Stream.runCollect),
-        );
-
-        yield* TestClock.adjust("10 millis");
+        const collectedStreamed = yield* forkCollecting(stream, 4);
 
         // Trigger some changes
         // lazy, lazy, autorun, lazy, lazy
@@ -375,11 +390,9 @@ describe("MarimoConfigurationService", () => {
         yield* TestClock.adjust("10 millis");
 
         // Verify the stream contains the correct changes
-        const collected = yield* collectedStreamed;
+        const collected = yield* Fiber.join(collectedStreamed);
         expect(collected).toMatchInlineSnapshot(`
-        {
-          "_id": "Chunk",
-          "values": [
+          [
             {
               "_id": "Option",
               "_tag": "None",
@@ -399,9 +412,8 @@ describe("MarimoConfigurationService", () => {
               "_tag": "Some",
               "value": "lazy",
             },
-          ],
-        }
-      `);
+          ]
+        `);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -438,11 +450,7 @@ describe("MarimoConfigurationService", () => {
           (config) => config.runtime?.on_cell_change,
         );
 
-        const collectedStreamed = yield* Effect.fork(
-          stream.pipe(Stream.take(5), Stream.runCollect),
-        );
-
-        yield* TestClock.adjust("10 millis");
+        const collectedStreamed = yield* forkCollecting(stream, 5);
 
         // Change active notebook and verify state changes
         yield* ctx.vscode.setActiveNotebookEditor(
@@ -464,11 +472,9 @@ describe("MarimoConfigurationService", () => {
         yield* service.updateConfig(notebook2Uri, AUTORUN_CONFIG);
         yield* TestClock.adjust("10 millis");
 
-        const collected = yield* collectedStreamed;
+        const collected = yield* Fiber.join(collectedStreamed);
         expect(collected).toMatchInlineSnapshot(`
-        {
-          "_id": "Chunk",
-          "values": [
+          [
             {
               "_id": "Option",
               "_tag": "None",
@@ -492,9 +498,8 @@ describe("MarimoConfigurationService", () => {
               "_tag": "Some",
               "value": "autorun",
             },
-          ],
-        }
-      `);
+          ]
+        `);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -564,11 +569,7 @@ describe("MarimoConfigurationService", () => {
           (config) => config.runtime?.auto_reload,
         );
 
-        const collectedStreamed = yield* Effect.fork(
-          stream.pipe(Stream.take(4), Stream.runCollect),
-        );
-
-        yield* TestClock.adjust("10 millis");
+        const collectedStreamed = yield* forkCollecting(stream, 4);
 
         // Trigger some changes
         // lazy, lazy, autorun, lazy, lazy
@@ -590,11 +591,9 @@ describe("MarimoConfigurationService", () => {
 
         yield* TestClock.adjust("10 millis");
 
-        const collected = yield* collectedStreamed;
+        const collected = yield* Fiber.join(collectedStreamed);
         expect(collected).toMatchInlineSnapshot(`
-        {
-          "_id": "Chunk",
-          "values": [
+          [
             {
               "_id": "Option",
               "_tag": "None",
@@ -614,9 +613,8 @@ describe("MarimoConfigurationService", () => {
               "_tag": "Some",
               "value": "lazy",
             },
-          ],
-        }
-      `);
+          ]
+        `);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

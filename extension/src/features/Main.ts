@@ -1,4 +1,4 @@
-import { Layer, Logger, type LogLevel, ManagedRuntime } from "effect";
+import { Layer, type LogLevel, ManagedRuntime, References } from "effect";
 import type * as vscode from "vscode";
 
 import { Config } from "../config/Config.ts";
@@ -79,31 +79,31 @@ const MainLive = Layer.empty
     Layer.merge(NotebookControllersLive),
   )
   .pipe(
-    Layer.provideMerge(Api.Default),
-    Layer.provide(DebugAdapter.Default),
-    Layer.provide(GitHubClient.Default),
-    Layer.provide(NotebookRenderer.Default),
-    Layer.provide(NotebookSerializer.Default),
-    Layer.provide(CellExecutions.Default),
-    Layer.provide(VariablesService.Default),
-    Layer.provide(DatasourcesService.Default),
-    Layer.provide(PackagesService.Default),
-    Layer.provideMerge(SessionsService.Default),
-    Layer.provide(HealthService.Default),
-    Layer.provide(CellMetadataUIBindingService.Default),
+    Layer.provideMerge(Api.layer),
+    Layer.provide(DebugAdapter.layer),
+    Layer.provide(GitHubClient.layer),
+    Layer.provide(NotebookRenderer.layer),
+    Layer.provide(NotebookSerializer.layer),
+    Layer.provide(CellExecutions.layer),
+    Layer.provide(VariablesService.layer),
+    Layer.provide(DatasourcesService.layer),
+    Layer.provide(PackagesService.layer),
+    Layer.provideMerge(SessionsService.layer),
+    Layer.provide(HealthService.layer),
+    Layer.provide(CellMetadataUIBindingService.layer),
   )
   .pipe(
-    Layer.provide(MarimoConfigurationService.Default),
-    Layer.provide(NotebookEditorRegistry.Default),
-    Layer.provide(Uv.Default),
-    Layer.provide(TreeView.Default),
-    Layer.provide(StatusBar.Default),
-    Layer.provide(Storage.Default),
-    Layer.provide(Constants.Default),
-    Layer.provide(Config.Default),
-    Layer.provide(OutputChannel.Default),
-    Layer.provide(PythonEnvInvalidation.Default),
-    Layer.provide(NotebookRuntime.Default),
+    Layer.provide(MarimoConfigurationService.layer),
+    Layer.provide(NotebookEditorRegistry.layer),
+    Layer.provide(Uv.layer),
+    Layer.provide(TreeView.layer),
+    Layer.provide(StatusBar.layer),
+    Layer.provide(Storage.layer),
+    Layer.provide(Constants.layer),
+    Layer.provide(Config.layer),
+    Layer.provide(OutputChannel.layer),
+    Layer.provide(PythonEnvInvalidation.layer),
+    Layer.provide(NotebookRuntime.layer),
   );
 
 export function makeExtension(
@@ -138,7 +138,9 @@ export function makeExtension(
       const appLayer = Layer.provide(
         Layer.provide(MainLive, layer),
         Layer.succeed(ExtensionContext, context),
-      ).pipe(Layer.merge(Logger.minimumLogLevel(minimumLogLevel)));
+      ).pipe(
+        Layer.merge(Layer.succeed(References.MinimumLogLevel, minimumLogLevel)),
+      );
       const runtime = ManagedRuntime.make(appLayer);
       closeActive = runtime.dispose;
 

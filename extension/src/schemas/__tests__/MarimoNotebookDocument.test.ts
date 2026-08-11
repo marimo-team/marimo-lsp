@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Either, Option } from "effect";
+import { Effect, Option, Result } from "effect";
 
 import {
   createNotebookCell,
@@ -100,7 +100,9 @@ describe("MarimoNotebookCell metadata updates", () => {
       const notebook = MarimoNotebookDocument.from(raw);
 
       expect(
-        Either.isLeft(Effect.runSync(Effect.either(notebook.parseMetadata()))),
+        Result.isFailure(
+          Effect.runSync(Effect.result(notebook.parseMetadata())),
+        ),
       ).toBe(true);
     },
   );
@@ -144,8 +146,8 @@ describe("MarimoNotebookDocument app config", () => {
     });
 
     const result = Effect.runSync(
-      Effect.either(MarimoNotebookDocument.from(raw).parseMetadata()),
+      Effect.result(MarimoNotebookDocument.from(raw).parseMetadata()),
     );
-    expect(Either.isLeft(result)).toBe(true);
+    expect(Result.isFailure(result)).toBe(true);
   });
 });

@@ -1,4 +1,4 @@
-import { Brand, Context, Data, Effect, Option, Schema } from "effect";
+import { Brand, Context, Data, Effect, Layer, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 
 export class StorageError extends Data.TaggedError("StorageError")<{
@@ -12,13 +12,13 @@ export class StorageDecodeError extends Data.TaggedError("StorageDecodeError")<{
 /**
  * Provides the VSCode ExtensionContext to the Effect runtime.
  */
-export class ExtensionContext extends Context.Tag("ExtensionContext")<
+export class ExtensionContext extends Context.Service<
   ExtensionContext,
   Pick<
     vscode.ExtensionContext,
     "workspaceState" | "globalState" | "extensionUri" | "globalStorageUri"
   >
->() {}
+>()("ExtensionContext") {}
 
 /**
  * Branded storage key that carries the schema type information.
@@ -31,7 +31,7 @@ export type StorageKeyId<A, I = A> = string &
 
 export interface StorageKey<A, I = A> {
   readonly key: StorageKeyId<A, I>;
-  readonly schema: Schema.Schema<A, I>;
+  readonly schema: Schema.Codec<A, I>;
 }
 
 /**
@@ -39,7 +39,7 @@ export interface StorageKey<A, I = A> {
  */
 export const createStorageKey = <A, I = A>(
   key: string,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.Codec<A, I>,
 ): StorageKey<A, I> => ({
   // SAFETY: StorageKeyId carries phantom `_A`/`_I` types that exist only at
   // the type level; the brand constructor expects the full branded shape but
@@ -65,15 +65,16 @@ class MementoStorage<_Scope extends "workspace" | "global"> {
   get<A, I>(
     storageKey: StorageKey<A, I>,
   ): Effect.Effect<Option.Option<A>, StorageDecodeError> {
-    return Effect.gen(this, function* () {
-      const raw = this.memento.get(storageKey.key);
+    const memento = this.memento;
+    return Effect.gen(function* () {
+      const raw = memento.get(storageKey.key);
       if (raw === undefined) {
         return Option.none();
       }
 
-      const decoded = yield* Schema.decodeUnknown(storageKey.schema)(raw).pipe(
-        Effect.mapError((cause) => new StorageDecodeError({ cause })),
-      );
+      const decoded = yield* Schema.decodeUnknownEffect(storageKey.schema)(
+        raw,
+      ).pipe(Effect.mapError((cause) => new StorageDecodeError({ cause })));
 
       return Option.some(decoded);
     });
@@ -98,13 +99,14 @@ class MementoStorage<_Scope extends "workspace" | "global"> {
     storageKey: StorageKey<A, I>,
     value: A,
   ): Effect.Effect<void, StorageError | StorageDecodeError> {
-    return Effect.gen(this, function* () {
-      const encoded = yield* Schema.encode(storageKey.schema)(value).pipe(
+    const memento = this.memento;
+    return Effect.gen(function* () {
+      const encoded = yield* Schema.encodeEffect(storageKey.schema)(value).pipe(
         Effect.mapError((cause) => new StorageDecodeError({ cause })),
       );
 
       yield* Effect.tryPromise({
-        try: () => this.memento.update(storageKey.key, encoded),
+        try: () => memento.update(storageKey.key, encoded),
         catch: (cause) => new StorageError({ cause }),
       });
     });
@@ -133,8 +135,8 @@ class MementoStorage<_Scope extends "workspace" | "global"> {
 /**
  * Storage service providing type-safe access to workspace and global state.
  */
-export class Storage extends Effect.Service<Storage>()("Storage", {
-  effect: Effect.gen(function* () {
+export class Storage extends Context.Service<Storage>()("Storage", {
+  make: Effect.gen(function* () {
     const context = yield* ExtensionContext;
 
     return {
@@ -149,4 +151,6 @@ export class Storage extends Effect.Service<Storage>()("Storage", {
       global: new MementoStorage<"global">(context.globalState),
     };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}

@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, TestClock } from "effect";
+import { Effect, Layer, Option, Ref } from "effect";
+import { TestClock } from "effect/testing";
 
 import {
   createTestTextDocument,
@@ -23,7 +24,7 @@ it.effect(
     const ctx = yield* withTestCtx();
     // build the layer
     yield* Effect.provide(Effect.void, ctx.layer);
-    expect(yield* ctx.vscode.executions).toEqual([
+    expect(yield* Ref.get(ctx.vscode.executions)).toEqual([
       {
         command: "setContext",
         args: ["marimo.isPythonFileMarimoNotebook", false],
@@ -105,7 +106,7 @@ if __name__ == "__main__":
     // build the layer
     yield* Effect.provide(Effect.void, ctx.layer);
 
-    expect(yield* ctx.vscode.executions).toEqual([
+    expect(yield* Ref.get(ctx.vscode.executions)).toEqual([
       {
         command: "setContext",
         args: ["marimo.isPythonFileMarimoNotebook", true],
@@ -144,7 +145,7 @@ if __name__ == "__main__":
       yield* TestClock.adjust("100 millis");
     }).pipe(Effect.provide(ctx.layer));
 
-    expect(yield* ctx.vscode.executions).toEqual([
+    expect(yield* Ref.get(ctx.vscode.executions)).toEqual([
       {
         command: "setContext",
         args: ["marimo.isPythonFileMarimoNotebook", true],
@@ -243,7 +244,7 @@ my_app = marimo.App()
       yield* TestClock.adjust("100 millis");
     }).pipe(Effect.provide(ctx.layer));
 
-    expect(yield* ctx.vscode.executions).toEqual([
+    expect(yield* Ref.get(ctx.vscode.executions)).toEqual([
       {
         command: "setContext",
         args: ["marimo.isPythonFileMarimoNotebook", false],

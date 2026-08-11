@@ -10,7 +10,7 @@ import { type TreeItem, TreeView } from "../TreeView.ts";
 import { type SessionViewItem, SessionsService } from "./SessionsService.ts";
 
 /** Native VS Code tree view for live marimo kernel sessions. */
-export const SessionsViewLive = Layer.scopedDiscard(
+export const SessionsViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const treeView = yield* TreeView;
@@ -21,7 +21,7 @@ export const SessionsViewLive = Layer.scopedDiscard(
       getChildren: (element?: SessionViewItem) =>
         element
           ? Effect.succeed([])
-          : Effect.map(sessions.get(), (items) => [...items]),
+          : Effect.map(sessions.get, (items) => [...items]),
       getTreeItem: (session: SessionViewItem) =>
         Effect.sync(() => {
           const uri = code.Uri.parse(session.notebookUri);
@@ -58,7 +58,7 @@ export const SessionsViewLive = Layer.scopedDiscard(
 
     yield* code.commands.setContext("marimo.hasLiveSessions", false);
     yield* Effect.forkScoped(
-      sessions.changes().pipe(
+      sessions.changes.pipe(
         Stream.runForEach(
           Effect.fn(function* (live) {
             yield* provider.refresh();
@@ -73,7 +73,7 @@ export const SessionsViewLive = Layer.scopedDiscard(
 
     const revealActiveSession = Effect.fn("SessionsView.revealActiveSession")(
       function* () {
-        const editor = yield* code.window.getActiveNotebookEditor();
+        const editor = yield* code.window.getActiveNotebookEditor;
         const notebook = Option.flatMap(editor, (active) =>
           MarimoNotebookDocument.tryFrom(active.notebook),
         );
@@ -91,18 +91,14 @@ export const SessionsViewLive = Layer.scopedDiscard(
 
     yield* Effect.forkScoped(revealActiveSession().pipe(Effect.ignore));
     yield* Effect.forkScoped(
-      code.window
-        .activeNotebookEditorChanges()
-        .pipe(
-          Stream.runForEach(() => revealActiveSession().pipe(Effect.ignore)),
-        ),
+      code.window.activeNotebookEditorChanges.pipe(
+        Stream.runForEach(() => revealActiveSession().pipe(Effect.ignore)),
+      ),
     );
     yield* Effect.forkScoped(
-      sessions
-        .changes()
-        .pipe(
-          Stream.runForEach(() => revealActiveSession().pipe(Effect.ignore)),
-        ),
+      sessions.changes.pipe(
+        Stream.runForEach(() => revealActiveSession().pipe(Effect.ignore)),
+      ),
     );
 
     yield* code.commands.register(openSession);

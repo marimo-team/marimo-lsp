@@ -25,7 +25,7 @@ interface PackageTreeItem {
  *
  * Subscribes to package dependency tree changes and updates the view in real-time.
  */
-export const PackagesViewLive = Layer.scopedDiscard(
+export const PackagesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const treeView = yield* TreeView;
     const packagesService = yield* PackagesService;
@@ -84,7 +84,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
 
     // Helper to rebuild the package tree from current state
     const refreshPackages = Effect.fn(function* () {
-      const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri();
+      const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri;
 
       yield* Effect.logDebug("Refreshing packages").pipe(
         Effect.annotateLogs({
@@ -144,7 +144,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
 
     // Subscribe to active notebook changes
     yield* Effect.forkScoped(
-      editorRegistry.streamActiveNotebookChanges().pipe(
+      editorRegistry.streamActiveNotebookChanges.pipe(
         Stream.runForEach(() => {
           return refreshPackages();
         }),
@@ -153,7 +153,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
 
     // Subscribe to dependency tree changes
     yield* Effect.forkScoped(
-      packagesService.streamDependencyTreeChanges().pipe(
+      packagesService.streamDependencyTreeChanges.pipe(
         Stream.runForEach(
           Effect.fn(function* (_treeMap) {
             yield* refreshPackages();
@@ -167,7 +167,7 @@ export const PackagesViewLive = Layer.scopedDiscard(
     // streamDependencyTreeChanges, which triggers refreshPackages to
     // re-fetch with the new controller's `target`.
     yield* Effect.forkScoped(
-      notebooks.controllerChanges().pipe(
+      notebooks.controllerChanges.pipe(
         Stream.runForEach(
           Effect.fn(function* ({ notebookUri }) {
             yield* packagesService.clearNotebook(notebookUri);

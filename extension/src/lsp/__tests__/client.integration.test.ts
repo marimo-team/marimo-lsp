@@ -23,7 +23,7 @@ import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts"
 import { makeNotebookLspClient } from "../client.ts";
 
 describe("makeNotebookLspClient against uv run ty server", () => {
-  it.scoped(
+  it.effect(
     "initialize → openNotebook → hover → textChange → close",
     () =>
       Effect.gen(function* () {
@@ -139,7 +139,7 @@ describe("makeNotebookLspClient against uv run ty server", () => {
 
         // Scope closes → shutdown request + exit notification + process kill
         // are asserted implicitly by the test completing without hanging.
-      }).pipe(Effect.provide(VariablesService.Default)),
+      }).pipe(Effect.provide(VariablesService.layer)),
     { timeout: 30_000 },
   );
 });

@@ -18,14 +18,13 @@ export const TestRuffLanguageServerLive = Layer.effect(
     yield* Effect.logWarning(
       "Using test mock for RuffLanguageServer - skipping actual server startup",
     );
-    return RuffLanguageServer.make({
-      getHealthStatus: () =>
-        Effect.succeed(
-          RuffLanguageServerStatus.Running({
-            serverVersion: "0.0.0-test",
-            binarySource: BinarySource.UvInstalled({ path: "/test/ruff" }),
-          }),
-        ),
-    });
+    return {
+      getHealthStatus: Effect.succeed(
+        RuffLanguageServerStatus.Running({
+          serverVersion: "0.0.0-test",
+          binarySource: BinarySource.UvInstalled({ path: "/test/ruff" }),
+        }),
+      ),
+    };
   }),
 );

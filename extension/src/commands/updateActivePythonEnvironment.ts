@@ -1,4 +1,4 @@
-import { Effect, Either, Option } from "effect";
+import { Effect, Option, Result } from "effect";
 
 import { defineCommand } from "../commands.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
@@ -27,7 +27,7 @@ const handler = Effect.fn("command.updateActivePythonEnvironment")(function* (
 
   const { document: notebook, editor } = target.value;
 
-  const controller = yield* notebooks.forNotebook(notebook.id).getController();
+  const controller = yield* notebooks.forNotebook(notebook.id).getController;
 
   if (Option.isNone(controller)) {
     yield* code.window.showInformationMessage(
@@ -41,9 +41,9 @@ const handler = Effect.fn("command.updateActivePythonEnvironment")(function* (
     executable = controller.value.executable;
   } else {
     const script = editor.notebook.uri.fsPath;
-    const venvResult = yield* uv.syncScript({ script }).pipe(Effect.either);
+    const venvResult = yield* uv.syncScript({ script }).pipe(Effect.result);
 
-    if (Either.isLeft(venvResult)) {
+    if (Result.isFailure(venvResult)) {
       yield* showErrorAndPromptLogs(
         "Failed to synchronize virtual environment for the current notebook.",
         { channel: uv.channel },
@@ -51,7 +51,7 @@ const handler = Effect.fn("command.updateActivePythonEnvironment")(function* (
       return;
     }
 
-    executable = getVenvPythonPath(venvResult.right);
+    executable = getVenvPythonPath(venvResult.success);
   }
 
   // update the active python environment

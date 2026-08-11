@@ -1,4 +1,13 @@
-import { Effect, HashMap, Option, Ref, Stream, SubscriptionRef } from "effect";
+import {
+  Context,
+  Effect,
+  HashMap,
+  Layer,
+  Option,
+  Ref,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import type * as vscode from "vscode";
 
 import { VsCode } from "../platform/VsCode.ts";
@@ -6,10 +15,10 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 
-export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistry>()(
+export class NotebookEditorRegistry extends Context.Service<NotebookEditorRegistry>()(
   "NotebookEditorRegistry",
   {
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const code = yield* VsCode;
       const telemetry = yield* Telemetry;
       const ref = yield* Ref.make(
@@ -22,10 +31,10 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
       );
 
       yield* Effect.forkScoped(
-        code.window.activeNotebookEditorChanges().pipe(
+        code.window.activeNotebookEditorChanges.pipe(
           Stream.runForEach(
             Effect.fn(function* (editor) {
-              const notebook = Option.filterMap(editor, (editor) =>
+              const notebook = Option.flatMap(editor, (editor) =>
                 MarimoNotebookDocument.tryFrom(editor.notebook),
               );
               if (Option.isNone(editor) || Option.isNone(notebook)) {
@@ -69,9 +78,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
       );
 
       return {
-        getNotebookEditors() {
-          return Effect.map(Ref.get(ref), HashMap.toEntries);
-        },
+        getNotebookEditors: Effect.map(Ref.get(ref), HashMap.toEntries),
         /**
          * Get the last notebook editor for a given notebook URI
          */
@@ -82,9 +89,7 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         /**
          * Get the currently active notebook URI
          */
-        getActiveNotebookUri() {
-          return SubscriptionRef.get(activeNotebookRef);
-        },
+        getActiveNotebookUri: SubscriptionRef.get(activeNotebookRef),
 
         /**
          * Get the notebook editor for a given notebook URI
@@ -96,20 +101,18 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
         /**
          * Get the currently active notebook editor
          */
-        getActiveNotebookEditor() {
-          return Effect.gen(function* () {
-            const activeNotebookUri =
-              yield* SubscriptionRef.get(activeNotebookRef);
+        getActiveNotebookEditor: Effect.gen(function* () {
+          const activeNotebookUri =
+            yield* SubscriptionRef.get(activeNotebookRef);
 
-            if (Option.isNone(activeNotebookUri)) {
-              yield* Effect.logWarning("No active notebook editor");
-              return Option.none();
-            }
+          if (Option.isNone(activeNotebookUri)) {
+            yield* Effect.logWarning("No active notebook editor");
+            return Option.none();
+          }
 
-            const editors = yield* Ref.get(ref);
-            return HashMap.get(editors, activeNotebookUri.value);
-          });
-        },
+          const editors = yield* Ref.get(ref);
+          return HashMap.get(editors, activeNotebookUri.value);
+        }),
 
         /**
          * Stream of active notebook URI changes.
@@ -117,10 +120,12 @@ export class NotebookEditorRegistry extends Effect.Service<NotebookEditorRegistr
          * Emits the current value on subscription, then all subsequent changes.
          * Filters consecutive duplicates via Stream.changes.
          */
-        streamActiveNotebookChanges() {
-          return activeNotebookRef.changes.pipe(Stream.changes);
-        },
+        streamActiveNotebookChanges: SubscriptionRef.changes(
+          activeNotebookRef,
+        ).pipe(Stream.changes),
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make);
+}

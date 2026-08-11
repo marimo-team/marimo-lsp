@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
 import pytest
@@ -17,9 +17,11 @@ from marimo_lsp.api import (
     ApiContext,
     _restore_unknown_app_options,
     deserialize,
+    execute_scratch,
     export_as_markdown,
     get_configuration,
     handle_api_command,
+    interrupt,
     list_sql_schemas,
     list_sql_tables,
     update_configuration,
@@ -29,11 +31,14 @@ from marimo_lsp.models import (
     DeserializeInvalidSyntax,
     DeserializeRequest,
     DeserializeSuccess,
+    ExecuteScratchRequest,
     ExportAsMarkdownRequest,
     GetConfigurationRequest,
+    InterruptRequest,
     ListSQLSchemasRequest,
     ListSQLTablesRequest,
     NotebookCommand,
+    SessionCommand,
     SetDisplayThemeRequest,
     UpdateConfigurationRequest,
 )
@@ -42,6 +47,93 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
 NOTEBOOK_URI = "file:///notebook.py"
+
+
+@pytest.mark.asyncio
+async def test_execute_scratch_skips_a_run_cancelled_before_startup() -> None:
+    sessions = MagicMock()
+    sessions.take_scratchpad_cancellation.return_value = True
+    sessions.start = AsyncMock()
+
+    await execute_scratch(
+        _context(sessions),
+        SessionCommand(
+            notebook_uri=NOTEBOOK_URI,
+            executable="/usr/bin/python",
+            working_directory="/workspace",
+            inner=ExecuteScratchRequest(code="print('late')", run_id="run-1"),
+        ),
+    )
+
+    sessions.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_scratch_skips_a_run_cancelled_during_startup() -> None:
+    sessions = MagicMock()
+    sessions.take_scratchpad_cancellation.side_effect = [False, True]
+    session = MagicMock()
+    session.wait_until_idle = AsyncMock(return_value=True)
+    sessions.start = AsyncMock(return_value=session)
+
+    with patch("marimo_lsp.api.find_notebook_document", return_value=MagicMock()):
+        await execute_scratch(
+            _context(sessions),
+            SessionCommand(
+                notebook_uri=NOTEBOOK_URI,
+                executable="/usr/bin/python",
+                working_directory="/workspace",
+                inner=ExecuteScratchRequest(code="print('late')", run_id="run-1"),
+            ),
+        )
+
+    sessions.start.assert_awaited_once()
+    session.mark_running.assert_not_called()
+    session.put_control_request.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_execute_scratch_claims_idle_session_before_dispatch() -> None:
+    sessions = MagicMock()
+    sessions.take_scratchpad_cancellation.return_value = False
+    session = MagicMock()
+    session.wait_until_idle = AsyncMock(return_value=True)
+    session.try_start_scratchpad.side_effect = [False, True]
+    sessions.start = AsyncMock(return_value=session)
+
+    with (
+        patch("marimo_lsp.api.find_notebook_document", return_value=MagicMock()),
+        patch("marimo_lsp.api.snapshot_for_scratchpad", return_value=((), {})),
+    ):
+        await execute_scratch(
+            _context(sessions),
+            SessionCommand(
+                notebook_uri=NOTEBOOK_URI,
+                executable="/usr/bin/python",
+                working_directory="/workspace",
+                inner=ExecuteScratchRequest(code="print('later')", run_id="run-1"),
+            ),
+        )
+
+    assert session.wait_until_idle.await_count == 2
+    assert session.try_start_scratchpad.call_count == 2
+    session.put_control_request.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_correlated_interrupt_records_scratchpad_cancellation() -> None:
+    sessions = MagicMock()
+
+    await interrupt(
+        _context(sessions),
+        NotebookCommand(
+            notebook_uri=NOTEBOOK_URI,
+            inner=InterruptRequest(run_id="run-1"),
+        ),
+    )
+
+    sessions.cancel_scratchpad.assert_called_once_with(NOTEBOOK_URI, "run-1")
+    sessions.get.assert_not_called()
 
 
 @pytest.mark.asyncio

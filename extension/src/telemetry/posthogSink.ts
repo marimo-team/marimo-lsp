@@ -18,7 +18,7 @@ export const acquirePostHogAdapter = Effect.acquireRelease(
   ),
   (client) =>
     Effect.promise(() => client.shutdown()).pipe(
-      Effect.catchAllCause(() => Effect.void),
+      Effect.catchCause(() => Effect.void),
     ),
 ).pipe(
   Effect.map(

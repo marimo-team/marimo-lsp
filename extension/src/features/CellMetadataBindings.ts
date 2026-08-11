@@ -1,4 +1,4 @@
-import { Effect, Layer, Option } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 
 import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
 import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
@@ -9,7 +9,8 @@ import {
   SqlCellProjection,
 } from "../schemas/Models.gen.ts";
 
-const DEFAULT_SQL_METADATA = SqlCellProjection.make();
+// Decoding an empty struct applies each field's decoding default.
+const DEFAULT_SQL_METADATA = Schema.decodeUnknownSync(SqlCellProjection)({});
 export const DEFAULT_SQL_ENGINE = DEFAULT_SQL_METADATA.engine;
 const DEFAULT_LABEL = "duckdb (In-Memory)";
 
@@ -43,7 +44,7 @@ function updateSqlMetadata(
   };
 }
 
-export const CellMetadataBindingsLive = Layer.scopedDiscard(
+export const CellMetadataBindingsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const { LanguageId } = yield* Constants;
     const bindingService = yield* CellMetadataUIBindingService;

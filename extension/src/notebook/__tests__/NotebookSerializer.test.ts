@@ -5,14 +5,13 @@ import {
   Cause,
   Duration,
   Effect,
-  Either,
   Exit,
   Fiber,
-  HashSet,
   Layer,
   Ref,
-  TestClock,
+  Result,
 } from "effect";
+import { TestClock } from "effect/testing";
 
 import packageJson from "../../../package.json";
 import { TestMarimoClientProcess } from "../../__mocks__/TestMarimoClient.ts";
@@ -26,24 +25,24 @@ import {
 import { Constants } from "../../platform/Constants.ts";
 
 const NotebookSerializerLive = Layer.empty.pipe(
-  Layer.provideMerge(NotebookSerializer.Default),
+  Layer.provideMerge(NotebookSerializer.layer),
   // These tests intentionally cover the cross-language serialization contract.
   Layer.provideMerge(TestMarimoClientProcess),
-  Layer.provideMerge(Constants.Default),
+  Layer.provideMerge(Constants.layer),
 );
 
-it.scoped(
+it.effect(
   "bounds a deserialize request that never completes",
   Effect.fn(function* () {
     const layer = Layer.empty.pipe(
-      Layer.provideMerge(NotebookSerializer.Default),
+      Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(makeTestMarimoClient({ execute: () => Effect.never })),
-      Layer.provideMerge(Constants.Default),
+      Layer.provideMerge(Constants.layer),
     );
 
     const exit = yield* Effect.gen(function* () {
       const serializer = yield* NotebookSerializer;
-      const deserialize = yield* Effect.fork(
+      const deserialize = yield* Effect.forkChild(
         serializer
           .deserializeEffect(new TextEncoder().encode("app = marimo.App()"))
           .pipe(Effect.exit),
@@ -53,28 +52,26 @@ it.scoped(
     }).pipe(Effect.provide(layer));
 
     assert(Exit.isFailure(exit));
-    const failure = Cause.failureOption(exit.cause);
+    const failure = Cause.findErrorOption(exit.cause);
     assert(failure._tag === "Some");
-    assert(Cause.isTimeoutException(failure.value));
+    assert(Cause.isTimeoutError(failure.value));
   }),
 );
 
-it.scoped(
+it.effect(
   "registered serializer explains deserialize timeouts",
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
     const layer = Layer.empty.pipe(
-      Layer.provideMerge(NotebookSerializer.Default),
+      Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(makeTestMarimoClient({ execute: () => Effect.never })),
-      Layer.provideMerge(Constants.Default),
+      Layer.provideMerge(Constants.layer),
       Layer.provideMerge(vscode.layer),
     );
 
     yield* Effect.gen(function* () {
       yield* NotebookSerializer;
-      const registrations = HashSet.toValues(
-        yield* Ref.get(vscode.serializers),
-      );
+      const registrations = Array.from(yield* Ref.get(vscode.serializers));
       const registration = registrations[0];
       assert.isDefined(registration);
 
@@ -89,7 +86,7 @@ it.scoped(
         () => undefined,
         (error: unknown) => error,
       );
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* TestClock.adjust(Duration.seconds(120));
       const error = yield* Effect.promise(() => settled);
 
@@ -101,12 +98,12 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "registered serializer explains non-marimo source failures",
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
     const layer = Layer.empty.pipe(
-      Layer.provideMerge(NotebookSerializer.Default),
+      Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(
         makeTestMarimoClient({
           execute: () =>
@@ -115,15 +112,13 @@ it.scoped(
             }),
         }),
       ),
-      Layer.provideMerge(Constants.Default),
+      Layer.provideMerge(Constants.layer),
       Layer.provideMerge(vscode.layer),
     );
 
     yield* Effect.gen(function* () {
       yield* NotebookSerializer;
-      const registrations = HashSet.toValues(
-        yield* Ref.get(vscode.serializers),
-      );
+      const registrations = Array.from(yield* Ref.get(vscode.serializers));
       const registration = registrations[0];
       assert.isDefined(registration);
 
@@ -166,7 +161,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
         const serializer = yield* NotebookSerializer;
-        const invalidCell = yield* Effect.either(
+        const invalidCell = yield* Effect.result(
           serializer.serializeEffect({
             cells: [
               {
@@ -178,15 +173,15 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
             ],
           }),
         );
-        const invalidNotebook = yield* Effect.either(
+        const invalidNotebook = yield* Effect.result(
           serializer.serializeEffect({
             cells: [],
             metadata: { marimo: { misspelled: true } },
           }),
         );
 
-        expect(Either.isLeft(invalidCell)).toBe(true);
-        expect(Either.isLeft(invalidNotebook)).toBe(true);
+        expect(Result.isFailure(invalidCell)).toBe(true);
+        expect(Result.isFailure(invalidNotebook)).toBe(true);
       }),
     );
 
@@ -352,14 +347,14 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       "rejects a present null notebook metadata namespace",
       Effect.fn(function* () {
         const serializer = yield* NotebookSerializer;
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           serializer.serializeEffect({
             cells: [],
             metadata: { marimo: null },
           }),
         );
 
-        expect(Either.isLeft(result)).toBe(true);
+        expect(Result.isFailure(result)).toBe(true);
       }),
     );
 
@@ -367,15 +362,15 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       "returns a typed source error for non-marimo Python",
       Effect.fn(function* () {
         const serializer = yield* NotebookSerializer;
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           serializer.deserializeEffect(
             new TextEncoder().encode("print('hello')\n"),
           ),
         );
 
-        assert(Either.isLeft(result));
-        assert(result.left instanceof NotebookSourceError);
-        expect(result.left.failure).toEqual({
+        assert(Result.isFailure(result));
+        assert(result.failure instanceof NotebookSourceError);
+        expect(result.failure.failure).toEqual({
           kind: "convertible",
         });
       }),

@@ -26,16 +26,16 @@ const makeTestLayer = Effect.fn(function* (
   return {
     vscode,
     layer: Layer.empty.pipe(
-      Layer.provideMerge(NotebookRuntime.Default),
+      Layer.provideMerge(NotebookRuntime.layer),
       Layer.provide(makeTestMarimoClient(options)),
       Layer.provide(TestTelemetryLive),
-      Layer.provide(TestPythonExtension.Default),
+      Layer.provide(TestPythonExtension.layer),
       Layer.provideMerge(vscode.layer),
     ),
   };
 });
 
-it.scoped(
+it.effect(
   "returns a stable handle that binds the notebook ID",
   Effect.fn(function* () {
     const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
@@ -61,7 +61,7 @@ it.scoped(
       yield* first
         .executeCells({ cellIds: [], codes: [] }, "/usr/bin/python")
         .pipe(Effect.orDie);
-      yield* first.interrupt().pipe(Effect.orDie);
+      yield* first.interrupt.pipe(Effect.orDie);
 
       assert.deepStrictEqual(yield* Ref.get(requests), [
         {
@@ -89,7 +89,7 @@ it.scoped(
   }),
 );
 
-it.scoped("tracks RuntimeSession until a successful kernel close", () =>
+it.effect("tracks RuntimeSession until a successful kernel close", () =>
   Effect.acquireUseRelease(
     Effect.sync(() =>
       NodeFs.mkdtempDisposableSync(
@@ -153,7 +153,7 @@ it.scoped("tracks RuntimeSession until a successful kernel close", () =>
           );
 
           yield* vscode.closeNotebook(editor.notebook);
-          yield* Effect.yieldNow();
+          yield* Effect.yieldNow;
           expect(yield* runtime.getRuntimeSession(id)).toEqual(
             Option.some({
               executable: "/python-one",
@@ -161,10 +161,11 @@ it.scoped("tracks RuntimeSession until a successful kernel close", () =>
             }),
           );
 
+          yield* vscode.openNotebook(editor.notebook);
           yield* runtime
             .forNotebook(id)
             .executeCells({ cellIds: [], codes: [] }, "/python-two");
-          yield* runtime.forNotebook(id).close();
+          yield* runtime.forNotebook(id).close;
           expect(Option.isNone(yield* runtime.getRuntimeSession(id))).toBe(
             true,
           );
@@ -186,15 +187,17 @@ it.scoped("tracks RuntimeSession until a successful kernel close", () =>
   ),
 );
 
-it.scoped(
+it.effect(
   "subscribes to MarimoClient operations once",
   Effect.fn(function* () {
     let subscriptions = 0;
     const { layer } = yield* makeTestLayer({
-      operations: () => {
+      // Stream.suspend evaluates once per subscription, so the counter still
+      // measures how many times the runtime subscribed to `operations`.
+      operations: Stream.suspend(() => {
         subscriptions += 1;
         return Stream.never;
-      },
+      }),
     });
 
     yield* Effect.gen(function* () {
@@ -202,12 +205,16 @@ it.scoped(
       notebooks.forNotebook(notebook);
       notebooks.forNotebook(notebookId("notebook-b"));
 
-      expect(subscriptions).toBe(1);
+      const settledSubscriptions = yield* eventually(
+        Effect.sync(() => subscriptions),
+        (count) => count === 1,
+      );
+      expect(settledSubscriptions).toBe(1);
     }).pipe(Effect.provide(layer));
   }),
 );
 
-it.scoped(
+it.effect(
   "owns the selected controller",
   Effect.fn(function* () {
     const { layer } = yield* makeTestLayer();
@@ -223,15 +230,15 @@ it.scoped(
       const notebooks = yield* NotebookRuntime;
       const handle = notebooks.forNotebook(notebook);
 
-      expect(Option.isNone(yield* handle.getController())).toBe(true);
+      expect(Option.isNone(yield* handle.getController)).toBe(true);
       yield* notebooks.attachController(notebook, controller);
 
-      expect(yield* handle.getController()).toEqual(Option.some(controller));
+      expect(yield* handle.getController).toEqual(Option.some(controller));
     }).pipe(Effect.provide(layer));
   }),
 );
 
-it.scoped(
+it.effect(
   "does not report a live kernel from controller selection alone",
   Effect.fn(function* () {
     const { layer, vscode } = yield* makeTestLayer();
@@ -283,10 +290,10 @@ const eventually = <A>(
 ) =>
   Effect.filterOrFail(get, predicate, () => "not settled yet" as const).pipe(
     Effect.retry(Schedule.recurs(100)),
-    Effect.orElse(() => get),
+    Effect.catch(() => get),
   );
 
-it.scoped(
+it.effect(
   "reports no kernel for an active notebook with no controller",
   Effect.fn(function* () {
     const { layer, vscode } = yield* makeTestLayer();
@@ -294,7 +301,7 @@ it.scoped(
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime;
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
       const contexts = yield* eventually(
@@ -306,7 +313,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "reports a live kernel from the server session snapshot",
   Effect.fn(function* () {
     const changes = yield* PubSub.unbounded<{
@@ -324,13 +331,13 @@ it.scoped(
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const id = notebookId(editor.notebook.uri.toString());
     const { layer, vscode } = yield* makeTestLayer({
-      sessionChanges: () => Stream.fromPubSub(changes),
+      sessionChanges: Stream.fromPubSub(changes),
     });
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* PubSub.publish(changes, {
         sessions: [
           {
@@ -355,7 +362,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "releases a notebook's controller when its document closes",
   Effect.fn(function* () {
     const { layer, vscode } = yield* makeTestLayer();
@@ -371,19 +378,19 @@ it.scoped(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime;
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* notebooks.attachController(id, controller);
       expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
 
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* vscode.closeNotebook(editor.notebook);
 
       // Pruning treats a controller as dead once no open notebook selects it,
       // so the runtime must stop handing this one out. Re-resolve the handle
       // each attempt: one captured before the close reads the released state.
       const released = yield* eventually(
-        Effect.suspend(() => notebooks.forNotebook(id).getController()),
+        Effect.suspend(() => notebooks.forNotebook(id).getController),
         Option.isNone,
       );
       expect(Option.isNone(released)).toBe(true);

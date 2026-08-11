@@ -20,7 +20,7 @@ import showNotebookMenu, { NOTEBOOK_MENU_ITEMS } from "../showNotebookMenu.ts";
 
 const configLayer = Layer.succeed(
   MarimoConfigurationService,
-  MarimoConfigurationService.make({
+  MarimoConfigurationService.of({
     getConfig: () =>
       Effect.succeed(
         marimoConfigFixture({
@@ -35,7 +35,7 @@ const configLayer = Layer.succeed(
 
 const constantsLayer = Layer.succeed(
   Constants,
-  Constants.make({
+  Constants.of({
     LanguageId: {
       Python: "mo-python",
       Sql: "sql",
@@ -46,20 +46,20 @@ const constantsLayer = Layer.succeed(
 
 const marimoLayer = Layer.succeed(
   MarimoClient,
-  MarimoClient.make({
+  MarimoClient.of({
     server: MarimoLspServer.Python(),
     channel: { name: "marimo-lsp-test", show() {} },
-    restart: () => Effect.void,
+    restart: Effect.void,
     ...makeMarimoCommands({
       execute: () => Effect.die("not implemented"),
-      operations: () => Stream.empty,
+      operations: Stream.empty,
     }),
   }),
 );
 
 const serializerLayer = Layer.succeed(
   NotebookSerializer,
-  NotebookSerializer.make({
+  NotebookSerializer.of({
     notebookType: NOTEBOOK_TYPE,
     serializeEffect: () => Effect.die("not implemented"),
     deserializeEffect: () => Effect.die("not implemented"),
@@ -68,7 +68,7 @@ const serializerLayer = Layer.succeed(
 
 const githubLayer = Layer.succeed(
   GitHubClient,
-  GitHubClient.make({
+  GitHubClient.of({
     Gists: {
       create: () => Effect.die("not implemented"),
       update: () => Effect.die("not implemented"),
@@ -92,7 +92,7 @@ const testLayer = (vscode: TestVsCode) =>
     marimoLayer,
     serializerLayer,
     githubLayer,
-    OutputChannel.Default.pipe(Layer.provide(vscode.layer)),
+    OutputChannel.layer.pipe(Layer.provide(vscode.layer)),
   );
 
 describe("showNotebookMenu", () => {
@@ -113,10 +113,10 @@ describe("showNotebookMenu", () => {
         .invoke(Option.none())
         .pipe(Effect.provide(testLayer(vscode)));
 
-      expect(yield* labels).toEqual(
+      expect(yield* Ref.get(labels)).toEqual(
         NOTEBOOK_MENU_ITEMS.map((item) => item.label),
       );
-      expect(yield* vscode.executions).toEqual([]);
+      expect(yield* Ref.get(vscode.executions)).toEqual([]);
     }),
   );
 
@@ -129,7 +129,7 @@ describe("showNotebookMenu", () => {
         window: {
           showQuickPickItems: (items) =>
             Effect.succeed(
-              Option.fromNullable(
+              Option.fromNullishOr(
                 items.find((item) => item.label.includes("Create setup cell")),
               ),
             ),
@@ -143,8 +143,8 @@ describe("showNotebookMenu", () => {
         .invoke(targetFor(editor))
         .pipe(Effect.provide(testLayer(vscode)));
 
-      expect(yield* applied).toBe(true);
-      expect(yield* vscode.executions).toEqual([]);
+      expect(yield* Ref.get(applied)).toBe(true);
+      expect(yield* Ref.get(vscode.executions)).toEqual([]);
     }),
   );
 
@@ -155,7 +155,7 @@ describe("showNotebookMenu", () => {
         window: {
           showQuickPickItems: (items) =>
             Effect.succeed(
-              Option.fromNullable(
+              Option.fromNullishOr(
                 items.find((item) => item.label.includes("Publish notebook")),
               ),
             ),
@@ -170,10 +170,10 @@ describe("showNotebookMenu", () => {
         .invoke(Option.none())
         .pipe(Effect.provide(testLayer(vscode)));
 
-      expect(yield* warning).toEqual(
+      expect(yield* Ref.get(warning)).toEqual(
         Option.some("Must have an open marimo notebook to publish Gist."),
       );
-      expect(yield* vscode.executions).toEqual([]);
+      expect(yield* Ref.get(vscode.executions)).toEqual([]);
     }),
   );
 
@@ -202,7 +202,7 @@ describe("showNotebookMenu", () => {
         window: {
           showQuickPickItems: (items) =>
             Effect.succeed(
-              Option.fromNullable(
+              Option.fromNullishOr(
                 items.find((item) => item.label.includes("Automatic exports")),
               ),
             ),
@@ -220,7 +220,7 @@ describe("showNotebookMenu", () => {
         .invoke(targetFor(editor))
         .pipe(Effect.provide(testLayer(vscode)));
 
-      expect(yield* applied).toBe(true);
+      expect(yield* Ref.get(applied)).toBe(true);
     }),
   );
 
@@ -236,7 +236,7 @@ describe("showNotebookMenu", () => {
             showQuickPickItems: (items, options) => {
               if (options?.title === "marimo notebook") {
                 return Effect.succeed(
-                  Option.fromNullable(
+                  Option.fromNullishOr(
                     items.find((item) => item.label.includes("Reactivity")),
                   ),
                 );
@@ -253,7 +253,7 @@ describe("showNotebookMenu", () => {
           .invoke(targetFor(editor))
           .pipe(Effect.provide(testLayer(vscode)));
 
-        expect(yield* descriptions).toEqual(["Lazy", "Auto-run"]);
+        expect(yield* Ref.get(descriptions)).toEqual(["Lazy", "Auto-run"]);
       }),
   );
 });

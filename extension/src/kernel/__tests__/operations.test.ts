@@ -42,7 +42,7 @@ const withTestCtx = Effect.fn(function* (options: {
         Ref.update(prompts, (count) => count + 1).pipe(
           Effect.as(
             options.installAll
-              ? Option.fromNullable(messageOptions.items?.[0])
+              ? Option.fromNullishOr(messageOptions.items?.[0])
               : Option.none(),
           ),
         ),
@@ -70,19 +70,15 @@ const withTestCtx = Effect.fn(function* (options: {
   const notebook = MarimoNotebookDocument.from(editor.notebook);
   const layer = Layer.mergeAll(
     vscode.layer,
-    Config.Default.pipe(Layer.provide(vscode.layer)),
-    Layer.succeed(
-      PythonEnvInvalidation,
-      PythonEnvInvalidation.make({
-        invalidate: () =>
-          Ref.update(invalidations, (count) => count + 1).pipe(Effect.as(true)),
-        changes: () => Stream.empty,
-      }),
-    ),
+    Config.layer.pipe(Layer.provide(vscode.layer)),
+    Layer.succeed(PythonEnvInvalidation, {
+      invalidate: () =>
+        Ref.update(invalidations, (count) => count + 1).pipe(Effect.as(true)),
+      changes: Stream.empty,
+    }),
     // Cancellation happens before invoking uv; any Uv method call is a defect.
     // Layer.mock still requires the non-method properties.
     Layer.mock(Uv, {
-      _tag: "Uv",
       bin: Effect.succeed(
         UvBin.Bundled({
           executable: "uv",
@@ -95,7 +91,7 @@ const withTestCtx = Effect.fn(function* (options: {
   return { layer, notebook, prompts, invalidations };
 });
 
-it.scoped("prompts to install missing packages when uv is enabled", () =>
+it.effect("prompts to install missing packages when uv is enabled", () =>
   Effect.gen(function* () {
     const ctx = yield* withTestCtx({ disableUvIntegration: false });
     yield* handleMissingPackageAlert(alert, ctx.notebook, controller).pipe(
@@ -105,7 +101,7 @@ it.scoped("prompts to install missing packages when uv is enabled", () =>
   }),
 );
 
-it.scoped("skips the install prompt when uv integration is disabled", () =>
+it.effect("skips the install prompt when uv integration is disabled", () =>
   Effect.gen(function* () {
     const ctx = yield* withTestCtx({ disableUvIntegration: true });
     yield* handleMissingPackageAlert(alert, ctx.notebook, controller).pipe(
@@ -115,7 +111,7 @@ it.scoped("skips the install prompt when uv integration is disabled", () =>
   }),
 );
 
-it.scoped(
+it.effect(
   "does not invalidate the environment when placement is cancelled",
   () =>
     Effect.gen(function* () {

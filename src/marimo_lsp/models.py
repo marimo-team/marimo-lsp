@@ -279,6 +279,13 @@ class ConvertRequest(msgspec.Struct, rename="camel"):
 class InterruptRequest(msgspec.Struct, rename="camel"):
     """A request to interrupt the kernel execution."""
 
+    run_id: str | None = None
+    """Optional scratchpad run to cancel.
+
+    Correlating cancellation lets the language server remember an interrupt
+    that arrives while the run's kernel session is still starting.
+    """
+
 
 class ListPackagesRequest(msgspec.Struct, rename="camel"):
     """A request to list installed packages in the kernel environment."""

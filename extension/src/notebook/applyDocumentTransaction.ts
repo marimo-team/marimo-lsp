@@ -112,7 +112,8 @@ export const applyDocumentTransaction = Effect.fn(
       name: cell.name === "" ? "_" : cell.name,
       options: cell.config,
       sourceProjections:
-        cell.sourceProjections ?? Api.CellSourceProjections.make(),
+        cell.sourceProjections ??
+        Api.CellSourceProjections.make({ markdown: null, sql: null }),
     });
     data.metadata = existing
       ? existing.buildMetadataForReplacement(marimoMetadata, {

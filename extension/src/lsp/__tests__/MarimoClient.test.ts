@@ -20,7 +20,7 @@ import {
 
 const notebook = notebookId("notebook-a");
 
-it.scoped(
+it.effect(
   "does not fail scope cleanup when language-client disposal rejects",
   Effect.fn(function* () {
     const dispose = vi.fn(() =>
@@ -33,7 +33,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "constructs marimo.api commands through named methods",
   Effect.fn(function* () {
     const calls = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
@@ -46,7 +46,7 @@ it.scoped(
         Ref.update(calls, (current) => [...current, request]).pipe(
           Effect.as(responses[request.method]),
         ),
-      operations: () => Stream.empty,
+      operations: Stream.empty,
     });
 
     yield* marimo.executeCells({
@@ -76,7 +76,7 @@ it.scoped(
 );
 
 describe("generated api client", () => {
-  it.scoped(
+  it.effect(
     "parses responses against the method's success schema",
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
@@ -84,7 +84,7 @@ describe("generated api client", () => {
           Effect.succeed({
             tree: { name: "root", version: null, tags: [], dependencies: [] },
           }),
-        operations: () => Stream.empty,
+        operations: Stream.empty,
       });
 
       const response = yield* marimo.getDependencyTree({
@@ -98,12 +98,12 @@ describe("generated api client", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "fails with ParseError when the server response violates the contract",
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
         execute: () => Effect.succeed({ tree: "not-a-tree" }),
-        operations: () => Stream.empty,
+        operations: Stream.empty,
       });
 
       const exit = yield* marimo
@@ -115,16 +115,20 @@ describe("generated api client", () => {
         .pipe(Effect.exit);
 
       assert.isTrue(Exit.isFailure(exit));
-      assert.include(String(exit), "DependencyTreeResponse");
+      // The formatter names the schema and the path of the field that
+      // failed. It does not name the response type that contains it.
+      assert.include(String(exit), "SchemaError");
+      assert.include(String(exit), "DependencyTreeNode");
+      assert.include(String(exit), '["tree"]');
     }),
   );
 
-  it.scoped(
+  it.effect(
     "rejects params the server would reject, before hitting the wire",
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
         execute: () => Effect.die("should not reach the transport"),
-        operations: () => Stream.empty,
+        operations: Stream.empty,
       });
 
       const exit = yield* marimo
@@ -141,12 +145,12 @@ describe("generated api client", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "requires tagged-union discriminators before hitting the wire",
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
         execute: () => Effect.die("should not reach the transport"),
-        operations: () => Stream.empty,
+        operations: Stream.empty,
       });
 
       const exit = yield* marimo
@@ -165,7 +169,7 @@ describe("generated api client", () => {
 });
 
 describe("findMarimoLspExecutable", () => {
-  it.scoped("uses a compatible Python range for the bundled LSP", () =>
+  it.effect("uses a compatible Python range for the bundled LSP", () =>
     Effect.acquireUseRelease(
       Effect.sync(() =>
         NodeFs.mkdtempDisposableSync(
@@ -247,7 +251,7 @@ describe("selectMarimoLspExecutable", () => {
     }),
   );
 
-  it.scoped("resolves uv only for the Python server variant", () =>
+  it.effect("resolves uv only for the Python server variant", () =>
     Effect.acquireUseRelease(
       Effect.sync(() =>
         NodeFs.mkdtempDisposableSync(
@@ -275,25 +279,27 @@ describe("selectMarimoLspExecutable", () => {
   );
 });
 
-it.scoped(
+it.effect(
   "subscribes to marimo operations",
   Effect.fn(function* () {
     let requestedNotification: string | undefined;
     const marimo = makeMarimoCommands({
       execute: () => Effect.void,
-      operations: () => {
+      // Stream.suspend defers to subscription time, so the assertion below
+      // still observes that draining `operations` evaluated the transport.
+      operations: Stream.suspend(() => {
         requestedNotification = "marimo/operation";
         return Stream.empty;
-      },
+      }),
     });
 
-    yield* marimo.operations().pipe(Stream.runDrain);
+    yield* marimo.operations.pipe(Stream.runDrain);
 
     assert.strictEqual(requestedNotification, "marimo/operation");
   }),
 );
 
-it.scoped(
+it.effect(
   "broadcasts marimo operations without replacing the transport handler",
   Effect.fn(function* () {
     let registrations = 0;
@@ -310,10 +316,10 @@ it.scoped(
     } as const;
     const [first, second] = yield* Effect.all(
       [
-        operations().pipe(Stream.take(1), Stream.runHead),
-        operations().pipe(Stream.take(1), Stream.runHead),
+        operations.pipe(Stream.take(1), Stream.runHead),
+        operations.pipe(Stream.take(1), Stream.runHead),
         Effect.gen(function* () {
-          yield* Effect.yieldNow();
+          yield* Effect.yieldNow;
           assert.ok(notify);
           notify(message);
         }),

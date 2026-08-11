@@ -1,13 +1,6 @@
 import { expect, it } from "@effect/vitest";
-import {
-  Effect,
-  Layer,
-  Option,
-  Ref,
-  Stream,
-  SubscriptionRef,
-  TestClock,
-} from "effect";
+import { Effect, Layer, Option, Ref, Stream, SubscriptionRef } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { marimoConfigFixture } from "../../lib/__tests__/branded.ts";
@@ -21,12 +14,12 @@ const withTestCtx = Effect.fn(function* () {
 
   const stubConfigService = Layer.succeed(
     MarimoConfigurationService,
-    MarimoConfigurationService.make({
+    MarimoConfigurationService.of({
       getConfig: () => Effect.die("not implemented"),
       updateConfig: () => Effect.die("not implemented"),
       clearNotebook: () => Effect.die("not implemented"),
       streamOf: (mapper) =>
-        configRef.changes.pipe(
+        SubscriptionRef.changes(configRef).pipe(
           Stream.map((config) => Option.map(config, mapper)),
           Stream.changes,
         ),
@@ -41,7 +34,7 @@ const withTestCtx = Effect.fn(function* () {
   return { vscode, configRef, layer };
 });
 
-it.scoped("mirrors kernel config into VS Code context keys", () =>
+it.effect("mirrors kernel config into VS Code context keys", () =>
   Effect.gen(function* () {
     const ctx = yield* withTestCtx();
     yield* Layer.build(ctx.layer);

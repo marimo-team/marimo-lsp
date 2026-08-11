@@ -1,6 +1,8 @@
 import {
+  Context,
   Effect,
   HashMap,
+  Layer,
   Option,
   PubSub,
   Stream,
@@ -26,10 +28,10 @@ import type {
  *
  * Uses SubscriptionRef for reactive state management.
  */
-export class VariablesService extends Effect.Service<VariablesService>()(
+export class VariablesService extends Context.Service<VariablesService>()(
   "VariablesService",
   {
-    scoped: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       // Track variable declarations: NotebookUri -> VariablesOp
       const variablesRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, VariablesNotification>(),
@@ -187,9 +189,9 @@ export class VariablesService extends Effect.Service<VariablesService>()(
          * Emits the current value on subscription, then all subsequent changes.
          * Filters consecutive duplicates via Stream.changes.
          */
-        streamVariablesChanges() {
-          return variablesRef.changes.pipe(Stream.changes);
-        },
+        streamVariablesChanges: SubscriptionRef.changes(variablesRef).pipe(
+          Stream.changes,
+        ),
 
         /**
          * Stream of variable value changes.
@@ -197,9 +199,9 @@ export class VariablesService extends Effect.Service<VariablesService>()(
          * Emits the current value on subscription, then all subsequent changes.
          * Filters consecutive duplicates via Stream.changes.
          */
-        streamVariableValuesChanges() {
-          return variableValuesRef.changes.pipe(Stream.changes);
-        },
+        streamVariableValuesChanges: SubscriptionRef.changes(
+          variableValuesRef,
+        ).pipe(Stream.changes),
 
         /**
          * Stream of notebook IDs that had variable updates.
@@ -207,10 +209,10 @@ export class VariablesService extends Effect.Service<VariablesService>()(
          * Emits the NotebookId whenever variables or variable values are updated.
          * Use this for reacting to changes without needing the full data.
          */
-        notebookUpdates() {
-          return Stream.fromPubSub(notebookUpdatesPubSub);
-        },
+        notebookUpdates: Stream.fromPubSub(notebookUpdatesPubSub),
       };
     }),
   },
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make);
+}

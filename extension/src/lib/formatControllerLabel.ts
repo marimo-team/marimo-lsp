@@ -1,7 +1,9 @@
 import type * as py from "@vscode/python-extension";
-import { Either } from "effect";
+import { type Context, Result } from "effect";
 
 import type { VsCode } from "../platform/VsCode.ts";
+
+type VsCodeShape = Context.Service.Shape<typeof VsCode>;
 
 /**
  * Format a {@link py.Environment} similar to vscode-jupyter
@@ -9,7 +11,7 @@ import type { VsCode } from "../platform/VsCode.ts";
  * E.g. "EnvName (Python 3.10.2)" or just "Python 3.10.2"
  */
 export function formatControllerLabel(
-  code: VsCode,
+  code: VsCodeShape,
   env: py.Environment,
 ): string {
   const versionString = formatPythonVersion(env);
@@ -50,7 +52,7 @@ export function formatPythonVersion(env: py.Environment): string {
  * E.g. "3.10.2 (myenv)" or "3.11.5"
  */
 export function formatPythonStatusBarLabel(
-  code: VsCode,
+  code: VsCodeShape,
   env: py.Environment,
 ): string {
   const versionParts: Array<number> = [];
@@ -81,7 +83,7 @@ export function formatPythonStatusBarLabel(
  * A human readable name for a {@link py.Environment}
  */
 function resolvePythonEnvironmentName(
-  code: VsCode,
+  code: VsCodeShape,
   env: py.Environment,
 ): string | undefined {
   if (env.environment?.name) {
@@ -90,7 +92,7 @@ function resolvePythonEnvironmentName(
   if (env.environment?.folderUri) {
     return code.utils
       .parseUri(env.environment.folderUri.toString())
-      .pipe(Either.getOrThrow)
+      .pipe(Result.getOrThrow)
       .path.split("/")
       .pop();
   }

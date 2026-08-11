@@ -20,7 +20,10 @@ import {
   makeNotebookLspClient,
   type NotebookLspClientConfig,
 } from "./client.ts";
-import { toVsCodeDiagnosticSeverity } from "./converters.ts";
+import {
+  toVsCodeDiagnosticSeverity,
+  type VsCodeService,
+} from "./converters.ts";
 import { registerLspProviders } from "./registerLspProviders.ts";
 
 /**
@@ -37,7 +40,7 @@ export const connectMarimoNotebookLspClient = Effect.fn(
 
   // -- Resolve workspace folders -------------------------------------------
 
-  const folders = yield* code.workspace.getWorkspaceFolders();
+  const folders = yield* code.workspace.getWorkspaceFolders;
   const workspaceFolders = Option.getOrElse(folders, () => []).map((f) => ({
     uri: f.uri.toString(),
     name: f.name,
@@ -71,7 +74,7 @@ export const connectMarimoNotebookLspClient = Effect.fn(
   // -- VS Code events → client lifecycle -----------------------------------
 
   yield* Effect.forkScoped(
-    code.workspace.notebookDocumentOpened().pipe(
+    code.workspace.notebookDocumentOpened.pipe(
       Stream.filter((nb) => nb.notebookType === NOTEBOOK_TYPE),
       Stream.runForEach((nb) => {
         const doc = MarimoNotebookDocument.tryFrom(nb);
@@ -83,14 +86,14 @@ export const connectMarimoNotebookLspClient = Effect.fn(
   );
 
   yield* Effect.forkScoped(
-    code.workspace.notebookDocumentChanges().pipe(
+    code.workspace.notebookDocumentChanges.pipe(
       Stream.filter((evt) => evt.notebook.notebookType === NOTEBOOK_TYPE),
       Stream.runForEach((evt) => client.notebookDocumentChange(evt)),
     ),
   );
 
   yield* Effect.forkScoped(
-    code.workspace.textDocumentChanges().pipe(
+    code.workspace.textDocumentChanges.pipe(
       Stream.filter(
         (evt) => evt.document.uri.scheme === "vscode-notebook-cell",
       ),
@@ -99,7 +102,7 @@ export const connectMarimoNotebookLspClient = Effect.fn(
   );
 
   yield* Effect.forkScoped(
-    code.workspace.notebookDocumentClosed().pipe(
+    code.workspace.notebookDocumentClosed.pipe(
       Stream.filter((nb) => nb.notebookType === NOTEBOOK_TYPE),
       Stream.runForEach((nb) => {
         const doc = MarimoNotebookDocument.tryFrom(nb);
@@ -116,7 +119,7 @@ export const connectMarimoNotebookLspClient = Effect.fn(
 
   // -- Open any already-open notebooks -------------------------------------
 
-  const existingNotebooks = yield* code.workspace.getNotebookDocuments();
+  const existingNotebooks = yield* code.workspace.getNotebookDocuments;
   for (const nb of existingNotebooks) {
     if (nb.notebookType === NOTEBOOK_TYPE) {
       const doc = MarimoNotebookDocument.tryFrom(nb);
@@ -255,7 +258,7 @@ function isRelativePattern(
  * @internal exported for testing.
  */
 export function toVsCodeGlobPattern(
-  code: VsCode,
+  code: VsCodeService,
   globPattern: unknown,
 ): Option.Option<vscode.GlobPattern> {
   if (typeof globPattern === "string") {
@@ -277,7 +280,7 @@ export function toVsCodeGlobPattern(
  * Convert an LSP diagnostic to a VS Code Diagnostic.
  */
 function toLspDiagnostic(
-  code: VsCode,
+  code: VsCodeService,
   source: string,
   d: lsp.Diagnostic,
 ): vscode.Diagnostic {
