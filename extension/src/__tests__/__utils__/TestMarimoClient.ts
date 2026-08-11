@@ -2,7 +2,7 @@ import {
   Effect,
   Layer,
   Option,
-  type ParseResult,
+  type SchemaError,
   PubSub,
   Stream,
 } from "effect";
@@ -27,7 +27,7 @@ import type {
 interface Options {
   readonly execute?: (
     request: MarimoApiCall,
-  ) => Effect.Effect<unknown, ParseResult.ParseError>;
+  ) => Effect.Effect<unknown, SchemaError.SchemaError>;
   readonly operations?: () => Stream.Stream<MarimoOperation>;
   readonly sessionChanges?: () => Stream.Stream<MarimoSessionsChanged>;
   readonly initialControllers?: ReadonlyArray<NotebookControllerSelection>;

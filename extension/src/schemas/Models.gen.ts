@@ -1527,7 +1527,7 @@ const dispatch = <PA, PI, PR, A, I, R2, E, R>(
   call: MarimoApiCall & { readonly params: PI },
   payload: Schema.Schema<PA, PI, PR>,
   success: Schema.Schema<A, I, R2>,
-): Effect.Effect<A, E | ParseResult.ParseError, R | PR | R2> =>
+): Effect.Effect<A, E | SchemaError.SchemaError, R | PR | R2> =>
   Effect.zipRight(
     Schema.decode(payload)(call.params),
     Effect.flatMap(execute(call), Schema.decodeUnknown(success)),

@@ -27,7 +27,7 @@ export interface InvocationAdapter<
   readonly consumedArguments: number;
   readonly decode: (
     args: ReadonlyArray<unknown>,
-  ) => Effect.Effect<HandlerArgs, ParseResult.ParseError, Requirements>;
+  ) => Effect.Effect<HandlerArgs, SchemaError.SchemaError, Requirements>;
 }
 
 type CallArgsOf<Adapter> =

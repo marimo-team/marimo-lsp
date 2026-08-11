@@ -6,7 +6,7 @@ import {
   Effect,
   Fiber,
   Option,
-  type ParseResult,
+  type SchemaError,
   Runtime,
   Schema,
 } from "effect";
@@ -295,7 +295,7 @@ function notebookDataToNotebookDocument(
   }: {
     LanguageId: Constants["LanguageId"];
   },
-): Effect.Effect<typeof Api.SerializePayload.Encoded, ParseResult.ParseError> {
+): Effect.Effect<typeof Api.SerializePayload.Encoded, SchemaError.SchemaError> {
   const { cells, metadata = {} } = notebook;
   const sqlParser = new SQLParser();
   const markdownParser = new MarkdownParser();

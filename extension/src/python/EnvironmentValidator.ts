@@ -11,7 +11,7 @@ import {
   Equal,
   Hash,
   Option,
-  type ParseResult,
+  type SchemaError,
   Schema,
   Stream,
   String,
@@ -34,7 +34,7 @@ class EnvironmentInspectionError extends Data.TaggedError(
   readonly env: py.Environment;
   readonly cause?:
     | PlatformError
-    | ParseResult.ParseError
+    | SchemaError.SchemaError
     | InvalidExecutableError;
   readonly stdout?: string;
   readonly stderr?: string;

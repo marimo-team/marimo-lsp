@@ -16,7 +16,7 @@ export interface CommandInvocation<
   readonly contributedSurfaces: ReadonlyArray<string>;
   readonly decode: (
     args: ReadonlyArray<unknown>,
-  ) => Effect.Effect<HandlerArgs, ParseResult.ParseError, Requirements>;
+  ) => Effect.Effect<HandlerArgs, SchemaError.SchemaError, Requirements>;
 }
 
 export interface MarimoCommand<
@@ -31,10 +31,10 @@ export interface MarimoCommand<
     readonly contributedSurfaces: ReadonlyArray<string>;
     readonly decodeArguments: (
       args: ReadonlyArray<unknown>,
-    ) => Effect.Effect<HandlerArgs, ParseResult.ParseError, DecodeRequirements>;
+    ) => Effect.Effect<HandlerArgs, SchemaError.SchemaError, DecodeRequirements>;
     readonly decodeResult: (
       result: unknown,
-    ) => Effect.Effect<Result, ParseResult.ParseError>;
+    ) => Effect.Effect<Result, SchemaError.SchemaError>;
   };
 }
 
@@ -146,7 +146,7 @@ export function decodeCommandArguments<
 >(
   command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
   args: ReadonlyArray<unknown>,
-): Effect.Effect<HandlerArgs, ParseResult.ParseError, DecodeRequirements> {
+): Effect.Effect<HandlerArgs, SchemaError.SchemaError, DecodeRequirements> {
   return command[MarimoCommandTypeId].decodeArguments(args);
 }
 
@@ -158,7 +158,7 @@ export function decodeCommandResult<
 >(
   command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
   result: unknown,
-): Effect.Effect<Result, ParseResult.ParseError> {
+): Effect.Effect<Result, SchemaError.SchemaError> {
   return command[MarimoCommandTypeId].decodeResult(result);
 }
 

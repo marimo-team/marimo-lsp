@@ -6,7 +6,7 @@ import {
   Exit,
   Fiber,
   Option,
-  type ParseResult,
+  type SchemaError,
   PubSub,
   Queue,
   Ref,
@@ -120,7 +120,7 @@ export interface NotebookHandle {
     | MarimoCommandError
     | NoActiveKernelError
     | NotebookFileRootError
-    | ParseResult.ParseError
+    | SchemaError.SchemaError
   >;
   readonly executeScratchpad: (
     code: string,
@@ -131,7 +131,7 @@ export interface NotebookHandle {
     | MarimoCommandError
     | NoActiveKernelError
     | NotebookFileRootError
-    | ParseResult.ParseError
+    | SchemaError.SchemaError
     | UnsavedNotebookError
   >;
   readonly updateUIElements: (

@@ -356,7 +356,7 @@ export class Commands extends Effect.Service<Commands>()("Commands", {
     >(
       command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
       ...args: CallArgs
-    ): Effect.Effect<Result, ParseResult.ParseError> {
+    ): Effect.Effect<Result, SchemaError.SchemaError> {
       return Effect.promise(() =>
         api.executeCommand(commandId(command), ...args),
       ).pipe(Effect.flatMap((result) => decodeCommandResult(command, result)));
