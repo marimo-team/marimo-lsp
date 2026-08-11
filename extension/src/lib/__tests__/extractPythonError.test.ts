@@ -46,6 +46,38 @@ describe("extractPythonError", () => {
     );
   });
 
+  it("extracts Python exceptions without Error or Exception suffixes", () => {
+    const error = new Error("An error has occurred", {
+      cause: new Error(
+        "Traceback (most recent call last):\n" +
+          '    File "/path/to/launch_kernel.py", line 28, in main\n' +
+          "  KeyboardInterrupt: interrupted while starting the kernel",
+      ),
+    });
+
+    expect(extractPythonError(error)).toEqual(
+      Option.some("KeyboardInterrupt: interrupted while starting the kernel"),
+    );
+  });
+
+  it("preserves exception lines with class names longer than telemetry bounds", () => {
+    const className = `${"VeryLong".repeat(12)}Error`;
+    const detail = `${className}: kernel startup failed`;
+    const error = new Error("An error has occurred", {
+      cause: new Error(`Traceback (most recent call last):\n  ${detail}`),
+    });
+
+    expect(extractPythonError(error)).toEqual(Option.some(detail));
+  });
+
+  it("does not treat a traceback header as an exception", () => {
+    const error = new Error("An error has occurred", {
+      cause: new Error("Traceback: no exception detail was returned"),
+    });
+
+    expect(extractPythonError(error)).toEqual(Option.none());
+  });
+
   it("extracts AttributeError for file name shadowing", () => {
     const error = new Error("An error has occurred", {
       cause: new Error(

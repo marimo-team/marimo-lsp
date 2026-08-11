@@ -1,6 +1,6 @@
 import { Option } from "effect";
 
-import { exceptionClassFromMessage } from "./errorClassification.ts";
+import { hasExceptionClassPrefix } from "./errorClassification.ts";
 
 /**
  * Extract the last Python exception line from a MarimoCommandError cause.
@@ -43,7 +43,7 @@ function extractLastException(text: string): Option.Option<string> {
   const lines = text.split("\n");
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
-    if (line && exceptionClassFromMessage(line)) {
+    if (line && hasExceptionClassPrefix(line)) {
       return Option.some(truncate(line, 500));
     }
   }
