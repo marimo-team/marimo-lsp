@@ -65,8 +65,8 @@ import {
 import { handleMissingPackageAlert } from "./operations.ts";
 
 /**
- * Service shapes. In v4 a `Context.Service` class is only the context key;
- * the service value's type is extracted with `Context.Service.Shape`.
+ * Service shapes. A `Context.Service` class is the context key. Use
+ * `Context.Service.Shape` to get the type of the service value.
  */
 type MarimoClientService = Context.Service.Shape<typeof MarimoClient>;
 type VsCodeService = Context.Service.Shape<typeof VsCode>;
@@ -272,8 +272,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         executeScratchpad: (sourceCode) =>
           Stream.unwrap(
             Effect.gen(function* () {
-              // Hold one permit for the lifetime of the stream's scope
-              // (v3 `TSemaphore.withPermitsScoped`).
+              // Hold one permit for the lifetime of the stream's scope.
               yield* Effect.acquireRelease(scratchpadLock.take(1), () =>
                 scratchpadLock.release(1),
               );
@@ -295,31 +294,24 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
               const subscription = yield* PubSub.subscribe(operations);
               const runId = crypto.randomUUID();
 
-              // Sending the command and arming the interrupt-on-abandon
-              // finalizer must be atomic w.r.t. interruption: once the kernel
-              // has been told to run, an abandoned stream must always reach
-              // the finalizer that interrupts it. Without this, interruption
-              // can land between the two (v4's inline Deferred resumption can
-              // resume a waiter observing the sent command before this fiber
-              // proceeds) and the kernel would keep running unsupervised.
-              yield* Effect.uninterruptible(
+              // The finalizer is armed before the command is sent. If the
+              // stream stops, the finalizer must always interrupt the kernel.
+              // An interrupt for a session that did not start is safe. The
+              // server ignores it.
+              //
+              // Only the command stays interruptible. The server starts the
+              // kernel process before it replies, and it has no timeout. You
+              // cannot cancel a masked command.
+              yield* Effect.uninterruptibleMask((restore) =>
                 Effect.gen(function* () {
-                  yield* marimo.executeScratchpad({
-                    notebookUri: notebookId,
-                    executable,
-                    workingDirectory,
-                    inner: { code: sourceCode, runId },
-                  });
-                  runtimeSessions.set(notebookId, {
-                    executable,
-                    workingDirectory,
-                  });
-
                   yield* Effect.addFinalizer((exit) =>
                     Exit.hasInterrupts(exit)
                       ? marimo
                           .interrupt({ notebookUri: notebookId, inner: {} })
                           .pipe(
+                            // You cannot interrupt a finalizer. Without a
+                            // timeout, a dead server stops the cancel.
+                            Effect.timeout("5 seconds"),
                             Effect.catchCause((cause) =>
                               Effect.logWarning(
                                 "Failed to interrupt kernel after scratchpad stream was abandoned",
@@ -328,6 +320,19 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                           )
                       : Effect.void,
                   );
+
+                  yield* restore(
+                    marimo.executeScratchpad({
+                      notebookUri: notebookId,
+                      executable,
+                      workingDirectory,
+                      inner: { code: sourceCode, runId },
+                    }),
+                  );
+                  runtimeSessions.set(notebookId, {
+                    executable,
+                    workingDirectory,
+                  });
                 }),
               );
 
@@ -767,8 +772,8 @@ export function processRuntimeOperations<
             const first = yield* Queue.take(queue);
             if (Option.isNone(first)) return;
 
-            // `Queue.clear` is v4's non-blocking "take everything buffered"
-            // (v3 `Queue.takeAll`; v4 `takeAll` waits for at least one item).
+            // `Queue.clear` takes all buffered items and does not wait.
+            // `Queue.takeAll` waits for a minimum of one item.
             const waiting = yield* Queue.clear(queue);
             const batch = [
               first.value,
