@@ -457,9 +457,7 @@ async def execute_scratch(
         if run_id is not None and ctx.sessions.take_scratchpad_cancellation(
             args.notebook_uri, run_id
         ):
-            logger.info(
-                f"Skipping scratchpad run {run_id} cancelled before dispatch"
-            )
+            logger.info(f"Skipping scratchpad run {run_id} cancelled before dispatch")
             return
         if session.try_start_scratchpad(run_id):
             break

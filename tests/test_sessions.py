@@ -278,9 +278,7 @@ def test_scratchpad_ignores_unrelated_completed_runs() -> None:
     session, _ = _make_session()
 
     assert session.try_start_scratchpad("scratch-1")
-    session._update_status(
-        KernelMessage(b'{"op": "completed-run", "run_id": null}')
-    )
+    session._update_status(KernelMessage(b'{"op": "completed-run", "run_id": null}'))
 
     assert session._status == "running"
     assert session.is_scratchpad_running("scratch-1")
