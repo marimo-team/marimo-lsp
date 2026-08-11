@@ -6,6 +6,7 @@ import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Option, Ref, Stream } from "effect";
 import { vi } from "vite-plus/test";
 
+import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { MarimoLspServer } from "../../config/Config.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { MarimoApiCall, MarimoOperation } from "../../types.ts";
@@ -14,11 +15,111 @@ import {
   findMarimoLspExecutable,
   findWasmMarimoLspExecutable,
   makeMarimoCommands,
+  makeCustomLspFailureNotifier,
   makeMarimoOperationStream,
   selectMarimoLspExecutable,
 } from "../MarimoClient.ts";
 
 const notebook = notebookId("notebook-a");
+
+describe("custom language-server failures", () => {
+  it.effect(
+    "prompts once and opens the selected recovery surface",
+    Effect.fn(function* () {
+      const prompts = yield* Ref.make(0);
+      let logsOpened = 0;
+      const vscode = yield* TestVsCode.make({
+        window: {
+          showErrorMessage: (message, options = {}) => {
+            expect(message).toContain(
+              "Custom language servers are for extension development",
+            );
+            return Ref.update(prompts, (count) => count + 1).pipe(
+              Effect.as(
+                Option.fromNullishOr(
+                  options.items?.find((item) => item === "Open Settings"),
+                ),
+              ),
+            );
+          },
+        },
+      });
+      const notify = yield* makeCustomLspFailureNotifier({
+        mode: "configured",
+        channel: {
+          name: "marimo-lsp",
+          show: () => {
+            logsOpened += 1;
+          },
+        },
+      }).pipe(Effect.provide(vscode.layer));
+
+      yield* Effect.all([notify, notify], { concurrency: "unbounded" });
+
+      expect(yield* Ref.get(prompts)).toBe(1);
+      expect(logsOpened).toBe(0);
+      expect(yield* Ref.get(vscode.executions)).toContainEqual({
+        command: "workbench.action.openSettings",
+        args: ["marimo.lsp"],
+      });
+    }),
+  );
+
+  it.effect(
+    "opens logs when selected",
+    Effect.fn(function* () {
+      let logsOpened = 0;
+      const vscode = yield* TestVsCode.make({
+        window: {
+          showErrorMessage: (_message, options = {}) =>
+            Effect.succeed(
+              Option.fromNullishOr(
+                options.items?.find((item) => item === "Open Logs"),
+              ),
+            ),
+        },
+      });
+      const notify = yield* makeCustomLspFailureNotifier({
+        mode: "configured",
+        channel: {
+          name: "marimo-lsp",
+          show: () => {
+            logsOpened += 1;
+          },
+        },
+      }).pipe(Effect.provide(vscode.layer));
+
+      yield* notify;
+
+      expect(logsOpened).toBe(1);
+      expect(yield* Ref.get(vscode.executions)).toEqual([]);
+    }),
+  );
+
+  it.effect(
+    "does not prompt for bundled language servers",
+    Effect.fn(function* () {
+      const prompts = yield* Ref.make(0);
+      const vscode = yield* TestVsCode.make({
+        window: {
+          showErrorMessage: () =>
+            Ref.update(prompts, (count) => count + 1).pipe(
+              Effect.as(Option.none()),
+            ),
+        },
+      });
+      for (const mode of ["wasm", "uv"] as const) {
+        const notify = yield* makeCustomLspFailureNotifier({
+          mode,
+          channel: { name: "marimo-lsp", show() {} },
+        }).pipe(Effect.provide(vscode.layer));
+        yield* notify;
+      }
+
+      expect(yield* Ref.get(prompts)).toBe(0);
+    }),
+  );
+});
 
 it.effect(
   "does not fail scope cleanup when language-client disposal rejects",

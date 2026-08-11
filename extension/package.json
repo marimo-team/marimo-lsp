@@ -88,7 +88,7 @@
           "markdownEnumDescriptions": [
             "Default. Run the self-contained language server using the bundled Pyodide runtime.",
             "Run the bundled Python language server in a uv-managed CPython environment.",
-            "Run the command configured by `marimo.lsp.path`."
+            "Development only. Run the command configured by `marimo.lsp.path`; it must match the extension source revision and has no compatibility guarantee."
           ],
           "markdownDescription": "Select how the extension runs the marimo language server. This does not change the Python interpreter used by notebook kernels.",
           "scope": "window"
@@ -99,7 +99,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Command and arguments used when `marimo.lsp.server` is `custom`, e.g., `[\"/path/to/marimo-lsp\"]`.",
+          "markdownDescription": "Development-only command and arguments used when `marimo.lsp.server` is `custom`, e.g., `[\"/path/to/marimo-lsp\"]`. The server must match the extension source revision.",
           "scope": "window"
         },
         "marimo.experimental.wasmLsp": {
