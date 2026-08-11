@@ -1,14 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  Deferred,
-  Effect,
-  Fiber,
-  Layer,
-  Option,
-  Schema,
-  Stream,
-  TestClock,
-} from "effect";
+import { Deferred, Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
+import { TestClock } from "effect/testing";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -59,7 +51,7 @@ const withTestCtx = Effect.fn(function* (
       makeTestMarimoClient({
         execute: Effect.fn(function* (request) {
           if (request.method === "get-configuration") {
-            const params = yield* Schema.decodeUnknown(
+            const params = yield* Schema.decodeUnknownEffect(
               Api.GetConfigurationPayload,
             )(request.params);
             const config = configStore.get(params.notebookUri);
@@ -75,7 +67,7 @@ const withTestCtx = Effect.fn(function* (
           }
 
           if (request.method === "update-configuration") {
-            const params = yield* Schema.decodeUnknown(
+            const params = yield* Schema.decodeUnknownEffect(
               Api.UpdateConfigurationPayload,
             )(request.params);
             const existing = configStore.get(params.notebookUri);
@@ -261,7 +253,9 @@ describe("MarimoConfigurationService", () => {
 
       yield* Effect.gen(function* () {
         const service = yield* MarimoConfigurationService;
-        const pending = yield* Effect.fork(service.getConfig(NOTEBOOK_URI));
+        const pending = yield* Effect.forkChild(
+          service.getConfig(NOTEBOOK_URI),
+        );
         yield* Deferred.await(requestStarted);
 
         yield* service.clearNotebook(NOTEBOOK_URI);
@@ -348,10 +342,14 @@ describe("MarimoConfigurationService", () => {
           (config) => config.runtime?.on_cell_change,
         );
 
-        const collectedStreamed = yield* Effect.fork(
+        const collectedStreamed = yield* Effect.forkChild(
           stream.pipe(Stream.take(4), Stream.runCollect),
         );
 
+        // v4 attaches the stream's inner PubSub subscriptions lazily and each
+        // TestClock.adjust performs a single scheduler drain; drain twice so
+        // the consumer is subscribed before the updates below fire.
+        yield* TestClock.adjust("10 millis");
         yield* TestClock.adjust("10 millis");
 
         // Trigger some changes
@@ -375,11 +373,9 @@ describe("MarimoConfigurationService", () => {
         yield* TestClock.adjust("10 millis");
 
         // Verify the stream contains the correct changes
-        const collected = yield* collectedStreamed;
+        const collected = yield* Fiber.join(collectedStreamed);
         expect(collected).toMatchInlineSnapshot(`
-        {
-          "_id": "Chunk",
-          "values": [
+          [
             {
               "_id": "Option",
               "_tag": "None",
@@ -399,9 +395,8 @@ describe("MarimoConfigurationService", () => {
               "_tag": "Some",
               "value": "lazy",
             },
-          ],
-        }
-      `);
+          ]
+        `);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -438,7 +433,7 @@ describe("MarimoConfigurationService", () => {
           (config) => config.runtime?.on_cell_change,
         );
 
-        const collectedStreamed = yield* Effect.fork(
+        const collectedStreamed = yield* Effect.forkChild(
           stream.pipe(Stream.take(5), Stream.runCollect),
         );
 
@@ -464,11 +459,9 @@ describe("MarimoConfigurationService", () => {
         yield* service.updateConfig(notebook2Uri, AUTORUN_CONFIG);
         yield* TestClock.adjust("10 millis");
 
-        const collected = yield* collectedStreamed;
+        const collected = yield* Fiber.join(collectedStreamed);
         expect(collected).toMatchInlineSnapshot(`
-        {
-          "_id": "Chunk",
-          "values": [
+          [
             {
               "_id": "Option",
               "_tag": "None",
@@ -492,9 +485,8 @@ describe("MarimoConfigurationService", () => {
               "_tag": "Some",
               "value": "autorun",
             },
-          ],
-        }
-      `);
+          ]
+        `);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -564,10 +556,14 @@ describe("MarimoConfigurationService", () => {
           (config) => config.runtime?.auto_reload,
         );
 
-        const collectedStreamed = yield* Effect.fork(
+        const collectedStreamed = yield* Effect.forkChild(
           stream.pipe(Stream.take(4), Stream.runCollect),
         );
 
+        // v4 attaches the stream's inner PubSub subscriptions lazily and each
+        // TestClock.adjust performs a single scheduler drain; drain twice so
+        // the consumer is subscribed before the updates below fire.
+        yield* TestClock.adjust("10 millis");
         yield* TestClock.adjust("10 millis");
 
         // Trigger some changes
@@ -590,11 +586,9 @@ describe("MarimoConfigurationService", () => {
 
         yield* TestClock.adjust("10 millis");
 
-        const collected = yield* collectedStreamed;
+        const collected = yield* Fiber.join(collectedStreamed);
         expect(collected).toMatchInlineSnapshot(`
-        {
-          "_id": "Chunk",
-          "values": [
+          [
             {
               "_id": "Option",
               "_tag": "None",
@@ -614,9 +608,8 @@ describe("MarimoConfigurationService", () => {
               "_tag": "Some",
               "value": "lazy",
             },
-          ],
-        }
-      `);
+          ]
+        `);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
