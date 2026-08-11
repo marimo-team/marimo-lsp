@@ -273,8 +273,9 @@ export class PythonController {
   resolveExecutable(_notebook: MarimoNotebookDocument) {
     return Effect.succeed(this.executable);
   }
-  // Field initializer, not a method: Stream.callback is lazy, so `this.#inner`
-  // is only read when the stream is subscribed (after construction).
+  // This is a field initializer and not a method. Stream.callback is lazy.
+  // It reads `this.#inner` only at subscription, which is after the
+  // constructor.
   readonly selectedNotebookChanges = Stream.callback<{
     notebook: vscode.NotebookDocument;
     selected: boolean;

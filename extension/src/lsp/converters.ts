@@ -8,10 +8,10 @@ import * as lsp from "vscode-languageserver-protocol";
 import type { VsCode } from "../platform/VsCode.ts";
 
 /**
- * The VsCode service shape — what `yield* VsCode` produces.
+ * The VsCode service shape. This is what `yield* VsCode` produces.
  *
- * In Effect v4 the class type is the context key, not the service
- * implementation, so converter signatures reference the shape explicitly.
+ * The class type is the context key and not the service value. Converter
+ * signatures must name the shape.
  */
 export type VsCodeService = VsCode["Service"];
 

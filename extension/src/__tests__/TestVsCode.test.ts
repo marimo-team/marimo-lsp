@@ -80,8 +80,8 @@ describe("TestVsCode", () => {
       const result = yield* Effect.gen(function* () {
         const code = yield* VsCode;
 
-        // v4 SubscriptionRef.changes emits the current value on subscription,
-        // so we expect the initial None plus the five updates below.
+        // `SubscriptionRef.changes` sends the current value at
+        // subscription. Expect the first None and the five updates below.
         const fiber = yield* code.window.activeNotebookEditorChanges.pipe(
           Stream.take(6),
           Stream.runCollect,

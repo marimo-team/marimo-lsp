@@ -109,8 +109,9 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
   });
 
   it("names structs in parse errors via identifier annotations", () => {
-    // v4's default formatter uses `identifier` as the expected label for
-    // type-level failures ("Expected VenvSource"), not for nested key issues.
+    // The default formatter uses `identifier` as the expected label for a
+    // type failure such as "Expected VenvSource". It does not use it for a
+    // nested key issue.
     const result = Schema.decodeUnknownResult(VenvSource)("not-an-object");
     expect(Result.isFailure(result)).toBe(true);
     if (Result.isFailure(result)) {

@@ -60,9 +60,8 @@ import {
 } from "./CellRunReducer.ts";
 
 /**
- * The VS Code API service shape. In v4 a `Context.Service` class is only the
- * context key; the service value's type is extracted with
- * `Context.Service.Shape`.
+ * The VS Code API service shape. A `Context.Service` class is the context
+ * key. Use `Context.Service.Shape` to get the type of the service value.
  */
 type VsCodeService = Context.Service.Shape<typeof VsCode>;
 
@@ -93,8 +92,7 @@ interface CellExecutionKey {
   readonly cellId: NotebookCellId;
 }
 
-// Plain object: v4 HashMap compares plain objects structurally, so this can
-// serve as a HashMap key without the removed `Data.struct` wrapper.
+// A plain object is sufficient. HashMap compares plain objects by structure.
 const cellExecutionKey = (
   notebookId: NotebookId,
   cellId: NotebookCellId,
@@ -138,11 +136,10 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
     make: Effect.gen(function* () {
       const code = yield* VsCode;
       const editorRegistry = yield* NotebookEditorRegistry;
-      // MutableHashMap on purpose: it hashes/compares only KEYS. Immutable
-      // HashMap.set additionally runs Equal.equals over the old and new VALUE
-      // when the key already exists, which walks the RunRecord structurally —
-      // including the live vscode.NotebookCellExecution, whose getters are not
-      // safe (or meaningful) to hash.
+      // MutableHashMap hashes and compares only the keys. HashMap.set also
+      // compares the old value and the new value when the key exists. That
+      // walks the RunRecord by structure. The RunRecord holds a live
+      // vscode.NotebookCellExecution. It is not safe to hash its getters.
       const records = MutableHashMap.empty<CellExecutionKey, RunRecord>();
       const lastExecutedCodeRef = yield* SubscriptionRef.make(
         HashMap.empty<

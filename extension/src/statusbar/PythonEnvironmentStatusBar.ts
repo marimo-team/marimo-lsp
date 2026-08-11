@@ -67,11 +67,10 @@ export const PythonEnvironmentStatusBarLive = Layer.effectDiscard(
       ),
     ];
 
-    // Funnel every trigger into one queue through per-source fibers. Merging
-    // the streams with `Stream.mergeAll` would subscribe to the underlying
-    // event sources lazily (several scheduler ticks after the layer is built),
-    // and events fired in that window would be dropped; a direct fork per
-    // source subscribes as soon as the fiber first runs.
+    // Each trigger source has its own fiber that writes to one queue. A
+    // `Stream.mergeAll` attaches its inner subscriptions too late and loses
+    // the events in that time. One fork for each source subscribes as soon
+    // as the fiber runs.
     const visibilityTriggers = yield* Queue.unbounded<void>();
     for (const source of visibilityTriggerSources) {
       yield* Effect.forkScoped(

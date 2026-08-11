@@ -465,8 +465,8 @@ function createUv(
     readonly env?: Record<string, string>;
     readonly cwd?: string;
   }) {
-    // `extendEnv: true` preserves v3 semantics, where the child inherited the
-    // parent environment merged with the command-specific env vars.
+    // `extendEnv: true` gives the parent environment to the child. The env
+    // vars of the command are merged into it.
     const command = ChildProcess.make(bin.executable, options.args, {
       env: { NO_COLOR: "1", ...options.env },
       extendEnv: true,

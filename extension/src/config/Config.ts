@@ -200,8 +200,8 @@ export class Config extends Context.Service<Config>()("Config", {
             DEFAULT_NOTEBOOK_FILE_ROOT,
         );
       },
-      // Getter (not a plain property): getConfiguration snapshots the config,
-      // so we must re-read it on each access to observe setting changes.
+      // This is a getter and not a plain property. getConfiguration makes a
+      // snapshot of the config. Read it again at each access to see a change.
       get getManagedLanguageFeaturesEnabled() {
         return Effect.map(
           code.value.workspace.getConfiguration("marimo"),

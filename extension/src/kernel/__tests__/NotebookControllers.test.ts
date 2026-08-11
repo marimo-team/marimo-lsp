@@ -92,11 +92,12 @@ it.effect(
         ),
       ).toBe(true);
 
-      // One scheduler drain so the trackControllerSelections fiber (forked
-      // while the layer was built) registers its onDidChangeSelectedNotebooks
-      // listener before the mock emitter fires. v4 forked fibers do not run
-      // until the current fiber yields; in production the listener registers
-      // during activation, long before a user can select a kernel.
+      // Drain the scheduler one time. The trackControllerSelections fiber
+      // is forked when the layer is built. It must register its
+      // onDidChangeSelectedNotebooks listener before the mock emitter fires.
+      // A forked fiber does not run until the current fiber yields. In
+      // production the listener registers during activation, long before a
+      // user can select a kernel.
       yield* TestClock.adjust("1 millis");
 
       yield* ctx.vscode.selectNotebookController(

@@ -33,6 +33,25 @@ const LAZY_CONFIG = marimoConfigFixture({
   runtime: { on_cell_change: "lazy" },
 });
 
+/**
+ * Forks a collector on `stream` and waits for the subscription.
+ *
+ * The inner subscription of a stream attaches some time after the fork. One
+ * `TestClock.adjust` call drains the scheduler one time. Two calls make sure
+ * that the consumer is subscribed. The first event is then not lost.
+ */
+const forkCollecting = Effect.fn(function* <A, E, R>(
+  stream: Stream.Stream<A, E, R>,
+  take: number,
+) {
+  const fiber = yield* Effect.forkChild(
+    stream.pipe(Stream.take(take), Stream.runCollect),
+  );
+  yield* TestClock.adjust("10 millis");
+  yield* TestClock.adjust("10 millis");
+  return fiber;
+});
+
 const withTestCtx = Effect.fn(function* (
   // Keyed by plain string: the fake server looks up by the decoded wire
   // value, which carries no brand.
@@ -342,15 +361,7 @@ describe("MarimoConfigurationService", () => {
           (config) => config.runtime?.on_cell_change,
         );
 
-        const collectedStreamed = yield* Effect.forkChild(
-          stream.pipe(Stream.take(4), Stream.runCollect),
-        );
-
-        // v4 attaches the stream's inner PubSub subscriptions lazily and each
-        // TestClock.adjust performs a single scheduler drain; drain twice so
-        // the consumer is subscribed before the updates below fire.
-        yield* TestClock.adjust("10 millis");
-        yield* TestClock.adjust("10 millis");
+        const collectedStreamed = yield* forkCollecting(stream, 4);
 
         // Trigger some changes
         // lazy, lazy, autorun, lazy, lazy
@@ -433,11 +444,7 @@ describe("MarimoConfigurationService", () => {
           (config) => config.runtime?.on_cell_change,
         );
 
-        const collectedStreamed = yield* Effect.forkChild(
-          stream.pipe(Stream.take(5), Stream.runCollect),
-        );
-
-        yield* TestClock.adjust("10 millis");
+        const collectedStreamed = yield* forkCollecting(stream, 5);
 
         // Change active notebook and verify state changes
         yield* ctx.vscode.setActiveNotebookEditor(
@@ -556,15 +563,7 @@ describe("MarimoConfigurationService", () => {
           (config) => config.runtime?.auto_reload,
         );
 
-        const collectedStreamed = yield* Effect.forkChild(
-          stream.pipe(Stream.take(4), Stream.runCollect),
-        );
-
-        // v4 attaches the stream's inner PubSub subscriptions lazily and each
-        // TestClock.adjust performs a single scheduler drain; drain twice so
-        // the consumer is subscribed before the updates below fire.
-        yield* TestClock.adjust("10 millis");
-        yield* TestClock.adjust("10 millis");
+        const collectedStreamed = yield* forkCollecting(stream, 4);
 
         // Trigger some changes
         // lazy, lazy, autorun, lazy, lazy

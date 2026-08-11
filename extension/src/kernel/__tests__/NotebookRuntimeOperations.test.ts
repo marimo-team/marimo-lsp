@@ -605,9 +605,8 @@ describe("NotebookRuntime scratch stream", () => {
               ),
             );
 
-        // Wait until the first command is actually recorded instead of
-        // counting scheduler drains: the scratchpad setup can span more than
-        // one drain under v4's time-sliced scheduler.
+        // Wait until the first command is recorded. Do not count scheduler
+        // drains. The scratchpad setup can need more than one drain.
         yield* SubscriptionRef.changes(ctx.executions).pipe(
           Stream.filter((calls) => scratchpadCalls(calls).length >= 1),
           Stream.runHead,
@@ -917,10 +916,9 @@ describe("NotebookRuntime scratch stream", () => {
             .pipe(Stream.runCollect),
         );
 
-        // Wait for the command to actually be recorded instead of counting
-        // scheduler drains: the scratchpad setup can span more than one drain
-        // under v4's time-sliced scheduler, which made a single
-        // `TestClock.adjust` flaky. Mirrors the sibling abandon test.
+        // Wait until the command is recorded. Do not count scheduler
+        // drains. The scratchpad setup can need more than one drain, which
+        // makes a single `TestClock.adjust` flaky.
         const calls = yield* SubscriptionRef.changes(ctx.executions).pipe(
           Stream.filter((current) =>
             current.some((call) => call.method === "execute-scratchpad"),

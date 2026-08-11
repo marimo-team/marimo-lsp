@@ -62,7 +62,8 @@ export const updateMarimoCellMetadata = Effect.fn(
   }
   const currentCell = resolved.cell;
   const current = Option.match(currentCell.metadata, {
-    // Mirrors the schema's decoding defaults; v4 `make` requires every field.
+    // These are the decoding defaults of the schema. `make` needs all
+    // fields.
     onNone: () =>
       Api.MarimoCellMetadata.make({
         name: "_",

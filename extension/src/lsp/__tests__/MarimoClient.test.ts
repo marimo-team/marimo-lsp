@@ -115,8 +115,8 @@ describe("generated api client", () => {
         .pipe(Effect.exit);
 
       assert.isTrue(Exit.isFailure(exit));
-      // v4's formatter names the failing field's schema and path, not the
-      // enclosing response type: `Expected DependencyTreeNode ... at ["tree"]`.
+      // The formatter names the schema and the path of the field that
+      // failed. It does not name the response type that contains it.
       assert.include(String(exit), "SchemaError");
       assert.include(String(exit), "DependencyTreeNode");
       assert.include(String(exit), '["tree"]');
