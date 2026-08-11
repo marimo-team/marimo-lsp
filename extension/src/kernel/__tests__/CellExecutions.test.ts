@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import { Effect, Layer, Option, Stream } from "effect";
+import { Effect, Layer, Option } from "effect";
 import { TestClock } from "effect/testing";
 import type * as vscode from "vscode";
 
@@ -12,11 +12,12 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
+import { CellExecutions, type Drive } from "../../kernel/CellExecutions.ts";
 import {
-  buildCellOutputs,
-  CellExecutions,
-} from "../../kernel/CellExecutions.ts";
-import { PythonController } from "../../kernel/PythonController.ts";
+  VsCodeCellDrive,
+  type VsCodeDriveBinding,
+} from "../../kernel/VsCodeCellDrive.ts";
+import { buildCellOutputs } from "../../kernel/VsCodeCellOutputs.ts";
 import {
   cellId,
   UNSAFE_castForNegativeTest,
@@ -39,6 +40,7 @@ const withTestCtx = Effect.fn(function* (
   const vscode = yield* TestVsCode.make(options);
   const layer = Layer.empty.pipe(
     Layer.merge(CellExecutions.layer),
+    Layer.merge(VsCodeCellDrive.layer),
     Layer.provide(TestNotebookRuntime),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
@@ -47,6 +49,21 @@ const withTestCtx = Effect.fn(function* (
 });
 
 const CELL_ID = cellId("test-cell-id");
+
+const acceptCell = (
+  executions: CellExecutions["Service"],
+  host: VsCodeCellDrive["Service"],
+  cell: MarimoNotebookCell,
+  message: CellOperationNotification,
+  controller: VsCodeDriveBinding["controller"],
+  renderOutput?: boolean,
+) =>
+  executions.handleOperation(message, {
+    notebookId: cell.notebook.id,
+    source: cell.document.getText(),
+    drive: host.bind({ notebook: cell.notebook, controller }),
+    renderOutput,
+  });
 
 // Convert Uint8Array data to strings for readable snapshots
 function normalizeOutputsForSnapshot(
@@ -1104,6 +1121,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const host = yield* VsCodeCellDrive;
       const code = yield* VsCode;
       const vscodeController = yield* code.notebooks.createNotebookController(
         "test-controller",
@@ -1126,14 +1144,20 @@ it.effect(
         run_id: "shared-run",
       };
 
-      yield* executions.handleOperation(message, {
-        editor: firstEditor,
+      yield* acceptCell(
+        executions,
+        host,
+        MarimoNotebookDocument.from(firstEditor.notebook).cellAt(0),
+        message,
         controller,
-      });
-      yield* executions.handleOperation(message, {
-        editor: secondEditor,
+      );
+      yield* acceptCell(
+        executions,
+        host,
+        MarimoNotebookDocument.from(secondEditor.notebook).cellAt(0),
+        message,
         controller,
-      });
+      );
 
       expect(createdFor.toSorted((a, b) => a.localeCompare(b))).toEqual(
         [
@@ -1141,6 +1165,83 @@ it.effect(
           MarimoNotebookDocument.from(secondEditor.notebook).id,
         ].toSorted((a, b) => a.localeCompare(b)),
       );
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
+  "keeps commands on the Drive that opened their run",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+      data: {
+        cells: [
+          {
+            kind: 1,
+            value: "x = 1",
+            languageId: "python",
+            metadata: MarimoNotebookCell.createMetadata({
+              marimoRuntime: { stableId: "cell-1" },
+            }),
+          },
+        ],
+      },
+    });
+    const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+    yield* Effect.gen(function* () {
+      const executions = yield* CellExecutions;
+      const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
+      const cellId = Option.getOrThrow(cell.id);
+      const events: string[] = [];
+      const namedDrive =
+        (name: string): Drive =>
+        (_cell, command) =>
+          Effect.sync(() => {
+            if ("runId" in command) {
+              events.push(`${name}:${command._tag}:${command.runId}`);
+            }
+          });
+      const first = namedDrive("first");
+      const second = namedDrive("second");
+      const accept = (message: CellOperationNotification, drive: Drive) =>
+        executions.handleOperation(message, {
+          notebookId: cell.notebook.id,
+          source: cell.document.getText(),
+          drive,
+        });
+
+      yield* accept(
+        {
+          op: "cell-op",
+          cell_id: cellId,
+          status: "queued",
+          run_id: "run-1",
+        },
+        first,
+      );
+      yield* accept(
+        {
+          op: "cell-op",
+          cell_id: cellId,
+          status: "queued",
+          run_id: "run-2",
+        },
+        second,
+      );
+      // Even if a later operation arrives with another current Drive, the
+      // active run remains bound to the Drive that opened it.
+      yield* accept(
+        { op: "cell-op", cell_id: cellId, status: "running" },
+        first,
+      );
+
+      expect(events).toEqual([
+        "first:OpenRun:run-1",
+        "first:CloseRun:run-1",
+        "second:OpenRun:run-2",
+        "second:StartRun:run-2",
+        "second:RenderOutputs:run-2",
+      ]);
     }).pipe(Effect.provide(ctx.layer));
   }),
 );
@@ -1169,6 +1270,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const host = yield* VsCodeCellDrive;
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cell = notebook.cellAt(0);
       const cid = Option.getOrThrow(cell.id);
@@ -1200,16 +1302,22 @@ it.effect(
         },
       };
 
-      yield* executions.handleOperation(
+      yield* acceptCell(
+        executions,
+        host,
+        cell,
         {
           op: "cell-op",
           cell_id: cid,
           status: "queued",
           run_id: "run",
         },
-        { editor, controller },
+        controller,
       );
-      yield* executions.handleOperation(
+      yield* acceptCell(
+        executions,
+        host,
+        cell,
         {
           op: "cell-op",
           cell_id: cid,
@@ -1221,12 +1329,16 @@ it.effect(
             timestamp: 0,
           },
         },
-        { editor, controller, renderOutput: false },
+        controller,
+        false,
       );
 
       expect(projectionCalls).toEqual([]);
 
-      yield* executions.handleOperation(
+      yield* acceptCell(
+        executions,
+        host,
+        cell,
         {
           op: "cell-op",
           cell_id: cid,
@@ -1238,7 +1350,8 @@ it.effect(
             timestamp: 1,
           },
         },
-        { editor, controller, renderOutput: true },
+        controller,
+        true,
       );
 
       expect(projectionCalls).toEqual(["clear", "append"]);
@@ -1270,6 +1383,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const host = yield* VsCodeCellDrive;
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cell = notebook.cellAt(0);
       const cid = Option.getOrThrow(cell.id);
@@ -1296,16 +1410,22 @@ it.effect(
         },
       };
 
-      yield* executions.handleOperation(
+      yield* acceptCell(
+        executions,
+        host,
+        cell,
         {
           op: "cell-op",
           cell_id: cid,
           status: "queued",
           run_id: "run-2",
         },
-        { editor, controller },
+        controller,
       );
-      yield* executions.handleOperation(
+      yield* acceptCell(
+        executions,
+        host,
+        cell,
         {
           op: "cell-op",
           cell_id: cid,
@@ -1313,12 +1433,16 @@ it.effect(
           run_id: "run-1",
           timestamp: 1,
         },
-        { editor, controller, renderOutput: false },
+        controller,
+        false,
       );
 
       expect(starts).toEqual([]);
 
-      yield* executions.handleOperation(
+      yield* acceptCell(
+        executions,
+        host,
+        cell,
         {
           op: "cell-op",
           cell_id: cid,
@@ -1326,7 +1450,8 @@ it.effect(
           run_id: "run-2",
           timestamp: 2,
         },
-        { editor, controller, renderOutput: false },
+        controller,
+        false,
       );
 
       expect(starts).toEqual([2_000]);
@@ -1362,26 +1487,11 @@ it.effect(
       const cell = notebook.cellAt(0);
       const cid = Option.getOrThrow(cell.id);
       let created = 0;
-      const controller = {
-        createNotebookCellExecution(): vscode.NotebookCellExecution {
-          created += 1;
-          return {
-            cell: cell.rawNotebookCell,
-            executionOrder: undefined,
-            token: {
-              isCancellationRequested: false,
-              onCancellationRequested: () => ({ dispose() {} }),
-            },
-            start() {},
-            end() {},
-            async clearOutput() {},
-            async appendOutput() {},
-            async appendOutputItems() {},
-            async replaceOutput() {},
-            async replaceOutputItems() {},
-          };
-        },
-      };
+      const drive: Drive = (_cell, command) =>
+        Effect.sync(() => {
+          if (command._tag === "OpenRun") created += 1;
+        });
+      const options = { notebookId: cell.notebook.id, drive };
 
       yield* executions.handleOperation(
         {
@@ -1390,7 +1500,7 @@ it.effect(
           status: "queued",
           run_id: "run-1",
         },
-        { editor, controller },
+        options,
       );
       yield* executions.handleOperation(
         {
@@ -1400,7 +1510,7 @@ it.effect(
           run_id: "run-1",
           timestamp: 1,
         },
-        { editor, controller },
+        options,
       );
       expect(created).toBe(1);
 
@@ -1416,7 +1526,7 @@ it.effect(
             data: [{ type: "syntax", msg: "late error" }],
           },
         },
-        { editor, controller },
+        options,
       );
 
       expect(created).toBe(1);
@@ -1449,6 +1559,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const host = yield* VsCodeCellDrive;
       const code = yield* VsCode;
 
       const notebook = MarimoNotebookDocument.from(editor.notebook);
@@ -1475,13 +1586,9 @@ it.effect(
         stale_inputs: true,
       };
 
-      yield* executions.handleOperation(message, {
-        editor,
-        controller: new PythonController(
-          controller,
-          "test-controller",
-          Stream.never,
-        ),
+      yield* acceptCell(executions, host, cell, message, {
+        createNotebookCellExecution: (value) =>
+          controller.createNotebookCellExecution(value.rawNotebookCell),
       });
 
       // Check that CellExecutions tracked the cell as stale
@@ -1513,6 +1620,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const host = yield* VsCodeCellDrive;
 
       // Create a test notebook with a stale cell
       const cellData = {
@@ -1567,13 +1675,9 @@ it.effect(
         run_id: "test-run-id",
       };
 
-      yield* executions.handleOperation(message, {
-        editor,
-        controller: new PythonController(
-          controller,
-          "test-controller",
-          Stream.never,
-        ),
+      yield* acceptCell(executions, host, cell, message, {
+        createNotebookCellExecution: (value) =>
+          controller.createNotebookCellExecution(value.rawNotebookCell),
       });
 
       // Check that the cell's stale state was cleared
@@ -1593,6 +1697,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const host = yield* VsCodeCellDrive;
 
       const cellData = {
         kind: 1, // Code
@@ -1640,13 +1745,9 @@ it.effect(
         run_id: null,
       };
 
-      yield* executions.handleOperation(message, {
-        editor,
-        controller: new PythonController(
-          controller,
-          "test-controller",
-          Stream.never,
-        ),
+      yield* acceptCell(executions, host, cell, message, {
+        createNotebookCellExecution: (value) =>
+          controller.createNotebookCellExecution(value.rawNotebookCell),
       });
 
       // Stale state preserved because we bail before recordExecution
@@ -1660,27 +1761,15 @@ it.effect(
 );
 
 /**
- * Creates a PythonController whose `createNotebookCellExecution` throws,
+ * Creates a controller whose `createNotebookCellExecution` throws,
  * simulating VS Code's "invalid cell" error when a cell is deleted.
  */
-function makeThrowingController(): PythonController {
-  const inner: Omit<vscode.NotebookController, "dispose"> = {
-    id: "throwing-controller",
-    notebookType: NOTEBOOK_TYPE,
-    label: "throwing-controller",
-    supportedLanguages: undefined,
-    description: undefined,
-    detail: undefined,
-    supportsExecutionOrder: undefined,
-    executeHandler: () => {},
-    interruptHandler: undefined,
-    onDidChangeSelectedNotebooks: () => ({ dispose() {} }),
-    updateNotebookAffinity() {},
+function makeThrowingController(): VsCodeDriveBinding["controller"] {
+  return {
     createNotebookCellExecution() {
       throw new Error("invalid cell");
     },
   };
-  return new PythonController(inner, "/usr/bin/python3", Stream.never);
 }
 
 it.effect(
@@ -1708,6 +1797,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const host = yield* VsCodeCellDrive;
 
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cell = notebook.cellAt(0);
@@ -1726,10 +1816,7 @@ it.effect(
         run_id: "test-run-id",
       };
 
-      yield* executions.handleOperation(message, {
-        editor,
-        controller,
-      });
+      yield* acceptCell(executions, host, cell, message, controller);
 
       // If we get here, the error was handled gracefully
       expect(true).toBe(true);
@@ -1762,6 +1849,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const host = yield* VsCodeCellDrive;
 
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cell = notebook.cellAt(0);
@@ -1787,10 +1875,7 @@ it.effect(
         },
       };
 
-      yield* executions.handleOperation(message, {
-        editor,
-        controller,
-      });
+      yield* acceptCell(executions, host, cell, message, controller);
 
       // If we get here, the error was handled gracefully
       expect(true).toBe(true);

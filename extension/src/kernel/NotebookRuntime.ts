@@ -46,6 +46,7 @@ import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
 import { Uv } from "../python/Uv.ts";
 import {
   extractCellIdFromCellMessage,
+  findNotebookCell,
   MarimoNotebookCell,
   MarimoNotebookDocument,
   type NotebookCellId,
@@ -56,7 +57,7 @@ import type {
   MarimoOperation,
   NotificationOf,
 } from "../types.ts";
-import { CellExecutions } from "./CellExecutions.ts";
+import { CellExecutions, type Drive } from "./CellExecutions.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import {
   NotebookFileRootError,
@@ -82,9 +83,7 @@ type InnerRequest<K extends keyof MarimoClientService> =
 export interface NotebookController {
   readonly id: string;
   readonly executable?: string;
-  readonly createNotebookCellExecution: (
-    cell: MarimoNotebookCell,
-  ) => vscode.NotebookCellExecution;
+  readonly drive: (notebook: MarimoNotebookDocument) => Drive;
   readonly resolveExecutable: (
     notebook: MarimoNotebookDocument,
   ) => Effect.Effect<string, ExecutableResolutionError | UnsavedNotebookError>;
@@ -975,9 +974,20 @@ function processNotebookOperation(
         if (extractCellIdFromCellMessage(operation) === SCRATCH_CELL_ID) {
           break;
         }
+        const cellId = extractCellIdFromCellMessage(operation);
+        const cell = yield* findNotebookCell(notebook, cellId).pipe(
+          Effect.option,
+        );
+        if (Option.isNone(cell)) {
+          yield* Effect.logWarning(
+            "Notebook cell not found for cell operation",
+          ).pipe(Effect.annotateLogs({ cellId }));
+          break;
+        }
         yield* executions.handleOperation(operation, {
-          editor: editor.value,
-          controller: controller.value,
+          notebookId: notebook.id,
+          source: cell.value.document.getText(),
+          drive: controller.value.drive(notebook),
           renderOutput: options.renderCellOutput,
         });
         yield* forkForSession(
@@ -986,7 +996,7 @@ function processNotebookOperation(
         break;
       }
       case "interrupted":
-        yield* executions.handleInterrupt(editor.value);
+        yield* executions.handleInterrupt(notebook.id);
         break;
       case "missing-package-alert":
         yield* forkForSession(
