@@ -5,7 +5,7 @@ import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.t
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Telemetry } from "../Telemetry.ts";
 
-it.scoped(
+it.effect(
   "is inert when telemetry is disabled",
   Effect.fn(function* () {
     const code = yield* TestVsCode.make({

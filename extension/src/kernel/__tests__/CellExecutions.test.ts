@@ -1077,7 +1077,7 @@ describe("buildCellOutputs", () => {
   );
 });
 
-it.scoped(
+it.effect(
   "tracks equal cell IDs independently across notebooks",
   Effect.fn(function* () {
     const makeEditor = (path: string) =>
@@ -1144,7 +1144,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "updates cell state without projecting skipped outputs",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(
@@ -1245,7 +1245,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "marks cell as stale when message has staleInputs",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(
@@ -1323,7 +1323,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "clears stale state when cell is queued for execution",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
@@ -1399,7 +1399,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "logs and skips when queued message has no run_id",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
@@ -1492,7 +1492,7 @@ function makeThrowingController(): PythonController {
   return new PythonController(inner, "/usr/bin/python3");
 }
 
-it.scoped(
+it.effect(
   "handles InvalidCellError when createNotebookCellExecution throws on queued",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(
@@ -1546,7 +1546,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "handles InvalidCellError on ephemeral execution for marimo error",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(

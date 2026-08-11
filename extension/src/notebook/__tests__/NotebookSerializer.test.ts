@@ -32,7 +32,7 @@ const NotebookSerializerLive = Layer.empty.pipe(
   Layer.provideMerge(Constants.Default),
 );
 
-it.scoped(
+it.effect(
   "bounds a deserialize request that never completes",
   Effect.fn(function* () {
     const layer = Layer.empty.pipe(
@@ -59,7 +59,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "registered serializer explains deserialize timeouts",
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
@@ -101,7 +101,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "registered serializer explains non-marimo source failures",
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();

@@ -12,7 +12,7 @@ import {
   watchForConfigurationChanges,
 } from "../ReloadOnConfigChange.ts";
 
-it.scoped(
+it.effect(
   "runs the restart command only when selected",
   Effect.fn(function* () {
     let acceptRestart = true;
@@ -44,7 +44,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "reloads after telemetry changes only when selected",
   Effect.fn(function* () {
     const prompted = yield* Queue.unbounded<void>();
@@ -90,7 +90,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "prompts to reload after changing the language-server runtime",
   Effect.fn(function* () {
     const prompted = yield* Deferred.make<void>();
@@ -129,7 +129,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "prompts when an affected inactive RuntimeSession becomes active",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor("/project/notebook.py");

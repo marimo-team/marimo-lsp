@@ -106,7 +106,7 @@ function takeFirstMessage(conn: Connection) {
 }
 
 describe("makeDapProxy", () => {
-  it.scoped(
+  it.effect(
     "rewrites source.path in setBreakpoints (cell URI -> temp file)",
     Effect.fn(function* () {
       const { conn, proxy } = yield* withTestCtx(
@@ -143,7 +143,7 @@ describe("makeDapProxy", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "signals ready and forwards configurationDone message",
     Effect.fn(function* () {
       const { proxy, conn } = yield* withTestCtx(createSourceMapping({}));
@@ -165,7 +165,7 @@ describe("makeDapProxy", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "rewrites source.path in responses from debugpy (temp file -> cell URI)",
     Effect.fn(function* () {
       const { proxy, conn } = yield* withTestCtx(
@@ -205,7 +205,7 @@ describe("makeDapProxy", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "forwards unrecognized messages unchanged",
     Effect.fn(function* () {
       const { proxy, conn } = yield* withTestCtx(

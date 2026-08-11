@@ -23,7 +23,7 @@ import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts"
 import { makeNotebookLspClient } from "../client.ts";
 
 describe("makeNotebookLspClient against uv run ty server", () => {
-  it.scoped(
+  it.effect(
     "initialize → openNotebook → hover → textChange → close",
     () =>
       Effect.gen(function* () {

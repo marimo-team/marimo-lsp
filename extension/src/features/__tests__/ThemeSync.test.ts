@@ -64,7 +64,7 @@ const withTestCtx = Effect.fn(function* (
 });
 
 describe("ThemeSync", () => {
-  it.scoped(
+  it.effect(
     "sends set-display-theme on theme change",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx("light");
@@ -96,7 +96,7 @@ describe("ThemeSync", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "syncs theme when a new notebook becomes active",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx("dark");

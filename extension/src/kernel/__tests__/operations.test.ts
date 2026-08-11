@@ -95,7 +95,7 @@ const withTestCtx = Effect.fn(function* (options: {
   return { layer, notebook, prompts, invalidations };
 });
 
-it.scoped("prompts to install missing packages when uv is enabled", () =>
+it.effect("prompts to install missing packages when uv is enabled", () =>
   Effect.gen(function* () {
     const ctx = yield* withTestCtx({ disableUvIntegration: false });
     yield* handleMissingPackageAlert(alert, ctx.notebook, controller).pipe(
@@ -105,7 +105,7 @@ it.scoped("prompts to install missing packages when uv is enabled", () =>
   }),
 );
 
-it.scoped("skips the install prompt when uv integration is disabled", () =>
+it.effect("skips the install prompt when uv integration is disabled", () =>
   Effect.gen(function* () {
     const ctx = yield* withTestCtx({ disableUvIntegration: true });
     yield* handleMissingPackageAlert(alert, ctx.notebook, controller).pipe(
@@ -115,7 +115,7 @@ it.scoped("skips the install prompt when uv integration is disabled", () =>
   }),
 );
 
-it.scoped(
+it.effect(
   "does not invalidate the environment when placement is cancelled",
   () =>
     Effect.gen(function* () {

@@ -20,7 +20,7 @@ import {
 
 const notebook = notebookId("notebook-a");
 
-it.scoped(
+it.effect(
   "does not fail scope cleanup when language-client disposal rejects",
   Effect.fn(function* () {
     const dispose = vi.fn(() =>
@@ -33,7 +33,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "constructs marimo.api commands through named methods",
   Effect.fn(function* () {
     const calls = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
@@ -76,7 +76,7 @@ it.scoped(
 );
 
 describe("generated api client", () => {
-  it.scoped(
+  it.effect(
     "parses responses against the method's success schema",
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
@@ -98,7 +98,7 @@ describe("generated api client", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "fails with ParseError when the server response violates the contract",
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
@@ -119,7 +119,7 @@ describe("generated api client", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "rejects params the server would reject, before hitting the wire",
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
@@ -141,7 +141,7 @@ describe("generated api client", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "requires tagged-union discriminators before hitting the wire",
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
@@ -165,7 +165,7 @@ describe("generated api client", () => {
 });
 
 describe("findMarimoLspExecutable", () => {
-  it.scoped("uses a compatible Python range for the bundled LSP", () =>
+  it.effect("uses a compatible Python range for the bundled LSP", () =>
     Effect.acquireUseRelease(
       Effect.sync(() =>
         NodeFs.mkdtempDisposableSync(
@@ -247,7 +247,7 @@ describe("selectMarimoLspExecutable", () => {
     }),
   );
 
-  it.scoped("resolves uv only for the Python server variant", () =>
+  it.effect("resolves uv only for the Python server variant", () =>
     Effect.acquireUseRelease(
       Effect.sync(() =>
         NodeFs.mkdtempDisposableSync(
@@ -275,7 +275,7 @@ describe("selectMarimoLspExecutable", () => {
   );
 });
 
-it.scoped(
+it.effect(
   "subscribes to marimo operations",
   Effect.fn(function* () {
     let requestedNotification: string | undefined;
@@ -293,7 +293,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "broadcasts marimo operations without replacing the transport handler",
   Effect.fn(function* () {
     let registrations = 0;

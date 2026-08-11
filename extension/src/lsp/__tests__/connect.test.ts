@@ -18,7 +18,7 @@ import { VsCode } from "../../platform/VsCode.ts";
 import { toVsCodeGlobPattern } from "../connect.ts";
 
 describe("toVsCodeGlobPattern", () => {
-  it.scoped("passes string globs through unchanged", () =>
+  it.effect("passes string globs through unchanged", () =>
     Effect.gen(function* () {
       const test = yield* TestVsCode.make();
       const code = yield* VsCode.pipe(Effect.provide(test.layer));
@@ -29,7 +29,7 @@ describe("toVsCodeGlobPattern", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "converts a RelativePattern object into a vscode.RelativePattern",
     () =>
       Effect.gen(function* () {
@@ -54,7 +54,7 @@ describe("toVsCodeGlobPattern", () => {
       }),
   );
 
-  it.scoped("rejects shapes it cannot interpret", () =>
+  it.effect("rejects shapes it cannot interpret", () =>
     Effect.gen(function* () {
       const test = yield* TestVsCode.make();
       const code = yield* VsCode.pipe(Effect.provide(test.layer));
@@ -75,7 +75,7 @@ describe("toVsCodeGlobPattern", () => {
     }),
   );
 
-  it.scoped("returns None when baseUri can't be parsed", () =>
+  it.effect("returns None when baseUri can't be parsed", () =>
     Effect.gen(function* () {
       const test = yield* TestVsCode.make();
       const code = yield* VsCode.pipe(Effect.provide(test.layer));

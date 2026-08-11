@@ -115,7 +115,7 @@ it.effect("preserves recursive schemas and deferred discovery", () =>
   }).pipe(Effect.provide(makeLayer())),
 );
 
-it.scoped("merges child schemas at their parent path", () => {
+it.effect("merges child schemas at their parent path", () => {
   const { calls, layer } = makeRecordingLayer();
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
@@ -157,7 +157,7 @@ it.scoped("merges child schemas at their parent path", () => {
   }).pipe(Effect.provide(layer));
 });
 
-it.scoped("merges tables at a nested schema path", () => {
+it.effect("merges tables at a nested schema path", () => {
   const { calls, layer } = makeRecordingLayer();
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
@@ -203,7 +203,7 @@ it.scoped("merges tables at a nested schema path", () => {
   }).pipe(Effect.provide(layer));
 });
 
-it.scoped("does not resolve deferred state after an error", () => {
+it.effect("does not resolve deferred state after an error", () => {
   const { calls, layer } = makeRecordingLayer();
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
@@ -277,7 +277,7 @@ it.effect("ignores uncorrelated expansion responses", () =>
   }).pipe(Effect.provide(makeLayer())),
 );
 
-it.scoped("deduplicates concurrent schema expansion requests", () => {
+it.effect("deduplicates concurrent schema expansion requests", () => {
   const calls: MarimoApiCall[] = [];
   const layer = makeLayer((request) => {
     calls.push(request);
@@ -317,7 +317,7 @@ it.scoped("deduplicates concurrent schema expansion requests", () => {
   }).pipe(Effect.provide(layer));
 });
 
-it.scoped("retries nested table expansion after an error", () => {
+it.effect("retries nested table expansion after an error", () => {
   const calls: MarimoApiCall[] = [];
   const layer = makeLayer((request) => {
     calls.push(request);
@@ -380,7 +380,7 @@ it.scoped("retries nested table expansion after an error", () => {
   }).pipe(Effect.provide(layer));
 });
 
-it.scoped("shares one timeout deadline and retries after it expires", () => {
+it.effect("shares one timeout deadline and retries after it expires", () => {
   const calls: MarimoApiCall[] = [];
   const layer = makeLayer((request) => {
     calls.push(request);

@@ -141,7 +141,7 @@ const withTestCtx = Effect.fn(function* (
 });
 
 describe("autoExportUri", () => {
-  it.scoped(
+  it.effect(
     "writes beside the notebook under __marimo__",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -156,7 +156,7 @@ describe("autoExportUri", () => {
 });
 
 describe("AutoExport", () => {
-  it.scoped(
+  it.effect(
     "exports Markdown to an md file",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx({ autoDownload: ["markdown"] });
@@ -175,7 +175,7 @@ describe("AutoExport", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "waits for a live runtime session before creating exports",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx({ hasRuntimeSession: false });
@@ -191,7 +191,7 @@ describe("AutoExport", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "exports enabled formats once per live-session generation",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -228,7 +228,7 @@ describe("AutoExport", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "exports a notebook once when it has multiple visible editors",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -246,7 +246,7 @@ describe("AutoExport", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "waits for cell output before exporting HTML",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx({ hasOutputs: false });
@@ -281,7 +281,7 @@ describe("AutoExport", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "does not credit an in-flight export to a reopened notebook",
     Effect.fn(function* () {
       const exportStarted = yield* Deferred.make<void>();

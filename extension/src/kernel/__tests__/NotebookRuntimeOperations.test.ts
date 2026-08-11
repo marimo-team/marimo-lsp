@@ -164,7 +164,7 @@ function makeIdleCellOperation(
 }
 
 describe("NotebookRuntime operation processing", () => {
-  it.scoped(
+  it.effect(
     "projects only the latest cell output received during a pending projection",
     Effect.fn(function* () {
       const source =
@@ -225,7 +225,7 @@ describe("NotebookRuntime operation processing", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "projects the newest renderable output when a state-only cell-op trails it",
     Effect.fn(function* () {
       const source =
@@ -301,7 +301,7 @@ describe("NotebookRuntime operation processing", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "processes separate notebooks independently",
     Effect.fn(function* () {
       const source =
@@ -358,7 +358,7 @@ describe("NotebookRuntime operation processing", () => {
 });
 
 describe("NotebookRuntime cell identity", () => {
-  it.scoped(
+  it.effect(
     "notifies marimo when a cell is deleted",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -392,7 +392,7 @@ describe("NotebookRuntime cell identity", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "does not delete a cell that moved within the notebook",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -430,7 +430,7 @@ describe("NotebookRuntime cell identity", () => {
 });
 
 describe("NotebookRuntime stdin", () => {
-  it.scoped(
+  it.effect(
     "prompts for input on stdin cell-op and sends response",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -478,7 +478,7 @@ describe("NotebookRuntime stdin", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "does not send command when user cancels input",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -528,7 +528,7 @@ describe("NotebookRuntime stdin", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "cancels an in-flight prompt when its notebook session closes",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -570,7 +570,7 @@ describe("NotebookRuntime stdin", () => {
 });
 
 describe("NotebookRuntime scratch stream", () => {
-  it.scoped(
+  it.effect(
     "runs one scratchpad at a time within a notebook",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -634,7 +634,7 @@ describe("NotebookRuntime scratch stream", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "allows scratchpad execution in separate notebooks",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -715,7 +715,7 @@ describe("NotebookRuntime scratch stream", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "streams scratch + cascade console ops until the matching completed-run",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -816,7 +816,7 @@ describe("NotebookRuntime scratch stream", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "interrupts the kernel when the stream is abandoned before completed-run",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -861,7 +861,7 @@ describe("NotebookRuntime scratch stream", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "does not interrupt the kernel after a normal completed-run",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -907,7 +907,7 @@ describe("NotebookRuntime scratch stream", () => {
 });
 
 describe("NotebookRuntime state eviction", () => {
-  it.scoped(
+  it.effect(
     "evicts variables and datasource state when a notebook closes",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();

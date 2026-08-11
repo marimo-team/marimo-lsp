@@ -52,7 +52,7 @@ const withTestCtx = Effect.gen(function* () {
   };
 });
 
-it.scoped(
+it.effect(
   "should show status bar when marimo notebook is active",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx;
@@ -71,7 +71,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "should hide status bar when Jupyter notebook becomes active",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx;
@@ -102,7 +102,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "should hide status bar when no notebook is active",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx;
@@ -126,7 +126,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "should hide status bar initially when no marimo notebook is open",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx;

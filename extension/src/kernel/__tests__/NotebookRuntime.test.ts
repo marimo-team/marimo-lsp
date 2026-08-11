@@ -35,7 +35,7 @@ const makeTestLayer = Effect.fn(function* (
   };
 });
 
-it.scoped(
+it.effect(
   "returns a stable handle that binds the notebook ID",
   Effect.fn(function* () {
     const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
@@ -89,7 +89,7 @@ it.scoped(
   }),
 );
 
-it.scoped("tracks RuntimeSession until a successful kernel close", () =>
+it.effect("tracks RuntimeSession until a successful kernel close", () =>
   Effect.acquireUseRelease(
     Effect.sync(() =>
       NodeFs.mkdtempDisposableSync(
@@ -186,7 +186,7 @@ it.scoped("tracks RuntimeSession until a successful kernel close", () =>
   ),
 );
 
-it.scoped(
+it.effect(
   "subscribes to MarimoClient operations once",
   Effect.fn(function* () {
     let subscriptions = 0;
@@ -207,7 +207,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "owns the selected controller",
   Effect.fn(function* () {
     const { layer } = yield* makeTestLayer();
@@ -231,7 +231,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "does not report a live kernel from controller selection alone",
   Effect.fn(function* () {
     const { layer, vscode } = yield* makeTestLayer();
@@ -286,7 +286,7 @@ const eventually = <A>(
     Effect.orElse(() => get),
   );
 
-it.scoped(
+it.effect(
   "reports no kernel for an active notebook with no controller",
   Effect.fn(function* () {
     const { layer, vscode } = yield* makeTestLayer();
@@ -306,7 +306,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "reports a live kernel from the server session snapshot",
   Effect.fn(function* () {
     const changes = yield* PubSub.unbounded<{
@@ -355,7 +355,7 @@ it.scoped(
   }),
 );
 
-it.scoped(
+it.effect(
   "releases a notebook's controller when its document closes",
   Effect.fn(function* () {
     const { layer, vscode } = yield* makeTestLayer();

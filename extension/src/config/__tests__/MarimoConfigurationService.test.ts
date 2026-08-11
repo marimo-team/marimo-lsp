@@ -246,7 +246,7 @@ describe("MarimoConfigurationService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "does not restore cache entries from requests invalidated while in flight",
     Effect.fn(function* () {
       const requestStarted = yield* Deferred.make<void>();
@@ -280,7 +280,7 @@ describe("MarimoConfigurationService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "ignores a delayed close from a replaced document at the same URI",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx({

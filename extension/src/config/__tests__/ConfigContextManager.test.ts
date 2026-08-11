@@ -41,7 +41,7 @@ const withTestCtx = Effect.fn(function* () {
   return { vscode, configRef, layer };
 });
 
-it.scoped("mirrors kernel config into VS Code context keys", () =>
+it.effect("mirrors kernel config into VS Code context keys", () =>
   Effect.gen(function* () {
     const ctx = yield* withTestCtx();
     yield* Layer.build(ctx.layer);

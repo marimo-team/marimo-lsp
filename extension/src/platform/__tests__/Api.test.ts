@@ -31,7 +31,7 @@ const withTestCtx = Effect.fn(function* (
 });
 
 describe("Api", () => {
-  it.scoped(
+  it.effect(
     "has experimental.kernels namespace",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -45,7 +45,7 @@ describe("Api", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "getKernel returns undefined for non-existent notebook",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -66,7 +66,7 @@ describe("Api", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "getKernel returns undefined when notebook exists but no controller",
     Effect.fn(function* () {
       const notebookDoc = createTestNotebookDocument(

@@ -37,7 +37,7 @@ const withTestCtx = Effect.fn(function* (
 });
 
 describe("extension.activate", () => {
-  it.scoped(
+  it.effect(
     "should return the public API",
     Effect.fn(function* () {
       const { extension } = yield* withTestCtx();
@@ -61,7 +61,7 @@ describe("extension.activate", () => {
     20_000,
   );
 
-  it.scoped(
+  it.effect(
     "should own contributions until deactivation",
     Effect.fn(function* () {
       const { vscode, extension } = yield* withTestCtx();
@@ -100,7 +100,7 @@ describe("extension.activate", () => {
     20_000,
   );
 
-  it.scoped(
+  it.effect(
     "should dispose the runtime exactly once",
     Effect.fn(function* () {
       const disposals = yield* Ref.make(0);

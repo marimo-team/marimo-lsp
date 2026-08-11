@@ -279,7 +279,7 @@ describe("PackagesService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "does not let an invalidated request overwrite a newer fetch",
     Effect.fn(function* () {
       const firstRequestStarted = yield* Deferred.make<void>();
@@ -339,7 +339,7 @@ describe("PackagesService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "evicts the dependency tree when its notebook closes",
     Effect.fn(function* () {
       const { layer, recorded, vscode } = yield* makeContext({
@@ -367,7 +367,7 @@ describe("PackagesService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "does not restore package state from a request invalidated by close",
     Effect.fn(function* () {
       const requestStarted = yield* Deferred.make<void>();
@@ -408,7 +408,7 @@ describe("PackagesService", () => {
     }),
   );
 
-  it.scoped(
+  it.effect(
     "ignores a delayed close from a replaced document at the same URI",
     Effect.fn(function* () {
       const { layer, recorded, vscode } = yield* makeContext({
