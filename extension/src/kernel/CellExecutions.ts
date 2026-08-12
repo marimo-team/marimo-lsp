@@ -3,6 +3,7 @@ import {
   Context,
   Effect,
   Equal,
+  Exit,
   Layer,
   MutableHashMap,
   Option,
@@ -59,6 +60,11 @@ interface DriveBinding {
 interface RunRecord {
   readonly entry: CellRunEntry;
   readonly drive: Option.Option<DriveBinding>;
+}
+
+interface SubmittedSource {
+  readonly token: symbol;
+  readonly source: string;
 }
 
 // MutableHashMap compares plain object keys by structure.
@@ -125,6 +131,10 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
       const code = yield* VsCode;
       const editorRegistry = yield* NotebookEditorRegistry;
       const records = MutableHashMap.empty<CellExecutionKey, RunRecord>();
+      const submittedSources = MutableHashMap.empty<
+        CellExecutionKey,
+        Array<SubmittedSource>
+      >();
       const revision = yield* SubscriptionRef.make(0);
 
       const emptyRecord = (cellId: NotebookCellId): RunRecord => ({
@@ -268,6 +278,18 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             ),
         });
 
+      const takeSubmittedSource = (key: CellExecutionKey) => {
+        const pending = MutableHashMap.get(submittedSources, key);
+        if (Option.isNone(pending) || pending.value.length === 0) {
+          return undefined;
+        }
+        const [submitted, ...remaining] = pending.value;
+        if (remaining.length === 0)
+          MutableHashMap.remove(submittedSources, key);
+        else MutableHashMap.set(submittedSources, key, remaining);
+        return submitted?.source;
+      };
+
       return {
         isCellStale,
         recordExecution: (cell: MarimoNotebookCell) =>
@@ -281,6 +303,9 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           Effect.gen(function* () {
             const key = cellExecutionKey(notebookId, cellId);
             const record = MutableHashMap.get(records, key);
+            yield* Effect.sync(() =>
+              MutableHashMap.remove(submittedSources, key),
+            );
             if (Option.isNone(record)) return;
 
             const result = step(record.value.entry, Op.Interrupt());
@@ -295,6 +320,50 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               );
             }
           }),
+        submit: <A, E, R>(
+          notebookId: NotebookId,
+          cells: ReadonlyArray<{
+            readonly cellId: NotebookCellId;
+            readonly source: string;
+          }>,
+          send: Effect.Effect<A, E, R>,
+        ) => {
+          const token = Symbol("cell submission");
+          const register = Effect.sync(() => {
+            for (const { cellId, source } of cells) {
+              const key = cellExecutionKey(notebookId, cellId);
+              const pending = Option.getOrElse(
+                MutableHashMap.get(submittedSources, key),
+                () => [],
+              );
+              MutableHashMap.set(submittedSources, key, [
+                ...pending,
+                { token, source },
+              ]);
+            }
+          });
+          const rollback = Effect.sync(() => {
+            for (const { cellId } of cells) {
+              const key = cellExecutionKey(notebookId, cellId);
+              const pending = MutableHashMap.get(submittedSources, key);
+              if (Option.isNone(pending)) continue;
+              const remaining = pending.value.filter(
+                (submitted) => submitted.token !== token,
+              );
+              if (remaining.length === 0) {
+                MutableHashMap.remove(submittedSources, key);
+              } else {
+                MutableHashMap.set(submittedSources, key, remaining);
+              }
+            }
+          });
+          return register.pipe(
+            Effect.andThen(send),
+            Effect.onExit((exit) =>
+              Exit.isSuccess(exit) ? Effect.void : rollback,
+            ),
+          );
+        },
         get changes(): Stream.Stream<void> {
           return Stream.merge(
             Stream.map(SubscriptionRef.changes(revision), constVoid),
@@ -328,7 +397,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           message: CellOperationNotification,
           options: {
             notebookId: NotebookId;
-            source: string;
+            source?: string;
             drive: Drive;
             renderOutput?: boolean;
           },
@@ -382,7 +451,11 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               return;
             }
 
-            const result = step(record.entry, op.value, options.source);
+            const source =
+              op.value._tag === "Queue"
+                ? (takeSubmittedSource(key) ?? options.source)
+                : undefined;
+            const result = step(record.entry, op.value, source);
             const opened = openedRunIds(result.commands);
             yield* Effect.sync(() =>
               MutableHashMap.set(records, key, {

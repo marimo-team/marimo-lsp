@@ -49,6 +49,7 @@ import {
   findNotebookCell,
   MarimoNotebookCell,
   MarimoNotebookDocument,
+  NotebookCellId as makeNotebookCellId,
   type NotebookCellId,
   type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
@@ -256,12 +257,22 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
               notebookId,
               executable,
             );
-            const result = yield* marimo.executeCells({
+            const send = marimo.executeCells({
               notebookUri: notebookId,
               executable,
               workingDirectory,
               inner: request,
             });
+            const result = yield* executions.submit(
+              notebookId,
+              request.cellIds.flatMap((cellId, index) => {
+                const source = request.codes[index];
+                return source === undefined
+                  ? []
+                  : [{ cellId: makeNotebookCellId(cellId), source }];
+              }),
+              send,
+            );
             runtimeSessions.set(notebookId, {
               executable,
               workingDirectory,
@@ -986,7 +997,6 @@ function processNotebookOperation(
         }
         yield* executions.handleOperation(operation, {
           notebookId: notebook.id,
-          source: cell.value.document.getText(),
           drive: controller.value.drive(notebook),
           renderOutput: options.renderCellOutput,
         });
