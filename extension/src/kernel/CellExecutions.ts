@@ -8,6 +8,7 @@ import {
   Context,
   Data,
   Effect,
+  Equal,
   Layer,
   MutableHashMap,
   Option,
@@ -245,13 +246,19 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             MutableHashMap.get(records, key),
             () => emptyRecord(cellId.value),
           );
+          if (Equal.equals(record.entry.acceptedSource, acceptedSource)) {
+            return false;
+          }
           MutableHashMap.set(records, key, {
             ...record,
             entry: { ...record.entry, acceptedSource },
           });
+          return true;
         }).pipe(
-          Effect.andThen(
-            SubscriptionRef.update(revision, (value) => value + 1),
+          Effect.flatMap((changed) =>
+            changed
+              ? SubscriptionRef.update(revision, (value) => value + 1)
+              : Effect.void,
           ),
         );
       };
@@ -551,7 +558,12 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                 entry: result.entry,
               }),
             );
-            if (result.entry.acceptedSource !== record.entry.acceptedSource) {
+            if (
+              !Equal.equals(
+                result.entry.acceptedSource,
+                record.entry.acceptedSource,
+              )
+            ) {
               yield* SubscriptionRef.update(revision, (value) => value + 1);
             }
 
