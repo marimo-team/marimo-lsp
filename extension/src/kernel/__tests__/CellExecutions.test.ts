@@ -1170,6 +1170,54 @@ it.effect(
 );
 
 it.effect(
+  "closes an active run when its cell is removed",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+      data: {
+        cells: [
+          {
+            kind: 1,
+            value: "x = 1",
+            languageId: "python",
+            metadata: MarimoNotebookCell.createMetadata({
+              marimoRuntime: { stableId: "cell-1" },
+            }),
+          },
+        ],
+      },
+    });
+    const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+    yield* Effect.gen(function* () {
+      const executions = yield* CellExecutions;
+      const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
+      const cellId = Option.getOrThrow(cell.id);
+      const commands: string[] = [];
+      const drive: Drive = (_cell, command) =>
+        Effect.sync(() => commands.push(command._tag));
+
+      yield* executions.handleOperation(
+        {
+          op: "cell-op",
+          cell_id: cellId,
+          status: "queued",
+          run_id: "run-1",
+        },
+        {
+          notebookId: cell.notebook.id,
+          source: cell.document.getText(),
+          drive,
+        },
+      );
+      yield* executions.removeCell(cell.notebook.id, cellId);
+      yield* executions.removeCell(cell.notebook.id, cellId);
+
+      expect(commands).toEqual(["SetDiagnostic", "OpenRun", "CloseRun"]);
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
   "keeps commands on the Drive that opened their run",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {

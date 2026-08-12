@@ -277,27 +277,24 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           ),
         invalidateCell: (cell: MarimoNotebookCell) =>
           updateAcceptedSource(cell, AcceptedSource.Invalidated()),
-        forgetCell(notebookId: NotebookId, cellId: NotebookCellId) {
-          const key = cellExecutionKey(notebookId, cellId);
-          return Effect.sync(() => {
+        removeCell: (notebookId: NotebookId, cellId: NotebookCellId) =>
+          Effect.gen(function* () {
+            const key = cellExecutionKey(notebookId, cellId);
             const record = MutableHashMap.get(records, key);
-            if (Option.isNone(record)) return false;
-            MutableHashMap.set(records, key, {
-              ...record.value,
-              entry: {
-                ...record.value.entry,
-                acceptedSource: AcceptedSource.Unknown(),
-              },
-            });
-            return true;
-          }).pipe(
-            Effect.flatMap((changed) =>
-              changed
-                ? SubscriptionRef.update(revision, (value) => value + 1)
-                : Effect.void,
-            ),
-          );
-        },
+            if (Option.isNone(record)) return;
+
+            const result = step(record.value.entry, Op.Interrupt());
+            yield* Effect.sync(() => MutableHashMap.remove(records, key));
+            yield* SubscriptionRef.update(revision, (value) => value + 1);
+
+            for (const command of result.commands) {
+              yield* run(
+                key,
+                command,
+                driveFor(command, record.value, Option.none(), noOpenedRuns),
+              );
+            }
+          }),
         get changes(): Stream.Stream<void> {
           return Stream.merge(
             Stream.map(SubscriptionRef.changes(revision), constVoid),

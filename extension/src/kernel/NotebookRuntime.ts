@@ -1101,7 +1101,7 @@ function syncCellIdentity(
     for (const cellId of removedCellIds) {
       if (addedCellIds.has(cellId)) continue;
 
-      yield* options.executions.forgetCell(event.notebook.id, cellId);
+      yield* options.executions.removeCell(event.notebook.id, cellId);
       yield* options.notebook.deleteCell({ cellId }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning(
