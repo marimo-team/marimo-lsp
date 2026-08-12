@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Cell execution architecture — PR stack #756–#759</title>
+  <!--
+  THESIS: This stack replaces distributed bookkeeping with a causal execution module; the page refuses a generic box diagram by making every ownership claim replayable.
+  OWN-WORLD: Cool proof paper, semantic blue/green/amber/red inks, compressed headings, code-only monospace, and logic-analyzer event rails.
+  STORY: Understand the old design, advance through four PRs, see the leverage, then replay the two cases where the claimed causal model breaks.
+  FIRST VIEWPORT: A declarative before→after thesis sits beside a live ownership ledger; the primary action jumps into the walkthrough.
+  FORM: Causal proof sheet, seventh grounded direction, staged as an annotated derivation; seed b5bb0f9c.
+  -->
+  <style>
+    :root {
+      --paper: #f4f6f3;
+      --surface: #fff;
+      --ink: #14211b;
+      --muted: #52635a;
+      --line: #c5d0c8;
+      --line-dark: #8ba096;
+      --blue: #2251cc;
+      --blue-soft: #e9efff;
+      --green: #087a55;
+      --green-soft: #e2f3eb;
+      --red: #bd2c2c;
+      --red-soft: #fbe8e6;
+      --amber: #945007;
+      --amber-soft: #fff0d6;
+      --display: "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+      --body: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      --shadow: 0 12px 28px rgba(20, 33, 27, .13);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font: 16px/1.65 var(--body);
+    }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    button { font: inherit; }
+    a { color: inherit; }
+    :focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+    .skip-link {
+      position: fixed; z-index: 30; left: 16px; top: 12px; transform: translateY(-160%);
+      background: var(--ink); color: #fff; padding: 8px 12px; border-radius: 6px;
+    }
+    .skip-link:focus { transform: translateY(0); }
+
+    .shell { max-width: 1500px; margin: 0 auto; padding: 0 34px; }
+    .topbar {
+      position: sticky; top: 0; z-index: 20; border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--paper) 94%, transparent); backdrop-filter: blur(12px);
+    }
+    .topbar-inner { min-height: 58px; display: flex; align-items: center; gap: 20px; }
+    .brand { font: 800 15px/1 var(--display); letter-spacing: .03em; margin-right: auto; }
+    .brand span { color: var(--blue); }
+    .progress { width: min(260px, 26vw); height: 3px; background: var(--line); }
+    .progress > i { display: block; height: 100%; width: 0; background: var(--blue); }
+    .topnav { display: flex; gap: 15px; font-size: 13px; }
+    .topnav a { text-decoration: none; color: var(--muted); }
+    .topnav a:hover { color: var(--ink); }
+
+    .hero { min-height: calc(100vh - 59px); display: grid; align-items: center; padding: 72px 0; }
+    .hero-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr); gap: 8vw; align-items: center; }
+    .kicker, .eyebrow {
+      font: 700 12px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+    }
+    .kicker { color: var(--blue); margin-bottom: 22px; }
+    h1, h2, h3 { font-family: var(--display); margin: 0; }
+    h1 { max-width: 880px; font-size: clamp(3.25rem, 8.5vw, 7.8rem); line-height: .87; letter-spacing: -.04em; }
+    h1 .to { display: block; color: var(--blue); padding-left: 12%; }
+    .lede { max-width: 670px; margin: 30px 0 0; font-size: clamp(1.05rem, 1.6vw, 1.32rem); color: var(--muted); }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 32px; }
+    .button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      min-height: 44px; padding: 9px 15px; border: 1px solid var(--ink); border-radius: 6px;
+      background: var(--ink); color: #fff; text-decoration: none; cursor: pointer; font-weight: 700;
+      transition: transform .16s ease-out, box-shadow .16s ease-out;
+    }
+    .button:hover { transform: translateY(-2px); box-shadow: 0 5px 12px rgba(20,33,27,.16); }
+    .button.secondary { color: var(--ink); background: transparent; }
+
+    .ledger { border-top: 3px solid var(--ink); border-bottom: 1px solid var(--ink); background: var(--surface); }
+    .ledger-head { padding: 13px 16px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); }
+    .ledger-head strong { font: 750 15px/1.2 var(--display); }
+    .ledger-row { display: grid; grid-template-columns: 92px 1fr; padding: 14px 16px; border-bottom: 1px solid var(--line); gap: 12px; }
+    .ledger-row:last-child { border-bottom: 0; }
+    .ledger-row .owner { font: 650 11px/1.3 var(--mono); text-transform: uppercase; color: var(--muted); }
+    .ledger-row code { font: 500 13px/1.45 var(--mono); }
+    .split-owner { color: var(--red); }
+    .one-owner { color: var(--green); }
+    .ledger-note { padding: 14px 16px; background: var(--green-soft); font-size: 14px; color: #15593f; }
+
+    main section { scroll-margin-top: 78px; }
+    .chapter { padding: 110px 0; border-top: 1px solid var(--line); }
+    .chapter-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 70px; }
+    .chapter-index { position: sticky; top: 94px; align-self: start; }
+    .chapter-index .eyebrow { color: var(--blue); }
+    .chapter-index p { color: var(--muted); font-size: 14px; line-height: 1.5; }
+    .chapter h2 { font-size: clamp(2.7rem, 5.7vw, 5.5rem); line-height: .95; letter-spacing: -.035em; max-width: 970px; }
+    .chapter-intro { max-width: 760px; margin: 26px 0 55px; color: var(--muted); font-size: 18px; }
+    .rule { height: 1px; background: var(--line); margin: 46px 0; }
+
+    .switcher { display: inline-grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line-dark); margin-bottom: 32px; }
+    .switcher button {
+      position: relative; min-height: 44px; min-width: 154px; border: 0; background: transparent;
+      color: var(--muted); cursor: pointer; font-weight: 700; padding: 9px 15px;
+    }
+    .switcher button[aria-selected="true"] { color: var(--blue); }
+    .switcher button[aria-selected="true"]::after { content: ""; position: absolute; height: 3px; background: var(--blue); left: 0; right: 0; bottom: -2px; }
+
+    .architecture { display: grid; grid-template-columns: minmax(0, 1fr) 94px minmax(0, 1fr); align-items: stretch; }
+    .arch-side { background: var(--surface); border: 1px solid var(--line); padding: 28px; }
+    .arch-side h3 { font-size: 28px; margin-bottom: 8px; }
+    .arch-side > p { color: var(--muted); margin-top: 0; }
+    .arch-arrow { display: grid; place-items: center; font: 800 28px/1 var(--display); color: var(--blue); }
+    .module-list { list-style: none; padding: 0; margin: 28px 0 0; }
+    .module-list li { position: relative; padding: 15px 12px 15px 42px; border-top: 1px solid var(--line); }
+    .module-list li::before { content: attr(data-mark); position: absolute; left: 10px; top: 16px; font: 700 11px/1 var(--mono); color: var(--blue); }
+    .module-list strong { display: block; font-size: 15px; }
+    .module-list small { display: block; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+    .arch-verdict { margin-top: 26px; padding: 15px; background: var(--blue-soft); color: #183a91; font-weight: 650; }
+
+    .code-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--line-dark); }
+    .code-pane { min-width: 0; background: #101a15; color: #e9f1ec; }
+    .code-pane + .code-pane { border-left: 1px solid #4b5d53; }
+    .code-title { padding: 13px 18px; background: #1d2a23; color: #c9d7cf; font: 700 12px/1 var(--mono); }
+    pre { margin: 0; padding: 22px 20px 25px; overflow: auto; font: 500 13px/1.65 var(--mono); tab-size: 2; }
+    .kw { color: #9db7ff; } .type { color: #7fe0b9; } .dim { color: #83958b; } .hot { color: #ffd38a; }
+    .code-caption { padding: 14px 18px; background: var(--surface); color: var(--ink); font-size: 14px; border-top: 1px solid var(--line-dark); }
+
+    .stack { position: relative; }
+    .stack::before { content: ""; position: absolute; left: 29px; top: 32px; bottom: 36px; width: 2px; background: var(--line); }
+    .pr { position: relative; display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 25px; padding-bottom: 56px; }
+    .pr:last-child { padding-bottom: 0; }
+    .pr-number { position: relative; z-index: 1; width: 60px; height: 60px; display: grid; place-items: center; background: var(--paper); border: 2px solid var(--blue); border-radius: 50%; color: var(--blue); font: 800 14px/1 var(--mono); }
+    .pr-body { padding-top: 2px; }
+    .pr h3 { font-size: clamp(1.65rem, 3vw, 2.7rem); line-height: 1.05; }
+    .pr-thesis { color: var(--muted); max-width: 750px; margin: 12px 0 20px; }
+    .delta { display: grid; grid-template-columns: 1fr 1fr; max-width: 880px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .delta > div { padding: 14px 16px 14px 0; }
+    .delta > div + div { border-left: 1px solid var(--line); padding-left: 16px; }
+    .delta b { font: 700 11px/1.3 var(--mono); text-transform: uppercase; color: var(--muted); }
+    .delta p { margin: 7px 0 0; font-size: 14px; line-height: 1.5; }
+
+    .gain-lines { border-top: 1px solid var(--line-dark); }
+    .gain { display: grid; grid-template-columns: 180px 1fr 130px; gap: 25px; align-items: baseline; padding: 20px 0; border-bottom: 1px solid var(--line); }
+    .gain strong { font-family: var(--display); font-size: 21px; }
+    .gain p { margin: 0; color: var(--muted); }
+    .gain output { justify-self: end; font: 700 11px/1 var(--mono); text-transform: uppercase; color: var(--green); }
+
+    .trace-controls { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; margin: 28px 0 22px; }
+    .trace-controls button {
+      min-height: 42px; padding: 8px 13px; border: 1px solid var(--ink); border-radius: 6px; background: transparent; color: var(--ink); cursor: pointer; font-weight: 700;
+    }
+    .trace-controls button:hover { background: #e8ece9; }
+    .trace-controls button:disabled { opacity: .4; cursor: not-allowed; }
+    .scenario-tabs { display: flex; gap: 6px; margin-right: auto; }
+    .scenario-tabs button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+    .trace-readout { font: 650 12px/1.4 var(--mono); color: var(--muted); min-width: 95px; text-align: center; }
+
+    .trace { background: var(--surface); border-top: 3px solid var(--ink); border-bottom: 1px solid var(--ink); padding: 22px 0 10px; overflow-x: auto; }
+    .trace-inner { min-width: 800px; }
+    .lane { display: grid; grid-template-columns: 135px repeat(6, 1fr); min-height: 82px; align-items: center; position: relative; }
+    .lane::after { content: ""; position: absolute; left: 150px; right: 22px; top: 50%; height: 1px; background: var(--line); }
+    .lane-label { padding-left: 22px; font: 700 11px/1.25 var(--mono); text-transform: uppercase; color: var(--muted); }
+    .event {
+      position: relative; z-index: 1; justify-self: center; display: grid; place-items: center; width: 86px; min-height: 39px; padding: 6px;
+      border: 1px solid var(--line-dark); border-radius: 6px; background: var(--paper); color: var(--muted); opacity: .38;
+      font: 650 10px/1.25 var(--mono); text-align: center; transition: opacity .2s ease-out, transform .2s ease-out, box-shadow .2s ease-out;
+    }
+    .event.visible { opacity: 1; color: var(--ink); }
+    .event.current { transform: translateY(-4px); border-color: var(--blue); box-shadow: var(--shadow); color: var(--blue); }
+    .event.bad.visible { background: var(--red-soft); border-color: var(--red); color: var(--red); }
+    .event.warn.visible { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); }
+    .trace-story { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .65fr); gap: 30px; margin-top: 28px; }
+    .state-sheet { background: #101a15; color: #eef5f1; padding: 20px; min-height: 210px; }
+    .state-sheet h3 { font: 700 12px/1 var(--mono); color: #9cb0a5; margin-bottom: 16px; }
+    .state-line { display: grid; grid-template-columns: 145px 1fr; gap: 12px; font: 500 13px/1.65 var(--mono); }
+    .state-line span:first-child { color: #8da096; }
+    .explanation { align-self: center; }
+    .explanation .step-label { color: var(--blue); font: 700 11px/1 var(--mono); }
+    .explanation h3 { font-size: 26px; margin: 9px 0; }
+    .explanation p { color: var(--muted); margin: 0; }
+
+    .proof { margin-top: 28px; display: grid; grid-template-columns: 1fr 52px 1fr; align-items: stretch; }
+    .premises, .conclusion { padding: 22px; border: 1px solid var(--line); background: var(--surface); }
+    .proof-arrow { display: grid; place-items: center; color: var(--muted); font-size: 24px; }
+    .premises b, .conclusion b { display: block; font: 700 11px/1.2 var(--mono); text-transform: uppercase; margin-bottom: 10px; }
+    .premises ul { margin: 0; padding-left: 20px; }
+    .conclusion.good { background: var(--green-soft); border-color: var(--green); color: #15593f; }
+    .conclusion.bad { background: var(--red-soft); border-color: var(--red); color: #81201f; }
+    .conclusion.warn { background: var(--amber-soft); border-color: var(--amber); color: #6b3a06; }
+
+    .interfaces { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 42px; align-items: start; }
+    .interface-nav { border-top: 3px solid var(--ink); }
+    .interface-nav button { width: 100%; display: grid; grid-template-columns: 110px 1fr; text-align: left; gap: 12px; padding: 16px 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; cursor: pointer; color: var(--muted); }
+    .interface-nav button:hover { background: #e9eeeb; }
+    .interface-nav button[aria-selected="true"] { color: var(--blue); background: var(--blue-soft); }
+    .interface-nav code { font: 700 12px/1.4 var(--mono); }
+    .interface-nav span { font-size: 14px; line-height: 1.45; }
+    .interface-sheet { background: #101a15; color: #eaf2ed; min-height: 530px; }
+    .interface-sheet pre { white-space: pre-wrap; }
+    .interface-note { padding: 18px 22px; background: var(--surface); color: var(--ink); border: 1px solid var(--line-dark); border-top: 0; }
+    .interface-note b { color: var(--blue); }
+
+    .scorecard { display: grid; grid-template-columns: 1fr 120px 1fr; border-top: 1px solid var(--line-dark); }
+    .score-head, .score-cell { padding: 16px; border-bottom: 1px solid var(--line); }
+    .score-head { font: 700 11px/1.2 var(--mono); text-transform: uppercase; color: var(--muted); }
+    .score-cell:nth-child(3n + 2), .score-head:nth-child(3n + 2) { text-align: center; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+    .score-cell code { font: 600 12px/1.4 var(--mono); }
+    .yes { color: var(--green); font-weight: 800; } .mixed { color: var(--amber); font-weight: 800; }
+
+    .takeaway { background: var(--ink); color: #eff5f1; padding: 80px 0; }
+    .takeaway-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 70px; }
+    .takeaway h2 { font-size: clamp(2.8rem, 5vw, 5rem); line-height: .95; letter-spacing: -.035em; }
+    .takeaway p { color: #b7c7be; max-width: 64ch; }
+    .sentence { margin-top: 30px; padding: 20px 0; border-top: 1px solid #506158; border-bottom: 1px solid #506158; font-size: 20px; color: #fff; }
+    .next-list { margin: 0; padding: 0; list-style: none; counter-reset: next; }
+    .next-list li { counter-increment: next; position: relative; padding: 18px 0 18px 52px; border-bottom: 1px solid #45554c; }
+    .next-list li::before { content: counter(next); position: absolute; left: 0; top: 22px; color: #91a59a; font: 700 12px/1 var(--mono); }
+    footer { padding: 28px 0; background: var(--ink); color: #90a399; border-top: 1px solid #43534b; font-size: 13px; }
+
+    [hidden] { display: none !important; }
+    @media (max-width: 980px) {
+      .hero-grid, .chapter-grid, .takeaway-grid { grid-template-columns: 1fr; }
+      .hero { min-height: auto; }
+      .ledger { max-width: 680px; }
+      .chapter-index { position: static; display: grid; grid-template-columns: 110px 1fr; gap: 20px; }
+      .chapter-index p { margin-top: 0; }
+      .architecture { grid-template-columns: 1fr; gap: 20px; }
+      .arch-arrow { transform: rotate(90deg); min-height: 40px; }
+      .interfaces { grid-template-columns: 1fr; }
+      .interface-sheet { min-height: 0; }
+    }
+    @media (max-width: 760px) {
+      .shell { padding: 0 18px; }
+      .topnav { display: none; }
+      .progress { width: 42vw; }
+      .hero { padding: 56px 0 72px; }
+      h1 { font-size: clamp(3.1rem, 17vw, 5.4rem); }
+      h1 .to { padding-left: 0; }
+      .chapter { padding: 78px 0; }
+      .chapter-intro { margin-bottom: 36px; }
+      .code-compare, .delta, .trace-story, .takeaway-grid { grid-template-columns: 1fr; }
+      .code-pane + .code-pane { border-left: 0; border-top: 1px solid #4b5d53; }
+      .delta > div + div { border-left: 0; border-top: 1px solid var(--line); padding-left: 0; }
+      .gain { grid-template-columns: 1fr; gap: 5px; }
+      .gain output { justify-self: start; }
+      .proof { grid-template-columns: 1fr; gap: 10px; }
+      .proof-arrow { transform: rotate(90deg); }
+      .scorecard { grid-template-columns: 1fr 70px 1fr; font-size: 13px; }
+      .score-head, .score-cell { padding: 11px 7px; }
+      .scenario-tabs { width: 100%; }
+      .scenario-tabs button { flex: 1; }
+      .switcher { width: 100%; }
+      .switcher button { min-width: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to explainer</a>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <div class="brand">marimo-lsp <span>/ execution architecture</span></div>
+      <div class="progress" aria-hidden="true"><i id="reading-progress"></i></div>
+      <nav class="topnav" aria-label="Explainer sections">
+        <a href="#delta">Delta</a><a href="#stack">Stack</a><a href="#proof">Proof</a><a href="#interfaces">Interfaces</a><a href="#verdict">Verdict</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="shell hero-grid">
+        <div>
+          <div class="kicker">PR stack #756–#759 · private walkthrough</div>
+          <h1>From scattered effects <span class="to">to owned causality.</span></h1>
+          <p class="lede">The stack is not mainly a reducer refactor. It is an attempt to make one module own the meaning, ordering, and presentation of a cell run. That buys real leverage—but two causal facts are still sampled too late or discarded too early.</p>
+          <div class="hero-actions">
+            <a class="button" href="#delta">Start with the conceptual delta <span aria-hidden="true">↓</span></a>
+            <a class="button secondary" href="#proof">Jump to the race simulator</a>
+          </div>
+        </div>
+        <aside class="ledger" aria-label="Ownership comparison">
+          <div class="ledger-head"><strong>Ownership ledger</strong><span class="eyebrow">before → after</span></div>
+          <div class="ledger-row"><span class="owner">Run state</span><code><span class="split-owner">reducer</span> → <span class="one-owner">CellExecutions</span></code></div>
+          <div class="ledger-row"><span class="owner">Accepted code</span><code><span class="split-owner">separate ref</span> → <span class="one-owner">CellRunState</span></code></div>
+          <div class="ledger-row"><span class="owner">VS Code run</span><code><span class="split-owner">same module</span> → <span class="one-owner">VsCodeCellDrive</span></code></div>
+          <div class="ledger-row"><span class="owner">Lifecycle</span><code><span class="split-owner">five methods</span> → <span class="one-owner">one input stream</span></code></div>
+          <div class="ledger-note"><strong>The gain:</strong> one place can now decide what a kernel fact means before a host Adapter presents it.</div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="chapter" id="delta">
+      <div class="shell chapter-grid">
+        <aside class="chapter-index"><span class="eyebrow">Conceptual delta</span><p>First understand what knowledge moves. The details of Effect, tagged enums, and maps are secondary.</p></aside>
+        <div>
+          <h2>The old architecture knew the same story in several places.</h2>
+          <p class="chapter-intro">A kernel <code>cell-op</code> updated reducer state, produced actions, mutated a VS Code execution, and separately updated staleness bookkeeping. Correctness depended on the caller invoking those pieces in the right order with live editor objects.</p>
+
+          <div class="switcher" role="tablist" aria-label="Architecture view">
+            <button role="tab" aria-selected="true" data-arch="before">Previous architecture</button>
+            <button role="tab" aria-selected="false" data-arch="after">Stack tip</button>
+          </div>
+
+          <div class="architecture" aria-live="polite">
+            <article class="arch-side" id="arch-left"></article>
+            <div class="arch-arrow" aria-hidden="true">→</div>
+            <article class="arch-side" id="arch-right"></article>
+          </div>
+
+          <div class="rule"></div>
+          <div class="code-compare">
+            <div class="code-pane">
+              <div class="code-title">BEFORE · CALLER MUST ORCHESTRATE</div>
+              <pre><span class="kw">yield</span>* executions.<span class="hot">handleOperation</span>(msg, {
+  editor,
+  controller,
+  renderOutput,
+});
+
+<span class="dim">// Public side doors mutate related truth:</span>
+<span class="kw">yield</span>* executions.<span class="hot">recordExecution</span>(cell);
+<span class="kw">yield</span>* executions.<span class="hot">invalidateCell</span>(cell);
+<span class="kw">yield</span>* executions.<span class="hot">forgetCell</span>(notebook, id);</pre>
+              <div class="code-caption">The Interface exposes several operations whose ordering and shared invariants callers must understand.</div>
+            </div>
+            <div class="code-pane">
+              <div class="code-title">AFTER · FACTS ENTER ONE INTERFACE</div>
+              <pre><span class="kw">yield</span>* executions.<span class="hot">accept</span>(
+  <span class="type">CellInput.Operation</span>({
+    notebookId,
+    operation,
+    source,
+    drive,
+  }),
+);
+
+<span class="dim">// Lifecycle uses the same ordering lane:</span>
+accept(<span class="type">CellInput.CellsRemoved</span>({ ... }));
+accept(<span class="type">CellInput.Invalidated</span>({ ... }));</pre>
+              <div class="code-caption">The Interface becomes event-shaped: callers report facts; the Module owns their ordering and consequences.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="chapter" id="stack">
+      <div class="shell chapter-grid">
+        <aside class="chapter-index"><span class="eyebrow">Four commits, one arc</span><p>Each PR removes one category of knowledge from callers or from the host-specific Implementation.</p></aside>
+        <div>
+          <h2>The stack deepens one layer at a time.</h2>
+          <p class="chapter-intro">Read these as a progression, not four isolated refactors. The later PRs make the architectural intent of the earlier ones visible.</p>
+          <div class="stack">
+            <article class="pr">
+              <div class="pr-number">#756</div>
+              <div class="pr-body"><h3>Put accepted source beside cell-run state.</h3><p class="pr-thesis">Deletes the parallel <code>lastExecutedCodeRef</code>. Queueing and invalidation now change the same state record that owns phase and runtime state.</p><div class="delta"><div><b>Removed knowledge</b><p>Callers no longer coordinate <code>RecordExecution</code> and <code>InvalidateCell</code> actions.</p></div><div><b>Leverage gained</b><p>One transition describes both execution phase and staleness truth.</p></div></div></div>
+            </article>
+            <article class="pr">
+              <div class="pr-number">#757</div>
+              <div class="pr-body"><h3>Give every run command an identity.</h3><p class="pr-thesis"><code>OpenRun</code>, <code>StartRun</code>, <code>RenderOutputs</code>, and <code>CloseRun</code> name the run they intend to touch. Late commands can be rejected by an Adapter.</p><div class="delta"><div><b>Removed knowledge</b><p>The interpreter no longer assumes “whatever VS Code execution exists” is the intended one.</p></div><div><b>Leverage gained</b><p>Commands become idempotent-ish and stale presentation work can be skipped.</p></div></div></div>
+            </article>
+            <article class="pr">
+              <div class="pr-number">#758</div>
+              <div class="pr-body"><h3>Move VS Code resources behind a Drive Adapter.</h3><p class="pr-thesis"><code>CellExecutions</code> stops holding <code>NotebookCellExecution</code>, output projection, and diagnostics. It emits host commands through one effectful capability.</p><div class="delta"><div><b>Removed knowledge</b><p>The cell-run Module no longer knows VS Code handles, editors, diagnostics, or output projection.</p></div><div><b>Leverage gained</b><p>The state machine is testable with a function; host resource cleanup has one home.</p></div></div></div>
+            </article>
+            <article class="pr">
+              <div class="pr-number">#759</div>
+              <div class="pr-body"><h3>Own cell state and lifecycle by notebook.</h3><p class="pr-thesis">Operations, interrupts, cell removal, and notebook invalidation enter a single Interface. Each notebook receives one serialization lane.</p><div class="delta"><div><b>Removed knowledge</b><p>Callers no longer choose among five mutation methods or clean records independently.</p></div><div><b>Leverage gained</b><p>Removal and reopening can be ordered against in-flight commands without blocking other notebooks.</p></div></div></div>
+            </article>
+          </div>
+
+          <div class="rule"></div>
+          <h3 style="font-size:32px;margin-bottom:18px">What you get at the stack tip</h3>
+          <div class="gain-lines">
+            <div class="gain"><strong>Locality</strong><p>Run phase, runtime state, accepted source, Drive binding, and cleanup policy are readable from one execution Module.</p><output>strong gain</output></div>
+            <div class="gain"><strong>Leverage</strong><p>Callers submit facts through <code>accept</code>; one Implementation produces ordered, run-addressed host commands.</p><output>strong gain</output></div>
+            <div class="gain"><strong>Test surface</strong><p>Tests can drive the same Interface as production without constructing live VS Code executions.</p><output>improved</output></div>
+            <div class="gain"><strong>Host isolation</strong><p>Deleting <code>VsCodeCellDrive</code> would move substantial VS Code complexity back into the execution Module. It is earning its seam.</p><output>deep module</output></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="chapter" id="proof">
+      <div class="shell chapter-grid">
+        <aside class="chapter-index"><span class="eyebrow">Causal proof</span><p>Replay a normal run, then introduce the timing races. The state sheet shows exactly what the proposed Module believes.</p></aside>
+        <div>
+          <h2>The design works when events preserve their causes.</h2>
+          <p class="chapter-intro">Choose a scenario and advance it one event at a time. The normal path demonstrates the intended architecture. The other paths show where a fact is sampled at the wrong time or associated after its identity is discarded.</p>
+
+          <div class="trace-controls">
+            <div class="scenario-tabs" aria-label="Trace scenario">
+              <button type="button" aria-pressed="true" data-scenario="normal">Normal run</button>
+              <button type="button" aria-pressed="false" data-scenario="source">Edit before ack</button>
+              <button type="button" aria-pressed="false" data-scenario="run">Late old-run output</button>
+            </div>
+            <button type="button" id="trace-prev">← Previous</button>
+            <span class="trace-readout" id="trace-readout" aria-live="polite">Step 1 / 6</span>
+            <button type="button" id="trace-next">Next →</button>
+            <button type="button" id="trace-reset">Reset</button>
+          </div>
+
+          <div class="trace" aria-label="Event timeline">
+            <div class="trace-inner" id="trace-lanes"></div>
+          </div>
+          <div class="trace-story">
+            <div class="state-sheet" aria-live="polite">
+              <h3>CELL EXECUTIONS · CURRENT BELIEF</h3>
+              <div id="state-lines"></div>
+            </div>
+            <div class="explanation" aria-live="polite">
+              <div class="step-label" id="step-label"></div>
+              <h3 id="step-title"></h3>
+              <p id="step-copy"></p>
+            </div>
+          </div>
+          <div class="proof" id="proof-result" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="chapter" id="interfaces">
+      <div class="shell chapter-grid">
+        <aside class="chapter-index"><span class="eyebrow">Interfaces</span><p>Click a Module to see what callers must know and what complexity stays hidden behind its seam.</p></aside>
+        <div>
+          <h2>The useful abstraction is not “a pure reducer.”</h2>
+          <p class="chapter-intro">The meaningful architecture is the chain from accepted facts to host presentation. The reducer is helpful internal Implementation; the deepest public leverage belongs to <code>CellExecutions</code> and <code>VsCodeCellDrive</code>.</p>
+          <div class="interfaces">
+            <div class="interface-nav" role="tablist" aria-label="Module interfaces">
+              <button role="tab" aria-selected="true" data-interface="input"><code>CellInput</code><span>Facts accepted from runtime and lifecycle callers</span></button>
+              <button role="tab" aria-selected="false" data-interface="executions"><code>CellExecutions</code><span>Notebook-owned state, ordering, and command production</span></button>
+              <button role="tab" aria-selected="false" data-interface="command"><code>CellCommand</code><span>Host effects requested by the state machine</span></button>
+              <button role="tab" aria-selected="false" data-interface="drive"><code>Drive</code><span>The host seam and its VS Code Adapter</span></button>
+            </div>
+            <div>
+              <div class="interface-sheet"><pre id="interface-code"></pre></div>
+              <div class="interface-note" id="interface-note"></div>
+            </div>
+          </div>
+
+          <div class="rule"></div>
+          <h3 style="font-size:32px;margin-bottom:18px">Depth check</h3>
+          <div class="scorecard" role="table" aria-label="Module depth comparison">
+            <div class="score-head">Module</div><div class="score-head">Depth</div><div class="score-head">Why</div>
+            <div class="score-cell"><code>VsCodeCellDrive</code></div><div class="score-cell yes">Deep</div><div class="score-cell">Hides resource identity, output reconciliation, diagnostics, and VS Code failure handling.</div>
+            <div class="score-cell"><code>CellExecutions</code></div><div class="score-cell yes">Deeper</div><div class="score-cell">One input Interface replaces several mutation paths and owns notebook serialization.</div>
+            <div class="score-cell"><code>CellRunReducer</code></div><div class="score-cell mixed">Shallow</div><div class="score-cell">Its wide algebra has one production caller; orchestration bugs live before and after it.</div>
+            <div class="score-cell"><code>Drive</code> seam</div><div class="score-cell mixed">Useful</div><div class="score-cell">One production Adapter means platform variation is hypothetical, but resource Locality is real.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="takeaway" id="verdict">
+      <div class="shell takeaway-grid">
+        <div>
+          <div class="kicker" style="color:#9db7ff">The shortest honest explanation</div>
+          <h2>The stack changes who is responsible for knowing the story of a run.</h2>
+          <p>Before, several callers and mutable stores collectively maintained that story. After, callers report facts, <code>CellExecutions</code> turns them into ordered commands, and <code>VsCodeCellDrive</code> presents them.</p>
+          <div class="sentence">That is worth doing. But “accepted source” and “run-addressed” are only true when provenance and correlation survive end to end.</div>
+        </div>
+        <div>
+          <div class="kicker" style="color:#9db7ff">Strongest next direction</div>
+          <ol class="next-list">
+            <li>Capture source when execution is submitted, not when <code>queued</code> is observed.</li>
+            <li>Bind the kernel <code>run_id</code> to that submitted source.</li>
+            <li>Correlate tagged runtime facts before folding shared state.</li>
+            <li>Define an explicit policy for terminal facts that lack <code>run_id</code>.</li>
+            <li>Test races through the <code>CellExecutions</code> Interface.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer><div class="shell">Private explanatory artifact · based on PRs #756–#759 at stack tip <code>640f43a</code> · code sketches are simplified but preserve the conceptual Interfaces.</div></footer>
+
+  <script>
+    const archData = {
+      before: {
+        left: { title: "Kernel notification", copy: "A raw cell-op enters with partial runtime state.", items: [["01", "NotebookRuntime", "Find the live editor and selected controller."], ["02", "CellRunReducer", "Fold runtime state and return ordered Actions."], ["03", "CellExecutions", "Interpret Actions against mutable VS Code resources."]] },
+        right: { title: "Parallel ownership", copy: "Related truths live beside—not inside—the run record.", items: [["A", "RunRecord", "Phase, editor, and live execution resource."], ["B", "lastExecutedCodeRef", "A second notebook/cell map for staleness."], ["C", "Public mutation methods", "recordExecution, invalidateCell, forgetCell, handleInterrupt."], ["D", "Caller obligation", "Supply live editor/controller and call the right method at the right time."]], verdict: "Complexity is locally implemented, but the Interface makes callers share the invariant." }
+      },
+      after: {
+        left: { title: "Facts enter one seam", copy: "Runtime and lifecycle events share a notebook ordering lane.", items: [["01", "CellInput.Operation", "Notebook ID, raw operation, source snapshot, Drive."], ["02", "CellInput lifecycle", "Interrupted, CellsRemoved, or Invalidated."], ["03", "CellExecutions.accept", "The only public mutation path."]] },
+        right: { title: "Separated ownership", copy: "Pure state and host resources each get one home.", items: [["A", "CellRunState", "Runtime state, phase, accepted source."], ["B", "CellRecord", "Run state plus the Drive bound to its active run."], ["C", "CellCommand", "Run-addressed requests to present state."], ["D", "VsCodeCellDrive", "VS Code execution handles, projection, and diagnostics."]], verdict: "The Interface gains leverage: report one fact and receive ordering, transition, routing, and cleanup." }
+      }
+    };
+
+    function renderArch(mode) {
+      document.querySelectorAll("[data-arch]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.arch === mode)));
+      const d = archData[mode];
+      const side = x => `<h3>${x.title}</h3><p>${x.copy}</p><ul class="module-list">${x.items.map(i => `<li data-mark="${i[0]}"><strong>${i[1]}</strong><small>${i[2]}</small></li>`).join("")}</ul>${x.verdict ? `<div class="arch-verdict">${x.verdict}</div>` : ""}`;
+      document.querySelector("#arch-left").innerHTML = side(d.left);
+      document.querySelector("#arch-right").innerHTML = side(d.right);
+    }
+    document.querySelectorAll("[data-arch]").forEach(b => b.addEventListener("click", () => renderArch(b.dataset.arch)));
+    renderArch("before");
+
+    const scenarios = {
+      normal: {
+        result: "good",
+        conclusion: "The source and presentation both belong to run-1.",
+        premises: ["Submitted source is A", "Queue acknowledges run-1", "No competing edit or run"],
+        steps: [
+          ["Editor", "Submit A", "Submission captures executable source A.", { editor: "A", submitted: "A", active: "—", accepted: "Unknown", presented: "—" }],
+          ["Kernel", "Queue run-1", "The kernel acknowledges that run-1 entered its queue.", { editor: "A", submitted: "A", active: "run-1", accepted: "A", presented: "opened run-1" }],
+          ["Reducer", "Start run-1", "The active phase becomes Running and emits a run-addressed command.", { editor: "A", submitted: "A", active: "run-1 · Running", accepted: "A", presented: "started run-1" }],
+          ["Kernel", "Output A", "Runtime output is folded into the active cell state.", { editor: "A", submitted: "A", active: "run-1 · Running", accepted: "A", presented: "output on run-1" }],
+          ["Drive", "Render run-1", "The Adapter finds the matching VS Code resource and projects output.", { editor: "A", submitted: "A", active: "run-1 · Running", accepted: "A", presented: "output on run-1" }],
+          ["Kernel", "Settle", "Final output is committed and run-1 closes.", { editor: "A", submitted: "A", active: "Completed", accepted: "A", presented: "closed run-1" }]
+        ]
+      },
+      source: {
+        result: "bad",
+        conclusion: "The Module calls B accepted, although the kernel accepted A.",
+        premises: ["Submission captured A", "Editor changed to B before acknowledgement", "Acknowledgement samples current editor text"],
+        steps: [
+          ["Editor", "Submit A", "The controller builds the execution request from source A.", { editor: "A", submitted: "A", active: "—", accepted: "Unknown", presented: "—" }],
+          ["Editor", "Edit to B", "The document changes while environment resolution or kernel acknowledgement is pending.", { editor: "B", submitted: "A", active: "—", accepted: "Unknown", presented: "—" }],
+          ["Kernel", "Queue run-1", "This acknowledgement causally belongs to the request containing A.", { editor: "B", submitted: "A", active: "run-1", accepted: "Unknown", presented: "opening run-1" }],
+          ["Runtime", "Read editor B", "NotebookRuntime reads the document now; the submitted source is no longer carried here.", { editor: "B", submitted: "A", active: "run-1", accepted: "B", presented: "opened run-1" }],
+          ["Reducer", "Store accepted B", "The state gains Locality but stores a value with the wrong provenance.", { editor: "B", submitted: "A", active: "run-1 · Queued", accepted: "B ⚠", presented: "opened run-1" }],
+          ["UI", "Report fresh", "Because editor B equals AcceptedSource B, staleness returns false.", { editor: "B", submitted: "A", active: "run-1 · Queued", accepted: "B ⚠", presented: "fresh (incorrect)" }]
+        ]
+      },
+      run: {
+        result: "warn",
+        conclusion: "A late run-1 fact can be relabeled as a command for run-2.",
+        premises: ["Run-2 becomes active", "Late output retains run_id=run-1", "parseOp discards that identity"],
+        steps: [
+          ["Kernel", "Queue run-1", "Run-1 becomes the active phase and opens a Drive resource.", { editor: "A", submitted: "A", active: "run-1 · Queued", accepted: "A", presented: "opened run-1" }],
+          ["Kernel", "Queue run-2", "Run-1 closes; run-2 becomes active and opens its own resource.", { editor: "B", submitted: "B", active: "run-2 · Queued", accepted: "B", presented: "opened run-2" }],
+          ["Kernel", "Late output run-1", "The wire fact can still carry run_id=run-1.", { editor: "B", submitted: "B", active: "run-2 · Queued", accepted: "B", presented: "run-1 output arrives" }],
+          ["Parser", "Discard run_id", "For non-queue operations, parseOp retains next state but not the incoming identity.", { editor: "B", submitted: "B", active: "run-2 · Queued", accepted: "B", presented: "identity lost ⚠" }],
+          ["Reducer", "Use active run", "step asks for activeRunId(entry.phase), which is run-2.", { editor: "B", submitted: "B", active: "run-2 · Running", accepted: "B", presented: "command says run-2 ⚠" }],
+          ["Drive", "Render on run-2", "The command is internally consistent, but it describes the wrong causal run.", { editor: "B", submitted: "B", active: "run-2 · Running", accepted: "B", presented: "run-1 data on run-2 ⚠" }]
+        ]
+      }
+    };
+    const laneNames = ["Editor", "Kernel", "Runtime", "Parser", "Reducer", "Drive", "UI"];
+    let scenario = "normal", traceStep = 0;
+    function renderTrace() {
+      const data = scenarios[scenario], step = data.steps[traceStep];
+      document.querySelectorAll("[data-scenario]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.scenario === scenario)));
+      document.querySelector("#trace-lanes").innerHTML = laneNames.map(lane => {
+        const cells = data.steps.map((s, i) => {
+          if (s[0] !== lane) return `<span></span>`;
+          const state = i <= traceStep ? " visible" : "";
+          const current = i === traceStep ? " current" : "";
+          const tone = scenario === "source" && i >= 3 ? " bad" : scenario === "run" && i >= 2 ? " warn" : "";
+          return `<span class="event${state}${current}${tone}">${s[1]}</span>`;
+        }).join("");
+        return `<div class="lane"><div class="lane-label">${lane}</div>${cells}</div>`;
+      }).join("");
+      const labels = { editor: "editor source", submitted: "submitted source", active: "active phase", accepted: "accepted source", presented: "VS Code" };
+      document.querySelector("#state-lines").innerHTML = Object.entries(step[3]).map(([k,v]) => `<div class="state-line"><span>${labels[k]}</span><span>${v}</span></div>`).join("");
+      document.querySelector("#step-label").textContent = `${scenario.toUpperCase()} · ${step[0]} · ${traceStep + 1}/${data.steps.length}`;
+      document.querySelector("#step-title").textContent = step[1];
+      document.querySelector("#step-copy").textContent = step[2];
+      document.querySelector("#trace-readout").textContent = `Step ${traceStep + 1} / ${data.steps.length}`;
+      document.querySelector("#trace-prev").disabled = traceStep === 0;
+      document.querySelector("#trace-next").disabled = traceStep === data.steps.length - 1;
+      document.querySelector("#proof-result").innerHTML = `<div class="premises"><b>Premises</b><ul>${data.premises.map(p => `<li>${p}</li>`).join("")}</ul></div><div class="proof-arrow" aria-hidden="true">⇒</div><div class="conclusion ${data.result}"><b>${data.result === "good" ? "Earned conclusion" : data.result === "bad" ? "Counterexample" : "Unearned guarantee"}</b>${data.conclusion}</div>`;
+    }
+    document.querySelectorAll("[data-scenario]").forEach(b => b.addEventListener("click", () => { scenario = b.dataset.scenario; traceStep = 0; renderTrace(); }));
+    document.querySelector("#trace-prev").addEventListener("click", () => { traceStep = Math.max(0, traceStep - 1); renderTrace(); });
+    document.querySelector("#trace-next").addEventListener("click", () => { traceStep = Math.min(scenarios[scenario].steps.length - 1, traceStep + 1); renderTrace(); });
+    document.querySelector("#trace-reset").addEventListener("click", () => { traceStep = 0; renderTrace(); });
+    renderTrace();
+
+    const interfaceData = {
+      input: { code: `<span class="kw">type</span> <span class="type">CellInput</span> = TaggedEnum&lt;{\n  Operation: {\n    notebookId; operation; source; drive;\n    renderOutput?;\n  };\n  Interrupted: { notebookId };\n  CellsRemoved: { notebookId; cellIds };\n  Invalidated: { notebookId };\n}&gt;;`, note: `<b>What callers gain:</b> one mutation Interface and notebook ordering. <b>What still leaks:</b> raw wire shape, a current source snapshot, the Drive, and upstream batching policy.` },
+      executions: { code: `<span class="kw">interface</span> <span class="type">CellExecutions</span> {\n  accept(input: CellInput): Effect&lt;void&gt;;\n  isStale(cell: CellSnapshot): Effect&lt;boolean&gt;;\n  readonly changes: Stream&lt;void&gt;;\n}\n\n<span class="dim">// Hidden Implementation</span>\nMap&lt;NotebookId, {\n  records: Map&lt;CellId, CellRecord&gt;;\n  serial: Semaphore;\n}&gt;`, note: `<b>Why it is deeper:</b> callers report facts without coordinating reducer state, staleness mutation, active Drive selection, resource closure, or notebook serialization.` },
+      command: { code: `<span class="kw">type</span> <span class="type">CellCommand</span> = TaggedEnum&lt;{\n  OpenRun: { runId };\n  StartRun: { runId; at };\n  RenderOutputs: { runId; state; final };\n  CloseRun: { runId; success; at };\n  SetDiagnostic: { state };\n}&gt;;`, note: `<b>The intended guarantee:</b> host work names the exact run it touches. <b>The current limitation:</b> outbound identity cannot repair inbound identity already discarded by <code>parseOp</code>.` },
+      drive: { code: `<span class="kw">type</span> <span class="type">Drive</span> = (\n  cell: CellRef,\n  command: CellCommand,\n) =&gt; Effect&lt;void&gt;;\n\n<span class="kw">class</span> <span class="type">VsCodeCellDrive</span> {\n  <span class="dim">// owns:</span>\n  Map&lt;Cell + RunId, PresentedRun&gt;;\n  output projection;\n  runtime diagnostics;\n  resource cleanup;\n}`, note: `<b>Why this is the deepest new Module:</b> its small Interface hides substantial VS Code-specific behavior. The two controllers share one production Adapter, so this is primarily a Locality and test seam today.` }
+    };
+    function renderInterface(key) {
+      document.querySelectorAll("[data-interface]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.interface === key)));
+      document.querySelector("#interface-code").innerHTML = interfaceData[key].code;
+      document.querySelector("#interface-note").innerHTML = interfaceData[key].note;
+    }
+    document.querySelectorAll("[data-interface]").forEach(b => b.addEventListener("click", () => renderInterface(b.dataset.interface)));
+    renderInterface("input");
+
+    const progress = document.querySelector("#reading-progress");
+    addEventListener("scroll", () => {
+      const max = document.documentElement.scrollHeight - innerHeight;
+      progress.style.width = `${max > 0 ? Math.min(100, scrollY / max * 100) : 0}%`;
+    }, { passive: true });
+  </script>
+</body>
+</html>

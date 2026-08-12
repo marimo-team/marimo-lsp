@@ -1,8 +1,9 @@
 import { Effect, Option } from "effect";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { CellExecutions, CellInput } from "../kernel/CellExecutions.ts";
+import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
+import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { type NotebookId } from "../schemas/MarimoNotebookDocument.ts";
@@ -32,7 +33,14 @@ const endExecutions = Effect.fn("command.endSessionExecutions")(function* (
   notebookUri: NotebookId,
 ) {
   const executions = yield* CellExecutions;
-  yield* executions.accept(CellInput.Interrupted({ notebookId: notebookUri }));
+  const editors = yield* NotebookEditorRegistry;
+  const editor = yield* editors.getLastNotebookEditor(notebookUri);
+  if (Option.isSome(editor)) {
+    const notebookExecutions = executions.find(editor.value.notebook);
+    if (Option.isSome(notebookExecutions)) {
+      yield* notebookExecutions.value.interrupt;
+    }
+  }
 });
 
 export const openSession = Effect.fn("command.openSession")(function* ({

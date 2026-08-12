@@ -1,4 +1,4 @@
-import { Effect, flow, Option } from "effect";
+import { Effect, flow, HashSet, Option } from "effect";
 
 import { defineCommand } from "../commands.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
@@ -19,19 +19,17 @@ const handler = Effect.fn("command.runStale")(
       return;
     }
 
-    const staleCells = yield* Effect.filter(
-      target.value.document.getCells(),
-      (cell) =>
-        Option.match(cell.id, {
-          onNone: () => Effect.succeed(false),
-          onSome: (cellId) =>
-            executions.isStale({
-              notebookId: cell.notebook.id,
-              cellId,
-              source: cell.document.getText(),
-            }),
-        }),
+    const notebookExecutions = executions.find(
+      target.value.document.rawNotebookDocument,
     );
+    const staleIds = Option.isSome(notebookExecutions)
+      ? yield* notebookExecutions.value.staleCells.current
+      : HashSet.empty();
+    const staleCells = target.value.document
+      .getCells()
+      .filter((cell) =>
+        Option.exists(cell.id, (cellId) => HashSet.has(staleIds, cellId)),
+      );
 
     if (staleCells.length === 0) {
       yield* Effect.logInfo("No stale cells found");

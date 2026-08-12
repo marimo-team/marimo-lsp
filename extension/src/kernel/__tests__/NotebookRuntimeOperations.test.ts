@@ -181,28 +181,23 @@ function makeIdleCellOperation(
 
 describe("NotebookRuntime operation processing", () => {
   it.effect(
-    "projects only the latest cell output received during a pending projection",
+    "processes every queued notebook operation in order",
     Effect.fn(function* () {
       const source =
         yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
       const firstStarted = yield* Latch.make();
       const releaseFirst = yield* Latch.make();
       const latestProcessed = yield* Latch.make();
-      const processed = yield* Ref.make<
-        ReadonlyArray<{ runId: string | null | undefined; project: boolean }>
-      >([]);
+      const processed = yield* Ref.make<ReadonlyArray<string | undefined>>([]);
       const notebook = notebookId("notebook");
 
       const fiber = yield* processRuntimeOperations(
         Stream.fromPubSub(source),
-        Effect.fn(function* ({ operation }, options) {
+        Effect.fn(function* ({ operation }) {
           assert(operation.op === "cell-op");
           yield* Ref.update(processed, (items) => [
             ...items,
-            {
-              runId: operation.run_id,
-              project: options.renderCellOutput,
-            },
+            operation.run_id ?? undefined,
           ]);
           if (operation.run_id === "one") {
             yield* firstStarted.open;
@@ -234,36 +229,31 @@ describe("NotebookRuntime operation processing", () => {
       yield* Fiber.interrupt(fiber);
 
       assert.deepStrictEqual(yield* Ref.get(processed), [
-        { runId: "one", project: true },
-        { runId: "two", project: false },
-        { runId: "three", project: true },
+        "one",
+        "two",
+        "three",
       ]);
     }),
   );
 
   it.effect(
-    "projects the newest renderable output when a state-only cell-op trails it",
+    "processes a state-only cell operation after its terminal output",
     Effect.fn(function* () {
       const source =
         yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
       const blockerStarted = yield* Latch.make();
       const releaseBlocker = yield* Latch.make();
       const trailerProcessed = yield* Latch.make();
-      const processed = yield* Ref.make<
-        ReadonlyArray<{ label: string; project: boolean }>
-      >([]);
+      const processed = yield* Ref.make<ReadonlyArray<string>>([]);
       const notebook = notebookId("notebook");
 
       const fiber = yield* processRuntimeOperations(
         Stream.fromPubSub(source),
-        Effect.fn(function* ({ operation }, options) {
+        Effect.fn(function* ({ operation }) {
           assert(operation.op === "cell-op");
           const label =
             operation.serialization ?? operation.run_id ?? "unlabelled";
-          yield* Ref.update(processed, (items) => [
-            ...items,
-            { label, project: options.renderCellOutput },
-          ]);
+          yield* Ref.update(processed, (items) => [...items, label]);
           if (label === "blocker") {
             yield* blockerStarted.open;
             yield* releaseBlocker.await;
@@ -310,9 +300,9 @@ describe("NotebookRuntime operation processing", () => {
       yield* Fiber.interrupt(fiber);
 
       assert.deepStrictEqual(yield* Ref.get(processed), [
-        { label: "blocker", project: true },
-        { label: "settle", project: true },
-        { label: "serialization", project: false },
+        "blocker",
+        "settle",
+        "serialization",
       ]);
     }),
   );

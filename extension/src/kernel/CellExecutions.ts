@@ -2,21 +2,28 @@ import {
   Cause,
   Context,
   Data,
+  Deferred,
   Effect,
   Equal,
   Exit,
+  HashMap,
+  HashSet,
   Layer,
-  MutableHashMap,
   Option,
   Semaphore,
   Stream,
   SubscriptionRef,
-  Array as EffectArray,
 } from "effect";
+import type * as vscode from "vscode";
 
-import type {
-  NotebookCellId,
-  NotebookId,
+import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
+import type { OpenNotebookSession } from "../notebook/NotebookSessions.ts";
+import { VsCode } from "../platform/VsCode.ts";
+import {
+  extractCellIdFromCellMessage,
+  MarimoNotebookDocument,
+  type NotebookCellId,
+  type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellOperationNotification } from "../types.ts";
 import {
@@ -31,75 +38,87 @@ import {
   transitionCell,
 } from "./CellRunReducer.ts";
 
-/** Stable identity of one cell whose commands can be driven. */
+/** Stable identity of one cell whose commands can be presented. */
 export interface CellRef {
   readonly notebookId: NotebookId;
   readonly cellId: NotebookCellId;
 }
 
-/** A cell snapshot used to ask whether its accepted source is stale. */
-export interface CellSnapshot extends CellRef {
-  readonly source: string;
-}
-
-/** Effectful capability supplied by a host adapter. */
+/** Effectful capability supplied by a host presentation adapter. */
 export type Drive = (
   cell: CellRef,
   command: CellCommand,
 ) => Effect.Effect<void>;
-
-/** Facts accepted by the cell execution module. */
-export type CellInput = Data.TaggedEnum<{
-  Operation: {
-    readonly notebookId: NotebookId;
-    readonly operation: CellOperationNotification;
-    readonly source: string;
-    readonly drive: Drive;
-    readonly renderOutput?: boolean;
-  };
-  Interrupted: { readonly notebookId: NotebookId };
-  CellsRemoved: {
-    readonly notebookId: NotebookId;
-    readonly cellIds: ReadonlyArray<NotebookCellId>;
-  };
-  Invalidated: { readonly notebookId: NotebookId };
-}>;
-export const CellInput = Data.taggedEnum<CellInput>();
-
-type OperationInput = Extract<CellInput, { readonly _tag: "Operation" }>;
 
 interface DriveBinding {
   readonly runId: RunId;
   readonly value: Drive;
 }
 
-/** Everything owned for one cell. */
 interface CellRecord {
   readonly run: CellRunState;
   readonly drive: Option.Option<DriveBinding>;
+}
+
+declare const WireCellOpTypeId: unique symbol;
+
+/** Decoded protocol data that has not yet been causally correlated. */
+export type WireCellOp = CellOperationNotification & {
+  readonly [WireCellOpTypeId]: typeof WireCellOpTypeId;
+};
+
+/** Marks an already-decoded cell operation as foreign wire data. */
+export const WireCellOp = (operation: CellOperationNotification): WireCellOp =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- nominal marker only
+  operation as WireCellOp;
+
+export class RunCorrelationError extends Data.TaggedError(
+  "RunCorrelationError",
+)<{
+  readonly cellId: NotebookCellId;
+  readonly expectedRunId: string | undefined;
+  readonly receivedRunId: string | undefined;
+  readonly status: CellOperationNotification["status"];
+}> {}
+
+export interface CellStaleness {
+  readonly current: Effect.Effect<HashSet.HashSet<NotebookCellId>>;
+  /** Emits the current set immediately, followed by changed sets. */
+  readonly changes: Stream.Stream<HashSet.HashSet<NotebookCellId>>;
+}
+
+/** Stable session binding whose current presentation may change over time. */
+export interface NotebookExecutionBinding {
+  readonly getDrive: Effect.Effect<Option.Option<Drive>>;
+}
+
+export interface NotebookExecutions {
+  readonly apply: (
+    operation: WireCellOp,
+  ) => Effect.Effect<void, RunCorrelationError>;
+  readonly interrupt: Effect.Effect<void>;
+  readonly remove: (cellId: NotebookCellId) => Effect.Effect<void>;
+  readonly submit: <A, E, R>(
+    cells: ReadonlyArray<{
+      readonly cellId: NotebookCellId;
+      readonly source: string;
+    }>,
+    send: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E, R>;
+  readonly staleCells: CellStaleness;
+}
+
+interface NotebookEntry {
+  readonly session: OpenNotebookSession;
+  readonly executions: NotebookExecutions;
+  readonly close: Effect.Effect<void>;
+  readonly refreshStale: Effect.Effect<void>;
 }
 
 interface SubmittedSource {
   readonly token: symbol;
   readonly source: string;
 }
-
-interface NotebookEntry {
-  readonly records: MutableHashMap.MutableHashMap<NotebookCellId, CellRecord>;
-  readonly submittedSources: MutableHashMap.MutableHashMap<
-    NotebookCellId,
-    Array<SubmittedSource>
-  >;
-  readonly serial: Semaphore.Semaphore;
-}
-
-type Release = Data.TaggedEnum<{
-  Interrupted: {};
-  CellsRemoved: { readonly cellIds: ReadonlySet<NotebookCellId> };
-  Invalidated: {};
-  Finalized: {};
-}>;
-const Release = Data.taggedEnum<Release>();
 
 interface Work {
   readonly cell: CellRef;
@@ -169,329 +188,318 @@ const driveAfter = (
   return resolveDriveBinding(runId, record, current, opened);
 };
 
-/**
- * Owns cell records and turns kernel operations into ordered host commands.
- * Each notebook has one ordering lane; host resources stay behind {@link Drive}.
- */
+/** Owns one ordered collection of cell runs per exact notebook session. */
 export class CellExecutions extends Context.Service<CellExecutions>()(
   "CellExecutions",
   {
     make: Effect.gen(function* () {
+      const code = yield* VsCode;
+      const editorRegistry = yield* NotebookEditorRegistry;
+      const serviceScope = yield* Effect.scope;
       const notebooks = new Map<NotebookId, NotebookEntry>();
-      const revision = yield* SubscriptionRef.make(0);
+      const allStaleCells = yield* SubscriptionRef.make(
+        HashMap.empty<NotebookId, HashSet.HashSet<NotebookCellId>>(),
+      );
 
-      const makeEntry = (): NotebookEntry => ({
-        records: MutableHashMap.empty(),
-        submittedSources: MutableHashMap.empty(),
-        serial: Semaphore.makeUnsafe(1),
-      });
-
-      const entryFor = (notebookId: NotebookId) => {
-        const existing = notebooks.get(notebookId);
-        if (existing !== undefined) return existing;
-        const entry = makeEntry();
-        notebooks.set(notebookId, entry);
-        return entry;
-      };
-
-      const emptyRecord = (cellId: NotebookCellId): CellRecord => ({
-        run: makeCellRunState(cellId),
-        drive: Option.none(),
-      });
-
-      const takeSubmittedSource = (
-        entry: NotebookEntry,
-        cellId: NotebookCellId,
-      ) => {
-        const pending = MutableHashMap.get(entry.submittedSources, cellId);
-        if (Option.isNone(pending) || pending.value.length === 0) {
-          return undefined;
-        }
-        const [submitted, ...remaining] = pending.value;
-        if (remaining.length === 0) {
-          MutableHashMap.remove(entry.submittedSources, cellId);
-        } else {
-          MutableHashMap.set(entry.submittedSources, cellId, remaining);
-        }
-        return submitted?.source;
-      };
-
-      const drive = ({ cell, command, drive }: Work) =>
-        Option.match(drive, {
-          onNone: () =>
-            Effect.logWarning("Cell run has no Drive; skipping command").pipe(
-              Effect.annotateLogs({
-                ...cell,
-                command: command._tag,
-                ...("runId" in command ? { runId: command.runId } : {}),
-              }),
+      const updateStaleContext = Effect.fn("CellExecutions.updateStaleContext")(
+        function* () {
+          const activeNotebook = yield* editorRegistry.getActiveNotebookUri;
+          const stale = yield* SubscriptionRef.get(allStaleCells);
+          const hasStaleCells = Option.exists(activeNotebook, (notebookId) =>
+            Option.exists(
+              HashMap.get(stale, notebookId),
+              (cells) => HashSet.size(cells) > 0,
             ),
-          onSome: (apply) =>
-            apply(cell, command).pipe(
-              Effect.catchCause((cause) =>
-                Cause.hasInterrupts(cause)
-                  ? Effect.failCause(cause)
-                  : Effect.logWarning("Failed to drive cell command").pipe(
-                      Effect.annotateLogs({
-                        cause,
-                        ...cell,
-                        command: command._tag,
-                        ...("runId" in command ? { runId: command.runId } : {}),
-                      }),
-                    ),
-              ),
-            ),
+          );
+          yield* code.commands.setContext(
+            "marimo.notebook.hasStaleCells",
+            hasStaleCells,
+          );
+        },
+      );
+
+      yield* Effect.forkScoped(
+        SubscriptionRef.changes(allStaleCells).pipe(
+          Stream.runForEach(updateStaleContext),
+        ),
+      );
+      yield* Effect.forkScoped(
+        editorRegistry.streamActiveNotebookChanges.pipe(
+          Stream.runForEach(updateStaleContext),
+        ),
+      );
+      yield* Effect.forkScoped(
+        code.workspace.notebookDocumentChanges.pipe(
+          Stream.filter((event) =>
+            event.cellChanges.some((change) => change.document !== undefined),
+          ),
+          Stream.runForEach((event) => {
+            const notebook = MarimoNotebookDocument.tryFrom(event.notebook);
+            if (Option.isNone(notebook)) return Effect.void;
+            const entry = notebooks.get(notebook.value.id);
+            return entry?.session.document === event.notebook
+              ? entry.refreshStale
+              : Effect.void;
+          }),
+        ),
+      );
+
+      const makeNotebook = Effect.fn("CellExecutions.makeNotebook")(function* (
+        session: OpenNotebookSession,
+        binding: NotebookExecutionBinding,
+      ) {
+        const notebook = MarimoNotebookDocument.from(session.document);
+        const notebookId = notebook.id;
+        const records = new Map<NotebookCellId, CellRecord>();
+        const submittedSources = new Map<
+          NotebookCellId,
+          Array<SubmittedSource>
+        >();
+        const staleRef = yield* SubscriptionRef.make(
+          HashSet.empty<NotebookCellId>(),
+        );
+        const ordering = Semaphore.makeUnsafe(1);
+        let closed = false;
+
+        const publishStale = (next: HashSet.HashSet<NotebookCellId>) =>
+          Effect.gen(function* () {
+            const current = yield* SubscriptionRef.get(staleRef);
+            if (Equal.equals(current, next)) return;
+            yield* SubscriptionRef.set(staleRef, next);
+            yield* SubscriptionRef.update(allStaleCells, (all) =>
+              HashMap.set(all, notebookId, next),
+            );
+          });
+
+        const refreshStale = Effect.gen(function* () {
+          let next = HashSet.empty<NotebookCellId>();
+          const currentSources = new Map<NotebookCellId, string>();
+          for (const cell of notebook.getCells()) {
+            if (Option.isSome(cell.id)) {
+              currentSources.set(cell.id.value, cell.document.getText());
+            }
+          }
+          for (const [cellId, record] of records) {
+            const stale = AcceptedSource.$match(record.run.acceptedSource, {
+              Unknown: () => false,
+              Invalidated: () => true,
+              Accepted: ({ source }) =>
+                currentSources.get(cellId) !== undefined &&
+                source !== currentSources.get(cellId),
+            });
+            if (stale) next = HashSet.add(next, cellId);
+          }
+          yield* publishStale(next);
         });
 
-      const acceptOperation = (entry: NotebookEntry, input: OperationInput) =>
-        entry.serial.withPermit(
-          Effect.gen(function* () {
-            const message = input.operation;
-            const cell = cellRef(input.notebookId, message.cell_id);
-            const record = Option.getOrElse(
-              MutableHashMap.get(entry.records, cell.cellId),
-              () => emptyRecord(cell.cellId),
-            );
-            const activeRunId =
-              record.run.phase._tag === "Queued" ||
-              record.run.phase._tag === "Running"
-                ? record.run.phase.runId
-                : undefined;
-            const receivedRunId =
-              typeof message.run_id === "string" && message.run_id.length > 0
-                ? message.run_id
-                : undefined;
-            if (
-              message.status !== "queued" &&
-              receivedRunId !== undefined &&
-              receivedRunId !== activeRunId
-            ) {
-              yield* Effect.logWarning(
-                "Cell operation targets a superseded run; skipping",
+        const drive = ({ cell, command, drive: target }: Work) =>
+          Option.match(target, {
+            onNone: () =>
+              Effect.logDebug(
+                "Cell run has no presentation; skipping command",
               ).pipe(
                 Effect.annotateLogs({
-                  expectedRunId: activeRunId,
-                  receivedRunId,
-                  status: message.status,
+                  ...cell,
+                  command: command._tag,
+                  ...("runId" in command ? { runId: command.runId } : {}),
                 }),
-              );
-              return;
-            }
-
-            const next = transitionCell(record.run.state, message);
-            const op = parseOp(next, message, RunId(crypto.randomUUID()));
-
-            if (Option.isNone(op)) {
-              takeSubmittedSource(entry, cell.cellId);
-              MutableHashMap.set(entry.records, cell.cellId, {
-                ...record,
-                run: { ...record.run, state: next },
-              });
-              yield* Effect.logWarning(
-                "Queued cell-op missing run_id; cannot track execution",
-              ).pipe(Effect.annotateLogs({ ...cell, status: message.status }));
-              return;
-            }
-
-            if (message.status === "idle" && activeRunId === undefined) {
-              takeSubmittedSource(entry, cell.cellId);
-            }
-
-            const source =
-              op.value._tag === "Queue"
-                ? (takeSubmittedSource(entry, cell.cellId) ?? input.source)
-                : undefined;
-            const result = step(record.run, op.value, source);
-            const opened = openedRunIds(result.commands);
-            MutableHashMap.set(entry.records, cell.cellId, {
-              run: result.entry,
-              drive: driveAfter(
-                result.entry,
-                record,
-                Option.some(input.drive),
-                opened,
               ),
-            });
-            if (
-              !Equal.equals(
-                result.entry.acceptedSource,
-                record.run.acceptedSource,
-              )
-            ) {
-              yield* SubscriptionRef.update(revision, (value) => value + 1);
-            }
-
-            for (const command of result.commands) {
-              if (
-                input.renderOutput === false &&
-                command._tag === "RenderOutputs"
-              ) {
-                continue;
-              }
-              yield* drive({
-                cell,
-                command,
-                drive: driveFor(
-                  command,
-                  record,
-                  Option.some(input.drive),
-                  opened,
+            onSome: (apply) =>
+              apply(cell, command).pipe(
+                Effect.catchCause((cause) =>
+                  Cause.hasInterrupts(cause)
+                    ? Effect.failCause(cause)
+                    : Effect.logWarning("Failed to drive cell command").pipe(
+                        Effect.annotateLogs({
+                          cause,
+                          ...cell,
+                          command: command._tag,
+                          ...("runId" in command
+                            ? { runId: command.runId }
+                            : {}),
+                        }),
+                      ),
                 ),
-              });
-            }
-          }),
-        );
+              ),
+          });
 
-      const release = (
-        notebookId: NotebookId,
-        entry: NotebookEntry,
-        reason: Release,
-      ) =>
-        entry.serial.withPermit(
-          Effect.gen(function* () {
-            const behavior = Release.$match(reason, {
-              Interrupted: () => ({
-                target: (_cellId: NotebookCellId) => true,
-                remove: false,
-                notify: false,
-              }),
-              CellsRemoved: ({ cellIds }) => ({
-                target: (cellId: NotebookCellId) => cellIds.has(cellId),
-                remove: true,
-                notify: true,
-              }),
-              Invalidated: () => ({
-                target: (_cellId: NotebookCellId) => true,
-                remove: true,
-                notify: true,
-              }),
-              Finalized: () => ({
-                target: (_cellId: NotebookCellId) => true,
-                remove: true,
-                notify: false,
-              }),
+        const correlate = Effect.fn("NotebookExecutions.correlate")(function* (
+          record: CellRecord,
+          wire: WireCellOp,
+        ) {
+          const cellId = extractCellIdFromCellMessage(wire);
+          const activeRunId =
+            record.run.phase._tag === "Queued" ||
+            record.run.phase._tag === "Running"
+              ? record.run.phase.runId
+              : undefined;
+          const receivedRunId =
+            typeof wire.run_id === "string" && wire.run_id.length > 0
+              ? wire.run_id
+              : undefined;
+
+          if (
+            wire.status !== "queued" &&
+            receivedRunId !== undefined &&
+            receivedRunId !== activeRunId
+          ) {
+            return yield* new RunCorrelationError({
+              cellId,
+              expectedRunId: activeRunId,
+              receivedRunId,
+              status: wire.status,
             });
-            const work: Work[] = [];
-            let changed = false;
+          }
 
-            for (const [cellId, record] of EffectArray.fromIterable(
-              entry.records,
-            )) {
-              if (!behavior.target(cellId)) continue;
-              changed = true;
+          const next = transitionCell(record.run.state, wire);
+          const op = parseOp(next, wire, RunId(crypto.randomUUID()));
+          if (Option.isNone(op)) {
+            return yield* new RunCorrelationError({
+              cellId,
+              expectedRunId: activeRunId,
+              receivedRunId,
+              status: wire.status,
+            });
+          }
+          return op.value;
+        });
+
+        const takeSubmittedSource = (cellId: NotebookCellId) => {
+          const pending = submittedSources.get(cellId);
+          if (pending === undefined || pending.length === 0) return undefined;
+          const submitted = pending.shift();
+          if (pending.length === 0) submittedSources.delete(cellId);
+          return submitted?.source;
+        };
+
+        const currentSource = (cellId: NotebookCellId) => {
+          for (const cell of notebook.getCells()) {
+            if (Option.isSome(cell.id) && cell.id.value === cellId) {
+              return cell.document.getText();
+            }
+          }
+          return undefined;
+        };
+
+        const apply = (wire: WireCellOp) =>
+          ordering.withPermit(
+            Effect.gen(function* () {
+              if (closed) return;
+              const cellId = extractCellIdFromCellMessage(wire);
+              const record = records.get(cellId) ?? {
+                run: makeCellRunState(cellId),
+                drive: Option.none<DriveBinding>(),
+              };
+              const op = yield* correlate(record, wire).pipe(
+                Effect.tapError(() =>
+                  wire.status === "queued"
+                    ? Effect.sync(() => {
+                        takeSubmittedSource(cellId);
+                      })
+                    : Effect.void,
+                ),
+              );
+              if (
+                wire.status === "idle" &&
+                record.run.phase._tag !== "Queued" &&
+                record.run.phase._tag !== "Running"
+              ) {
+                takeSubmittedSource(cellId);
+              }
+              const currentDrive = yield* binding.getDrive;
+              const source =
+                op._tag === "Queue"
+                  ? (takeSubmittedSource(cellId) ?? currentSource(cellId))
+                  : undefined;
+              const result = step(record.run, op, source);
+              const opened = openedRunIds(result.commands);
+              records.set(cellId, {
+                run: result.entry,
+                drive: driveAfter(result.entry, record, currentDrive, opened),
+              });
+              yield* refreshStale;
+
               const cell = cellRef(notebookId, cellId);
-              const result = step(record.run, Op.Interrupt());
               for (const command of result.commands) {
-                work.push({
+                yield* drive({
+                  cell,
+                  command,
+                  drive: driveFor(command, record, currentDrive, opened),
+                });
+              }
+            }).pipe(
+              Effect.annotateLogs({
+                notebookId,
+                cellId: extractCellIdFromCellMessage(wire),
+              }),
+            ),
+          );
+
+        const release = (
+          target: (cellId: NotebookCellId) => boolean,
+          remove: boolean,
+        ) =>
+          Effect.gen(function* () {
+            for (const [cellId, record] of records) {
+              if (!target(cellId)) continue;
+              const result = step(record.run, Op.Interrupt());
+              const cell = cellRef(notebookId, cellId);
+              for (const command of result.commands) {
+                yield* drive({
                   cell,
                   command,
                   drive: driveFor(command, record, Option.none(), noOpenedRuns),
                 });
               }
-
-              if (behavior.remove) {
-                MutableHashMap.remove(entry.records, cellId);
-              } else {
-                MutableHashMap.set(entry.records, cellId, {
+              if (remove) records.delete(cellId);
+              else {
+                records.set(cellId, {
                   run: result.entry,
                   drive: Option.none(),
                 });
               }
             }
+            yield* refreshStale;
+          });
 
-            for (const [cellId] of EffectArray.fromIterable(
-              entry.submittedSources,
-            )) {
-              if (behavior.target(cellId)) {
-                MutableHashMap.remove(entry.submittedSources, cellId);
-              }
-            }
-
-            if (changed && behavior.notify) {
-              yield* SubscriptionRef.update(revision, (value) => value + 1);
-            }
-            yield* Effect.forEach(work, drive, { discard: true });
+        const interrupt = ordering.withPermit(
+          Effect.gen(function* () {
+            if (closed) return;
+            submittedSources.clear();
+            yield* release(() => true, false);
           }),
         );
 
-      yield* Effect.addFinalizer(() =>
-        Effect.forEach(
-          Array.from(notebooks),
-          ([notebookId, entry]) =>
-            release(notebookId, entry, Release.Finalized()),
-          { discard: true },
-        ),
-      );
+        const remove = (cellId: NotebookCellId) =>
+          ordering.withPermit(
+            Effect.gen(function* () {
+              if (closed) return;
+              yield* release((candidate) => candidate === cellId, true);
+              submittedSources.delete(cellId);
+            }),
+          );
 
-      const withEntry = (
-        notebookId: NotebookId,
-        use: (entry: NotebookEntry) => Effect.Effect<void>,
-      ) => {
-        const entry = notebooks.get(notebookId);
-        return entry === undefined ? Effect.void : use(entry);
-      };
-
-      return {
-        isStale: (cell: CellSnapshot) =>
-          Effect.sync(() => {
-            const entry = notebooks.get(cell.notebookId);
-            if (entry === undefined) return false;
-            return Option.match(
-              MutableHashMap.get(entry.records, cell.cellId),
-              {
-                onNone: () => false,
-                onSome: ({ run }) =>
-                  AcceptedSource.$match(run.acceptedSource, {
-                    Unknown: () => false,
-                    Invalidated: () => true,
-                    Accepted: ({ source }) => source !== cell.source,
-                  }),
-              },
-            );
-          }),
-        get changes(): Stream.Stream<void> {
-          return Stream.map(SubscriptionRef.changes(revision), () => undefined);
-        },
-        submit: <A, E, R>(
-          notebookId: NotebookId,
-          cells: ReadonlyArray<{
-            readonly cellId: NotebookCellId;
-            readonly source: string;
-          }>,
-          send: Effect.Effect<A, E, R>,
-        ) => {
-          const entry = entryFor(notebookId);
+        const submit: NotebookExecutions["submit"] = (cells, send) => {
           const token = Symbol("cell submission");
-          const register = entry.serial.withPermit(
+          const register = ordering.withPermit(
             Effect.sync(() => {
               for (const { cellId, source } of cells) {
-                const pending = Option.getOrElse(
-                  MutableHashMap.get(entry.submittedSources, cellId),
-                  () => [],
-                );
-                MutableHashMap.set(entry.submittedSources, cellId, [
-                  ...pending,
-                  { token, source },
-                ]);
+                const pending = submittedSources.get(cellId) ?? [];
+                pending.push({ token, source });
+                submittedSources.set(cellId, pending);
               }
             }),
           );
-          const rollback = entry.serial.withPermit(
+          const rollback = ordering.withPermit(
             Effect.sync(() => {
               for (const { cellId } of cells) {
-                const pending = MutableHashMap.get(
-                  entry.submittedSources,
-                  cellId,
-                );
-                if (Option.isNone(pending)) continue;
-                const remaining = pending.value.filter(
+                const pending = submittedSources.get(cellId);
+                if (pending === undefined) continue;
+                const remaining = pending.filter(
                   (submitted) => submitted.token !== token,
                 );
-                if (remaining.length === 0) {
-                  MutableHashMap.remove(entry.submittedSources, cellId);
-                } else {
-                  MutableHashMap.set(entry.submittedSources, cellId, remaining);
-                }
+                if (remaining.length === 0) submittedSources.delete(cellId);
+                else submittedSources.set(cellId, remaining);
               }
             }),
           );
@@ -501,33 +509,87 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               Exit.isSuccess(exit) ? Effect.void : rollback,
             ),
           );
-        },
-        accept: (input: CellInput) =>
-          Effect.suspend(() =>
-            CellInput.$match(input, {
-              Operation: (operation) =>
-                acceptOperation(entryFor(operation.notebookId), operation),
-              Interrupted: ({ notebookId }) =>
-                withEntry(notebookId, (entry) =>
-                  release(notebookId, entry, Release.Interrupted()),
-                ),
-              CellsRemoved: ({ notebookId, cellIds }) =>
-                withEntry(notebookId, (entry) =>
-                  release(
-                    notebookId,
-                    entry,
-                    Release.CellsRemoved({ cellIds: new Set(cellIds) }),
-                  ),
-                ),
-              Invalidated: ({ notebookId }) =>
-                withEntry(notebookId, (entry) =>
-                  release(notebookId, entry, Release.Invalidated()),
-                ),
+        };
+
+        const close = ordering.withPermit(
+          Effect.gen(function* () {
+            if (closed) return;
+            closed = true;
+            yield* release(() => true, true);
+            submittedSources.clear();
+            yield* SubscriptionRef.set(staleRef, HashSet.empty());
+            yield* SubscriptionRef.update(allStaleCells, (all) =>
+              HashMap.remove(all, notebookId),
+            );
+          }),
+        );
+
+        const executions: NotebookExecutions = {
+          apply,
+          interrupt,
+          remove,
+          submit,
+          staleCells: {
+            current: SubscriptionRef.get(staleRef),
+            changes: SubscriptionRef.changes(staleRef),
+          },
+        };
+        return { executions, close, refreshStale } as const;
+      });
+
+      const open = Effect.fn("CellExecutions.open")(function* (
+        session: OpenNotebookSession,
+        binding: NotebookExecutionBinding,
+      ) {
+        const notebookId = MarimoNotebookDocument.from(session.document).id;
+        const existing = notebooks.get(notebookId);
+        if (existing?.session === session) return existing.executions;
+        if (existing !== undefined) yield* existing.close;
+
+        const made = yield* makeNotebook(session, binding);
+        const entry: NotebookEntry = { session, ...made };
+        notebooks.set(notebookId, entry);
+        yield* made.refreshStale;
+
+        yield* Deferred.await(session.invalidated).pipe(
+          Effect.andThen(
+            Effect.suspend(() => {
+              if (notebooks.get(notebookId)?.session !== session) {
+                return Effect.void;
+              }
+              notebooks.delete(notebookId);
+              return made.close;
             }),
           ),
-      };
+          Effect.forkIn(serviceScope),
+        );
+        return made.executions;
+      });
+
+      yield* Effect.addFinalizer(() =>
+        Effect.forEach(notebooks.values(), (entry) => entry.close, {
+          discard: true,
+        }),
+      );
+
+      return {
+        open,
+        find(document: vscode.NotebookDocument) {
+          const notebook = MarimoNotebookDocument.tryFrom(document);
+          if (Option.isNone(notebook)) return Option.none<NotebookExecutions>();
+          const entry = notebooks.get(notebook.value.id);
+          return entry?.session.document === document
+            ? Option.some(entry.executions)
+            : Option.none<NotebookExecutions>();
+        },
+        get staleChanges() {
+          return SubscriptionRef.changes(allStaleCells);
+        },
+      } as const;
     }),
   },
 ) {
-  static readonly layer = Layer.effect(this, this.make);
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide([NotebookEditorRegistry.layer]),
+  );
 }

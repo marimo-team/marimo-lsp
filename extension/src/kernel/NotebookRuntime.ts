@@ -34,6 +34,7 @@ import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
 import {
   isOpenNotebookSession,
   makeNotebookSessions,
+  type NotebookSession,
   type OpenNotebookSession,
 } from "../notebook/NotebookSessions.ts";
 import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
@@ -46,7 +47,6 @@ import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
 import { Uv } from "../python/Uv.ts";
 import {
   extractCellIdFromCellMessage,
-  findNotebookCell,
   MarimoNotebookCell,
   MarimoNotebookDocument,
   NotebookCellId as makeNotebookCellId,
@@ -58,7 +58,7 @@ import type {
   MarimoOperation,
   NotificationOf,
 } from "../types.ts";
-import { CellExecutions, CellInput, type Drive } from "./CellExecutions.ts";
+import { CellExecutions, type Drive, WireCellOp } from "./CellExecutions.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import {
   NotebookFileRootError,
@@ -234,6 +234,9 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       const operations = yield* PubSub.unbounded<MarimoOperation>();
       const notebooks = new Map<NotebookId, NotebookState>();
       const runtimeSessions = new Map<NotebookId, RuntimeSession>();
+      let currentNotebookSession: (
+        notebookId: NotebookId,
+      ) => NotebookSession | undefined = () => undefined;
       const controllerSelections =
         yield* PubSub.unbounded<NotebookControllerSelection>();
 
@@ -263,16 +266,28 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
               workingDirectory,
               inner: request,
             });
-            const result = yield* executions.submit(
-              notebookId,
-              request.cellIds.flatMap((cellId, index) => {
-                const source = request.codes[index];
-                return source === undefined
-                  ? []
-                  : [{ cellId: makeNotebookCellId(cellId), source }];
-              }),
-              send,
-            );
+            const session = currentNotebookSession(notebookId);
+            const result = isOpenNotebookSession(session)
+              ? yield* (yield* executions.open(session, {
+                  getDrive: Ref.get(controller).pipe(
+                    Effect.map(
+                      Option.map((selected) =>
+                        selected.drive(
+                          MarimoNotebookDocument.from(session.document),
+                        ),
+                      ),
+                    ),
+                  ),
+                })).submit(
+                  request.cellIds.flatMap((cellId, index) => {
+                    const source = request.codes[index];
+                    return source === undefined
+                      ? []
+                      : [{ cellId: makeNotebookCellId(cellId), source }];
+                  }),
+                  send,
+                )
+              : yield* send;
             runtimeSessions.set(notebookId, {
               executable,
               workingDirectory,
@@ -441,12 +456,12 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         code,
         Effect.fn("NotebookRuntime.releaseNotebook")(function* (notebookId) {
           notebooks.delete(notebookId);
-          yield* executions.accept(CellInput.Invalidated({ notebookId }));
           yield* variables.clearNotebook(notebookId);
           yield* datasources.clearNotebook(notebookId);
           yield* updateKernelContext();
         }),
       );
+      currentNotebookSession = notebookSessions.current;
       yield* Effect.forkScoped(
         liveSessions.changes.pipe(Stream.runForEach(updateKernelContext)),
       );
@@ -466,48 +481,44 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
             .pipe(
               Stream.tap((operation) => PubSub.publish(operations, operation)),
             ),
-          Effect.fn("NotebookRuntime.processOperation")(
-            function* (message, options) {
-              // The session is captured when the operation enters the runtime,
-              // not when its per-notebook worker eventually processes it.
-              // This keeps queued operations from an old session out of a
-              // rapidly reopened notebook with the same URI.
-              if (
-                notebookSessions.current(message.notebookUri) !==
-                message.session
-              ) {
-                return;
-              }
-              yield* Effect.annotateCurrentSpan(
-                "operation.type",
-                message.operation.op,
-              );
-              yield* Effect.raceFirst(
-                processOperation(message, {
-                  forNotebook,
-                  session: message.session,
-                  ...options,
-                }).pipe(
-                  Effect.catchCause(
-                    Effect.fn(function* (cause) {
-                      yield* Effect.logError(
-                        "Failed to process marimo operation",
-                      ).pipe(Effect.annotateLogs({ cause }));
-                      yield* Effect.forkChild(
-                        showErrorAndPromptLogs(
-                          "Failed to process marimo operation.",
-                        ),
-                      );
-                    }),
-                  ),
-                  Effect.annotateLogs({
-                    "operation.type": message.operation.op,
+          Effect.fn("NotebookRuntime.processOperation")(function* (message) {
+            // The session is captured when the operation enters the runtime,
+            // not when its per-notebook worker eventually processes it.
+            // This keeps queued operations from an old session out of a
+            // rapidly reopened notebook with the same URI.
+            if (
+              notebookSessions.current(message.notebookUri) !== message.session
+            ) {
+              return;
+            }
+            yield* Effect.annotateCurrentSpan(
+              "operation.type",
+              message.operation.op,
+            );
+            yield* Effect.raceFirst(
+              processOperation(message, {
+                forNotebook,
+                session: message.session,
+              }).pipe(
+                Effect.catchCause(
+                  Effect.fn(function* (cause) {
+                    yield* Effect.logError(
+                      "Failed to process marimo operation",
+                    ).pipe(Effect.annotateLogs({ cause }));
+                    yield* Effect.forkChild(
+                      showErrorAndPromptLogs(
+                        "Failed to process marimo operation.",
+                      ),
+                    );
                   }),
                 ),
-                Deferred.await(message.session.invalidated),
-              );
-            },
-          ),
+                Effect.annotateLogs({
+                  "operation.type": message.operation.op,
+                }),
+              ),
+              Deferred.await(message.session.invalidated),
+            );
+          }),
         ),
       );
 
@@ -722,9 +733,8 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
 /**
  * Processes operations in order with one worker per notebook.
  *
- * Operations received while a worker is busy form the next batch. Every
- * operation updates runtime state, but only the newest renderable output for
- * each cell in that batch is projected into VS Code.
+ * Each notebook has one worker, so its operations are processed in order while
+ * independent notebooks continue concurrently.
  */
 export function processRuntimeOperations<
   Operation extends MarimoOperation,
@@ -732,48 +742,13 @@ export function processRuntimeOperations<
   R,
 >(
   operations: Stream.Stream<Operation>,
-  process: (
-    operation: Operation,
-    options: { readonly renderCellOutput: boolean },
-  ) => Effect.Effect<void, E, R>,
+  process: (operation: Operation) => Effect.Effect<void, E, R>,
 ): Effect.Effect<void, E, Exclude<R, Scope.Scope>> {
   return Effect.scoped(
     Effect.gen(function* () {
       type Work = Option.Option<Operation>;
       const queues = new Map<NotebookId, Queue.Queue<Work>>();
       const workers: Array<Fiber.Fiber<void, E>> = [];
-
-      const processBatch = (batch: ReadonlyArray<Operation>) => {
-        // The newest op for a cell may carry no payload at all — marimo sends
-        // state-only cell-ops (`stale_inputs`, `serialization`) that trail the
-        // terminal `idle` op. Project the newest op that can actually render,
-        // so a payload-less trailer never costs the cell its output.
-        const renderIndex = new Map<NotebookCellId, number>();
-        for (const [index, message] of batch.entries()) {
-          const operation = message.operation;
-          if (operation.op !== "cell-op") continue;
-          if (
-            operation.status === "idle" ||
-            operation.output != null ||
-            operation.console != null
-          ) {
-            renderIndex.set(operation.cell_id, index);
-          }
-        }
-
-        return Effect.forEach(
-          batch,
-          (message, index) => {
-            const operation = message.operation;
-            return process(message, {
-              renderCellOutput:
-                operation.op !== "cell-op" ||
-                renderIndex.get(operation.cell_id) === index,
-            });
-          },
-          { discard: true },
-        );
-      };
 
       const runWorker = (queue: Queue.Queue<Work>) =>
         Effect.gen(function* () {
@@ -793,7 +768,7 @@ export function processRuntimeOperations<
                 }),
               ),
             ];
-            yield* processBatch(batch);
+            yield* Effect.forEach(batch, process, { discard: true });
 
             if (waiting.some(Option.isNone)) return;
           }
@@ -839,7 +814,6 @@ function processOperation(
   options: {
     forNotebook: (notebookId: NotebookId) => NotebookHandle;
     readonly session: OpenNotebookSession;
-    readonly renderCellOutput: boolean;
   },
 ) {
   return Effect.gen(function* () {
@@ -950,13 +924,23 @@ function processNotebookOperation(
   options: {
     forNotebook: (notebookId: NotebookId) => NotebookHandle;
     readonly session: OpenNotebookSession;
-    readonly renderCellOutput: boolean;
   },
 ) {
   return Effect.gen(function* () {
     const editors = yield* NotebookEditorRegistry;
     const renderer = yield* NotebookRenderer;
     const executions = yield* CellExecutions;
+    const notebookHandle = options.forNotebook(notebookUri);
+    const sessionNotebook = MarimoNotebookDocument.from(
+      options.session.document,
+    );
+    const notebookExecutions = yield* executions.open(options.session, {
+      getDrive: notebookHandle.getController.pipe(
+        Effect.map(
+          Option.map((controller) => controller.drive(sessionNotebook)),
+        ),
+      ),
+    });
 
     const forkForSession = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       Effect.forkDetach(
@@ -966,6 +950,29 @@ function processNotebookOperation(
         ).pipe(Effect.asVoid),
       );
 
+    if (operation.op === "cell-op") {
+      if (extractCellIdFromCellMessage(operation) === SCRATCH_CELL_ID) return;
+      yield* notebookExecutions.apply(WireCellOp(operation)).pipe(
+        Effect.catchTag("RunCorrelationError", (error) =>
+          Effect.logWarning("Ignoring uncorrelated cell operation").pipe(
+            Effect.annotateLogs({
+              cellId: error.cellId,
+              expectedRunId: error.expectedRunId,
+              receivedRunId: error.receivedRunId,
+              status: error.status,
+            }),
+          ),
+        ),
+      );
+      yield* forkForSession(handleStdinPrompt(operation, notebookHandle));
+      return;
+    }
+
+    if (operation.op === "interrupted") {
+      yield* notebookExecutions.interrupt;
+      return;
+    }
+
     const editor = yield* editors.getLastNotebookEditor(notebookUri);
     if (Option.isNone(editor)) {
       yield* Effect.logWarning("No active notebook editor, skipping operation");
@@ -973,7 +980,7 @@ function processNotebookOperation(
     }
     if (editor.value.notebook !== options.session.document) return;
 
-    const controller = yield* options.forNotebook(notebookUri).getController;
+    const controller = yield* notebookHandle.getController;
     if (Option.isNone(controller)) {
       yield* Effect.logWarning("No active controller, skipping operation");
       return;
@@ -982,39 +989,6 @@ function processNotebookOperation(
     const notebook = MarimoNotebookDocument.from(editor.value.notebook);
 
     switch (operation.op) {
-      case "cell-op": {
-        if (extractCellIdFromCellMessage(operation) === SCRATCH_CELL_ID) {
-          break;
-        }
-        const cellId = extractCellIdFromCellMessage(operation);
-        const cell = yield* findNotebookCell(notebook, cellId).pipe(
-          Effect.option,
-        );
-        if (Option.isNone(cell)) {
-          yield* Effect.logWarning(
-            "Notebook cell not found for cell operation",
-          ).pipe(Effect.annotateLogs({ cellId }));
-          break;
-        }
-        yield* executions.accept(
-          CellInput.Operation({
-            notebookId: notebook.id,
-            operation,
-            source: cell.value.document.getText(),
-            drive: controller.value.drive(notebook),
-            renderOutput: options.renderCellOutput,
-          }),
-        );
-        yield* forkForSession(
-          handleStdinPrompt(operation, options.forNotebook(notebookUri)),
-        );
-        break;
-      }
-      case "interrupted":
-        yield* executions.accept(
-          CellInput.Interrupted({ notebookId: notebook.id }),
-        );
-        break;
       case "missing-package-alert":
         yield* forkForSession(
           handleMissingPackageAlert(operation, notebook, controller.value),
@@ -1118,14 +1092,13 @@ function syncCellIdentity(
     const removed = [...removedCellIds].filter(
       (cellId) => !addedCellIds.has(cellId),
     );
-    yield* options.executions.accept(
-      CellInput.CellsRemoved({
-        notebookId: event.notebook.id,
-        cellIds: removed,
-      }),
-    );
-
     for (const cellId of removed) {
+      const notebookExecutions = options.executions.find(
+        event.notebook.rawNotebookDocument,
+      );
+      if (Option.isSome(notebookExecutions)) {
+        yield* notebookExecutions.value.remove(cellId);
+      }
       yield* options.notebook.deleteCell({ cellId }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning(
