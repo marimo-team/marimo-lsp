@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import struct
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Generic, Literal, TypeAlias, TypeVar
 
 import marimo._ipc as ipc
 import msgspec
@@ -50,7 +50,7 @@ class Log(msgspec.Struct, tag="log", tag_field="type", rename="camel"):
     version: Literal[1] = VERSION
 
 
-type FromBridge = Ready | Operation | Error | Log
+FromBridge: TypeAlias = Ready | Operation | Error | Log
 
 
 class KernelLaunchArgs(ipc.KernelArgs):
@@ -97,7 +97,9 @@ class Close(msgspec.Struct, tag="close", tag_field="type", rename="camel"):
     version: Literal[1] = VERSION
 
 
-type ToBridge = Start | Control | Input | Interrupt | Close
+ToBridge: TypeAlias = Start | Control | Input | Interrupt | Close
+
+Message = TypeVar("Message")
 
 
 def encode(message: FromBridge | ToBridge) -> bytes:
@@ -117,7 +119,7 @@ def read_header(header: bytes | bytearray) -> int:
     return _HEADER.unpack(header)[0]
 
 
-class Decoder[Message]:
+class Decoder(Generic[Message]):
     """Decode length-prefixed messages across arbitrary byte chunks."""
 
     def __init__(self, message_type: TypeForm[Message]) -> None:
