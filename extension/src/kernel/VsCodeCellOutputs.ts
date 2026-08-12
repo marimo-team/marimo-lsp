@@ -105,6 +105,10 @@ export function buildKeyedCellOutputs(
           stdinItems.push(item);
           break;
         case "media":
+          // Items in one NotebookCellOutput are alternate MIME
+          // representations. Keep the full console state in the rich marimo
+          // item so its renderer preserves the ordering of text and media;
+          // native stdout remains the fallback representation.
           stdoutItems.push(item);
           break;
         case "output":

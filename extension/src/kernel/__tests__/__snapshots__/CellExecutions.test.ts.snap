@@ -102,27 +102,6 @@ exports[`buildCellOutputs > handles media channel in console outputs 1`] = `
 ]
 `;
 
-exports[`buildCellOutputs > handles media channel with stdout in console outputs 1`] = `
-[
-  {
-    "items": [
-      {
-        "data": "Text output
-",
-        "mime": "application/vnd.code.notebook.stdout",
-      },
-      {
-        "data": "{"cellId":"test-cell-id","state":{"outline":null,"output":null,"consoleOutputs":[{"mimetype":"text/plain","channel":"stdout","data":"Text output\\n","timestamp":0},{"mimetype":"image/png","channel":"media","data":"imagedata","timestamp":1}],"status":"idle","staleInputs":false,"interrupted":false,"errored":false,"stopped":false,"runElapsedTimeMs":null,"runStartTimestamp":null,"lastRunStartTimestamp":null,"debuggerActive":false}}",
-        "mime": "application/vnd.marimo.ui+json",
-      },
-    ],
-    "metadata": {
-      "channel": "stdout",
-    },
-  },
-]
-`;
-
 exports[`buildCellOutputs > handles mix of empty and non-empty console outputs 1`] = `
 [
   {

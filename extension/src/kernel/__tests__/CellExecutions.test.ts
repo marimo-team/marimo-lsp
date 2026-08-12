@@ -1063,7 +1063,7 @@ describe("buildCellOutputs", () => {
   );
 
   it.effect(
-    "handles media channel with stdout in console outputs",
+    "offers native stdout and rich media as alternate MIME representations",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
@@ -1089,8 +1089,22 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
-      // Both stdout and media should be in the stdout channel
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      expect(outputs).toHaveLength(1);
+      const output = outputs.at(0);
+      if (output === undefined) throw new Error("Expected stdout output");
+      expect(output.metadata).toEqual({ channel: "stdout" });
+      expect(output.items.map((item) => item.mime)).toEqual([
+        "application/vnd.code.notebook.stdout",
+        "application/vnd.marimo.ui+json",
+      ]);
+
+      const richItem = output.items.at(1);
+      if (richItem === undefined) throw new Error("Expected rich MIME item");
+      expect(JSON.parse(new TextDecoder().decode(richItem.data))).toMatchObject(
+        {
+          state: { consoleOutputs: state.consoleOutputs },
+        },
+      );
     }),
   );
 });
