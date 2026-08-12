@@ -197,6 +197,17 @@ jobs:
           uv run ruff format --check
           uv run ruff check
 
+  kernel-compatibility:
+    name: Python / Kernel compatibility floor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+      - name: Import bridge with minimum Python and marimo
+        run: |
+          minimum_marimo="$(uv run --no-project --python 3.13 python -c 'from scripts.marimo_version import check; print(check().kernel_compatibility_floor)')"
+          uv run --no-project --python 3.10 --with "marimo==${minimum_marimo}" python tests/kernel_bridge_compatibility.py
+
   python-test:
     name: Python / Test / ${{ matrix.os }}
     strategy:
