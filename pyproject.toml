@@ -46,6 +46,12 @@ exclude = ["extension/**"]
 [tool.ruff]
 extend-exclude = ["vscode/*", "extension/tutorials/*"]
 
+[tool.ruff.per-file-target-version]
+# These files run in the notebook's selected Python, outside the bundled
+# Pyodide environment. Keep them compatible with marimo's Python floor.
+"extension/resources/wasm/*.py" = "py310"
+"src/marimo_lsp/wasm/protocol.py" = "py310"
+
 [tool.ruff.lint]
 pydocstyle = { convention = "numpy" }
 select = ["ALL"]
