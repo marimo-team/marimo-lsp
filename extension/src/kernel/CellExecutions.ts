@@ -85,6 +85,20 @@ const openedRunIds = (commands: ReadonlyArray<CellCommand>) => {
 
 const noOpenedRuns = new Set<RunId>();
 
+const resolveDriveBinding = (
+  runId: RunId,
+  record: RunRecord,
+  current: Option.Option<Drive>,
+  opened: ReadonlySet<RunId>,
+): Option.Option<DriveBinding> =>
+  Option.filter(record.drive, (binding) => binding.runId === runId).pipe(
+    Option.orElse(() =>
+      opened.has(runId)
+        ? Option.map(current, (value) => ({ runId, value }))
+        : Option.none(),
+    ),
+  );
+
 const driveFor = (
   command: CellCommand,
   record: RunRecord,
@@ -92,9 +106,8 @@ const driveFor = (
   opened: ReadonlySet<RunId>,
 ): Option.Option<Drive> => {
   const forRun = (runId: RunId) =>
-    Option.filter(record.drive, (binding) => binding.runId === runId).pipe(
+    resolveDriveBinding(runId, record, current, opened).pipe(
       Option.map((binding) => binding.value),
-      Option.orElse(() => (opened.has(runId) ? current : Option.none())),
     );
 
   return CellCommand.$match(command, {
@@ -109,15 +122,14 @@ const driveFor = (
 const driveAfter = (
   entry: CellRunEntry,
   record: RunRecord,
-  current: Drive,
+  current: Option.Option<Drive>,
   opened: ReadonlySet<RunId>,
 ): Option.Option<DriveBinding> => {
   if (entry.phase._tag !== "Queued" && entry.phase._tag !== "Running") {
     return Option.none();
   }
   const runId = entry.phase.runId;
-  if (opened.has(runId)) return Option.some({ runId, value: current });
-  return Option.filter(record.drive, (binding) => binding.runId === runId);
+  return resolveDriveBinding(runId, record, current, opened);
 };
 
 /**
@@ -460,7 +472,12 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             yield* Effect.sync(() =>
               MutableHashMap.set(records, key, {
                 entry: result.entry,
-                drive: driveAfter(result.entry, record, options.drive, opened),
+                drive: driveAfter(
+                  result.entry,
+                  record,
+                  Option.some(options.drive),
+                  opened,
+                ),
               }),
             );
             if (
