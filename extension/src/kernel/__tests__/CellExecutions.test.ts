@@ -1247,6 +1247,94 @@ it.effect(
 );
 
 it.effect(
+  "ignores a tagged operation from a superseded run",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor(
+      "file:///test/notebook_mo.py",
+      {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      },
+    );
+    const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+    yield* Effect.gen(function* () {
+      const executions = yield* CellExecutions;
+      const notebook = MarimoNotebookDocument.from(editor.notebook);
+      const cell = notebook.cellAt(0);
+      const cid = Option.getOrThrow(cell.id);
+      const starts: Array<number | undefined> = [];
+      const controller = {
+        createNotebookCellExecution(): vscode.NotebookCellExecution {
+          return {
+            cell: cell.rawNotebookCell,
+            executionOrder: undefined,
+            token: {
+              isCancellationRequested: false,
+              onCancellationRequested: () => ({ dispose() {} }),
+            },
+            start(at) {
+              starts.push(at);
+            },
+            end() {},
+            async clearOutput() {},
+            async appendOutput() {},
+            async appendOutputItems() {},
+            async replaceOutput() {},
+            async replaceOutputItems() {},
+          };
+        },
+      };
+
+      yield* executions.handleOperation(
+        {
+          op: "cell-op",
+          cell_id: cid,
+          status: "queued",
+          run_id: "run-2",
+        },
+        { editor, controller },
+      );
+      yield* executions.handleOperation(
+        {
+          op: "cell-op",
+          cell_id: cid,
+          status: "running",
+          run_id: "run-1",
+          timestamp: 1,
+        },
+        { editor, controller, renderOutput: false },
+      );
+
+      expect(starts).toEqual([]);
+
+      yield* executions.handleOperation(
+        {
+          op: "cell-op",
+          cell_id: cid,
+          status: "running",
+          run_id: "run-2",
+          timestamp: 2,
+        },
+        { editor, controller, renderOutput: false },
+      );
+
+      expect(starts).toEqual([2_000]);
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
   "marks cell as stale when message has staleInputs",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(

@@ -531,6 +531,33 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               () => emptyRecord(cellId, editor),
             );
 
+            const activeRunId =
+              record.entry.phase._tag === "Queued" ||
+              record.entry.phase._tag === "Running"
+                ? record.entry.phase.runId
+                : undefined;
+            const receivedRunId =
+              typeof msg.run_id === "string" && msg.run_id.length > 0
+                ? msg.run_id
+                : undefined;
+            if (
+              msg.status !== "queued" &&
+              receivedRunId !== undefined &&
+              activeRunId !== undefined &&
+              receivedRunId !== activeRunId
+            ) {
+              yield* Effect.logWarning(
+                "Cell operation targets a superseded run; skipping",
+              ).pipe(
+                Effect.annotateLogs({
+                  expectedRunId: activeRunId,
+                  receivedRunId,
+                  status: msg.status,
+                }),
+              );
+              return;
+            }
+
             const notebookCell = yield* findNotebookCell(notebook, cellId);
 
             // Fold the cell-op into the run state once, up front, so the folded
