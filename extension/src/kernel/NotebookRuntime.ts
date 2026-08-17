@@ -54,7 +54,7 @@ import type {
   KernelNotification,
   NotificationOf,
 } from "../types.ts";
-import { CellExecutions, type Drive, WireCellOp } from "./CellExecutions.ts";
+import { CellExecutions, type Drive } from "./CellExecutions.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import { makeNotebookExecutor } from "./NotebookExecutor.ts";
 import {
@@ -1222,7 +1222,7 @@ function processNotebookOperation(
 
     if (operation.op === "cell-op") {
       if (extractCellIdFromCellMessage(operation) === SCRATCH_CELL_ID) return;
-      yield* notebookExecutions.apply(WireCellOp(operation)).pipe(
+      yield* notebookExecutions.apply(operation).pipe(
         Effect.catchTag("RunCorrelationError", (error) =>
           Effect.logWarning("Ignoring uncorrelated cell operation").pipe(
             Effect.annotateLogs({

@@ -64,18 +64,6 @@ interface CellRecord {
   readonly drive: Option.Option<DriveBinding>;
 }
 
-declare const WireCellOpTypeId: unique symbol;
-
-/** Decoded protocol data that has not yet been causally correlated. */
-export type WireCellOp = CellOperationNotification & {
-  readonly [WireCellOpTypeId]: typeof WireCellOpTypeId;
-};
-
-/** Marks an already-decoded cell operation as foreign wire data. */
-export const WireCellOp = (operation: CellOperationNotification): WireCellOp =>
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- nominal marker only
-  operation as WireCellOp;
-
 export class RunCorrelationError extends Data.TaggedError(
   "RunCorrelationError",
 )<{
@@ -98,7 +86,7 @@ export interface NotebookExecutionBinding {
 
 export interface NotebookExecutions {
   readonly apply: (
-    operation: WireCellOp,
+    operation: CellOperationNotification,
   ) => Effect.Effect<void, RunCorrelationError>;
   readonly interrupt: Effect.Effect<void>;
   readonly invalidate: Effect.Effect<void>;
@@ -387,7 +375,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
 
         const correlate = Effect.fn("NotebookExecutions.correlate")(function* (
           record: CellRecord,
-          wire: WireCellOp,
+          wire: CellOperationNotification,
         ) {
           const cellId = extractCellIdFromCellMessage(wire);
           const activeRunId =
@@ -434,7 +422,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           return submitted?.source;
         };
 
-        const apply = (wire: WireCellOp) =>
+        const apply = (wire: CellOperationNotification) =>
           ordering.withPermit(
             Effect.gen(function* () {
               if (closed) return;

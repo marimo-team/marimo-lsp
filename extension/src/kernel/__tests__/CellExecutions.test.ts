@@ -23,7 +23,6 @@ import {
   CellExecutions,
   type Drive,
   type NotebookExecutions,
-  WireCellOp,
 } from "../../kernel/CellExecutions.ts";
 import { CellCommand, RunId } from "../../kernel/CellRunReducer.ts";
 import { buildCellOutputs } from "../../kernel/VsCodeCellOutputs.ts";
@@ -1129,14 +1128,12 @@ describe("NotebookExecutions", () => {
     runId: string,
   ) {
     yield* notebook.submit([{ cellId, source }], Effect.succeed(undefined));
-    yield* notebook.apply(
-      WireCellOp({
-        op: "cell-op",
-        cell_id: cellId,
-        status: "queued",
-        run_id: runId,
-      }),
-    );
+    yield* notebook.apply({
+      op: "cell-op",
+      cell_id: cellId,
+      status: "queued",
+      run_id: runId,
+    });
   });
 
   it.effect(
@@ -1181,31 +1178,25 @@ describe("NotebookExecutions", () => {
           MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
         );
 
-        yield* notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "queued",
-            run_id: "run-1",
-          }),
-        );
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        });
         yield* Ref.set(currentDrive, Option.some(second));
-        yield* notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "queued",
-            run_id: "run-2",
-          }),
-        );
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-2",
+        });
         yield* Ref.set(currentDrive, Option.some(first));
-        yield* notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "running",
-          }),
-        );
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "running",
+        });
 
         expect(events).toEqual([
           "first:OpenRun:run-1",
@@ -1255,14 +1246,12 @@ describe("NotebookExecutions", () => {
           MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
         );
 
-        yield* notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "queued",
-            run_id: "run-1",
-          }),
-        );
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        });
         yield* notebook.remove(id);
 
         expect(events).toEqual(["OpenRun:run-1", "CloseRun:run-1"]);
@@ -1319,14 +1308,12 @@ describe("NotebookExecutions", () => {
           ],
           contentChanges: [],
         });
-        yield* notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "queued",
-            run_id: "run-1",
-          }),
-        );
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        });
 
         expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
       }).pipe(Effect.provide(ctx.layer));
@@ -1375,15 +1362,13 @@ describe("NotebookExecutions", () => {
           ],
         });
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
-        yield* notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "idle",
-            run_id: "run-1",
-            stale_inputs: true,
-          }),
-        );
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "idle",
+          run_id: "run-1",
+          stale_inputs: true,
+        });
 
         expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
       }).pipe(Effect.provide(ctx.layer));
@@ -1415,14 +1400,12 @@ describe("NotebookExecutions", () => {
 
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
         cellData.value = "x = 2";
-        yield* notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "queued",
-            run_id: "run-2",
-          }),
-        );
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-2",
+        });
 
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
@@ -1584,15 +1567,13 @@ describe("NotebookExecutions", () => {
           MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
         );
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
-        yield* notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "idle",
-            run_id: "run-1",
-            stale_inputs: true,
-          }),
-        );
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "idle",
+          run_id: "run-1",
+          stale_inputs: true,
+        });
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
 
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-2");
@@ -1784,18 +1765,16 @@ describe("NotebookExecutions", () => {
 
         yield* notebook.submit(
           [{ cellId: id, source: "x = 1" }],
-          notebook.apply(
-            WireCellOp({
-              op: "cell-op",
-              cell_id: id,
-              status: "idle",
-              output: {
-                mimetype: "application/vnd.marimo+error",
-                channel: "marimo-error",
-                data: [{ type: "syntax", msg: "invalid syntax" }],
-              },
-            }),
-          ),
+          notebook.apply({
+            op: "cell-op",
+            cell_id: id,
+            status: "idle",
+            output: {
+              mimetype: "application/vnd.marimo+error",
+              channel: "marimo-error",
+              data: [{ type: "syntax", msg: "invalid syntax" }],
+            },
+          }),
         );
         yield* acknowledgeSubmission(notebook, id, "x = 2", "run-1");
 
@@ -1837,14 +1816,12 @@ describe("NotebookExecutions", () => {
         );
         yield* Effect.yieldNow;
 
-        yield* notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "idle",
-            stale_inputs: true,
-          }),
-        );
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "idle",
+          stale_inputs: true,
+        });
 
         const values = Array.from(yield* Fiber.join(snapshots));
         expect(values).toHaveLength(2);
@@ -1880,32 +1857,26 @@ describe("NotebookExecutions", () => {
           MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
         );
 
-        yield* notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "queued",
-            run_id: "run-1",
-          }),
-        );
-        yield* notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "queued",
-            run_id: "run-2",
-          }),
-        );
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        });
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-2",
+        });
 
         const error = yield* notebook
-          .apply(
-            WireCellOp({
-              op: "cell-op",
-              cell_id: id,
-              status: "running",
-              run_id: "run-1",
-            }),
-          )
+          .apply({
+            op: "cell-op",
+            cell_id: id,
+            status: "running",
+            run_id: "run-1",
+          })
           .pipe(Effect.flip);
 
         expect(error._tag).toBe("RunCorrelationError");
@@ -1950,38 +1921,32 @@ describe("NotebookExecutions", () => {
           MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
         );
 
-        yield* notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "queued",
-            run_id: "run-1",
-          }),
-        );
-        yield* notebook.apply(
-          WireCellOp({
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        });
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "idle",
+          run_id: "run-1",
+        });
+        expect(opened).toBe(1);
+
+        const error = yield* notebook
+          .apply({
             op: "cell-op",
             cell_id: id,
             status: "idle",
             run_id: "run-1",
-          }),
-        );
-        expect(opened).toBe(1);
-
-        const error = yield* notebook
-          .apply(
-            WireCellOp({
-              op: "cell-op",
-              cell_id: id,
-              status: "idle",
-              run_id: "run-1",
-              output: {
-                mimetype: "application/vnd.marimo+error",
-                channel: "marimo-error",
-                data: [{ type: "syntax", msg: "late error" }],
-              },
-            }),
-          )
+            output: {
+              mimetype: "application/vnd.marimo+error",
+              channel: "marimo-error",
+              data: [{ type: "syntax", msg: "late error" }],
+            },
+          })
           .pipe(Effect.flip);
 
         expect(error._tag).toBe("RunCorrelationError");
@@ -2043,14 +2008,12 @@ describe("NotebookExecutions", () => {
         yield* ctx.vscode.closeNotebook(editor.notebook);
         yield* Effect.yieldNow;
 
-        yield* second.notebook.apply(
-          WireCellOp({
-            op: "cell-op",
-            cell_id: id,
-            status: "queued",
-            run_id: "replacement-run",
-          }),
-        );
+        yield* second.notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "replacement-run",
+        });
 
         expect(executions.find(replacement.notebook)).toEqual(
           Option.some(second.notebook),

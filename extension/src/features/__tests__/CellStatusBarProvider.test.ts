@@ -12,7 +12,7 @@ import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoCli
 import { commandId } from "../../commands.ts";
 import enableCell from "../../commands/enableCell.ts";
 import runStale from "../../commands/runStale.ts";
-import { CellExecutions, WireCellOp } from "../../kernel/CellExecutions.ts";
+import { CellExecutions } from "../../kernel/CellExecutions.ts";
 import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
@@ -75,14 +75,12 @@ const markStale = Effect.fn(function* (
 ) {
   const notebook = yield* openExecutions(executions, vscode, cell);
   const cellId = Option.getOrThrow(MarimoNotebookCell.from(cell).id);
-  yield* notebook.apply(
-    WireCellOp({
-      op: "cell-op",
-      cell_id: cellId,
-      status: "idle",
-      stale_inputs: true,
-    }),
-  );
+  yield* notebook.apply({
+    op: "cell-op",
+    cell_id: cellId,
+    status: "idle",
+    stale_inputs: true,
+  });
 });
 
 it.effect(
@@ -127,22 +125,18 @@ it.effect(
       const notebook = yield* openExecutions(executions, ctx.vscode, cell);
       const id = Option.getOrThrow(MarimoNotebookCell.from(cell).id);
       yield* notebook.submit([{ cellId: id, source: "" }], Effect.void);
-      yield* notebook.apply(
-        WireCellOp({
-          op: "cell-op",
-          cell_id: id,
-          status: "queued",
-          run_id: "run-1",
-        }),
-      );
-      yield* notebook.apply(
-        WireCellOp({
-          op: "cell-op",
-          cell_id: id,
-          status: "idle",
-          run_id: "run-1",
-        }),
-      );
+      yield* notebook.apply({
+        op: "cell-op",
+        cell_id: id,
+        status: "queued",
+        run_id: "run-1",
+      });
+      yield* notebook.apply({
+        op: "cell-op",
+        cell_id: id,
+        status: "idle",
+        run_id: "run-1",
+      });
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[0].provideCellStatusBarItems(cell);
