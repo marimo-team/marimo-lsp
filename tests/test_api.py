@@ -10,11 +10,12 @@ import msgspec
 import pytest
 from marimo._config.config import DEFAULT_CONFIG
 from marimo._convert.converters import MarimoConvert
-from marimo._types.ids import RequestId
+from marimo._types.ids import RequestId, SessionId
 
 from marimo_lsp.api import (
     ApiBuilder,
     ApiContext,
+    KernelSessionMismatchError,
     _restore_unknown_app_options,
     deserialize,
     execute_scratch,
@@ -24,6 +25,7 @@ from marimo_lsp.api import (
     interrupt,
     list_sql_schemas,
     list_sql_tables,
+    send_stdin,
     update_configuration,
 )
 from marimo_lsp.models import (
@@ -35,11 +37,13 @@ from marimo_lsp.models import (
     ExportAsMarkdownRequest,
     GetConfigurationRequest,
     InterruptRequest,
+    KernelCommand,
     ListSQLSchemasRequest,
     ListSQLTablesRequest,
     NotebookCommand,
     SessionCommand,
     SetDisplayThemeRequest,
+    StdinRequest,
     UpdateConfigurationRequest,
 )
 
@@ -134,6 +138,44 @@ async def test_run_correlated_interrupt_records_scratchpad_cancellation() -> Non
 
     sessions.cancel_scratchpad.assert_called_once_with(NOTEBOOK_URI, "run-1")
     sessions.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_stdin_targets_one_exact_kernel_session() -> None:
+    session_id = SessionId("00000000-0000-4000-8000-000000000001")
+    session = MagicMock(session_id=session_id)
+    sessions = MagicMock()
+    sessions.get.return_value = session
+
+    await send_stdin(
+        _context(sessions),
+        KernelCommand(
+            notebook_uri=NOTEBOOK_URI,
+            session_id=session_id,
+            inner=StdinRequest(text="answer"),
+        ),
+    )
+
+    session.put_input.assert_called_once_with("answer")
+
+
+@pytest.mark.asyncio
+async def test_send_stdin_rejects_a_replaced_kernel_session() -> None:
+    session = MagicMock(session_id=SessionId("00000000-0000-4000-8000-000000000002"))
+    sessions = MagicMock()
+    sessions.get.return_value = session
+
+    with pytest.raises(KernelSessionMismatchError):
+        await send_stdin(
+            _context(sessions),
+            KernelCommand(
+                notebook_uri=NOTEBOOK_URI,
+                session_id=SessionId("00000000-0000-4000-8000-000000000001"),
+                inner=StdinRequest(text="stale"),
+            ),
+        )
+
+    session.put_input.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -513,14 +555,16 @@ async def test_list_sql_schemas_is_forwarded_to_the_kernel() -> None:
         database="analytics",
         schema_path=["catalog"],
     )
-    session = MagicMock()
+    session_id = SessionId("00000000-0000-4000-8000-000000000001")
+    session = MagicMock(session_id=session_id)
     sessions = MagicMock()
     sessions.get.return_value = session
 
     await list_sql_schemas(
         _context(sessions),
-        NotebookCommand(
+        KernelCommand(
             notebook_uri="file:///notebook.py",
+            session_id=session_id,
             inner=request,
         ),
     )
@@ -539,14 +583,16 @@ async def test_list_sql_tables_is_forwarded_to_the_kernel() -> None:
         schema="events",
         schema_path=["catalog", "events"],
     )
-    session = MagicMock()
+    session_id = SessionId("00000000-0000-4000-8000-000000000001")
+    session = MagicMock(session_id=session_id)
     sessions = MagicMock()
     sessions.get.return_value = session
 
     await list_sql_tables(
         _context(sessions),
-        NotebookCommand(
+        KernelCommand(
             notebook_uri="file:///notebook.py",
+            session_id=session_id,
             inner=request,
         ),
     )
@@ -589,5 +635,9 @@ async def test_list_sql_metadata_rejects_a_missing_session(
     with pytest.raises(ValueError, match=f"No session found for {NOTEBOOK_URI}"):
         await handler(
             _context(sessions),
-            NotebookCommand(notebook_uri=NOTEBOOK_URI, inner=sql_request),
+            KernelCommand(
+                notebook_uri=NOTEBOOK_URI,
+                session_id=SessionId("00000000-0000-4000-8000-000000000001"),
+                inner=sql_request,
+            ),
         )

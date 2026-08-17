@@ -135,6 +135,22 @@ describe("cell run reducer", () => {
     expect(idle.entry.phase).toEqual(RunPhase.Idle());
   });
 
+  it("invalidates an accepted source and closes its live run", () => {
+    const running: CellRunState = {
+      ...entry(RunPhase.Running({ runId: RUN })),
+      acceptedSource: AcceptedSource.Accepted({ source: "x = 1" }),
+    };
+    const invalidated = step(running, Op.Invalidate());
+
+    expect(invalidated.entry.phase).toEqual(RunPhase.Completed());
+    expect(invalidated.entry.acceptedSource).toEqual(
+      AcceptedSource.Invalidated(),
+    );
+    expect(invalidated.commands).toEqual([
+      CellCommand.CloseRun({ runId: RUN, success: false, at: undefined }),
+    ]);
+  });
+
   it("renders a compile error with no prior run via an ephemeral execution", () => {
     const { commands, entry: next } = step(
       entry(RunPhase.Idle()),

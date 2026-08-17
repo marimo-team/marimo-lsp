@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Context, Deferred, Effect, Layer, Option } from "effect";
+import { Context, Effect, Layer, Option } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -13,6 +13,7 @@ import { commandId } from "../../commands.ts";
 import enableCell from "../../commands/enableCell.ts";
 import runStale from "../../commands/runStale.ts";
 import { CellExecutions, WireCellOp } from "../../kernel/CellExecutions.ts";
+import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
@@ -22,6 +23,7 @@ const withTestCtx = Effect.fn(function* () {
   const layer = Layer.empty.pipe(
     Layer.provideMerge(CellStatusBarProviderLive),
     Layer.provideMerge(CellExecutions.layer),
+    Layer.provideMerge(NotebookDocumentSessions.layer),
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
     Layer.provide(makeTestNotebookRuntime()),
@@ -49,20 +51,29 @@ function createMockCell(
 
 const openExecutions = Effect.fn(function* (
   executions: Context.Service.Shape<typeof CellExecutions>,
+  vscode: TestVsCode,
   cell: ReturnType<typeof createMockCell>,
 ) {
-  const invalidated = yield* Deferred.make<void>();
-  return yield* executions.open(
-    { document: cell.notebook, invalidated },
-    { getDrive: Effect.succeed(Option.none()) },
-  );
+  yield* vscode.openNotebook(cell.notebook);
+  yield* Effect.yieldNow;
+  const sessions = yield* NotebookDocumentSessions;
+  const session = sessions.forDocument(cell.notebook);
+  if (session === undefined) {
+    return yield* Effect.die("Expected an open notebook document session");
+  }
+  return yield* executions
+    .open(session, {
+      getDrive: Effect.succeed(Option.none()),
+    })
+    .pipe(Effect.orDie);
 });
 
 const markStale = Effect.fn(function* (
   executions: Context.Service.Shape<typeof CellExecutions>,
+  vscode: TestVsCode,
   cell: ReturnType<typeof createMockCell>,
 ) {
-  const notebook = yield* openExecutions(executions, cell);
+  const notebook = yield* openExecutions(executions, vscode, cell);
   const cellId = Option.getOrThrow(MarimoNotebookCell.from(cell).id);
   yield* notebook.apply(
     WireCellOp({
@@ -113,7 +124,25 @@ it.effect(
         marimoRuntime: { stableId: "cell-1" },
       });
 
-      yield* openExecutions(executions, cell);
+      const notebook = yield* openExecutions(executions, ctx.vscode, cell);
+      const id = Option.getOrThrow(MarimoNotebookCell.from(cell).id);
+      yield* notebook.submit([{ cellId: id, source: "" }], Effect.void);
+      yield* notebook.apply(
+        WireCellOp({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        }),
+      );
+      yield* notebook.apply(
+        WireCellOp({
+          op: "cell-op",
+          cell_id: id,
+          status: "idle",
+          run_id: "run-1",
+        }),
+      );
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[0].provideCellStatusBarItems(cell);
@@ -133,7 +162,7 @@ it.effect(
         marimoRuntime: { stableId: "cell-1" },
       });
 
-      yield* markStale(executions, cell);
+      yield* markStale(executions, ctx.vscode, cell);
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[0].provideCellStatusBarItems(cell);
@@ -226,7 +255,7 @@ it.effect(
         marimoRuntime: { stableId: "cell-2" },
       });
 
-      yield* markStale(executions, cell);
+      yield* markStale(executions, ctx.vscode, cell);
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
 

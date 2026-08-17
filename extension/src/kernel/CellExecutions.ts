@@ -2,7 +2,6 @@ import {
   Cause,
   Context,
   Data,
-  Deferred,
   Effect,
   Equal,
   Exit,
@@ -16,8 +15,12 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
+import {
+  type NotebookDocumentSession,
+  NotebookDocumentSessionEndedError,
+  NotebookDocumentSessions,
+} from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
-import type { OpenNotebookSession } from "../notebook/NotebookSessions.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   extractCellIdFromCellMessage,
@@ -98,6 +101,7 @@ export interface NotebookExecutions {
     operation: WireCellOp,
   ) => Effect.Effect<void, RunCorrelationError>;
   readonly interrupt: Effect.Effect<void>;
+  readonly invalidate: Effect.Effect<void>;
   readonly remove: (cellId: NotebookCellId) => Effect.Effect<void>;
   readonly submit: <A, E, R>(
     cells: ReadonlyArray<{
@@ -115,7 +119,7 @@ interface CellSource {
 }
 
 interface NotebookEntry {
-  readonly session: OpenNotebookSession;
+  readonly session: NotebookDocumentSession;
   readonly executions: NotebookExecutions;
   readonly close: Effect.Effect<void>;
   readonly updateSources: (
@@ -203,8 +207,10 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
     make: Effect.gen(function* () {
       const code = yield* VsCode;
       const editorRegistry = yield* NotebookEditorRegistry;
+      const documentSessions = yield* NotebookDocumentSessions;
       const serviceScope = yield* Effect.scope;
       const notebooks = new Map<NotebookId, NotebookEntry>();
+      const opening = Semaphore.makeUnsafe(1);
       const allStaleCells = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, HashSet.HashSet<NotebookCellId>>(),
       );
@@ -281,7 +287,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
       );
 
       const makeNotebook = Effect.fn("CellExecutions.makeNotebook")(function* (
-        session: OpenNotebookSession,
+        session: NotebookDocumentSession,
         binding: NotebookExecutionBinding,
       ) {
         const notebook = MarimoNotebookDocument.from(session.document);
@@ -485,13 +491,14 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         const release = (
           target: (cellId: NotebookCellId) => boolean,
           remove: boolean,
+          operation: Op = Op.Interrupt(),
         ) =>
           Effect.gen(function* () {
             const released: NotebookCellId[] = [];
             for (const [cellId, record] of records) {
               if (!target(cellId)) continue;
               released.push(cellId);
-              const result = step(record.run, Op.Interrupt());
+              const result = step(record.run, operation);
               const cell = cellRef(notebookId, cellId);
               for (const command of result.commands) {
                 yield* drive({
@@ -502,7 +509,6 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               }
               if (remove) {
                 records.delete(cellId);
-                currentSources.delete(cellId);
               } else {
                 records.set(cellId, {
                   run: result.entry,
@@ -521,12 +527,22 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           }),
         );
 
+        const invalidate = ordering.withPermit(
+          Effect.gen(function* () {
+            if (closed) return;
+            submittedSources.clear();
+            yield* release(() => true, false, Op.Invalidate());
+          }),
+        );
+
         const remove = (cellId: NotebookCellId) =>
           ordering.withPermit(
             Effect.gen(function* () {
               if (closed) return;
               yield* release((candidate) => candidate === cellId, true);
+              currentSources.delete(cellId);
               submittedSources.delete(cellId);
+              yield* refreshStale([cellId]);
             }),
           );
 
@@ -579,6 +595,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         const executions: NotebookExecutions = {
           apply,
           interrupt,
+          invalidate,
           remove,
           submit,
           staleCells: {
@@ -589,32 +606,50 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         return { executions, close, updateSources } as const;
       });
 
-      const open = Effect.fn("CellExecutions.open")(function* (
-        session: OpenNotebookSession,
+      const open = Effect.fn("CellExecutions.open")(function (
+        session: NotebookDocumentSession,
         binding: NotebookExecutionBinding,
       ) {
-        const notebookId = MarimoNotebookDocument.from(session.document).id;
-        const existing = notebooks.get(notebookId);
-        if (existing?.session === session) return existing.executions;
-        if (existing !== undefined) yield* existing.close;
+        return opening.withPermit(
+          Effect.gen(function* () {
+            const notebookId = session.notebookId;
+            if (documentSessions.current(notebookId) !== session) {
+              return yield* new NotebookDocumentSessionEndedError({
+                notebookId,
+              });
+            }
 
-        const made = yield* makeNotebook(session, binding);
-        const entry: NotebookEntry = { session, ...made };
-        notebooks.set(notebookId, entry);
+            const existing = notebooks.get(notebookId);
+            if (existing?.session === session) return existing.executions;
 
-        yield* Deferred.await(session.invalidated).pipe(
-          Effect.andThen(
-            Effect.suspend(() => {
-              if (notebooks.get(notebookId)?.session !== session) {
-                return Effect.void;
-              }
-              notebooks.delete(notebookId);
-              return made.close;
-            }),
-          ),
-          Effect.forkIn(serviceScope),
+            const made = yield* makeNotebook(session, binding);
+            if (documentSessions.current(notebookId) !== session) {
+              yield* made.close;
+              return yield* new NotebookDocumentSessionEndedError({
+                notebookId,
+              });
+            }
+
+            const displaced = notebooks.get(notebookId);
+            const entry: NotebookEntry = { session, ...made };
+            notebooks.set(notebookId, entry);
+
+            yield* session.ended.pipe(
+              Effect.andThen(
+                Effect.suspend(() => {
+                  if (notebooks.get(notebookId)?.session !== session) {
+                    return Effect.void;
+                  }
+                  notebooks.delete(notebookId);
+                  return made.close;
+                }),
+              ),
+              Effect.forkIn(serviceScope),
+            );
+            if (displaced !== undefined) yield* displaced.close;
+            return made.executions;
+          }),
         );
-        return made.executions;
       });
 
       yield* Effect.addFinalizer(() =>
@@ -625,6 +660,11 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
 
       return {
         open,
+        invalidate(notebookId: NotebookId) {
+          return (
+            notebooks.get(notebookId)?.executions.invalidate ?? Effect.void
+          );
+        },
         find(document: vscode.NotebookDocument) {
           const notebook = MarimoNotebookDocument.tryFrom(document);
           if (Option.isNone(notebook)) return Option.none<NotebookExecutions>();
@@ -641,6 +681,9 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
   },
 ) {
   static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide([NotebookEditorRegistry.layer]),
+    Layer.provide([
+      NotebookDocumentSessions.layer,
+      NotebookEditorRegistry.layer,
+    ]),
   );
 }

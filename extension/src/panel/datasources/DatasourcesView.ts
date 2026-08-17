@@ -1,6 +1,7 @@
 import { Effect, Layer, Option, Stream } from "effect";
 
 import { unreachable } from "../../assert.ts";
+import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DataTable } from "../../types.ts";
@@ -145,6 +146,7 @@ export const DatasourcesViewLive = Layer.effectDiscard(
     const treeView = yield* TreeView;
     const datasources = yield* DatasourcesService;
     const editors = yield* NotebookEditorRegistry;
+    const documentSessions = yield* NotebookDocumentSessions;
 
     const getDatabase = Effect.fn(function* (item: DatabaseItem | SchemaItem) {
       const connections = yield* datasources.getConnections(item.notebookUri);
@@ -168,14 +170,17 @@ export const DatasourcesViewLive = Layer.effectDiscard(
       database: DatasourceDatabase,
     ) {
       if (!database.schemasResolved) {
-        yield* ignoreExpansionError(
-          datasources.loadSchemas(
-            item.notebookUri,
-            item.connectionName,
-            item.databaseName,
-            [],
-          ),
-        );
+        const session = documentSessions.current(item.notebookUri);
+        if (session !== undefined) {
+          yield* ignoreExpansionError(
+            datasources.loadSchemas(
+              session,
+              item.connectionName,
+              item.databaseName,
+              [],
+            ),
+          );
+        }
       }
 
       let current = yield* getDatabase(item);
@@ -190,15 +195,18 @@ export const DatasourcesViewLive = Layer.effectDiscard(
 
         // Schemaless databases expose their tables directly below the database.
         if (!schema.tablesResolved) {
-          yield* ignoreExpansionError(
-            datasources.loadTables(
-              item.notebookUri,
-              item.connectionName,
-              item.databaseName,
-              schema.name,
-              [],
-            ),
-          );
+          const session = documentSessions.current(item.notebookUri);
+          if (session !== undefined) {
+            yield* ignoreExpansionError(
+              datasources.loadTables(
+                session,
+                item.connectionName,
+                item.databaseName,
+                schema.name,
+                [],
+              ),
+            );
+          }
           current = yield* getDatabase(item);
         }
         const schemaless = current?.schemas.get("");
@@ -219,11 +227,13 @@ export const DatasourcesViewLive = Layer.effectDiscard(
       if (schema === undefined) return [];
 
       const loads: Array<Effect.Effect<unknown>> = [];
+      const session = documentSessions.current(item.notebookUri);
+      if (session === undefined) return [];
       if (!schema.childSchemasResolved) {
         loads.push(
           ignoreExpansionError(
             datasources.loadSchemas(
-              item.notebookUri,
+              session,
               item.connectionName,
               item.databaseName,
               item.schemaPath,
@@ -235,7 +245,7 @@ export const DatasourcesViewLive = Layer.effectDiscard(
         loads.push(
           ignoreExpansionError(
             datasources.loadTables(
-              item.notebookUri,
+              session,
               item.connectionName,
               item.databaseName,
               item.schemaName,

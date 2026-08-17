@@ -113,7 +113,9 @@ class TestNotebookGraphUpdater:
 
         server.protocol.notify.assert_called_once()
         call_args = server.protocol.notify.call_args
-        assert call_args[0][0] == "marimo/operation"
+        assert call_args[0][0] == "marimo/documentAnalysis"
+        assert "sessionId" not in call_args[0][1]
+        assert call_args[0][1]["analysis"]["op"] == "variables"
 
     def test_flush_skips_publish_when_variables_unchanged(self) -> None:
         """Second flush with same sources should not publish again."""
@@ -188,7 +190,7 @@ class TestNotebookGraphUpdater:
 
         # Variable y should no longer be published
         last_call = server.protocol.notify.call_args
-        operation = last_call[0][1]["operation"]
+        operation = last_call[0][1]["analysis"]
         var_names = [v["name"] for v in operation["variables"]]
         assert "y" not in var_names
         assert "x" in var_names
@@ -250,7 +252,7 @@ class TestNotebookGraphUpdater:
         updater.flush()
 
         call_args = server.protocol.notify.call_args
-        operation = call_args[0][1]["operation"]
+        operation = call_args[0][1]["analysis"]
         variables = {v["name"]: v for v in operation["variables"]}
 
         assert "x" in variables

@@ -9,6 +9,7 @@ import {
   SubscriptionRef,
 } from "effect";
 
+import type { NotebookDocumentSession } from "../../notebook/NotebookDocumentSessions.ts";
 import {
   decodeVariablesOperation,
   type NotebookId,
@@ -18,6 +19,11 @@ import type {
   VariableValuesNotification,
   VariableName,
 } from "../../types.ts";
+
+interface Owned<A> {
+  readonly owner: NotebookDocumentSession["id"];
+  readonly value: A;
+}
 
 /**
  * Manages variable state across all notebooks.
@@ -34,12 +40,12 @@ export class VariablesService extends Context.Service<VariablesService>()(
     make: Effect.gen(function* () {
       // Track variable declarations: NotebookUri -> VariablesOp
       const variablesRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, VariablesNotification>(),
+        HashMap.empty<NotebookId, Owned<VariablesNotification>>(),
       );
 
       // Track variable values: NotebookUri -> VariableValuesOp
       const variableValuesRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, VariableValuesNotification>(),
+        HashMap.empty<NotebookId, Owned<VariableValuesNotification>>(),
       );
 
       // PubSub to notify when any notebook's variables change
@@ -55,7 +61,9 @@ export class VariablesService extends Context.Service<VariablesService>()(
         return Effect.gen(function* () {
           const map = yield* SubscriptionRef.get(variablesRef);
           const op = HashMap.get(map, notebookUri);
-          return Option.map(op, (o) => decodeVariablesOperation(o));
+          return Option.map(op, (owned) =>
+            decodeVariablesOperation(owned.value),
+          );
         });
       }
 
@@ -63,7 +71,7 @@ export class VariablesService extends Context.Service<VariablesService>()(
         return Effect.gen(function* () {
           const map = yield* SubscriptionRef.get(variableValuesRef);
           const op = HashMap.get(map, notebookUri);
-          return Option.map(op, (o) => [...o.variables] as const);
+          return Option.map(op, (owned) => [...owned.value.variables] as const);
         });
       }
 
@@ -72,35 +80,48 @@ export class VariablesService extends Context.Service<VariablesService>()(
          * Update variable declarations for a notebook
          */
         updateVariables(
-          notebookUri: NotebookId,
+          session: NotebookDocumentSession,
           operation: VariablesNotification,
         ) {
           return Effect.gen(function* () {
+            const notebookUri = session.notebookId;
             yield* SubscriptionRef.update(variablesRef, (map) =>
-              HashMap.set(map, notebookUri, operation),
+              HashMap.set(map, notebookUri, {
+                owner: session.id,
+                value: operation,
+              }),
             );
 
             // Filter variable values to only include variables that exist in declarations
             const valuesMap = yield* SubscriptionRef.get(variableValuesRef);
             const existingValues = HashMap.get(valuesMap, notebookUri);
 
-            if (Option.isSome(existingValues)) {
+            if (
+              Option.isSome(existingValues) &&
+              existingValues.value.owner === session.id
+            ) {
               const declaredVarNames = new Set(
                 operation.variables.map((v) => v.name),
               );
-              const filteredValues = existingValues.value.variables.filter(
-                (v) => {
+              const filteredValues =
+                existingValues.value.value.variables.filter((v) => {
                   // @ts-expect-error - should be able to remove in once branded types are fully fixed in marimo main
                   const varName: VariableName = v.name;
                   return declaredVarNames.has(varName);
-                },
-              );
+                });
 
               yield* SubscriptionRef.update(variableValuesRef, (map) =>
                 HashMap.set(map, notebookUri, {
-                  ...existingValues.value,
-                  variables: filteredValues,
+                  owner: session.id,
+                  value: {
+                    ...existingValues.value.value,
+                    variables: filteredValues,
+                  },
                 }),
+              );
+            } else if (Option.isSome(existingValues)) {
+              yield* SubscriptionRef.update(variableValuesRef, (map) =>
+                HashMap.remove(map, notebookUri),
               );
             }
 
@@ -122,12 +143,23 @@ export class VariablesService extends Context.Service<VariablesService>()(
          * Update variable values for a notebook
          */
         updateVariableValues(
-          notebookUri: NotebookId,
+          session: NotebookDocumentSession,
           operation: VariableValuesNotification,
         ) {
           return Effect.gen(function* () {
+            const notebookUri = session.notebookId;
+            yield* SubscriptionRef.update(variablesRef, (map) => {
+              const current = HashMap.get(map, notebookUri);
+              return Option.isSome(current) &&
+                current.value.owner !== session.id
+                ? HashMap.remove(map, notebookUri)
+                : map;
+            });
             yield* SubscriptionRef.update(variableValuesRef, (map) =>
-              HashMap.set(map, notebookUri, operation),
+              HashMap.set(map, notebookUri, {
+                owner: session.id,
+                value: operation,
+              }),
             );
 
             yield* PubSub.publish(notebookUpdatesPubSub, {
@@ -168,14 +200,23 @@ export class VariablesService extends Context.Service<VariablesService>()(
         /**
          * Clear all variable data for a notebook
          */
-        clearNotebook(notebookUri: NotebookId) {
+        clearSession(session: NotebookDocumentSession) {
           return Effect.gen(function* () {
-            yield* SubscriptionRef.update(variablesRef, (map) =>
-              HashMap.remove(map, notebookUri),
-            );
-            yield* SubscriptionRef.update(variableValuesRef, (map) =>
-              HashMap.remove(map, notebookUri),
-            );
+            const notebookUri = session.notebookId;
+            yield* SubscriptionRef.update(variablesRef, (map) => {
+              const current = HashMap.get(map, notebookUri);
+              return Option.isSome(current) &&
+                current.value.owner === session.id
+                ? HashMap.remove(map, notebookUri)
+                : map;
+            });
+            yield* SubscriptionRef.update(variableValuesRef, (map) => {
+              const current = HashMap.get(map, notebookUri);
+              return Option.isSome(current) &&
+                current.value.owner === session.id
+                ? HashMap.remove(map, notebookUri)
+                : map;
+            });
 
             yield* Effect.logTrace("Cleared variable data").pipe(
               Effect.annotateLogs({ notebookUri }),
@@ -190,6 +231,9 @@ export class VariablesService extends Context.Service<VariablesService>()(
          * Filters consecutive duplicates via Stream.changes.
          */
         streamVariablesChanges: SubscriptionRef.changes(variablesRef).pipe(
+          Stream.map((notebooks) =>
+            HashMap.map(notebooks, (owned) => owned.value),
+          ),
           Stream.changes,
         ),
 
@@ -201,7 +245,12 @@ export class VariablesService extends Context.Service<VariablesService>()(
          */
         streamVariableValuesChanges: SubscriptionRef.changes(
           variableValuesRef,
-        ).pipe(Stream.changes),
+        ).pipe(
+          Stream.map((notebooks) =>
+            HashMap.map(notebooks, (owned) => owned.value),
+          ),
+          Stream.changes,
+        ),
 
         /**
          * Stream of notebook IDs that had variable updates.

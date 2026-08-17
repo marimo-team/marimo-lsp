@@ -14,6 +14,8 @@ from uuid import uuid4
 
 import msgspec
 from marimo._config.manager import get_default_config_manager
+from marimo._messaging.msgspec_encoder import asdict
+from marimo._messaging.serde import deserialize_kernel_message
 from marimo._runtime.commands import (
     CodeCompletionCommand,
     CommandMessage,
@@ -25,11 +27,12 @@ from marimo._runtime.commands import (
     UpdateUserConfigCommand,
 )
 from marimo._session.state.session_view import SessionView
+from marimo._types.ids import SessionId
 
 from marimo_lsp.app_file_manager import LspAppFileManager, sync_app_with_workspace
 from marimo_lsp.kernels import KernelOpenError
 from marimo_lsp.loggers import get_logger
-from marimo_lsp.models import ListSessionsResponse, SessionInfo
+from marimo_lsp.models import KernelNotification, ListSessionsResponse, SessionInfo
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -41,6 +44,7 @@ if TYPE_CHECKING:
         RuntimeConfig,
     )
     from marimo._config.manager import MarimoConfigManager
+    from marimo._messaging.notification import NotificationMessage
     from marimo._messaging.types import KernelMessage
     from marimo._session.requests import InstantiateNotebookRequest
     from marimo._types.ids import ConsumerId
@@ -61,12 +65,22 @@ def _raise_kernel_failure(_session: Session, error: str) -> None:
 
 
 class _OperationSink:
-    """Forward operations to the single attached language-server client."""
+    """Forward operations from one live kernel session."""
 
-    def __init__(self, server: LanguageServer, notebook_uri: str) -> None:
+    def __init__(
+        self,
+        server: LanguageServer,
+        notebook_uri: str,
+        session_id: SessionId,
+        *,
+        activated: bool = True,
+    ) -> None:
         self._server = server
         self._notebook_uri = notebook_uri
+        self._session_id = session_id
         self._attached = True
+        self._activated = activated
+        self._pending: list[NotificationMessage] = []
 
     @property
     def attached(self) -> bool:
@@ -78,7 +92,21 @@ class _OperationSink:
 
     def detach(self) -> None:
         self._attached = False
+        self._pending.clear()
         logger.info(f"Detached client for {self._notebook_uri}")
+
+    def activate(self) -> None:
+        """Release operations after the session snapshot is visible."""
+        if self._activated:
+            return
+        self._activated = True
+        if not self._attached:
+            self._pending.clear()
+            return
+        pending = self._pending
+        self._pending = []
+        for operation in pending:
+            self._forward(operation)
 
     def move(self, notebook_uri: str) -> None:
         """Route future operations to a renamed notebook."""
@@ -89,16 +117,26 @@ class _OperationSink:
             return
 
         try:
-            operation = json.loads(message)
-            self._server.protocol.notify(
-                "marimo/operation",
-                {"notebookUri": self._notebook_uri, "operation": operation},
-            )
-            logger.debug(
-                f"Forwarded {operation.get('op', 'unknown')} to {self._notebook_uri}"
-            )
+            notification = deserialize_kernel_message(message)
+            if not self._activated:
+                self._pending.append(notification)
+                return
+            self._forward(notification)
         except Exception:
             logger.exception("Error forwarding kernel message")
+
+    def _forward(self, notification: NotificationMessage) -> None:
+        self._server.protocol.notify(
+            "marimo/kernelNotification",
+            asdict(
+                KernelNotification(
+                    notebook_uri=self._notebook_uri,
+                    session_id=self._session_id,
+                    notification=notification,
+                )
+            ),
+        )
+        logger.debug(f"Forwarded {notification.name} to {self._notebook_uri}")
 
 
 class Session:
@@ -107,9 +145,9 @@ class Session:
     def __init__(  # noqa: PLR0913
         self,
         *,
-        initialization_id: str,
+        session_id: SessionId,
         notebook_uri: str,
-        operation_sink: _OperationSink,
+        server: LanguageServer,
         kernel: Kernel,
         app_file_manager: LspAppFileManager,
         config_manager: MarimoConfigManager,
@@ -117,14 +155,19 @@ class Session:
         session_view: SessionView | None = None,
         started_at: float | None = None,
     ) -> None:
-        self.initialization_id = initialization_id
+        self.session_id = session_id
         self._notebook_uri = notebook_uri
         self._app_file_manager = app_file_manager
         self._config_manager = config_manager
         # Used by exporters and scratchpad snapshots.
         self.session_view = session_view if session_view is not None else SessionView()
 
-        self._operation_sink = operation_sink
+        self._operation_sink = _OperationSink(
+            server,
+            notebook_uri,
+            session_id,
+            activated=False,
+        )
         self._closed = False
         self._runtime_config = config_manager.get_config(hide_secrets=False)
         self.started_at = started_at if started_at is not None else time.time()
@@ -140,7 +183,7 @@ class Session:
         self._state_lock = threading.RLock()
 
         self._kernel = kernel
-        logger.info(f"Started session {initialization_id}")
+        logger.info(f"Started session {session_id}")
 
     @property
     def executable(self) -> str:
@@ -302,7 +345,7 @@ class Session:
         """Return the public snapshot for this live session."""
         with self._state_lock:
             return SessionInfo(
-                session_id=self.initialization_id,
+                session_id=self.session_id,
                 notebook_uri=self._notebook_uri,
                 filename=self.filename,
                 executable=self.executable,
@@ -418,6 +461,10 @@ class Session:
             from_consumer_id=None,
         )
 
+    def activate(self) -> None:
+        """Release operations after this session becomes authoritative."""
+        self._operation_sink.activate()
+
     def close(self) -> None:
         """Close the session and its owned kernel resources."""
         if self._closed:
@@ -425,7 +472,7 @@ class Session:
         self._closed = True
         self._idle.set()
         self._on_change = lambda: None
-        logger.info(f"Closing session {self.initialization_id}")
+        logger.info(f"Closing session {self.session_id}")
         self._kernel.close()
         self._operation_sink.detach()
 
@@ -550,6 +597,7 @@ class Sessions:
             if current is not None:
                 self._close(current, notebook_uri)
             self._notify_changed()
+            replacement.activate()
             return replacement
 
     async def _create(
@@ -571,7 +619,7 @@ class Sessions:
             config_manager = get_default_config_manager(
                 current_path=app_file_manager.path
             )
-        initialization_id = str(uuid4())
+        session_id = SessionId(str(uuid4()))
         pending_messages: list[KernelMessage] = []
         session: Session | None = None
         loop = asyncio.get_running_loop()
@@ -597,9 +645,9 @@ class Sessions:
         )
         try:
             session = Session(
-                initialization_id=initialization_id,
+                session_id=session_id,
                 notebook_uri=notebook_uri,
-                operation_sink=_OperationSink(self._server, notebook_uri),
+                server=self._server,
                 kernel=kernel,
                 app_file_manager=app_file_manager,
                 config_manager=config_manager,
@@ -667,6 +715,7 @@ class Sessions:
             if current is not None:
                 self._close(current, notebook_uri)
             self._notify_changed()
+            replacement.activate()
             return replacement
 
     def move(self, notebook_uri: str, new_notebook_uri: str) -> None:

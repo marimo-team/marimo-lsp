@@ -13,6 +13,7 @@ import {
   PubSub,
   Queue,
   Redacted,
+  Schema,
   Stream,
 } from "effect";
 import * as lsp from "vscode-languageclient/node";
@@ -27,14 +28,19 @@ import { Uv } from "../python/Uv.ts";
 import * as Api from "../schemas/Models.gen.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import type {
+  DocumentAnalysis,
+  KernelNotification,
   MarimoApiCall,
-  MarimoOperation,
   MarimoSessionsChanged,
 } from "../types.ts";
 
 const MAX_STDERR_LINES = 200;
 const CUSTOM_LSP_FAILURE_MESSAGE =
   "The configured marimo-lsp command failed. Custom language servers are for extension development and may be incompatible with this extension build. Update marimo.lsp.path or switch to a bundled language server.";
+const decodeKernelNotification = Schema.decodeUnknownOption(
+  Api.KernelNotification,
+);
+const decodeDocumentAnalysis = Schema.decodeUnknownOption(Api.DocumentAnalysis);
 
 export type MarimoLspMode = "wasm" | "uv" | "configured";
 
@@ -79,36 +85,66 @@ export class MarimoCommandError extends Data.TaggedError("MarimoCommandError")<{
  */
 interface MarimoTransport<Error = never> {
   readonly execute: (request: MarimoApiCall) => Effect.Effect<unknown, Error>;
-  readonly operations: Stream.Stream<MarimoOperation>;
+  readonly kernelNotifications: Stream.Stream<KernelNotification>;
+  readonly documentAnalysis?: Stream.Stream<DocumentAnalysis>;
   readonly sessionChanges?: Stream.Stream<MarimoSessionsChanged>;
 }
 
 export function makeMarimoCommands<Error>(transport: MarimoTransport<Error>) {
   return {
-    operations: transport.operations,
+    kernelNotifications: transport.kernelNotifications,
+    documentAnalysis: transport.documentAnalysis ?? Stream.never,
     sessionChanges: transport.sessionChanges ?? Stream.never,
     ...Api.makeApiClient(transport.execute),
   };
 }
 
-export const makeMarimoOperationStream = Effect.fn(function* (
-  register: (handler: (message: MarimoOperation) => void) => {
+export const makeKernelNotificationStream = Effect.fn(function* (
+  register: (handler: (message: unknown) => void) => {
     readonly dispose: () => void;
   },
 ) {
-  const operationPubSub = yield* PubSub.unbounded<MarimoOperation>();
+  const notifications = yield* PubSub.unbounded<KernelNotification>();
   const runSync = Effect.runSyncWith(yield* Effect.context());
-  yield* Effect.addFinalizer(() => PubSub.shutdown(operationPubSub));
+  yield* Effect.addFinalizer(() => PubSub.shutdown(notifications));
 
   // vscode-languageclient stores one notification handler per method, so
-  // register once and fan out to every `operations` consumer.
+  // register once and fan out to every consumer.
   yield* acquireDisposable(() =>
     register((message) => {
-      runSync(PubSub.publish(operationPubSub, message));
+      const decoded = decodeKernelNotification(message);
+      if (Option.isNone(decoded)) {
+        runSync(Effect.logWarning("Ignored invalid kernel notification"));
+        return;
+      }
+      runSync(PubSub.publish(notifications, decoded.value));
     }),
   );
 
-  return Stream.fromPubSub(operationPubSub);
+  return Stream.fromPubSub(notifications);
+});
+
+export const makeDocumentAnalysisStream = Effect.fn(function* (
+  register: (handler: (message: unknown) => void) => {
+    readonly dispose: () => void;
+  },
+) {
+  const analyses = yield* PubSub.unbounded<DocumentAnalysis>();
+  const runSync = Effect.runSyncWith(yield* Effect.context());
+  yield* Effect.addFinalizer(() => PubSub.shutdown(analyses));
+
+  yield* acquireDisposable(() =>
+    register((message) => {
+      const decoded = decodeDocumentAnalysis(message);
+      if (Option.isNone(decoded)) {
+        runSync(Effect.logWarning("Ignored invalid document analysis"));
+        return;
+      }
+      runSync(PubSub.publish(analyses, decoded.value));
+    }),
+  );
+
+  return Stream.fromPubSub(analyses);
 });
 
 /**
@@ -281,8 +317,14 @@ export class MarimoClient extends Context.Service<MarimoClient>()(
 
       yield* Effect.addFinalizer(() => disposeLanguageClient(client));
 
-      const operations = yield* makeMarimoOperationStream((handler) =>
-        client.onNotification("marimo/operation", (message) => {
+      const kernelNotifications = yield* makeKernelNotificationStream(
+        (handler) =>
+          client.onNotification("marimo/kernelNotification", (message) => {
+            handler(message);
+          }),
+      );
+      const documentAnalysis = yield* makeDocumentAnalysisStream((handler) =>
+        client.onNotification("marimo/documentAnalysis", (message) => {
           handler(message);
         }),
       );
@@ -356,7 +398,8 @@ export class MarimoClient extends Context.Service<MarimoClient>()(
             }),
           );
         }),
-        operations,
+        kernelNotifications,
+        documentAnalysis,
         sessionChanges: Stream.callback<MarimoSessionsChanged>((queue) =>
           acquireDisposable(() =>
             client.onNotification("marimo/sessionsChanged", (message) => {

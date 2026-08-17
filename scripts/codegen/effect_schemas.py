@@ -33,7 +33,33 @@ HEADER = """\
 // Generated from `src/marimo_lsp/models.py` and the `marimo.api` registry
 // (`API_METHODS` in `src/marimo_lsp/api.py`) by `scripts.codegen`.
 // Regenerate with `just codegen`.
+import type { components as MarimoApi } from "@marimo-team/openapi/src/api";
 import { Effect, Schema } from "effect";
+
+type MarimoNotification = MarimoApi["schemas"]["KnownUnions"]["notification"];
+const MarimoNotification = Schema.declare<MarimoNotification>(
+  (value): value is MarimoNotification =>
+    typeof value === "object" &&
+    value !== null &&
+    "op" in value &&
+    typeof value.op === "string",
+);
+
+type VariablesNotification = Extract<MarimoNotification, { op: "variables" }>;
+const VariablesNotification = Schema.declare<VariablesNotification>(
+  (value): value is VariablesNotification =>
+    Schema.is(MarimoNotification)(value) && value.op === "variables",
+);
+
+export const KernelSessionIdFromString = Schema.String.check(
+  Schema.isUUID(4),
+).pipe(Schema.brand("KernelSessionId"));
+export type KernelSessionId = typeof KernelSessionIdFromString.Type;
+
+export const NotebookIdFromString = Schema.String.pipe(
+  Schema.brand("NotebookId"),
+);
+export type NotebookId = typeof NotebookIdFromString.Type;
 """
 
 
@@ -52,6 +78,8 @@ class _Inner(msgspec.Struct):
 CONCRETE: list[tuple[str, type | object]] = [
     ("PackageSource", models.PackageSource),
     ("OwnedAppConfig", models.OwnedAppConfig),
+    ("KernelNotification", models.KernelNotification),
+    ("DocumentAnalysis", models.DocumentAnalysis),
     ("CellMetadata", models.CellMetadata),
     ("NotebookDocumentMetadata", models.NotebookDocumentMetadata),
     ("NotebookDocument", models.NotebookDocument),
@@ -74,6 +102,7 @@ CONCRETE: list[tuple[str, type | object]] = [
 # marker the emitter can recognize.
 GENERIC: list[tuple[type, type]] = [
     (models.NotebookCommand, models.NotebookCommand[_Inner]),
+    (models.KernelCommand, models.KernelCommand[_Inner]),
     (models.SessionCommand, models.SessionCommand[_Inner]),
     (models.PackageCommand, models.PackageCommand[_Inner]),
 ]
@@ -349,7 +378,23 @@ class Emitter:
             tag = _ts_string(str(t.tag))
             lines.append(f"{indent}{_prop(t.tag_field)}: Schema.Literal({tag}),")
         for field in t.fields:
-            expr = self.type_expr(field.type)
+            if t.cls is models.KernelNotification and field.name == "notification":
+                expr = "MarimoNotification"
+            elif t.cls is models.DocumentAnalysis and field.name == "analysis":
+                expr = "VariablesNotification"
+            elif field.name == "notebook_uri":
+                expr = "NotebookIdFromString"
+            elif field.name == "session_id":
+                nullable = isinstance(field.type, mi.UnionType) and any(
+                    isinstance(member, mi.NoneType) for member in field.type.types
+                )
+                expr = (
+                    "Schema.NullOr(KernelSessionIdFromString)"
+                    if nullable
+                    else "KernelSessionIdFromString"
+                )
+            else:
+                expr = self.type_expr(field.type)
             prop = _prop(field.encode_name)
             if field.required:
                 rendered = expr if prop == expr else f"{prop}: {expr}"

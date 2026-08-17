@@ -54,6 +54,13 @@ def asdict(obj: Any) -> dict[str, Any]:  # noqa: ANN401
     return obj
 
 
+def assert_one_kernel_session(messages: list[dict[str, Any]]) -> None:
+    session_ids = {
+        message["sessionId"] for message in messages if "sessionId" in message
+    }
+    assert len(session_ids) == 1
+
+
 def filter_output(source: str, *replacers: Callable[[str], str]) -> str:
     """Apply one or more replacer functions to `source` in order."""
     for replacer in replacers:
@@ -245,9 +252,9 @@ async def test_enabling_disabled_cell_runs_registered_source(
     initial_run_completed = asyncio.Event()
     stdout: asyncio.Future[str] = asyncio.get_running_loop().create_future()
 
-    @client.feature("marimo/operation")
+    @client.feature("marimo/kernelNotification")
     def _(params: Any) -> None:  # noqa: ANN401
-        operation = getattr(params, "operation", None)
+        operation = getattr(params, "notification", None)
         if getattr(operation, "op", None) == "completed-run":
             initial_run_completed.set()
         console = getattr(operation, "console", None)
@@ -632,7 +639,7 @@ async def test_execute_scratchpad_binds_code_mode_and_emits_transaction(
 
     def _find_created_cell(params: Any) -> Any | None:  # noqa: ANN401
         """Return the create-cell change from a code-mode transaction, if any."""
-        operation = getattr(params, "operation", None)
+        operation = getattr(params, "notification", None)
         if getattr(operation, "op", None) != "notebook-document-transaction":
             return None
         transaction = getattr(operation, "transaction", None)
@@ -641,7 +648,7 @@ async def test_execute_scratchpad_binds_code_mode_and_emits_transaction(
                 return change
         return None
 
-    @client.feature("marimo/operation")
+    @client.feature("marimo/kernelNotification")
     def _(params: Any) -> None:  # noqa: ANN401
         change = _find_created_cell(params)
         if change is not None and not created_cell.done():
@@ -748,9 +755,9 @@ async def test_code_mode_edit_cell_config_on_existing_cell(
     uri = "file:///code_mode_config_test.py"
     set_config: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
 
-    @client.feature("marimo/operation")
+    @client.feature("marimo/kernelNotification")
     def _(params: Any) -> None:  # noqa: ANN401
-        operation = getattr(params, "operation", None)
+        operation = getattr(params, "notification", None)
         if getattr(operation, "op", None) != "notebook-document-transaction":
             return
         transaction = getattr(operation, "transaction", None)
@@ -1114,12 +1121,12 @@ x\
     messages = []
     completion_event = asyncio.Event()
 
-    @client.feature("marimo/operation")
+    @client.feature("marimo/kernelNotification")
     async def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
         # pygls dynamically makes an `Object` named tuple which makes snapshotting hard
         # we just convert to a regular dict here for snapshotting
         messages.append(asdict(params))
-        if params.operation.op == "completed-run":
+        if params.notification.op == "completed-run":
             # `completed-run` fires before the kernel finishes emitting
             # trailing notifications (variables, remove-ui-elements, etc).
             # Wait a beat so the snapshot captures the full sequence.
@@ -1147,11 +1154,12 @@ x\
     )
 
     await asyncio.wait_for(completion_event.wait(), timeout=5.0)
+    assert_one_kernel_session(messages)
     assert messages == snapshot(
         [
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "notification": {
                     "op": "variables",
                     "variables": IsList(
                         {
@@ -1170,7 +1178,8 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "notebook-document-transaction",
                     "transaction": {
                         "changes": [{"type": "reorder-cells", "cellIds": ["cell1"]}],
@@ -1181,7 +1190,8 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -1194,11 +1204,13 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "completed-run", "run_id": None},
+                "sessionId": IsUUID(4),
+                "notification": {"op": "completed-run", "run_id": None},
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "variables",
                     "variables": IsList(
                         {"name": "sys", "declared_by": ["cell1"], "used_by": []},
@@ -1209,7 +1221,8 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -1222,7 +1235,8 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -1235,11 +1249,13 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "remove-ui-elements", "cell_id": "cell1"},
+                "sessionId": IsUUID(4),
+                "notification": {"op": "remove-ui-elements", "cell_id": "cell1"},
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -1252,7 +1268,8 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "variable-values",
                     "variables": IsList(
                         {"name": "sys", "value": "sys", "datatype": "module"},
@@ -1263,7 +1280,8 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": {
@@ -1281,7 +1299,8 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -1299,7 +1318,8 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -1317,7 +1337,8 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -1330,7 +1351,8 @@ x\
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "completed-run", "run_id": None},
+                "sessionId": IsUUID(4),
+                "notification": {"op": "completed-run", "run_id": None},
             },
         ]
     )
@@ -1378,12 +1400,12 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
     messages = []
     completion_event = asyncio.Event()
 
-    @client.feature("marimo/operation")
+    @client.feature("marimo/kernelNotification")
     async def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
         # pygls dynamically makes an `Object` named tuple which makes snapshotting hard
         # we just convert to a regular dict here for snapshotting
         messages.append(asdict(params))
-        if params.operation.op == "completed-run":
+        if params.notification.op == "completed-run":
             # `completed-run` fires before the kernel finishes emitting
             # trailing notifications (variables, remove-ui-elements, etc).
             # Wait a beat so the snapshot captures the full sequence.
@@ -1412,11 +1434,12 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
     )
 
     await asyncio.wait_for(completion_event.wait(), timeout=5.0)
+    assert_one_kernel_session(messages)
     assert messages == snapshot(
         [
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "notification": {
                     "op": "variables",
                     "variables": [
                         {
@@ -1429,7 +1452,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "notebook-document-transaction",
                     "transaction": {
                         "changes": [
@@ -1442,7 +1466,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -1455,7 +1480,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell2",
                     "output": None,
@@ -1468,11 +1494,13 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "completed-run", "run_id": None},
+                "sessionId": IsUUID(4),
+                "notification": {"op": "completed-run", "run_id": None},
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "variables",
                     "variables": [
                         {
@@ -1485,7 +1513,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -1498,7 +1527,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -1511,7 +1541,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell2",
                     "output": None,
@@ -1524,7 +1555,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell2",
                     "output": None,
@@ -1537,15 +1569,18 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "remove-ui-elements", "cell_id": "cell1"},
+                "sessionId": IsUUID(4),
+                "notification": {"op": "remove-ui-elements", "cell_id": "cell1"},
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "remove-ui-elements", "cell_id": "cell2"},
+                "sessionId": IsUUID(4),
+                "notification": {"op": "remove-ui-elements", "cell_id": "cell2"},
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -1558,14 +1593,16 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "variable-values",
                     "variables": [{"name": "x", "value": "42", "datatype": "int"}],
                 },
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": {
@@ -1583,7 +1620,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell1",
                     "output": None,
@@ -1596,7 +1634,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell2",
                     "output": None,
@@ -1609,7 +1648,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell2",
                     "output": {
@@ -1627,7 +1667,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell2",
                     "output": None,
@@ -1645,7 +1686,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "cell2",
                     "output": None,
@@ -1658,7 +1700,8 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///exec_test.py",
-                "operation": {"op": "completed-run", "run_id": None},
+                "sessionId": IsUUID(4),
+                "notification": {"op": "completed-run", "run_id": None},
             },
         ]
     )
@@ -1669,9 +1712,9 @@ async def test_incremental_graph_text_change(client: LanguageClient) -> None:
     variables_operations = []
     open_event = asyncio.Event()
 
-    @client.feature("marimo/operation")
+    @client.feature("marimo/kernelNotification")
     async def on_operation(params: Any) -> None:  # noqa: ANN401
-        if params.operation.op == "variables":
+        if params.notification.op == "variables":
             variables_operations.append(asdict(params))
             open_event.set()
 
@@ -1715,7 +1758,7 @@ async def test_incremental_graph_text_change(client: LanguageClient) -> None:
         [
             {
                 "notebookUri": "file:///incremental_test.py",
-                "operation": {
+                "notification": {
                     "op": "variables",
                     "variables": [
                         {
@@ -1740,9 +1783,9 @@ async def test_cell_addition(client: LanguageClient) -> None:
     variables_operations = []
     open_event = asyncio.Event()
 
-    @client.feature("marimo/operation")
+    @client.feature("marimo/kernelNotification")
     async def on_operation(params: Any) -> None:  # noqa: ANN401
-        if params.operation.op == "variables":
+        if params.notification.op == "variables":
             variables_operations.append(asdict(params))
             open_event.set()
 
@@ -1777,7 +1820,7 @@ async def test_cell_addition(client: LanguageClient) -> None:
         [
             {
                 "notebookUri": "file:///addition_test.py",
-                "operation": {
+                "notification": {
                     "op": "variables",
                     "variables": [
                         {
@@ -1845,7 +1888,7 @@ async def test_cell_addition(client: LanguageClient) -> None:
         [
             {
                 "notebookUri": "file:///addition_test.py",
-                "operation": {
+                "notification": {
                     "op": "variables",
                     "variables": [
                         {
@@ -1858,7 +1901,7 @@ async def test_cell_addition(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///addition_test.py",
-                "operation": {
+                "notification": {
                     "op": "variables",
                     "variables": [
                         {
@@ -1912,11 +1955,11 @@ async def test_scratchpad_execution(client: LanguageClient) -> None:
     scratch_completion_event = asyncio.Event()
     waiting_for_scratch = False
 
-    @client.feature("marimo/operation")
+    @client.feature("marimo/kernelNotification")
     async def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
         nonlocal waiting_for_scratch
         msg = asdict(params)
-        op = msg.get("operation", {})
+        op = msg.get("notification", {})
 
         # Handle cell completion (kernel startup)
         if op.get("op") == "completed-run" and not waiting_for_scratch:
@@ -1986,11 +2029,13 @@ y\
     )
 
     await asyncio.wait_for(scratch_completion_event.wait(), timeout=5.0)
+    assert_one_kernel_session(scratch_messages)
     assert scratch_messages == snapshot(
         [
             {
                 "notebookUri": "file:///scratch_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "__scratch__",
                     "output": None,
@@ -2003,7 +2048,8 @@ y\
             },
             {
                 "notebookUri": "file:///scratch_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "__scratch__",
                     "output": None,
@@ -2016,7 +2062,8 @@ y\
             },
             {
                 "notebookUri": "file:///scratch_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "__scratch__",
                     "output": {
@@ -2034,7 +2081,8 @@ y\
             },
             {
                 "notebookUri": "file:///scratch_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "__scratch__",
                     "output": None,
@@ -2052,7 +2100,8 @@ y\
             },
             {
                 "notebookUri": "file:///scratch_test.py",
-                "operation": {
+                "sessionId": IsUUID(4),
+                "notification": {
                     "op": "cell-op",
                     "cell_id": "__scratch__",
                     "output": None,
@@ -2106,10 +2155,10 @@ async def test_scratchpad_creates_session_when_missing(
     scratch_messages: list[dict] = []
     scratch_done = asyncio.Event()
 
-    @client.feature("marimo/operation")
+    @client.feature("marimo/kernelNotification")
     async def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
         msg = asdict(params)
-        op = msg.get("operation", {})
+        op = msg.get("notification", {})
         if op.get("op") == "cell-op" and op.get("cell_id") == "__scratch__":
             scratch_messages.append(msg)
             if op.get("status") == "idle":
@@ -2138,9 +2187,9 @@ async def test_scratchpad_creates_session_when_missing(
     await asyncio.wait_for(scratch_done.wait(), timeout=10.0)
 
     stdout = "".join(
-        op["operation"]["console"]["data"]
+        op["notification"]["console"]["data"]
         for op in scratch_messages
-        if isinstance(op["operation"].get("console"), dict)
-        and op["operation"]["console"].get("channel") == "stdout"
+        if isinstance(op["notification"].get("console"), dict)
+        and op["notification"]["console"].get("channel") == "stdout"
     )
     assert stdout == snapshot("from new session\n")

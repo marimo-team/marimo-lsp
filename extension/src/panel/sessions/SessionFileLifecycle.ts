@@ -1,9 +1,9 @@
 import { Effect, Layer, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
 
+import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { NotebookIdFromString } from "../../schemas/MarimoNotebookDocument.ts";
-import { SessionsService } from "./SessionsService.ts";
 
 const decodeNotebookId = Schema.decodeUnknownEffect(NotebookIdFromString);
 
@@ -57,7 +57,7 @@ export function containsNotebookUri(
 export const SessionFileLifecycleLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const sessions = yield* SessionsService;
+    const runtime = yield* NotebookRuntime;
     const deletedWhileOpen = new Set<string>();
 
     yield* Effect.forkScoped(
@@ -67,17 +67,20 @@ export const SessionFileLifecycleLive = Layer.effectDiscard(
             event.files,
             ({ oldUri, newUri }) =>
               Effect.gen(function* () {
-                const live = yield* sessions.get;
+                const live = yield* runtime.getRuntimeSessions;
                 for (const session of live) {
                   const rebased = rebaseNotebookUri(
-                    code.Uri.parse(session.notebookUri),
+                    code.Uri.parse(session.notebookId),
                     oldUri,
                     newUri,
                   );
                   if (rebased === undefined) continue;
                   const newNotebookUri = yield* decodeNotebookId(rebased);
-                  yield* sessions.move(session.notebookUri, newNotebookUri);
-                  if (deletedWhileOpen.delete(session.notebookUri)) {
+                  yield* runtime.moveSession(
+                    session.notebookId,
+                    newNotebookUri,
+                  );
+                  if (deletedWhileOpen.delete(session.notebookId)) {
                     deletedWhileOpen.add(newNotebookUri);
                   }
                 }
@@ -95,13 +98,13 @@ export const SessionFileLifecycleLive = Layer.effectDiscard(
             event.files,
             (uri) =>
               Effect.gen(function* () {
-                const live = yield* sessions.get;
+                const live = yield* runtime.getRuntimeSessions;
                 const open = yield* code.workspace.getNotebookDocuments;
                 for (const session of live) {
                   if (
                     !containsNotebookUri(
                       uri,
-                      code.Uri.parse(session.notebookUri),
+                      code.Uri.parse(session.notebookId),
                     )
                   ) {
                     continue;
@@ -109,13 +112,13 @@ export const SessionFileLifecycleLive = Layer.effectDiscard(
                   if (
                     open.some(
                       (document) =>
-                        document.uri.toString() === session.notebookUri,
+                        document.uri.toString() === session.notebookId,
                     )
                   ) {
-                    deletedWhileOpen.add(session.notebookUri);
+                    deletedWhileOpen.add(session.notebookId);
                     continue;
                   }
-                  yield* sessions.shutdown(session.notebookUri);
+                  yield* runtime.forNotebook(session.notebookId).close;
                 }
               }).pipe(Effect.ignore),
             { discard: true },
@@ -131,7 +134,7 @@ export const SessionFileLifecycleLive = Layer.effectDiscard(
             const uri = document.uri.toString();
             if (!deletedWhileOpen.delete(uri)) return;
             const notebookUri = yield* decodeNotebookId(uri);
-            yield* sessions.shutdown(notebookUri);
+            yield* runtime.forNotebook(notebookUri).close;
           }).pipe(Effect.ignore),
         ),
       ),

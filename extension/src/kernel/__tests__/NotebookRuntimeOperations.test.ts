@@ -25,14 +25,13 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
-import {
-  NotebookRuntime,
-  processRuntimeOperations,
-} from "../../kernel/NotebookRuntime.ts";
+import { makeNotebookExecutor } from "../../kernel/NotebookExecutor.ts";
+import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { PythonController } from "../../kernel/PythonController.ts";
 import { VsCodeCellDrive } from "../../kernel/VsCodeCellDrive.ts";
 import {
   cellId,
+  kernelSessionId,
   notebookId,
   variableName,
 } from "../../lib/__tests__/branded.ts";
@@ -45,13 +44,25 @@ import {
   type NotebookId,
 } from "../../schemas/MarimoNotebookDocument.ts";
 import * as Api from "../../schemas/Models.gen.ts";
+import type { KernelSessionId } from "../../schemas/Models.gen.ts";
 import type {
   CellOperationNotification,
+  DocumentAnalysis,
+  KernelNotification,
   MarimoApiCall,
-  MarimoLspNotificationOf,
+  MarimoSessionsChanged,
 } from "../../types.ts";
 
-const withTestCtx = Effect.fn(function* () {
+const ACTIVE_SESSION_ID = kernelSessionId(
+  "00000000-0000-4000-8000-000000000001",
+);
+const REPLACEMENT_SESSION_ID = kernelSessionId(
+  "00000000-0000-4000-8000-000000000002",
+);
+
+const withTestCtx = Effect.fn(function* (
+  activeSessionId: KernelSessionId = ACTIVE_SESSION_ID,
+) {
   // Controllable showInputBox via Queue
   const inputQueue = yield* Queue.unbounded<Option.Option<string>>();
   const inputRequested = yield* Latch.make();
@@ -62,8 +73,8 @@ const withTestCtx = Effect.fn(function* () {
   );
 
   // PubSub to push operations into NotebookRuntime
-  const operationsPubSub =
-    yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
+  const operationsPubSub = yield* PubSub.unbounded<KernelNotification>();
+  const documentAnalysisPubSub = yield* PubSub.unbounded<DocumentAnalysis>();
 
   const editor = TestVsCode.makeNotebookEditor(
     NodePath.join(process.cwd(), "notebook_mo.py"),
@@ -85,6 +96,24 @@ const withTestCtx = Effect.fn(function* () {
 
   const notebook = MarimoNotebookDocument.from(editor.notebook);
   const notebookUri = notebook.id;
+  const serverSessions = new Map<
+    NotebookId,
+    MarimoSessionsChanged["sessions"][number]
+  >([
+    [
+      notebookUri,
+      {
+        sessionId: activeSessionId,
+        notebookUri,
+        filename: "notebook_mo.py",
+        executable: "/usr/bin/python3",
+        workingDirectory: process.cwd(),
+        startedAt: 1,
+        status: "idle",
+        attached: true,
+      },
+    ],
+  ]);
 
   const vscode = yield* TestVsCode.make({
     initialDocuments: [editor.notebook],
@@ -128,12 +157,44 @@ const withTestCtx = Effect.fn(function* () {
     Layer.provide(
       makeTestMarimoClient({
         execute(request) {
-          return SubscriptionRef.update(executions, (current) => [
-            ...current,
-            request,
-          ]).pipe(Effect.as(null));
+          return Effect.gen(function* () {
+            yield* SubscriptionRef.update(executions, (current) => [
+              ...current,
+              request,
+            ]);
+            if (
+              request.method === "execute-scratchpad" ||
+              request.method === "execute-cells"
+            ) {
+              const id = notebookId(request.params.notebookUri);
+              serverSessions.set(id, {
+                sessionId: activeSessionId,
+                notebookUri: id,
+                filename: NodePath.basename(request.params.notebookUri),
+                executable: request.params.executable,
+                workingDirectory: request.params.workingDirectory,
+                startedAt: 1,
+                status: "idle",
+                attached: true,
+              });
+            }
+            if (request.method === "restart-session") {
+              const id = notebookId(request.params.notebookUri);
+              const current = serverSessions.get(id);
+              if (current !== undefined) {
+                serverSessions.set(id, {
+                  ...current,
+                  sessionId: REPLACEMENT_SESSION_ID,
+                });
+              }
+            }
+            return request.method === "list-sessions"
+              ? { sessions: [...serverSessions.values()] }
+              : null;
+          });
         },
-        operations: Stream.fromPubSub(operationsPubSub),
+        kernelNotifications: Stream.fromPubSub(operationsPubSub),
+        documentAnalysis: Stream.fromPubSub(documentAnalysisPubSub),
       }),
     ),
     Layer.provide(TestTelemetryLive),
@@ -160,6 +221,7 @@ const withTestCtx = Effect.fn(function* () {
     inputQueue,
     inputRequested,
     operationsPubSub,
+    documentAnalysisPubSub,
   };
 });
 
@@ -167,10 +229,11 @@ function makeIdleCellOperation(
   notebookUri: NotebookId,
   cid: string,
   overrides: Partial<CellOperationNotification> = {},
-): MarimoLspNotificationOf<"marimo/operation"> {
+): KernelNotification {
   return {
     notebookUri,
-    operation: {
+    sessionId: ACTIVE_SESSION_ID,
+    notification: {
       op: "cell-op" as const,
       cell_id: cellId(cid),
       status: "idle",
@@ -183,50 +246,32 @@ describe("NotebookRuntime operation processing", () => {
   it.effect(
     "processes every queued notebook operation in order",
     Effect.fn(function* () {
-      const source =
-        yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
+      const executor = yield* makeNotebookExecutor<never>();
       const firstStarted = yield* Latch.make();
       const releaseFirst = yield* Latch.make();
       const latestProcessed = yield* Latch.make();
       const processed = yield* Ref.make<ReadonlyArray<string | undefined>>([]);
       const notebook = notebookId("notebook");
 
-      const fiber = yield* processRuntimeOperations(
-        Stream.fromPubSub(source),
-        Effect.fn(function* ({ operation }) {
-          assert(operation.op === "cell-op");
-          yield* Ref.update(processed, (items) => [
-            ...items,
-            operation.run_id ?? undefined,
-          ]);
-          if (operation.run_id === "one") {
+      const process = (runId: string) =>
+        Effect.gen(function* () {
+          yield* Ref.update(processed, (items) => [...items, runId]);
+          if (runId === "one") {
             yield* firstStarted.open;
             yield* releaseFirst.await;
           }
-          if (operation.run_id === "three") {
+          if (runId === "three") {
             yield* latestProcessed.open;
           }
-        }),
-      ).pipe(Effect.forkChild);
-      yield* TestClock.adjust("1 millis");
+        });
 
-      yield* PubSub.publish(
-        source,
-        makeIdleCellOperation(notebook, "cell", { run_id: "one" }),
-      );
+      yield* executor.post(notebook, process("one"));
       yield* firstStarted.await;
-      yield* PubSub.publish(
-        source,
-        makeIdleCellOperation(notebook, "cell", { run_id: "two" }),
-      );
-      yield* PubSub.publish(
-        source,
-        makeIdleCellOperation(notebook, "cell", { run_id: "three" }),
-      );
+      yield* executor.post(notebook, process("two"));
+      yield* executor.post(notebook, process("three"));
 
       yield* releaseFirst.open;
       yield* latestProcessed.await;
-      yield* Fiber.interrupt(fiber);
 
       assert.deepStrictEqual(yield* Ref.get(processed), [
         "one",
@@ -239,65 +284,36 @@ describe("NotebookRuntime operation processing", () => {
   it.effect(
     "processes a state-only cell operation after its terminal output",
     Effect.fn(function* () {
-      const source =
-        yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
+      const executor = yield* makeNotebookExecutor<never>();
       const blockerStarted = yield* Latch.make();
       const releaseBlocker = yield* Latch.make();
       const trailerProcessed = yield* Latch.make();
       const processed = yield* Ref.make<ReadonlyArray<string>>([]);
       const notebook = notebookId("notebook");
 
-      const fiber = yield* processRuntimeOperations(
-        Stream.fromPubSub(source),
-        Effect.fn(function* ({ operation }) {
-          assert(operation.op === "cell-op");
-          const label =
-            operation.serialization ?? operation.run_id ?? "unlabelled";
+      const process = (label: string) =>
+        Effect.gen(function* () {
           yield* Ref.update(processed, (items) => [...items, label]);
           if (label === "blocker") {
             yield* blockerStarted.open;
             yield* releaseBlocker.await;
           }
           if (label === "serialization") yield* trailerProcessed.open;
-        }),
-      ).pipe(Effect.forkChild);
-      yield* TestClock.adjust("1 millis");
+        });
 
       // Occupy the worker so the next two operations arrive as one batch.
-      yield* PubSub.publish(
-        source,
-        makeIdleCellOperation(notebook, "cell", { run_id: "blocker" }),
-      );
+      yield* executor.post(notebook, process("blocker"));
       yield* blockerStarted.await;
 
       // The kernel's terminal op for the run, carrying the output it produced.
-      yield* PubSub.publish(
-        source,
-        makeIdleCellOperation(notebook, "cell", {
-          run_id: "settle",
-          output: {
-            mimetype: "text/plain",
-            channel: "output",
-            data: "42",
-            timestamp: 0,
-          },
-        }),
-      );
+      yield* executor.post(notebook, process("settle"));
       // Edit mode appends `render_toplevel_defs` after `_set_status_idle`, so a
       // cell defining a top-level function or class emits this payload-less
       // hint right behind the settle op. It must not take the render slot.
-      yield* PubSub.publish(source, {
-        notebookUri: notebook,
-        operation: {
-          op: "cell-op" as const,
-          cell_id: cellId("cell"),
-          serialization: "serialization",
-        },
-      });
+      yield* executor.post(notebook, process("serialization"));
 
       yield* releaseBlocker.open;
       yield* trailerProcessed.await;
-      yield* Fiber.interrupt(fiber);
 
       assert.deepStrictEqual(yield* Ref.get(processed), [
         "blocker",
@@ -310,8 +326,7 @@ describe("NotebookRuntime operation processing", () => {
   it.effect(
     "processes separate notebooks independently",
     Effect.fn(function* () {
-      const source =
-        yield* PubSub.unbounded<MarimoLspNotificationOf<"marimo/operation">>();
+      const executor = yield* makeNotebookExecutor<never>();
       const firstStarted = yield* Latch.make();
       const releaseFirst = yield* Latch.make();
       const otherProcessed = yield* Latch.make();
@@ -320,12 +335,8 @@ describe("NotebookRuntime operation processing", () => {
       const notebookA = notebookId("notebook-a");
       const notebookB = notebookId("notebook-b");
 
-      const fiber = yield* processRuntimeOperations(
-        Stream.fromPubSub(source),
-        Effect.fn(function* ({ operation }) {
-          assert(operation.op === "cell-op");
-          const runId = operation.run_id;
-          assert(typeof runId === "string");
+      const process = (runId: string) =>
+        Effect.gen(function* () {
           if (runId === "a-1") {
             yield* firstStarted.open;
             yield* releaseFirst.await;
@@ -333,30 +344,18 @@ describe("NotebookRuntime operation processing", () => {
           yield* Ref.update(processed, (items) => [...items, runId]);
           if (runId === "b-1") yield* otherProcessed.open;
           if (runId === "a-2") yield* secondProcessed.open;
-        }),
-      ).pipe(Effect.forkChild);
-      yield* TestClock.adjust("1 millis");
+        });
 
-      yield* PubSub.publish(
-        source,
-        makeIdleCellOperation(notebookA, "cell", { run_id: "a-1" }),
-      );
+      yield* executor.post(notebookA, process("a-1"));
       yield* firstStarted.await;
-      yield* PubSub.publish(
-        source,
-        makeIdleCellOperation(notebookA, "cell", { run_id: "a-2" }),
-      );
-      yield* PubSub.publish(
-        source,
-        makeIdleCellOperation(notebookB, "cell", { run_id: "b-1" }),
-      );
+      yield* executor.post(notebookA, process("a-2"));
+      yield* executor.post(notebookB, process("b-1"));
 
       yield* otherProcessed.await;
       assert.deepStrictEqual(yield* Ref.get(processed), ["b-1"]);
 
       yield* releaseFirst.open;
       yield* secondProcessed.await;
-      yield* Fiber.interrupt(fiber);
 
       assert.deepStrictEqual(yield* Ref.get(processed), ["b-1", "a-1", "a-2"]);
     }),
@@ -398,6 +397,7 @@ describe("NotebookRuntime cell identity", () => {
           method: "delete-cell",
           params: {
             notebookUri: ctx.notebookUri,
+            sessionId: ACTIVE_SESSION_ID,
             inner: { cellId: "cell-1" },
           },
         });
@@ -480,15 +480,21 @@ describe("NotebookRuntime stdin", () => {
 
         // Provide the input (unblocks showInputBox)
         yield* Queue.offer(ctx.inputQueue, Option.some("foo"));
-        yield* TestClock.adjust("1 millis");
 
         // Assert executeCommand was called with send-stdin
-        const cmds = yield* SubscriptionRef.get(ctx.executions);
+        const cmds = yield* SubscriptionRef.get(ctx.executions).pipe(
+          Effect.filterOrFail(
+            (calls) => calls.some((call) => call.method === "send-stdin"),
+            () => "stdin response not sent" as const,
+          ),
+          Effect.eventually,
+        );
         const stdinCmd = cmds.find((c) => c.method === "send-stdin");
         expect(stdinCmd).toMatchObject({
           method: "send-stdin",
           params: {
             notebookUri: ctx.notebookUri,
+            sessionId: ACTIVE_SESSION_ID,
             inner: { text: "foo" },
           },
         });
@@ -526,10 +532,15 @@ describe("NotebookRuntime stdin", () => {
 
         // User cancels the input box
         yield* Queue.offer(ctx.inputQueue, Option.none());
-        yield* TestClock.adjust("1 millis");
+        const cmds = yield* SubscriptionRef.changes(ctx.executions).pipe(
+          Stream.filter((calls) =>
+            calls.some((call) => call.method === "interrupt"),
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
 
         // No send-stdin command should have been sent
-        const cmds = yield* SubscriptionRef.get(ctx.executions);
         const stdinCmd = cmds.find((c) => c.method === "send-stdin");
         expect(stdinCmd).toBeUndefined();
 
@@ -539,7 +550,7 @@ describe("NotebookRuntime stdin", () => {
           method: "interrupt",
           params: {
             notebookUri: ctx.notebookUri,
-            inner: {},
+            inner: { sessionId: ACTIVE_SESSION_ID },
           },
         });
       }).pipe(Effect.provide(ctx.layer));
@@ -574,6 +585,46 @@ describe("NotebookRuntime stdin", () => {
 
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
         yield* TestClock.adjust("1 millis");
+        yield* Queue.offer(ctx.inputQueue, Option.some("stale response"));
+        yield* TestClock.adjust("1 millis");
+
+        expect(
+          (yield* SubscriptionRef.get(ctx.executions)).some(
+            (command) => command.method === "send-stdin",
+          ),
+        ).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "does not send an old prompt response to a replacement kernel",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime;
+        const cellId = Option.getOrThrow(ctx.notebook.cellAt(0).id);
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* TestClock.adjust("1 millis");
+
+        yield* PubSub.publish(
+          ctx.operationsPubSub,
+          makeIdleCellOperation(ctx.notebookUri, cellId, {
+            status: "running",
+            console: [
+              {
+                channel: "stdin",
+                data: "Enter name: ",
+                mimetype: "text/plain",
+                timestamp: 0,
+              },
+            ],
+          }),
+        );
+        yield* ctx.inputRequested.await;
+
+        yield* runtime.forNotebook(ctx.notebookUri).restart;
         yield* Queue.offer(ctx.inputQueue, Option.some("stale response"));
         yield* TestClock.adjust("1 millis");
 
@@ -634,7 +685,8 @@ describe("NotebookRuntime scratch stream", () => {
 
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,
-          operation: {
+          sessionId: ACTIVE_SESSION_ID,
+          notification: {
             op: "completed-run",
             run_id: firstCommand.inner.runId,
           },
@@ -658,7 +710,8 @@ describe("NotebookRuntime scratch stream", () => {
 
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,
-          operation: {
+          sessionId: ACTIVE_SESSION_ID,
+          notification: {
             op: "completed-run",
             run_id: secondCommand.inner.runId,
           },
@@ -682,7 +735,7 @@ describe("NotebookRuntime scratch stream", () => {
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime;
         yield* ctx.vscode.addNotebookDocument(otherEditor.notebook);
-        // No drain needed before the open: NotebookSessions acquires its
+        // No drain needed before the open: the document-session service acquires its
         // lifecycle subscription before its layer finishes building, so an
         // open published this early is delivered rather than dropped.
         yield* ctx.vscode.openNotebook(otherEditor.notebook);
@@ -741,7 +794,8 @@ describe("NotebookRuntime scratch stream", () => {
         for (const command of commands) {
           yield* PubSub.publish(ctx.operationsPubSub, {
             notebookUri: command.notebookUri,
-            operation: {
+            sessionId: ACTIVE_SESSION_ID,
+            notification: {
               op: "completed-run",
               run_id: command.runId,
             },
@@ -840,7 +894,8 @@ describe("NotebookRuntime scratch stream", () => {
         // Our completed-run ends the stream (inclusive; filtered back out).
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,
-          operation: {
+          sessionId: ACTIVE_SESSION_ID,
+          notification: {
             op: "completed-run",
             run_id: runId,
           },
@@ -946,7 +1001,8 @@ describe("NotebookRuntime scratch stream", () => {
         // Our completed-run ends the stream normally.
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,
-          operation: { op: "completed-run", run_id: runId },
+          sessionId: ACTIVE_SESSION_ID,
+          notification: { op: "completed-run", run_id: runId },
         });
 
         yield* Fiber.join(streamFiber);
@@ -961,6 +1017,43 @@ describe("NotebookRuntime scratch stream", () => {
 });
 
 describe("NotebookRuntime state eviction", () => {
+  it.effect(
+    "ignores operations from a replaced kernel session",
+    Effect.fn(function* () {
+      const activeSessionId = ACTIVE_SESSION_ID;
+      const staleSessionId = kernelSessionId(
+        "00000000-0000-4000-8000-000000000002",
+      );
+      const ctx = yield* withTestCtx(activeSessionId);
+
+      yield* Effect.gen(function* () {
+        yield* NotebookRuntime;
+        const variables = yield* VariablesService;
+        yield* TestClock.adjust("1 millis");
+
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          sessionId: staleSessionId,
+          notification: { op: "variables", variables: [] },
+        });
+        yield* TestClock.adjust("10 millis");
+        expect(
+          Option.isNone(yield* variables.getVariables(ctx.notebookUri)),
+        ).toBe(true);
+
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          sessionId: activeSessionId,
+          notification: { op: "variables", variables: [] },
+        });
+        yield* TestClock.adjust("10 millis");
+        expect(
+          Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
+        ).toBe(true);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
   it.effect(
     "evicts variables and datasource state when a notebook closes",
     Effect.fn(function* () {
@@ -979,9 +1072,9 @@ describe("NotebookRuntime state eviction", () => {
         // can be published before the pipeline subscribes.
         yield* TestClock.adjust("1 millis");
 
-        yield* PubSub.publish(ctx.operationsPubSub, {
+        yield* PubSub.publish(ctx.documentAnalysisPubSub, {
           notebookUri: ctx.notebookUri,
-          operation: {
+          analysis: {
             op: "variables",
             variables: [
               {
@@ -994,9 +1087,20 @@ describe("NotebookRuntime state eviction", () => {
         });
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,
-          operation: { op: "datasets", tables: [] },
+          sessionId: ACTIVE_SESSION_ID,
+          notification: { op: "datasets", tables: [] },
         });
-        yield* TestClock.adjust("10 millis");
+        yield* Effect.all([
+          variables.getVariables(ctx.notebookUri),
+          datasources.getDatasets(ctx.notebookUri),
+        ]).pipe(
+          Effect.filterOrFail(
+            ([currentVariables, currentDatasets]) =>
+              Option.isSome(currentVariables) && Option.isSome(currentDatasets),
+            () => "runtime projections not settled" as const,
+          ),
+          Effect.eventually,
+        );
 
         expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
@@ -1017,9 +1121,9 @@ describe("NotebookRuntime state eviction", () => {
 
         // Notifications already queued, or delivered late by the old kernel
         // session, must not recreate state after eviction.
-        yield* PubSub.publish(ctx.operationsPubSub, {
+        yield* PubSub.publish(ctx.documentAnalysisPubSub, {
           notebookUri: ctx.notebookUri,
-          operation: {
+          analysis: {
             op: "variables",
             variables: [
               {
@@ -1042,9 +1146,9 @@ describe("NotebookRuntime state eviction", () => {
         );
         yield* ctx.vscode.openNotebook(replacement);
         yield* TestClock.adjust("10 millis");
-        yield* PubSub.publish(ctx.operationsPubSub, {
+        yield* PubSub.publish(ctx.documentAnalysisPubSub, {
           notebookUri: ctx.notebookUri,
-          operation: { op: "variables", variables: [] },
+          analysis: { op: "variables", variables: [] },
         });
         yield* TestClock.adjust("10 millis");
         expect(

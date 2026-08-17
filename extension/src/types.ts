@@ -1,10 +1,7 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
 import type * as lsp from "vscode-languageclient/node";
 
-import type {
-  NotebookCellId,
-  NotebookId,
-} from "./schemas/MarimoNotebookDocument.ts";
+import type { NotebookCellId } from "./schemas/MarimoNotebookDocument.ts";
 import type * as Gen from "./schemas/Models.gen.ts";
 
 export type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
@@ -121,7 +118,8 @@ export type RendererReceiveMessage =
 
 // Language server -> client
 type MarimoLspNotificationMap = {
-  "marimo/operation": { notebookUri: NotebookId; operation: Notification };
+  "marimo/kernelNotification": Gen.KernelNotification;
+  "marimo/documentAnalysis": Gen.DocumentAnalysis;
   "marimo/sessionsChanged": SessionsSnapshot;
   "window/logMessage": lsp.LogMessageParams;
 };
@@ -130,7 +128,10 @@ export type MarimoLspNotificationOf<K extends MarimoLspNotification> = {
   [C in MarimoLspNotification]: MarimoLspNotificationMap[C];
 }[K];
 
-export type MarimoOperation = MarimoLspNotificationOf<"marimo/operation">;
+export type KernelNotification =
+  MarimoLspNotificationOf<"marimo/kernelNotification">;
+export type DocumentAnalysis =
+  MarimoLspNotificationOf<"marimo/documentAnalysis">;
 export type MarimoSessionsChanged =
   MarimoLspNotificationOf<"marimo/sessionsChanged">;
 

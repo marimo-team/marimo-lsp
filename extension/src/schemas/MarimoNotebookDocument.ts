@@ -1,4 +1,4 @@
-import { Brand, Data, Effect, Option, Schema } from "effect";
+import { Data, Effect, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
@@ -10,10 +10,10 @@ import type {
 } from "../types.ts";
 import * as Api from "./Models.gen.ts";
 
-export type NotebookId = Brand.Branded<string, "NotebookId">;
+export type NotebookId = Api.NotebookId;
 export type NotebookCellId = CellId;
+const makeNotebookId = Schema.decodeUnknownSync(Api.NotebookIdFromString);
 
-const NotebookId = Brand.nominal<NotebookId>();
 // SAFETY: brand smart constructors for TypedString<"CellId"> / TypedString<"VariableName">
 // (openapi codegen types, not Effect Brand). No runtime check — callers pass
 // strings originating from the LSP's typed responses.
@@ -63,9 +63,7 @@ function asRecord(value: unknown): Record<string, unknown> {
  * configurations, serialized state). Prefer obtaining NotebookId values
  * from {@link MarimoNotebookDocument.id} in normal code paths.
  */
-export const NotebookIdFromString = Schema.String.pipe(
-  Schema.fromBrand("NotebookId", NotebookId),
-);
+export const NotebookIdFromString = Api.NotebookIdFromString;
 
 export function extractCellIdFromCellMessage(msg: CellOperationNotification) {
   return NotebookCellId(msg.cell_id);
@@ -381,7 +379,7 @@ export class MarimoNotebookDocument {
   get id() {
     // The LSP server keys notebook documents by the URI from notebookDocument/didOpen,
     // which VS Code sends without percent-encoding. We should match that form here.
-    return NotebookId(this.#raw.uri.toString(/* skipEncoding */ true));
+    return makeNotebookId(this.#raw.uri.toString(/* skipEncoding */ true));
   }
 
   get header() {

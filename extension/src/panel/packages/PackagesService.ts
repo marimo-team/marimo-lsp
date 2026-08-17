@@ -4,6 +4,7 @@ import {
   HashMap,
   Layer,
   Option,
+  Stream,
   SubscriptionRef,
 } from "effect";
 
@@ -12,9 +13,11 @@ import {
   NotebookRuntime,
 } from "../../kernel/NotebookRuntime.ts";
 import { MarimoClient } from "../../lsp/MarimoClient.ts";
+import {
+  type NotebookDocumentSession,
+  NotebookDocumentSessions,
+} from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
-import { makeNotebookSessions } from "../../notebook/NotebookSessions.ts";
-import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type {
@@ -53,24 +56,52 @@ export class PackagesService extends Context.Service<PackagesService>()(
       const marimo = yield* MarimoClient;
       const notebooks = yield* NotebookRuntime;
       const editors = yield* NotebookEditorRegistry;
-      const code = yield* VsCode;
+      const documentSessions = yield* NotebookDocumentSessions;
 
       // Track dependency trees: NotebookUri -> DependencyTreeState
       const dependencyTreesRef = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, DependencyTreeState>(),
       );
-      const clearCache = (notebookUri: NotebookId) =>
-        Effect.gen(function* () {
-          yield* SubscriptionRef.update(
-            dependencyTreesRef,
-            HashMap.remove(notebookUri),
-          );
-          yield* Effect.logTrace("Cleared package data").pipe(
-            Effect.annotateLogs({ notebookUri }),
-          );
-        });
+      const cacheOwners = new Map<NotebookId, NotebookDocumentSession>();
+      const cacheGenerations = new Map<NotebookId, symbol>();
+      const generationFor = (notebookUri: NotebookId) => {
+        const existing = cacheGenerations.get(notebookUri);
+        if (existing !== undefined) return existing;
+        const generation = Symbol("package cache generation");
+        cacheGenerations.set(notebookUri, generation);
+        return generation;
+      };
+      const clearCache = (
+        notebookUri: NotebookId,
+        expectedOwner?: NotebookDocumentSession,
+      ) =>
+        SubscriptionRef.update(dependencyTreesRef, (map) => {
+          if (
+            expectedOwner !== undefined &&
+            cacheOwners.get(notebookUri) !== expectedOwner
+          ) {
+            return map;
+          }
+          cacheOwners.delete(notebookUri);
+          cacheGenerations.set(notebookUri, Symbol("package cache generation"));
+          return HashMap.remove(map, notebookUri);
+        }).pipe(
+          Effect.tap(() =>
+            Effect.logTrace("Cleared package data").pipe(
+              Effect.annotateLogs({ notebookUri }),
+            ),
+          ),
+        );
 
-      const sessions = yield* makeNotebookSessions(code, clearCache);
+      yield* Effect.forkScoped(
+        documentSessions.changes.pipe(
+          Stream.runForEach((change) =>
+            change._tag === "Ended"
+              ? clearCache(change.session.notebookId, change.session)
+              : Effect.void,
+          ),
+        ),
+      );
 
       return {
         /**
@@ -89,15 +120,24 @@ export class PackagesService extends Context.Service<PackagesService>()(
          */
         fetchDependencyTree(notebookUri: NotebookId) {
           return Effect.gen(function* () {
-            const session = yield* sessions.sessionFor(notebookUri);
+            const session = documentSessions.current(notebookUri);
+            const generation = generationFor(notebookUri);
             const updateIfCurrent = (
               update: (
                 map: HashMap.HashMap<NotebookId, DependencyTreeState>,
               ) => HashMap.HashMap<NotebookId, DependencyTreeState>,
             ) =>
-              sessions.current(notebookUri) === session
-                ? SubscriptionRef.update(dependencyTreesRef, update)
-                : Effect.void;
+              SubscriptionRef.update(dependencyTreesRef, (map) => {
+                if (
+                  session === undefined ||
+                  documentSessions.current(notebookUri) !== session ||
+                  generationFor(notebookUri) !== generation
+                ) {
+                  return map;
+                }
+                cacheOwners.set(notebookUri, session);
+                return update(map);
+              });
 
             // Check if we already have a cached tree
             const cached = yield* SubscriptionRef.get(dependencyTreesRef);
@@ -106,6 +146,8 @@ export class PackagesService extends Context.Service<PackagesService>()(
             // If we have a tree and it's not in error state, re-use it
             if (
               Option.isSome(existing) &&
+              session !== undefined &&
+              cacheOwners.get(notebookUri) === session &&
               existing.value.tree &&
               !existing.value.error
             ) {
@@ -250,14 +292,18 @@ export class PackagesService extends Context.Service<PackagesService>()(
                 ),
               );
 
-            if (sessions.current(notebookUri) === session) {
-              yield* SubscriptionRef.update(dependencyTreesRef, (map) =>
-                HashMap.set(map, notebookUri, {
-                  tree: rawResult.tree,
-                  loading: false,
-                  error: null,
-                }),
-              );
+            yield* updateIfCurrent((map) =>
+              HashMap.set(map, notebookUri, {
+                tree: rawResult.tree,
+                loading: false,
+                error: null,
+              }),
+            );
+            if (
+              session !== undefined &&
+              documentSessions.current(notebookUri) === session &&
+              generationFor(notebookUri) === generation
+            ) {
               yield* Effect.logTrace("Cached dependency tree").pipe(
                 Effect.annotateLogs({
                   notebookUri,
@@ -273,7 +319,7 @@ export class PackagesService extends Context.Service<PackagesService>()(
         /**
          * Clear all package data for a notebook
          */
-        clearNotebook: sessions.invalidate,
+        clearNotebook: (notebookUri: NotebookId) => clearCache(notebookUri),
 
         /**
          * Stream of dependency tree changes.
@@ -286,5 +332,7 @@ export class PackagesService extends Context.Service<PackagesService>()(
     }),
   },
 ) {
-  static readonly layer = Layer.effect(this, this.make);
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(NotebookDocumentSessions.layer),
+  );
 }

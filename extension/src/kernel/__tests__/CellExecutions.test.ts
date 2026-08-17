@@ -2,7 +2,6 @@ import { describe, expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import {
   Context,
-  Deferred,
   Effect,
   Fiber,
   HashSet,
@@ -26,11 +25,13 @@ import {
   type NotebookExecutions,
   WireCellOp,
 } from "../../kernel/CellExecutions.ts";
+import { CellCommand, RunId } from "../../kernel/CellRunReducer.ts";
 import { buildCellOutputs } from "../../kernel/VsCodeCellOutputs.ts";
 import {
   cellId,
   UNSAFE_castForNegativeTest,
 } from "../../lib/__tests__/branded.ts";
+import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -47,6 +48,7 @@ const withTestCtx = Effect.fn(function* (
   const vscode = yield* TestVsCode.make(options);
   const layer = Layer.empty.pipe(
     Layer.merge(CellExecutions.layer),
+    Layer.provideMerge(NotebookDocumentSessions.layer),
     Layer.provide(TestNotebookRuntime),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
@@ -1106,11 +1108,17 @@ describe("NotebookExecutions", () => {
     document: vscode.NotebookDocument,
     getDrive = Effect.succeed(Option.none<Drive>()),
   ) {
-    const invalidated = yield* Deferred.make<void>();
-    const session = { document, invalidated };
-    const notebook = yield* executions.open(session, {
-      getDrive,
-    });
+    yield* Effect.yieldNow;
+    const sessions = yield* NotebookDocumentSessions;
+    const session = sessions.forDocument(document);
+    if (session === undefined) {
+      return yield* Effect.die("Expected an open notebook document session");
+    }
+    const notebook = yield* executions
+      .open(session, {
+        getDrive,
+      })
+      .pipe(Effect.orDie);
     return { notebook, session };
   });
 
@@ -1594,6 +1602,91 @@ describe("NotebookExecutions", () => {
   );
 
   it.effect(
+    "invalidates accepted sources without consulting an editor",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const commands: CellCommand[] = [];
+        const drive: Drive = (_cell, command) =>
+          Effect.sync(() => {
+            commands.push(command);
+          });
+        const { notebook } = yield* openNotebook(
+          executions,
+          editor.notebook,
+          Effect.succeed(Option.some(drive)),
+        );
+        const document = MarimoNotebookDocument.from(editor.notebook);
+        const id = Option.getOrThrow(document.cellAt(0).id);
+
+        yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+
+        yield* executions.invalidate(document.id);
+
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+        expect(commands.at(-1)).toEqual(
+          CellCommand.CloseRun({
+            runId: RunId("run-1"),
+            success: false,
+            at: undefined,
+          }),
+        );
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "forgets a never-run cell's source when the cell is removed",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(executions, editor.notebook);
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+
+        yield* notebook.remove(id);
+        yield* acknowledgeSubmission(notebook, id, "x = 2", "run-1");
+
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
     "rolls back source provenance when submission fails",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
@@ -1900,7 +1993,7 @@ describe("NotebookExecutions", () => {
   );
 
   it.effect(
-    "an old session finalizer cannot close its replacement",
+    "an old document session cannot evict its replacement",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: {
@@ -1921,12 +2014,33 @@ describe("NotebookExecutions", () => {
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
         const first = yield* openNotebook(executions, editor.notebook);
-        const second = yield* openNotebook(executions, editor.notebook);
+        const replacement = TestVsCode.makeNotebookEditor(editor.notebook.uri, {
+          data: {
+            cells: [
+              {
+                kind: 1,
+                value: "x = 2",
+                languageId: "python",
+                metadata: MarimoNotebookCell.createMetadata({
+                  marimoRuntime: { stableId: "cell-1" },
+                }),
+              },
+            ],
+          },
+        });
+        yield* ctx.vscode.openNotebook(replacement.notebook);
+        yield* Effect.yieldNow;
+        const second = yield* openNotebook(executions, replacement.notebook);
         const id = Option.getOrThrow(
-          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+          MarimoNotebookDocument.from(replacement.notebook).cellAt(0).id,
         );
 
-        yield* Deferred.succeed(first.session.invalidated, undefined);
+        const error = yield* executions
+          .open(first.session, { getDrive: Effect.succeed(Option.none()) })
+          .pipe(Effect.flip);
+        expect(error._tag).toBe("NotebookDocumentSessionEndedError");
+
+        yield* ctx.vscode.closeNotebook(editor.notebook);
         yield* Effect.yieldNow;
 
         yield* second.notebook.apply(
@@ -1938,7 +2052,7 @@ describe("NotebookExecutions", () => {
           }),
         );
 
-        expect(executions.find(editor.notebook)).toEqual(
+        expect(executions.find(replacement.notebook)).toEqual(
           Option.some(second.notebook),
         );
       }).pipe(Effect.provide(ctx.layer));

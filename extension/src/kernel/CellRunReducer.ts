@@ -52,6 +52,7 @@ export type Op = Data.TaggedEnum<{
   };
   Update: { readonly next: CellRuntimeState; readonly ephemeralRunId: RunId };
   Interrupt: {};
+  Invalidate: {};
 }>;
 export const Op = Data.taggedEnum<Op>();
 
@@ -160,6 +161,31 @@ export function step(
   readonly commands: ReadonlyArray<CellCommand>;
 } {
   return Op.$match(op, {
+    Invalidate: () => {
+      const runId = activeRunId(entry.phase);
+      const acceptedSource = AcceptedSource.$match(entry.acceptedSource, {
+        Unknown: () => entry.acceptedSource,
+        Invalidated: () => entry.acceptedSource,
+        Accepted: () => AcceptedSource.Invalidated(),
+      });
+      if (runId === undefined) {
+        return {
+          entry: { ...entry, acceptedSource },
+          commands: [],
+        };
+      }
+      return {
+        entry: {
+          ...entry,
+          phase: RunPhase.Completed(),
+          acceptedSource,
+        },
+        commands: [
+          CellCommand.CloseRun({ runId, success: false, at: undefined }),
+        ],
+      };
+    },
+
     Interrupt: () => {
       const runId = activeRunId(entry.phase);
       if (runId === undefined) return { entry, commands: [] };

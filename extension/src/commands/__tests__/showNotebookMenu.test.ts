@@ -52,7 +52,7 @@ const marimoLayer = Layer.succeed(
     restart: Effect.void,
     ...makeMarimoCommands({
       execute: () => Effect.die("not implemented"),
-      operations: Stream.empty,
+      kernelNotifications: Stream.empty,
     }),
   }),
 );

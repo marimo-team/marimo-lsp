@@ -7,6 +7,7 @@ import {
   createTestNotebookDocument,
   createTestNotebookEditor,
   TestVsCode,
+  Uri,
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import {
@@ -66,8 +67,12 @@ const withTestCtx = Effect.fn(function* (
     beforeGetResponse?: (notebookUri: string) => Effect.Effect<void>;
   } = {},
 ) {
-  const vscode = yield* TestVsCode.make();
   const { configStore = new Map<string, MarimoConfig>() } = options;
+  const vscode = yield* TestVsCode.make({
+    initialDocuments: Array.from(configStore.keys(), (uri) =>
+      createTestNotebookDocument(Uri.parse(uri)),
+    ),
+  });
 
   const layer = MarimoConfigurationService.layer.pipe(
     Layer.provide(NotebookEditorRegistry.layer),
@@ -243,7 +248,7 @@ describe("MarimoConfigurationService", () => {
         const doc = createTestNotebookDocument(
           code.Uri.parse(notebookUri, true),
         );
-        yield* ctx.vscode.addNotebookDocument(doc);
+        yield* ctx.vscode.openNotebook(doc);
         // No drain needed: the service's lifecycle subscription is live
         // before its layer finishes building, so the close below cannot
         // outrun it.
@@ -357,7 +362,7 @@ describe("MarimoConfigurationService", () => {
         const doc = createTestNotebookDocument(
           code.Uri.parse(notebookUri, true),
         );
-        yield* ctx.vscode.addNotebookDocument(doc);
+        yield* ctx.vscode.openNotebook(doc);
         yield* ctx.vscode.setActiveNotebookEditor(
           Option.some(createTestNotebookEditor(doc)),
         );
@@ -443,8 +448,8 @@ describe("MarimoConfigurationService", () => {
         );
 
         // Add to workspace
-        yield* ctx.vscode.addNotebookDocument(doc);
-        yield* ctx.vscode.addNotebookDocument(doc2);
+        yield* ctx.vscode.openNotebook(doc);
+        yield* ctx.vscode.openNotebook(doc2);
 
         const stream = service.streamOf(
           (config) => config.runtime?.on_cell_change,
@@ -559,7 +564,7 @@ describe("MarimoConfigurationService", () => {
         const doc = createTestNotebookDocument(
           code.Uri.parse(notebookUri, true),
         );
-        yield* ctx.vscode.addNotebookDocument(doc);
+        yield* ctx.vscode.openNotebook(doc);
         yield* ctx.vscode.setActiveNotebookEditor(
           Option.some(createTestNotebookEditor(doc)),
         );

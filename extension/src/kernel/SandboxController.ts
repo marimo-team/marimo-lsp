@@ -112,9 +112,8 @@ export const createSandboxController = Effect.fn("createSandboxController")(
             Effect.provideService(Uv, uv),
           );
 
-          yield* notebooks
-            .forNotebook(notebook.id)
-            .executeCells(request.value, executable);
+          const documentHandle = yield* notebooks.forDocument(rawNotebook);
+          yield* documentHandle.executeCells(request.value, executable);
         }).pipe(
           // Handle the expected "unsaved notebook" path before logging, so a
           // normal save prompt isn't recorded as an error. (sandboxing only

@@ -19,6 +19,7 @@ from marimo._types.ids import CellId_t, VariableName
 
 from marimo_lsp import _rules
 from marimo_lsp.loggers import get_logger
+from marimo_lsp.models import DocumentAnalysis
 from marimo_lsp.utils import (
     decode_cell_metadata,
     find_text_document,
@@ -72,7 +73,7 @@ class NotebookGraphUpdater:
     Rather than compiling on every keystroke, this class schedules compilation
     after a quiet period. When the timer fires (or ``flush()`` is called), it
     reads the latest cell text from the pygls workspace, compiles any cells
-    whose source changed, and publishes a ``marimo/operation`` notification if
+    whose source changed, and publishes a ``marimo/documentAnalysis`` notification if
     the variable dependency structure changed.
 
     Parameters
@@ -236,9 +237,9 @@ def _publish_variables(
     notebook: lsp.NotebookDocument,
     graph: DirectedGraph,
 ) -> None:
-    """Send a ``marimo/operation`` notification with the current variable state."""
+    """Publish the current document-derived variable analysis."""
     variables = extract_variables(graph)
     server.protocol.notify(
-        "marimo/operation",
-        {"notebookUri": notebook.uri, "operation": asdict(variables)},
+        "marimo/documentAnalysis",
+        asdict(DocumentAnalysis(notebook_uri=notebook.uri, analysis=variables)),
     )

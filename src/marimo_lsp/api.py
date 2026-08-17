@@ -62,6 +62,7 @@ from marimo_lsp.models import (
     GetConfigurationRequest,
     GetConfigurationResponse,
     InterruptRequest,
+    KernelCommand,
     ListPackagesRequest,
     ListPackagesResponse,
     ListSessionsRequest,
@@ -93,9 +94,10 @@ if TYPE_CHECKING:
         PartialMarimoConfig,
         SharingConfig,
     )
+    from marimo._types.ids import SessionId
     from pygls.lsp.server import LanguageServer
 
-    from marimo_lsp.sessions import Sessions
+    from marimo_lsp.sessions import Session, Sessions
 
 
 _APP_CONFIG_FIELD_NAMES = frozenset(
@@ -226,6 +228,26 @@ class SessionNotFoundError(ValueError):
         super().__init__(f"No session found for {notebook_uri}")
 
 
+class KernelSessionMismatchError(ValueError):
+    """Raised when a command targets a replaced kernel session."""
+
+    def __init__(self, notebook_uri: str) -> None:
+        super().__init__(f"Kernel session changed for {notebook_uri}")
+
+
+def _require_kernel_session(
+    ctx: ApiContext,
+    notebook_uri: str,
+    session_id: SessionId,
+) -> Session:
+    session = ctx.sessions.get(notebook_uri)
+    if session is None:
+        raise SessionNotFoundError(notebook_uri)
+    if session.session_id != session_id:
+        raise KernelSessionMismatchError(notebook_uri)
+    return session
+
+
 def _get_display_config(config: MarimoConfig) -> DisplayConfig:
     """Extract the display config from a MarimoConfig.
 
@@ -260,33 +282,30 @@ async def run(
 @marimo_api("update-ui-element")
 async def set_ui_element_value(
     ctx: ApiContext,
-    args: NotebookCommand[UpdateUIElementRequest],
+    args: KernelCommand[UpdateUIElementRequest],
 ) -> None:
     logger.info(f"set_ui_element_value for {args.notebook_uri}")
-    session = ctx.sessions.get(args.notebook_uri)
-    assert session, f"No session in workspace for {args.notebook_uri}"
+    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
 
 
 @marimo_api("set-model-value")
 async def set_model_value(
     ctx: ApiContext,
-    args: NotebookCommand[ModelRequest],
+    args: KernelCommand[ModelRequest],
 ) -> None:
     logger.info(f"set_model_value for {args.notebook_uri}")
-    session = ctx.sessions.get(args.notebook_uri)
-    assert session, f"No session in workspace for {args.notebook_uri}"
+    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
 
 
 @marimo_api("invoke-function")
 async def function_call_request(
     ctx: ApiContext,
-    args: NotebookCommand[InvokeFunctionCommand],
+    args: KernelCommand[InvokeFunctionCommand],
 ) -> None:
     logger.info(f"function_call_request for {args.notebook_uri}")
-    session = ctx.sessions.get(args.notebook_uri)
-    assert session, f"No session in workspace for {args.notebook_uri}"
+    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
     session.put_control_request(args.inner, from_consumer_id=None)
 
 
@@ -304,7 +323,10 @@ async def interrupt(
         )
         return
 
-    session = ctx.sessions.get(args.notebook_uri)
+    session_id = args.inner.session_id
+    if session_id is None:
+        raise KernelSessionMismatchError(args.notebook_uri)
+    session = _require_kernel_session(ctx, args.notebook_uri, session_id)
     if session:
         session.try_interrupt()
         logger.info(f"Interrupt request sent for {args.notebook_uri}")
@@ -315,52 +337,42 @@ async def interrupt(
 @marimo_api("delete-cell")
 async def delete_cell(
     ctx: ApiContext,
-    args: NotebookCommand[DeleteCellRequest],
+    args: KernelCommand[DeleteCellRequest],
 ) -> None:
     logger.info(f"delete_cell for {args.notebook_uri}")
-    session = ctx.sessions.get(args.notebook_uri)
-    if session:
-        session.put_control_request(args.inner.as_command(), from_consumer_id=None)
-        logger.info(f"Delete cell request sent for {args.notebook_uri}")
-    else:
-        logger.warning(f"No session found for {args.notebook_uri}")
+    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
+    session.put_control_request(args.inner.as_command(), from_consumer_id=None)
+    logger.info(f"Delete cell request sent for {args.notebook_uri}")
 
 
 @marimo_api("list-sql-schemas")
 async def list_sql_schemas(
     ctx: ApiContext,
-    args: NotebookCommand[ListSQLSchemasRequest],
+    args: KernelCommand[ListSQLSchemasRequest],
 ) -> None:
     """Request the immediate child schemas at a database path."""
-    session = ctx.sessions.get(args.notebook_uri)
-    if session is None:
-        raise SessionNotFoundError(args.notebook_uri)
+    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
 
 
 @marimo_api("list-sql-tables")
 async def list_sql_tables(
     ctx: ApiContext,
-    args: NotebookCommand[ListSQLTablesRequest],
+    args: KernelCommand[ListSQLTablesRequest],
 ) -> None:
     """Request the tables belonging to a schema path."""
-    session = ctx.sessions.get(args.notebook_uri)
-    if session is None:
-        raise SessionNotFoundError(args.notebook_uri)
+    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
     session.put_control_request(args.inner.as_command(), from_consumer_id=None)
 
 
 @marimo_api("send-stdin")
 async def send_stdin(
     ctx: ApiContext,
-    args: NotebookCommand[StdinRequest],
+    args: KernelCommand[StdinRequest],
 ) -> None:
     logger.info(f"send_stdin for {args.notebook_uri}")
-    session = ctx.sessions.get(args.notebook_uri)
-    if session:
-        session.put_input(args.inner.text)
-    else:
-        logger.warning(f"No session found for {args.notebook_uri}")
+    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
+    session.put_input(args.inner.text)
 
 
 @marimo_api("close-session")
