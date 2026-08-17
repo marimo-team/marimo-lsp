@@ -403,11 +403,6 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                   }),
                   send,
                 );
-                if (documentSessions.current(notebookId) !== session) {
-                  return yield* new NoActiveKernelError({
-                    notebookUri: session.notebookId,
-                  });
-                }
                 yield* liveSessions.refresh();
                 yield* reconcileKernelSession(notebookId);
                 return result;

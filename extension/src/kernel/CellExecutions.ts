@@ -611,13 +611,6 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             if (existing?.session === session) return existing.executions;
 
             const made = yield* makeNotebook(session, binding);
-            if (documentSessions.current(notebookId) !== session) {
-              yield* made.close;
-              return yield* new NotebookDocumentSessionEndedError({
-                notebookId,
-              });
-            }
-
             const displaced = notebooks.get(notebookId);
             const entry: NotebookEntry = { session, ...made };
             notebooks.set(notebookId, entry);
