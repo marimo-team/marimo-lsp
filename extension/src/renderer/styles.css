@@ -59,6 +59,14 @@
 }
 
 /**
+ * The embedded renderer suppresses ErrorBanner's viewport-level dialog. Keep
+ * the banner's cursor consistent with its non-interactive behavior here.
+ */
+[data-vscode-output-container] .cursor-pointer.shadow-error {
+  cursor: default;
+}
+
+/**
  * Image toolbar: floating copy/save buttons shown on hover over images.
  */
 .image-toolbar {

@@ -9,6 +9,7 @@ import {
   TooltipProvider,
   useTheme,
 } from "./marimo-frontend.ts";
+import { suppressEmbeddedErrorDialog } from "./suppressEmbeddedErrorDialog.ts";
 import { useEventListener } from "./useEventListener.ts";
 
 interface CellOutputProps {
@@ -25,6 +26,7 @@ export function CellOutput({ cellId, state }: CellOutputProps) {
   const { target: hoveredImage, clear: clearHover } = useImageHover(container);
 
   useStopUnmodifiedInputKeys(container);
+  useEventListener(container, "click", suppressEmbeddedErrorDialog, true);
 
   return (
     <div
