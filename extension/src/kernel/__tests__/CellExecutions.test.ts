@@ -1335,6 +1335,96 @@ it.effect(
 );
 
 it.effect(
+  "ignores a tagged operation after its run completes",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor(
+      "file:///test/notebook_mo.py",
+      {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      },
+    );
+    const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+    yield* Effect.gen(function* () {
+      const executions = yield* CellExecutions;
+      const notebook = MarimoNotebookDocument.from(editor.notebook);
+      const cell = notebook.cellAt(0);
+      const cid = Option.getOrThrow(cell.id);
+      let created = 0;
+      const controller = {
+        createNotebookCellExecution(): vscode.NotebookCellExecution {
+          created += 1;
+          return {
+            cell: cell.rawNotebookCell,
+            executionOrder: undefined,
+            token: {
+              isCancellationRequested: false,
+              onCancellationRequested: () => ({ dispose() {} }),
+            },
+            start() {},
+            end() {},
+            async clearOutput() {},
+            async appendOutput() {},
+            async appendOutputItems() {},
+            async replaceOutput() {},
+            async replaceOutputItems() {},
+          };
+        },
+      };
+
+      yield* executions.handleOperation(
+        {
+          op: "cell-op",
+          cell_id: cid,
+          status: "queued",
+          run_id: "run-1",
+        },
+        { editor, controller },
+      );
+      yield* executions.handleOperation(
+        {
+          op: "cell-op",
+          cell_id: cid,
+          status: "idle",
+          run_id: "run-1",
+          timestamp: 1,
+        },
+        { editor, controller },
+      );
+      expect(created).toBe(1);
+
+      yield* executions.handleOperation(
+        {
+          op: "cell-op",
+          cell_id: cid,
+          status: "idle",
+          run_id: "run-1",
+          output: {
+            mimetype: "application/vnd.marimo+error",
+            channel: "marimo-error",
+            data: [{ type: "syntax", msg: "late error" }],
+          },
+        },
+        { editor, controller },
+      );
+
+      expect(created).toBe(1);
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
   "marks cell as stale when message has staleInputs",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor(

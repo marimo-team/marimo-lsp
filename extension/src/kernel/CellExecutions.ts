@@ -543,7 +543,6 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             if (
               msg.status !== "queued" &&
               receivedRunId !== undefined &&
-              activeRunId !== undefined &&
               receivedRunId !== activeRunId
             ) {
               yield* Effect.logWarning(
