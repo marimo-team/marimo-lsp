@@ -327,11 +327,8 @@ async def interrupt(
     if session_id is None:
         raise KernelSessionMismatchError(args.notebook_uri)
     session = _require_kernel_session(ctx, args.notebook_uri, session_id)
-    if session:
-        session.try_interrupt()
-        logger.info(f"Interrupt request sent for {args.notebook_uri}")
-    else:
-        logger.warning(f"No session found for {args.notebook_uri}")
+    session.try_interrupt()
+    logger.info(f"Interrupt request sent for {args.notebook_uri}")
 
 
 @marimo_api("delete-cell")
