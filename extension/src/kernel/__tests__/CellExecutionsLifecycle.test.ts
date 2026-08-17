@@ -26,6 +26,46 @@ const acceptRun = (
   );
 
 describe("CellExecutions lifecycle", () => {
+  it.effect("accepts the current source for a cascaded queued run", () =>
+    Effect.gen(function* () {
+      const executions = yield* CellExecutions;
+      const notebook = notebookId("notebook");
+      const cell = cellId("cell");
+      const drive: Drive = () => Effect.void;
+
+      yield* acceptRun(executions, notebook, cell, "run-1", drive);
+      expect(
+        yield* executions.isStale({
+          notebookId: notebook,
+          cellId: cell,
+          source: "x = 2",
+        }),
+      ).toBe(true);
+
+      yield* executions.accept(
+        CellInput.Operation({
+          notebookId: notebook,
+          operation: {
+            op: "cell-op",
+            cell_id: cell,
+            status: "queued",
+            run_id: "run-2",
+          },
+          source: "x = 2",
+          drive,
+        }),
+      );
+
+      expect(
+        yield* executions.isStale({
+          notebookId: notebook,
+          cellId: cell,
+          source: "x = 2",
+        }),
+      ).toBe(false);
+    }).pipe(Effect.provide(CellExecutions.layer)),
+  );
+
   it.effect("removes a cell record and closes its active run", () =>
     Effect.gen(function* () {
       const executions = yield* CellExecutions;

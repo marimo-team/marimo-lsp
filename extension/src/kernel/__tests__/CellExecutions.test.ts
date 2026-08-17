@@ -1726,6 +1726,7 @@ it.effect(
                 status: "queued",
                 run_id: "run-1",
               },
+              source: cell.document.getText(),
               drive,
             }),
           );
@@ -1784,6 +1785,7 @@ it.effect(
               status: "queued",
               run_id: "run-1",
             },
+            source: cell.document.getText(),
             drive,
           }),
         ),

@@ -1000,6 +1000,7 @@ function processNotebookOperation(
           CellInput.Operation({
             notebookId: notebook.id,
             operation,
+            source: cell.value.document.getText(),
             drive: controller.value.drive(notebook),
             renderOutput: options.renderCellOutput,
           }),

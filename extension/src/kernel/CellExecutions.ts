@@ -53,7 +53,7 @@ export type CellInput = Data.TaggedEnum<{
   Operation: {
     readonly notebookId: NotebookId;
     readonly operation: CellOperationNotification;
-    readonly source?: string;
+    readonly source: string;
     readonly drive: Drive;
     readonly renderOutput?: boolean;
   };
