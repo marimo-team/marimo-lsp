@@ -1768,6 +1768,111 @@ it.effect(
 );
 
 it.effect(
+  "drops submitted sources when execution is interrupted before queued",
+  Effect.fn(function* () {
+    const cellData = {
+      kind: 1,
+      value: "x = 2",
+      languageId: "python",
+      metadata: MarimoNotebookCell.createMetadata({
+        marimoRuntime: { stableId: "cell-1" },
+      }),
+    };
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+      data: { cells: [cellData] },
+    });
+    const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+    yield* Effect.gen(function* () {
+      const executions = yield* CellExecutions;
+      const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
+      const cellId = Option.getOrThrow(cell.id);
+      const drive: Drive = () => Effect.void;
+
+      yield* executions.submit(
+        cell.notebook.id,
+        [{ cellId, source: "x = 1" }],
+        Effect.void,
+      );
+      yield* executions.handleInterrupt(cell.notebook.id);
+      yield* executions.submit(
+        cell.notebook.id,
+        [{ cellId, source: "x = 2" }],
+        executions.handleOperation(
+          {
+            op: "cell-op",
+            cell_id: cellId,
+            status: "queued",
+            run_id: "run-1",
+          },
+          { notebookId: cell.notebook.id, drive },
+        ),
+      );
+
+      expect(yield* executions.isCellStale(cell)).toBe(false);
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
+  "drops submitted sources when compilation fails before queued",
+  Effect.fn(function* () {
+    const cellData = {
+      kind: 1,
+      value: "x = 2",
+      languageId: "python",
+      metadata: MarimoNotebookCell.createMetadata({
+        marimoRuntime: { stableId: "cell-1" },
+      }),
+    };
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+      data: { cells: [cellData] },
+    });
+    const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+    yield* Effect.gen(function* () {
+      const executions = yield* CellExecutions;
+      const cell = MarimoNotebookDocument.from(editor.notebook).cellAt(0);
+      const cellId = Option.getOrThrow(cell.id);
+      const drive: Drive = () => Effect.void;
+
+      yield* executions.submit(
+        cell.notebook.id,
+        [{ cellId, source: "x = 1" }],
+        executions.handleOperation(
+          {
+            op: "cell-op",
+            cell_id: cellId,
+            status: "idle",
+            output: {
+              mimetype: "application/vnd.marimo+error",
+              channel: "marimo-error",
+              data: [{ type: "syntax", msg: "invalid syntax" }],
+            },
+          },
+          { notebookId: cell.notebook.id, drive },
+        ),
+      );
+      yield* executions.submit(
+        cell.notebook.id,
+        [{ cellId, source: "x = 2" }],
+        executions.handleOperation(
+          {
+            op: "cell-op",
+            cell_id: cellId,
+            status: "queued",
+            run_id: "run-1",
+          },
+          { notebookId: cell.notebook.id, drive },
+        ),
+      );
+
+      expect(yield* executions.isCellStale(cell)).toBe(false);
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
   "clears stale state when cell is queued for execution",
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();

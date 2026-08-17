@@ -302,6 +302,15 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         return submitted?.source;
       };
 
+      const clearSubmittedSources = (notebookId: NotebookId) => {
+        const targets = EffectArray.fromIterable(submittedSources).filter(
+          ([key]) => key.notebookId === notebookId,
+        );
+        for (const [key] of targets) {
+          MutableHashMap.remove(submittedSources, key);
+        }
+      };
+
       return {
         isCellStale,
         recordExecution: (cell: MarimoNotebookCell) =>
@@ -384,6 +393,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         },
         handleInterrupt: (notebookId: NotebookId) =>
           Effect.gen(function* () {
+            clearSubmittedSources(notebookId);
             const targets = EffectArray.fromIterable(records).filter(
               ([key]) => key.notebookId === notebookId,
             );
@@ -451,6 +461,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             const next = transitionCell(record.entry.state, message);
             const op = parseOp(next, message, RunId(crypto.randomUUID()));
             if (Option.isNone(op)) {
+              takeSubmittedSource(key);
               yield* Effect.logWarning(
                 "Queued cell-op missing run_id; cannot track execution",
               ).pipe(Effect.annotateLogs({ cellId, status: message.status }));
@@ -461,6 +472,10 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                 }),
               );
               return;
+            }
+
+            if (message.status === "idle" && activeRunId === undefined) {
+              takeSubmittedSource(key);
             }
 
             const source =
