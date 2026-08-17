@@ -1159,25 +1159,6 @@ x\
         [
             {
                 "notebookUri": "file:///exec_test.py",
-                "notification": {
-                    "op": "variables",
-                    "variables": IsList(
-                        {
-                            "name": "x",
-                            "declared_by": ["cell1"],
-                            "used_by": [],
-                        },
-                        {
-                            "name": "sys",
-                            "declared_by": ["cell1"],
-                            "used_by": [],
-                        },
-                        check_order=False,
-                    ),
-                },
-            },
-            {
-                "notebookUri": "file:///exec_test.py",
                 "sessionId": IsUUID(4),
                 "notification": {
                     "op": "notebook-document-transaction",
@@ -1437,19 +1418,6 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
     assert_one_kernel_session(messages)
     assert messages == snapshot(
         [
-            {
-                "notebookUri": "file:///exec_test.py",
-                "notification": {
-                    "op": "variables",
-                    "variables": [
-                        {
-                            "name": "x",
-                            "declared_by": ["cell1"],
-                            "used_by": ["cell2"],
-                        }
-                    ],
-                },
-            },
             {
                 "notebookUri": "file:///exec_test.py",
                 "sessionId": IsUUID(4),
@@ -1712,9 +1680,9 @@ async def test_incremental_graph_text_change(client: LanguageClient) -> None:
     variables_operations = []
     open_event = asyncio.Event()
 
-    @client.feature("marimo/kernelNotification")
-    async def on_operation(params: Any) -> None:  # noqa: ANN401
-        if params.notification.op == "variables":
+    @client.feature("marimo/documentAnalysis")
+    async def on_document_analysis(params: Any) -> None:  # noqa: ANN401
+        if params.analysis.op == "variables":
             variables_operations.append(asdict(params))
             open_event.set()
 
@@ -1758,7 +1726,7 @@ async def test_incremental_graph_text_change(client: LanguageClient) -> None:
         [
             {
                 "notebookUri": "file:///incremental_test.py",
-                "notification": {
+                "analysis": {
                     "op": "variables",
                     "variables": [
                         {
@@ -1783,9 +1751,9 @@ async def test_cell_addition(client: LanguageClient) -> None:
     variables_operations = []
     open_event = asyncio.Event()
 
-    @client.feature("marimo/kernelNotification")
-    async def on_operation(params: Any) -> None:  # noqa: ANN401
-        if params.notification.op == "variables":
+    @client.feature("marimo/documentAnalysis")
+    async def on_document_analysis(params: Any) -> None:  # noqa: ANN401
+        if params.analysis.op == "variables":
             variables_operations.append(asdict(params))
             open_event.set()
 
@@ -1820,7 +1788,7 @@ async def test_cell_addition(client: LanguageClient) -> None:
         [
             {
                 "notebookUri": "file:///addition_test.py",
-                "notification": {
+                "analysis": {
                     "op": "variables",
                     "variables": [
                         {
@@ -1888,7 +1856,7 @@ async def test_cell_addition(client: LanguageClient) -> None:
         [
             {
                 "notebookUri": "file:///addition_test.py",
-                "notification": {
+                "analysis": {
                     "op": "variables",
                     "variables": [
                         {
@@ -1901,7 +1869,7 @@ async def test_cell_addition(client: LanguageClient) -> None:
             },
             {
                 "notebookUri": "file:///addition_test.py",
-                "notification": {
+                "analysis": {
                     "op": "variables",
                     "variables": [
                         {
