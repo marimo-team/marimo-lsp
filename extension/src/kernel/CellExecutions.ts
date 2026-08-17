@@ -131,62 +131,11 @@ const cellRef = (notebookId: NotebookId, cellId: NotebookCellId): CellRef => ({
   cellId,
 });
 
-const openedRunIds = (commands: ReadonlyArray<CellCommand>) => {
-  const ids = new Set<RunId>();
-  for (const command of commands) {
-    if (command._tag === "OpenRun") ids.add(command.runId);
-  }
-  return ids;
-};
-
-const noOpenedRuns = new Set<RunId>();
-
-const resolveDriveBinding = (
-  runId: RunId,
-  record: CellRecord,
-  current: Option.Option<Drive>,
-  opened: ReadonlySet<RunId>,
-): Option.Option<DriveBinding> =>
+/** The drive bound when the given run opened, if the record still holds it. */
+const boundDrive = (record: CellRecord, runId: RunId): Option.Option<Drive> =>
   Option.filter(record.drive, (binding) => binding.runId === runId).pipe(
-    Option.orElse(() =>
-      opened.has(runId)
-        ? Option.map(current, (value) => ({ runId, value }))
-        : Option.none(),
-    ),
+    Option.map((binding) => binding.value),
   );
-
-const driveFor = (
-  command: CellCommand,
-  record: CellRecord,
-  current: Option.Option<Drive>,
-  opened: ReadonlySet<RunId>,
-): Option.Option<Drive> => {
-  const forRun = (runId: RunId) =>
-    resolveDriveBinding(runId, record, current, opened).pipe(
-      Option.map((binding) => binding.value),
-    );
-
-  return CellCommand.$match(command, {
-    OpenRun: () => current,
-    StartRun: ({ runId }) => forRun(runId),
-    RenderOutputs: ({ runId }) => forRun(runId),
-    CloseRun: ({ runId }) => forRun(runId),
-    SetDiagnostic: () => current,
-  });
-};
-
-const driveAfter = (
-  run: CellRunState,
-  record: CellRecord,
-  current: Option.Option<Drive>,
-  opened: ReadonlySet<RunId>,
-): Option.Option<DriveBinding> => {
-  if (run.phase._tag !== "Queued" && run.phase._tag !== "Running") {
-    return Option.none();
-  }
-  const runId = run.phase.runId;
-  return resolveDriveBinding(runId, record, current, opened);
-};
 
 /** Owns one ordered collection of cell runs per exact notebook session. */
 export class CellExecutions extends Context.Service<CellExecutions>()(
@@ -453,10 +402,30 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                   ? (takeSubmittedSource(cellId) ?? currentSources.get(cellId))
                   : undefined;
               const result = step(record.run, op, source);
-              const opened = openedRunIds(result.commands);
+              // A run's presentation stays on the drive that opened it:
+              // OpenRun binds the drive current at open time, and later
+              // commands for that run reuse the binding even after the
+              // controller changes or detaches.
+              const opened = new Set<RunId>();
+              for (const command of result.commands) {
+                if (command._tag === "OpenRun") opened.add(command.runId);
+              }
+              const driveForRun = (runId: RunId): Option.Option<Drive> =>
+                boundDrive(record, runId).pipe(
+                  Option.orElse(() =>
+                    opened.has(runId) ? currentDrive : Option.none(),
+                  ),
+                );
+              const phase = result.entry.phase;
               records.set(cellId, {
                 run: result.entry,
-                drive: driveAfter(result.entry, record, currentDrive, opened),
+                drive:
+                  phase._tag === "Queued" || phase._tag === "Running"
+                    ? Option.map(driveForRun(phase.runId), (value) => ({
+                        runId: phase.runId,
+                        value,
+                      }))
+                    : Option.none(),
               });
               yield* refreshStale([cellId]);
 
@@ -465,7 +434,11 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                 yield* drive({
                   cell,
                   command,
-                  drive: driveFor(command, record, currentDrive, opened),
+                  drive:
+                    command._tag === "OpenRun" ||
+                    command._tag === "SetDiagnostic"
+                      ? currentDrive
+                      : driveForRun(command.runId),
                 });
               }
             }).pipe(
@@ -492,7 +465,11 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                 yield* drive({
                   cell,
                   command,
-                  drive: driveFor(command, record, Option.none(), noOpenedRuns),
+                  drive:
+                    command._tag === "OpenRun" ||
+                    command._tag === "SetDiagnostic"
+                      ? Option.none()
+                      : boundDrive(record, command.runId),
                 });
               }
               if (remove) {
