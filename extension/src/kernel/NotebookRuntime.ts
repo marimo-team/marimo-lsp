@@ -637,6 +637,9 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                     yield* updateKernelContext();
                   }),
                 );
+                // Ingress order puts retirement after the cleanup above; a
+                // reopened notebook simply starts a fresh worker.
+                yield* executor.retire(notebookId);
               },
             ),
           ),

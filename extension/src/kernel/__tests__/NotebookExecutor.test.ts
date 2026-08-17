@@ -101,4 +101,27 @@ describe("NotebookExecutor", () => {
       assert.strictEqual(result, "done");
     }),
   );
+
+  it.effect(
+    "retires a notebook after draining admitted work",
+    Effect.fn(function* () {
+      const executor = yield* makeNotebookExecutor<never>();
+      const order = yield* Ref.make<ReadonlyArray<string>>([]);
+      const notebook = notebookId("notebook");
+
+      yield* executor.post(
+        notebook,
+        Ref.update(order, (events) => [...events, "before"]),
+      );
+      yield* executor.retire(notebook);
+      yield* executor.post(
+        notebook,
+        Ref.update(order, (events) => [...events, "after"]),
+      );
+
+      const result = yield* executor.submit(notebook, Effect.succeed("done"));
+      assert.strictEqual(result, "done");
+      assert.deepStrictEqual(yield* Ref.get(order), ["before", "after"]);
+    }),
+  );
 });
