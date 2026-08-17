@@ -15,7 +15,10 @@ from uuid import uuid4
 import msgspec
 from marimo._config.manager import get_default_config_manager
 from marimo._messaging.msgspec_encoder import asdict
-from marimo._messaging.serde import deserialize_kernel_message
+from marimo._messaging.serde import (
+    deserialize_kernel_message,
+    deserialize_kernel_notification_name,
+)
 from marimo._runtime.commands import (
     CodeCompletionCommand,
     CommandMessage,
@@ -62,6 +65,14 @@ _MAX_CANCELLED_SCRATCHPAD_RUNS = 1024
 def _raise_kernel_failure(_session: Session, error: str) -> None:
     """Turn a terminal failure before publication into a launch failure."""
     raise KernelOpenError(error)
+
+
+def _notification_name(message: KernelMessage) -> str:
+    """Best-effort op name of a kernel message, for logging only."""
+    try:
+        return deserialize_kernel_notification_name(message)
+    except Exception:  # noqa: BLE001
+        return "<undecodable>"
 
 
 class _OperationSink:
@@ -123,7 +134,13 @@ class _OperationSink:
                 return
             self._forward(notification)
         except Exception:
-            logger.exception("Error forwarding kernel message")
+            # A dropped message is invisible to the client; name the op so a
+            # kernel emitting notifications this build cannot decode (e.g. a
+            # newer user-env marimo) is diagnosable from the log.
+            logger.exception(
+                "Dropped undecodable kernel message (op=%s)",
+                _notification_name(message),
+            )
 
     def _forward(self, notification: NotificationMessage) -> None:
         self._server.protocol.notify(
@@ -719,7 +736,14 @@ class Sessions:
             return replacement
 
     def move(self, notebook_uri: str, new_notebook_uri: str) -> None:
-        """Move a live session to a renamed notebook URI."""
+        """Move a live session to a renamed notebook URI.
+
+        Must not yield to the event loop between re-registering the session
+        and ``session.move``: kernel notifications are forwarded on this loop
+        (see ``receive`` in ``start``), so an ``await`` in that window would
+        let them carry the old URI while the registry already answers for
+        the new one.
+        """
         with self._lock:
             self._invalidate_lifecycle(notebook_uri)
             session = self._sessions.pop(notebook_uri, None)

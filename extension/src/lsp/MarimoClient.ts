@@ -10,6 +10,7 @@ import {
   Effect,
   Layer,
   Option,
+  Predicate,
   PubSub,
   Queue,
   Redacted,
@@ -41,6 +42,30 @@ const decodeKernelNotification = Schema.decodeUnknownOption(
   Api.KernelNotification,
 );
 const decodeDocumentAnalysis = Schema.decodeUnknownOption(Api.DocumentAnalysis);
+
+/**
+ * Best-effort identifiers of a message we are about to drop, for logging.
+ * A silent drop is invisible to the user; the op name makes protocol drift
+ * (e.g. a server emitting shapes this build cannot decode) diagnosable.
+ */
+const describeIgnored = (message: unknown) => {
+  const inner = Predicate.hasProperty(message, "notification")
+    ? message.notification
+    : Predicate.hasProperty(message, "analysis")
+      ? message.analysis
+      : undefined;
+  return {
+    op:
+      Predicate.hasProperty(inner, "op") && typeof inner.op === "string"
+        ? inner.op
+        : "<unknown>",
+    notebookUri:
+      Predicate.hasProperty(message, "notebookUri") &&
+      typeof message.notebookUri === "string"
+        ? message.notebookUri
+        : "<unknown>",
+  };
+};
 
 export type MarimoLspMode = "wasm" | "uv" | "configured";
 
@@ -114,7 +139,11 @@ export const makeKernelNotificationStream = Effect.fn(function* (
     register((message) => {
       const decoded = decodeKernelNotification(message);
       if (Option.isNone(decoded)) {
-        runSync(Effect.logWarning("Ignored invalid kernel notification"));
+        runSync(
+          Effect.logWarning("Ignored invalid kernel notification").pipe(
+            Effect.annotateLogs(describeIgnored(message)),
+          ),
+        );
         return;
       }
       runSync(PubSub.publish(notifications, decoded.value));
@@ -137,7 +166,11 @@ export const makeDocumentAnalysisStream = Effect.fn(function* (
     register((message) => {
       const decoded = decodeDocumentAnalysis(message);
       if (Option.isNone(decoded)) {
-        runSync(Effect.logWarning("Ignored invalid document analysis"));
+        runSync(
+          Effect.logWarning("Ignored invalid document analysis").pipe(
+            Effect.annotateLogs(describeIgnored(message)),
+          ),
+        );
         return;
       }
       runSync(PubSub.publish(analyses, decoded.value));

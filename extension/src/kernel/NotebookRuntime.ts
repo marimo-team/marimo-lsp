@@ -687,6 +687,14 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                 return;
               }
 
+              // The kernel-session gate covers one race: sessionsChanged and
+              // kernel notifications arrive on independent streams, so a
+              // notification from a kernel replaced by restart can reach this
+              // worker after the reconcile that installed the new session id.
+              // The server never emits a stale id after announcing its
+              // replacement on the wire; only this client-side reordering
+              // needs guarding. (File-backed close/reopen reuses the same
+              // kernel session, so no id change is involved there.)
               if (
                 kernelSessions.get(message.notebookUri) !== message.sessionId
               ) {
