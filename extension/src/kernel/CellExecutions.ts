@@ -29,7 +29,7 @@ import {
   type NotebookCellId,
   type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
-import type { CellOperationNotification } from "../types.ts";
+import type { CellOperationNotification, CellRuntimeState } from "../types.ts";
 import {
   AcceptedSource,
   CellCommand,
@@ -324,6 +324,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
 
         const correlate = Effect.fn("NotebookExecutions.correlate")(function* (
           record: CellRecord,
+          next: CellRuntimeState,
           wire: CellOperationNotification,
         ) {
           const cellId = extractCellIdFromCellMessage(wire);
@@ -350,7 +351,6 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             });
           }
 
-          const next = transitionCell(record.run.state, wire);
           const op = parseOp(next, wire, RunId(crypto.randomUUID()));
           if (Option.isNone(op)) {
             return yield* new RunCorrelationError({
@@ -380,13 +380,21 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                 run: makeCellRunState(cellId),
                 drive: Option.none<DriveBinding>(),
               };
-              const op = yield* correlate(record, wire).pipe(
+              const next = transitionCell(record.run.state, wire);
+              const op = yield* correlate(record, next, wire).pipe(
                 Effect.tapError(() =>
-                  wire.status === "queued"
-                    ? Effect.sync(() => {
-                        takeSubmittedSource(cellId);
-                      })
-                    : Effect.void,
+                  Effect.sync(() => {
+                    if (wire.status === "queued") takeSubmittedSource(cellId);
+                    // Keep the kernel's state fold even for an op we cannot
+                    // correlate to a run — only presentation is withheld.
+                    // Late console appends from threads of a finished run
+                    // land here, and the kernel remains the source of truth
+                    // for cell state.
+                    records.set(cellId, {
+                      ...record,
+                      run: { ...record.run, state: next },
+                    });
+                  }),
                 ),
               );
               if (

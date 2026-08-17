@@ -1887,6 +1887,85 @@ describe("NotebookExecutions", () => {
   );
 
   it.effect(
+    "keeps the state fold from a rejected operation for the final render",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const finalRenders: CellRuntimeState[] = [];
+        const drive: Drive = (_cell, command) =>
+          Effect.sync(() => {
+            if (command._tag === "RenderOutputs" && command.final) {
+              finalRenders.push(command.state);
+            }
+          });
+        const { notebook } = yield* openNotebook(
+          executions,
+          editor.notebook,
+          Effect.succeed(Option.some(drive)),
+        );
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-2",
+        });
+        // A console append from a thread of a previous run: the command is
+        // rejected, but the kernel's state fold must survive.
+        const error = yield* notebook
+          .apply({
+            op: "cell-op",
+            cell_id: id,
+            run_id: "run-1",
+            console: {
+              mimetype: "text/plain",
+              channel: "stdout",
+              data: "late line",
+              timestamp: 0,
+            },
+          })
+          .pipe(Effect.flip);
+        expect(error._tag).toBe("RunCorrelationError");
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "running",
+        });
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "idle",
+        });
+
+        expect(finalRenders).toHaveLength(1);
+        expect(
+          finalRenders[0]?.consoleOutputs.map((output) => output.data),
+        ).toContain("late line");
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
     "rejects a tagged operation after its run completes",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
