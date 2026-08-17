@@ -10,25 +10,32 @@ import msgspec
 import pytest
 from marimo._config.config import DEFAULT_CONFIG
 from marimo._convert.converters import MarimoConvert
-from marimo._types.ids import RequestId, SessionId
+from marimo._runtime.commands import InvokeFunctionCommand, ModelUpdateMessage
+from marimo._types.ids import CellId_t, RequestId, SessionId, WidgetModelId
 
 from marimo_lsp.api import (
     ApiBuilder,
     ApiContext,
     KernelSessionMismatchError,
+    KernelSessionRequiredError,
     _restore_unknown_app_options,
+    delete_cell,
     deserialize,
     execute_scratch,
     export_as_markdown,
+    function_call_request,
     get_configuration,
     handle_api_command,
     interrupt,
     list_sql_schemas,
     list_sql_tables,
     send_stdin,
+    set_model_value,
+    set_ui_element_value,
     update_configuration,
 )
 from marimo_lsp.models import (
+    DeleteCellRequest,
     DeserializeConvertible,
     DeserializeInvalidSyntax,
     DeserializeRequest,
@@ -40,11 +47,13 @@ from marimo_lsp.models import (
     KernelCommand,
     ListSQLSchemasRequest,
     ListSQLTablesRequest,
+    ModelRequest,
     NotebookCommand,
     SessionCommand,
     SetDisplayThemeRequest,
     StdinRequest,
     UpdateConfigurationRequest,
+    UpdateUIElementRequest,
 )
 
 if TYPE_CHECKING:
@@ -176,6 +185,103 @@ async def test_send_stdin_rejects_a_replaced_kernel_session() -> None:
         )
 
     session.put_input.assert_not_called()
+
+
+STALE_SESSION_ID = SessionId("00000000-0000-4000-8000-000000000001")
+LIVE_SESSION_ID = SessionId("00000000-0000-4000-8000-000000000002")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("handler", "inner"),
+    [
+        (set_ui_element_value, UpdateUIElementRequest(object_ids=[], values=[])),
+        (
+            set_model_value,
+            ModelRequest(
+                model_id=WidgetModelId("model-1"),
+                message=ModelUpdateMessage(state={}, buffer_paths=[]),
+                buffers=[],
+            ),
+        ),
+        (
+            function_call_request,
+            InvokeFunctionCommand(
+                function_call_id=RequestId("request-1"),
+                namespace="ns",
+                function_name="fn",
+                args={},
+            ),
+        ),
+        (delete_cell, DeleteCellRequest(cell_id=CellId_t("cell-1"))),
+        (
+            list_sql_schemas,
+            ListSQLSchemasRequest(
+                request_id=RequestId("request-1"), engine="duckdb", database="db"
+            ),
+        ),
+        (
+            list_sql_tables,
+            ListSQLTablesRequest(
+                request_id=RequestId("request-1"),
+                engine="duckdb",
+                database="db",
+                schema="main",
+            ),
+        ),
+    ],
+)
+async def test_kernel_commands_reject_a_replaced_kernel_session(
+    handler: Callable[[ApiContext, KernelCommand[msgspec.Struct]], Awaitable[None]],
+    inner: msgspec.Struct,
+) -> None:
+    session = MagicMock(session_id=LIVE_SESSION_ID)
+    sessions = MagicMock()
+    sessions.get.return_value = session
+
+    with pytest.raises(KernelSessionMismatchError):
+        await handler(
+            _context(sessions),
+            KernelCommand(
+                notebook_uri=NOTEBOOK_URI,
+                session_id=STALE_SESSION_ID,
+                inner=inner,
+            ),
+        )
+
+    session.put_control_request.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_rejects_a_replaced_kernel_session() -> None:
+    session = MagicMock(session_id=LIVE_SESSION_ID)
+    sessions = MagicMock()
+    sessions.get.return_value = session
+
+    with pytest.raises(KernelSessionMismatchError):
+        await interrupt(
+            _context(sessions),
+            NotebookCommand(
+                notebook_uri=NOTEBOOK_URI,
+                inner=InterruptRequest(session_id=STALE_SESSION_ID),
+            ),
+        )
+
+    session.try_interrupt.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_requires_a_kernel_session_id() -> None:
+    sessions = MagicMock()
+
+    with pytest.raises(KernelSessionRequiredError):
+        await interrupt(
+            _context(sessions),
+            NotebookCommand(notebook_uri=NOTEBOOK_URI, inner=InterruptRequest()),
+        )
+
+    sessions.get.assert_not_called()
+    sessions.cancel_scratchpad.assert_not_called()
 
 
 @pytest.mark.asyncio
