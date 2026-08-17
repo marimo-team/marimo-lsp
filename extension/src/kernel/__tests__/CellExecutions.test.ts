@@ -14,7 +14,11 @@ import {
 import type * as vscode from "vscode";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import {
+  createNotebookCell,
+  NotebookRange,
+  TestVsCode,
+} from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import {
   CellExecutions,
@@ -1286,7 +1290,27 @@ describe("NotebookExecutions", () => {
         );
 
         // The editor moves ahead before the kernel acknowledges the submission.
+        const becomesStale = yield* notebook.staleCells.changes.pipe(
+          Stream.filter((stale) => HashSet.has(stale, id)),
+          Stream.runHead,
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
         cellData.value = "x = 2";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
         yield* notebook.apply(
           WireCellOp({
             op: "cell-op",
@@ -1296,8 +1320,64 @@ describe("NotebookExecutions", () => {
           }),
         );
 
-        const stale = yield* notebook.staleCells.current;
-        expect(HashSet.has(stale, id)).toBe(true);
+        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "tracks sources for cells added after the notebook opens",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
+      const addedCell = createNotebookCell(
+        editor.notebook,
+        {
+          kind: 1,
+          value: "x = 1",
+          languageId: "python",
+          metadata: MarimoNotebookCell.createMetadata({
+            marimoRuntime: { stableId: "cell-1" },
+          }),
+        },
+        0,
+      );
+      const id = Option.getOrThrow(MarimoNotebookCell.from(addedCell).id);
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(executions, editor.notebook);
+        const becomesStale = yield* notebook.staleCells.changes.pipe(
+          Stream.filter((stale) => HashSet.has(stale, id)),
+          Stream.runHead,
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [],
+          contentChanges: [
+            {
+              range: new NotebookRange(0, 0),
+              removedCells: [],
+              addedCells: [addedCell],
+            },
+          ],
+        });
+        yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
+        yield* notebook.apply(
+          WireCellOp({
+            op: "cell-op",
+            cell_id: id,
+            status: "idle",
+            run_id: "run-1",
+            stale_inputs: true,
+          }),
+        );
+
+        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -1320,10 +1400,7 @@ describe("NotebookExecutions", () => {
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
-        const { notebook } = yield* openNotebook(
-          executions,
-          editor.notebook,
-        );
+        const { notebook } = yield* openNotebook(executions, editor.notebook);
         const id = Option.getOrThrow(
           MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
         );
@@ -1405,6 +1482,70 @@ describe("NotebookExecutions", () => {
         cellData.value = "x = 1";
         yield* notifyChange();
         expect(Option.isSome(yield* Fiber.join(becomesCurrent))).toBe(true);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "reads only changed cell sources when refreshing staleness",
+    Effect.fn(function* () {
+      const sources = Array.from({ length: 32 }, (_, index) => `x = ${index}`);
+      const reads = sources.map(() => 0);
+      const cells = sources.map(
+        (_, index): vscode.NotebookCellData => ({
+          kind: 1,
+          get value() {
+            reads[index] = (reads[index] ?? 0) + 1;
+            return sources[index] ?? "";
+          },
+          set value(source: string) {
+            sources[index] = source;
+          },
+          languageId: "python",
+          metadata: MarimoNotebookCell.createMetadata({
+            marimoRuntime: { stableId: `cell-${index}` },
+          }),
+        }),
+      );
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: { cells },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(executions, editor.notebook);
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+        yield* acknowledgeSubmission(notebook, id, "x = 0", "run-1");
+        reads.fill(0);
+
+        const becomesStale = yield* notebook.staleCells.changes.pipe(
+          Stream.filter((stale) => HashSet.has(stale, id)),
+          Stream.runHead,
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+        sources[0] = "x = 100";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
+        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
+
+        expect(reads[0]).toBe(1);
+        expect(reads.slice(1).every((count) => count === 0)).toBe(true);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

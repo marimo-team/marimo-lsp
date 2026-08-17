@@ -21,6 +21,7 @@ import type { OpenNotebookSession } from "../notebook/NotebookSessions.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   extractCellIdFromCellMessage,
+  MarimoNotebookCell,
   MarimoNotebookDocument,
   type NotebookCellId,
   type NotebookId,
@@ -108,11 +109,18 @@ export interface NotebookExecutions {
   readonly staleCells: CellStaleness;
 }
 
+interface CellSource {
+  readonly cellId: NotebookCellId;
+  readonly source: string;
+}
+
 interface NotebookEntry {
   readonly session: OpenNotebookSession;
   readonly executions: NotebookExecutions;
   readonly close: Effect.Effect<void>;
-  readonly refreshStale: Effect.Effect<void>;
+  readonly updateSources: (
+    sources: ReadonlyArray<CellSource>,
+  ) => Effect.Effect<void>;
 }
 
 interface SubmittedSource {
@@ -200,6 +208,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
       const allStaleCells = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, HashSet.HashSet<NotebookCellId>>(),
       );
+      let staleContextValue: boolean | undefined;
 
       const updateStaleContext = Effect.fn("CellExecutions.updateStaleContext")(
         function* () {
@@ -211,35 +220,62 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               (cells) => HashSet.size(cells) > 0,
             ),
           );
+          if (hasStaleCells === staleContextValue) return;
           yield* code.commands.setContext(
             "marimo.notebook.hasStaleCells",
             hasStaleCells,
           );
+          staleContextValue = hasStaleCells;
         },
       );
 
       yield* Effect.forkScoped(
-        SubscriptionRef.changes(allStaleCells).pipe(
-          Stream.runForEach(updateStaleContext),
-        ),
-      );
-      yield* Effect.forkScoped(
-        editorRegistry.streamActiveNotebookChanges.pipe(
-          Stream.runForEach(updateStaleContext),
-        ),
+        Stream.merge(
+          SubscriptionRef.changes(allStaleCells).pipe(
+            Stream.map(() => undefined),
+          ),
+          editorRegistry.streamActiveNotebookChanges.pipe(
+            Stream.map(() => undefined),
+          ),
+        ).pipe(Stream.runForEach(updateStaleContext)),
       );
       yield* Effect.forkScoped(
         code.workspace.notebookDocumentChanges.pipe(
-          Stream.filter((event) =>
-            event.cellChanges.some((change) => change.document !== undefined),
+          Stream.filter(
+            (event) =>
+              event.cellChanges.some(
+                (change) => change.document !== undefined,
+              ) ||
+              event.contentChanges.some(
+                (change) => change.addedCells.length > 0,
+              ),
           ),
           Stream.runForEach((event) => {
             const notebook = MarimoNotebookDocument.tryFrom(event.notebook);
             if (Option.isNone(notebook)) return Effect.void;
             const entry = notebooks.get(notebook.value.id);
-            return entry?.session.document === event.notebook
-              ? entry.refreshStale
-              : Effect.void;
+            if (entry?.session.document !== event.notebook) return Effect.void;
+            const sourceOf = (
+              cell: vscode.NotebookCell,
+              source: string,
+            ): CellSource[] => {
+              const marimoCell = MarimoNotebookCell.from(cell);
+              return Option.match(marimoCell.id, {
+                onNone: () => [],
+                onSome: (cellId) => [{ cellId, source }],
+              });
+            };
+            const sources = event.cellChanges.flatMap((change) => {
+              const document = change.document;
+              if (document === undefined) return [];
+              return sourceOf(change.cell, document.getText());
+            });
+            const addedSources = event.contentChanges.flatMap((change) =>
+              change.addedCells.flatMap((cell) =>
+                sourceOf(cell, cell.document.getText()),
+              ),
+            );
+            return entry.updateSources([...sources, ...addedSources]);
           }),
         ),
       );
@@ -255,6 +291,12 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           NotebookCellId,
           Array<SubmittedSource>
         >();
+        const currentSources = new Map<NotebookCellId, string>();
+        for (const cell of notebook.getCells()) {
+          if (Option.isSome(cell.id)) {
+            currentSources.set(cell.id.value, cell.document.getText());
+          }
+        }
         const staleRef = yield* SubscriptionRef.make(
           HashSet.empty<NotebookCellId>(),
         );
@@ -271,26 +313,40 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             );
           });
 
-        const refreshStale = Effect.gen(function* () {
-          let next = HashSet.empty<NotebookCellId>();
-          const currentSources = new Map<NotebookCellId, string>();
-          for (const cell of notebook.getCells()) {
-            if (Option.isSome(cell.id)) {
-              currentSources.set(cell.id.value, cell.document.getText());
+        const isStale = (cellId: NotebookCellId): boolean => {
+          const record = records.get(cellId);
+          if (record === undefined) return false;
+          return AcceptedSource.$match(record.run.acceptedSource, {
+            Unknown: () => false,
+            Invalidated: () => true,
+            Accepted: ({ source }) => {
+              const currentSource = currentSources.get(cellId);
+              return currentSource !== undefined && source !== currentSource;
+            },
+          });
+        };
+
+        const refreshStale = (cellIds: Iterable<NotebookCellId>) =>
+          Effect.gen(function* () {
+            let next = yield* SubscriptionRef.get(staleRef);
+            for (const cellId of cellIds) {
+              next = isStale(cellId)
+                ? HashSet.add(next, cellId)
+                : HashSet.remove(next, cellId);
             }
-          }
-          for (const [cellId, record] of records) {
-            const stale = AcceptedSource.$match(record.run.acceptedSource, {
-              Unknown: () => false,
-              Invalidated: () => true,
-              Accepted: ({ source }) =>
-                currentSources.get(cellId) !== undefined &&
-                source !== currentSources.get(cellId),
-            });
-            if (stale) next = HashSet.add(next, cellId);
-          }
-          yield* publishStale(next);
-        });
+            yield* publishStale(next);
+          });
+
+        const updateSources = (sources: ReadonlyArray<CellSource>) =>
+          ordering.withPermit(
+            Effect.gen(function* () {
+              if (closed) return;
+              for (const { cellId, source } of sources) {
+                currentSources.set(cellId, source);
+              }
+              yield* refreshStale(sources.map(({ cellId }) => cellId));
+            }),
+          );
 
         const drive = ({ cell, command, drive: target }: Work) =>
           Option.match(target, {
@@ -372,15 +428,6 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           return submitted?.source;
         };
 
-        const currentSource = (cellId: NotebookCellId) => {
-          for (const cell of notebook.getCells()) {
-            if (Option.isSome(cell.id) && cell.id.value === cellId) {
-              return cell.document.getText();
-            }
-          }
-          return undefined;
-        };
-
         const apply = (wire: WireCellOp) =>
           ordering.withPermit(
             Effect.gen(function* () {
@@ -409,7 +456,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               const currentDrive = yield* binding.getDrive;
               const source =
                 op._tag === "Queue"
-                  ? (takeSubmittedSource(cellId) ?? currentSource(cellId))
+                  ? (takeSubmittedSource(cellId) ?? currentSources.get(cellId))
                   : undefined;
               const result = step(record.run, op, source);
               const opened = openedRunIds(result.commands);
@@ -417,7 +464,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                 run: result.entry,
                 drive: driveAfter(result.entry, record, currentDrive, opened),
               });
-              yield* refreshStale;
+              yield* refreshStale([cellId]);
 
               const cell = cellRef(notebookId, cellId);
               for (const command of result.commands) {
@@ -440,8 +487,10 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           remove: boolean,
         ) =>
           Effect.gen(function* () {
+            const released: NotebookCellId[] = [];
             for (const [cellId, record] of records) {
               if (!target(cellId)) continue;
+              released.push(cellId);
               const result = step(record.run, Op.Interrupt());
               const cell = cellRef(notebookId, cellId);
               for (const command of result.commands) {
@@ -451,15 +500,17 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                   drive: driveFor(command, record, Option.none(), noOpenedRuns),
                 });
               }
-              if (remove) records.delete(cellId);
-              else {
+              if (remove) {
+                records.delete(cellId);
+                currentSources.delete(cellId);
+              } else {
                 records.set(cellId, {
                   run: result.entry,
                   drive: Option.none(),
                 });
               }
             }
-            yield* refreshStale;
+            yield* refreshStale(released);
           });
 
         const interrupt = ordering.withPermit(
@@ -517,6 +568,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             closed = true;
             yield* release(() => true, true);
             submittedSources.clear();
+            currentSources.clear();
             yield* SubscriptionRef.set(staleRef, HashSet.empty());
             yield* SubscriptionRef.update(allStaleCells, (all) =>
               HashMap.remove(all, notebookId),
@@ -534,7 +586,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             changes: SubscriptionRef.changes(staleRef),
           },
         };
-        return { executions, close, refreshStale } as const;
+        return { executions, close, updateSources } as const;
       });
 
       const open = Effect.fn("CellExecutions.open")(function* (
@@ -549,7 +601,6 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         const made = yield* makeNotebook(session, binding);
         const entry: NotebookEntry = { session, ...made };
         notebooks.set(notebookId, entry);
-        yield* made.refreshStale;
 
         yield* Deferred.await(session.invalidated).pipe(
           Effect.andThen(

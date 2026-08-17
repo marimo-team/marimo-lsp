@@ -40,6 +40,33 @@ it.effect(
 );
 
 it.effect(
+  "should seed an already-active notebook editor",
+  Effect.fn(function* () {
+    const editor = createTestNotebookEditor(
+      createTestNotebookDocument("/test/already-active_mo.py"),
+    );
+    const vscode = yield* TestVsCode.make({
+      initialActiveNotebookEditor: Option.some(editor),
+    });
+
+    yield* Effect.provide(
+      Effect.gen(function* () {
+        const registry = yield* NotebookEditorRegistry;
+        yield* TestClock.adjust("10 millis");
+
+        expect(yield* registry.getActiveNotebookUri).toEqual(
+          Option.some(editor.notebook.uri.toString()),
+        );
+        expect(yield* registry.getActiveNotebookEditor).toEqual(
+          Option.some(editor),
+        );
+      }),
+      makeRegistryLayer(vscode),
+    );
+  }),
+);
+
+it.effect(
   "should track active notebook editor changes",
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
