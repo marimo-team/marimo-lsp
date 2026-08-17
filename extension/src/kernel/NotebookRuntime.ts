@@ -1236,6 +1236,7 @@ function processNotebookOperation(
               expectedRunId: error.expectedRunId,
               receivedRunId: error.receivedRunId,
               status: error.status,
+              reason: error.reason,
             }),
           ),
         ),

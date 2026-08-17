@@ -235,6 +235,13 @@ class KernelSessionMismatchError(ValueError):
         super().__init__(f"Kernel session changed for {notebook_uri}")
 
 
+class KernelSessionRequiredError(ValueError):
+    """Raised when a kernel command omits its required session id."""
+
+    def __init__(self, notebook_uri: str) -> None:
+        super().__init__(f"Kernel session id required for {notebook_uri}")
+
+
 def _require_kernel_session(
     ctx: ApiContext,
     notebook_uri: str,
@@ -325,7 +332,7 @@ async def interrupt(
 
     session_id = args.inner.session_id
     if session_id is None:
-        raise KernelSessionMismatchError(args.notebook_uri)
+        raise KernelSessionRequiredError(args.notebook_uri)
     session = _require_kernel_session(ctx, args.notebook_uri, session_id)
     session.try_interrupt()
     logger.info(f"Interrupt request sent for {args.notebook_uri}")

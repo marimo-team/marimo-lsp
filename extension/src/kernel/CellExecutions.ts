@@ -71,6 +71,12 @@ export class RunCorrelationError extends Data.TaggedError(
   readonly expectedRunId: string | undefined;
   readonly receivedRunId: string | undefined;
   readonly status: CellOperationNotification["status"];
+  /**
+   * `superseded-run`: a tagged operation named a run other than the active
+   * one. `untracked-queue`: a queued operation carried no run id at all, so
+   * no run can be opened for it.
+   */
+  readonly reason: "superseded-run" | "untracked-queue";
 }> {}
 
 export interface CellStaleness {
@@ -348,6 +354,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               expectedRunId: activeRunId,
               receivedRunId,
               status: wire.status,
+              reason: "superseded-run",
             });
           }
 
@@ -358,6 +365,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               expectedRunId: activeRunId,
               receivedRunId,
               status: wire.status,
+              reason: "untracked-queue",
             });
           }
           return op.value;

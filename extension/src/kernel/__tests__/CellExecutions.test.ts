@@ -1882,6 +1882,7 @@ describe("NotebookExecutions", () => {
         expect(error._tag).toBe("RunCorrelationError");
         expect(error.expectedRunId).toBe("run-2");
         expect(error.receivedRunId).toBe("run-1");
+        expect(error.reason).toBe("superseded-run");
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
