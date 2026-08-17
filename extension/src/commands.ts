@@ -225,6 +225,10 @@ export interface VscodeCommandMap {
     readonly args: [];
     readonly result: void;
   };
+  readonly "workbench.extensions.installExtension": {
+    readonly args: [extensionId: string];
+    readonly result: void;
+  };
 }
 
 export const VscodeBuiltinCommandCatalog = builtinCommandCatalog;

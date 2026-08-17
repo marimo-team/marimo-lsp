@@ -5,6 +5,7 @@ import {
   Context,
   Data,
   Effect,
+  Exit,
   Layer,
   Option,
   Ref,
@@ -18,20 +19,48 @@ import {
   companionExtensionConfiguredPath,
   resolveBinary,
   userConfiguredPath,
+  validateBinary,
 } from "../lib/binaryResolution.ts";
+import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VariablesService } from "../panel/variables/VariablesService.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
-import { ExtensionContext } from "../platform/Storage.ts";
+import { ExtensionContext, Storage } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
-import { Uv } from "../python/Uv.ts";
+import { resolvePlatformBinaryName, Uv } from "../python/Uv.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
+import {
+  clearManagedInstallFailure,
+  getManagedInstallFailure,
+  matchesManagedInstallFailure,
+  setManagedInstallFailure,
+} from "./managedInstallFailure.ts";
 
 const TY_SERVER = { name: "ty", version: "0.0.63" } as const;
 const TY_EXTENSION_ID = "astral-sh.ty";
+const INSTALL_TY_EXTENSION = "Install ty Extension";
+const OPEN_UV_LOGS = "Open uv Logs";
+const RELOAD_WINDOW = "Reload Window";
+
+export class ManagedTyInstallPreviouslyFailed extends Data.TaggedError(
+  "ManagedTyInstallPreviouslyFailed",
+)<{
+  readonly extensionVersion: string;
+  readonly serverVersion: string;
+  readonly details: string;
+}> {
+  format(): string {
+    return [
+      this.details,
+      "Managed installation will be retried after the marimo extension is updated.",
+      "To recover now, install the official ty extension (astral-sh.ty) or configure marimo.ty.path, then reload VS Code.",
+      "For full installation output, open the marimo (uv) output channel.",
+    ].join("\n");
+  }
+}
 
 export const TyLanguageServerStatus = Data.taggedEnum<TyLanguageServerStatus>();
 
@@ -67,6 +96,10 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
       const envInvalidation = yield* PythonEnvInvalidation;
       const telemetry = yield* Effect.serviceOption(Telemetry);
       const code = yield* VsCode;
+      const uv = yield* Uv;
+      const notifyInstallFailure = yield* makeTyInstallFailureNotifier(
+        uv.channel,
+      );
 
       const statusRef = yield* Ref.make<TyLanguageServerStatus>(
         TyLanguageServerStatus.Starting(),
@@ -205,12 +238,50 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
           }).pipe(Effect.scoped);
 
           // Run the server in a loop: start → invalidation → restart.
-          // On failure, the error propagates to catchCause and stops.
+          // Installation failures get a dedicated recovery path; other
+          // failures propagate to catchCause and stop the loop.
           yield* Effect.forever(serverCycle).pipe(
+            Effect.catchTag("ManagedTyInstallPreviouslyFailed", (error) =>
+              Effect.gen(function* () {
+                const message = error.format();
+                yield* Ref.set(
+                  statusRef,
+                  TyLanguageServerStatus.Failed({
+                    message,
+                    cause: Cause.fail(error),
+                  }),
+                );
+                yield* Effect.logWarning(message).pipe(
+                  Effect.annotateLogs({
+                    server: TY_SERVER.name,
+                    version: TY_SERVER.version,
+                  }),
+                );
+              }),
+            ),
+            Effect.catchTag("LanguageServerInstallError", (error) =>
+              Effect.gen(function* () {
+                const message = error.message;
+                yield* Ref.set(
+                  statusRef,
+                  TyLanguageServerStatus.Failed({
+                    message,
+                    cause: Cause.fail(error),
+                  }),
+                );
+                yield* Effect.logError(message).pipe(
+                  Effect.annotateLogs({
+                    server: TY_SERVER.name,
+                    version: TY_SERVER.version,
+                  }),
+                );
+                yield* notifyInstallFailure;
+              }),
+            ),
             Effect.catchCause((cause) =>
               Effect.gen(function* () {
                 if (Cause.hasInterruptsOnly(cause)) return;
-                const message = "Failed to start language server";
+                const message = "Failed to start ty language server";
                 yield* Ref.set(
                   statusRef,
                   TyLanguageServerStatus.Failed({ message, cause }),
@@ -242,6 +313,7 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
       OutputChannel.layer,
       VariablesService.layer,
       PythonEnvInvalidation.layer,
+      Storage.layer,
     ]),
   );
 }
@@ -257,8 +329,15 @@ const resolveTyBinary = Effect.fn(function* () {
   const config = yield* Config;
   const uv = yield* Uv;
   const context = yield* ExtensionContext;
+  const extensionVersion = yield* getExtensionVersion();
 
   const tyExtension = code.extensions.getExtension(TY_EXTENSION_ID);
+  const targetPath = NodePath.resolve(context.globalStorageUri.fsPath, "libs");
+  const managedBinaryPath = NodePath.resolve(
+    targetPath,
+    "bin",
+    resolvePlatformBinaryName(TY_SERVER.name),
+  );
 
   const tyExtConfiguredPath = Effect.gen(function* () {
     const tyExtConfig = yield* code.workspace.getConfiguration("ty");
@@ -268,7 +347,7 @@ const resolveTyBinary = Effect.fn(function* () {
     );
   });
 
-  return yield* resolveBinary(
+  const resolved = yield* resolveBinary(
     TY_SERVER.name,
     [
       userConfiguredPath("ty", TY_SERVER.version, config.ty.path),
@@ -284,23 +363,113 @@ const resolveTyBinary = Effect.fn(function* () {
         TY_EXTENSION_ID,
         tyExtension,
       ),
+      {
+        label: "existing managed installation",
+        resolve: validateBinary(managedBinaryPath, TY_SERVER.version).pipe(
+          Effect.map(Option.map((path) => BinarySource.UvInstalled({ path }))),
+        ),
+      },
     ],
     {
       label: "uv install",
       resolve: Effect.gen(function* () {
-        const targetPath = NodePath.resolve(
-          context.globalStorageUri.fsPath,
-          "libs",
-        );
-        const binaryPath = yield* uv.ensureLanguageServerBinaryInstalled(
-          TY_SERVER,
-          {
-            targetPath,
-          },
-        );
+        const previousFailure =
+          yield* getPreviousInstallFailure(extensionVersion);
+        if (Option.isSome(previousFailure)) {
+          return yield* new ManagedTyInstallPreviouslyFailed({
+            extensionVersion: previousFailure.value.extensionVersion,
+            serverVersion: previousFailure.value.serverVersion,
+            details: previousFailure.value.details,
+          });
+        }
+
+        const binaryPath = yield* uv
+          .ensureLanguageServerBinaryInstalled(TY_SERVER, { targetPath })
+          .pipe(
+            Effect.tapError((error) =>
+              rememberInstallFailure(extensionVersion, error.message),
+            ),
+          );
         return Option.some(BinarySource.UvInstalled({ path: binaryPath }));
       }),
     },
+  );
+
+  yield* clearManagedInstallFailure(TY_SERVER.name).pipe(Effect.ignore);
+  return resolved;
+});
+
+const getPreviousInstallFailure = Effect.fn(function* (
+  extensionVersion: Option.Option<string>,
+) {
+  if (Option.isNone(extensionVersion)) return Option.none();
+
+  const failure = yield* getManagedInstallFailure(TY_SERVER.name).pipe(
+    Effect.orElseSucceed(() => Option.none()),
+  );
+  return matchesManagedInstallFailure(failure, {
+    extensionVersion: extensionVersion.value,
+    serverVersion: TY_SERVER.version,
+  })
+    ? failure
+    : Option.none();
+});
+
+const rememberInstallFailure = Effect.fn(function* (
+  extensionVersion: Option.Option<string>,
+  details: string,
+) {
+  if (Option.isNone(extensionVersion)) return;
+
+  yield* setManagedInstallFailure(TY_SERVER.name, {
+    extensionVersion: extensionVersion.value,
+    serverVersion: TY_SERVER.version,
+    details,
+  }).pipe(Effect.ignore);
+});
+
+export const makeTyInstallFailureNotifier = Effect.fn(
+  "TyLanguageServer.makeTyInstallFailureNotifier",
+)(function* (channel: { readonly name: string; show(): void }) {
+  const code = yield* VsCode;
+
+  return yield* Effect.cached(
+    Effect.gen(function* () {
+      const selection = yield* code.window.showWarningMessage(
+        "marimo couldn't install ty. Install the official ty extension to enable Python completions and diagnostics in marimo notebooks.",
+        { items: [INSTALL_TY_EXTENSION, OPEN_UV_LOGS] },
+      );
+      if (Option.isNone(selection)) return;
+
+      if (selection.value === OPEN_UV_LOGS) {
+        channel.show();
+        return;
+      }
+
+      const install = yield* Effect.exit(
+        code.commands.executeVSCode(
+          "workbench.extensions.installExtension",
+          TY_EXTENSION_ID,
+        ),
+      );
+      if (Exit.isFailure(install)) {
+        yield* Effect.logError("Failed to install the ty extension").pipe(
+          Effect.annotateLogs({ cause: install.cause }),
+        );
+        yield* code.window.showErrorMessage(
+          "VS Code couldn't install the ty extension. Search for @id:astral-sh.ty in the Extensions view.",
+        );
+        return;
+      }
+
+      const reload = yield* code.window.showInformationMessage(
+        "Reload VS Code to finish enabling the ty extension in marimo notebooks.",
+        { items: [RELOAD_WINDOW] },
+      );
+      if (Option.contains(reload, RELOAD_WINDOW)) {
+        yield* code.commands.executeVSCode("workbench.action.reloadWindow");
+      }
+    }),
   );
 });
 

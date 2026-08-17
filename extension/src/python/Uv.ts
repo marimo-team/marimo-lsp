@@ -168,9 +168,12 @@ export class LanguageServerInstallError extends Data.TaggedError(
   readonly targetPath: string;
   readonly attempts: ReadonlyArray<LanguageServerInstallAttempt>;
 }> {
+  override readonly message = this.format();
+
   format(): string {
     const lines = [
       `Failed to install ${this.server.name}@${this.server.version}`,
+      `Target: ${this.targetPath}`,
     ];
     for (const attempt of this.attempts) {
       const errorMsg =
