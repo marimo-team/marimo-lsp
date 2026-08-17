@@ -471,7 +471,7 @@ it.effect(
 );
 
 it.effect(
-  "requires a UUID kernel session ID even for kernel variable snapshots",
+  "requires a kernel session ID even for kernel variable snapshots",
   Effect.fn(function* () {
     let notify: ((message: unknown) => void) | undefined;
     const operations = yield* makeKernelNotificationStream((handler) => {
@@ -490,7 +490,7 @@ it.effect(
         Effect.gen(function* () {
           yield* Effect.yieldNow;
           assert.ok(notify);
-          notify({ ...kernelSnapshot, sessionId: "not-a-uuid" });
+          notify({ ...kernelSnapshot, sessionId: undefined });
           notify(kernelSnapshot);
         }),
       ],

@@ -51,9 +51,12 @@ const VariablesNotification = Schema.declare<VariablesNotification>(
     Schema.is(MarimoNotification)(value) && value.op === "variables",
 );
 
-export const KernelSessionIdFromString = Schema.String.check(
-  Schema.isUUID(4),
-).pipe(Schema.brand("KernelSessionId"));
+// The id is an opaque token minted by the server; only equality matters.
+// Validating its shape here would turn a harmless server-side format
+// change into silently dropped notifications.
+export const KernelSessionIdFromString = Schema.String.pipe(
+  Schema.brand("KernelSessionId"),
+);
 export type KernelSessionId = typeof KernelSessionIdFromString.Type;
 
 export const NotebookIdFromString = Schema.String.pipe(
