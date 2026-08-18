@@ -18,7 +18,6 @@ import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
 import { DatasourcesViewLive } from "../panel/datasources/DatasourcesView.ts";
-import { PackagesService } from "../panel/packages/PackagesService.ts";
 import { PackagesViewLive } from "../panel/packages/PackagesView.ts";
 import { SessionFileLifecycleLive } from "../panel/sessions/SessionFileLifecycle.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
@@ -88,7 +87,6 @@ const MainLive = Layer.empty
     Layer.provide(CellExecutions.layer),
     Layer.provide(VariablesService.layer),
     Layer.provide(DatasourcesService.layer),
-    Layer.provide(PackagesService.layer),
     Layer.provideMerge(SessionsService.layer),
     Layer.provide(HealthService.layer),
     Layer.provide(CellMetadataUIBindingService.layer),

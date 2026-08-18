@@ -2,12 +2,20 @@ import { Effect, Layer, Option, Ref, Stream } from "effect";
 
 import refreshPackagesCommand from "../../commands/refreshPackages.ts";
 import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
+import {
+  NotebookDependencies,
+  type NotebookDependencyState,
+} from "../../notebook/NotebookDependencies.ts";
+import {
+  type NotebookDocumentSession,
+  NotebookDocumentSessions,
+} from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
+import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DependencyTreeNode } from "../../schemas/Models.gen.ts";
 import { TreeView } from "../TreeView.ts";
-import { PackagesService } from "./PackagesService.ts";
 
 interface PackageTreeItem {
   type: "package";
@@ -16,6 +24,11 @@ interface PackageTreeItem {
   version: string | null;
   tags: readonly Record<string, string>[];
   dependencies: readonly DependencyTreeNode[];
+}
+
+interface ActiveDependencies {
+  readonly session: NotebookDocumentSession;
+  readonly state: NotebookDependencyState;
 }
 
 /**
@@ -28,7 +41,8 @@ interface PackageTreeItem {
 export const PackagesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const treeView = yield* TreeView;
-    const packagesService = yield* PackagesService;
+    const documentSessions = yield* NotebookDocumentSessions;
+    const sessionResources = yield* NotebookSessionResources;
     const editorRegistry = yield* NotebookEditorRegistry;
     const notebooks = yield* NotebookRuntime;
     const code = yield* VsCode;
@@ -82,95 +96,89 @@ export const PackagesViewLive = Layer.effectDiscard(
         }),
     });
 
-    // Helper to rebuild the package tree from current state
-    const refreshPackages = Effect.fn(function* () {
-      const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri;
-
-      yield* Effect.logDebug("Refreshing packages").pipe(
-        Effect.annotateLogs({
-          activeNotebookUri: Option.getOrElse(activeNotebookUri, () => null),
-        }),
+    const sessionFor = (notebookId: Option.Option<NotebookId>) =>
+      Option.flatMap(notebookId, (id) =>
+        Option.fromUndefinedOr(documentSessions.current(id)),
       );
-      if (Option.isNone(activeNotebookUri)) {
-        yield* Ref.set(packageItems, []);
-        yield* provider.refresh();
-        return;
-      }
+    const activeSessions = Stream.merge(
+      editorRegistry.streamActiveNotebookChanges.pipe(Stream.map(sessionFor)),
+      documentSessions.changes.pipe(
+        Stream.mapEffect(() => editorRegistry.getActiveNotebookUri),
+        Stream.map(sessionFor),
+      ),
+    ).pipe(
+      Stream.changesWith((left, right) =>
+        Option.isNone(left)
+          ? Option.isNone(right)
+          : Option.isSome(right) && left.value.id === right.value.id,
+      ),
+    );
 
-      const notebookUri = activeNotebookUri.value;
-
-      // Check if we already have the dependency tree cached
-      const cachedTreeState =
-        yield* packagesService.getDependencyTree(notebookUri);
-
-      if (Option.isNone(cachedTreeState)) {
-        // No cached tree, fetch it
-        yield* packagesService.fetchDependencyTree(notebookUri);
-        // Will be updated via the stream subscription
-        return;
-      }
-
-      const { tree, loading, error } = cachedTreeState.value;
-
-      if (loading || error || !tree) {
-        yield* Ref.set(packageItems, []);
-        yield* provider.refresh();
-        return;
-      }
-
-      // Surface the user's direct dependencies and hide the tree's top-level
-      // wrapper. Across all paths the root is uninformative:
-      //   - `<root>` for PEP 723 script mode
-      //   - the uv project name when the notebook lives in a uv project
-      //   - `installed-packages` from our venv pip-list fallback synthesizer
-      // The deps below it are what the user actually wants to see.
-      const items: PackageTreeItem[] = tree.dependencies.map((dep) => ({
-        type: "package",
-        notebookUri,
-        name: dep.name,
-        version: dep.version,
-        tags: dep.tags,
-        dependencies: dep.dependencies,
-      }));
-
-      yield* Effect.logDebug("Refreshed packages").pipe(
-        Effect.annotateLogs({
-          topLevelCount: items.length,
-        }),
-      );
-      yield* Ref.set(packageItems, items);
-      yield* provider.refresh();
-    });
-
-    // Subscribe to active notebook changes
-    yield* Effect.forkScoped(
-      editorRegistry.streamActiveNotebookChanges.pipe(
-        Stream.runForEach(() => {
-          return refreshPackages();
+    const activeDependencies = activeSessions.pipe(
+      Stream.switchMap(
+        Option.match({
+          onNone: () => Stream.succeed(Option.none<ActiveDependencies>()),
+          onSome: (session) =>
+            sessionResources
+              .stream(
+                session,
+                Stream.unwrap(
+                  NotebookDependencies.pipe(
+                    Effect.map((dependencies) => dependencies.changes),
+                  ),
+                ),
+              )
+              .pipe(
+                Stream.map((state) =>
+                  Option.some({ session, state } satisfies ActiveDependencies),
+                ),
+              ),
         }),
       ),
     );
 
-    // Subscribe to dependency tree changes
     yield* Effect.forkScoped(
-      packagesService.streamDependencyTreeChanges.pipe(
+      activeDependencies.pipe(
         Stream.runForEach(
-          Effect.fn(function* (_treeMap) {
-            yield* refreshPackages();
+          Effect.fn(function* (active) {
+            const items = Option.match(active, {
+              onNone: () => [],
+              onSome: ({ session, state }) => {
+                if (state._tag !== "Loaded" || state.tree === null) return [];
+                // The root is an implementation detail (`<root>`, a project
+                // name, or `installed-packages`); its children are the user's
+                // direct dependencies.
+                return state.tree.dependencies.map((dependency) => ({
+                  type: "package" as const,
+                  notebookUri: session.notebookId,
+                  name: dependency.name,
+                  version: dependency.version,
+                  tags: dependency.tags,
+                  dependencies: dependency.dependencies,
+                }));
+              },
+            });
+            yield* Ref.set(packageItems, items);
+            yield* provider.refresh();
           }),
         ),
       ),
     );
 
-    // Invalidate cache when the user switches kernels on a notebook —
-    // the cached tree was computed against the old env. Clearing fires
-    // streamDependencyTreeChanges, which triggers refreshPackages to
-    // re-fetch with the new controller's `target`.
+    // A dependency tree belongs to the selected environment, so a controller
+    // change refreshes the resource owned by that document session.
     yield* Effect.forkScoped(
       notebooks.controllerChanges.pipe(
         Stream.runForEach(
           Effect.fn(function* ({ notebookUri }) {
-            yield* packagesService.clearNotebook(notebookUri);
+            const session = documentSessions.current(notebookUri);
+            if (session === undefined) return;
+            yield* sessionResources.run(
+              session,
+              NotebookDependencies.pipe(
+                Effect.flatMap((dependencies) => dependencies.refresh),
+              ),
+            );
           }),
         ),
       ),
