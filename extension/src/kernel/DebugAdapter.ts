@@ -97,7 +97,6 @@ export class DebugAdapter extends Context.Service<DebugAdapter>()(
   {
     make: Effect.gen(function* () {
       const code = yield* VsCode;
-      const notebooks = yield* NotebookRuntime;
 
       const debugpyLibsPath = yield* resolveDebugpyPath(code);
 
@@ -208,11 +207,7 @@ export class DebugAdapter extends Context.Service<DebugAdapter>()(
 
             // Activate debugpy (idempotent — returns existing port if running).
             yield* Effect.logInfo("Activating debugpy in kernel");
-            const state = yield* activateDebugpy(
-              notebooks,
-              notebookUri,
-              debugpyLibsPath,
-            );
+            const state = yield* activateDebugpy(notebookUri, debugpyLibsPath);
             yield* Effect.logInfo("debugpy ready").pipe(
               Effect.annotateLogs({
                 port: state.port,
@@ -283,58 +278,57 @@ export class DebugAdapter extends Context.Service<DebugAdapter>()(
  * Activate debugpy in the kernel by running a scratchpad snippet
  * and parsing the port + tmpdir from stdout.
  */
-function activateDebugpy(
-  notebooks: NotebookRuntime["Service"],
+const activateDebugpy = Effect.fn("DebugAdapter.activateDebugpy")(function* (
   notebookUri: NotebookId,
   debugpyLibsPath: string,
 ) {
-  return Effect.gen(function* () {
-    const script = activationScript(debugpyLibsPath);
-    const ops = notebooks.forNotebook(notebookUri).executeScratchpad(script);
+  const notebooks = yield* NotebookRuntime;
+  const script = activationScript(debugpyLibsPath);
+  const notebook = yield* notebooks.forNotebook(notebookUri);
+  const ops = notebook.executeScratchpad(script);
 
-    // Collect all console outputs and find the JSON with port + tmpdir
-    let result: DebugpyState | undefined;
+  // Collect all console outputs and find the JSON with port + tmpdir
+  let result: DebugpyState | undefined;
 
-    yield* Stream.runForEach(ops, (op) =>
-      Effect.sync(() => {
-        if (result) return;
-        // SAFETY: `console` is an optional cell-op field whose shape isn't
-        // surfaced in the openapi-generated type for `CellOperationNotification`;
-        // the guards below validate each entry before use.
-        const consoleOutput = (op as { console?: unknown }).console;
-        if (!consoleOutput) return;
+  yield* Stream.runForEach(ops, (op) =>
+    Effect.sync(() => {
+      if (result) return;
+      // SAFETY: `console` is an optional cell-op field whose shape isn't
+      // surfaced in the openapi-generated type for `CellOperationNotification`;
+      // the guards below validate each entry before use.
+      const consoleOutput = (op as { console?: unknown }).console;
+      if (!consoleOutput) return;
 
-        const outputs = Array.isArray(consoleOutput)
-          ? consoleOutput
-          : [consoleOutput];
-        for (const output of outputs) {
-          if (
-            typeof output !== "object" ||
-            output === null ||
-            !("channel" in output) ||
-            !("data" in output)
-          ) {
-            continue;
-          }
-          if (output.channel === "stdout" && typeof output.data === "string") {
-            try {
-              const json: unknown = JSON.parse(output.data.trim());
-              const decoded = Schema.decodeUnknownOption(DebugpyState)(json);
-              if (Option.isSome(decoded)) {
-                result = decoded.value;
-              }
-            } catch {
-              // Not valid JSON, skip
+      const outputs = Array.isArray(consoleOutput)
+        ? consoleOutput
+        : [consoleOutput];
+      for (const output of outputs) {
+        if (
+          typeof output !== "object" ||
+          output === null ||
+          !("channel" in output) ||
+          !("data" in output)
+        ) {
+          continue;
+        }
+        if (output.channel === "stdout" && typeof output.data === "string") {
+          try {
+            const json: unknown = JSON.parse(output.data.trim());
+            const decoded = Schema.decodeUnknownOption(DebugpyState)(json);
+            if (Option.isSome(decoded)) {
+              result = decoded.value;
             }
+          } catch {
+            // Not valid JSON, skip
           }
         }
-      }),
-    );
+      }
+    }),
+  );
 
-    if (!result) {
-      return yield* new DebugpyActivationError({ reason: "no port received" });
-    }
+  if (!result) {
+    return yield* new DebugpyActivationError({ reason: "no port received" });
+  }
 
-    return result;
-  });
-}
+  return result;
+});

@@ -38,7 +38,8 @@ export const restartSession = Effect.fn("command.restartSession")(function* ({
   notebookUri,
 }: SessionCommandTarget) {
   const runtime = yield* NotebookRuntime;
-  yield* runtime.forNotebook(notebookUri).restart.pipe(
+  const notebook = yield* runtime.forNotebook(notebookUri);
+  yield* notebook.restart.pipe(
     Effect.catchCause(
       Effect.fn(function* (cause) {
         yield* Effect.logError("Failed to restart kernel").pipe(
@@ -59,7 +60,8 @@ export const shutdownSession = Effect.fn("command.shutdownSession")(function* ({
   const session = yield* sessions.find(notebookUri);
   if (Option.isNone(session)) return;
 
-  yield* runtime.forNotebook(notebookUri).close;
+  const notebook = yield* runtime.forNotebook(notebookUri);
+  yield* notebook.close;
   const choice = yield* code.window.showInformationMessage(
     `Shut down kernel for ${session.value.filename ?? "notebook"}.`,
     { items: ["Restart"] },

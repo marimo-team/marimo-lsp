@@ -330,8 +330,8 @@ const pruneStaleControllers = Effect.fn("pruneStaleControllers")(
     for (const rawDocument of documents) {
       const notebook = MarimoNotebookDocument.tryFrom(rawDocument);
       if (Option.isNone(notebook)) continue;
-      const controller = yield* notebooks.forNotebook(notebook.value.id)
-        .getController;
+      const handle = yield* notebooks.forNotebook(notebook.value.id);
+      const controller = yield* handle.getController;
       if (Option.isSome(controller)) {
         selectedControllerIds.add(controller.value.id);
       }

@@ -99,9 +99,10 @@ export class PackagesService extends Context.Service<PackagesService>()(
             return null;
           }
 
-          const activeController = yield* notebooks.forNotebook(
+          const notebook = yield* notebooks.forNotebook(
             activeNotebook.value.id,
-          ).getController;
+          );
+          const activeController = yield* notebook.getController;
           if (Option.isNone(activeController)) {
             yield* Effect.logDebug(
               "No active controller; skipping dependency tree fetch",

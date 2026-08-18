@@ -115,8 +115,8 @@ it.effect(
       const id = notebookId(editor.notebook.uri.toString());
       yield* vscode.openNotebook(editor.notebook);
       yield* Effect.yieldNow;
-      const first = notebooks.forNotebook(id);
-      const second = notebooks.forNotebook(id);
+      const first = yield* notebooks.forNotebook(id);
+      const second = yield* notebooks.forNotebook(id);
       const document = yield* notebooks.forDocument(editor.notebook);
 
       expect(first).toBe(second);
@@ -202,8 +202,8 @@ it.effect(
         .pipe(Effect.forkChild);
       yield* Deferred.await(secondExecutionStarted);
 
-      const mutation = yield* runtime
-        .forNotebook(id)
+      const notebook = yield* runtime.forNotebook(id);
+      const mutation = yield* notebook
         .updateUIElements({ objectIds: [], values: [] })
         .pipe(Effect.forkChild);
       yield* Effect.yieldNow;
@@ -391,7 +391,8 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
             { cellIds: [], codes: [] },
             "/python-two",
           );
-          yield* runtime.forNotebook(id).close;
+          const notebook = yield* runtime.forNotebook(id);
+          yield* notebook.close;
           expect(Option.isNone(yield* runtime.getRuntimeSession(id))).toBe(
             true,
           );
@@ -429,8 +430,8 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime;
-      notebooks.forNotebook(notebook);
-      notebooks.forNotebook(notebookId("notebook-b"));
+      yield* notebooks.forNotebook(notebook);
+      yield* notebooks.forNotebook(notebookId("notebook-b"));
 
       const settledSubscriptions = yield* eventually(
         Effect.sync(() => subscriptions),
@@ -453,7 +454,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime;
-      const handle = notebooks.forNotebook(notebook);
+      const handle = yield* notebooks.forNotebook(notebook);
 
       expect(Option.isNone(yield* handle.getController)).toBe(true);
       yield* notebooks.attachController(notebook, controller);
@@ -612,7 +613,9 @@ it.effect(
       // so the runtime must stop handing this one out. Re-resolve the handle
       // each attempt: one captured before the close reads the released state.
       const released = yield* eventually(
-        Effect.suspend(() => notebooks.forNotebook(id).getController),
+        notebooks
+          .forNotebook(id)
+          .pipe(Effect.flatMap((notebook) => notebook.getController)),
         Option.isNone,
       );
       expect(Option.isNone(released)).toBe(true);

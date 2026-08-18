@@ -176,7 +176,6 @@ export interface NotebookDocumentHandle {
 }
 
 interface NotebookState {
-  readonly session: NotebookDocumentSession | undefined;
   readonly handle: NotebookHandle;
   readonly controller: Ref.Ref<Option.Option<NotebookController>>;
 }
@@ -239,7 +238,7 @@ function isScratchpadOutput(
  * ```ts
  * const runtime = yield* NotebookRuntime;
  * const documentHandle = yield* runtime.forDocument(rawNotebook);
- * const notebook = runtime.forNotebook(notebookId);
+ * const notebook = yield* runtime.forNotebook(notebookId);
  *
  * yield* documentHandle.executeCells(request, executable);
  * yield* notebook.updateUIElements(update);
@@ -262,7 +261,10 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       const liveSessions = yield* SessionsService;
       const documentSessions = yield* NotebookDocumentSessions;
       const operations = yield* PubSub.unbounded<SessionNotification>();
-      const notebooks = new Map<NotebookId, NotebookState>();
+      const notebookStates = new Map<
+        NotebookId | NotebookDocumentSession,
+        NotebookState
+      >();
       const kernelSessions = new Map<NotebookId, KernelSessionId>(
         (yield* liveSessions.get).map((session) => [
           session.notebookUri,
@@ -372,7 +374,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         controller: Ref.Ref<Option.Option<NotebookController>>,
       ): NotebookDocumentHandle => ({
         executeCells: (request, executable) =>
-          registerDocumentSessionCleanup(session).pipe(
+          stateForDocumentSession(session).pipe(
             Effect.andThen(
               executor
                 .submitScoped(
@@ -591,34 +593,6 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         ),
       });
 
-      const makeState = (notebookId: NotebookId): NotebookState => {
-        const controller = Ref.makeUnsafe<Option.Option<NotebookController>>(
-          Option.none(),
-        );
-        return {
-          session: documentSessions.current(notebookId),
-          controller,
-          handle: makeHandle(notebookId, controller, Semaphore.makeUnsafe(1)),
-        };
-      };
-
-      const stateForNotebook = (notebookId: NotebookId) => {
-        const existing = notebooks.get(notebookId);
-        if (
-          existing !== undefined &&
-          existing.session === documentSessions.current(notebookId)
-        ) {
-          return existing;
-        }
-
-        const state = makeState(notebookId);
-        notebooks.set(notebookId, state);
-        return state;
-      };
-
-      const forNotebook = (notebookId: NotebookId) =>
-        stateForNotebook(notebookId).handle;
-
       const updateKernelContext = Effect.fn(
         "NotebookRuntime.updateKernelContext",
       )(function* () {
@@ -639,34 +613,64 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           Stream.runForEach(updateKernelContext),
         ),
       );
-      const registeredSessionCleanups = new WeakSet<NotebookDocumentSession>();
-      const registerDocumentSessionCleanup = Effect.fn(
-        "NotebookRuntime.registerDocumentSessionCleanup",
+      const makeState = (notebookId: NotebookId): NotebookState => {
+        const controller = Ref.makeUnsafe<Option.Option<NotebookController>>(
+          Option.none(),
+        );
+        return {
+          controller,
+          handle: makeHandle(notebookId, controller, Semaphore.makeUnsafe(1)),
+        };
+      };
+
+      const stateForDocumentSession = Effect.fn(
+        "NotebookRuntime.stateForDocumentSession",
       )((session: NotebookDocumentSession) =>
         Effect.uninterruptible(
           Effect.suspend(() => {
-            if (registeredSessionCleanups.has(session)) return Effect.void;
-            registeredSessionCleanups.add(session);
+            const existing = notebookStates.get(session);
+            if (existing !== undefined) return Effect.succeed(existing);
+
             const { notebookId } = session;
+            const state = makeState(notebookId);
+            notebookStates.delete(notebookId);
+            notebookStates.set(session, state);
             return Scope.addFinalizer(
               session.scope,
               executor
                 .post(
                   notebookId,
                   Effect.gen(function* () {
-                    const state = notebooks.get(notebookId);
-                    if (state?.session === session)
-                      notebooks.delete(notebookId);
+                    notebookStates.delete(session);
                     yield* variables.clearSession(session);
                     yield* datasources.clearSession(session);
                     yield* updateKernelContext();
                   }),
                 )
                 .pipe(Effect.exit, Effect.asVoid),
-            );
+            ).pipe(Effect.as(state));
           }),
         ),
       );
+
+      const stateForNotebook = Effect.fn("NotebookRuntime.stateForNotebook")(
+        (notebookId: NotebookId) =>
+          Effect.suspend(() => {
+            const session = documentSessions.current(notebookId);
+            if (session !== undefined) return stateForDocumentSession(session);
+
+            const existing = notebookStates.get(notebookId);
+            if (existing !== undefined) return Effect.succeed(existing);
+
+            const state = makeState(notebookId);
+            notebookStates.set(notebookId, state);
+            return Effect.succeed(state);
+          }),
+      );
+
+      const forNotebook = (notebookId: NotebookId) =>
+        stateForNotebook(notebookId).pipe(Effect.map((state) => state.handle));
+
       yield* Effect.forkScoped(
         liveSessions.changes.pipe(
           Stream.runForEach((snapshot) =>
@@ -700,54 +704,72 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
             }),
           ),
           Stream.runForEach((message) => {
-            const run = Effect.gen(function* () {
-              // The kernel-session gate covers one race: sessionsChanged and
-              // kernel notifications arrive on independent streams, so a
-              // notification from a kernel replaced by restart can reach this
-              // worker after the reconcile that installed the new session id.
-              // The server never emits a stale id after announcing its
-              // replacement on the wire; only this client-side reordering
-              // needs guarding. (File-backed close/reopen reuses the same
-              // kernel session, so no id change is involved there.)
-              if (
-                kernelSessions.get(message.notebookUri) !== message.sessionId
-              ) {
-                yield* liveSessions.refresh();
-                yield* reconcileKernelSession(message.notebookUri);
-              }
-              if (
-                kernelSessions.get(message.notebookUri) !== message.sessionId
-              ) {
-                yield* Effect.logDebug(
-                  "Ignored notification from an inactive kernel session",
-                ).pipe(
+            const run = (notebook: NotebookHandle) =>
+              Effect.gen(function* () {
+                // The kernel-session gate covers one race: sessionsChanged and
+                // kernel notifications arrive on independent streams, so a
+                // notification from a kernel replaced by restart can reach this
+                // worker after the reconcile that installed the new session id.
+                // The server never emits a stale id after announcing its
+                // replacement on the wire; only this client-side reordering
+                // needs guarding. (File-backed close/reopen reuses the same
+                // kernel session, so no id change is involved there.)
+                if (
+                  kernelSessions.get(message.notebookUri) !== message.sessionId
+                ) {
+                  yield* liveSessions.refresh();
+                  yield* reconcileKernelSession(message.notebookUri);
+                }
+                if (
+                  kernelSessions.get(message.notebookUri) !== message.sessionId
+                ) {
+                  yield* Effect.logDebug(
+                    "Ignored notification from an inactive kernel session",
+                  ).pipe(
+                    Effect.annotateLogs({
+                      notebookUri: message.notebookUri,
+                      sessionId: message.sessionId,
+                      notification: message.notification.op,
+                    }),
+                  );
+                  return;
+                }
+
+                yield* PubSub.publish(operations, message);
+                yield* Effect.annotateCurrentSpan(
+                  "notification.type",
+                  message.notification.op,
+                );
+                yield* processOperation(message, {
+                  notebook,
+                  respondToStdin,
+                  session: message.session,
+                }).pipe(
+                  Effect.catchTag(
+                    "NotebookDocumentSessionEndedError",
+                    () => Effect.void,
+                  ),
+                  Effect.catchCause(
+                    Effect.fn(function* (cause) {
+                      yield* Effect.logError(
+                        "Failed to process marimo operation",
+                      ).pipe(Effect.annotateLogs({ cause }));
+                      yield* Effect.forkChild(
+                        showErrorAndPromptLogs(
+                          "Failed to process marimo operation.",
+                        ),
+                      );
+                    }),
+                  ),
                   Effect.annotateLogs({
-                    notebookUri: message.notebookUri,
-                    sessionId: message.sessionId,
-                    notification: message.notification.op,
+                    "notification.type": message.notification.op,
                   }),
                 );
-                return;
-              }
-
-              yield* PubSub.publish(operations, message);
-              yield* Effect.annotateCurrentSpan(
-                "notification.type",
-                message.notification.op,
-              );
-              yield* processOperation(message, {
-                forNotebook,
-                respondToStdin,
-                session: message.session,
               }).pipe(
-                Effect.catchTag(
-                  "NotebookDocumentSessionEndedError",
-                  () => Effect.void,
-                ),
                 Effect.catchCause(
                   Effect.fn(function* (cause) {
                     yield* Effect.logError(
-                      "Failed to process marimo operation",
+                      "Failed to coordinate marimo operation",
                     ).pipe(Effect.annotateLogs({ cause }));
                     yield* Effect.forkChild(
                       showErrorAndPromptLogs(
@@ -756,29 +778,12 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                     );
                   }),
                 ),
-                Effect.annotateLogs({
-                  "notification.type": message.notification.op,
-                }),
+                Effect.withSpan("NotebookRuntime.processOperation"),
               );
-            }).pipe(
-              Effect.catchCause(
-                Effect.fn(function* (cause) {
-                  yield* Effect.logError(
-                    "Failed to coordinate marimo operation",
-                  ).pipe(Effect.annotateLogs({ cause }));
-                  yield* Effect.forkChild(
-                    showErrorAndPromptLogs(
-                      "Failed to process marimo operation.",
-                    ),
-                  );
-                }),
-              ),
-              Effect.withSpan("NotebookRuntime.processOperation"),
-            );
-            return registerDocumentSessionCleanup(message.session).pipe(
-              Effect.andThen(
+            return stateForDocumentSession(message.session).pipe(
+              Effect.flatMap((state) =>
                 executor
-                  .postScoped(message.notebookUri, run)
+                  .postScoped(message.notebookUri, run(state.handle))
                   .pipe(Scope.provide(message.session.scope)),
               ),
             );
@@ -790,7 +795,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           Stream.runForEach((message) => {
             const session = documentSessions.current(message.notebookUri);
             if (session === undefined) return Effect.void;
-            return registerDocumentSessionCleanup(session).pipe(
+            return stateForDocumentSession(session).pipe(
               Effect.andThen(
                 executor
                   .postScoped(
@@ -809,7 +814,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           Stream.runForEach(({ editor, message }) =>
             Effect.gen(function* () {
               const notebook = MarimoNotebookDocument.from(editor.notebook);
-              const handle = forNotebook(notebook.id);
+              const handle = yield* forNotebook(notebook.id);
 
               switch (message.command) {
                 case "update-ui-element":
@@ -894,10 +899,13 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
             ),
           ),
           Stream.runForEach((event) =>
-            syncCellIdentity(event, {
-              code,
-              executions,
-              notebook: forNotebook(event.notebook.id),
+            Effect.gen(function* () {
+              const notebook = yield* forNotebook(event.notebook.id);
+              yield* syncCellIdentity(event, {
+                code,
+                executions,
+                notebook,
+              });
             }),
           ),
         ),
@@ -909,16 +917,10 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           controller: NotebookController,
         ) {
           return Effect.gen(function* () {
-            const session = documentSessions.current(notebookId);
-            if (session !== undefined) {
-              yield* registerDocumentSessionCleanup(session);
-            }
             yield* Effect.uninterruptible(
               Effect.gen(function* () {
-                yield* Ref.set(
-                  stateForNotebook(notebookId).controller,
-                  Option.some(controller),
-                );
+                const state = yield* stateForNotebook(notebookId);
+                yield* Ref.set(state.controller, Option.some(controller));
                 yield* PubSub.publish(controllerSelections, {
                   notebookUri: notebookId,
                   controller,
@@ -986,7 +988,10 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           const current = yield* liveSessions.get;
           yield* Effect.forEach(
             current,
-            (session) => forNotebook(session.notebookUri).close,
+            (session) =>
+              forNotebook(session.notebookUri).pipe(
+                Effect.andThen((handle) => handle.close),
+              ),
             { discard: true },
           );
         }),
@@ -999,8 +1004,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                 notebookUri: notebook.id,
               });
             }
-            yield* registerDocumentSessionCleanup(session);
-            const state = stateForNotebook(session.notebookId);
+            const state = yield* stateForDocumentSession(session);
             return makeDocumentHandle(session, state.controller);
           });
         },
@@ -1088,7 +1092,7 @@ function isValueUpdateEcho(
 function processOperation(
   message: SessionNotification,
   options: {
-    forNotebook: (notebookId: NotebookId) => NotebookHandle;
+    readonly notebook: NotebookHandle;
     readonly respondToStdin: RespondToStdin;
     readonly session: NotebookDocumentSession;
   },
@@ -1219,7 +1223,7 @@ function processNotebookOperation(
     | NotificationOf<"send-ui-element-message">
     | NotificationOf<"model-lifecycle">,
   options: {
-    forNotebook: (notebookId: NotebookId) => NotebookHandle;
+    readonly notebook: NotebookHandle;
     readonly respondToStdin: RespondToStdin;
     readonly session: NotebookDocumentSession;
     readonly kernelSessionId: KernelSessionId | undefined;
@@ -1229,12 +1233,11 @@ function processNotebookOperation(
     const editors = yield* NotebookEditorRegistry;
     const renderer = yield* NotebookRenderer;
     const executions = yield* CellExecutions;
-    const notebookHandle = options.forNotebook(notebookUri);
     const sessionNotebook = MarimoNotebookDocument.from(
       options.session.document,
     );
     const notebookExecutions = yield* executions.open(options.session, {
-      getDrive: notebookHandle.getController.pipe(
+      getDrive: options.notebook.getController.pipe(
         Effect.map(
           Option.map((controller) => controller.drive(sessionNotebook)),
         ),
@@ -1286,7 +1289,7 @@ function processNotebookOperation(
     }
     if (editor.value.notebook !== options.session.document) return;
 
-    const controller = yield* notebookHandle.getController;
+    const controller = yield* options.notebook.getController;
     if (Option.isNone(controller)) {
       yield* Effect.logWarning("No active controller, skipping operation");
       return;

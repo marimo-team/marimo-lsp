@@ -186,7 +186,8 @@ export const createSandboxController = Effect.fn("createSandboxController")(
       runPromise(
         Effect.gen(function* () {
           const notebook = MarimoNotebookDocument.from(doc);
-          yield* notebooks.forNotebook(notebook.id).interrupt;
+          const handle = yield* notebooks.forNotebook(notebook.id);
+          yield* handle.interrupt;
         }).pipe(
           Effect.withSpan("SandboxController.interrupt", {
             attributes: {
