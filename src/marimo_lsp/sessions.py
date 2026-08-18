@@ -117,7 +117,14 @@ class _OperationSink:
         pending = self._pending
         self._pending = []
         for operation in pending:
-            self._forward(operation)
+            # Match notify(): one undeliverable notification must not fail
+            # the start or restart that is releasing the backlog.
+            try:
+                self._forward(operation)
+            except Exception:
+                logger.exception(
+                    "Dropped pending kernel notification (op=%s)", operation.name
+                )
 
     def move(self, notebook_uri: str) -> None:
         """Route future operations to a renamed notebook."""
