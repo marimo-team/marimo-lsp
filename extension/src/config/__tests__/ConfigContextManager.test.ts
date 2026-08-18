@@ -1,5 +1,5 @@
-import { assert, expect, it } from "@effect/vitest";
-import { Context, Deferred, Effect, Layer, Option, Ref, Schema } from "effect";
+import { expect, it } from "@effect/vitest";
+import { Deferred, Effect, Layer, Option, Ref, Schema } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -18,7 +18,6 @@ import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts
 import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
 import * as Api from "../../schemas/Models.gen.ts";
 import { ConfigContextManagerLive } from "../ConfigContextManager.ts";
-import { NotebookConfiguration } from "../NotebookConfiguration.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 
@@ -71,26 +70,13 @@ const withTestCtx = Effect.fn(function* () {
     Layer.provide(documentSessions),
     Layer.provide(runtime),
   );
-  const ready = yield* Deferred.make<{
-    sessions: Context.Service.Shape<typeof NotebookDocumentSessions>;
-    resources: Context.Service.Shape<typeof NotebookSessionResources>;
-  }>();
-  const capture = Layer.effectDiscard(
-    Effect.gen(function* () {
-      const sessions = yield* NotebookDocumentSessions;
-      const resources = yield* NotebookSessionResources;
-      yield* Deferred.succeed(ready, { sessions, resources });
-    }),
-  );
-
   return {
     vscode,
     document,
     contextWrites,
     wroteDefaults,
     wroteConfiguration,
-    ready,
-    layer: Layer.merge(ConfigContextManagerLive, capture).pipe(
+    layer: ConfigContextManagerLive.pipe(
       Layer.provide(resources),
       Layer.provide(documentSessions),
       Layer.provide(editors),
@@ -103,7 +89,6 @@ it.effect("mirrors the active session configuration into context keys", () =>
   Effect.gen(function* () {
     const ctx = yield* withTestCtx();
     yield* Layer.build(ctx.layer);
-    const { sessions, resources } = yield* Deferred.await(ctx.ready);
     yield* Deferred.await(ctx.wroteDefaults);
 
     const initial = yield* Ref.get(ctx.contextWrites);
@@ -118,14 +103,6 @@ it.effect("mirrors the active session configuration into context keys", () =>
 
     yield* ctx.vscode.setActiveNotebookEditor(
       Option.some(createTestNotebookEditor(ctx.document)),
-    );
-    const session = sessions.current(NOTEBOOK_URI);
-    assert(session !== undefined);
-    yield* resources.run(
-      session,
-      NotebookConfiguration.pipe(
-        Effect.flatMap((configuration) => configuration.get),
-      ),
     );
     yield* Deferred.await(ctx.wroteConfiguration);
 

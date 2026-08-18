@@ -1,5 +1,14 @@
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
+import {
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+  Option,
+  Schema,
+  Scope,
+  Stream,
+} from "effect";
 
 import {
   createTestNotebookDocument,
@@ -90,7 +99,9 @@ const inNotebook = <A, E, R>(
     const resources = yield* NotebookSessionResources;
     const session = sessions.current(notebookUri);
     assert(session !== undefined);
-    return yield* resources.run(session, effect);
+    return yield* resources
+      .runScoped(session, effect)
+      .pipe(Scope.provide(session.scope));
   });
 
 const collectUntilTerminal = (notebookUri: NotebookId) =>

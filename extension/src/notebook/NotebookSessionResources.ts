@@ -1,18 +1,24 @@
 import {
+  Cause,
   Context,
   Duration,
   Effect,
   Equal,
+  Exit,
+  Fiber,
   Hash,
   Layer,
   LayerMap,
+  Predicate,
   Scope,
-  Stream,
 } from "effect";
 
 import { NotebookConfiguration } from "../config/NotebookConfiguration.ts";
 import { NotebookDependencies } from "./NotebookDependencies.ts";
-import type { NotebookDocumentSession } from "./NotebookDocumentSessions.ts";
+import {
+  type NotebookDocumentSession,
+  NotebookDocumentSessionEndedError,
+} from "./NotebookDocumentSessions.ts";
 import { NotebookSession } from "./NotebookSession.ts";
 
 /**
@@ -70,28 +76,63 @@ export class NotebookSessionResources extends Context.Service<NotebookSessionRes
       );
 
       const contextFor = (session: NotebookDocumentSession) =>
-        resources
-          .contextEffect(new NotebookSessionKey(session))
-          .pipe(Effect.tap(() => registerSession(session)));
+        registerSession(session).pipe(
+          Effect.andThen(
+            resources.contextEffect(new NotebookSessionKey(session)),
+          ),
+        );
+
+      const runInSessionScope = <A, E, R>(
+        session: NotebookDocumentSession,
+        makeEffect: (scope: Scope.Scope) => Effect.Effect<A, E, R>,
+      ): Effect.Effect<
+        A,
+        E | NotebookDocumentSessionEndedError,
+        R | Scope.Scope
+      > =>
+        Effect.gen(function* () {
+          const scope = yield* Effect.scope;
+          if (scope !== session.scope) {
+            return yield* Effect.die(
+              "NotebookSessionResources.runScoped must be provided the session scope",
+            );
+          }
+          if (Predicate.isTagged(scope.state, "Closed")) {
+            return yield* new NotebookDocumentSessionEndedError({
+              notebookId: session.notebookId,
+            });
+          }
+
+          const fiber = yield* Effect.forkIn(makeEffect(scope), scope, {
+            startImmediately: true,
+          });
+          const exit = yield* Fiber.await(fiber).pipe(
+            Effect.onInterrupt(() => Fiber.interrupt(fiber)),
+          );
+          if (
+            Predicate.isTagged(scope.state, "Closed") &&
+            Exit.isFailure(exit) &&
+            Cause.hasInterruptsOnly(exit.cause)
+          ) {
+            return yield* new NotebookDocumentSessionEndedError({
+              notebookId: session.notebookId,
+            });
+          }
+          return yield* exit;
+        });
 
       return {
-        run<A, E, R>(
+        runScoped<A, E, R>(
           session: NotebookDocumentSession,
           effect: Effect.Effect<A, E, R>,
         ) {
-          return Effect.scoped(
-            contextFor(session).pipe(
-              Effect.flatMap((context) => Effect.provide(effect, context)),
-            ),
-          );
-        },
-        stream<A, E, R>(
-          session: NotebookDocumentSession,
-          stream: Stream.Stream<A, E, R>,
-        ) {
-          return Stream.unwrap(
-            contextFor(session).pipe(
-              Effect.map((context) => Stream.provide(stream, context)),
+          return runInSessionScope(session, (scope) =>
+            Effect.scoped(
+              contextFor(session).pipe(
+                Effect.flatMap((context) =>
+                  Effect.provide(effect, context).pipe(Scope.provide(scope)),
+                ),
+              ),
             ),
           );
         },

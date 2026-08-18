@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect";
+import { Effect, Option, Scope } from "effect";
 
 import { defineCommand } from "../commands.ts";
 import { NotebookDependencies } from "../notebook/NotebookDependencies.ts";
@@ -26,12 +26,14 @@ const handler = Effect.fn("command.refreshPackages")(function* () {
     yield* Effect.logWarning("Active notebook session ended before refresh");
     return;
   }
-  yield* sessionResources.run(
-    session,
-    NotebookDependencies.pipe(
-      Effect.flatMap((dependencies) => dependencies.refresh),
-    ),
-  );
+  yield* sessionResources
+    .runScoped(
+      session,
+      NotebookDependencies.pipe(
+        Effect.flatMap((dependencies) => dependencies.refresh),
+      ),
+    )
+    .pipe(Scope.provide(session.scope));
 });
 
 export default defineCommand(MarimoCommands.refreshPackages, handler);

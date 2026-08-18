@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect";
+import { Effect, Option, Scope } from "effect";
 
 import { NotebookConfiguration } from "../config/NotebookConfiguration.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
@@ -55,55 +55,57 @@ export const createConfigToggle = <T extends string>({
       return;
     }
 
-    yield* sessionResources.run(
-      session,
-      Effect.gen(function* () {
-        const configuration = yield* NotebookConfiguration;
-        const config = yield* configuration.get;
-        const currentValue = getCurrentValue(config);
+    yield* sessionResources
+      .runScoped(
+        session,
+        Effect.gen(function* () {
+          const configuration = yield* NotebookConfiguration;
+          const config = yield* configuration.get;
+          const currentValue = getCurrentValue(config);
 
-        const choice = yield* code.window.showQuickPickItems(
-          choices.map((c) => ({
-            label: c.label,
-            description:
-              c.value === currentValue ? "$(check) Current" : undefined,
-            detail: c.detail,
-            value: c.value,
-          })),
-          { title: pickerTitle },
-        );
+          const choice = yield* code.window.showQuickPickItems(
+            choices.map((c) => ({
+              label: c.label,
+              description:
+                c.value === currentValue ? "$(check) Current" : undefined,
+              detail: c.detail,
+              value: c.value,
+            })),
+            { title: pickerTitle },
+          );
 
-        if (Option.isNone(choice)) return;
+          if (Option.isNone(choice)) return;
 
-        const newValue = choice.value.value;
-        if (newValue === currentValue) {
-          yield* Effect.logInfo("Value unchanged");
-          return;
-        }
+          const newValue = choice.value.value;
+          if (newValue === currentValue) {
+            yield* Effect.logInfo("Value unchanged");
+            return;
+          }
 
-        yield* Effect.logInfo(`Updating ${configPath}`).pipe(
-          Effect.annotateLogs({
-            notebook: notebook.value.id,
-            from: currentValue,
-            to: newValue,
-          }),
-        );
+          yield* Effect.logInfo(`Updating ${configPath}`).pipe(
+            Effect.annotateLogs({
+              notebook: notebook.value.id,
+              from: currentValue,
+              to: newValue,
+            }),
+          );
 
-        const pathParts = configPath.split(".");
-        let partialConfig: Record<string, unknown> = {
-          [pathParts[pathParts.length - 1]]: newValue,
-        };
-        for (let i = pathParts.length - 2; i >= 0; i--) {
-          partialConfig = { [pathParts[i]]: partialConfig };
-        }
+          const pathParts = configPath.split(".");
+          let partialConfig: Record<string, unknown> = {
+            [pathParts[pathParts.length - 1]]: newValue,
+          };
+          for (let i = pathParts.length - 2; i >= 0; i--) {
+            partialConfig = { [pathParts[i]]: partialConfig };
+          }
 
-        yield* configuration.update(partialConfig);
+          yield* configuration.update(partialConfig);
 
-        yield* code.window.showInformationMessage(
-          `${settingName} set to ${getDisplayName(newValue)}.`,
-        );
-      }),
-    );
+          yield* code.window.showInformationMessage(
+            `${settingName} set to ${getDisplayName(newValue)}.`,
+          );
+        }),
+      )
+      .pipe(Scope.provide(session.scope));
   }).pipe(
     Effect.tapCause(Effect.logError),
     Effect.catchCause(() =>

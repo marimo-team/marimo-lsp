@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect";
+import { Effect, Option, Scope } from "effect";
 
 import { defineCommand } from "../commands.ts";
 import { NotebookConfiguration } from "../config/NotebookConfiguration.ts";
@@ -80,12 +80,14 @@ const handler = Effect.fn("command.showNotebookMenu")(function* (
     );
     return;
   }
-  const config = yield* sessionResources.run(
-    session,
-    NotebookConfiguration.pipe(
-      Effect.flatMap((configuration) => configuration.get),
-    ),
-  );
+  const config = yield* sessionResources
+    .runScoped(
+      session,
+      NotebookConfiguration.pipe(
+        Effect.flatMap((configuration) => configuration.get),
+      ),
+    )
+    .pipe(Scope.provide(session.scope));
   const onCellChange = config.runtime?.on_cell_change ?? "autorun";
   const autoReload = config.runtime?.auto_reload ?? "off";
   const reactivity = yield* code.window.showQuickPickItems(
