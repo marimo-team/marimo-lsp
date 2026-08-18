@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Scope } from "effect";
 import type * as vscode from "vscode";
 
 import { type NotebookDocumentSession } from "../../notebook/NotebookDocumentSessions.ts";
@@ -13,5 +13,6 @@ export function makeTestNotebookDocumentSession(
     notebookId: MarimoNotebookDocument.from(document).id,
     document,
     ended: Effect.never,
+    scope: Scope.makeUnsafe(),
   };
 }

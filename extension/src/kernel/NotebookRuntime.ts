@@ -200,6 +200,7 @@ type RuntimeWorkRequirements =
   | Constants
   | DatasourcesService
   | NotebookEditorRegistry
+  | NotebookDocumentSessions
   | NotebookRenderer
   | OutputChannel
   | PythonEnvInvalidation
@@ -1231,9 +1232,7 @@ function processNotebookOperation(
     });
 
     const forkForSession = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-      Effect.forkDetach(
-        Effect.raceFirst(effect, options.session.ended).pipe(Effect.asVoid),
-      );
+      Effect.forkIn(effect, options.session.scope).pipe(Effect.asVoid);
 
     if (operation.op === "cell-op") {
       if (extractCellIdFromCellMessage(operation) === SCRATCH_CELL_ID) return;

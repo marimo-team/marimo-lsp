@@ -122,7 +122,6 @@ interface CellSource {
 interface NotebookEntry {
   readonly session: NotebookDocumentSession;
   readonly executions: NotebookExecutions;
-  readonly close: Effect.Effect<void>;
   readonly updateSources: (
     sources: ReadonlyArray<CellSource>,
   ) => Effect.Effect<void>;
@@ -158,7 +157,6 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
       const code = yield* VsCode;
       const editorRegistry = yield* NotebookEditorRegistry;
       const documentSessions = yield* NotebookDocumentSessions;
-      const serviceScope = yield* Effect.scope;
       const notebooks = new Map<NotebookId, NotebookEntry>();
       const opening = Semaphore.makeUnsafe(1);
       const allStaleCells = yield* SubscriptionRef.make(
@@ -237,10 +235,9 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
       );
 
       const makeNotebook = Effect.fn("CellExecutions.makeNotebook")(function* (
-        session: NotebookDocumentSession,
+        notebook: MarimoNotebookDocument,
         binding: NotebookExecutionBinding,
       ) {
-        const notebook = MarimoNotebookDocument.from(session.document);
         const notebookId = notebook.id;
         const records = new Map<NotebookCellId, CellRecord>();
         const submittedSources = new Map<
@@ -257,7 +254,8 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           HashSet.empty<NotebookCellId>(),
         );
         const ordering = Semaphore.makeUnsafe(1);
-        const presentationScope = yield* Scope.fork(serviceScope);
+        const scope = yield* Effect.scope;
+        const presentationScope = yield* Scope.fork(scope);
         const presentation = yield* Queue.unbounded<Work, Cause.Done>();
         let closed = false;
 
@@ -620,11 +618,6 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           ),
         );
         yield* Scope.addFinalizer(presentationScope, cleanup);
-        const close = Effect.uninterruptible(
-          cleanup.pipe(
-            Effect.andThen(Scope.close(presentationScope, Exit.void)),
-          ),
-        );
 
         const executions: NotebookExecutions = {
           apply,
@@ -637,7 +630,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             changes: SubscriptionRef.changes(staleRef),
           },
         };
-        return { executions, close, updateSources } as const;
+        return { executions, updateSources } as const;
       });
 
       const open = Effect.fn("CellExecutions.open")(function (
@@ -656,34 +649,31 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             const existing = notebooks.get(notebookId);
             if (existing?.session === session) return existing.executions;
 
-            const made = yield* makeNotebook(session, binding);
-            const displaced = notebooks.get(notebookId);
+            const notebook = MarimoNotebookDocument.from(session.document);
+            const made = yield* Effect.gen(function* () {
+              const made = yield* makeNotebook(notebook, binding);
+              yield* Effect.addFinalizer(() =>
+                Effect.sync(() => {
+                  if (notebooks.get(notebookId)?.session === session) {
+                    notebooks.delete(notebookId);
+                  }
+                }),
+              );
+              return made;
+            }).pipe(Scope.provide(session.scope));
+
+            if (documentSessions.current(notebookId) !== session) {
+              return yield* new NotebookDocumentSessionEndedError({
+                notebookId,
+              });
+            }
+
             const entry: NotebookEntry = { session, ...made };
             notebooks.set(notebookId, entry);
-
-            yield* session.ended.pipe(
-              Effect.andThen(
-                Effect.suspend(() => {
-                  if (notebooks.get(notebookId)?.session !== session) {
-                    return Effect.void;
-                  }
-                  notebooks.delete(notebookId);
-                  return made.close;
-                }),
-              ),
-              Effect.forkIn(serviceScope),
-            );
-            if (displaced !== undefined) yield* displaced.close;
             return made.executions;
           }),
         );
       });
-
-      yield* Effect.addFinalizer(() =>
-        Effect.forEach(notebooks.values(), (entry) => entry.close, {
-          discard: true,
-        }),
-      );
 
       return {
         open,
