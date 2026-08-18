@@ -83,7 +83,9 @@ export class PackagesService extends Context.Service<PackagesService>()(
             return map;
           }
           cacheOwners.delete(notebookUri);
-          cacheGenerations.set(notebookUri, Symbol("package cache generation"));
+          // Deleting keeps the map bounded; an in-flight operation holding
+          // the old symbol fails the equality check either way.
+          cacheGenerations.delete(notebookUri);
           return HashMap.remove(map, notebookUri);
         }).pipe(
           Effect.tap(() =>
@@ -108,9 +110,18 @@ export class PackagesService extends Context.Service<PackagesService>()(
          * Get dependency tree state for a notebook
          */
         getDependencyTree(notebookUri: NotebookId) {
-          return Effect.map(
-            SubscriptionRef.get(dependencyTreesRef),
-            HashMap.get(notebookUri),
+          // Eviction on session end is asynchronous; never serve an entry a
+          // previous document session cached.
+          return Effect.map(SubscriptionRef.get(dependencyTreesRef), (map) =>
+            HashMap.get(map, notebookUri).pipe(
+              Option.filter(() => {
+                const owner = cacheOwners.get(notebookUri);
+                return (
+                  owner !== undefined &&
+                  owner === documentSessions.current(notebookUri)
+                );
+              }),
+            ),
           );
         },
 
@@ -131,7 +142,7 @@ export class PackagesService extends Context.Service<PackagesService>()(
                 if (
                   session === undefined ||
                   documentSessions.current(notebookUri) !== session ||
-                  generationFor(notebookUri) !== generation
+                  cacheGenerations.get(notebookUri) !== generation
                 ) {
                   return map;
                 }
@@ -302,7 +313,7 @@ export class PackagesService extends Context.Service<PackagesService>()(
             if (
               session !== undefined &&
               documentSessions.current(notebookUri) === session &&
-              generationFor(notebookUri) === generation
+              cacheGenerations.get(notebookUri) === generation
             ) {
               yield* Effect.logTrace("Cached dependency tree").pipe(
                 Effect.annotateLogs({

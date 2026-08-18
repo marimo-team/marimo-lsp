@@ -169,18 +169,17 @@ export const DatasourcesViewLive = Layer.effectDiscard(
       item: DatabaseItem,
       database: DatasourceDatabase,
     ) {
+      const session = documentSessions.current(item.notebookUri);
+      if (session === undefined) return [];
       if (!database.schemasResolved) {
-        const session = documentSessions.current(item.notebookUri);
-        if (session !== undefined) {
-          yield* ignoreExpansionError(
-            datasources.loadSchemas(
-              session,
-              item.connectionName,
-              item.databaseName,
-              [],
-            ),
-          );
-        }
+        yield* ignoreExpansionError(
+          datasources.loadSchemas(
+            session,
+            item.connectionName,
+            item.databaseName,
+            [],
+          ),
+        );
       }
 
       let current = yield* getDatabase(item);

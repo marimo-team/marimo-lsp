@@ -57,10 +57,9 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
             return map;
           }
           cacheOwners.delete(notebookUri);
-          cacheGenerations.set(
-            notebookUri,
-            Symbol("configuration cache generation"),
-          );
+          // Deleting keeps the map bounded; an in-flight operation holding
+          // the old symbol fails the equality check either way.
+          cacheGenerations.delete(notebookUri);
           return HashMap.remove(map, notebookUri);
         }).pipe(
           Effect.tap(() =>
@@ -138,7 +137,7 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
               cacheIsCurrent =
                 session !== undefined &&
                 documentSessions.current(notebookUri) === session &&
-                generationFor(notebookUri) === generation;
+                cacheGenerations.get(notebookUri) === generation;
               if (!cacheIsCurrent || session === undefined) return map;
               cacheOwners.set(notebookUri, session);
               return HashMap.set(map, notebookUri, result.config);
@@ -178,7 +177,7 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
               if (
                 session === undefined ||
                 documentSessions.current(notebookUri) !== session ||
-                generationFor(notebookUri) !== generation
+                cacheGenerations.get(notebookUri) !== generation
               ) {
                 return map;
               }
