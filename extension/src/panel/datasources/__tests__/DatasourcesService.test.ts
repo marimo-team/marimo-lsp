@@ -14,6 +14,10 @@ import {
   notebookId,
   requestId,
 } from "../../../lib/__tests__/branded.ts";
+import {
+  type NotebookDocumentSession,
+  NotebookDocumentSessions,
+} from "../../../notebook/NotebookDocumentSessions.ts";
 import type {
   DataSourceConnectionsNotification,
   DatabaseSchema,
@@ -37,10 +41,24 @@ const SESSION = makeTestNotebookDocumentSession(
 const makeLayer = (
   execute: (request: MarimoApiCall) => Effect.Effect<unknown> = () =>
     Effect.succeed(null),
+  currentSession: () => NotebookDocumentSession = () => SESSION,
 ) =>
-  Layer.empty.pipe(
-    Layer.provideMerge(DatasourcesService.layer),
-    Layer.provide(makeTestMarimoClient({ execute })),
+  Layer.effect(DatasourcesService, DatasourcesService.make).pipe(
+    Layer.provide([
+      makeTestMarimoClient({ execute }),
+      Layer.succeed(NotebookDocumentSessions, {
+        current: (notebookUri) =>
+          notebookUri === currentSession().notebookId
+            ? Option.some(currentSession())
+            : Option.none(),
+        forDocument: (document) => {
+          const session = currentSession();
+          return session.document === document
+            ? Option.some(session)
+            : Option.none();
+        },
+      }),
+    ]),
   );
 
 const makeRecordingLayer = () => {
@@ -133,6 +151,92 @@ it.effect("preserves recursive schemas and deferred discovery", () =>
     expect(catalog.childSchemasResolved).toBe(false);
     expect(catalog.childSchemas.get("loaded")?.tables.has("events")).toBe(true);
   }).pipe(Effect.provide(makeLayer())),
+);
+
+it.effect("isolates datasource state by document session", () => {
+  const replacement = makeTestNotebookDocumentSession(
+    createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+      notebookType: NOTEBOOK_TYPE,
+    }),
+  );
+  let current = SESSION;
+  const layer = makeLayer(
+    () => Effect.succeed(null),
+    () => current,
+  );
+
+  return Effect.gen(function* () {
+    const service = yield* DatasourcesService;
+    yield* service.updateConnections(
+      SESSION,
+      KERNEL_SESSION_ID,
+      connections([schema("old")]),
+    );
+
+    current = replacement;
+    expect(Option.isNone(yield* service.getConnections(NOTEBOOK_URI))).toBe(
+      true,
+    );
+
+    yield* service.updateConnections(
+      replacement,
+      KERNEL_SESSION_ID,
+      connections([schema("new")]),
+    );
+    yield* service.clearSession(SESSION);
+
+    const state = yield* service.getConnections(NOTEBOOK_URI);
+    assert(Option.isSome(state));
+    const database = state.value.connections
+      .get("warehouse")
+      ?.databases.get("analytics");
+    expect(database?.schemas.has("new")).toBe(true);
+    expect(database?.schemas.has("old")).toBe(false);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect(
+  "keeps kernel replacement independent from document ownership",
+  () => {
+    const replacementKernelSessionId = kernelSessionId(
+      "00000000-0000-4000-8000-000000000002",
+    );
+
+    return Effect.gen(function* () {
+      const service = yield* DatasourcesService;
+      yield* service.updateConnections(
+        SESSION,
+        KERNEL_SESSION_ID,
+        connections([schema("old")]),
+      );
+
+      // The first notification from a replacement kernel starts fresh state.
+      yield* service.updateDatasets(SESSION, replacementKernelSessionId, {
+        op: "datasets",
+        tables: [table("fresh")],
+      });
+      expect(Option.isNone(yield* service.getConnections(NOTEBOOK_URI))).toBe(
+        true,
+      );
+      expect(Option.isSome(yield* service.getDatasets(NOTEBOOK_URI))).toBe(
+        true,
+      );
+
+      yield* service.updateConnections(
+        SESSION,
+        replacementKernelSessionId,
+        connections([schema("new")]),
+      );
+      yield* service.clearKernelSession(NOTEBOOK_URI, KERNEL_SESSION_ID);
+
+      expect(Option.isSome(yield* service.getConnections(NOTEBOOK_URI))).toBe(
+        true,
+      );
+      const datasets = yield* service.getDatasets(NOTEBOOK_URI);
+      assert(Option.isSome(datasets));
+      expect(datasets.value.tables.has("fresh")).toBe(true);
+    }).pipe(Effect.provide(makeLayer()));
+  },
 );
 
 it.effect("merges child schemas at their parent path", () => {
