@@ -7,7 +7,7 @@ import {
   TestVsCode,
   Uri,
 } from "../../__mocks__/TestVsCode.ts";
-import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import {
   marimoConfigFixture,
   mergeMarimoConfig,
@@ -98,7 +98,7 @@ const withTestCtx = Effect.fn(function* (
   );
   const vscode = yield* TestVsCode.make({ initialDocuments });
 
-  const marimo = makeTestMarimoClient({
+  const runtime = makeTestNotebookRuntime({
     execute: Effect.fn(function* (request) {
       if (request.method === "get-configuration") {
         const params = yield* Schema.decodeUnknownEffect(
@@ -141,7 +141,7 @@ const withTestCtx = Effect.fn(function* (
   );
   const sessionResources = NotebookSessionResources.layer.pipe(
     Layer.provide(documentSessions),
-    Layer.provide(marimo),
+    Layer.provide(runtime),
   );
 
   return {

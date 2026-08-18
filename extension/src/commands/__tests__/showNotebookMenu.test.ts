@@ -1,11 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, Stream } from "effect";
+import { Effect, Layer, Option, Ref } from "effect";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { MarimoLspServer } from "../../config/Config.ts";
+import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { marimoConfigFixture } from "../../lib/__tests__/branded.ts";
-import { makeMarimoCommands, MarimoClient } from "../../lsp/MarimoClient.ts";
 import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookSerializer } from "../../notebook/NotebookSerializer.ts";
 import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
@@ -30,28 +29,19 @@ const constantsLayer = Layer.succeed(
   }),
 );
 
-const marimoLayer = Layer.succeed(
-  MarimoClient,
-  MarimoClient.of({
-    server: MarimoLspServer.Python(),
-    channel: { name: "marimo-lsp-test", show() {} },
-    restart: Effect.void,
-    ...makeMarimoCommands({
-      execute: (request) =>
-        request.method === "get-configuration"
-          ? Effect.succeed({
-              config: marimoConfigFixture({
-                runtime: {
-                  on_cell_change: "lazy",
-                  auto_reload: "autorun",
-                },
-              }),
-            })
-          : Effect.die("not implemented"),
-      kernelNotifications: Stream.empty,
-    }),
-  }),
-);
+const runtimeLayer = makeTestNotebookRuntime({
+  execute: (request) =>
+    request.method === "get-configuration"
+      ? Effect.succeed({
+          config: marimoConfigFixture({
+            runtime: {
+              on_cell_change: "lazy",
+              auto_reload: "autorun",
+            },
+          }),
+        })
+      : Effect.die("not implemented"),
+});
 
 const serializerLayer = Layer.succeed(
   NotebookSerializer,
@@ -86,14 +76,14 @@ const testLayer = (vscode: TestVsCode) => {
   );
   const sessionResources = NotebookSessionResources.layer.pipe(
     Layer.provide(documentSessions),
-    Layer.provide(marimoLayer),
+    Layer.provide(runtimeLayer),
   );
   return Layer.mergeAll(
     vscode.layer,
     documentSessions,
     sessionResources,
     constantsLayer,
-    marimoLayer,
+    runtimeLayer,
     serializerLayer,
     githubLayer,
     OutputChannel.layer.pipe(Layer.provide(vscode.layer)),

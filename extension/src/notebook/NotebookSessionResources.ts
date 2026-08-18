@@ -10,6 +10,7 @@ import {
 } from "effect";
 
 import { NotebookConfiguration } from "../config/NotebookConfiguration.ts";
+import { NotebookDependencies } from "./NotebookDependencies.ts";
 import {
   type NotebookDocumentSession,
   NotebookDocumentSessions,
@@ -37,9 +38,10 @@ class NotebookSessionKey implements Equal.Equal {
 
 const layerFor = (key: NotebookSessionKey) => {
   const sessionLayer = Layer.succeed(NotebookSession, key.session);
-  return Layer.merge(
+  return Layer.mergeAll(
     sessionLayer,
     NotebookConfiguration.layer.pipe(Layer.provide(sessionLayer)),
+    NotebookDependencies.layer.pipe(Layer.provide(sessionLayer)),
   ).pipe(Layer.fresh);
 };
 

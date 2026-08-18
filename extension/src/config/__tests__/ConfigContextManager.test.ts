@@ -8,7 +8,7 @@ import {
   TestVsCode,
   Uri,
 } from "../../__mocks__/TestVsCode.ts";
-import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import {
   marimoConfigFixture,
   notebookId,
@@ -49,7 +49,7 @@ const withTestCtx = Effect.fn(function* () {
   const config = marimoConfigFixture({
     runtime: { on_cell_change: "lazy", auto_reload: "autorun" },
   });
-  const marimo = makeTestMarimoClient({
+  const runtime = makeTestNotebookRuntime({
     execute: Effect.fn(function* (request) {
       if (request.method !== "get-configuration") {
         return yield* Effect.die(`Unexpected method: ${request.method}`);
@@ -69,7 +69,7 @@ const withTestCtx = Effect.fn(function* () {
   );
   const resources = NotebookSessionResources.layer.pipe(
     Layer.provide(documentSessions),
-    Layer.provide(marimo),
+    Layer.provide(runtime),
   );
   const ready = yield* Deferred.make<{
     sessions: Context.Service.Shape<typeof NotebookDocumentSessions>;
