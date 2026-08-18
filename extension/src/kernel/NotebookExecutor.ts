@@ -44,6 +44,9 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
     Effect.gen(function* () {
       const ingress = yield* Queue.unbounded<Work<R>, Cause.Done>();
       const actors = new Map<NotebookId, Actor<R>>();
+      // Shutdown tracking: holds every actor whose worker has not finished,
+      // including retired ones still draining after leaving `actors`.
+      const live = new Set<Actor<R>>();
 
       const runWorker = (queue: Queue.Queue<Work<R>, Cause.Done>) =>
         Effect.forever(
@@ -72,10 +75,15 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
           if (current !== undefined) return current;
 
           const queue = yield* Queue.unbounded<Work<R>, Cause.Done>();
-          const actor = {
+          const actor: Actor<R> = {
             queue,
-            worker: yield* Effect.forkDetach(runWorker(queue)),
-          } satisfies Actor<R>;
+            worker: yield* Effect.forkDetach(
+              runWorker(queue).pipe(
+                Effect.ensuring(Effect.sync(() => live.delete(actor))),
+              ),
+            ),
+          };
+          live.add(actor);
           actors.set(notebookId, actor);
           return actor;
         });
@@ -109,7 +117,7 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
             yield* Queue.end(ingress);
             yield* Fiber.join(coordinator);
 
-            const currentActors = [...actors.values()];
+            const currentActors = [...live];
             yield* Effect.forEach(
               currentActors,
               (actor) => Queue.end(actor.queue),
