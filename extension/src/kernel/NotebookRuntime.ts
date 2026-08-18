@@ -259,7 +259,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       const datasources = yield* DatasourcesService;
       const liveSessions = yield* SessionsService;
       const documentSessions = yield* NotebookDocumentSessions;
-      const operations = yield* PubSub.unbounded<KernelNotification>();
+      const operations = yield* PubSub.unbounded<SessionNotification>();
       const notebooks = new Map<NotebookId, NotebookState>();
       const kernelSessions = new Map<NotebookId, KernelSessionId>(
         (yield* liveSessions.get).map((session) => [
@@ -481,6 +481,12 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                       });
                     }
 
+                    const session = documentSessions.current(notebookId);
+                    if (session === undefined) {
+                      return yield* new NoActiveKernelError({
+                        notebookUri: notebookId,
+                      });
+                    }
                     const notebook = yield* findOpenNotebook(notebookId);
                     const executable =
                       yield* selectedController.value.resolveExecutable(
@@ -501,8 +507,10 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                     yield* reconcileKernelSession(notebookId);
 
                     return Stream.fromSubscription(subscription).pipe(
+                      // Only output owned by the requesting document session;
+                      // a reopened notebook's operations belong to a new one.
                       Stream.filter(
-                        (operation) => operation.notebookUri === notebookId,
+                        (operation) => operation.session === session,
                       ),
                       Stream.takeUntil(isCompletedRunFor(runId)),
                       Stream.filterMap(

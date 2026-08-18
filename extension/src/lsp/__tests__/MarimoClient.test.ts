@@ -392,7 +392,8 @@ it.effect(
     const marimo = makeMarimoCommands({
       execute: () => Effect.void,
       // Stream.suspend defers to subscription time, so the assertion below
-      // still observes that draining `operations` evaluated the transport.
+      // still observes that draining `kernelNotifications` evaluated the
+      // transport.
       kernelNotifications: Stream.suspend(() => {
         requestedNotification = "marimo/kernelNotification";
         return Stream.empty;
