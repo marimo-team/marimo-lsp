@@ -6,9 +6,9 @@ import {
   HashMap,
   Layer,
   Option,
-  Ref,
   Scope,
   Stream,
+  SubscriptionRef,
 } from "effect";
 import type * as vscode from "vscode";
 
@@ -59,7 +59,7 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
     make: Effect.gen(function* () {
       const code = yield* VsCode;
       const serviceScope = yield* Effect.scope;
-      const sessions = yield* Ref.make(
+      const sessions = yield* SubscriptionRef.make(
         HashMap.empty<NotebookId, SessionEntry>(),
       );
 
@@ -86,7 +86,7 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
             scope,
           };
           const candidate: SessionEntry = { session, scope };
-          const result = yield* Ref.modify(
+          const result = yield* SubscriptionRef.modify(
             sessions,
             (
               current,
@@ -128,7 +128,7 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
           const notebook = MarimoNotebookDocument.tryFrom(document);
           if (notebook._tag === "None") return;
 
-          const removed = yield* Ref.modify(sessions, (current) => {
+          const removed = yield* SubscriptionRef.modify(sessions, (current) => {
             const entry = HashMap.get(current, notebook.value.id);
             if (
               Option.isNone(entry) ||
@@ -157,7 +157,7 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
 
       yield* Effect.addFinalizer(() =>
         Effect.gen(function* () {
-          const current = yield* Ref.getAndSet(
+          const current = yield* SubscriptionRef.getAndSet(
             sessions,
             HashMap.empty<NotebookId, SessionEntry>(),
           );
@@ -167,19 +167,41 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
         }),
       );
 
+      const forDocument = (document: vscode.NotebookDocument) => {
+        const notebook = MarimoNotebookDocument.tryFrom(document);
+        if (notebook._tag === "None") return undefined;
+        const session = Option.getOrUndefined(
+          HashMap.get(SubscriptionRef.getUnsafe(sessions), notebook.value.id),
+        )?.session;
+        return session?.document === document ? session : undefined;
+      };
+      const active = Stream.merge(
+        code.window.activeNotebookEditorChanges.pipe(
+          Stream.map(() => undefined),
+        ),
+        SubscriptionRef.changes(sessions).pipe(Stream.map(() => undefined)),
+      ).pipe(
+        Stream.mapEffect(() => code.window.getActiveNotebookEditor),
+        Stream.map(
+          Option.flatMap((editor) =>
+            Option.fromUndefinedOr(forDocument(editor.notebook)),
+          ),
+        ),
+        Stream.changesWith((left, right) =>
+          Option.isNone(left)
+            ? Option.isNone(right)
+            : Option.isSome(right) && left.value.id === right.value.id,
+        ),
+      );
+
       return {
         current: (notebookId: NotebookId) =>
           Option.getOrUndefined(
-            HashMap.get(Ref.getUnsafe(sessions), notebookId),
+            HashMap.get(SubscriptionRef.getUnsafe(sessions), notebookId),
           )?.session,
-        forDocument(document: vscode.NotebookDocument) {
-          const notebook = MarimoNotebookDocument.tryFrom(document);
-          if (notebook._tag === "None") return undefined;
-          const session = Option.getOrUndefined(
-            HashMap.get(Ref.getUnsafe(sessions), notebook.value.id),
-          )?.session;
-          return session?.document === document ? session : undefined;
-        },
+        forDocument,
+        /** The current document session for VS Code's active notebook editor. */
+        active,
       } as const;
     }),
   },

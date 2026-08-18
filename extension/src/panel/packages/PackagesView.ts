@@ -10,7 +10,6 @@ import {
   type NotebookDocumentSession,
   NotebookDocumentSessions,
 } from "../../notebook/NotebookDocumentSessions.ts";
-import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -43,7 +42,6 @@ export const PackagesViewLive = Layer.effectDiscard(
     const treeView = yield* TreeView;
     const documentSessions = yield* NotebookDocumentSessions;
     const sessionResources = yield* NotebookSessionResources;
-    const editorRegistry = yield* NotebookEditorRegistry;
     const notebooks = yield* NotebookRuntime;
     const code = yield* VsCode;
 
@@ -96,25 +94,7 @@ export const PackagesViewLive = Layer.effectDiscard(
         }),
     });
 
-    const sessionFor = (notebookId: Option.Option<NotebookId>) =>
-      Option.flatMap(notebookId, (id) =>
-        Option.fromUndefinedOr(documentSessions.current(id)),
-      );
-    const activeSessions = Stream.merge(
-      editorRegistry.streamActiveNotebookChanges.pipe(Stream.map(sessionFor)),
-      documentSessions.changes.pipe(
-        Stream.mapEffect(() => editorRegistry.getActiveNotebookUri),
-        Stream.map(sessionFor),
-      ),
-    ).pipe(
-      Stream.changesWith((left, right) =>
-        Option.isNone(left)
-          ? Option.isNone(right)
-          : Option.isSome(right) && left.value.id === right.value.id,
-      ),
-    );
-
-    const activeDependencies = activeSessions.pipe(
+    const activeDependencies = documentSessions.active.pipe(
       Stream.switchMap(
         Option.match({
           onNone: () => Stream.succeed(Option.none<ActiveDependencies>()),

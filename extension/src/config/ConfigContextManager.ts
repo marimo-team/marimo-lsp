@@ -1,10 +1,8 @@
 import { Effect, Layer, Option, Stream } from "effect";
 
 import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 import { NotebookConfiguration } from "./NotebookConfiguration.ts";
 
 /**
@@ -18,28 +16,9 @@ export const ConfigContextManagerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const documentSessions = yield* NotebookDocumentSessions;
-    const editors = yield* NotebookEditorRegistry;
     const sessionResources = yield* NotebookSessionResources;
 
-    const sessionFor = (notebookId: Option.Option<NotebookId>) =>
-      Option.flatMap(notebookId, (id) =>
-        Option.fromUndefinedOr(documentSessions.current(id)),
-      );
-    const activeSessions = Stream.merge(
-      editors.streamActiveNotebookChanges.pipe(Stream.map(sessionFor)),
-      documentSessions.changes.pipe(
-        Stream.mapEffect(() => editors.getActiveNotebookUri),
-        Stream.map(sessionFor),
-      ),
-    ).pipe(
-      Stream.changesWith((left, right) =>
-        Option.isNone(left)
-          ? Option.isNone(right)
-          : Option.isSome(right) && left.value.id === right.value.id,
-      ),
-    );
-
-    const activeConfiguration = activeSessions.pipe(
+    const activeConfiguration = documentSessions.active.pipe(
       Stream.switchMap(
         Option.match({
           onNone: () => Stream.succeed(Option.none()),

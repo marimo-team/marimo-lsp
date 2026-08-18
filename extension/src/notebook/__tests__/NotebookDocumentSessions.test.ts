@@ -1,13 +1,17 @@
 import { expect, it } from "@effect/vitest";
-import { Deferred, Effect, Layer, Option, Scope } from "effect";
+import { Deferred, Effect, Layer, Option, Ref, Scope, Stream } from "effect";
 
 import {
   createTestNotebookDocument,
+  createTestNotebookEditor,
   TestVsCode,
   Uri,
 } from "../../__mocks__/TestVsCode.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
-import { NotebookDocumentSessions } from "../NotebookDocumentSessions.ts";
+import {
+  type NotebookDocumentSessionId,
+  NotebookDocumentSessions,
+} from "../NotebookDocumentSessions.ts";
 
 it.effect(
   "ends the old session when a document is replaced at the same URI",
@@ -130,6 +134,84 @@ it.effect(
       );
       expect(Option.isNone(yield* Deferred.poll(staleBackgroundStarted))).toBe(
         true,
+      );
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "projects the active session across document replacement and close",
+  Effect.fn(function* () {
+    const uri = Uri.parse("file:///test/notebook.py");
+    const id = notebookId(uri.toString());
+    const first = createTestNotebookDocument(uri);
+    const replacement = createTestNotebookDocument(uri);
+    const vscode = yield* TestVsCode.make({ initialDocuments: [first] });
+    const layer = NotebookDocumentSessions.layer.pipe(
+      Layer.provideMerge(vscode.layer),
+    );
+
+    yield* Effect.gen(function* () {
+      const sessions = yield* NotebookDocumentSessions;
+      const firstSession = sessions.current(id);
+      expect(firstSession).toBeDefined();
+      if (firstSession === undefined) return;
+
+      const observed = yield* Ref.make<
+        ReadonlyArray<NotebookDocumentSessionId | null>
+      >([]);
+      yield* sessions.active.pipe(
+        Stream.runForEach((active) =>
+          Ref.update(observed, (sessions) => [
+            ...sessions,
+            Option.match(active, {
+              onNone: () => null,
+              onSome: (session) => session.id,
+            }),
+          ]),
+        ),
+        Effect.forkChild,
+      );
+
+      yield* vscode.setActiveNotebookEditor(
+        Option.some(createTestNotebookEditor(first)),
+      );
+      yield* Ref.get(observed).pipe(
+        Effect.filterOrFail(
+          (sessions) => sessions.includes(firstSession.id),
+          () => "first session not observed" as const,
+        ),
+        Effect.eventually,
+      );
+
+      yield* vscode.openNotebook(replacement);
+      const replacementSession = yield* Effect.sync(() =>
+        sessions.forDocument(replacement),
+      ).pipe(
+        Effect.filterOrFail(
+          (session) => session !== undefined,
+          () => "replacement session not opened" as const,
+        ),
+        Effect.eventually,
+      );
+      yield* vscode.setActiveNotebookEditor(
+        Option.some(createTestNotebookEditor(replacement)),
+      );
+      yield* Ref.get(observed).pipe(
+        Effect.filterOrFail(
+          (sessions) => sessions.includes(replacementSession.id),
+          () => "replacement session not observed" as const,
+        ),
+        Effect.eventually,
+      );
+
+      yield* vscode.closeNotebook(replacement);
+      yield* Ref.get(observed).pipe(
+        Effect.filterOrFail(
+          (sessions) => sessions.at(-1) === null,
+          () => "closed session remained active" as const,
+        ),
+        Effect.eventually,
       );
     }).pipe(Effect.provide(layer));
   }),

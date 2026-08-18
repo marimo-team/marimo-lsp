@@ -51,8 +51,8 @@ export class NotebookDependencies extends Context.Service<NotebookDependencies>(
 
       const fetch = Effect.gen(function* () {
         yield* SubscriptionRef.set(state, NotebookDependencyState.Loading());
-        const controller = yield* notebooks.forNotebook(session.notebookId)
-          .getController;
+        const notebook = yield* notebooks.forNotebook(session.notebookId);
+        const controller = yield* notebook.getController;
         if (Option.isNone(controller)) {
           return NotebookDependencyState.Failed({
             error: "No kernel selected",

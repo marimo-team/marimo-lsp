@@ -6,15 +6,13 @@ import {
   Hash,
   Layer,
   LayerMap,
+  Scope,
   Stream,
 } from "effect";
 
 import { NotebookConfiguration } from "../config/NotebookConfiguration.ts";
 import { NotebookDependencies } from "./NotebookDependencies.ts";
-import {
-  type NotebookDocumentSession,
-  NotebookDocumentSessions,
-} from "./NotebookDocumentSessions.ts";
+import type { NotebookDocumentSession } from "./NotebookDocumentSessions.ts";
 import { NotebookSession } from "./NotebookSession.ts";
 
 /**
@@ -50,21 +48,31 @@ export class NotebookSessionResources extends Context.Service<NotebookSessionRes
   "NotebookSessionResources",
   {
     make: Effect.gen(function* () {
-      const documentSessions = yield* NotebookDocumentSessions;
       const resources = yield* LayerMap.make(layerFor, {
         // A document-session end is the authoritative eviction signal.
         idleTimeToLive: Duration.infinity,
       });
+      const registeredSessions = new WeakSet<NotebookDocumentSession>();
 
-      yield* Effect.forkScoped(
-        documentSessions.changes.pipe(
-          Stream.runForEach((change) =>
-            change._tag === "Ended"
-              ? resources.invalidate(new NotebookSessionKey(change.session))
-              : Effect.void,
-          ),
+      const registerSession = Effect.fn(
+        "NotebookSessionResources.registerSession",
+      )((session: NotebookDocumentSession) =>
+        Effect.uninterruptible(
+          Effect.suspend(() => {
+            if (registeredSessions.has(session)) return Effect.void;
+            registeredSessions.add(session);
+            return Scope.addFinalizer(
+              session.scope,
+              resources.invalidate(new NotebookSessionKey(session)),
+            );
+          }),
         ),
       );
+
+      const contextFor = (session: NotebookDocumentSession) =>
+        resources
+          .contextEffect(new NotebookSessionKey(session))
+          .pipe(Effect.tap(() => registerSession(session)));
 
       return {
         run<A, E, R>(
@@ -72,11 +80,9 @@ export class NotebookSessionResources extends Context.Service<NotebookSessionRes
           effect: Effect.Effect<A, E, R>,
         ) {
           return Effect.scoped(
-            resources
-              .contextEffect(new NotebookSessionKey(session))
-              .pipe(
-                Effect.flatMap((context) => Effect.provide(effect, context)),
-              ),
+            contextFor(session).pipe(
+              Effect.flatMap((context) => Effect.provide(effect, context)),
+            ),
           );
         },
         stream<A, E, R>(
@@ -84,9 +90,9 @@ export class NotebookSessionResources extends Context.Service<NotebookSessionRes
           stream: Stream.Stream<A, E, R>,
         ) {
           return Stream.unwrap(
-            resources
-              .contextEffect(new NotebookSessionKey(session))
-              .pipe(Effect.map((context) => Stream.provide(stream, context))),
+            contextFor(session).pipe(
+              Effect.map((context) => Stream.provide(stream, context)),
+            ),
           );
         },
       };
