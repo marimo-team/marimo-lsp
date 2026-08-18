@@ -22,18 +22,18 @@ const handler = Effect.fn("command.refreshPackages")(function* () {
     Effect.annotateLogs({ notebookUri }),
   );
   const session = documentSessions.current(notebookUri);
-  if (session === undefined) {
+  if (Option.isNone(session)) {
     yield* Effect.logWarning("Active notebook session ended before refresh");
     return;
   }
   yield* sessionResources
     .runScoped(
-      session,
+      session.value,
       NotebookDependencies.pipe(
         Effect.flatMap((dependencies) => dependencies.refresh),
       ),
     )
-    .pipe(Scope.provide(session.scope));
+    .pipe(Scope.provide(session.value.scope));
 });
 
 export default defineCommand(MarimoCommands.refreshPackages, handler);

@@ -51,10 +51,10 @@ const inNotebook = <A, E, R>(
     const sessions = yield* NotebookDocumentSessions;
     const resources = yield* NotebookSessionResources;
     const session = sessions.current(notebookUri);
-    assert(session !== undefined);
+    assert(Option.isSome(session));
     return yield* resources
-      .runScoped(session, effect)
-      .pipe(Scope.provide(session.scope));
+      .runScoped(session.value, effect)
+      .pipe(Scope.provide(session.value.scope));
   });
 
 const getConfig = (notebookUri: NotebookId) =>
@@ -89,17 +89,17 @@ const configurationChanges = (notebookUri: NotebookId, take: number) =>
     const sessions = yield* NotebookDocumentSessions;
     const resources = yield* NotebookSessionResources;
     const session = sessions.current(notebookUri);
-    assert(session !== undefined);
+    assert(Option.isSome(session));
     return yield* resources
       .runScoped(
-        session,
+        session.value,
         NotebookConfiguration.pipe(
           Effect.flatMap((configuration) =>
             configuration.changes.pipe(Stream.take(take), Stream.runCollect),
           ),
         ),
       )
-      .pipe(Scope.provide(session.scope));
+      .pipe(Scope.provide(session.value.scope));
   });
 
 const withTestCtx = Effect.fn(function* (

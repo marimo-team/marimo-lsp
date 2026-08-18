@@ -167,16 +167,16 @@ export const PackagesViewLive = Layer.effectDiscard(
         Stream.runForEach(
           Effect.fn(function* ({ notebookUri }) {
             const session = documentSessions.current(notebookUri);
-            if (session === undefined) return;
+            if (Option.isNone(session)) return;
             yield* sessionResources
               .runScoped(
-                session,
+                session.value,
                 NotebookDependencies.pipe(
                   Effect.flatMap((dependencies) => dependencies.refresh),
                 ),
               )
               .pipe(
-                Scope.provide(session.scope),
+                Scope.provide(session.value.scope),
                 Effect.catchTag(
                   "NotebookDocumentSessionEndedError",
                   () => Effect.void,

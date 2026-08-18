@@ -48,7 +48,7 @@ export const createConfigToggle = <T extends string>({
     const session = documentSessions.forDocument(
       notebook.value.rawNotebookDocument,
     );
-    if (session === undefined) {
+    if (Option.isNone(session)) {
       yield* showErrorAndPromptLogs(
         `Open a marimo notebook to configure ${settingName.toLowerCase()}.`,
       );
@@ -57,7 +57,7 @@ export const createConfigToggle = <T extends string>({
 
     yield* sessionResources
       .runScoped(
-        session,
+        session.value,
         Effect.gen(function* () {
           const configuration = yield* NotebookConfiguration;
           const config = yield* configuration.get;
@@ -105,7 +105,7 @@ export const createConfigToggle = <T extends string>({
           );
         }),
       )
-      .pipe(Scope.provide(session.scope));
+      .pipe(Scope.provide(session.value.scope));
   }).pipe(
     Effect.tapCause(Effect.logError),
     Effect.catchCause(() =>

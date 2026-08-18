@@ -10,6 +10,7 @@ import { makeTestNotebookDocumentSession } from "../../../__tests__/__utils__/Te
 import { NOTEBOOK_TYPE } from "../../../constants.ts";
 import { notebookId } from "../../../lib/__tests__/branded.ts";
 import type { NotebookDocumentSession } from "../../../notebook/NotebookDocumentSessions.ts";
+import { NotebookDocumentSessions } from "../../../notebook/NotebookDocumentSessions.ts";
 import type { NotebookId } from "../../../schemas/MarimoNotebookDocument.ts";
 import type {
   VariablesNotification,
@@ -19,7 +20,19 @@ import { VariablesService } from "../VariablesService.ts";
 
 const withTestCtx = () =>
   Effect.sync(() => {
-    const layer = Layer.empty.pipe(Layer.provideMerge(VariablesService.layer));
+    const documentSessions = Layer.succeed(NotebookDocumentSessions, {
+      current: (id: NotebookId) => Option.fromNullishOr(sessions.get(id)),
+      forDocument: (document) =>
+        Option.fromNullishOr(
+          Array.from(sessions.values()).find(
+            (session) => session.document === document,
+          ),
+        ),
+      active: Stream.empty,
+    });
+    const layer = Layer.effect(VariablesService, VariablesService.make).pipe(
+      Layer.provide(documentSessions),
+    );
     return { layer };
   });
 
@@ -29,6 +42,16 @@ const sessions = new Map<NotebookId, NotebookDocumentSession>();
 const sessionFor = (id: NotebookId) => {
   const existing = sessions.get(id);
   if (existing !== undefined) return existing;
+  const session = makeTestNotebookDocumentSession(
+    createTestNotebookDocument(Uri.parse(id), {
+      notebookType: NOTEBOOK_TYPE,
+    }),
+  );
+  sessions.set(id, session);
+  return session;
+};
+
+const replaceSessionFor = (id: NotebookId) => {
   const session = makeTestNotebookDocumentSession(
     createTestNotebookDocument(Uri.parse(id), {
       notebookType: NOTEBOOK_TYPE,
@@ -250,6 +273,48 @@ it.effect(
 
     assert(Option.isNone(result.afterClear.variables));
     assert(Option.isNone(result.afterClear.values));
+  }),
+);
+
+it.effect(
+  "keeps replacement-session state isolated from the displaced session",
+  Effect.fn(function* () {
+    const { layer } = yield* withTestCtx();
+
+    const result = yield* Effect.gen(function* () {
+      const service = yield* VariablesService;
+      const notebookUri = NOTEBOOK_URI;
+      const displaced = sessionFor(notebookUri);
+
+      yield* service.updateVariables(
+        displaced,
+        createMockVariablesOp([
+          { name: "old", declared_by: ["cell1"], used_by: [] },
+        ]),
+      );
+
+      const replacement = replaceSessionFor(notebookUri);
+      const beforeReplacementUpdate = yield* service.getVariables(notebookUri);
+      yield* service.updateVariables(
+        replacement,
+        createMockVariablesOp([
+          { name: "new", declared_by: ["cell2"], used_by: [] },
+        ]),
+      );
+
+      // Cleanup for a delayed close of the displaced document only removes
+      // that exact document opening's state.
+      yield* service.clearSession(displaced);
+      const afterDisplacedClear = yield* service.getVariables(notebookUri);
+      return { beforeReplacementUpdate, afterDisplacedClear };
+    }).pipe(Effect.provide(layer));
+
+    expect(Option.isNone(result.beforeReplacementUpdate)).toBe(true);
+    assert(
+      Option.isSome(result.afterDisplacedClear),
+      "Expected replacement variables",
+    );
+    expect(result.afterDisplacedClear.value[0].name).toBe("new");
   }),
 );
 

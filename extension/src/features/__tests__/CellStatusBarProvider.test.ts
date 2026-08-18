@@ -58,11 +58,11 @@ const openExecutions = Effect.fn(function* (
   yield* Effect.yieldNow;
   const sessions = yield* NotebookDocumentSessions;
   const session = sessions.forDocument(cell.notebook);
-  if (session === undefined) {
+  if (Option.isNone(session)) {
     return yield* Effect.die("Expected an open notebook document session");
   }
   return yield* executions
-    .open(session, {
+    .open(session.value, {
       getDrive: Effect.succeed(Option.none()),
     })
     .pipe(Effect.orDie);

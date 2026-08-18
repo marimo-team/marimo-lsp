@@ -1111,15 +1111,15 @@ describe("NotebookExecutions", () => {
     yield* Effect.yieldNow;
     const sessions = yield* NotebookDocumentSessions;
     const session = sessions.forDocument(document);
-    if (session === undefined) {
+    if (Option.isNone(session)) {
       return yield* Effect.die("Expected an open notebook document session");
     }
     const notebook = yield* executions
-      .open(session, {
+      .open(session.value, {
         getDrive,
       })
       .pipe(Effect.orDie);
-    return { notebook, session };
+    return { notebook, session: session.value };
   });
 
   const acknowledgeSubmission = Effect.fn(function* (

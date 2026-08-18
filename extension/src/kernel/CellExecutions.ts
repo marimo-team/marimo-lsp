@@ -640,7 +640,12 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         return opening.withPermit(
           Effect.gen(function* () {
             const notebookId = session.notebookId;
-            if (documentSessions.current(notebookId) !== session) {
+            if (
+              !Option.exists(
+                documentSessions.current(notebookId),
+                (current) => current === session,
+              )
+            ) {
               return yield* new NotebookDocumentSessionEndedError({
                 notebookId,
               });
@@ -662,7 +667,12 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               return made;
             }).pipe(Scope.provide(session.scope));
 
-            if (documentSessions.current(notebookId) !== session) {
+            if (
+              !Option.exists(
+                documentSessions.current(notebookId),
+                (current) => current === session,
+              )
+            ) {
               return yield* new NotebookDocumentSessionEndedError({
                 notebookId,
               });

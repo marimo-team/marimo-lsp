@@ -6,6 +6,7 @@ import {
   Exit,
   Fiber,
   Layer,
+  Option,
   Ref,
   Scope,
 } from "effect";
@@ -54,8 +55,9 @@ describe("NotebookSessionResources", () => {
       yield* Effect.gen(function* () {
         const sessions = yield* NotebookDocumentSessions;
         const resources = yield* NotebookSessionResources;
-        const session = sessions.current(NOTEBOOK_URI);
-        assert(session !== undefined);
+        const current = sessions.current(NOTEBOOK_URI);
+        assert(Option.isSome(current));
+        const session = current.value;
 
         const running = yield* resources
           .runScoped(
@@ -90,8 +92,9 @@ describe("NotebookSessionResources", () => {
       yield* Effect.gen(function* () {
         const sessions = yield* NotebookDocumentSessions;
         const resources = yield* NotebookSessionResources;
-        const session = sessions.current(NOTEBOOK_URI);
-        assert(session !== undefined);
+        const current = sessions.current(NOTEBOOK_URI);
+        assert(Option.isSome(current));
+        const session = current.value;
         const ended = yield* Deferred.make<void>();
         yield* Effect.addFinalizer(() =>
           Deferred.succeed(ended, undefined),
@@ -117,8 +120,9 @@ describe("NotebookSessionResources", () => {
       yield* Effect.gen(function* () {
         const sessions = yield* NotebookDocumentSessions;
         const resources = yield* NotebookSessionResources;
-        const session = sessions.current(NOTEBOOK_URI);
-        assert(session !== undefined);
+        const current = sessions.current(NOTEBOOK_URI);
+        assert(Option.isSome(current));
+        const session = current.value;
 
         const providedScope = yield* resources
           .runScoped(session, Effect.scope)

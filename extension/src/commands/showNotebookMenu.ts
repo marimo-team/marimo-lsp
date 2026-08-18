@@ -74,7 +74,7 @@ const handler = Effect.fn("command.showNotebookMenu")(function* (
   const session = documentSessions.forDocument(
     notebook.value.rawNotebookDocument,
   );
-  if (session === undefined) {
+  if (Option.isNone(session)) {
     yield* code.window.showWarningMessage(
       "The notebook was closed before its configuration could be loaded.",
     );
@@ -82,12 +82,12 @@ const handler = Effect.fn("command.showNotebookMenu")(function* (
   }
   const config = yield* sessionResources
     .runScoped(
-      session,
+      session.value,
       NotebookConfiguration.pipe(
         Effect.flatMap((configuration) => configuration.get),
       ),
     )
-    .pipe(Scope.provide(session.scope));
+    .pipe(Scope.provide(session.value.scope));
   const onCellChange = config.runtime?.on_cell_change ?? "autorun";
   const autoReload = config.runtime?.auto_reload ?? "off";
   const reactivity = yield* code.window.showQuickPickItems(

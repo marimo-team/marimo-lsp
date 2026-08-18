@@ -98,10 +98,10 @@ const inNotebook = <A, E, R>(
     const sessions = yield* NotebookDocumentSessions;
     const resources = yield* NotebookSessionResources;
     const session = sessions.current(notebookUri);
-    assert(session !== undefined);
+    assert(Option.isSome(session));
     return yield* resources
-      .runScoped(session, effect)
-      .pipe(Scope.provide(session.scope));
+      .runScoped(session.value, effect)
+      .pipe(Scope.provide(session.value.scope));
   });
 
 const collectUntilTerminal = (notebookUri: NotebookId) =>

@@ -10,17 +10,31 @@
  */
 
 import { describe, expect, it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Layer, Option, Stream } from "effect";
 import * as lsp from "vscode-languageserver-protocol";
 
 import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
+import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
 import { VariablesService } from "../../panel/variables/VariablesService.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import { makeNotebookLspClient } from "../client.ts";
+
+const variablesLayer = Layer.effect(
+  VariablesService,
+  VariablesService.make,
+).pipe(
+  Layer.provide(
+    Layer.succeed(NotebookDocumentSessions, {
+      current: () => Option.none(),
+      forDocument: () => Option.none(),
+      active: Stream.empty,
+    }),
+  ),
+);
 
 describe("makeNotebookLspClient against uv run ty server", () => {
   it.effect(
@@ -139,7 +153,7 @@ describe("makeNotebookLspClient against uv run ty server", () => {
 
         // Scope closes → shutdown request + exit notification + process kill
         // are asserted implicitly by the test completing without hanging.
-      }).pipe(Effect.provide(VariablesService.layer)),
+      }).pipe(Effect.provide(variablesLayer)),
     { timeout: 30_000 },
   );
 });

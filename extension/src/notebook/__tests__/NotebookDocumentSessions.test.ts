@@ -28,33 +28,45 @@ it.effect(
     yield* Effect.gen(function* () {
       const sessions = yield* NotebookDocumentSessions;
       const firstSession = sessions.current(id);
-      expect(firstSession?.document).toBe(first);
-      if (firstSession === undefined) return;
+      expect(
+        Option.exists(firstSession, (session) => session.document === first),
+      ).toBe(true);
+      if (Option.isNone(firstSession)) return;
 
       const firstEnded = yield* Deferred.make<void>();
       yield* Effect.addFinalizer(() =>
         Deferred.succeed(firstEnded, undefined),
-      ).pipe(Scope.provide(firstSession.scope));
+      ).pipe(Scope.provide(firstSession.value.scope));
       yield* vscode.openNotebook(replacement);
       yield* Deferred.await(firstEnded);
 
       const replacementSession = sessions.current(id);
-      expect(replacementSession?.document).toBe(replacement);
-      expect(replacementSession).not.toBe(firstSession);
-      if (replacementSession === undefined) return;
+      expect(
+        Option.exists(
+          replacementSession,
+          (session) => session.document === replacement,
+        ),
+      ).toBe(true);
+      if (Option.isNone(replacementSession)) return;
+      expect(replacementSession.value).not.toBe(firstSession.value);
 
       // A delayed close for the displaced document cannot end its replacement.
       yield* vscode.closeNotebook(first);
       yield* Effect.yieldNow;
-      expect(sessions.current(id)).toBe(replacementSession);
+      expect(
+        Option.exists(
+          sessions.current(id),
+          (session) => session === replacementSession.value,
+        ),
+      ).toBe(true);
 
       const replacementEnded = yield* Deferred.make<void>();
       yield* Effect.addFinalizer(() =>
         Deferred.succeed(replacementEnded, undefined),
-      ).pipe(Scope.provide(replacementSession.scope));
+      ).pipe(Scope.provide(replacementSession.value.scope));
       yield* vscode.closeNotebook(replacement);
       yield* Deferred.await(replacementEnded);
-      expect(sessions.current(id)).toBeUndefined();
+      expect(Option.isNone(sessions.current(id))).toBe(true);
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -77,11 +89,16 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const sessions = yield* NotebookDocumentSessions;
-      expect(sessions.current(id)).toBeUndefined();
+      expect(Option.isNone(sessions.current(id))).toBe(true);
 
       yield* vscode.openNotebook(replacement);
       yield* Effect.yieldNow;
-      expect(sessions.current(id)?.document).toBe(replacement);
+      expect(
+        Option.exists(
+          sessions.current(id),
+          (session) => session.document === replacement,
+        ),
+      ).toBe(true);
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -105,18 +122,18 @@ it.effect(
     yield* Effect.gen(function* () {
       const sessions = yield* NotebookDocumentSessions;
       const session = sessions.current(id);
-      expect(session).toBeDefined();
-      if (session === undefined) return;
+      expect(Option.isSome(session)).toBe(true);
+      if (Option.isNone(session)) return;
 
       yield* Effect.addFinalizer(() =>
         Deferred.succeed(finalized, undefined),
-      ).pipe(Scope.provide(session.scope));
+      ).pipe(Scope.provide(session.value.scope));
       yield* Effect.forkIn(
         Deferred.succeed(backgroundStarted, undefined).pipe(
           Effect.andThen(Effect.never),
           Effect.ensuring(Deferred.succeed(backgroundStopped, undefined)),
         ),
-        session.scope,
+        session.value.scope,
       );
       yield* Deferred.await(backgroundStarted);
 
@@ -126,11 +143,11 @@ it.effect(
 
       yield* Effect.addFinalizer(() =>
         Deferred.succeed(lateFinalizer, undefined),
-      ).pipe(Scope.provide(session.scope));
+      ).pipe(Scope.provide(session.value.scope));
       yield* Deferred.await(lateFinalizer);
       yield* Effect.forkIn(
         Deferred.succeed(staleBackgroundStarted, undefined),
-        session.scope,
+        session.value.scope,
       );
       expect(Option.isNone(yield* Deferred.poll(staleBackgroundStarted))).toBe(
         true,
@@ -154,8 +171,8 @@ it.effect(
     yield* Effect.gen(function* () {
       const sessions = yield* NotebookDocumentSessions;
       const firstSession = sessions.current(id);
-      expect(firstSession).toBeDefined();
-      if (firstSession === undefined) return;
+      expect(Option.isSome(firstSession)).toBe(true);
+      if (Option.isNone(firstSession)) return;
 
       const observed = yield* Ref.make<
         ReadonlyArray<NotebookDocumentSessionId | null>
@@ -178,7 +195,7 @@ it.effect(
       );
       yield* Ref.get(observed).pipe(
         Effect.filterOrFail(
-          (sessions) => sessions.includes(firstSession.id),
+          (sessions) => sessions.includes(firstSession.value.id),
           () => "first session not observed" as const,
         ),
         Effect.eventually,
@@ -189,10 +206,11 @@ it.effect(
         sessions.forDocument(replacement),
       ).pipe(
         Effect.filterOrFail(
-          (session) => session !== undefined,
+          Option.isSome,
           () => "replacement session not opened" as const,
         ),
         Effect.eventually,
+        Effect.map((session) => session.value),
       );
       yield* vscode.setActiveNotebookEditor(
         Option.some(createTestNotebookEditor(replacement)),

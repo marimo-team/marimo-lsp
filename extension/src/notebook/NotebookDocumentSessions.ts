@@ -167,13 +167,20 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
         }),
       );
 
+      const current = (notebookId: NotebookId) =>
+        Option.map(
+          HashMap.get(SubscriptionRef.getUnsafe(sessions), notebookId),
+          (entry) => entry.session,
+        );
+
       const forDocument = (document: vscode.NotebookDocument) => {
         const notebook = MarimoNotebookDocument.tryFrom(document);
-        if (notebook._tag === "None") return undefined;
-        const session = Option.getOrUndefined(
-          HashMap.get(SubscriptionRef.getUnsafe(sessions), notebook.value.id),
-        )?.session;
-        return session?.document === document ? session : undefined;
+        return Option.flatMap(notebook, ({ id }) =>
+          Option.filter(
+            current(id),
+            (session) => session.document === document,
+          ),
+        );
       };
       const active = Stream.merge(
         code.window.activeNotebookEditorChanges.pipe(
@@ -182,11 +189,7 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
         SubscriptionRef.changes(sessions).pipe(Stream.map(() => undefined)),
       ).pipe(
         Stream.mapEffect(() => code.window.getActiveNotebookEditor),
-        Stream.map(
-          Option.flatMap((editor) =>
-            Option.fromUndefinedOr(forDocument(editor.notebook)),
-          ),
-        ),
+        Stream.map(Option.flatMap((editor) => forDocument(editor.notebook))),
         Stream.changesWith((left, right) =>
           Option.isNone(left)
             ? Option.isNone(right)
@@ -195,10 +198,7 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
       );
 
       return {
-        current: (notebookId: NotebookId) =>
-          Option.getOrUndefined(
-            HashMap.get(SubscriptionRef.getUnsafe(sessions), notebookId),
-          )?.session,
+        current,
         forDocument,
         /** The current document session for VS Code's active notebook editor. */
         active,
