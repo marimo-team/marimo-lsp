@@ -1,4 +1,12 @@
-import { Cause, Deferred, Effect, Fiber, Queue, type Scope } from "effect";
+import {
+  Cause,
+  Deferred,
+  Effect,
+  Fiber,
+  FiberSet,
+  Queue,
+  type Scope,
+} from "effect";
 
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 
@@ -14,7 +22,6 @@ interface Work<R> {
 
 interface Actor<R> {
   readonly queue: Queue.Queue<Work<R>, Cause.Done>;
-  readonly worker: Fiber.Fiber<void>;
 }
 
 /** Runs admitted work in FIFO order, independently for each notebook. */
@@ -44,9 +51,18 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
     Effect.gen(function* () {
       const ingress = yield* Queue.unbounded<Work<R>, Cause.Done>();
       const actors = new Map<NotebookId, Actor<R>>();
-      // Shutdown tracking: holds every actor whose worker has not finished,
-      // including retired ones still draining after leaving `actors`.
-      const live = new Set<Actor<R>>();
+      const fibers = yield* FiberSet.make<void, never>();
+
+      const closeActor = (notebookId: NotebookId, actor: Actor<R>) =>
+        Effect.gen(function* () {
+          if (actors.get(notebookId) === actor) actors.delete(notebookId);
+          yield* Queue.end(actor.queue);
+          const buffered = yield* Queue.clear(actor.queue);
+          yield* Effect.forEach(buffered, (work) => work.reject, {
+            discard: true,
+          });
+          yield* Queue.shutdown(actor.queue);
+        });
 
       const runWorker = (queue: Queue.Queue<Work<R>, Cause.Done>) =>
         Effect.forever(
@@ -75,20 +91,19 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
           if (current !== undefined) return current;
 
           const queue = yield* Queue.unbounded<Work<R>, Cause.Done>();
-          const actor: Actor<R> = {
-            queue,
-            worker: yield* Effect.forkDetach(
-              runWorker(queue).pipe(
-                Effect.ensuring(Effect.sync(() => live.delete(actor))),
-              ),
-            ),
-          };
-          live.add(actor);
+          const actor: Actor<R> = { queue };
           actors.set(notebookId, actor);
+          yield* FiberSet.run(
+            fibers,
+            runWorker(queue).pipe(
+              Effect.ensuring(closeActor(notebookId, actor)),
+            ),
+          );
           return actor;
         });
 
-      const coordinator = yield* Effect.forkDetach(
+      const coordinator = yield* FiberSet.run(
+        fibers,
         Effect.forever(
           Queue.take(ingress).pipe(
             Effect.flatMap((work) =>
@@ -113,37 +128,10 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
         Effect.uninterruptible(
           Effect.gen(function* () {
             // Ending preserves every message admitted before this point. Join
-            // the coordinator before closing actors so all of them are routed.
+            // the coordinator before the FiberSet interrupts workers so every
+            // admitted message reaches an actor queue.
             yield* Queue.end(ingress);
             yield* Fiber.join(coordinator);
-
-            const currentActors = [...live];
-            yield* Effect.forEach(
-              currentActors,
-              (actor) => Queue.end(actor.queue),
-              { discard: true },
-            );
-            yield* Effect.forEach(
-              currentActors,
-              (actor) =>
-                Effect.gen(function* () {
-                  const buffered = yield* Queue.clear(actor.queue);
-                  yield* Effect.forEach(buffered, (work) => work.reject, {
-                    discard: true,
-                  });
-                }),
-              { discard: true },
-            );
-            // Signal every worker before waiting for any one worker's cleanup.
-            // If a command is active, Deferred.into records the interruption.
-            yield* Fiber.interruptAll(
-              currentActors.map((actor) => actor.worker),
-            );
-            yield* Effect.forEach(
-              currentActors,
-              (actor) => Queue.shutdown(actor.queue),
-              { discard: true },
-            );
             yield* Queue.shutdown(ingress);
           }),
         ),

@@ -103,6 +103,60 @@ describe("NotebookExecutor", () => {
   );
 
   it.effect(
+    "interrupts a retired worker that is still draining",
+    Effect.fn(function* () {
+      const scope = yield* Scope.make();
+      const executor = yield* makeNotebookExecutor<never>().pipe(
+        Effect.provideService(Scope.Scope, scope),
+      );
+      const blockerStarted = yield* Latch.make();
+      const releaseBlocker = yield* Latch.make();
+      const routed = yield* Latch.make();
+      const trailingStarted = yield* Latch.make();
+      const bufferedStarted = yield* Ref.make(false);
+      const notebook = notebookId("notebook");
+
+      yield* executor.post(
+        notebook,
+        blockerStarted.open.pipe(Effect.andThen(releaseBlocker.await)),
+      );
+      yield* blockerStarted.await;
+
+      yield* executor.retire(notebook);
+      const trailing = yield* executor
+        .submit(
+          notebook,
+          trailingStarted.open.pipe(Effect.andThen(Effect.never)),
+        )
+        .pipe(Effect.forkDetach);
+      const buffered = yield* executor
+        .submit(
+          notebook,
+          Ref.set(bufferedStarted, true).pipe(Effect.andThen(Effect.never)),
+        )
+        .pipe(Effect.forkDetach);
+
+      // Work for another notebook proves the coordinator routed everything
+      // above while the first actor was still blocked. The retire marker will
+      // remove that actor from the lookup map before its trailing work runs.
+      yield* executor.post(notebookId("barrier"), routed.open);
+      yield* routed.await;
+      yield* releaseBlocker.open;
+      yield* trailingStarted.await;
+
+      yield* Scope.close(scope, Exit.void);
+      const [trailingExit, bufferedExit] = yield* Effect.all([
+        Fiber.await(trailing),
+        Fiber.await(buffered),
+      ]);
+
+      assert.isTrue(Exit.hasInterrupts(trailingExit));
+      assert.isTrue(Exit.hasInterrupts(bufferedExit));
+      assert.isFalse(yield* Ref.get(bufferedStarted));
+    }),
+  );
+
+  it.effect(
     "retires a notebook after draining admitted work",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
