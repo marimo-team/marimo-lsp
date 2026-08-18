@@ -1,5 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, Stream } from "effect";
+import { Effect, Exit, Layer, Option, Ref, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import {
@@ -20,6 +20,7 @@ import { VariablesService } from "../VariablesService.ts";
 
 const withTestCtx = () =>
   Effect.sync(() => {
+    sessions.clear();
     const documentSessions = Layer.succeed(NotebookDocumentSessions, {
       current: (id: NotebookId) => Option.fromNullishOr(sessions.get(id)),
       forDocument: (document) =>
@@ -231,7 +232,7 @@ it.effect(
 );
 
 it.effect(
-  "should clear all data for a notebook",
+  "should release all data when a notebook session ends",
   Effect.fn(function* () {
     const { layer } = yield* withTestCtx();
 
@@ -246,20 +247,24 @@ it.effect(
         { name: "x", value: 123, datatype: "int" },
       ]);
 
-      // Add data
-      yield* service.updateVariables(sessionFor(notebookUri), mockVariables);
-      yield* service.updateVariableValues(sessionFor(notebookUri), mockValues);
+      const session = sessionFor(notebookUri);
+      yield* service.updateVariables(session, mockVariables);
+      yield* service.updateVariableValues(session, mockValues);
 
       // Verify data exists
       const beforeClear = yield* service.getAllVariableData(notebookUri);
 
-      // Clear notebook
-      yield* service.clearSession(sessionFor(notebookUri));
+      yield* Scope.close(session.scope, Exit.void);
 
       // Verify data is gone
       const afterClear = yield* service.getAllVariableData(notebookUri);
 
-      return { beforeClear, afterClear };
+      // A delayed notification cannot repopulate an ended session.
+      yield* service.updateVariables(session, mockVariables);
+      yield* service.updateVariableValues(session, mockValues);
+      const afterLateUpdate = yield* service.getAllVariableData(notebookUri);
+
+      return { beforeClear, afterClear, afterLateUpdate };
     }).pipe(Effect.provide(layer));
 
     assert(
@@ -273,6 +278,8 @@ it.effect(
 
     assert(Option.isNone(result.afterClear.variables));
     assert(Option.isNone(result.afterClear.values));
+    assert(Option.isNone(result.afterLateUpdate.variables));
+    assert(Option.isNone(result.afterLateUpdate.values));
   }),
 );
 
@@ -302,9 +309,9 @@ it.effect(
         ]),
       );
 
-      // Cleanup for a delayed close of the displaced document only removes
+      // Finalizing a delayed close of the displaced document only removes
       // that exact document opening's state.
-      yield* service.clearSession(displaced);
+      yield* Scope.close(displaced.scope, Exit.void);
       const afterDisplacedClear = yield* service.getVariables(notebookUri);
       return { beforeReplacementUpdate, afterDisplacedClear };
     }).pipe(Effect.provide(layer));

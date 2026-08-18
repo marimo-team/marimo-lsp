@@ -7,6 +7,7 @@ import {
   HashMap,
   Layer,
   Option,
+  Scope,
   Stream,
   SubscriptionRef,
 } from "effect";
@@ -121,6 +122,43 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
       );
       const pendingByLocation = new Map<string, PendingExpansion>();
       const pendingByRequest = new Map<string, PendingExpansion>();
+      const registeredSessionCleanups = new WeakSet<NotebookDocumentSession>();
+
+      const releaseSession = Effect.fn("DatasourcesService.releaseSession")(
+        function* (session: NotebookDocumentSession) {
+          const notebookUri = session.notebookId;
+          registeredSessionCleanups.delete(session);
+          for (const pending of [...pendingByRequest.values()]) {
+            if (pending.session === session) {
+              yield* Deferred.fail(
+                pending.deferred,
+                new DatasourceExpansionError({
+                  message: "Notebook closed",
+                }),
+              );
+              yield* Fiber.await(pending.fiber);
+            }
+          }
+          yield* SubscriptionRef.update(
+            stateRef,
+            HashMap.remove(keyFor(session)),
+          );
+
+          yield* Effect.logTrace("Released datasource data").pipe(
+            Effect.annotateLogs({ notebookUri }),
+          );
+        },
+      );
+
+      const registerSessionCleanup = Effect.fn(
+        "DatasourcesService.registerSessionCleanup",
+      )((session: NotebookDocumentSession) =>
+        Effect.suspend(() => {
+          if (registeredSessionCleanups.has(session)) return Effect.void;
+          registeredSessionCleanups.add(session);
+          return Scope.addFinalizer(session.scope, releaseSession(session));
+        }),
+      );
 
       const expansionKey = (
         notebookUri: NotebookId,
@@ -401,30 +439,36 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
           kernelSessionId: KernelSessionId,
           operation: DataSourceConnectionsNotification,
         ) {
-          return Effect.gen(function* () {
-            const notebookUri = session.notebookId;
-            const connectionsMap = convertConnectionsToMap(operation);
-            const key = keyFor(session);
+          return Effect.uninterruptible(
+            Effect.gen(function* () {
+              const notebookUri = session.notebookId;
+              const connectionsMap = convertConnectionsToMap(operation);
+              const key = keyFor(session);
 
-            yield* SubscriptionRef.update(stateRef, (map) => {
-              const current = Option.filter(
-                HashMap.get(map, key),
-                (state) => state.kernelSessionId === kernelSessionId,
-              );
-              return HashMap.set(map, key, {
-                kernelSessionId,
-                connections: Option.some(connectionsMap),
-                datasets: Option.flatMap(current, (state) => state.datasets),
+              yield* SubscriptionRef.update(stateRef, (map) => {
+                const current = Option.filter(
+                  HashMap.get(map, key),
+                  (state) => state.kernelSessionId === kernelSessionId,
+                );
+                return HashMap.set(map, key, {
+                  kernelSessionId,
+                  connections: Option.some(connectionsMap),
+                  datasets: Option.flatMap(current, (state) => state.datasets),
+                });
               });
-            });
 
-            yield* Effect.logTrace("Updated data source connections").pipe(
-              Effect.annotateLogs({
-                notebookUri,
-                count: operation.connections.length,
-              }),
-            );
-          });
+              // Adding a finalizer to an already-closed scope runs it
+              // immediately, so late writes cannot repopulate state.
+              yield* registerSessionCleanup(session);
+
+              yield* Effect.logTrace("Updated data source connections").pipe(
+                Effect.annotateLogs({
+                  notebookUri,
+                  count: operation.connections.length,
+                }),
+              );
+            }),
+          );
         },
 
         updateSchemaList(
@@ -657,34 +701,38 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
           kernelSessionId: KernelSessionId,
           operation: DatasetsNotification,
         ) {
-          return Effect.gen(function* () {
-            const notebookUri = session.notebookId;
-            const datasetsMap = convertDatasetsToMap(operation);
-            const key = keyFor(session);
+          return Effect.uninterruptible(
+            Effect.gen(function* () {
+              const notebookUri = session.notebookId;
+              const datasetsMap = convertDatasetsToMap(operation);
+              const key = keyFor(session);
 
-            yield* SubscriptionRef.update(stateRef, (map) => {
-              const current = Option.filter(
-                HashMap.get(map, key),
-                (state) => state.kernelSessionId === kernelSessionId,
-              );
-              return HashMap.set(map, key, {
-                kernelSessionId,
-                connections: Option.flatMap(
-                  current,
-                  (state) => state.connections,
-                ),
-                datasets: Option.some(datasetsMap),
+              yield* SubscriptionRef.update(stateRef, (map) => {
+                const current = Option.filter(
+                  HashMap.get(map, key),
+                  (state) => state.kernelSessionId === kernelSessionId,
+                );
+                return HashMap.set(map, key, {
+                  kernelSessionId,
+                  connections: Option.flatMap(
+                    current,
+                    (state) => state.connections,
+                  ),
+                  datasets: Option.some(datasetsMap),
+                });
               });
-            });
 
-            yield* Effect.logTrace("Updated datasets").pipe(
-              Effect.annotateLogs({
-                notebookUri,
-                count: operation.tables.length,
-                clear_channel: operation.clear_channel,
-              }),
-            );
-          });
+              yield* registerSessionCleanup(session);
+
+              yield* Effect.logTrace("Updated datasets").pipe(
+                Effect.annotateLogs({
+                  notebookUri,
+                  count: operation.tables.length,
+                  clear_channel: operation.clear_channel,
+                }),
+              );
+            }),
+          );
         },
 
         /**
@@ -737,34 +785,6 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
                   stateNotebookUri !== notebookUri ||
                   state.kernelSessionId !== kernelSessionId,
               ),
-            );
-          });
-        },
-
-        /**
-         * Clear all datasource data for a notebook
-         */
-        clearSession(session: NotebookDocumentSession) {
-          return Effect.gen(function* () {
-            const notebookUri = session.notebookId;
-            for (const pending of pendingByRequest.values()) {
-              if (pending.session === session) {
-                yield* Deferred.fail(
-                  pending.deferred,
-                  new DatasourceExpansionError({
-                    message: "Notebook closed",
-                  }),
-                );
-                yield* Fiber.await(pending.fiber);
-              }
-            }
-            yield* SubscriptionRef.update(
-              stateRef,
-              HashMap.remove(keyFor(session)),
-            );
-
-            yield* Effect.logTrace("Cleared datasource data").pipe(
-              Effect.annotateLogs({ notebookUri }),
             );
           });
         },

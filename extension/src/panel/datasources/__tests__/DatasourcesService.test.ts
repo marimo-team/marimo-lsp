@@ -1,5 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Fiber, Layer, Option } from "effect";
+import { Effect, Exit, Fiber, Layer, Option, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import {
@@ -57,6 +57,7 @@ const makeLayer = (
             ? Option.some(session)
             : Option.none();
         },
+        active: Stream.empty,
       }),
     ]),
   );
@@ -154,12 +155,17 @@ it.effect("preserves recursive schemas and deferred discovery", () =>
 );
 
 it.effect("isolates datasource state by document session", () => {
+  const displaced = makeTestNotebookDocumentSession(
+    createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+      notebookType: NOTEBOOK_TYPE,
+    }),
+  );
   const replacement = makeTestNotebookDocumentSession(
     createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
       notebookType: NOTEBOOK_TYPE,
     }),
   );
-  let current = SESSION;
+  let current = displaced;
   const layer = makeLayer(
     () => Effect.succeed(null),
     () => current,
@@ -168,7 +174,7 @@ it.effect("isolates datasource state by document session", () => {
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
-      SESSION,
+      displaced,
       KERNEL_SESSION_ID,
       connections([schema("old")]),
     );
@@ -183,7 +189,19 @@ it.effect("isolates datasource state by document session", () => {
       KERNEL_SESSION_ID,
       connections([schema("new")]),
     );
-    yield* service.clearSession(SESSION);
+    yield* Scope.close(displaced.scope, Exit.void);
+
+    // A delayed notification cannot repopulate the ended session.
+    yield* service.updateConnections(
+      displaced,
+      KERNEL_SESSION_ID,
+      connections([schema("late")]),
+    );
+    current = displaced;
+    expect(Option.isNone(yield* service.getConnections(NOTEBOOK_URI))).toBe(
+      true,
+    );
+    current = replacement;
 
     const state = yield* service.getConnections(NOTEBOOK_URI);
     assert(Option.isSome(state));

@@ -642,8 +642,6 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                   notebookId,
                   Effect.gen(function* () {
                     notebookStates.delete(session);
-                    yield* variables.clearSession(session);
-                    yield* datasources.clearSession(session);
                     yield* updateKernelContext();
                   }),
                 )

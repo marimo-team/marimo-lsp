@@ -5,6 +5,7 @@ import {
   Layer,
   Option,
   PubSub,
+  Scope,
   Stream,
   SubscriptionRef,
 } from "effect";
@@ -56,6 +57,37 @@ export class VariablesService extends Context.Service<VariablesService>()(
       // Track variable values by exact document opening.
       const variableValuesRef = yield* SubscriptionRef.make(
         HashMap.empty<VariableStateKey, VariableValuesNotification>(),
+      );
+
+      const registeredSessionCleanups = new WeakSet<NotebookDocumentSession>();
+
+      const releaseSession = Effect.fn("VariablesService.releaseSession")(
+        function* (session: NotebookDocumentSession) {
+          const notebookUri = session.notebookId;
+          registeredSessionCleanups.delete(session);
+          yield* SubscriptionRef.update(
+            variablesRef,
+            HashMap.remove(keyFor(session)),
+          );
+          yield* SubscriptionRef.update(
+            variableValuesRef,
+            HashMap.remove(keyFor(session)),
+          );
+
+          yield* Effect.logTrace("Released variable data").pipe(
+            Effect.annotateLogs({ notebookUri }),
+          );
+        },
+      );
+
+      const registerSessionCleanup = Effect.fn(
+        "VariablesService.registerSessionCleanup",
+      )((session: NotebookDocumentSession) =>
+        Effect.suspend(() => {
+          if (registeredSessionCleanups.has(session)) return Effect.void;
+          registeredSessionCleanups.add(session);
+          return Scope.addFinalizer(session.scope, releaseSession(session));
+        }),
       );
 
       // PubSub to notify when any notebook's variables change
@@ -118,48 +150,54 @@ export class VariablesService extends Context.Service<VariablesService>()(
           session: NotebookDocumentSession,
           operation: VariablesNotification,
         ) {
-          return Effect.gen(function* () {
-            const notebookUri = session.notebookId;
-            yield* SubscriptionRef.update(variablesRef, (map) =>
-              HashMap.set(map, keyFor(session), operation),
-            );
-
-            // Filter variable values to only include variables that exist in declarations
-            const valuesMap = yield* SubscriptionRef.get(variableValuesRef);
-            const existingValues = HashMap.get(valuesMap, keyFor(session));
-
-            if (Option.isSome(existingValues)) {
-              const declaredVarNames = new Set(
-                operation.variables.map((v) => v.name),
-              );
-              const filteredValues = existingValues.value.variables.filter(
-                (v) => {
-                  // @ts-expect-error - should be able to remove in once branded types are fully fixed in marimo main
-                  const varName: VariableName = v.name;
-                  return declaredVarNames.has(varName);
-                },
+          return Effect.uninterruptible(
+            Effect.gen(function* () {
+              const notebookUri = session.notebookId;
+              yield* SubscriptionRef.update(variablesRef, (map) =>
+                HashMap.set(map, keyFor(session), operation),
               );
 
-              yield* SubscriptionRef.update(variableValuesRef, (map) =>
-                HashMap.set(map, keyFor(session), {
-                  ...existingValues.value,
-                  variables: filteredValues,
+              // Filter variable values to only include variables that exist in declarations
+              const valuesMap = yield* SubscriptionRef.get(variableValuesRef);
+              const existingValues = HashMap.get(valuesMap, keyFor(session));
+
+              if (Option.isSome(existingValues)) {
+                const declaredVarNames = new Set(
+                  operation.variables.map((v) => v.name),
+                );
+                const filteredValues = existingValues.value.variables.filter(
+                  (v) => {
+                    // @ts-expect-error - should be able to remove in once branded types are fully fixed in marimo main
+                    const varName: VariableName = v.name;
+                    return declaredVarNames.has(varName);
+                  },
+                );
+
+                yield* SubscriptionRef.update(variableValuesRef, (map) =>
+                  HashMap.set(map, keyFor(session), {
+                    ...existingValues.value,
+                    variables: filteredValues,
+                  }),
+                );
+              }
+
+              // Register after mutation: adding a finalizer to an already-closed
+              // scope runs it immediately, so late writes cannot repopulate state.
+              yield* registerSessionCleanup(session);
+
+              yield* PubSub.publish(notebookUpdatesPubSub, {
+                notebookId: notebookUri,
+                kind: "declaration" as const,
+              });
+
+              yield* Effect.logTrace("Updated variable declarations").pipe(
+                Effect.annotateLogs({
+                  notebookUri,
+                  count: operation.variables.length,
                 }),
               );
-            }
-
-            yield* PubSub.publish(notebookUpdatesPubSub, {
-              notebookId: notebookUri,
-              kind: "declaration" as const,
-            });
-
-            yield* Effect.logTrace("Updated variable declarations").pipe(
-              Effect.annotateLogs({
-                notebookUri,
-                count: operation.variables.length,
-              }),
-            );
-          });
+            }),
+          );
         },
 
         /**
@@ -169,24 +207,27 @@ export class VariablesService extends Context.Service<VariablesService>()(
           session: NotebookDocumentSession,
           operation: VariableValuesNotification,
         ) {
-          return Effect.gen(function* () {
-            const notebookUri = session.notebookId;
-            yield* SubscriptionRef.update(variableValuesRef, (map) =>
-              HashMap.set(map, keyFor(session), operation),
-            );
+          return Effect.uninterruptible(
+            Effect.gen(function* () {
+              const notebookUri = session.notebookId;
+              yield* SubscriptionRef.update(variableValuesRef, (map) =>
+                HashMap.set(map, keyFor(session), operation),
+              );
+              yield* registerSessionCleanup(session);
 
-            yield* PubSub.publish(notebookUpdatesPubSub, {
-              notebookId: notebookUri,
-              kind: "values" as const,
-            });
+              yield* PubSub.publish(notebookUpdatesPubSub, {
+                notebookId: notebookUri,
+                kind: "values" as const,
+              });
 
-            yield* Effect.logTrace("Updated variable values").pipe(
-              Effect.annotateLogs({
-                notebookUri,
-                count: operation.variables.length,
-              }),
-            );
-          });
+              yield* Effect.logTrace("Updated variable values").pipe(
+                Effect.annotateLogs({
+                  notebookUri,
+                  count: operation.variables.length,
+                }),
+              );
+            }),
+          );
         },
 
         /**
@@ -207,27 +248,6 @@ export class VariablesService extends Context.Service<VariablesService>()(
             const variables = yield* getVariables(notebookUri);
             const values = yield* getVariableValues(notebookUri);
             return { variables, values };
-          });
-        },
-
-        /**
-         * Clear all variable data for a notebook
-         */
-        clearSession(session: NotebookDocumentSession) {
-          return Effect.gen(function* () {
-            const notebookUri = session.notebookId;
-            yield* SubscriptionRef.update(
-              variablesRef,
-              HashMap.remove(keyFor(session)),
-            );
-            yield* SubscriptionRef.update(
-              variableValuesRef,
-              HashMap.remove(keyFor(session)),
-            );
-
-            yield* Effect.logTrace("Cleared variable data").pipe(
-              Effect.annotateLogs({ notebookUri }),
-            );
           });
         },
 
