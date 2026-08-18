@@ -6,11 +6,15 @@ import {
   Fiber,
   HashMap,
   Layer,
+  Option,
+  Stream,
   SubscriptionRef,
 } from "effect";
 
 import { MarimoClient } from "../../lsp/MarimoClient.ts";
+import type { NotebookDocumentSession } from "../../notebook/NotebookDocumentSessions.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
+import type { KernelSessionId } from "../../schemas/Models.gen.ts";
 import type {
   DataSourceConnection,
   DataSourceConnectionsNotification,
@@ -65,9 +69,16 @@ export class DatasourceExpansionError extends Data.TaggedError(
 )<{ readonly message: string }> {}
 
 interface PendingExpansion {
-  readonly notebookUri: NotebookId;
+  readonly session: NotebookDocumentSession;
+  readonly kernelSessionId: KernelSessionId;
   readonly deferred: Deferred.Deferred<void, DatasourceExpansionError>;
   readonly fiber: Fiber.Fiber<void, DatasourceExpansionError>;
+}
+
+interface Owned<A> {
+  readonly documentSessionId: NotebookDocumentSession["id"];
+  readonly kernelSessionId: KernelSessionId;
+  readonly value: A;
 }
 
 const EXPANSION_TIMEOUT = "30 seconds";
@@ -91,12 +102,12 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
 
       // Track data source connections: NotebookUri -> DataSourceConnectionMap
       const connectionsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, DataSourceConnectionMap>(),
+        HashMap.empty<NotebookId, Owned<DataSourceConnectionMap>>(),
       );
 
       // Track datasets: NotebookUri -> DatasetsMap
       const datasetsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, DatasetsMap>(),
+        HashMap.empty<NotebookId, Owned<DatasetsMap>>(),
       );
       const pendingByLocation = new Map<string, PendingExpansion>();
       const pendingByRequest = new Map<string, PendingExpansion>();
@@ -111,13 +122,41 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
         JSON.stringify([notebookUri, connection, database, kind, schemaPath]);
 
       const requestExpansion = Effect.fn(function* (
-        notebookUri: NotebookId,
+        session: NotebookDocumentSession,
         location: string,
-        send: (requestId: string) => Effect.Effect<void, unknown>,
+        send: (
+          requestId: string,
+          kernelSessionId: KernelSessionId,
+        ) => Effect.Effect<void, unknown>,
       ) {
+        const connections = HashMap.get(
+          yield* SubscriptionRef.get(connectionsRef),
+          session.notebookId,
+        );
+        if (
+          Option.isNone(connections) ||
+          connections.value.documentSessionId !== session.id
+        ) {
+          return yield* new DatasourceExpansionError({
+            message: "Datasource state is no longer active",
+          });
+        }
+        const kernelSessionId = connections.value.kernelSessionId;
         const current = pendingByLocation.get(location);
-        if (current !== undefined) {
+        if (
+          current?.session === session &&
+          current.kernelSessionId === kernelSessionId
+        ) {
           return yield* Fiber.join(current.fiber);
+        }
+        if (current !== undefined) {
+          yield* Deferred.fail(
+            current.deferred,
+            new DatasourceExpansionError({
+              message: "Datasource expansion superseded",
+            }),
+          );
+          yield* Fiber.await(current.fiber);
         }
 
         const requestId = crypto.randomUUID();
@@ -145,14 +184,15 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
           Effect.forkIn(serviceScope),
         );
         const pending = {
-          notebookUri,
+          session,
+          kernelSessionId,
           deferred,
           fiber,
         };
         pendingByLocation.set(location, pending);
         pendingByRequest.set(requestId, pending);
 
-        yield* send(requestId).pipe(
+        yield* send(requestId, kernelSessionId).pipe(
           Effect.catch((cause) =>
             Deferred.fail(
               deferred,
@@ -178,8 +218,17 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
         });
       };
 
-      const isPendingExpansion = (notebookUri: NotebookId, requestId: string) =>
-        pendingByRequest.get(requestId)?.notebookUri === notebookUri;
+      const isPendingExpansion = (
+        session: NotebookDocumentSession,
+        kernelSessionId: KernelSessionId,
+        requestId: string,
+      ) => {
+        const pending = pendingByRequest.get(requestId);
+        return (
+          pending?.session === session &&
+          pending.kernelSessionId === kernelSessionId
+        );
+      };
 
       const convertTablesToMap = (tables: readonly DataTable[]) =>
         new Map(tables.map((table) => [table.name, table]));
@@ -311,15 +360,29 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
          * Update data source connections for a notebook
          */
         updateConnections(
-          notebookUri: NotebookId,
+          session: NotebookDocumentSession,
+          kernelSessionId: KernelSessionId,
           operation: DataSourceConnectionsNotification,
         ) {
           return Effect.gen(function* () {
+            const notebookUri = session.notebookId;
             const connectionsMap = convertConnectionsToMap(operation);
 
             yield* SubscriptionRef.update(connectionsRef, (map) =>
-              HashMap.set(map, notebookUri, connectionsMap),
+              HashMap.set(map, notebookUri, {
+                documentSessionId: session.id,
+                kernelSessionId,
+                value: connectionsMap,
+              }),
             );
+            yield* SubscriptionRef.update(datasetsRef, (map) => {
+              const current = HashMap.get(map, notebookUri);
+              return Option.isSome(current) &&
+                (current.value.documentSessionId !== session.id ||
+                  current.value.kernelSessionId !== kernelSessionId)
+                ? HashMap.remove(map, notebookUri)
+                : map;
+            });
 
             yield* Effect.logTrace("Updated data source connections").pipe(
               Effect.annotateLogs({
@@ -331,11 +394,19 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
         },
 
         updateSchemaList(
-          notebookUri: NotebookId,
+          session: NotebookDocumentSession,
+          kernelSessionId: KernelSessionId,
           operation: SqlSchemaListPreviewNotification,
         ) {
           return Effect.gen(function* () {
-            if (!isPendingExpansion(notebookUri, operation.request_id)) {
+            const notebookUri = session.notebookId;
+            if (
+              !isPendingExpansion(
+                session,
+                kernelSessionId,
+                operation.request_id,
+              )
+            ) {
               yield* Effect.logTrace(
                 "Ignored uncorrelated datasource schema response",
               ).pipe(
@@ -363,12 +434,18 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
 
             yield* SubscriptionRef.update(connectionsRef, (notebooks) => {
               const current = HashMap.get(notebooks, notebookUri);
-              if (current._tag === "None") return notebooks;
+              if (
+                Option.isNone(current) ||
+                current.value.documentSessionId !== session.id ||
+                current.value.kernelSessionId !== kernelSessionId
+              ) {
+                return notebooks;
+              }
               const { connection, database } = operation.metadata;
               const schemaPath = operation.metadata.schema_path ?? [];
               const schemas = convertSchemasToMap(operation.schemas ?? []);
               const next = updateDatabase(
-                current.value,
+                current.value.value,
                 connection,
                 database,
                 (db) =>
@@ -387,20 +464,32 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
                         ),
                       },
               );
-              return next === current.value
+              return next === current.value.value
                 ? notebooks
-                : HashMap.set(notebooks, notebookUri, next);
+                : HashMap.set(notebooks, notebookUri, {
+                    documentSessionId: session.id,
+                    kernelSessionId,
+                    value: next,
+                  });
             });
             yield* completeExpansion(operation.request_id);
           });
         },
 
         updateTableList(
-          notebookUri: NotebookId,
+          session: NotebookDocumentSession,
+          kernelSessionId: KernelSessionId,
           operation: SqlTableListPreviewNotification,
         ) {
           return Effect.gen(function* () {
-            if (!isPendingExpansion(notebookUri, operation.request_id)) {
+            const notebookUri = session.notebookId;
+            if (
+              !isPendingExpansion(
+                session,
+                kernelSessionId,
+                operation.request_id,
+              )
+            ) {
               yield* Effect.logTrace(
                 "Ignored uncorrelated datasource table response",
               ).pipe(
@@ -426,13 +515,19 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
 
             yield* SubscriptionRef.update(connectionsRef, (notebooks) => {
               const current = HashMap.get(notebooks, notebookUri);
-              if (current._tag === "None") return notebooks;
+              if (
+                Option.isNone(current) ||
+                current.value.documentSessionId !== session.id ||
+                current.value.kernelSessionId !== kernelSessionId
+              ) {
+                return notebooks;
+              }
               const { connection, database, schema } = operation.metadata;
               const schemaPath = operation.metadata.schema_path ?? [];
               const path = schemaPath.length > 0 ? schemaPath : [schema];
               const tables = convertTablesToMap(operation.tables ?? []);
               const next = updateDatabase(
-                current.value,
+                current.value.value,
                 connection,
                 database,
                 (db) => ({
@@ -444,20 +539,25 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
                   })),
                 }),
               );
-              return next === current.value
+              return next === current.value.value
                 ? notebooks
-                : HashMap.set(notebooks, notebookUri, next);
+                : HashMap.set(notebooks, notebookUri, {
+                    documentSessionId: session.id,
+                    kernelSessionId,
+                    value: next,
+                  });
             });
             yield* completeExpansion(operation.request_id);
           });
         },
 
         loadSchemas(
-          notebookUri: NotebookId,
+          session: NotebookDocumentSession,
           connection: string,
           database: string,
           schemaPath: readonly string[],
         ) {
+          const notebookUri = session.notebookId;
           const location = expansionKey(
             notebookUri,
             connection,
@@ -465,26 +565,31 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
             "schemas",
             schemaPath,
           );
-          return requestExpansion(notebookUri, location, (requestId) =>
-            marimo.listSqlSchemas({
-              notebookUri,
-              inner: {
-                requestId,
-                engine: connection,
-                database,
-                schemaPath: [...schemaPath],
-              },
-            }),
+          return requestExpansion(
+            session,
+            location,
+            (requestId, kernelSessionId) =>
+              marimo.listSqlSchemas({
+                notebookUri,
+                sessionId: kernelSessionId,
+                inner: {
+                  requestId,
+                  engine: connection,
+                  database,
+                  schemaPath: [...schemaPath],
+                },
+              }),
           );
         },
 
         loadTables(
-          notebookUri: NotebookId,
+          session: NotebookDocumentSession,
           connection: string,
           database: string,
           schema: string,
           schemaPath: readonly string[],
         ) {
+          const notebookUri = session.notebookId;
           const location = expansionKey(
             notebookUri,
             connection,
@@ -492,17 +597,21 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
             "tables",
             schemaPath,
           );
-          return requestExpansion(notebookUri, location, (requestId) =>
-            marimo.listSqlTables({
-              notebookUri,
-              inner: {
-                requestId,
-                engine: connection,
-                database,
-                schema,
-                schemaPath: [...schemaPath],
-              },
-            }),
+          return requestExpansion(
+            session,
+            location,
+            (requestId, kernelSessionId) =>
+              marimo.listSqlTables({
+                notebookUri,
+                sessionId: kernelSessionId,
+                inner: {
+                  requestId,
+                  engine: connection,
+                  database,
+                  schema,
+                  schemaPath: [...schemaPath],
+                },
+              }),
           );
         },
 
@@ -510,15 +619,29 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
          * Update datasets for a notebook
          */
         updateDatasets(
-          notebookUri: NotebookId,
+          session: NotebookDocumentSession,
+          kernelSessionId: KernelSessionId,
           operation: DatasetsNotification,
         ) {
           return Effect.gen(function* () {
+            const notebookUri = session.notebookId;
             const datasetsMap = convertDatasetsToMap(operation);
 
             yield* SubscriptionRef.update(datasetsRef, (map) =>
-              HashMap.set(map, notebookUri, datasetsMap),
+              HashMap.set(map, notebookUri, {
+                documentSessionId: session.id,
+                kernelSessionId,
+                value: datasetsMap,
+              }),
             );
+            yield* SubscriptionRef.update(connectionsRef, (map) => {
+              const current = HashMap.get(map, notebookUri);
+              return Option.isSome(current) &&
+                (current.value.documentSessionId !== session.id ||
+                  current.value.kernelSessionId !== kernelSessionId)
+                ? HashMap.remove(map, notebookUri)
+                : map;
+            });
 
             yield* Effect.logTrace("Updated datasets").pipe(
               Effect.annotateLogs({
@@ -536,7 +659,9 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
         getConnections(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             const map = yield* SubscriptionRef.get(connectionsRef);
-            return HashMap.get(map, notebookUri);
+            return HashMap.get(map, notebookUri).pipe(
+              Option.map((owned) => owned.value),
+            );
           });
         },
 
@@ -546,17 +671,56 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
         getDatasets(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             const map = yield* SubscriptionRef.get(datasetsRef);
-            return HashMap.get(map, notebookUri);
+            return HashMap.get(map, notebookUri).pipe(
+              Option.map((owned) => owned.value),
+            );
+          });
+        },
+
+        clearKernelSession(
+          notebookUri: NotebookId,
+          kernelSessionId: KernelSessionId,
+        ) {
+          return Effect.gen(function* () {
+            for (const pending of [...pendingByRequest.values()]) {
+              if (
+                pending.session.notebookId === notebookUri &&
+                pending.kernelSessionId === kernelSessionId
+              ) {
+                yield* Deferred.fail(
+                  pending.deferred,
+                  new DatasourceExpansionError({
+                    message: "Kernel session ended",
+                  }),
+                );
+                yield* Fiber.await(pending.fiber);
+              }
+            }
+            yield* SubscriptionRef.update(connectionsRef, (map) => {
+              const current = HashMap.get(map, notebookUri);
+              return Option.isSome(current) &&
+                current.value.kernelSessionId === kernelSessionId
+                ? HashMap.remove(map, notebookUri)
+                : map;
+            });
+            yield* SubscriptionRef.update(datasetsRef, (map) => {
+              const current = HashMap.get(map, notebookUri);
+              return Option.isSome(current) &&
+                current.value.kernelSessionId === kernelSessionId
+                ? HashMap.remove(map, notebookUri)
+                : map;
+            });
           });
         },
 
         /**
          * Clear all datasource data for a notebook
          */
-        clearNotebook(notebookUri: NotebookId) {
+        clearSession(session: NotebookDocumentSession) {
           return Effect.gen(function* () {
+            const notebookUri = session.notebookId;
             for (const pending of pendingByRequest.values()) {
-              if (pending.notebookUri === notebookUri) {
+              if (pending.session === session) {
                 yield* Deferred.fail(
                   pending.deferred,
                   new DatasourceExpansionError({
@@ -566,12 +730,20 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
                 yield* Fiber.await(pending.fiber);
               }
             }
-            yield* SubscriptionRef.update(connectionsRef, (map) =>
-              HashMap.remove(map, notebookUri),
-            );
-            yield* SubscriptionRef.update(datasetsRef, (map) =>
-              HashMap.remove(map, notebookUri),
-            );
+            yield* SubscriptionRef.update(connectionsRef, (map) => {
+              const current = HashMap.get(map, notebookUri);
+              return Option.isSome(current) &&
+                current.value.documentSessionId === session.id
+                ? HashMap.remove(map, notebookUri)
+                : map;
+            });
+            yield* SubscriptionRef.update(datasetsRef, (map) => {
+              const current = HashMap.get(map, notebookUri);
+              return Option.isSome(current) &&
+                current.value.documentSessionId === session.id
+                ? HashMap.remove(map, notebookUri)
+                : map;
+            });
 
             yield* Effect.logTrace("Cleared datasource data").pipe(
               Effect.annotateLogs({ notebookUri }),
@@ -584,14 +756,22 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
          *
          * Emits the current value on subscription, then all subsequent changes.
          */
-        streamConnectionsChanges: SubscriptionRef.changes(connectionsRef),
+        streamConnectionsChanges: SubscriptionRef.changes(connectionsRef).pipe(
+          Stream.map((notebooks) =>
+            HashMap.map(notebooks, (owned) => owned.value),
+          ),
+        ),
 
         /**
          * Stream of dataset changes.
          *
          * Emits the current value on subscription, then all subsequent changes.
          */
-        streamDatasetsChanges: SubscriptionRef.changes(datasetsRef),
+        streamDatasetsChanges: SubscriptionRef.changes(datasetsRef).pipe(
+          Stream.map((notebooks) =>
+            HashMap.map(notebooks, (owned) => owned.value),
+          ),
+        ),
       };
     }),
   },

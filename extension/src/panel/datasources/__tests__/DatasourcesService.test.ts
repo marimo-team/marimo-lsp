@@ -2,8 +2,18 @@ import { assert, expect, it } from "@effect/vitest";
 import { Effect, Fiber, Layer, Option } from "effect";
 import { TestClock } from "effect/testing";
 
+import {
+  createTestNotebookDocument,
+  Uri,
+} from "../../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../../__tests__/__utils__/TestMarimoClient.ts";
-import { notebookId, requestId } from "../../../lib/__tests__/branded.ts";
+import { makeTestNotebookDocumentSession } from "../../../__tests__/__utils__/TestNotebookDocumentSession.ts";
+import { NOTEBOOK_TYPE } from "../../../constants.ts";
+import {
+  kernelSessionId,
+  notebookId,
+  requestId,
+} from "../../../lib/__tests__/branded.ts";
 import type {
   DataSourceConnectionsNotification,
   DatabaseSchema,
@@ -15,6 +25,14 @@ import type { MarimoApiCall } from "../../../types.ts";
 import { DatasourcesService } from "../DatasourcesService.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
+const KERNEL_SESSION_ID = kernelSessionId(
+  "00000000-0000-4000-8000-000000000001",
+);
+const SESSION = makeTestNotebookDocumentSession(
+  createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+    notebookType: NOTEBOOK_TYPE,
+  }),
+);
 
 const makeLayer = (
   execute: (request: MarimoApiCall) => Effect.Effect<unknown> = () =>
@@ -93,7 +111,8 @@ it.effect("preserves recursive schemas and deferred discovery", () =>
   Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
-      NOTEBOOK_URI,
+      SESSION,
+      KERNEL_SESSION_ID,
       connections(
         [
           schema("catalog", {
@@ -121,7 +140,8 @@ it.effect("merges child schemas at their parent path", () => {
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
-      NOTEBOOK_URI,
+      SESSION,
+      KERNEL_SESSION_ID,
       connections([
         schema("catalog", {
           tables: [table("existing")],
@@ -131,7 +151,7 @@ it.effect("merges child schemas at their parent path", () => {
     );
 
     const load = yield* Effect.forkChild(
-      service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", ["catalog"]),
+      service.loadSchemas(SESSION, "warehouse", "analytics", ["catalog"]),
     );
     yield* Effect.yieldNow;
     const call = calls[0];
@@ -147,7 +167,7 @@ it.effect("merges child schemas at their parent path", () => {
       },
       schemas: [schema("events", { tables_resolved: false })],
     };
-    yield* service.updateSchemaList(NOTEBOOK_URI, operation);
+    yield* service.updateSchemaList(SESSION, KERNEL_SESSION_ID, operation);
     yield* Fiber.join(load);
 
     const catalog = (yield* getDatabase()).schemas.get("catalog");
@@ -163,7 +183,8 @@ it.effect("merges tables at a nested schema path", () => {
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
-      NOTEBOOK_URI,
+      SESSION,
+      KERNEL_SESSION_ID,
       connections([
         schema("catalog", {
           child_schemas: [schema("events", { tables_resolved: false })],
@@ -172,7 +193,7 @@ it.effect("merges tables at a nested schema path", () => {
     );
 
     const load = yield* Effect.forkChild(
-      service.loadTables(NOTEBOOK_URI, "warehouse", "analytics", "events", [
+      service.loadTables(SESSION, "warehouse", "analytics", "events", [
         "catalog",
         "events",
       ]),
@@ -193,7 +214,7 @@ it.effect("merges tables at a nested schema path", () => {
       },
       tables: [table("clicks")],
     };
-    yield* service.updateTableList(NOTEBOOK_URI, operation);
+    yield* service.updateTableList(SESSION, KERNEL_SESSION_ID, operation);
     yield* Fiber.join(load);
 
     const events = (yield* getDatabase()).schemas
@@ -209,13 +230,14 @@ it.effect("does not resolve deferred state after an error", () => {
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
-      NOTEBOOK_URI,
+      SESSION,
+      KERNEL_SESSION_ID,
       connections([schema("public", { tables_resolved: false })]),
     );
 
     const load = yield* Effect.forkChild(
       Effect.result(
-        service.loadTables(NOTEBOOK_URI, "warehouse", "analytics", "public", [
+        service.loadTables(SESSION, "warehouse", "analytics", "public", [
           "public",
         ]),
       ),
@@ -224,7 +246,7 @@ it.effect("does not resolve deferred state after an error", () => {
     const call = calls[0];
     assert(call?.method === "list-sql-tables");
 
-    yield* service.updateTableList(NOTEBOOK_URI, {
+    yield* service.updateTableList(SESSION, KERNEL_SESSION_ID, {
       op: "sql-table-list-preview",
       request_id: requestId(call.params.inner.requestId),
       metadata: {
@@ -248,17 +270,18 @@ it.effect("ignores uncorrelated expansion responses", () =>
   Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
-      NOTEBOOK_URI,
+      SESSION,
+      KERNEL_SESSION_ID,
       connections([schema("public", { tables_resolved: false })], false),
     );
 
-    yield* service.updateSchemaList(NOTEBOOK_URI, {
+    yield* service.updateSchemaList(SESSION, KERNEL_SESSION_ID, {
       op: "sql-schema-list-preview",
       request_id: requestId("stale-schemas"),
       metadata: { connection: "warehouse", database: "analytics" },
       schemas: [schema("stale")],
     });
-    yield* service.updateTableList(NOTEBOOK_URI, {
+    yield* service.updateTableList(SESSION, KERNEL_SESSION_ID, {
       op: "sql-table-list-preview",
       request_id: requestId("stale-tables"),
       metadata: {
@@ -287,20 +310,24 @@ it.effect("deduplicates concurrent schema expansion requests", () => {
 
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
-    yield* service.updateConnections(NOTEBOOK_URI, connections([], false));
+    yield* service.updateConnections(
+      SESSION,
+      KERNEL_SESSION_ID,
+      connections([], false),
+    );
 
     const first = yield* Effect.forkChild(
-      service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
+      service.loadSchemas(SESSION, "warehouse", "analytics", []),
     );
     const second = yield* Effect.forkChild(
-      service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
+      service.loadSchemas(SESSION, "warehouse", "analytics", []),
     );
     yield* Effect.yieldNow;
 
     expect(calls).toHaveLength(1);
     const call = calls[0];
     assert(call?.method === "list-sql-schemas");
-    yield* service.updateSchemaList(NOTEBOOK_URI, {
+    yield* service.updateSchemaList(SESSION, KERNEL_SESSION_ID, {
       op: "sql-schema-list-preview",
       request_id: requestId(call.params.inner.requestId),
       metadata: {
@@ -328,7 +355,8 @@ it.effect("retries nested table expansion after an error", () => {
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
-      NOTEBOOK_URI,
+      SESSION,
+      KERNEL_SESSION_ID,
       connections([
         schema("catalog", {
           child_schemas: [schema("events", { tables_resolved: false })],
@@ -338,7 +366,7 @@ it.effect("retries nested table expansion after an error", () => {
 
     const first = yield* Effect.forkChild(
       Effect.result(
-        service.loadTables(NOTEBOOK_URI, "warehouse", "analytics", "events", [
+        service.loadTables(SESSION, "warehouse", "analytics", "events", [
           "catalog",
           "events",
         ]),
@@ -354,7 +382,7 @@ it.effect("retries nested table expansion after an error", () => {
       schema: "events",
       schemaPath: ["catalog", "events"],
     });
-    yield* service.updateTableList(NOTEBOOK_URI, {
+    yield* service.updateTableList(SESSION, KERNEL_SESSION_ID, {
       op: "sql-table-list-preview",
       request_id: requestId(call.params.inner.requestId),
       metadata: {
@@ -370,7 +398,7 @@ it.effect("retries nested table expansion after an error", () => {
     expect((yield* Fiber.join(first))._tag).toBe("Failure");
 
     const retry = yield* Effect.forkChild(
-      service.loadTables(NOTEBOOK_URI, "warehouse", "analytics", "events", [
+      service.loadTables(SESSION, "warehouse", "analytics", "events", [
         "catalog",
         "events",
       ]),
@@ -390,21 +418,21 @@ it.effect("shares one timeout deadline and retries after it expires", () => {
 
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
-    yield* service.updateConnections(NOTEBOOK_URI, connections([], false));
+    yield* service.updateConnections(
+      SESSION,
+      KERNEL_SESSION_ID,
+      connections([], false),
+    );
 
     const first = yield* Effect.forkChild(
-      Effect.result(
-        service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
-      ),
+      Effect.result(service.loadSchemas(SESSION, "warehouse", "analytics", [])),
     );
     yield* Effect.yieldNow;
     expect(calls).toHaveLength(1);
 
     yield* TestClock.adjust("20 seconds");
     const joined = yield* Effect.forkChild(
-      Effect.result(
-        service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
-      ),
+      Effect.result(service.loadSchemas(SESSION, "warehouse", "analytics", [])),
     );
     yield* Effect.yieldNow;
     expect(calls).toHaveLength(1);
@@ -414,7 +442,7 @@ it.effect("shares one timeout deadline and retries after it expires", () => {
     expect((yield* Fiber.join(joined))._tag).toBe("Failure");
 
     const retry = yield* Effect.forkChild(
-      service.loadSchemas(NOTEBOOK_URI, "warehouse", "analytics", []),
+      service.loadSchemas(SESSION, "warehouse", "analytics", []),
     );
     yield* Effect.yieldNow;
     expect(calls).toHaveLength(2);

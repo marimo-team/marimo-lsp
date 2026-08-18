@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
@@ -7,6 +7,7 @@ import {
   createTestNotebookDocument,
   createTestNotebookEditor,
   TestVsCode,
+  Uri,
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import {
@@ -66,8 +67,11 @@ const withTestCtx = Effect.fn(function* (
     beforeGetResponse?: (notebookUri: string) => Effect.Effect<void>;
   } = {},
 ) {
-  const vscode = yield* TestVsCode.make();
   const { configStore = new Map<string, MarimoConfig>() } = options;
+  const initialDocuments = Array.from(configStore.keys(), (uri) =>
+    createTestNotebookDocument(Uri.parse(uri)),
+  );
+  const vscode = yield* TestVsCode.make({ initialDocuments });
 
   const layer = MarimoConfigurationService.layer.pipe(
     Layer.provide(NotebookEditorRegistry.layer),
@@ -118,6 +122,7 @@ const withTestCtx = Effect.fn(function* (
   return {
     vscode,
     layer,
+    initialDocuments,
     setConfig(uri: NotebookId, config: MarimoConfig) {
       configStore.set(uri, config);
       return Effect.void;
@@ -237,16 +242,10 @@ describe("MarimoConfigurationService", () => {
       });
 
       yield* Effect.gen(function* () {
-        const code = yield* VsCode;
         const service = yield* MarimoConfigurationService;
 
-        const doc = createTestNotebookDocument(
-          code.Uri.parse(notebookUri, true),
-        );
-        yield* ctx.vscode.addNotebookDocument(doc);
-        // No drain needed: the service's lifecycle subscription is live
-        // before its layer finishes building, so the close below cannot
-        // outrun it.
+        const doc = ctx.initialDocuments[0];
+        assert(doc !== undefined);
 
         const config1 = yield* service.getConfig(notebookUri);
         expect(config1.runtime?.on_cell_change).toBe("autorun");
@@ -357,7 +356,7 @@ describe("MarimoConfigurationService", () => {
         const doc = createTestNotebookDocument(
           code.Uri.parse(notebookUri, true),
         );
-        yield* ctx.vscode.addNotebookDocument(doc);
+        yield* ctx.vscode.openNotebook(doc);
         yield* ctx.vscode.setActiveNotebookEditor(
           Option.some(createTestNotebookEditor(doc)),
         );
@@ -443,8 +442,8 @@ describe("MarimoConfigurationService", () => {
         );
 
         // Add to workspace
-        yield* ctx.vscode.addNotebookDocument(doc);
-        yield* ctx.vscode.addNotebookDocument(doc2);
+        yield* ctx.vscode.openNotebook(doc);
+        yield* ctx.vscode.openNotebook(doc2);
 
         const stream = service.streamOf(
           (config) => config.runtime?.on_cell_change,
@@ -559,7 +558,7 @@ describe("MarimoConfigurationService", () => {
         const doc = createTestNotebookDocument(
           code.Uri.parse(notebookUri, true),
         );
-        yield* ctx.vscode.addNotebookDocument(doc);
+        yield* ctx.vscode.openNotebook(doc);
         yield* ctx.vscode.setActiveNotebookEditor(
           Option.some(createTestNotebookEditor(doc)),
         );

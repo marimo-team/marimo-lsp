@@ -1,9 +1,13 @@
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Effect, Fiber, Option, Stream } from "effect";
+import { Deferred, Effect, Fiber, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
-import { makeNotebookLifecycle, VsCode } from "../platform/VsCode.ts";
+import {
+  makeActiveNotebookEditorChanges,
+  makeNotebookLifecycle,
+  VsCode,
+} from "../platform/VsCode.ts";
 
 // Tests for our VsCode test harness
 describe("TestVsCode", () => {
@@ -43,6 +47,52 @@ describe("TestVsCode", () => {
           "file:///test/foo_mo.py",
         ]
       `);
+    }),
+  );
+
+  it.effect(
+    "subscribes before emitting the active notebook editor snapshot",
+    Effect.fn(function* () {
+      const initial = TestVsCode.makeNotebookEditor("/test/initial_mo.py");
+      const next = TestVsCode.makeNotebookEditor("/test/next_mo.py");
+      const initialObserved = yield* Deferred.make<void>();
+      let listener:
+        | ((editor: vscode.NotebookEditor | undefined) => unknown)
+        | undefined;
+      let disposals = 0;
+      const changes = makeActiveNotebookEditorChanges({
+        get activeNotebookEditor() {
+          expect(listener).toBeDefined();
+          return initial;
+        },
+        onDidChangeActiveNotebookEditor(callback) {
+          listener = callback;
+          return {
+            dispose() {
+              disposals += 1;
+              listener = undefined;
+            },
+          };
+        },
+      });
+
+      const result = yield* changes.pipe(
+        Stream.tap(() => Deferred.succeed(initialObserved, undefined)),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* Deferred.await(initialObserved);
+      listener?.(next);
+
+      const editors = Array.from(yield* Fiber.join(result)).map(
+        Option.map((editor) => editor.notebook.uri.toString()),
+      );
+      expect(editors).toEqual([
+        Option.some("file:///test/initial_mo.py"),
+        Option.some("file:///test/next_mo.py"),
+      ]);
+      expect(disposals).toBe(1);
     }),
   );
 

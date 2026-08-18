@@ -8,15 +8,20 @@ import { vi } from "vite-plus/test";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { MarimoLspServer } from "../../config/Config.ts";
-import { notebookId } from "../../lib/__tests__/branded.ts";
-import type { MarimoApiCall, MarimoOperation } from "../../types.ts";
+import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
+import type {
+  DocumentAnalysis,
+  KernelNotification,
+  MarimoApiCall,
+} from "../../types.ts";
 import {
   disposeLanguageClient,
   findMarimoLspExecutable,
   findWasmMarimoLspExecutable,
   makeMarimoCommands,
   makeCustomLspFailureNotifier,
-  makeMarimoOperationStream,
+  makeDocumentAnalysisStream,
+  makeKernelNotificationStream,
   selectMarimoLspExecutable,
 } from "../MarimoClient.ts";
 
@@ -147,7 +152,7 @@ it.effect(
         Ref.update(calls, (current) => [...current, request]).pipe(
           Effect.as(responses[request.method]),
         ),
-      operations: Stream.empty,
+      kernelNotifications: Stream.empty,
     });
 
     yield* marimo.executeCells({
@@ -185,7 +190,7 @@ describe("generated api client", () => {
           Effect.succeed({
             tree: { name: "root", version: null, tags: [], dependencies: [] },
           }),
-        operations: Stream.empty,
+        kernelNotifications: Stream.empty,
       });
 
       const response = yield* marimo.getDependencyTree({
@@ -204,7 +209,7 @@ describe("generated api client", () => {
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
         execute: () => Effect.succeed({ tree: "not-a-tree" }),
-        operations: Stream.empty,
+        kernelNotifications: Stream.empty,
       });
 
       const exit = yield* marimo
@@ -229,7 +234,7 @@ describe("generated api client", () => {
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
         execute: () => Effect.die("should not reach the transport"),
-        operations: Stream.empty,
+        kernelNotifications: Stream.empty,
       });
 
       const exit = yield* marimo
@@ -251,7 +256,7 @@ describe("generated api client", () => {
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
         execute: () => Effect.die("should not reach the transport"),
-        operations: Stream.empty,
+        kernelNotifications: Stream.empty,
       });
 
       const exit = yield* marimo
@@ -381,31 +386,32 @@ describe("selectMarimoLspExecutable", () => {
 });
 
 it.effect(
-  "subscribes to marimo operations",
+  "subscribes to kernel notifications",
   Effect.fn(function* () {
     let requestedNotification: string | undefined;
     const marimo = makeMarimoCommands({
       execute: () => Effect.void,
       // Stream.suspend defers to subscription time, so the assertion below
-      // still observes that draining `operations` evaluated the transport.
-      operations: Stream.suspend(() => {
-        requestedNotification = "marimo/operation";
+      // still observes that draining `kernelNotifications` evaluated the
+      // transport.
+      kernelNotifications: Stream.suspend(() => {
+        requestedNotification = "marimo/kernelNotification";
         return Stream.empty;
       }),
     });
 
-    yield* marimo.operations.pipe(Stream.runDrain);
+    yield* marimo.kernelNotifications.pipe(Stream.runDrain);
 
-    assert.strictEqual(requestedNotification, "marimo/operation");
+    assert.strictEqual(requestedNotification, "marimo/kernelNotification");
   }),
 );
 
 it.effect(
-  "broadcasts marimo operations without replacing the transport handler",
+  "broadcasts kernel notifications without replacing the transport handler",
   Effect.fn(function* () {
     let registrations = 0;
-    let notify: ((message: MarimoOperation) => void) | undefined;
-    const operations = yield* makeMarimoOperationStream((handler) => {
+    let notify: ((message: unknown) => void) | undefined;
+    const operations = yield* makeKernelNotificationStream((handler) => {
       registrations += 1;
       notify = handler;
       return { dispose() {} };
@@ -413,7 +419,8 @@ it.effect(
 
     const message = {
       notebookUri: notebook,
-      operation: { op: "completed-run", run_id: null },
+      sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
+      notification: { op: "completed-run", run_id: null },
     } as const;
     const [first, second] = yield* Effect.all(
       [
@@ -431,5 +438,66 @@ it.effect(
     assert.strictEqual(registrations, 1);
     assert.deepStrictEqual(first, Option.some(message));
     assert.deepStrictEqual(second, Option.some(message));
+  }),
+);
+
+it.effect(
+  "decodes document analysis on its own channel",
+  Effect.fn(function* () {
+    let notify: ((message: unknown) => void) | undefined;
+    const analyses = yield* makeDocumentAnalysisStream((handler) => {
+      notify = handler;
+      return { dispose() {} };
+    });
+    const snapshot: DocumentAnalysis = {
+      notebookUri: notebook,
+      analysis: { op: "variables", variables: [] },
+    };
+
+    const [received] = yield* Effect.all(
+      [
+        analyses.pipe(Stream.take(1), Stream.runHead),
+        Effect.gen(function* () {
+          yield* Effect.yieldNow;
+          assert.ok(notify);
+          notify({ notebookUri: notebook, analysis: { op: "datasets" } });
+          notify(snapshot);
+        }),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    assert.deepStrictEqual(received, Option.some(snapshot));
+  }),
+);
+
+it.effect(
+  "requires a kernel session ID even for kernel variable snapshots",
+  Effect.fn(function* () {
+    let notify: ((message: unknown) => void) | undefined;
+    const operations = yield* makeKernelNotificationStream((handler) => {
+      notify = handler;
+      return { dispose() {} };
+    });
+    const kernelSnapshot: KernelNotification = {
+      notebookUri: notebook,
+      sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
+      notification: { op: "variables", variables: [] },
+    };
+
+    const [received] = yield* Effect.all(
+      [
+        operations.pipe(Stream.take(1), Stream.runHead),
+        Effect.gen(function* () {
+          yield* Effect.yieldNow;
+          assert.ok(notify);
+          notify({ ...kernelSnapshot, sessionId: undefined });
+          notify(kernelSnapshot);
+        }),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    assert.deepStrictEqual(received, Option.some(kernelSnapshot));
   }),
 );

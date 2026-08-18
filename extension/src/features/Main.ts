@@ -12,6 +12,7 @@ import type { MarimoClient } from "../lsp/MarimoClient.ts";
 import type { RuffLanguageServer } from "../lsp/RuffLanguageServer.ts";
 import type { TyLanguageServer } from "../lsp/TyLanguageServer.ts";
 import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
+import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
@@ -94,6 +95,7 @@ const MainLive = Layer.empty
   )
   .pipe(
     Layer.provide(MarimoConfigurationService.layer),
+    Layer.provide(NotebookDocumentSessions.layer),
     Layer.provide(NotebookEditorRegistry.layer),
     Layer.provide(Uv.layer),
     Layer.provide(TreeView.layer),

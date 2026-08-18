@@ -14,12 +14,13 @@ import { TestClock } from "effect/testing";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import type { NotebookController } from "../../kernel/NotebookRuntime.ts";
+import { kernelSessionId } from "../../lib/__tests__/branded.ts";
 import { FileSystemError, VsCode } from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../../schemas/MarimoNotebookDocument.ts";
-import type { MarimoApiCall, MarimoOperation } from "../../types.ts";
+import type { KernelNotification, MarimoApiCall } from "../../types.ts";
 import {
   AUTO_EXPORT_INTERVAL,
   AutoExportLive,
@@ -31,6 +32,7 @@ const controller: NotebookController = {
   drive: () => () => Effect.void,
   resolveExecutable: () => Effect.succeed("/usr/bin/python"),
 };
+const SESSION_ID = kernelSessionId("00000000-0000-4000-8000-000000000001");
 
 const withTestCtx = Effect.fn(function* (
   options: {
@@ -43,7 +45,7 @@ const withTestCtx = Effect.fn(function* (
   const calls = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
   const writes = yield* Ref.make<ReadonlyMap<string, string>>(new Map());
   const directories = yield* Ref.make<ReadonlyArray<string>>([]);
-  const operations = yield* PubSub.unbounded<MarimoOperation>();
+  const operations = yield* PubSub.unbounded<KernelNotification>();
 
   const output = {
     items: [
@@ -104,7 +106,7 @@ const withTestCtx = Effect.fn(function* (
       options.hasRuntimeSession === false
         ? undefined
         : { executable: "/usr/bin/python", workingDirectory: "/test" },
-    operations: Stream.fromPubSub(operations),
+    kernelNotifications: Stream.fromPubSub(operations),
     execute: (request) =>
       Ref.update(calls, (current) => [...current, request]).pipe(
         Effect.andThen(
@@ -215,7 +217,8 @@ describe("AutoExport", () => {
 
         yield* PubSub.publish(ctx.operations, {
           notebookUri: ctx.notebook.id,
-          operation: { op: "completed-run", run_id: null },
+          sessionId: SESSION_ID,
+          notification: { op: "completed-run", run_id: null },
         });
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
         expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
@@ -268,7 +271,8 @@ describe("AutoExport", () => {
         });
         yield* PubSub.publish(ctx.operations, {
           notebookUri: ctx.notebook.id,
-          operation: { op: "completed-run", run_id: null },
+          sessionId: SESSION_ID,
+          notification: { op: "completed-run", run_id: null },
         });
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
 

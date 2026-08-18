@@ -3,7 +3,36 @@
 // Generated from `src/marimo_lsp/models.py` and the `marimo.api` registry
 // (`API_METHODS` in `src/marimo_lsp/api.py`) by `scripts.codegen`.
 // Regenerate with `just codegen`.
+import type { components as MarimoApi } from "@marimo-team/openapi/src/api";
 import { Effect, Schema } from "effect";
+
+type MarimoNotification = MarimoApi["schemas"]["KnownUnions"]["notification"];
+const MarimoNotification = Schema.declare<MarimoNotification>(
+  (value): value is MarimoNotification =>
+    typeof value === "object" &&
+    value !== null &&
+    "op" in value &&
+    typeof value.op === "string",
+);
+
+type VariablesNotification = Extract<MarimoNotification, { op: "variables" }>;
+const VariablesNotification = Schema.declare<VariablesNotification>(
+  (value): value is VariablesNotification =>
+    Schema.is(MarimoNotification)(value) && value.op === "variables",
+);
+
+// The id is an opaque token minted by the server; only equality matters.
+// Validating its shape here would turn a harmless server-side format
+// change into silently dropped notifications.
+export const KernelSessionIdFromString = Schema.String.pipe(
+  Schema.brand("KernelSessionId"),
+);
+export type KernelSessionId = typeof KernelSessionIdFromString.Type;
+
+export const NotebookIdFromString = Schema.String.pipe(
+  Schema.brand("NotebookId"),
+);
+export type NotebookId = typeof NotebookIdFromString.Type;
 
 /**
  * The notebook's environment is a concrete venv with a known python executable.
@@ -45,6 +74,25 @@ export const OwnedAppConfig = Schema.Struct({
   parseOptions: { onExcessProperty: "preserve" },
 });
 export type OwnedAppConfig = typeof OwnedAppConfig.Type;
+
+/**
+ * A notification emitted by one exact live kernel.
+ */
+export const KernelNotification = Schema.Struct({
+  notebookUri: NotebookIdFromString,
+  sessionId: KernelSessionIdFromString,
+  notification: MarimoNotification,
+}).annotate({ identifier: "KernelNotification" });
+export type KernelNotification = typeof KernelNotification.Type;
+
+/**
+ * Analysis derived from a notebook document without a live kernel.
+ */
+export const DocumentAnalysis = Schema.Struct({
+  notebookUri: NotebookIdFromString,
+  analysis: VariablesNotification,
+}).annotate({ identifier: "DocumentAnalysis" });
+export type DocumentAnalysis = typeof DocumentAnalysis.Type;
 
 /**
  * Configuration for a notebook cell
@@ -300,6 +348,9 @@ export const InterruptRequest = Schema.Struct({
   runId: Schema.NullOr(Schema.String).pipe(
     Schema.withDecodingDefault(Effect.sync(() => null)),
   ),
+  sessionId: Schema.NullOr(KernelSessionIdFromString).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
 }).annotate({ identifier: "InterruptRequest" });
 export type InterruptRequest = typeof InterruptRequest.Type;
 
@@ -379,8 +430,18 @@ export type SetDisplayThemeRequest = typeof SetDisplayThemeRequest.Type;
  */
 export const NotebookCommand = <S extends Schema.Top>(inner: S) =>
   Schema.Struct({
-    notebookUri: Schema.String,
+    notebookUri: NotebookIdFromString,
     inner,
+  });
+
+/**
+ * A command addressed to one exact live kernel.
+ */
+export const KernelCommand = <S extends Schema.Top>(inner: S) =>
+  Schema.Struct({
+    notebookUri: NotebookIdFromString,
+    inner,
+    sessionId: KernelSessionIdFromString,
   });
 
 /**
@@ -388,7 +449,7 @@ export const NotebookCommand = <S extends Schema.Top>(inner: S) =>
  */
 export const SessionCommand = <S extends Schema.Top>(inner: S) =>
   Schema.Struct({
-    notebookUri: Schema.String,
+    notebookUri: NotebookIdFromString,
     inner,
     executable: Schema.String,
     workingDirectory: Schema.String,
@@ -403,7 +464,7 @@ export const SessionCommand = <S extends Schema.Top>(inner: S) =>
  */
 export const PackageCommand = <S extends Schema.Top>(inner: S) =>
   Schema.Struct({
-    notebookUri: Schema.String,
+    notebookUri: NotebookIdFromString,
     inner,
     source: PackageSource,
   });
@@ -446,7 +507,7 @@ export const ExecuteCellsRequest = Schema.Struct({
 export type ExecuteCellsRequest = typeof ExecuteCellsRequest.Type;
 
 export const ExecuteCellsPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: ExecuteCellsRequest,
   executable: Schema.String,
   workingDirectory: Schema.String,
@@ -463,8 +524,9 @@ export const UpdateUIElementRequest = Schema.Struct({
 export type UpdateUIElementRequest = typeof UpdateUIElementRequest.Type;
 
 export const UpdateUiElementPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: UpdateUIElementRequest,
+  sessionId: KernelSessionIdFromString,
 });
 
 /**
@@ -514,8 +576,9 @@ export const ModelRequest = Schema.Struct({
 export type ModelRequest = typeof ModelRequest.Type;
 
 export const SetModelValuePayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: ModelRequest,
+  sessionId: KernelSessionIdFromString,
 });
 
 /**
@@ -539,12 +602,13 @@ export const InvokeFunctionCommand = Schema.Struct({
 export type InvokeFunctionCommand = typeof InvokeFunctionCommand.Type;
 
 export const InvokeFunctionPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: InvokeFunctionCommand,
+  sessionId: KernelSessionIdFromString,
 });
 
 export const InterruptPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: InterruptRequest,
 });
 
@@ -554,8 +618,9 @@ export const DeleteCellRequest = Schema.Struct({
 export type DeleteCellRequest = typeof DeleteCellRequest.Type;
 
 export const DeleteCellPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: DeleteCellRequest,
+  sessionId: KernelSessionIdFromString,
 });
 
 export const ListSQLSchemasRequest = Schema.Struct({
@@ -569,8 +634,9 @@ export const ListSQLSchemasRequest = Schema.Struct({
 export type ListSQLSchemasRequest = typeof ListSQLSchemasRequest.Type;
 
 export const ListSqlSchemasPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: ListSQLSchemasRequest,
+  sessionId: KernelSessionIdFromString,
 });
 
 export const ListSQLTablesRequest = Schema.Struct({
@@ -585,8 +651,9 @@ export const ListSQLTablesRequest = Schema.Struct({
 export type ListSQLTablesRequest = typeof ListSQLTablesRequest.Type;
 
 export const ListSqlTablesPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: ListSQLTablesRequest,
+  sessionId: KernelSessionIdFromString,
 });
 
 export const StdinRequest = Schema.Struct({
@@ -595,12 +662,13 @@ export const StdinRequest = Schema.Struct({
 export type StdinRequest = typeof StdinRequest.Type;
 
 export const SendStdinPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: StdinRequest,
+  sessionId: KernelSessionIdFromString,
 });
 
 export const CloseSessionPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: CloseSessionRequest,
 });
 
@@ -617,7 +685,7 @@ export const RestartSessionRequest = Schema.Struct({
 export type RestartSessionRequest = typeof RestartSessionRequest.Type;
 
 export const RestartSessionPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: RestartSessionRequest,
 });
 
@@ -630,7 +698,7 @@ export const MoveSessionRequest = Schema.Struct({
 export type MoveSessionRequest = typeof MoveSessionRequest.Type;
 
 export const MoveSessionPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: MoveSessionRequest,
 });
 
@@ -638,8 +706,8 @@ export const MoveSessionPayload = Schema.Struct({
  * User-facing state for one live kernel session.
  */
 export const SessionInfo = Schema.Struct({
-  sessionId: Schema.String,
-  notebookUri: Schema.String,
+  sessionId: KernelSessionIdFromString,
+  notebookUri: NotebookIdFromString,
   filename: Schema.NullOr(Schema.String),
   executable: Schema.String,
   workingDirectory: Schema.String,
@@ -662,7 +730,7 @@ export const ListSessionsPayload = Schema.Struct({});
 export const ShutdownAllSessionsPayload = Schema.Struct({});
 
 export const ExecuteScratchpadPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: ExecuteScratchRequest,
   executable: Schema.String,
   workingDirectory: Schema.String,
@@ -683,7 +751,7 @@ export const ListPackagesResponse = Schema.Struct({
 export type ListPackagesResponse = typeof ListPackagesResponse.Type;
 
 export const GetPackageListPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: ListPackagesRequest,
   source: PackageSource,
 });
@@ -720,7 +788,7 @@ export const DependencyTreeResponse = Schema.Struct({
 export type DependencyTreeResponse = typeof DependencyTreeResponse.Type;
 
 export const GetDependencyTreePayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: DependencyTreeRequest,
   source: PackageSource,
 });
@@ -1349,12 +1417,12 @@ export const GetConfigurationResponse = Schema.Struct({
 export type GetConfigurationResponse = typeof GetConfigurationResponse.Type;
 
 export const GetConfigurationPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: GetConfigurationRequest,
 });
 
 export const UpdateConfigurationPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: UpdateConfigurationRequest,
 });
 
@@ -1381,12 +1449,12 @@ export const ExportAsHTMLRequest = Schema.Struct({
 export type ExportAsHTMLRequest = typeof ExportAsHTMLRequest.Type;
 
 export const ExportAsHtmlPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: ExportAsHTMLRequest,
 });
 
 export const ExportAsIpynbPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: ExportAsIpynbRequest,
 });
 
@@ -1399,7 +1467,7 @@ export const ExportAsMarkdownRequest = Schema.Struct({}).annotate({
 export type ExportAsMarkdownRequest = typeof ExportAsMarkdownRequest.Type;
 
 export const ExportAsMarkdownPayload = Schema.Struct({
-  notebookUri: Schema.String,
+  notebookUri: NotebookIdFromString,
   inner: ExportAsMarkdownRequest,
 });
 

@@ -62,8 +62,6 @@ export const createPythonController = Effect.fn("createPythonController")(
             return;
           }
 
-          const notebook = MarimoNotebookDocument.from(rawNotebook);
-
           const validation = isProblematicFilename(rawNotebook.uri);
           if (validation.problematic) {
             yield* code.window.showErrorMessage(validation.message, {
@@ -74,9 +72,11 @@ export const createPythonController = Effect.fn("createPythonController")(
 
           const validEnv = yield* validator.validate(options.env);
 
-          yield* notebooks
-            .forNotebook(notebook.id)
-            .executeCells(request.value, validEnv.executable);
+          const documentHandle = yield* notebooks.forDocument(rawNotebook);
+          yield* documentHandle.executeCells(
+            request.value,
+            validEnv.executable,
+          );
         }).pipe(
           Effect.withSpan("PythonController.execute", {
             attributes: {

@@ -29,7 +29,10 @@ const makeContext = Effect.fn(function* (options: {
   treeResponse?: unknown;
   treeEffect?: Effect.Effect<unknown>;
 }) {
-  const vscode = yield* TestVsCode.make();
+  const document = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+    notebookType: "marimo-notebook",
+  });
+  const vscode = yield* TestVsCode.make({ initialDocuments: [document] });
   const recorded: ExecutedCommand[] = [];
 
   const runtime = makeTestNotebookRuntime({
@@ -56,13 +59,7 @@ const makeContext = Effect.fn(function* (options: {
     getActiveNotebookUri: Effect.succeed(Option.some(NOTEBOOK_URI)),
     getNotebookEditor: () => Effect.succeed(Option.none()),
     getActiveNotebookEditor: Effect.succeed(
-      Option.some(
-        createTestNotebookEditor(
-          createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
-            notebookType: "marimo-notebook",
-          }),
-        ),
-      ),
+      Option.some(createTestNotebookEditor(document)),
     ),
     streamActiveNotebookChanges: Stream.empty,
   });
@@ -74,7 +71,7 @@ const makeContext = Effect.fn(function* (options: {
     Layer.provideMerge(vscode.layer),
   );
 
-  return { layer, recorded, vscode };
+  return { document, layer, recorded, vscode };
 });
 
 const makePythonController = Effect.fn(function* (executable: string) {
@@ -338,16 +335,12 @@ describe("PackagesService", () => {
   it.effect(
     "evicts the dependency tree when its notebook closes",
     Effect.fn(function* () {
-      const { layer, recorded, vscode } = yield* makeContext({
+      const { document, layer, recorded, vscode } = yield* makeContext({
         controller: Option.some(makeNonPythonController()),
         treeResponse: {
           tree: { name: "<root>", version: null, tags: [], dependencies: [] },
         },
       });
-      const document = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
-        notebookType: "marimo-notebook",
-      });
-
       yield* Effect.gen(function* () {
         const svc = yield* PackagesService;
         yield* TestClock.adjust("1 millis");
@@ -368,7 +361,7 @@ describe("PackagesService", () => {
     Effect.fn(function* () {
       const requestStarted = yield* Deferred.make<void>();
       const releaseRequest = yield* Deferred.make<void>();
-      const { layer, vscode } = yield* makeContext({
+      const { document, layer, vscode } = yield* makeContext({
         controller: Option.some(makeNonPythonController()),
         treeEffect: Deferred.succeed(requestStarted, undefined).pipe(
           Effect.andThen(Deferred.await(releaseRequest)),
@@ -382,10 +375,6 @@ describe("PackagesService", () => {
           }),
         ),
       });
-      const document = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
-        notebookType: "marimo-notebook",
-      });
-
       yield* Effect.gen(function* () {
         const svc = yield* PackagesService;
         const pending = yield* Effect.forkChild(

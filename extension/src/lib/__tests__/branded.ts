@@ -17,7 +17,10 @@ import type { components as Api } from "@marimo-team/openapi/src/api";
 import { Schema } from "effect";
 
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
-import { MarimoConfig as MarimoConfigSchema } from "../../schemas/Models.gen.ts";
+import {
+  KernelSessionIdFromString,
+  MarimoConfig as MarimoConfigSchema,
+} from "../../schemas/Models.gen.ts";
 import type { MarimoConfig } from "../../types.ts";
 
 type Schemas = Api["schemas"];
@@ -36,6 +39,9 @@ export const uiElementId = (s: string) => s as UIElementId;
 export const widgetModelId = (s: string) => s as WidgetModelId;
 export const base64String = (s: string) => s as Base64String;
 export const notebookId = (s: string) => s as NotebookId;
+export const kernelSessionId = Schema.decodeUnknownSync(
+  KernelSessionIdFromString,
+);
 
 type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];

@@ -47,6 +47,28 @@ import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
 import { tokenFromSignal } from "../lib/tokenFromSignal.ts";
 
+type ActiveNotebookEditorSource = Pick<
+  typeof vscode.window,
+  "activeNotebookEditor" | "onDidChangeActiveNotebookEditor"
+>;
+
+/** Subscribe before sampling so an already-active editor cannot be missed. */
+export const makeActiveNotebookEditorChanges = (
+  source: ActiveNotebookEditorSource,
+): Stream.Stream<Option.Option<vscode.NotebookEditor>> =>
+  Stream.callback<Option.Option<vscode.NotebookEditor>>((queue) =>
+    acquireDisposable(() => {
+      const subscription = source.onDidChangeActiveNotebookEditor((editor) =>
+        Queue.offerUnsafe(queue, Option.fromNullishOr(editor)),
+      );
+      Queue.offerUnsafe(
+        queue,
+        Option.fromNullishOr(source.activeNotebookEditor),
+      );
+      return subscription;
+    }),
+  );
+
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
   cause: unknown;
 }> {}
@@ -219,15 +241,7 @@ export class Window extends Context.Service<Window>()("Window", {
         );
       },
       colorThemeChanges: SubscriptionRef.changes(colorThemeRef),
-      activeNotebookEditorChanges: Stream.callback<
-        Option.Option<vscode.NotebookEditor>
-      >((queue) =>
-        acquireDisposable(() =>
-          api.onDidChangeActiveNotebookEditor((e) =>
-            Queue.offerUnsafe(queue, Option.fromNullishOr(e)),
-          ),
-        ),
-      ),
+      activeNotebookEditorChanges: makeActiveNotebookEditorChanges(api),
       visibleNotebookEditorsChanges: Stream.callback<
         ReadonlyArray<vscode.NotebookEditor>
       >((queue) =>

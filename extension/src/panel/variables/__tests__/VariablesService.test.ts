@@ -2,7 +2,15 @@ import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
+import {
+  createTestNotebookDocument,
+  Uri,
+} from "../../../__mocks__/TestVsCode.ts";
+import { makeTestNotebookDocumentSession } from "../../../__tests__/__utils__/TestNotebookDocumentSession.ts";
+import { NOTEBOOK_TYPE } from "../../../constants.ts";
 import { notebookId } from "../../../lib/__tests__/branded.ts";
+import type { NotebookDocumentSession } from "../../../notebook/NotebookDocumentSessions.ts";
+import type { NotebookId } from "../../../schemas/MarimoNotebookDocument.ts";
 import type {
   VariablesNotification,
   VariableValuesNotification,
@@ -16,6 +24,19 @@ const withTestCtx = () =>
   });
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
+const sessions = new Map<NotebookId, NotebookDocumentSession>();
+
+const sessionFor = (id: NotebookId) => {
+  const existing = sessions.get(id);
+  if (existing !== undefined) return existing;
+  const session = makeTestNotebookDocumentSession(
+    createTestNotebookDocument(Uri.parse(id), {
+      notebookType: NOTEBOOK_TYPE,
+    }),
+  );
+  sessions.set(id, session);
+  return session;
+};
 
 // Mock data factories. SAFETY: the inputs are plain-string variants of the
 // branded variables shape; tests don't need to construct real CellId/VariableName
@@ -79,7 +100,7 @@ it.effect(
       ]);
 
       // Update variables
-      yield* service.updateVariables(notebookUri, mockOp);
+      yield* service.updateVariables(sessionFor(notebookUri), mockOp);
 
       // Retrieve variables
       return yield* service.getVariables(notebookUri);
@@ -107,7 +128,7 @@ it.effect(
       ]);
 
       // Update values
-      yield* service.updateVariableValues(notebookUri, mockOp);
+      yield* service.updateVariableValues(sessionFor(notebookUri), mockOp);
 
       // Retrieve values
       return yield* service.getVariableValues(notebookUri);
@@ -137,8 +158,8 @@ it.effect(
       ]);
 
       // Update both
-      yield* service.updateVariables(notebookUri, mockVariables);
-      yield* service.updateVariableValues(notebookUri, mockValues);
+      yield* service.updateVariables(sessionFor(notebookUri), mockVariables);
+      yield* service.updateVariableValues(sessionFor(notebookUri), mockValues);
 
       // Get all data
       return yield* service.getAllVariableData(notebookUri);
@@ -169,8 +190,8 @@ it.effect(
       ]);
 
       // Update both notebooks
-      yield* service.updateVariables(notebook1, mockOp1);
-      yield* service.updateVariables(notebook2, mockOp2);
+      yield* service.updateVariables(sessionFor(notebook1), mockOp1);
+      yield* service.updateVariables(sessionFor(notebook2), mockOp2);
 
       // Verify they're separate
       return {
@@ -203,14 +224,14 @@ it.effect(
       ]);
 
       // Add data
-      yield* service.updateVariables(notebookUri, mockVariables);
-      yield* service.updateVariableValues(notebookUri, mockValues);
+      yield* service.updateVariables(sessionFor(notebookUri), mockVariables);
+      yield* service.updateVariableValues(sessionFor(notebookUri), mockValues);
 
       // Verify data exists
       const beforeClear = yield* service.getAllVariableData(notebookUri);
 
       // Clear notebook
-      yield* service.clearNotebook(notebookUri);
+      yield* service.clearSession(sessionFor(notebookUri));
 
       // Verify data is gone
       const afterClear = yield* service.getAllVariableData(notebookUri);
@@ -256,7 +277,7 @@ it.effect(
 
       // Make changes
       yield* service.updateVariables(
-        notebookUri,
+        sessionFor(notebookUri),
         createMockVariablesOp([
           { name: "x", declared_by: ["cell1"], used_by: [] },
         ]),
@@ -264,7 +285,7 @@ it.effect(
       yield* TestClock.adjust("10 millis");
 
       yield* service.updateVariables(
-        notebookUri,
+        sessionFor(notebookUri),
         createMockVariablesOp([
           { name: "y", declared_by: ["cell2"], used_by: [] },
         ]),
@@ -272,7 +293,7 @@ it.effect(
       yield* TestClock.adjust("10 millis");
 
       yield* service.updateVariables(
-        notebookUri,
+        sessionFor(notebookUri),
         createMockVariablesOp([
           { name: "x", declared_by: ["cell1"], used_by: [] },
           { name: "z", declared_by: ["cell3"], used_by: [] },
@@ -313,13 +334,13 @@ it.effect(
 
       // Make changes
       yield* service.updateVariableValues(
-        notebookUri,
+        sessionFor(notebookUri),
         createMockVariableValuesOp([{ name: "x", value: 1, datatype: "int" }]),
       );
       yield* TestClock.adjust("10 millis");
 
       yield* service.updateVariableValues(
-        notebookUri,
+        sessionFor(notebookUri),
         createMockVariableValuesOp([{ name: "x", value: 2, datatype: "int" }]),
       );
       yield* TestClock.adjust("10 millis");
@@ -344,7 +365,7 @@ it.effect(
 
       // Set initial variable values
       yield* service.updateVariableValues(
-        notebookUri,
+        sessionFor(notebookUri),
         createMockVariableValuesOp([
           { name: "x", value: 42, datatype: "int" },
           { name: "y", value: "hello", datatype: "str" },
@@ -354,7 +375,7 @@ it.effect(
 
       // Update variable declarations - only x and y are declared now
       yield* service.updateVariables(
-        notebookUri,
+        sessionFor(notebookUri),
         createMockVariablesOp([
           { name: "x", declared_by: ["cell1"], used_by: ["cell2"] },
           { name: "y", declared_by: ["cell2"], used_by: [] },

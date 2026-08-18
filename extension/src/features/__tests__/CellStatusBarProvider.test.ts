@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Context, Effect, Layer, Option } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -12,9 +12,8 @@ import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoCli
 import { commandId } from "../../commands.ts";
 import enableCell from "../../commands/enableCell.ts";
 import runStale from "../../commands/runStale.ts";
-import { makeCellHarness } from "../../kernel/__tests__/CellExecutionsHarness.ts";
 import { CellExecutions } from "../../kernel/CellExecutions.ts";
-import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
+import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
@@ -24,7 +23,7 @@ const withTestCtx = Effect.fn(function* () {
   const layer = Layer.empty.pipe(
     Layer.provideMerge(CellStatusBarProviderLive),
     Layer.provideMerge(CellExecutions.layer),
-    Layer.provide(NotebookEditorRegistry.layer),
+    Layer.provideMerge(NotebookDocumentSessions.layer),
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
     Layer.provide(makeTestNotebookRuntime()),
@@ -49,6 +48,40 @@ function createMockCell(
     0,
   );
 }
+
+const openExecutions = Effect.fn(function* (
+  executions: Context.Service.Shape<typeof CellExecutions>,
+  vscode: TestVsCode,
+  cell: ReturnType<typeof createMockCell>,
+) {
+  yield* vscode.openNotebook(cell.notebook);
+  yield* Effect.yieldNow;
+  const sessions = yield* NotebookDocumentSessions;
+  const session = sessions.forDocument(cell.notebook);
+  if (session === undefined) {
+    return yield* Effect.die("Expected an open notebook document session");
+  }
+  return yield* executions
+    .open(session, {
+      getDrive: Effect.succeed(Option.none()),
+    })
+    .pipe(Effect.orDie);
+});
+
+const markStale = Effect.fn(function* (
+  executions: Context.Service.Shape<typeof CellExecutions>,
+  vscode: TestVsCode,
+  cell: ReturnType<typeof createMockCell>,
+) {
+  const notebook = yield* openExecutions(executions, vscode, cell);
+  const cellId = Option.getOrThrow(MarimoNotebookCell.from(cell).id);
+  yield* notebook.apply({
+    op: "cell-op",
+    cell_id: cellId,
+    status: "idle",
+    stale_inputs: true,
+  });
+});
 
 it.effect(
   "should register providers",
@@ -84,14 +117,26 @@ it.effect(
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
-      const cells = makeCellHarness(executions);
       const cell = createMockCell(notebookUri, {
         marimo: { name: "test_cell" },
         marimoRuntime: { stableId: "cell-1" },
       });
 
-      // Record execution — clears stale
-      yield* cells.acceptSource(MarimoNotebookCell.from(cell));
+      const notebook = yield* openExecutions(executions, ctx.vscode, cell);
+      const id = Option.getOrThrow(MarimoNotebookCell.from(cell).id);
+      yield* notebook.submit([{ cellId: id, source: "" }], Effect.void);
+      yield* notebook.apply({
+        op: "cell-op",
+        cell_id: id,
+        status: "queued",
+        run_id: "run-1",
+      });
+      yield* notebook.apply({
+        op: "cell-op",
+        cell_id: id,
+        status: "idle",
+        run_id: "run-1",
+      });
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[0].provideCellStatusBarItems(cell);
@@ -106,15 +151,12 @@ it.effect(
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
-      const cells = makeCellHarness(executions);
       const cell = createMockCell(notebookUri, {
         marimo: { name: "test_cell" },
         marimoRuntime: { stableId: "cell-1" },
       });
 
-      // Execute then invalidate (simulates staleInputs from kernel)
-      yield* cells.acceptSource(MarimoNotebookCell.from(cell));
-      yield* cells.markStale(MarimoNotebookCell.from(cell));
+      yield* markStale(executions, ctx.vscode, cell);
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[0].provideCellStatusBarItems(cell);
@@ -202,15 +244,12 @@ it.effect(
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
-      const cells = makeCellHarness(executions);
       const cell = createMockCell(notebookUri, {
         marimo: { name: "my_cell" },
         marimoRuntime: { stableId: "cell-2" },
       });
 
-      // Execute then invalidate → stale + shows name
-      yield* cells.acceptSource(MarimoNotebookCell.from(cell));
-      yield* cells.markStale(MarimoNotebookCell.from(cell));
+      yield* markStale(executions, ctx.vscode, cell);
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
 

@@ -14,6 +14,10 @@ import msgspec
 # are first encoded/inspected, which fails under TYPE_CHECKING-only imports.
 from marimo._config.config import MarimoConfig  # noqa: TC002
 from marimo._convert.common.format import DEFAULT_MARKDOWN_PREFIX
+from marimo._messaging.notification import (  # noqa: TC002
+    NotificationMessage,
+    VariablesNotification,
+)
 from marimo._runtime.packages.package_manager import PackageDescription  # noqa: TC002
 from marimo._schemas.notebook import (
     NotebookCellConfig,
@@ -21,6 +25,7 @@ from marimo._schemas.notebook import (
     NotebookV1,
 )
 from marimo._server.models.packages import DependencyTreeNode  # noqa: TC002
+from marimo._types.ids import SessionId  # noqa: TC002
 
 # NOTE: the generic structs below use the legacy TypeVar spelling (noqa: UP046)
 # because msgspec's annotation resolver cannot see PEP 695 type parameters —
@@ -67,6 +72,27 @@ class NotebookCommand(msgspec.Struct, typing.Generic[T], rename="camel"):  # noq
 
     inner: T
     """The wrapped marimo command to execute."""
+
+
+class KernelCommand(NotebookCommand[T]):
+    """A command addressed to one exact live kernel."""
+
+    session_id: SessionId
+
+
+class KernelNotification(msgspec.Struct, rename="camel"):
+    """A notification emitted by one exact live kernel."""
+
+    notebook_uri: str
+    session_id: SessionId
+    notification: NotificationMessage
+
+
+class DocumentAnalysis(msgspec.Struct, rename="camel"):
+    """Analysis derived from a notebook document without a live kernel."""
+
+    notebook_uri: str
+    analysis: VariablesNotification
 
 
 class SessionCommand(NotebookCommand[T]):
@@ -286,6 +312,9 @@ class InterruptRequest(msgspec.Struct, rename="camel"):
     that arrives while the run's kernel session is still starting.
     """
 
+    session_id: SessionId | None = None
+    """The exact live kernel to interrupt for an ordinary cancellation."""
+
 
 class ListPackagesRequest(msgspec.Struct, rename="camel"):
     """A request to list installed packages in the kernel environment."""
@@ -334,7 +363,7 @@ class ShutdownAllSessionsRequest(msgspec.Struct, rename="camel"):
 class SessionInfo(msgspec.Struct, rename="camel", frozen=True):
     """User-facing state for one live kernel session."""
 
-    session_id: str
+    session_id: SessionId
     notebook_uri: str
     filename: str | None
     executable: str

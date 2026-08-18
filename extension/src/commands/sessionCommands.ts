@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { CellExecutions, CellInput } from "../kernel/CellExecutions.ts";
+import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -28,13 +28,6 @@ const openSessionNotebook = Effect.fn("command.openSessionNotebook")(function* (
   yield* code.commands.executeVSCode("vscode.openWith", uri, NOTEBOOK_TYPE);
 });
 
-const endExecutions = Effect.fn("command.endSessionExecutions")(function* (
-  notebookUri: NotebookId,
-) {
-  const executions = yield* CellExecutions;
-  yield* executions.accept(CellInput.Interrupted({ notebookId: notebookUri }));
-});
-
 export const openSession = Effect.fn("command.openSession")(function* ({
   notebookUri,
 }: SessionCommandTarget) {
@@ -44,9 +37,8 @@ export const openSession = Effect.fn("command.openSession")(function* ({
 export const restartSession = Effect.fn("command.restartSession")(function* ({
   notebookUri,
 }: SessionCommandTarget) {
-  const sessions = yield* SessionsService;
-  yield* sessions.restart(notebookUri).pipe(
-    Effect.tap(() => endExecutions(notebookUri)),
+  const runtime = yield* NotebookRuntime;
+  yield* runtime.forNotebook(notebookUri).restart.pipe(
     Effect.catchCause(
       Effect.fn(function* (cause) {
         yield* Effect.logError("Failed to restart kernel").pipe(
@@ -63,11 +55,11 @@ export const shutdownSession = Effect.fn("command.shutdownSession")(function* ({
 }: SessionCommandTarget) {
   const code = yield* VsCode;
   const sessions = yield* SessionsService;
+  const runtime = yield* NotebookRuntime;
   const session = yield* sessions.find(notebookUri);
   if (Option.isNone(session)) return;
 
-  yield* sessions.shutdown(notebookUri);
-  yield* endExecutions(notebookUri);
+  yield* runtime.forNotebook(notebookUri).close;
   const choice = yield* code.window.showInformationMessage(
     `Shut down kernel for ${session.value.filename ?? "notebook"}.`,
     { items: ["Restart"] },
@@ -75,7 +67,7 @@ export const shutdownSession = Effect.fn("command.shutdownSession")(function* ({
   if (!Option.contains(choice, "Restart")) return;
 
   yield* openSessionNotebook(notebookUri);
-  yield* sessions.restore(
+  yield* runtime.restoreSession(
     notebookUri,
     session.value.executable,
     session.value.workingDirectory,
@@ -86,6 +78,7 @@ export const shutdownAllSessions = Effect.fn("command.shutdownAllSessions")(
   function* () {
     const code = yield* VsCode;
     const sessions = yield* SessionsService;
+    const runtime = yield* NotebookRuntime;
     const live = yield* sessions.get;
     if (live.length === 0) return;
     if (live.length > 1) {
@@ -95,11 +88,6 @@ export const shutdownAllSessions = Effect.fn("command.shutdownAllSessions")(
       );
       if (!Option.contains(choice, "Shut Down All")) return;
     }
-    yield* sessions.shutdownAll();
-    yield* Effect.forEach(
-      live,
-      (session) => endExecutions(session.notebookUri),
-      { discard: true },
-    );
+    yield* runtime.shutdownAll;
   },
 );

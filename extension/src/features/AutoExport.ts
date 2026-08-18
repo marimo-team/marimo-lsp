@@ -131,7 +131,7 @@ export const AutoExportLive = Layer.effectDiscard(
     );
 
     yield* Effect.forkScoped(
-      marimo.operations.pipe(
+      marimo.kernelNotifications.pipe(
         Stream.runForEach((message) => markDirty(message.notebookUri)),
       ),
     );

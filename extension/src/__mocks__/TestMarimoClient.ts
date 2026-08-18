@@ -75,9 +75,16 @@ export const TestMarimoClientProcess = Layer.effect(
               }),
           });
         },
-        operations: Stream.callback((queue) =>
+        kernelNotifications: Stream.callback((queue) =>
           acquireDisposable(() =>
-            conn.onNotification("marimo/operation", (message) => {
+            conn.onNotification("marimo/kernelNotification", (message) => {
+              Queue.offerUnsafe(queue, message);
+            }),
+          ),
+        ),
+        documentAnalysis: Stream.callback((queue) =>
+          acquireDisposable(() =>
+            conn.onNotification("marimo/documentAnalysis", (message) => {
               Queue.offerUnsafe(queue, message);
             }),
           ),

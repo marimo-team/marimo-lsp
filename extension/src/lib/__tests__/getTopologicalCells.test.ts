@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option } from "effect";
 
 import { createTestNotebookDocument, Uri } from "../../__mocks__/TestVsCode.ts";
+import { makeTestNotebookDocumentSession } from "../../__tests__/__utils__/TestNotebookDocumentSession.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { VariablesService } from "../../panel/variables/VariablesService.ts";
 import {
@@ -57,6 +58,9 @@ const stableId = (cell: { metadata?: unknown }) =>
   Option.getOrUndefined(MarimoNotebookCell.decodeMetadata(cell.metadata))
     ?.marimoRuntime.stableId ?? undefined;
 
+const sessionFor = (notebook: MarimoNotebookDocument) =>
+  makeTestNotebookDocumentSession(notebook.rawNotebookDocument);
+
 describe("getTopologicalCells", () => {
   it.effect("returns empty array for notebook with no cells", () =>
     Effect.gen(function* () {
@@ -98,7 +102,7 @@ describe("getTopologicalCells", () => {
       const service = yield* VariablesService;
 
       yield* service.updateVariables(
-        doc.id,
+        sessionFor(doc),
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: ["cell-b"] },
         ]),
@@ -126,7 +130,7 @@ describe("getTopologicalCells", () => {
       const service = yield* VariablesService;
 
       yield* service.updateVariables(
-        doc.id,
+        sessionFor(doc),
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: ["cell-b"] },
           { name: "y", declared_by: ["cell-b"], used_by: ["cell-c"] },
@@ -181,7 +185,7 @@ describe("getTopologicalCells", () => {
       const service = yield* VariablesService;
 
       yield* service.updateVariables(
-        doc.id,
+        sessionFor(doc),
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: ["cell-b"] },
         ]),
@@ -209,7 +213,7 @@ describe("getTopologicalCells", () => {
 
       // Each cell defines its own variable, no cross-cell dependencies
       yield* service.updateVariables(
-        doc.id,
+        sessionFor(doc),
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: [] },
           { name: "y", declared_by: ["cell-b"], used_by: [] },
@@ -242,7 +246,7 @@ describe("getTopologicalCells", () => {
       const service = yield* VariablesService;
 
       yield* service.updateVariables(
-        doc.id,
+        sessionFor(doc),
         createMockVariablesOp([
           {
             name: "x",

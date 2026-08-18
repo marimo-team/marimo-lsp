@@ -2,15 +2,16 @@ import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Result } from "effect";
 
 import { makeTestMarimoClient } from "../../../__tests__/__utils__/TestMarimoClient.ts";
-import { notebookId } from "../../../lib/__tests__/branded.ts";
+import { kernelSessionId, notebookId } from "../../../lib/__tests__/branded.ts";
 import type { MarimoApiCall } from "../../../types.ts";
 import { SessionNotFoundError, SessionsService } from "../SessionsService.ts";
 
 const NOTEBOOK_URI = notebookId("file:///workspace/notebook.py");
+const SESSION_ID = kernelSessionId("00000000-0000-4000-8000-000000000001");
 const SNAPSHOT = {
   sessions: [
     {
-      sessionId: "session-1",
+      sessionId: SESSION_ID,
       notebookUri: NOTEBOOK_URI,
       filename: "notebook.py",
       executable: "/venv/bin/python",
@@ -61,7 +62,7 @@ it.effect(
         ...SNAPSHOT.sessions,
         {
           ...SNAPSHOT.sessions[0],
-          sessionId: "session-2",
+          sessionId: kernelSessionId("00000000-0000-4000-8000-000000000002"),
           notebookUri: secondNotebook,
           filename: "second.py",
         },

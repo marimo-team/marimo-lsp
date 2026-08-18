@@ -22,7 +22,7 @@ from marimo._runtime.commands import (
 )
 from marimo._session.managers import IPCQueueManagerImpl
 from marimo._session.state.session_view import SessionView
-from marimo._types.ids import CellId_t, RequestId, UIElementId
+from marimo._types.ids import CellId_t, RequestId, SessionId, UIElementId
 
 from marimo_lsp.kernels import KernelOpenError
 from marimo_lsp.kernels.native import NativeKernel
@@ -31,6 +31,9 @@ from marimo_lsp.sessions import Session, Sessions, _OperationSink
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+
+SESSION_ID = SessionId("00000000-0000-4000-8000-000000000001")
 
 
 def _make_session() -> tuple[Session, Mock]:
@@ -179,7 +182,7 @@ def test_detach_only_overrides_auto_reload() -> None:
     )
     session._config_manager = Mock()
     session._config_manager.get_config.return_value = configured
-    session._operation_sink = _OperationSink(Mock(), "file:///test.py")
+    session._operation_sink = _OperationSink(Mock(), "file:///test.py", SESSION_ID)
     display = cast("dict[str, object]", configured.get("display", {}))
     runtime_config = cast(
         "MarimoConfig",
@@ -213,7 +216,7 @@ def test_detach_only_overrides_auto_reload() -> None:
 def test_detached_session_keeps_auto_reload_paused_after_config_update() -> None:
     session, queue_manager = _make_session()
     session._config_manager = Mock()
-    session._operation_sink = _OperationSink(Mock(), "file:///test.py")
+    session._operation_sink = _OperationSink(Mock(), "file:///test.py", SESSION_ID)
     session._operation_sink.detach()
     configured = cast(
         "MarimoConfig",
@@ -230,7 +233,7 @@ def test_detached_session_keeps_auto_reload_paused_after_config_update() -> None
 
 def test_detached_operation_sink_drops_messages_until_reattached() -> None:
     server = Mock()
-    sink = _OperationSink(server, "file:///test.py")
+    sink = _OperationSink(server, "file:///test.py", SESSION_ID)
     message = KernelMessage(b'{"op": "completed-run", "run_id": null}')
 
     sink.detach()
@@ -242,10 +245,31 @@ def test_detached_operation_sink_drops_messages_until_reattached() -> None:
     sink.notify(message)
 
     server.protocol.notify.assert_called_once_with(
-        "marimo/operation",
+        "marimo/kernelNotification",
         {
             "notebookUri": "file:///test.py",
-            "operation": {"op": "completed-run", "run_id": None},
+            "sessionId": SESSION_ID,
+            "notification": {"op": "completed-run", "run_id": None},
+        },
+    )
+
+
+def test_operation_sink_buffers_until_session_is_activated() -> None:
+    server = Mock()
+    sink = _OperationSink(server, "file:///test.py", SESSION_ID, activated=False)
+    message = KernelMessage(b'{"op": "completed-run", "run_id": null}')
+
+    sink.notify(message)
+    server.protocol.notify.assert_not_called()
+
+    sink.activate()
+
+    server.protocol.notify.assert_called_once_with(
+        "marimo/kernelNotification",
+        {
+            "notebookUri": "file:///test.py",
+            "sessionId": SESSION_ID,
+            "notification": {"op": "completed-run", "run_id": None},
         },
     )
 
@@ -348,7 +372,7 @@ def test_sessions_changed_notification_contains_public_snapshot() -> None:
     sessions = Sessions(server, kernels=Mock())
     session = Mock(spec=Session)
     session.describe.return_value = SessionInfo(
-        session_id="session",
+        session_id=SESSION_ID,
         notebook_uri="file:///test.py",
         filename="test.py",
         executable="/usr/bin/python",
@@ -366,7 +390,7 @@ def test_sessions_changed_notification_contains_public_snapshot() -> None:
         {
             "sessions": [
                 {
-                    "sessionId": "session",
+                    "sessionId": SESSION_ID,
                     "notebookUri": "file:///test.py",
                     "filename": "test.py",
                     "executable": "/usr/bin/python",
@@ -414,14 +438,19 @@ async def test_start_reuses_same_executable_despite_new_working_directory() -> N
 
 @pytest.mark.asyncio
 async def test_start_replaces_session_after_replacement_starts() -> None:
+    events: list[str] = []
     sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)
     current.executable = "/old/python"
+    current.close.side_effect = lambda: events.append("old closed")
     replacement = Mock(spec=Session)
     replacement.describe.return_value = Mock()
+    replacement.activate.side_effect = lambda: events.append("new activated")
     sessions._sessions["file:///test.py"] = current
     sessions._create = AsyncMock(return_value=replacement)
-    sessions._notify_changed = Mock()
+    sessions._notify_changed = Mock(
+        side_effect=lambda: events.append("snapshot published")
+    )
 
     result = await sessions.start("file:///test.py", "/new/python", "/workspace")
 
@@ -429,6 +458,8 @@ async def test_start_replaces_session_after_replacement_starts() -> None:
     assert sessions.get("file:///test.py") is replacement
     current.close.assert_called_once_with()
     sessions._notify_changed.assert_called_once_with()
+    replacement.activate.assert_called_once_with()
+    assert events == ["old closed", "snapshot published", "new activated"]
 
 
 @pytest.mark.asyncio
@@ -625,6 +656,7 @@ async def test_terminal_error_during_startup_handoff_aborts_session() -> None:
 
 @pytest.mark.asyncio
 async def test_restart_replaces_kernel_without_reloading_closed_notebook() -> None:
+    events: list[str] = []
     sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)
     current.executable = "/usr/bin/python"
@@ -632,10 +664,14 @@ async def test_restart_replaces_kernel_without_reloading_closed_notebook() -> No
     current.attached = False
     current.session_view = Mock()
     current.started_at = 42
+    current.close.side_effect = lambda: events.append("old closed")
     replacement = Mock(spec=Session)
+    replacement.activate.side_effect = lambda: events.append("new activated")
     sessions._sessions["file:///test.py"] = current
     sessions._create = AsyncMock(return_value=replacement)
-    sessions._notify_changed = Mock()
+    sessions._notify_changed = Mock(
+        side_effect=lambda: events.append("snapshot published")
+    )
 
     result = await sessions.restart(
         "file:///test.py",
@@ -653,6 +689,8 @@ async def test_restart_replaces_kernel_without_reloading_closed_notebook() -> No
     replacement.detach.assert_called_once_with(notify=False)
     current.close.assert_called_once_with()
     sessions._notify_changed.assert_called_once_with()
+    replacement.activate.assert_called_once_with()
+    assert events == ["old closed", "snapshot published", "new activated"]
 
 
 @pytest.mark.asyncio
