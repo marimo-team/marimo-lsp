@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { CellExecutions } from "../kernel/CellExecutions.ts";
+import { CellExecutions, CellInput } from "../kernel/CellExecutions.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -55,7 +55,9 @@ const handler = Effect.fn("command.restartKernel")(function* (
 
       if (!succeeded) return false;
 
-      yield* executions.handleInterrupt(notebook.id);
+      yield* executions.accept(
+        CellInput.Interrupted({ notebookId: notebook.id }),
+      );
 
       progress.report({ message: "Kernel restarted." });
       yield* Effect.sleep("500 millis");

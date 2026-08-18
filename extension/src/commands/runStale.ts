@@ -21,7 +21,16 @@ const handler = Effect.fn("command.runStale")(
 
     const staleCells = yield* Effect.filter(
       target.value.document.getCells(),
-      (cell) => executions.isCellStale(cell),
+      (cell) =>
+        Option.match(cell.id, {
+          onNone: () => Effect.succeed(false),
+          onSome: (cellId) =>
+            executions.isStale({
+              notebookId: cell.notebook.id,
+              cellId,
+              source: cell.document.getText(),
+            }),
+        }),
     );
 
     if (staleCells.length === 0) {

@@ -12,7 +12,9 @@ import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoCli
 import { commandId } from "../../commands.ts";
 import enableCell from "../../commands/enableCell.ts";
 import runStale from "../../commands/runStale.ts";
+import { makeCellHarness } from "../../kernel/__tests__/CellExecutionsHarness.ts";
 import { CellExecutions } from "../../kernel/CellExecutions.ts";
+import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
@@ -22,6 +24,7 @@ const withTestCtx = Effect.fn(function* () {
   const layer = Layer.empty.pipe(
     Layer.provideMerge(CellStatusBarProviderLive),
     Layer.provideMerge(CellExecutions.layer),
+    Layer.provide(NotebookEditorRegistry.layer),
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
     Layer.provide(makeTestNotebookRuntime()),
@@ -81,13 +84,14 @@ it.effect(
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const cells = makeCellHarness(executions);
       const cell = createMockCell(notebookUri, {
         marimo: { name: "test_cell" },
         marimoRuntime: { stableId: "cell-1" },
       });
 
       // Record execution — clears stale
-      yield* executions.recordExecution(MarimoNotebookCell.from(cell));
+      yield* cells.acceptSource(MarimoNotebookCell.from(cell));
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[0].provideCellStatusBarItems(cell);
@@ -102,14 +106,15 @@ it.effect(
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const cells = makeCellHarness(executions);
       const cell = createMockCell(notebookUri, {
         marimo: { name: "test_cell" },
         marimoRuntime: { stableId: "cell-1" },
       });
 
       // Execute then invalidate (simulates staleInputs from kernel)
-      yield* executions.recordExecution(MarimoNotebookCell.from(cell));
-      yield* executions.invalidateCell(MarimoNotebookCell.from(cell));
+      yield* cells.acceptSource(MarimoNotebookCell.from(cell));
+      yield* cells.markStale(MarimoNotebookCell.from(cell));
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
       const items = yield* providers[0].provideCellStatusBarItems(cell);
@@ -197,14 +202,15 @@ it.effect(
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
       const executions = yield* CellExecutions;
+      const cells = makeCellHarness(executions);
       const cell = createMockCell(notebookUri, {
         marimo: { name: "my_cell" },
         marimoRuntime: { stableId: "cell-2" },
       });
 
       // Execute then invalidate → stale + shows name
-      yield* executions.recordExecution(MarimoNotebookCell.from(cell));
-      yield* executions.invalidateCell(MarimoNotebookCell.from(cell));
+      yield* cells.acceptSource(MarimoNotebookCell.from(cell));
+      yield* cells.markStale(MarimoNotebookCell.from(cell));
 
       const providers = yield* ctx.vscode.getRegisteredStatusBarItemProviders();
 
