@@ -3,13 +3,13 @@ import { Effect, Result, Schema } from "effect";
 
 import {
   CellMetadata,
+  ExecuteCellsPayload,
   ExecuteScratchRequest,
+  GetPackageListPayload,
   makeApiClient,
   NotebookDocument,
   NotebookDocumentMetadata,
-  PackageCommand,
   PackageSource,
-  SessionCommand,
   VenvSource,
 } from "../Models.gen.ts";
 
@@ -86,24 +86,22 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
     expect(Result.isFailure(missingCode)).toBe(true);
   });
 
-  it("composes generic command wrappers around an inner schema", () => {
-    const command = PackageCommand(Schema.Struct({ query: Schema.String }));
-    const decoded = Schema.decodeUnknownSync(command)({
+  it("decodes a generated package command payload", () => {
+    const decoded = Schema.decodeUnknownSync(GetPackageListPayload)({
       notebookUri: "file:///nb.py",
       source: { kind: "script" },
-      inner: { query: "polars" },
+      inner: {},
     });
-    expect(decoded.inner.query).toBe("polars");
+    expect(decoded.inner).toEqual({});
     expect(decoded.source).toEqual({ kind: "script" });
   });
 
-  it("requires workingDirectory for session commands", () => {
-    const command = SessionCommand(Schema.Struct({ code: Schema.String }));
+  it("requires workingDirectory for generated session command payloads", () => {
     expect(() =>
-      Schema.decodeUnknownSync(command)({
+      Schema.decodeUnknownSync(ExecuteCellsPayload)({
         notebookUri: "file:///nb.py",
         executable: "/usr/bin/python",
-        inner: { code: "print(1)" },
+        inner: { cellIds: ["cell-1"], codes: ["print(1)"] },
       }),
     ).toThrow();
   });

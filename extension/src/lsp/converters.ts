@@ -95,10 +95,6 @@ export function toVsCodeDiagnosticSeverity(
   }
 }
 
-export function toLspPosition(pos: vscode.Position): lsp.Position {
-  return { line: pos.line, character: pos.character };
-}
-
 export function toLspRange(range: vscode.Range): lsp.Range {
   return {
     start: { line: range.start.line, character: range.start.character },

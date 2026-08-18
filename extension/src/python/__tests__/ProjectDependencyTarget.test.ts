@@ -4,10 +4,7 @@ import * as NodePath from "node:path";
 
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  findProjectDependencyTargets,
-  inspectProjectDependencies,
-} from "../ProjectDependencyTarget.ts";
+import { inspectProjectDependencies } from "../ProjectDependencyTarget.ts";
 
 function withProject(content: string, test: (directory: string) => void) {
   using tmp = NodeFs.mkdtempDisposableSync(
@@ -17,7 +14,10 @@ function withProject(content: string, test: (directory: string) => void) {
   test(tmp.path);
 }
 
-describe("findProjectDependencyTargets", () => {
+const findTargets = (directory: string, requirement: string) =>
+  inspectProjectDependencies(directory).findTargets(requirement);
+
+describe("inspectProjectDependencies", () => {
   it("finds production, optional, and arbitrary dependency groups", () => {
     withProject(
       `
@@ -32,14 +32,12 @@ dev = ["marimo>=0.12"]
 docs = ["marimo>=0.13"]
 `,
       (directory) => {
-        expect(findProjectDependencyTargets(directory, "marimo>=0.20")).toEqual(
-          [
-            { _tag: "Production" },
-            { _tag: "Optional", name: "notebooks" },
-            { _tag: "Group", name: "dev" },
-            { _tag: "Group", name: "docs" },
-          ],
-        );
+        expect(findTargets(directory, "marimo>=0.20")).toEqual([
+          { _tag: "Production" },
+          { _tag: "Optional", name: "notebooks" },
+          { _tag: "Group", name: "dev" },
+          { _tag: "Group", name: "docs" },
+        ]);
       },
     );
   });
@@ -55,7 +53,7 @@ dev = [{ include-group = "notebooks" }]
 notebooks = ["marimo>=0.10"]
 `,
       (directory) => {
-        expect(findProjectDependencyTargets(directory, "marimo")).toEqual([
+        expect(findTargets(directory, "marimo")).toEqual([
           { _tag: "Group", name: "notebooks" },
         ]);
       },
@@ -72,7 +70,7 @@ dependencies = []
 dev-dependencies = ["marimo>=0.10"]
 `,
       (directory) => {
-        expect(findProjectDependencyTargets(directory, "marimo")).toEqual([
+        expect(findTargets(directory, "marimo")).toEqual([
           { _tag: "Group", name: "dev" },
         ]);
       },
@@ -92,7 +90,7 @@ dev = ["marimo>=0.10"]
 dev-dependencies = ["marimo>=0.10"]
 `,
       (directory) => {
-        expect(findProjectDependencyTargets(directory, "marimo")).toEqual([
+        expect(findTargets(directory, "marimo")).toEqual([
           { _tag: "Group", name: "dev" },
         ]);
       },
@@ -156,9 +154,9 @@ dependencies = []
 dev = ["My.Package_Name>=1"]
 `,
       (directory) => {
-        expect(
-          findProjectDependencyTargets(directory, "my-package-name>=2"),
-        ).toEqual([{ _tag: "Group", name: "dev" }]);
+        expect(findTargets(directory, "my-package-name>=2")).toEqual([
+          { _tag: "Group", name: "dev" },
+        ]);
       },
     );
   });
@@ -175,7 +173,7 @@ test = ["marimo"]
       (directory) => {
         const venv = NodePath.join(directory, ".venv", "nested");
         NodeFs.mkdirSync(venv, { recursive: true });
-        expect(findProjectDependencyTargets(venv, "marimo")).toEqual([
+        expect(findTargets(venv, "marimo")).toEqual([
           { _tag: "Group", name: "test" },
         ]);
       },
@@ -186,12 +184,12 @@ test = ["marimo"]
     using tmp = NodeFs.mkdtempDisposableSync(
       NodePath.join(NodeOs.tmpdir(), "marimo-project-target-"),
     );
-    expect(findProjectDependencyTargets(tmp.path, "marimo")).toEqual([]);
+    expect(findTargets(tmp.path, "marimo")).toEqual([]);
   });
 
   it("rejects malformed TOML", () => {
     withProject("[project\ndependencies = []", (directory) => {
-      expect(() => findProjectDependencyTargets(directory, "marimo")).toThrow();
+      expect(() => findTargets(directory, "marimo")).toThrow();
     });
   });
 });
