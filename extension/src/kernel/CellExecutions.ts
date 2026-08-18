@@ -5,10 +5,13 @@ import {
   Effect,
   Equal,
   Exit,
+  Fiber,
   HashMap,
   HashSet,
   Layer,
   Option,
+  Queue,
+  Scope,
   Semaphore,
   Stream,
   SubscriptionRef,
@@ -91,6 +94,10 @@ export interface NotebookExecutionBinding {
 }
 
 export interface NotebookExecutions {
+  /**
+   * Correlates and folds one Wire Cell Operation, then admits its presentation
+   * commands. Completion does not wait for the presentation adapter.
+   */
   readonly apply: (
     operation: CellOperationNotification,
   ) => Effect.Effect<void, RunCorrelationError>;
@@ -250,6 +257,8 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           HashSet.empty<NotebookCellId>(),
         );
         const ordering = Semaphore.makeUnsafe(1);
+        const presentationScope = yield* Scope.fork(serviceScope);
+        const presentation = yield* Queue.unbounded<Work, Cause.Done>();
         let closed = false;
 
         const publishStale = (next: HashSet.HashSet<NotebookCellId>) =>
@@ -328,6 +337,41 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               ),
           });
 
+        const driveBatch = (batch: ReadonlyArray<Work>) => {
+          // Preserve every lifecycle command, but project only the newest
+          // output pending for each cell while the previous batch was driven.
+          const newestOutput = new Map<NotebookCellId, number>();
+          for (const [index, work] of batch.entries()) {
+            if (work.command._tag === "RenderOutputs") {
+              newestOutput.set(work.cell.cellId, index);
+            }
+          }
+
+          return Effect.forEach(
+            batch,
+            (work, index) =>
+              work.command._tag === "RenderOutputs" &&
+              newestOutput.get(work.cell.cellId) !== index
+                ? Effect.void
+                : drive(work),
+            { discard: true },
+          );
+        };
+
+        const presentationWorker = yield* Stream.fromQueue(presentation).pipe(
+          Stream.runForEachArray(driveBatch),
+          Effect.forkIn(presentationScope),
+        );
+
+        const present = (work: Work) =>
+          Queue.offer(presentation, work).pipe(
+            Effect.flatMap((admitted) =>
+              admitted
+                ? Effect.void
+                : Effect.die("Cell presentation is closed"),
+            ),
+          );
+
         const correlate = Effect.fn("NotebookExecutions.correlate")(function* (
           record: CellRecord,
           next: CellRuntimeState,
@@ -379,7 +423,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           return submitted?.source;
         };
 
-        const apply = (wire: CellOperationNotification) =>
+        const apply: NotebookExecutions["apply"] = (wire) =>
           ordering.withPermit(
             Effect.gen(function* () {
               if (closed) return;
@@ -447,7 +491,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
 
               const cell = cellRef(notebookId, cellId);
               for (const command of result.commands) {
-                yield* drive({
+                yield* present({
                   cell,
                   command,
                   drive:
@@ -478,7 +522,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               const result = step(record.run, operation);
               const cell = cellRef(notebookId, cellId);
               for (const command of result.commands) {
-                yield* drive({
+                yield* present({
                   cell,
                   command,
                   drive:
@@ -559,18 +603,28 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           );
         };
 
-        const close = ordering.withPermit(
-          Effect.gen(function* () {
-            if (closed) return;
-            closed = true;
-            yield* release(() => true, true);
-            submittedSources.clear();
-            currentSources.clear();
-            yield* SubscriptionRef.set(staleRef, HashSet.empty());
-            yield* SubscriptionRef.update(allStaleCells, (all) =>
-              HashMap.remove(all, notebookId),
-            );
-          }),
+        const cleanup = Effect.uninterruptible(
+          ordering.withPermit(
+            Effect.gen(function* () {
+              if (closed) return;
+              closed = true;
+              yield* release(() => true, true);
+              yield* Queue.end(presentation);
+              yield* Fiber.join(presentationWorker);
+              submittedSources.clear();
+              currentSources.clear();
+              yield* SubscriptionRef.set(staleRef, HashSet.empty());
+              yield* SubscriptionRef.update(allStaleCells, (all) =>
+                HashMap.remove(all, notebookId),
+              );
+            }),
+          ),
+        );
+        yield* Scope.addFinalizer(presentationScope, cleanup);
+        const close = Effect.uninterruptible(
+          cleanup.pipe(
+            Effect.andThen(Scope.close(presentationScope, Exit.void)),
+          ),
         );
 
         const executions: NotebookExecutions = {

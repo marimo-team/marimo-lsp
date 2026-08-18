@@ -6,6 +6,7 @@ import {
   Fiber,
   HashSet,
   Layer,
+  Latch,
   Option,
   Ref,
   Stream,
@@ -1158,12 +1159,20 @@ describe("NotebookExecutions", () => {
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
         const events: string[] = [];
+        const presented = yield* Latch.make();
         const namedDrive =
           (name: string): Drive =>
           (_cell, command) =>
-            Effect.sync(() => {
+            Effect.gen(function* () {
               if ("runId" in command) {
                 events.push(`${name}:${command._tag}:${command.runId}`);
+              }
+              if (
+                name === "second" &&
+                command._tag === "RenderOutputs" &&
+                command.runId === RunId("run-2")
+              ) {
+                yield* presented.open;
               }
             });
         const first = namedDrive("first");
@@ -1197,6 +1206,7 @@ describe("NotebookExecutions", () => {
           cell_id: id,
           status: "running",
         });
+        yield* presented.await;
 
         expect(events).toEqual([
           "first:OpenRun:run-1",
@@ -1205,6 +1215,251 @@ describe("NotebookExecutions", () => {
           "second:StartRun:run-2",
           "second:RenderOutputs:run-2",
         ]);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "folds every operation while conflating pending output presentation",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const projectionStarted = yield* Latch.make();
+        const releaseProjection = yield* Latch.make();
+        const latestClosed = yield* Latch.make();
+        const events: Array<{
+          readonly label: string;
+          readonly console: ReadonlyArray<unknown>;
+        }> = [];
+        const drive: Drive = (_cell, command) =>
+          Effect.gen(function* () {
+            const runId = "runId" in command ? `:${command.runId}` : "";
+            events.push({
+              label: `${command._tag}${runId}`,
+              console:
+                command._tag === "RenderOutputs"
+                  ? command.state.consoleOutputs.map((output) => output.data)
+                  : [],
+            });
+            if (
+              command._tag === "RenderOutputs" &&
+              command.runId === RunId("run-1") &&
+              !command.final
+            ) {
+              yield* projectionStarted.open;
+              yield* releaseProjection.await;
+            }
+            if (
+              command._tag === "CloseRun" &&
+              command.runId === RunId("run-2")
+            ) {
+              yield* latestClosed.open;
+            }
+          });
+        const { notebook } = yield* openNotebook(
+          executions,
+          editor.notebook,
+          Effect.succeed(Option.some(drive)),
+        );
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        });
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "running",
+          run_id: "run-1",
+          console: {
+            mimetype: "text/plain",
+            channel: "stdout",
+            data: "first",
+            timestamp: 0,
+          },
+        });
+        yield* projectionStarted.await;
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "idle",
+          run_id: "run-1",
+        });
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-2",
+        });
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "running",
+          run_id: "run-2",
+          console: {
+            mimetype: "text/plain",
+            channel: "stdout",
+            data: "run-2-start",
+            timestamp: 0,
+          },
+        });
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          run_id: "run-2",
+          console: {
+            mimetype: "text/plain",
+            channel: "stdout",
+            data: "middle",
+            timestamp: 0,
+          },
+        });
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "idle",
+          run_id: "run-2",
+          console: {
+            mimetype: "text/plain",
+            channel: "stdout",
+            data: "latest",
+            timestamp: 0,
+          },
+        });
+
+        yield* releaseProjection.open;
+        yield* latestClosed.await;
+
+        expect(events.map((event) => event.label)).toEqual([
+          "SetDiagnostic",
+          "OpenRun:run-1",
+          "StartRun:run-1",
+          "RenderOutputs:run-1",
+          "SetDiagnostic",
+          "CloseRun:run-1",
+          "SetDiagnostic",
+          "OpenRun:run-2",
+          "StartRun:run-2",
+          "RenderOutputs:run-2",
+          "SetDiagnostic",
+          "CloseRun:run-2",
+        ]);
+        expect(
+          events.filter((event) => event.label.startsWith("RenderOutputs")),
+        ).toEqual([
+          { label: "RenderOutputs:run-1", console: ["first"] },
+          {
+            label: "RenderOutputs:run-2",
+            console: ["firstrun-2-startmiddlelatest"],
+          },
+        ]);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "presents terminal output followed by a state-only trailer",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const projectionStarted = yield* Latch.make();
+        const releaseProjection = yield* Latch.make();
+        const runClosed = yield* Latch.make();
+        const rendered: unknown[] = [];
+        const drive: Drive = (_cell, command) =>
+          Effect.gen(function* () {
+            if (command._tag === "RenderOutputs") {
+              rendered.push(command.state.output?.data);
+              if (!command.final) {
+                yield* projectionStarted.open;
+                yield* releaseProjection.await;
+              }
+            }
+            if (command._tag === "CloseRun") yield* runClosed.open;
+          });
+        const { notebook } = yield* openNotebook(
+          executions,
+          editor.notebook,
+          Effect.succeed(Option.some(drive)),
+        );
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        });
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "running",
+          run_id: "run-1",
+        });
+        yield* projectionStarted.await;
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "idle",
+          run_id: "run-1",
+          output: {
+            mimetype: "text/plain",
+            channel: "output",
+            data: "42",
+            timestamp: 0,
+          },
+        });
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          serialization: "serialization",
+        });
+
+        yield* releaseProjection.open;
+        yield* runClosed.await;
+
+        expect(rendered).toEqual([undefined, "42"]);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -1231,11 +1486,13 @@ describe("NotebookExecutions", () => {
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
         const events: string[] = [];
+        const removed = yield* Latch.make();
         const drive: Drive = (_cell, command) =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
             if ("runId" in command) {
               events.push(`${command._tag}:${command.runId}`);
             }
+            if (command._tag === "CloseRun") yield* removed.open;
           });
         const { notebook } = yield* openNotebook(
           executions,
@@ -1253,6 +1510,7 @@ describe("NotebookExecutions", () => {
           run_id: "run-1",
         });
         yield* notebook.remove(id);
+        yield* removed.await;
 
         expect(events).toEqual(["OpenRun:run-1", "CloseRun:run-1"]);
       }).pipe(Effect.provide(ctx.layer));
@@ -1604,9 +1862,11 @@ describe("NotebookExecutions", () => {
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
         const commands: CellCommand[] = [];
+        const invalidated = yield* Latch.make();
         const drive: Drive = (_cell, command) =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
             commands.push(command);
+            if (command._tag === "CloseRun") yield* invalidated.open;
           });
         const { notebook } = yield* openNotebook(
           executions,
@@ -1620,6 +1880,7 @@ describe("NotebookExecutions", () => {
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
 
         yield* executions.invalidate(document.id);
+        yield* invalidated.await;
 
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
         expect(commands.at(-1)).toEqual(
@@ -1909,10 +2170,12 @@ describe("NotebookExecutions", () => {
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
         const finalRenders: CellRuntimeState[] = [];
+        const rendered = yield* Latch.make();
         const drive: Drive = (_cell, command) =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
             if (command._tag === "RenderOutputs" && command.final) {
               finalRenders.push(command.state);
+              yield* rendered.open;
             }
           });
         const { notebook } = yield* openNotebook(
@@ -1957,6 +2220,7 @@ describe("NotebookExecutions", () => {
           cell_id: id,
           status: "idle",
         });
+        yield* rendered.await;
 
         expect(finalRenders).toHaveLength(1);
         expect(
@@ -1988,9 +2252,13 @@ describe("NotebookExecutions", () => {
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
         let opened = 0;
+        const runOpened = yield* Latch.make();
         const drive: Drive = (_cell, command) =>
-          Effect.sync(() => {
-            if (command._tag === "OpenRun") opened += 1;
+          Effect.gen(function* () {
+            if (command._tag === "OpenRun") {
+              opened += 1;
+              yield* runOpened.open;
+            }
           });
         const { notebook } = yield* openNotebook(
           executions,
@@ -2013,6 +2281,7 @@ describe("NotebookExecutions", () => {
           status: "idle",
           run_id: "run-1",
         });
+        yield* runOpened.await;
         expect(opened).toBe(1);
 
         const error = yield* notebook
