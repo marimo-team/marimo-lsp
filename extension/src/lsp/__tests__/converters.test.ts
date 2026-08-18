@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
+import { vi } from "vite-plus/test";
 import * as lsp from "vscode-languageserver-protocol";
 
 import {
@@ -552,6 +553,23 @@ describe("toVsCodeDiagnosticSeverity", () => {
       	  "Warning": 1,
       	}
       `);
+    }),
+  );
+
+  it.effect(
+    "logs an unexpected runtime value without changing the fallback",
+    Effect.fn(function* () {
+      const code = yield* withVsCode;
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const unknown = UNSAFE_castForNegativeTest<lsp.DiagnosticSeverity>(99);
+        expect(toVsCodeDiagnosticSeverity(code, unknown)).toBe(99);
+        expect(error).toHaveBeenCalledWith(
+          "Entered unreachable code [Unknown LSP diagnostic severity]: 99",
+        );
+      } finally {
+        error.mockRestore();
+      }
     }),
   );
 });

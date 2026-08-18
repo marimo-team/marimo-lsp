@@ -5,6 +5,7 @@
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
+import { logUnreachable } from "../assert.ts";
 import type { VsCode } from "../platform/VsCode.ts";
 
 /**
@@ -90,6 +91,7 @@ export function toVsCodeDiagnosticSeverity(
       return code.DiagnosticSeverity.Hint;
     default: {
       const _exhaustive: never = severity;
+      logUnreachable(_exhaustive, "Unknown LSP diagnostic severity");
       return _exhaustive;
     }
   }
@@ -121,6 +123,7 @@ export function toLspDiagnosticSeverity(
       return lsp.DiagnosticSeverity.Hint;
     default: {
       const _exhaustive: never = severity;
+      logUnreachable(_exhaustive, "Unknown VS Code diagnostic severity");
       return _exhaustive;
     }
   }
@@ -240,6 +243,7 @@ export function toCompletionItemKind(
       return code.CompletionItemKind.TypeParameter;
     default: {
       const _exhaustive: never = value;
+      logUnreachable(_exhaustive, "Unknown LSP completion item kind");
       return _exhaustive;
     }
   }
@@ -306,6 +310,7 @@ export function toLspCompletionItemKind(
       return lsp.CompletionItemKind.Text;
     default: {
       const _exhaustive: never = kind;
+      logUnreachable(_exhaustive, "Unknown VS Code completion item kind");
       return _exhaustive;
     }
   }
@@ -324,6 +329,7 @@ export function toLspCompletionTriggerKind(
       return lsp.CompletionTriggerKind.TriggerForIncompleteCompletions;
     default: {
       const _exhaustive: never = kind;
+      logUnreachable(_exhaustive, "Unknown VS Code completion trigger kind");
       return _exhaustive;
     }
   }
@@ -421,6 +427,7 @@ export function toSymbolKind(kind: lsp.SymbolKind): vscode.SymbolKind {
       return 25 satisfies vscode.SymbolKind.TypeParameter;
     default: {
       const _exhaustive: never = kind;
+      logUnreachable(_exhaustive, "Unknown LSP symbol kind");
       return _exhaustive;
     }
   }
@@ -465,6 +472,7 @@ export function toDocumentHighlightKind(
       return 2 satisfies typeof vscode.DocumentHighlightKind.Write;
     default: {
       const _exhaustive: never = kind;
+      logUnreachable(_exhaustive, "Unknown LSP document highlight kind");
       return _exhaustive;
     }
   }
@@ -831,6 +839,7 @@ export function toLspCodeActionTriggerKind(
       return lsp.CodeActionTriggerKind.Automatic;
     default: {
       const _exhaustive: never = kind;
+      logUnreachable(_exhaustive, "Unknown VS Code code action trigger kind");
       return _exhaustive;
     }
   }
