@@ -2231,6 +2231,76 @@ describe("NotebookExecutions", () => {
   );
 
   it.effect(
+    "retains downstream staleness tagged with an ancestor run",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "ancestor" },
+              }),
+            },
+            {
+              kind: 1,
+              value: "y = x + 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "descendant" },
+              }),
+            },
+          ],
+        },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(executions, editor.notebook);
+        const document = MarimoNotebookDocument.from(editor.notebook);
+        const ancestorId = Option.getOrThrow(document.cellAt(0).id);
+        const descendantId = Option.getOrThrow(document.cellAt(1).id);
+
+        yield* acknowledgeSubmission(
+          notebook,
+          descendantId,
+          "y = x + 1",
+          "initial-run",
+        );
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: descendantId,
+          status: "idle",
+          run_id: "initial-run",
+        });
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: ancestorId,
+          status: "queued",
+          run_id: "ancestor-run",
+        });
+
+        // Lazy execution tags every notification in the cascade with the
+        // ancestor's run ID, including stale-only updates for idle descendants.
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: descendantId,
+          status: null,
+          run_id: "ancestor-run",
+          stale_inputs: true,
+        });
+
+        expect(
+          HashSet.has(yield* notebook.staleCells.current, descendantId),
+        ).toBe(true);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
     "rejects a tagged operation after its run completes",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {

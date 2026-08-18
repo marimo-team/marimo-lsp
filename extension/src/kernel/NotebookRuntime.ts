@@ -1251,7 +1251,9 @@ function processNotebookOperation(
       if (extractCellIdFromCellMessage(operation) === SCRATCH_CELL_ID) return;
       yield* notebookExecutions.apply(operation).pipe(
         Effect.catchTag("RunCorrelationError", (error) =>
-          Effect.logWarning("Ignoring uncorrelated cell operation").pipe(
+          Effect.logWarning(
+            "Withheld presentation for uncorrelated cell operation",
+          ).pipe(
             Effect.annotateLogs({
               cellId: error.cellId,
               expectedRunId: error.expectedRunId,

@@ -32,8 +32,10 @@ import {
   type NotebookCellId,
   type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
-import type { CellOperationNotification, CellRuntimeState } from "../types.ts";
+import type { CellOperationNotification } from "../types.ts";
 import {
+  acceptKernelState,
+  activeRunId,
   AcceptedSource,
   CellCommand,
   type CellRunState,
@@ -95,8 +97,8 @@ export interface NotebookExecutionBinding {
 
 export interface NotebookExecutions {
   /**
-   * Correlates and folds one Wire Cell Operation, then admits its presentation
-   * commands. Completion does not wait for the presentation adapter.
+   * Folds one Wire Cell Operation, then admits its presentation commands when
+   * its run correlates. Completion does not wait for the presentation adapter.
    */
   readonly apply: (
     operation: CellOperationNotification,
@@ -370,17 +372,12 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             ),
           );
 
-        const correlate = Effect.fn("NotebookExecutions.correlate")(function* (
+        const correlationError = (
           record: CellRecord,
-          next: CellRuntimeState,
           wire: CellOperationNotification,
-        ) {
+        ): RunCorrelationError | undefined => {
           const cellId = extractCellIdFromCellMessage(wire);
-          const activeRunId =
-            record.run.phase._tag === "Queued" ||
-            record.run.phase._tag === "Running"
-              ? record.run.phase.runId
-              : undefined;
+          const expectedRunId = activeRunId(record.run.phase);
           const receivedRunId =
             typeof wire.run_id === "string" && wire.run_id.length > 0
               ? wire.run_id
@@ -389,29 +386,18 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           if (
             wire.status !== "queued" &&
             receivedRunId !== undefined &&
-            receivedRunId !== activeRunId
+            receivedRunId !== expectedRunId
           ) {
-            return yield* new RunCorrelationError({
+            return new RunCorrelationError({
               cellId,
-              expectedRunId: activeRunId,
+              expectedRunId,
               receivedRunId,
               status: wire.status,
               reason: "superseded-run",
             });
           }
-
-          const op = parseOp(next, wire, RunId(crypto.randomUUID()));
-          if (Option.isNone(op)) {
-            return yield* new RunCorrelationError({
-              cellId,
-              expectedRunId: activeRunId,
-              receivedRunId,
-              status: wire.status,
-              reason: "untracked-queue",
-            });
-          }
-          return op.value;
-        });
+          return undefined;
+        };
 
         const takeSubmittedSource = (cellId: NotebookCellId) => {
           const pending = submittedSources.get(cellId);
@@ -431,34 +417,53 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                 drive: Option.none<DriveBinding>(),
               };
               const next = transitionCell(record.run.state, wire);
-              const retainUncorrelatedState = Effect.sync(() => {
+              const retainKernelState = Effect.gen(function* () {
                 if (wire.status === "queued") takeSubmittedSource(cellId);
-                // Keep the kernel's state fold even for an op we cannot
-                // correlate to a run — only presentation is withheld.
-                // Late console appends from threads of a finished run
-                // land here, and the kernel remains the source of truth
-                // for cell state.
+                // Keep kernel-owned state even when this operation cannot
+                // drive a host run. Lazy execution tags descendant staleness
+                // with the ancestor's run ID; late console appends likewise
+                // arrive after their presentation run has closed.
                 records.set(cellId, {
                   ...record,
-                  run: { ...record.run, state: next },
+                  run: acceptKernelState(record.run, next),
                 });
+                yield* refreshStale([cellId]);
               });
-              const op = yield* correlate(record, next, wire).pipe(
-                Effect.tapError(() => retainUncorrelatedState),
+              const op = yield* Option.match(
+                parseOp(next, wire, RunId(crypto.randomUUID())),
+                {
+                  onNone: () =>
+                    retainKernelState.pipe(
+                      Effect.andThen(
+                        Effect.fail(
+                          new RunCorrelationError({
+                            cellId,
+                            expectedRunId: activeRunId(record.run.phase),
+                            receivedRunId: undefined,
+                            status: wire.status,
+                            reason: "untracked-queue",
+                          }),
+                        ),
+                      ),
+                    ),
+                  onSome: Effect.succeed,
+                },
               );
+              const source = Op.$is("Queue")(op)
+                ? (takeSubmittedSource(cellId) ?? currentSources.get(cellId))
+                : undefined;
+              const result = step(record.run, op, source);
+              const mismatch = correlationError(record, wire);
+              yield* mismatch !== undefined && result.commands.length > 0
+                ? retainKernelState.pipe(Effect.andThen(Effect.fail(mismatch)))
+                : Effect.void;
               if (
                 wire.status === "idle" &&
-                record.run.phase._tag !== "Queued" &&
-                record.run.phase._tag !== "Running"
+                activeRunId(record.run.phase) === undefined
               ) {
                 takeSubmittedSource(cellId);
               }
               const currentDrive = yield* binding.getDrive;
-              const source =
-                op._tag === "Queue"
-                  ? (takeSubmittedSource(cellId) ?? currentSources.get(cellId))
-                  : undefined;
-              const result = step(record.run, op, source);
               // A run's presentation stays on the drive that opened it:
               // OpenRun binds the drive current at open time, and later
               // commands for that run reuse the binding even after the
@@ -474,12 +479,13 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                   ),
                 );
               const phase = result.entry.phase;
+              const runId = activeRunId(phase);
               records.set(cellId, {
                 run: result.entry,
                 drive:
-                  phase._tag === "Queued" || phase._tag === "Running"
-                    ? Option.map(driveForRun(phase.runId), (value) => ({
-                        runId: phase.runId,
+                  runId !== undefined
+                    ? Option.map(driveForRun(runId), (value) => ({
+                        runId,
                         value,
                       }))
                     : Option.none(),
