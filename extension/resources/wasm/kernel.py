@@ -136,12 +136,13 @@ class _Bridge:
     ) -> str:
         """Read the readiness line without allowing startup to hang forever."""
         assert self._process is not None
-        assert self._process.stdout is not None
+        stdout = self._process.stdout
+        assert stdout is not None
         result: queue.Queue[str | Exception] = queue.Queue(maxsize=1)
 
         def read_ready() -> None:
             try:
-                ready = self._process.stdout.readline().decode(errors="replace").strip()
+                ready = stdout.readline().decode(errors="replace").strip()
                 result.put(ready)
             except Exception as error:  # noqa: BLE001
                 result.put(error)

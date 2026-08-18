@@ -41,7 +41,11 @@ build-backend = "uv_build"
 minimum-kernel-version = "0.23.3"
 
 [tool.ty.src]
-exclude = ["extension/**"]
+exclude = ["extension/tutorials/**"]
+
+[tool.ty.environment]
+# Resolves the WASM kernel bridge's flat `protocol` import.
+extra-paths = ["extension/resources/wasm"]
 
 [tool.ruff]
 extend-exclude = ["vscode/*", "extension/tutorials/*"]
