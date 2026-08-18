@@ -2,6 +2,7 @@ import * as NodePath from "node:path";
 
 import { assert, describe, expect, it } from "@effect/vitest";
 import {
+  Deferred,
   Effect,
   Fiber,
   Latch,
@@ -62,6 +63,9 @@ const REPLACEMENT_SESSION_ID = kernelSessionId(
 
 const withTestCtx = Effect.fn(function* (
   activeSessionId: KernelSessionId = ACTIVE_SESSION_ID,
+  workspace: {
+    readonly applyEdit?: () => Effect.Effect<boolean>;
+  } = {},
 ) {
   // Controllable showInputBox via Queue
   const inputQueue = yield* Queue.unbounded<Option.Option<string>>();
@@ -71,6 +75,7 @@ const withTestCtx = Effect.fn(function* (
   const executions = yield* SubscriptionRef.make<ReadonlyArray<MarimoApiCall>>(
     [],
   );
+  const errorMessages = yield* Ref.make<ReadonlyArray<string>>([]);
 
   // PubSub to push operations into NotebookRuntime
   const operationsPubSub = yield* PubSub.unbounded<KernelNotification>();
@@ -117,9 +122,14 @@ const withTestCtx = Effect.fn(function* (
 
   const vscode = yield* TestVsCode.make({
     initialDocuments: [editor.notebook],
+    workspace,
     window: {
       showInputBox: () =>
         inputRequested.open.pipe(Effect.andThen(Queue.take(inputQueue))),
+      showErrorMessage: (message) =>
+        Ref.update(errorMessages, (messages) => [...messages, message]).pipe(
+          Effect.as(Option.none()),
+        ),
     },
   });
   const cellDrive = yield* VsCodeCellDrive.make.pipe(
@@ -218,6 +228,7 @@ const withTestCtx = Effect.fn(function* (
     notebookUri,
     mockController,
     executions,
+    errorMessages,
     inputQueue,
     inputRequested,
     operationsPubSub,
@@ -358,6 +369,50 @@ describe("NotebookRuntime operation processing", () => {
       yield* secondProcessed.await;
 
       assert.deepStrictEqual(yield* Ref.get(processed), ["b-1", "a-1", "a-2"]);
+    }),
+  );
+
+  it.effect(
+    "does not report session cancellation as an operation failure",
+    Effect.fn(function* () {
+      const editStarted = yield* Deferred.make<void>();
+      const ctx = yield* withTestCtx(ACTIVE_SESSION_ID, {
+        applyEdit: () =>
+          Deferred.succeed(editStarted, undefined).pipe(
+            Effect.andThen(Effect.never),
+          ),
+      });
+
+      yield* Effect.gen(function* () {
+        yield* NotebookRuntime;
+        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* TestClock.adjust("1 millis");
+
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          sessionId: ACTIVE_SESSION_ID,
+          notification: {
+            op: "notebook-document-transaction",
+            transaction: {
+              changes: [
+                {
+                  type: "set-code",
+                  cellId: cellId("cell-1"),
+                  code: "name = 'closed'",
+                },
+              ],
+              source: "code-mode",
+              version: 1,
+            },
+          },
+        });
+        yield* Deferred.await(editStarted);
+
+        yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
+        yield* TestClock.adjust("1 millis");
+
+        expect(yield* Ref.get(ctx.errorMessages)).toEqual([]);
+      }).pipe(Effect.provide(ctx.layer));
     }),
   );
 });

@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Fiber, Layer } from "effect";
+import { Deferred, Effect, Layer, Option, Scope } from "effect";
 
 import {
   createTestNotebookDocument,
@@ -27,9 +27,12 @@ it.effect(
       expect(firstSession?.document).toBe(first);
       if (firstSession === undefined) return;
 
-      const firstEnded = yield* Effect.forkChild(firstSession.ended);
+      const firstEnded = yield* Deferred.make<void>();
+      yield* Effect.addFinalizer(() =>
+        Deferred.succeed(firstEnded, undefined),
+      ).pipe(Scope.provide(firstSession.scope));
       yield* vscode.openNotebook(replacement);
-      yield* Fiber.join(firstEnded);
+      yield* Deferred.await(firstEnded);
 
       const replacementSession = sessions.current(id);
       expect(replacementSession?.document).toBe(replacement);
@@ -41,11 +44,12 @@ it.effect(
       yield* Effect.yieldNow;
       expect(sessions.current(id)).toBe(replacementSession);
 
-      const replacementEnded = yield* Effect.forkChild(
-        replacementSession.ended,
-      );
+      const replacementEnded = yield* Deferred.make<void>();
+      yield* Effect.addFinalizer(() =>
+        Deferred.succeed(replacementEnded, undefined),
+      ).pipe(Scope.provide(replacementSession.scope));
       yield* vscode.closeNotebook(replacement);
-      yield* Fiber.join(replacementEnded);
+      yield* Deferred.await(replacementEnded);
       expect(sessions.current(id)).toBeUndefined();
     }).pipe(Effect.provide(layer));
   }),
@@ -74,6 +78,59 @@ it.effect(
       yield* vscode.openNotebook(replacement);
       yield* Effect.yieldNow;
       expect(sessions.current(id)?.document).toBe(replacement);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "a document session owns scoped work and finalizers",
+  Effect.fn(function* () {
+    const uri = Uri.parse("file:///test/notebook.py");
+    const id = notebookId(uri.toString());
+    const document = createTestNotebookDocument(uri);
+    const vscode = yield* TestVsCode.make({ initialDocuments: [document] });
+    const layer = NotebookDocumentSessions.layer.pipe(
+      Layer.provideMerge(vscode.layer),
+    );
+    const backgroundStarted = yield* Deferred.make<void>();
+    const backgroundStopped = yield* Deferred.make<void>();
+    const finalized = yield* Deferred.make<void>();
+    const lateFinalizer = yield* Deferred.make<void>();
+    const staleBackgroundStarted = yield* Deferred.make<void>();
+
+    yield* Effect.gen(function* () {
+      const sessions = yield* NotebookDocumentSessions;
+      const session = sessions.current(id);
+      expect(session).toBeDefined();
+      if (session === undefined) return;
+
+      yield* Effect.addFinalizer(() =>
+        Deferred.succeed(finalized, undefined),
+      ).pipe(Scope.provide(session.scope));
+      yield* Effect.forkIn(
+        Deferred.succeed(backgroundStarted, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.ensuring(Deferred.succeed(backgroundStopped, undefined)),
+        ),
+        session.scope,
+      );
+      yield* Deferred.await(backgroundStarted);
+
+      yield* vscode.closeNotebook(document);
+      yield* Deferred.await(backgroundStopped);
+      yield* Deferred.await(finalized);
+
+      yield* Effect.addFinalizer(() =>
+        Deferred.succeed(lateFinalizer, undefined),
+      ).pipe(Scope.provide(session.scope));
+      yield* Deferred.await(lateFinalizer);
+      yield* Effect.forkIn(
+        Deferred.succeed(staleBackgroundStarted, undefined),
+        session.scope,
+      );
+      expect(Option.isNone(yield* Deferred.poll(staleBackgroundStarted))).toBe(
+        true,
+      );
     }).pipe(Effect.provide(layer));
   }),
 );

@@ -1,8 +1,11 @@
-import { assert, describe, it } from "@effect/vitest";
-import { Effect, Exit, Fiber, Latch, Ref, Scope } from "effect";
+import { assert, describe, expect, it } from "@effect/vitest";
+import { Cause, Effect, Exit, Fiber, Latch, Ref, Scope } from "effect";
 
 import { notebookId } from "../../lib/__tests__/branded.ts";
-import { makeNotebookExecutor } from "../NotebookExecutor.ts";
+import {
+  makeNotebookExecutor,
+  NotebookExecutionScopeClosedError,
+} from "../NotebookExecutor.ts";
 
 describe("NotebookExecutor", () => {
   it.effect(
@@ -85,6 +88,69 @@ describe("NotebookExecutor", () => {
         executor.post(notebook, Effect.void),
       );
       assert.isTrue(Exit.hasInterrupts(postAfterClose));
+    }),
+  );
+
+  it.effect(
+    "interrupts work owned by a document scope without closing the executor",
+    Effect.fn(function* () {
+      const executor = yield* makeNotebookExecutor<never>();
+      const documentScope = yield* Scope.make();
+      const started = yield* Latch.make();
+      const bufferedStarted = yield* Ref.make(false);
+      const notebook = notebookId("notebook");
+
+      const active = yield* executor
+        .submitIn(
+          documentScope,
+          notebook,
+          started.open.pipe(Effect.andThen(Effect.never)),
+        )
+        .pipe(Effect.forkDetach);
+      yield* started.await;
+
+      const buffered = yield* executor
+        .submitIn(
+          documentScope,
+          notebook,
+          Ref.set(bufferedStarted, true).pipe(Effect.andThen(Effect.never)),
+        )
+        .pipe(Effect.forkDetach);
+      yield* Effect.yieldNow;
+
+      yield* Scope.close(documentScope, Exit.void);
+      const [activeExit, bufferedExit] = yield* Effect.all([
+        Fiber.await(active),
+        Fiber.await(buffered),
+      ]);
+
+      for (const exit of [activeExit, bufferedExit]) {
+        assert.isTrue(Exit.isFailure(exit));
+        if (!Exit.isFailure(exit)) continue;
+        const failure = exit.cause.reasons.find(Cause.isFailReason);
+        assert.instanceOf(failure?.error, NotebookExecutionScopeClosedError);
+        expect(failure?.error).toMatchObject({ notebookId: notebook });
+      }
+      assert.isFalse(yield* Ref.get(bufferedStarted));
+
+      const result = yield* executor.submit(notebook, Effect.succeed("done"));
+      assert.strictEqual(result, "done");
+    }),
+  );
+
+  it.effect(
+    "preserves self-interruption while the owning scope remains open",
+    Effect.fn(function* () {
+      const executor = yield* makeNotebookExecutor<never>();
+      const documentScope = yield* Scope.make();
+      const notebook = notebookId("notebook");
+
+      const submitted = yield* executor
+        .submitIn(documentScope, notebook, Effect.interrupt)
+        .pipe(Effect.forkDetach);
+
+      assert.isTrue(Exit.hasInterrupts(yield* Fiber.await(submitted)));
+      yield* Scope.close(documentScope, Exit.void);
     }),
   );
 
