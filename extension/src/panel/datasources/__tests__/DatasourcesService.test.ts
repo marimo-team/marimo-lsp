@@ -1,5 +1,14 @@
 import { assert, expect, it } from "@effect/vitest";
-import { Effect, Exit, Fiber, Layer, Option, Scope, Stream } from "effect";
+import {
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Option,
+  Scope,
+  Stream,
+} from "effect";
 import { TestClock } from "effect/testing";
 
 import {
@@ -466,6 +475,59 @@ it.effect("deduplicates concurrent schema expansion requests", () => {
     expect(database.schemas.has("public")).toBe(true);
   }).pipe(Effect.provide(layer));
 });
+
+it.effect("interrupts an expansion send when its document session closes", () =>
+  Effect.gen(function* () {
+    const session = makeTestNotebookDocumentSession(
+      createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+        notebookType: NOTEBOOK_TYPE,
+      }),
+    );
+    const sendStarted = yield* Deferred.make<void>();
+    const releaseSend = yield* Deferred.make<void>();
+    const calls: MarimoApiCall[] = [];
+    let sendFinalized = false;
+    const layer = makeLayer(
+      (request) =>
+        Deferred.succeed(sendStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseSend)),
+          Effect.andThen(
+            Effect.sync(() => {
+              calls.push(request);
+            }),
+          ),
+          Effect.ensuring(
+            Effect.sync(() => {
+              sendFinalized = true;
+            }),
+          ),
+        ),
+      () => session,
+    );
+
+    yield* Effect.gen(function* () {
+      const service = yield* DatasourcesService;
+      yield* service.updateConnections(
+        session,
+        KERNEL_SESSION_ID,
+        connections([], false),
+      );
+
+      const load = yield* service
+        .loadSchemas(session, "warehouse", "analytics", [])
+        .pipe(Effect.result, Effect.forkChild);
+      yield* Deferred.await(sendStarted);
+      yield* Scope.close(session.scope, Exit.void);
+
+      expect((yield* Fiber.join(load))._tag).toBe("Failure");
+      expect(sendFinalized).toBe(true);
+      yield* Deferred.succeed(releaseSend, undefined);
+      yield* Effect.yieldNow;
+
+      expect(calls).toHaveLength(0);
+    }).pipe(Effect.provide(layer));
+  }),
+);
 
 it.effect("retries nested table expansion after an error", () => {
   const calls: MarimoApiCall[] = [];

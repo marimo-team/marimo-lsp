@@ -3,6 +3,7 @@ import {
   Data,
   Deferred,
   Effect,
+  Exit,
   Fiber,
   HashMap,
   Layer,
@@ -113,7 +114,6 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
     make: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
       const documentSessions = yield* NotebookDocumentSessions;
-      const serviceScope = yield* Effect.scope;
 
       // One state entry per exact document opening. Kernel identity remains in
       // the value because a kernel can restart without reopening the document.
@@ -169,7 +169,33 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
       ) =>
         JSON.stringify([notebookUri, connection, database, kind, schemaPath]);
 
-      const requestExpansion = Effect.fn(function* (
+      const inSessionScope = <A, E, R>(
+        session: NotebookDocumentSession,
+        effect: Effect.Effect<A, E, R>,
+      ): Effect.Effect<A, E | DatasourceExpansionError, R> =>
+        Effect.gen(function* () {
+          const watcherScope = yield* Scope.fork(session.scope);
+          const closed = yield* Deferred.make<void>();
+          yield* Scope.addFinalizer(
+            watcherScope,
+            Deferred.succeed(closed, undefined),
+          );
+          const sessionEnded = Deferred.await(closed).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new DatasourceExpansionError({
+                  message: "Notebook closed",
+                }),
+              ),
+            ),
+          );
+          if (yield* Deferred.isDone(closed)) return yield* sessionEnded;
+          return yield* Effect.raceFirst(effect, sessionEnded).pipe(
+            Effect.ensuring(Scope.close(watcherScope, Exit.void)),
+          );
+        });
+
+      const requestExpansionWork = Effect.fn(function* (
         session: NotebookDocumentSession,
         location: string,
         send: (
@@ -226,7 +252,7 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
               }
             }),
           ),
-          Effect.forkIn(serviceScope),
+          Effect.forkIn(session.scope),
         );
         const pending = {
           session,
@@ -247,6 +273,20 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
         );
 
         return yield* Fiber.join(fiber);
+      });
+
+      const requestExpansion = Effect.fn(function* (
+        session: NotebookDocumentSession,
+        location: string,
+        send: (
+          requestId: string,
+          kernelSessionId: KernelSessionId,
+        ) => Effect.Effect<void, unknown>,
+      ) {
+        return yield* inSessionScope(
+          session,
+          requestExpansionWork(session, location, send),
+        );
       });
 
       const completeExpansion = (requestId: string, error?: string | null) => {
