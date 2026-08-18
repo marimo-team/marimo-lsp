@@ -1,7 +1,9 @@
-import { Effect, Option } from "effect";
+import { Effect, Option, Scope } from "effect";
 
-import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
+import { NotebookConfiguration } from "../config/NotebookConfiguration.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
+import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
+import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { MarimoConfig } from "../types.ts";
@@ -33,7 +35,8 @@ export const createConfigToggle = <T extends string>({
 }) =>
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const configService = yield* MarimoConfigurationService;
+    const documentSessions = yield* NotebookDocumentSessions;
+    const sessionResources = yield* NotebookSessionResources;
 
     if (Option.isNone(notebook)) {
       yield* showErrorAndPromptLogs(
@@ -42,56 +45,69 @@ export const createConfigToggle = <T extends string>({
       return;
     }
 
-    // Fetch current configuration
-    const config = yield* configService.getConfig(notebook.value.id);
-    const currentValue = getCurrentValue(config);
-
-    // Show quick pick with all choices, marking current
-    const choice = yield* code.window.showQuickPickItems(
-      choices.map((c) => ({
-        label: c.label,
-        description: c.value === currentValue ? "$(check) Current" : undefined,
-        detail: c.detail,
-        value: c.value,
-      })),
-      { title: pickerTitle },
+    const session = documentSessions.forDocument(
+      notebook.value.rawNotebookDocument,
     );
-
-    if (Option.isNone(choice)) {
-      return; // User cancelled
-    }
-
-    const newValue = choice.value.value;
-
-    if (newValue === currentValue) {
-      yield* Effect.logInfo("Value unchanged");
+    if (Option.isNone(session)) {
+      yield* showErrorAndPromptLogs(
+        `Open a marimo notebook to configure ${settingName.toLowerCase()}.`,
+      );
       return;
     }
 
-    // Update configuration
-    yield* Effect.logInfo(`Updating ${configPath}`).pipe(
-      Effect.annotateLogs({
-        notebook: notebook.value.id,
-        from: currentValue,
-        to: newValue,
-      }),
-    );
+    yield* sessionResources
+      .runScoped(
+        session.value,
+        Effect.gen(function* () {
+          const configuration = yield* NotebookConfiguration;
+          const config = yield* configuration.get;
+          const currentValue = getCurrentValue(config);
 
-    // Build nested config object from path (e.g., "runtime.on_cell_change" -> { runtime: { on_cell_change: value }})
-    const pathParts = configPath.split(".");
-    let partialConfig: Record<string, unknown> = {
-      [pathParts[pathParts.length - 1]]: newValue,
-    };
-    for (let i = pathParts.length - 2; i >= 0; i--) {
-      partialConfig = { [pathParts[i]]: partialConfig };
-    }
+          const choice = yield* code.window.showQuickPickItems(
+            choices.map((c) => ({
+              label: c.label,
+              description:
+                c.value === currentValue ? "$(check) Current" : undefined,
+              detail: c.detail,
+              value: c.value,
+            })),
+            { title: pickerTitle },
+          );
 
-    yield* configService.updateConfig(notebook.value.id, partialConfig);
+          if (Option.isNone(choice)) return;
 
-    yield* code.window.showInformationMessage(
-      `${settingName} set to ${getDisplayName(newValue)}.`,
-    );
+          const newValue = choice.value.value;
+          if (newValue === currentValue) {
+            yield* Effect.logInfo("Value unchanged");
+            return;
+          }
+
+          yield* Effect.logInfo(`Updating ${configPath}`).pipe(
+            Effect.annotateLogs({
+              notebook: notebook.value.id,
+              from: currentValue,
+              to: newValue,
+            }),
+          );
+
+          const pathParts = configPath.split(".");
+          let partialConfig: Record<string, unknown> = {
+            [pathParts[pathParts.length - 1]]: newValue,
+          };
+          for (let i = pathParts.length - 2; i >= 0; i--) {
+            partialConfig = { [pathParts[i]]: partialConfig };
+          }
+
+          yield* configuration.update(partialConfig);
+
+          yield* code.window.showInformationMessage(
+            `${settingName} set to ${getDisplayName(newValue)}.`,
+          );
+        }),
+      )
+      .pipe(Scope.provide(session.value.scope));
   }).pipe(
+    Effect.catchTag("NotebookDocumentSessionEndedError", () => Effect.void),
     Effect.tapCause(Effect.logError),
     Effect.catchCause(() =>
       showErrorAndPromptLogs(`Could not update ${settingName.toLowerCase()}.`),

@@ -7,12 +7,16 @@ import {
   HashMap,
   Layer,
   Option,
+  Scope,
   Stream,
   SubscriptionRef,
 } from "effect";
 
 import { MarimoClient } from "../../lsp/MarimoClient.ts";
-import type { NotebookDocumentSession } from "../../notebook/NotebookDocumentSessions.ts";
+import {
+  type NotebookDocumentSession,
+  NotebookDocumentSessions,
+} from "../../notebook/NotebookDocumentSessions.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { KernelSessionId } from "../../schemas/Models.gen.ts";
 import type {
@@ -75,11 +79,21 @@ interface PendingExpansion {
   readonly fiber: Fiber.Fiber<void, DatasourceExpansionError>;
 }
 
-interface Owned<A> {
-  readonly documentSessionId: NotebookDocumentSession["id"];
+type DatasourceStateKey = readonly [
+  notebookId: NotebookId,
+  documentSessionId: NotebookDocumentSession["id"],
+];
+
+interface DatasourceState {
   readonly kernelSessionId: KernelSessionId;
-  readonly value: A;
+  readonly connections: Option.Option<DataSourceConnectionMap>;
+  readonly datasets: Option.Option<DatasetsMap>;
 }
+
+const keyFor = (session: NotebookDocumentSession): DatasourceStateKey => [
+  session.notebookId,
+  session.id,
+];
 
 const EXPANSION_TIMEOUT = "30 seconds";
 
@@ -98,19 +112,52 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
   {
     make: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
-      const serviceScope = yield* Effect.scope;
+      const documentSessions = yield* NotebookDocumentSessions;
 
-      // Track data source connections: NotebookUri -> DataSourceConnectionMap
-      const connectionsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, Owned<DataSourceConnectionMap>>(),
-      );
-
-      // Track datasets: NotebookUri -> DatasetsMap
-      const datasetsRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, Owned<DatasetsMap>>(),
+      // One state entry per exact document opening. Kernel identity remains in
+      // the value because a kernel can restart without reopening the document.
+      const stateRef = yield* SubscriptionRef.make(
+        HashMap.empty<DatasourceStateKey, DatasourceState>(),
       );
       const pendingByLocation = new Map<string, PendingExpansion>();
       const pendingByRequest = new Map<string, PendingExpansion>();
+      const registeredSessionCleanups = new WeakSet<NotebookDocumentSession>();
+
+      const releaseSession = Effect.fn("DatasourcesService.releaseSession")(
+        function* (session: NotebookDocumentSession) {
+          const notebookUri = session.notebookId;
+          registeredSessionCleanups.delete(session);
+          for (const pending of [...pendingByRequest.values()]) {
+            if (pending.session === session) {
+              yield* Deferred.fail(
+                pending.deferred,
+                new DatasourceExpansionError({
+                  message: "Notebook closed",
+                }),
+              );
+              yield* Fiber.await(pending.fiber);
+            }
+          }
+          yield* SubscriptionRef.update(
+            stateRef,
+            HashMap.remove(keyFor(session)),
+          );
+
+          yield* Effect.logTrace("Released datasource data").pipe(
+            Effect.annotateLogs({ notebookUri }),
+          );
+        },
+      );
+
+      const registerSessionCleanup = Effect.fn(
+        "DatasourcesService.registerSessionCleanup",
+      )((session: NotebookDocumentSession) =>
+        Effect.suspend(() => {
+          if (registeredSessionCleanups.has(session)) return Effect.void;
+          registeredSessionCleanups.add(session);
+          return Scope.addFinalizer(session.scope, releaseSession(session));
+        }),
+      );
 
       const expansionKey = (
         notebookUri: NotebookId,
@@ -121,7 +168,7 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
       ) =>
         JSON.stringify([notebookUri, connection, database, kind, schemaPath]);
 
-      const requestExpansion = Effect.fn(function* (
+      const requestExpansionWork = Effect.fn(function* (
         session: NotebookDocumentSession,
         location: string,
         send: (
@@ -129,19 +176,16 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
           kernelSessionId: KernelSessionId,
         ) => Effect.Effect<void, unknown>,
       ) {
-        const connections = HashMap.get(
-          yield* SubscriptionRef.get(connectionsRef),
-          session.notebookId,
+        const state = HashMap.get(
+          yield* SubscriptionRef.get(stateRef),
+          keyFor(session),
         );
-        if (
-          Option.isNone(connections) ||
-          connections.value.documentSessionId !== session.id
-        ) {
+        if (Option.isNone(state) || Option.isNone(state.value.connections)) {
           return yield* new DatasourceExpansionError({
             message: "Datasource state is no longer active",
           });
         }
-        const kernelSessionId = connections.value.kernelSessionId;
+        const kernelSessionId = state.value.kernelSessionId;
         const current = pendingByLocation.get(location);
         if (
           current?.session === session &&
@@ -181,7 +225,7 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
               }
             }),
           ),
-          Effect.forkIn(serviceScope),
+          Effect.forkChild,
         );
         const pending = {
           session,
@@ -201,6 +245,20 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
           ),
         );
 
+        return yield* Fiber.join(fiber);
+      });
+
+      const requestExpansion = Effect.fn(function* (
+        session: NotebookDocumentSession,
+        location: string,
+        send: (
+          requestId: string,
+          kernelSessionId: KernelSessionId,
+        ) => Effect.Effect<void, unknown>,
+      ) {
+        const fiber = yield* requestExpansionWork(session, location, send).pipe(
+          Effect.forkIn(session.scope),
+        );
         return yield* Fiber.join(fiber);
       });
 
@@ -355,6 +413,36 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
         };
       };
 
+      const getCurrentState = (
+        state: HashMap.HashMap<DatasourceStateKey, DatasourceState>,
+        notebookUri: NotebookId,
+      ) =>
+        Option.flatMap(documentSessions.current(notebookUri), (session) =>
+          HashMap.get(state, keyFor(session)),
+        );
+
+      const projectCurrent = <A>(
+        state: HashMap.HashMap<DatasourceStateKey, DatasourceState>,
+        select: (state: DatasourceState) => Option.Option<A>,
+      ) => {
+        let projection = HashMap.empty<NotebookId, A>();
+        for (const [[notebookId, documentSessionId], value] of state) {
+          if (
+            Option.exists(
+              documentSessions.current(notebookId),
+              (session) => session.id === documentSessionId,
+            )
+          ) {
+            projection = Option.match(select(value), {
+              onNone: () => projection,
+              onSome: (selected) =>
+                HashMap.set(projection, notebookId, selected),
+            });
+          }
+        }
+        return projection;
+      };
+
       return {
         /**
          * Update data source connections for a notebook
@@ -364,33 +452,36 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
           kernelSessionId: KernelSessionId,
           operation: DataSourceConnectionsNotification,
         ) {
-          return Effect.gen(function* () {
-            const notebookUri = session.notebookId;
-            const connectionsMap = convertConnectionsToMap(operation);
+          return Effect.uninterruptible(
+            Effect.gen(function* () {
+              const notebookUri = session.notebookId;
+              const connectionsMap = convertConnectionsToMap(operation);
+              const key = keyFor(session);
 
-            yield* SubscriptionRef.update(connectionsRef, (map) =>
-              HashMap.set(map, notebookUri, {
-                documentSessionId: session.id,
-                kernelSessionId,
-                value: connectionsMap,
-              }),
-            );
-            yield* SubscriptionRef.update(datasetsRef, (map) => {
-              const current = HashMap.get(map, notebookUri);
-              return Option.isSome(current) &&
-                (current.value.documentSessionId !== session.id ||
-                  current.value.kernelSessionId !== kernelSessionId)
-                ? HashMap.remove(map, notebookUri)
-                : map;
-            });
+              yield* SubscriptionRef.update(stateRef, (map) => {
+                const current = Option.filter(
+                  HashMap.get(map, key),
+                  (state) => state.kernelSessionId === kernelSessionId,
+                );
+                return HashMap.set(map, key, {
+                  kernelSessionId,
+                  connections: Option.some(connectionsMap),
+                  datasets: Option.flatMap(current, (state) => state.datasets),
+                });
+              });
 
-            yield* Effect.logTrace("Updated data source connections").pipe(
-              Effect.annotateLogs({
-                notebookUri,
-                count: operation.connections.length,
-              }),
-            );
-          });
+              // Adding a finalizer to an already-closed scope runs it
+              // immediately, so late writes cannot repopulate state.
+              yield* registerSessionCleanup(session);
+
+              yield* Effect.logTrace("Updated data source connections").pipe(
+                Effect.annotateLogs({
+                  notebookUri,
+                  count: operation.connections.length,
+                }),
+              );
+            }),
+          );
         },
 
         updateSchemaList(
@@ -432,12 +523,13 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
               return;
             }
 
-            yield* SubscriptionRef.update(connectionsRef, (notebooks) => {
-              const current = HashMap.get(notebooks, notebookUri);
+            yield* SubscriptionRef.update(stateRef, (notebooks) => {
+              const key = keyFor(session);
+              const current = HashMap.get(notebooks, key);
               if (
                 Option.isNone(current) ||
-                current.value.documentSessionId !== session.id ||
-                current.value.kernelSessionId !== kernelSessionId
+                current.value.kernelSessionId !== kernelSessionId ||
+                Option.isNone(current.value.connections)
               ) {
                 return notebooks;
               }
@@ -445,7 +537,7 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
               const schemaPath = operation.metadata.schema_path ?? [];
               const schemas = convertSchemasToMap(operation.schemas ?? []);
               const next = updateDatabase(
-                current.value.value,
+                current.value.connections.value,
                 connection,
                 database,
                 (db) =>
@@ -464,12 +556,11 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
                         ),
                       },
               );
-              return next === current.value.value
+              return next === current.value.connections.value
                 ? notebooks
-                : HashMap.set(notebooks, notebookUri, {
-                    documentSessionId: session.id,
-                    kernelSessionId,
-                    value: next,
+                : HashMap.set(notebooks, key, {
+                    ...current.value,
+                    connections: Option.some(next),
                   });
             });
             yield* completeExpansion(operation.request_id);
@@ -513,12 +604,13 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
               return;
             }
 
-            yield* SubscriptionRef.update(connectionsRef, (notebooks) => {
-              const current = HashMap.get(notebooks, notebookUri);
+            yield* SubscriptionRef.update(stateRef, (notebooks) => {
+              const key = keyFor(session);
+              const current = HashMap.get(notebooks, key);
               if (
                 Option.isNone(current) ||
-                current.value.documentSessionId !== session.id ||
-                current.value.kernelSessionId !== kernelSessionId
+                current.value.kernelSessionId !== kernelSessionId ||
+                Option.isNone(current.value.connections)
               ) {
                 return notebooks;
               }
@@ -527,7 +619,7 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
               const path = schemaPath.length > 0 ? schemaPath : [schema];
               const tables = convertTablesToMap(operation.tables ?? []);
               const next = updateDatabase(
-                current.value.value,
+                current.value.connections.value,
                 connection,
                 database,
                 (db) => ({
@@ -539,12 +631,11 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
                   })),
                 }),
               );
-              return next === current.value.value
+              return next === current.value.connections.value
                 ? notebooks
-                : HashMap.set(notebooks, notebookUri, {
-                    documentSessionId: session.id,
-                    kernelSessionId,
-                    value: next,
+                : HashMap.set(notebooks, key, {
+                    ...current.value,
+                    connections: Option.some(next),
                   });
             });
             yield* completeExpansion(operation.request_id);
@@ -623,34 +714,38 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
           kernelSessionId: KernelSessionId,
           operation: DatasetsNotification,
         ) {
-          return Effect.gen(function* () {
-            const notebookUri = session.notebookId;
-            const datasetsMap = convertDatasetsToMap(operation);
+          return Effect.uninterruptible(
+            Effect.gen(function* () {
+              const notebookUri = session.notebookId;
+              const datasetsMap = convertDatasetsToMap(operation);
+              const key = keyFor(session);
 
-            yield* SubscriptionRef.update(datasetsRef, (map) =>
-              HashMap.set(map, notebookUri, {
-                documentSessionId: session.id,
-                kernelSessionId,
-                value: datasetsMap,
-              }),
-            );
-            yield* SubscriptionRef.update(connectionsRef, (map) => {
-              const current = HashMap.get(map, notebookUri);
-              return Option.isSome(current) &&
-                (current.value.documentSessionId !== session.id ||
-                  current.value.kernelSessionId !== kernelSessionId)
-                ? HashMap.remove(map, notebookUri)
-                : map;
-            });
+              yield* SubscriptionRef.update(stateRef, (map) => {
+                const current = Option.filter(
+                  HashMap.get(map, key),
+                  (state) => state.kernelSessionId === kernelSessionId,
+                );
+                return HashMap.set(map, key, {
+                  kernelSessionId,
+                  connections: Option.flatMap(
+                    current,
+                    (state) => state.connections,
+                  ),
+                  datasets: Option.some(datasetsMap),
+                });
+              });
 
-            yield* Effect.logTrace("Updated datasets").pipe(
-              Effect.annotateLogs({
-                notebookUri,
-                count: operation.tables.length,
-                clear_channel: operation.clear_channel,
-              }),
-            );
-          });
+              yield* registerSessionCleanup(session);
+
+              yield* Effect.logTrace("Updated datasets").pipe(
+                Effect.annotateLogs({
+                  notebookUri,
+                  count: operation.tables.length,
+                  clear_channel: operation.clear_channel,
+                }),
+              );
+            }),
+          );
         },
 
         /**
@@ -658,9 +753,9 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
          */
         getConnections(notebookUri: NotebookId) {
           return Effect.gen(function* () {
-            const map = yield* SubscriptionRef.get(connectionsRef);
-            return HashMap.get(map, notebookUri).pipe(
-              Option.map((owned) => owned.value),
+            const state = yield* SubscriptionRef.get(stateRef);
+            return getCurrentState(state, notebookUri).pipe(
+              Option.flatMap((current) => current.connections),
             );
           });
         },
@@ -670,9 +765,9 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
          */
         getDatasets(notebookUri: NotebookId) {
           return Effect.gen(function* () {
-            const map = yield* SubscriptionRef.get(datasetsRef);
-            return HashMap.get(map, notebookUri).pipe(
-              Option.map((owned) => owned.value),
+            const state = yield* SubscriptionRef.get(stateRef);
+            return getCurrentState(state, notebookUri).pipe(
+              Option.flatMap((current) => current.datasets),
             );
           });
         },
@@ -696,57 +791,13 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
                 yield* Fiber.await(pending.fiber);
               }
             }
-            yield* SubscriptionRef.update(connectionsRef, (map) => {
-              const current = HashMap.get(map, notebookUri);
-              return Option.isSome(current) &&
-                current.value.kernelSessionId === kernelSessionId
-                ? HashMap.remove(map, notebookUri)
-                : map;
-            });
-            yield* SubscriptionRef.update(datasetsRef, (map) => {
-              const current = HashMap.get(map, notebookUri);
-              return Option.isSome(current) &&
-                current.value.kernelSessionId === kernelSessionId
-                ? HashMap.remove(map, notebookUri)
-                : map;
-            });
-          });
-        },
-
-        /**
-         * Clear all datasource data for a notebook
-         */
-        clearSession(session: NotebookDocumentSession) {
-          return Effect.gen(function* () {
-            const notebookUri = session.notebookId;
-            for (const pending of pendingByRequest.values()) {
-              if (pending.session === session) {
-                yield* Deferred.fail(
-                  pending.deferred,
-                  new DatasourceExpansionError({
-                    message: "Notebook closed",
-                  }),
-                );
-                yield* Fiber.await(pending.fiber);
-              }
-            }
-            yield* SubscriptionRef.update(connectionsRef, (map) => {
-              const current = HashMap.get(map, notebookUri);
-              return Option.isSome(current) &&
-                current.value.documentSessionId === session.id
-                ? HashMap.remove(map, notebookUri)
-                : map;
-            });
-            yield* SubscriptionRef.update(datasetsRef, (map) => {
-              const current = HashMap.get(map, notebookUri);
-              return Option.isSome(current) &&
-                current.value.documentSessionId === session.id
-                ? HashMap.remove(map, notebookUri)
-                : map;
-            });
-
-            yield* Effect.logTrace("Cleared datasource data").pipe(
-              Effect.annotateLogs({ notebookUri }),
+            yield* SubscriptionRef.update(
+              stateRef,
+              HashMap.filter(
+                (state, [stateNotebookUri]) =>
+                  stateNotebookUri !== notebookUri ||
+                  state.kernelSessionId !== kernelSessionId,
+              ),
             );
           });
         },
@@ -756,10 +807,11 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
          *
          * Emits the current value on subscription, then all subsequent changes.
          */
-        streamConnectionsChanges: SubscriptionRef.changes(connectionsRef).pipe(
-          Stream.map((notebooks) =>
-            HashMap.map(notebooks, (owned) => owned.value),
+        streamConnectionsChanges: SubscriptionRef.changes(stateRef).pipe(
+          Stream.map((state) =>
+            projectCurrent(state, (current) => current.connections),
           ),
+          Stream.changes,
         ),
 
         /**
@@ -767,14 +819,17 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
          *
          * Emits the current value on subscription, then all subsequent changes.
          */
-        streamDatasetsChanges: SubscriptionRef.changes(datasetsRef).pipe(
-          Stream.map((notebooks) =>
-            HashMap.map(notebooks, (owned) => owned.value),
+        streamDatasetsChanges: SubscriptionRef.changes(stateRef).pipe(
+          Stream.map((state) =>
+            projectCurrent(state, (current) => current.datasets),
           ),
+          Stream.changes,
         ),
       };
     }),
   },
 ) {
-  static readonly layer = Layer.effect(this, this.make);
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(NotebookDocumentSessions.layer),
+  );
 }

@@ -497,7 +497,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                     }
 
                     const session = documentSessions.current(notebookId);
-                    if (session === undefined) {
+                    if (Option.isNone(session)) {
                       return yield* new NoActiveKernelError({
                         notebookUri: notebookId,
                       });
@@ -525,7 +525,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                       // Only output owned by the requesting document session;
                       // a reopened notebook's operations belong to a new one.
                       Stream.filter(
-                        (operation) => operation.session === session,
+                        (operation) => operation.session === session.value,
                       ),
                       Stream.takeUntil(isCompletedRunFor(runId)),
                       Stream.filterMap(
@@ -642,8 +642,6 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                   notebookId,
                   Effect.gen(function* () {
                     notebookStates.delete(session);
-                    yield* variables.clearSession(session);
-                    yield* datasources.clearSession(session);
                     yield* updateKernelContext();
                   }),
                 )
@@ -657,7 +655,9 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         (notebookId: NotebookId) =>
           Effect.suspend(() => {
             const session = documentSessions.current(notebookId);
-            if (session !== undefined) return stateForDocumentSession(session);
+            if (Option.isSome(session)) {
+              return stateForDocumentSession(session.value);
+            }
 
             const existing = notebookStates.get(notebookId);
             if (existing !== undefined) return Effect.succeed(existing);
@@ -697,10 +697,10 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         marimo.kernelNotifications.pipe(
           Stream.filterMap(
             Filter.fromPredicateOption((message: KernelNotification) => {
-              const session = documentSessions.current(message.notebookUri);
-              return session !== undefined
-                ? Option.some<SessionNotification>({ ...message, session })
-                : Option.none();
+              return Option.map(
+                documentSessions.current(message.notebookUri),
+                (session): SessionNotification => ({ ...message, session }),
+              );
             }),
           ),
           Stream.runForEach((message) => {
@@ -794,15 +794,15 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         marimo.documentAnalysis.pipe(
           Stream.runForEach((message) => {
             const session = documentSessions.current(message.notebookUri);
-            if (session === undefined) return Effect.void;
-            return stateForDocumentSession(session).pipe(
+            if (Option.isNone(session)) return Effect.void;
+            return stateForDocumentSession(session.value).pipe(
               Effect.andThen(
                 executor
                   .postScoped(
                     message.notebookUri,
-                    variables.updateVariables(session, message.analysis),
+                    variables.updateVariables(session.value, message.analysis),
                   )
-                  .pipe(Scope.provide(session.scope)),
+                  .pipe(Scope.provide(session.value.scope)),
               ),
             );
           }),
@@ -998,14 +998,14 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         forDocument(document: vscode.NotebookDocument) {
           return Effect.gen(function* () {
             const session = documentSessions.forDocument(document);
-            if (session === undefined) {
+            if (Option.isNone(session)) {
               const notebook = MarimoNotebookDocument.from(document);
               return yield* new NoActiveKernelError({
                 notebookUri: notebook.id,
               });
             }
-            const state = yield* stateForDocumentSession(session);
-            return makeDocumentHandle(session, state.controller);
+            const state = yield* stateForDocumentSession(session.value);
+            return makeDocumentHandle(session.value, state.controller);
           });
         },
         forNotebook,

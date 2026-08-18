@@ -1,13 +1,18 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option } from "effect";
+import { Effect, Layer, Option, Stream } from "effect";
 
 import { createTestNotebookDocument, Uri } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookDocumentSession } from "../../__tests__/__utils__/TestNotebookDocumentSession.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
+import {
+  type NotebookDocumentSession,
+  NotebookDocumentSessions,
+} from "../../notebook/NotebookDocumentSessions.ts";
 import { VariablesService } from "../../panel/variables/VariablesService.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
+  type NotebookId,
 } from "../../schemas/MarimoNotebookDocument.ts";
 import type { VariablesNotification } from "../../types.ts";
 import { getTopologicalCells } from "../getTopologicalCells.ts";
@@ -51,15 +56,33 @@ function makeNotebookWithCells(
   return MarimoNotebookDocument.from(raw);
 }
 
+const sessions = new Map<NotebookId, NotebookDocumentSession>();
+const documentSessions = Layer.succeed(NotebookDocumentSessions, {
+  current: (id: NotebookId) => Option.fromNullishOr(sessions.get(id)),
+  forDocument: (document) =>
+    Option.fromNullishOr(
+      Array.from(sessions.values()).find(
+        (session) => session.document === document,
+      ),
+    ),
+  active: Stream.empty,
+});
 const withTestLayer = () =>
-  Layer.empty.pipe(Layer.provideMerge(VariablesService.layer));
+  Layer.effect(VariablesService, VariablesService.make).pipe(
+    Layer.provide(documentSessions),
+  );
 
 const stableId = (cell: { metadata?: unknown }) =>
   Option.getOrUndefined(MarimoNotebookCell.decodeMetadata(cell.metadata))
     ?.marimoRuntime.stableId ?? undefined;
 
-const sessionFor = (notebook: MarimoNotebookDocument) =>
-  makeTestNotebookDocumentSession(notebook.rawNotebookDocument);
+const sessionFor = (notebook: MarimoNotebookDocument) => {
+  const current = sessions.get(notebook.id);
+  if (current?.document === notebook.rawNotebookDocument) return current;
+  const session = makeTestNotebookDocumentSession(notebook.rawNotebookDocument);
+  sessions.set(notebook.id, session);
+  return session;
+};
 
 describe("getTopologicalCells", () => {
   it.effect("returns empty array for notebook with no cells", () =>

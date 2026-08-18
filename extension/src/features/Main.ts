@@ -3,7 +3,6 @@ import type * as vscode from "vscode";
 
 import { Config } from "../config/Config.ts";
 import { ConfigContextManagerLive } from "../config/ConfigContextManager.ts";
-import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
 import { NotebookControllersLive } from "../kernel/NotebookControllers.ts";
@@ -16,9 +15,9 @@ import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.t
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
+import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
 import { DatasourcesViewLive } from "../panel/datasources/DatasourcesView.ts";
-import { PackagesService } from "../panel/packages/PackagesService.ts";
 import { PackagesViewLive } from "../panel/packages/PackagesView.ts";
 import { SessionFileLifecycleLive } from "../panel/sessions/SessionFileLifecycle.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
@@ -88,13 +87,12 @@ const MainLive = Layer.empty
     Layer.provide(CellExecutions.layer),
     Layer.provide(VariablesService.layer),
     Layer.provide(DatasourcesService.layer),
-    Layer.provide(PackagesService.layer),
     Layer.provideMerge(SessionsService.layer),
     Layer.provide(HealthService.layer),
     Layer.provide(CellMetadataUIBindingService.layer),
   )
   .pipe(
-    Layer.provide(MarimoConfigurationService.layer),
+    Layer.provide(NotebookSessionResources.layer),
     Layer.provide(NotebookDocumentSessions.layer),
     Layer.provide(NotebookEditorRegistry.layer),
     Layer.provide(Uv.layer),

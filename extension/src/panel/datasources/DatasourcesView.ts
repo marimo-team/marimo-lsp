@@ -170,11 +170,11 @@ export const DatasourcesViewLive = Layer.effectDiscard(
       database: DatasourceDatabase,
     ) {
       const session = documentSessions.current(item.notebookUri);
-      if (session === undefined) return [];
+      if (Option.isNone(session)) return [];
       if (!database.schemasResolved) {
         yield* ignoreExpansionError(
           datasources.loadSchemas(
-            session,
+            session.value,
             item.connectionName,
             item.databaseName,
             [],
@@ -195,10 +195,10 @@ export const DatasourcesViewLive = Layer.effectDiscard(
         // Schemaless databases expose their tables directly below the database.
         if (!schema.tablesResolved) {
           const session = documentSessions.current(item.notebookUri);
-          if (session !== undefined) {
+          if (Option.isSome(session)) {
             yield* ignoreExpansionError(
               datasources.loadTables(
-                session,
+                session.value,
                 item.connectionName,
                 item.databaseName,
                 schema.name,
@@ -227,12 +227,12 @@ export const DatasourcesViewLive = Layer.effectDiscard(
 
       const loads: Array<Effect.Effect<unknown>> = [];
       const session = documentSessions.current(item.notebookUri);
-      if (session === undefined) return [];
+      if (Option.isNone(session)) return [];
       if (!schema.childSchemasResolved) {
         loads.push(
           ignoreExpansionError(
             datasources.loadSchemas(
-              session,
+              session.value,
               item.connectionName,
               item.databaseName,
               item.schemaPath,
@@ -244,7 +244,7 @@ export const DatasourcesViewLive = Layer.effectDiscard(
         loads.push(
           ignoreExpansionError(
             datasources.loadTables(
-              session,
+              session.value,
               item.connectionName,
               item.databaseName,
               item.schemaName,
