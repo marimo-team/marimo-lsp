@@ -6,7 +6,6 @@ import {
   HashMap,
   Layer,
   Option,
-  PubSub,
   Ref,
   Scope,
   Stream,
@@ -38,13 +37,6 @@ export interface NotebookDocumentSession {
   readonly scope: Scope.Scope;
 }
 
-export type NotebookDocumentSessionChange = Data.TaggedEnum<{
-  Opened: { readonly session: NotebookDocumentSession };
-  Ended: { readonly session: NotebookDocumentSession };
-}>;
-export const NotebookDocumentSessionChange =
-  Data.taggedEnum<NotebookDocumentSessionChange>();
-
 export class NotebookDocumentSessionEndedError extends Data.TaggedError(
   "NotebookDocumentSessionEndedError",
 )<{ readonly notebookId: NotebookId }> {}
@@ -70,18 +62,11 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
       const sessions = yield* Ref.make(
         HashMap.empty<NotebookId, SessionEntry>(),
       );
-      const changes = yield* PubSub.unbounded<NotebookDocumentSessionChange>();
 
       const end = Effect.fn("NotebookDocumentSessions.end")(function* (
         entry: SessionEntry,
       ) {
         yield* Scope.close(entry.scope, Exit.void);
-        yield* PubSub.publish(
-          changes,
-          NotebookDocumentSessionChange.Ended({
-            session: entry.session,
-          }),
-        );
       });
 
       const markOpen = Effect.fn("NotebookDocumentSessions.markOpen")(
@@ -134,10 +119,6 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
           }
 
           if (result.displaced !== undefined) yield* end(result.displaced);
-          yield* PubSub.publish(
-            changes,
-            NotebookDocumentSessionChange.Opened({ session }),
-          );
           return session;
         },
       );
@@ -183,7 +164,6 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
           yield* Effect.forEach(HashMap.values(current), end, {
             discard: true,
           });
-          yield* PubSub.shutdown(changes);
         }),
       );
 
@@ -200,7 +180,6 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
           )?.session;
           return session?.document === document ? session : undefined;
         },
-        changes: Stream.fromPubSub(changes),
       } as const;
     }),
   },

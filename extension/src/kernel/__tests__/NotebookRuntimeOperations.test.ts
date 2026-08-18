@@ -1101,10 +1101,10 @@ describe("NotebookRuntime state eviction", () => {
           sessionId: activeSessionId,
           notification: { op: "variables", variables: [] },
         });
-        yield* TestClock.adjust("10 millis");
-        expect(
-          Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
-        ).toBe(true);
+        yield* variables.getVariables(ctx.notebookUri).pipe(
+          Effect.filterOrFail(Option.isSome, () => "variables not settled"),
+          Effect.eventually,
+        );
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -1165,14 +1165,17 @@ describe("NotebookRuntime state eviction", () => {
         ).toBe(true);
 
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
-        yield* TestClock.adjust("10 millis");
-
-        expect(
-          Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
-        ).toBe(false);
-        expect(
-          Option.isSome(yield* datasources.getDatasets(ctx.notebookUri)),
-        ).toBe(false);
+        yield* Effect.all([
+          variables.getVariables(ctx.notebookUri),
+          datasources.getDatasets(ctx.notebookUri),
+        ]).pipe(
+          Effect.filterOrFail(
+            ([currentVariables, currentDatasets]) =>
+              Option.isNone(currentVariables) && Option.isNone(currentDatasets),
+            () => "runtime projections not evicted" as const,
+          ),
+          Effect.eventually,
+        );
 
         // Notifications already queued, or delivered late by the old kernel
         // session, must not recreate state after eviction.
