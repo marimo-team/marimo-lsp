@@ -71,14 +71,40 @@ const makeLayer = (
     ]),
   );
 
-const makeRecordingLayer = () => {
+const makeRecordingLayer = (
+  currentSession: () => NotebookDocumentSession = () => SESSION,
+) => {
   const calls: MarimoApiCall[] = [];
+  const waiters = new Map<number, Deferred.Deferred<MarimoApiCall>>();
+  const nextCall = (index: number): Effect.Effect<MarimoApiCall> =>
+    Effect.gen(function* () {
+      const call = calls[index];
+      if (call !== undefined) return call;
+      const waiter = yield* Deferred.make<MarimoApiCall>();
+      const current = calls[index];
+      if (current !== undefined) return current;
+      waiters.set(index, waiter);
+      return yield* Deferred.await(waiter).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (waiters.get(index) === waiter) waiters.delete(index);
+          }),
+        ),
+      );
+    });
   return {
     calls,
-    layer: makeLayer((request) => {
-      calls.push(request);
-      return Effect.succeed(null);
-    }),
+    nextCall,
+    layer: makeLayer(
+      (request) =>
+        Effect.gen(function* () {
+          const index = calls.push(request) - 1;
+          const waiter = waiters.get(index);
+          if (waiter !== undefined) yield* Deferred.succeed(waiter, request);
+          return null;
+        }),
+      currentSession,
+    ),
   };
 };
 
@@ -267,7 +293,7 @@ it.effect(
 );
 
 it.effect("merges child schemas at their parent path", () => {
-  const { calls, layer } = makeRecordingLayer();
+  const { layer, nextCall } = makeRecordingLayer();
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
@@ -284,9 +310,8 @@ it.effect("merges child schemas at their parent path", () => {
     const load = yield* Effect.forkChild(
       service.loadSchemas(SESSION, "warehouse", "analytics", ["catalog"]),
     );
-    yield* Effect.yieldNow;
-    const call = calls[0];
-    assert(call?.method === "list-sql-schemas");
+    const call = yield* nextCall(0);
+    assert(call.method === "list-sql-schemas");
 
     const operation: SqlSchemaListPreviewNotification = {
       op: "sql-schema-list-preview",
@@ -310,7 +335,7 @@ it.effect("merges child schemas at their parent path", () => {
 });
 
 it.effect("merges tables at a nested schema path", () => {
-  const { calls, layer } = makeRecordingLayer();
+  const { layer, nextCall } = makeRecordingLayer();
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
@@ -329,9 +354,8 @@ it.effect("merges tables at a nested schema path", () => {
         "events",
       ]),
     );
-    yield* Effect.yieldNow;
-    const call = calls[0];
-    assert(call?.method === "list-sql-tables");
+    const call = yield* nextCall(0);
+    assert(call.method === "list-sql-tables");
 
     const operation: SqlTableListPreviewNotification = {
       op: "sql-table-list-preview",
@@ -357,7 +381,7 @@ it.effect("merges tables at a nested schema path", () => {
 });
 
 it.effect("does not resolve deferred state after an error", () => {
-  const { calls, layer } = makeRecordingLayer();
+  const { layer, nextCall } = makeRecordingLayer();
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
     yield* service.updateConnections(
@@ -373,9 +397,8 @@ it.effect("does not resolve deferred state after an error", () => {
         ]),
       ),
     );
-    yield* Effect.yieldNow;
-    const call = calls[0];
-    assert(call?.method === "list-sql-tables");
+    const call = yield* nextCall(0);
+    assert(call.method === "list-sql-tables");
 
     yield* service.updateTableList(SESSION, KERNEL_SESSION_ID, {
       op: "sql-table-list-preview",
@@ -433,11 +456,7 @@ it.effect("ignores uncorrelated expansion responses", () =>
 );
 
 it.effect("deduplicates concurrent schema expansion requests", () => {
-  const calls: MarimoApiCall[] = [];
-  const layer = makeLayer((request) => {
-    calls.push(request);
-    return Effect.succeed(null);
-  });
+  const { calls, layer, nextCall } = makeRecordingLayer();
 
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
@@ -453,11 +472,8 @@ it.effect("deduplicates concurrent schema expansion requests", () => {
     const second = yield* Effect.forkChild(
       service.loadSchemas(SESSION, "warehouse", "analytics", []),
     );
-    yield* Effect.yieldNow;
-
-    expect(calls).toHaveLength(1);
-    const call = calls[0];
-    assert(call?.method === "list-sql-schemas");
+    const call = yield* nextCall(0);
+    assert(call.method === "list-sql-schemas");
     yield* service.updateSchemaList(SESSION, KERNEL_SESSION_ID, {
       op: "sql-schema-list-preview",
       request_id: requestId(call.params.inner.requestId),
@@ -470,6 +486,7 @@ it.effect("deduplicates concurrent schema expansion requests", () => {
 
     yield* Fiber.join(first);
     yield* Fiber.join(second);
+    expect(calls).toHaveLength(1);
     const database = yield* getDatabase();
     expect(database.schemasResolved).toBe(true);
     expect(database.schemas.has("public")).toBe(true);
@@ -485,8 +502,8 @@ it.effect("interrupts an expansion send when its document session closes", () =>
     );
     const sendStarted = yield* Deferred.make<void>();
     const releaseSend = yield* Deferred.make<void>();
+    const sendFinalized = yield* Deferred.make<void>();
     const calls: MarimoApiCall[] = [];
-    let sendFinalized = false;
     const layer = makeLayer(
       (request) =>
         Deferred.succeed(sendStarted, undefined).pipe(
@@ -496,11 +513,7 @@ it.effect("interrupts an expansion send when its document session closes", () =>
               calls.push(request);
             }),
           ),
-          Effect.ensuring(
-            Effect.sync(() => {
-              sendFinalized = true;
-            }),
-          ),
+          Effect.ensuring(Deferred.succeed(sendFinalized, undefined)),
         ),
       () => session,
     );
@@ -515,26 +528,75 @@ it.effect("interrupts an expansion send when its document session closes", () =>
 
       const load = yield* service
         .loadSchemas(session, "warehouse", "analytics", [])
-        .pipe(Effect.result, Effect.forkChild);
+        .pipe(Effect.forkChild);
       yield* Deferred.await(sendStarted);
-      yield* Scope.close(session.scope, Exit.void);
+      yield* Scope.close(session.scope, Exit.void).pipe(
+        Effect.forkChild,
+        Effect.flatMap(Fiber.join),
+      );
 
-      expect((yield* Fiber.join(load))._tag).toBe("Failure");
-      expect(sendFinalized).toBe(true);
+      expect((yield* Fiber.await(load))._tag).toBe("Failure");
+      expect(yield* Deferred.isDone(sendFinalized)).toBe(true);
       yield* Deferred.succeed(releaseSend, undefined);
-      yield* Effect.yieldNow;
 
       expect(calls).toHaveLength(0);
     }).pipe(Effect.provide(layer));
   }),
 );
 
+it.effect("detaches completed expansions from the session scope", () => {
+  const session = makeTestNotebookDocumentSession(
+    createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
+      notebookType: NOTEBOOK_TYPE,
+    }),
+  );
+  const { layer, nextCall } = makeRecordingLayer(() => session);
+
+  return Effect.gen(function* () {
+    const service = yield* DatasourcesService;
+    yield* service.updateConnections(
+      session,
+      KERNEL_SESSION_ID,
+      connections([], false),
+    );
+    const finalizerCount = () =>
+      session.scope.state._tag === "Open"
+        ? session.scope.state.finalizers.size
+        : 0;
+    const baseline = finalizerCount();
+
+    for (let index = 0; index < 3; index++) {
+      const load = yield* service
+        .loadSchemas(session, "warehouse", "analytics", [])
+        .pipe(Effect.forkChild);
+      const request = yield* nextCall(index);
+      assert(request.method === "list-sql-schemas");
+
+      yield* service.updateSchemaList(session, KERNEL_SESSION_ID, {
+        op: "sql-schema-list-preview",
+        request_id: requestId(request.params.inner.requestId),
+        metadata: {
+          connection: "warehouse",
+          database: "analytics",
+        },
+        schemas: [schema(`schema_${index}`)],
+      });
+      yield* Fiber.join(load);
+      expect(finalizerCount()).toBe(baseline);
+
+      yield* service.updateConnections(
+        session,
+        KERNEL_SESSION_ID,
+        connections([], false),
+      );
+    }
+
+    yield* Scope.close(session.scope, Exit.void);
+  }).pipe(Effect.provide(layer));
+});
+
 it.effect("retries nested table expansion after an error", () => {
-  const calls: MarimoApiCall[] = [];
-  const layer = makeLayer((request) => {
-    calls.push(request);
-    return Effect.succeed(null);
-  });
+  const { calls, layer, nextCall } = makeRecordingLayer();
 
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
@@ -556,10 +618,8 @@ it.effect("retries nested table expansion after an error", () => {
         ]),
       ),
     );
-    yield* Effect.yieldNow;
-
-    const call = calls[0];
-    assert(call?.method === "list-sql-tables");
+    const call = yield* nextCall(0);
+    assert(call.method === "list-sql-tables");
     expect(call.params.inner).toMatchObject({
       engine: "warehouse",
       database: "analytics",
@@ -587,18 +647,15 @@ it.effect("retries nested table expansion after an error", () => {
         "events",
       ]),
     );
-    yield* Effect.yieldNow;
+    const retryCall = yield* nextCall(1);
+    assert(retryCall.method === "list-sql-tables");
     expect(calls).toHaveLength(2);
     yield* Fiber.interrupt(retry);
   }).pipe(Effect.provide(layer));
 });
 
 it.effect("shares one timeout deadline and retries after it expires", () => {
-  const calls: MarimoApiCall[] = [];
-  const layer = makeLayer((request) => {
-    calls.push(request);
-    return Effect.succeed(null);
-  });
+  const { calls, layer, nextCall } = makeRecordingLayer();
 
   return Effect.gen(function* () {
     const service = yield* DatasourcesService;
@@ -611,24 +668,24 @@ it.effect("shares one timeout deadline and retries after it expires", () => {
     const first = yield* Effect.forkChild(
       Effect.result(service.loadSchemas(SESSION, "warehouse", "analytics", [])),
     );
-    yield* Effect.yieldNow;
-    expect(calls).toHaveLength(1);
+    const firstCall = yield* nextCall(0);
+    assert(firstCall.method === "list-sql-schemas");
 
     yield* TestClock.adjust("20 seconds");
     const joined = yield* Effect.forkChild(
       Effect.result(service.loadSchemas(SESSION, "warehouse", "analytics", [])),
     );
-    yield* Effect.yieldNow;
-    expect(calls).toHaveLength(1);
 
     yield* TestClock.adjust("10 seconds");
     expect((yield* Fiber.join(first))._tag).toBe("Failure");
     expect((yield* Fiber.join(joined))._tag).toBe("Failure");
+    expect(calls).toHaveLength(1);
 
     const retry = yield* Effect.forkChild(
       service.loadSchemas(SESSION, "warehouse", "analytics", []),
     );
-    yield* Effect.yieldNow;
+    const retryCall = yield* nextCall(1);
+    assert(retryCall.method === "list-sql-schemas");
     expect(calls).toHaveLength(2);
     yield* Fiber.interrupt(retry);
   }).pipe(Effect.provide(layer));

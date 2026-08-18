@@ -3,7 +3,6 @@ import {
   Data,
   Deferred,
   Effect,
-  Exit,
   Fiber,
   HashMap,
   Layer,
@@ -169,32 +168,6 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
       ) =>
         JSON.stringify([notebookUri, connection, database, kind, schemaPath]);
 
-      const inSessionScope = <A, E, R>(
-        session: NotebookDocumentSession,
-        effect: Effect.Effect<A, E, R>,
-      ): Effect.Effect<A, E | DatasourceExpansionError, R> =>
-        Effect.gen(function* () {
-          const watcherScope = yield* Scope.fork(session.scope);
-          const closed = yield* Deferred.make<void>();
-          yield* Scope.addFinalizer(
-            watcherScope,
-            Deferred.succeed(closed, undefined),
-          );
-          const sessionEnded = Deferred.await(closed).pipe(
-            Effect.andThen(
-              Effect.fail(
-                new DatasourceExpansionError({
-                  message: "Notebook closed",
-                }),
-              ),
-            ),
-          );
-          if (yield* Deferred.isDone(closed)) return yield* sessionEnded;
-          return yield* Effect.raceFirst(effect, sessionEnded).pipe(
-            Effect.ensuring(Scope.close(watcherScope, Exit.void)),
-          );
-        });
-
       const requestExpansionWork = Effect.fn(function* (
         session: NotebookDocumentSession,
         location: string,
@@ -252,7 +225,7 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
               }
             }),
           ),
-          Effect.forkIn(session.scope),
+          Effect.forkChild,
         );
         const pending = {
           session,
@@ -283,10 +256,10 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
           kernelSessionId: KernelSessionId,
         ) => Effect.Effect<void, unknown>,
       ) {
-        return yield* inSessionScope(
-          session,
-          requestExpansionWork(session, location, send),
+        const fiber = yield* requestExpansionWork(session, location, send).pipe(
+          Effect.forkIn(session.scope),
         );
+        return yield* Fiber.join(fiber);
       });
 
       const completeExpansion = (requestId: string, error?: string | null) => {
