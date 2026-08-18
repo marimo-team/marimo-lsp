@@ -16,14 +16,14 @@ import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
-import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
 import { DatasourcesViewLive } from "../panel/datasources/DatasourcesView.ts";
+import { NotebookDatasources } from "../panel/datasources/NotebookDatasources.ts";
 import { PackagesViewLive } from "../panel/packages/PackagesView.ts";
+import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
 import { SessionFileLifecycleLive } from "../panel/sessions/SessionFileLifecycle.ts";
-import { SessionsService } from "../panel/sessions/SessionsService.ts";
 import { SessionsViewLive } from "../panel/sessions/SessionsView.ts";
 import { TreeView } from "../panel/TreeView.ts";
-import { VariablesService } from "../panel/variables/VariablesService.ts";
+import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
 import { Api, type MarimoApi } from "../platform/Api.ts";
 import { Constants } from "../platform/Constants.ts";
@@ -85,9 +85,9 @@ const MainLive = Layer.empty
     Layer.provide(NotebookRenderer.layer),
     Layer.provide(NotebookSerializer.layer),
     Layer.provide(CellExecutions.layer),
-    Layer.provide(VariablesService.layer),
-    Layer.provide(DatasourcesService.layer),
-    Layer.provideMerge(SessionsService.layer),
+    Layer.provide(NotebookVariables.layer),
+    Layer.provide(NotebookDatasources.layer),
+    Layer.provideMerge(LiveSessions.layer),
     Layer.provide(HealthService.layer),
     Layer.provide(CellMetadataUIBindingService.layer),
   )

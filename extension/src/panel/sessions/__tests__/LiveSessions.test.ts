@@ -4,7 +4,7 @@ import { Effect, Layer, Result } from "effect";
 import { makeTestMarimoClient } from "../../../__tests__/__utils__/TestMarimoClient.ts";
 import { kernelSessionId, notebookId } from "../../../lib/__tests__/branded.ts";
 import type { MarimoApiCall } from "../../../types.ts";
-import { SessionNotFoundError, SessionsService } from "../SessionsService.ts";
+import { SessionNotFoundError, LiveSessions } from "../LiveSessions.ts";
 
 const NOTEBOOK_URI = notebookId("file:///workspace/notebook.py");
 const SESSION_ID = kernelSessionId("00000000-0000-4000-8000-000000000001");
@@ -24,7 +24,7 @@ const SNAPSHOT = {
 } as const;
 
 function makeLayer(recorded: MarimoApiCall[], snapshot: unknown = SNAPSHOT) {
-  return SessionsService.layer.pipe(
+  return LiveSessions.layer.pipe(
     Layer.provide(
       makeTestMarimoClient({
         execute: (request) =>
@@ -43,7 +43,7 @@ it.effect(
     const recorded: MarimoApiCall[] = [];
 
     const live = yield* Effect.gen(function* () {
-      const sessions = yield* SessionsService;
+      const sessions = yield* LiveSessions;
       return yield* sessions.get;
     }).pipe(Effect.provide(makeLayer(recorded)));
 
@@ -70,7 +70,7 @@ it.effect(
     };
 
     yield* Effect.gen(function* () {
-      const sessions = yield* SessionsService;
+      const sessions = yield* LiveSessions;
       yield* sessions.shutdownAll();
     }).pipe(Effect.provide(makeLayer(recorded, snapshot)));
 
@@ -87,7 +87,7 @@ it.effect(
   Effect.fn(function* () {
     const recorded: MarimoApiCall[] = [];
     const result = yield* Effect.gen(function* () {
-      const sessions = yield* SessionsService;
+      const sessions = yield* LiveSessions;
       return yield* Effect.result(sessions.restart(NOTEBOOK_URI));
     }).pipe(Effect.provide(makeLayer(recorded, { sessions: [] })));
 
@@ -107,7 +107,7 @@ it.effect(
     const recorded: MarimoApiCall[] = [];
 
     yield* Effect.gen(function* () {
-      const sessions = yield* SessionsService;
+      const sessions = yield* LiveSessions;
       yield* sessions.restart(NOTEBOOK_URI);
     }).pipe(Effect.provide(makeLayer(recorded)));
 

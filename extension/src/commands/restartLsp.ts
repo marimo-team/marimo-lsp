@@ -2,12 +2,12 @@ import { Effect } from "effect";
 
 import { defineCommand } from "../commands.ts";
 import { MarimoClient } from "../lsp/MarimoClient.ts";
-import { SessionsService } from "../panel/sessions/SessionsService.ts";
+import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
 
 const handler = Effect.fn(function* () {
   const marimo = yield* MarimoClient;
-  const sessions = yield* SessionsService;
+  const sessions = yield* LiveSessions;
   yield* marimo.restart;
   yield* sessions
     .refresh()

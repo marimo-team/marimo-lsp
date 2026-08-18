@@ -43,8 +43,8 @@ const keyFor = (session: NotebookDocumentSession): VariableStateKey => [
  *
  * Uses SubscriptionRef for reactive state management.
  */
-export class VariablesService extends Context.Service<VariablesService>()(
-  "VariablesService",
+export class NotebookVariables extends Context.Service<NotebookVariables>()(
+  "NotebookVariables",
   {
     make: Effect.gen(function* () {
       const documentSessions = yield* NotebookDocumentSessions;
@@ -61,7 +61,7 @@ export class VariablesService extends Context.Service<VariablesService>()(
 
       const registeredSessionCleanups = new WeakSet<NotebookDocumentSession>();
 
-      const releaseSession = Effect.fn("VariablesService.releaseSession")(
+      const releaseSession = Effect.fn("NotebookVariables.releaseSession")(
         function* (session: NotebookDocumentSession) {
           const notebookUri = session.notebookId;
           registeredSessionCleanups.delete(session);
@@ -81,7 +81,7 @@ export class VariablesService extends Context.Service<VariablesService>()(
       );
 
       const registerSessionCleanup = Effect.fn(
-        "VariablesService.registerSessionCleanup",
+        "NotebookVariables.registerSessionCleanup",
       )((session: NotebookDocumentSession) =>
         Effect.suspend(() => {
           if (registeredSessionCleanups.has(session)) return Effect.void;

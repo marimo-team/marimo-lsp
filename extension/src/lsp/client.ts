@@ -38,7 +38,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { getTopologicalCells } from "../lib/getTopologicalCells.ts";
-import { VariablesService } from "../panel/variables/VariablesService.ts";
+import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 
@@ -713,7 +713,7 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
 
     // -- 5. State tracking ---------------------------------------------------
 
-    const variables = yield* VariablesService;
+    const variables = yield* NotebookVariables;
 
     const cellOrderRef = yield* Ref.make(
       HashMap.empty<NotebookId, Array<vscode.Uri>>(),

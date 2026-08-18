@@ -23,7 +23,7 @@ import {
 } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { VariablesService } from "../panel/variables/VariablesService.ts";
+import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
 import { ExtensionContext, Storage } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -311,7 +311,7 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
       Uv.layer,
       Config.layer,
       OutputChannel.layer,
-      VariablesService.layer,
+      NotebookVariables.layer,
       PythonEnvInvalidation.layer,
       Storage.layer,
     ]),

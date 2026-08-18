@@ -1,7 +1,7 @@
 import { Effect, Layer, Option, Schema } from "effect";
 
 import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
-import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
+import { NotebookDatasources } from "../panel/datasources/NotebookDatasources.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -49,7 +49,7 @@ export const CellMetadataBindingsLive = Layer.effectDiscard(
     const { LanguageId } = yield* Constants;
     const bindingService = yield* CellMetadataUIBindingService;
     const code = yield* VsCode;
-    const datasources = yield* DatasourcesService;
+    const datasources = yield* NotebookDatasources;
 
     /**
      * SQL dataframeName binding

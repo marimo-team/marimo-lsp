@@ -9,8 +9,8 @@ import { TreeView } from "../TreeView.ts";
 import {
   type DatasourceDatabase,
   type DatasourceSchema,
-  DatasourcesService,
-} from "./DatasourcesService.ts";
+  NotebookDatasources,
+} from "./NotebookDatasources.ts";
 
 const IN_MEMORY_CONNECTION = "__in_memory";
 const IN_MEMORY_DATABASE = "default";
@@ -144,7 +144,7 @@ const itemId = (item: DatasourceTreeItem): string => {
 export const DatasourcesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const treeView = yield* TreeView;
-    const datasources = yield* DatasourcesService;
+    const datasources = yield* NotebookDatasources;
     const editors = yield* NotebookEditorRegistry;
     const documentSessions = yield* NotebookDocumentSessions;
 

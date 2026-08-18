@@ -33,9 +33,9 @@ import {
 } from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
-import { DatasourcesService } from "../panel/datasources/DatasourcesService.ts";
-import { SessionsService } from "../panel/sessions/SessionsService.ts";
-import { VariablesService } from "../panel/variables/VariablesService.ts";
+import { NotebookDatasources } from "../panel/datasources/NotebookDatasources.ts";
+import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
+import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { Constants } from "../platform/Constants.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -71,7 +71,7 @@ import { handleMissingPackageAlert } from "./operations.ts";
 type MarimoClientService = Context.Service.Shape<typeof MarimoClient>;
 type VsCodeService = Context.Service.Shape<typeof VsCode>;
 type CellExecutionsService = Context.Service.Shape<typeof CellExecutions>;
-type SessionsServiceShape = Context.Service.Shape<typeof SessionsService>;
+type LiveSessionsShape = Context.Service.Shape<typeof LiveSessions>;
 
 type InnerRequest<K extends keyof MarimoClientService> =
   MarimoClientService[K] extends (params: infer Params) => unknown
@@ -156,8 +156,8 @@ export interface NotebookHandle {
   readonly interrupt: WithNoActiveKernel<
     ReturnType<MarimoClientService["interrupt"]>
   >;
-  readonly restart: ReturnType<SessionsServiceShape["restart"]>;
-  readonly close: ReturnType<SessionsServiceShape["shutdown"]>;
+  readonly restart: ReturnType<LiveSessionsShape["restart"]>;
+  readonly close: ReturnType<LiveSessionsShape["shutdown"]>;
 }
 
 /** Operations scoped to one Notebook Document Session. */
@@ -198,14 +198,14 @@ type RuntimeWorkRequirements =
   | CellExecutions
   | Config
   | Constants
-  | DatasourcesService
+  | NotebookDatasources
   | NotebookEditorRegistry
   | NotebookDocumentSessions
   | NotebookRenderer
   | OutputChannel
   | PythonEnvInvalidation
   | Uv
-  | VariablesService
+  | NotebookVariables
   | VsCode;
 
 function hasRunId<T extends { run_id?: string | null }>(
@@ -256,9 +256,9 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       const marimo = yield* MarimoClient;
       const renderer = yield* NotebookRenderer;
       const executions = yield* CellExecutions;
-      const variables = yield* VariablesService;
-      const datasources = yield* DatasourcesService;
-      const liveSessions = yield* SessionsService;
+      const variables = yield* NotebookVariables;
+      const datasources = yield* NotebookDatasources;
+      const liveSessions = yield* LiveSessions;
       const documentSessions = yield* NotebookDocumentSessions;
       const operations = yield* PubSub.unbounded<SessionNotification>();
       const notebookStates = new Map<
@@ -1066,13 +1066,13 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       Config.layer,
       Constants.layer,
       OutputChannel.layer,
-      VariablesService.layer,
+      NotebookVariables.layer,
       NotebookRenderer.layer,
       CellExecutions.layer,
-      DatasourcesService.layer,
+      NotebookDatasources.layer,
       NotebookEditorRegistry.layer,
       PythonEnvInvalidation.layer,
-      SessionsService.layer,
+      LiveSessions.layer,
       NotebookDocumentSessions.layer,
     ]),
   );
@@ -1099,8 +1099,8 @@ function processOperation(
 ) {
   return Effect.gen(function* () {
     const { notebookUri, notification: operation, sessionId } = message;
-    const variables = yield* VariablesService;
-    const datasources = yield* DatasourcesService;
+    const variables = yield* NotebookVariables;
+    const datasources = yield* NotebookDatasources;
 
     switch (operation.op) {
       case "variables":

@@ -23,8 +23,8 @@ export type SessionViewItem = Omit<SessionInfo, "status"> & {
 };
 
 /** Authoritative live-session state shared by the tree and future renderers. */
-export class SessionsService extends Context.Service<SessionsService>()(
-  "SessionsService",
+export class LiveSessions extends Context.Service<LiveSessions>()(
+  "LiveSessions",
   {
     make: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
@@ -32,15 +32,15 @@ export class SessionsService extends Context.Service<SessionsService>()(
         ReadonlyArray<SessionViewItem>
       >([]);
 
-      const applySnapshot = Effect.fn("SessionsService.applySnapshot")(
-        function* (snapshot: unknown) {
-          const decoded =
-            yield* Schema.decodeUnknownEffect(SessionsSnapshot)(snapshot);
-          yield* SubscriptionRef.set(sessions, decoded.sessions);
-        },
-      );
+      const applySnapshot = Effect.fn("LiveSessions.applySnapshot")(function* (
+        snapshot: unknown,
+      ) {
+        const decoded =
+          yield* Schema.decodeUnknownEffect(SessionsSnapshot)(snapshot);
+        yield* SubscriptionRef.set(sessions, decoded.sessions);
+      });
 
-      const refresh = Effect.fn("SessionsService.refresh")(function* () {
+      const refresh = Effect.fn("LiveSessions.refresh")(function* () {
         yield* applySnapshot(yield* marimo.listSessions({}));
       });
 
@@ -78,7 +78,7 @@ export class SessionsService extends Context.Service<SessionsService>()(
           ),
         );
 
-      const restart = Effect.fn("SessionsService.restart")(function* (
+      const restart = Effect.fn("LiveSessions.restart")(function* (
         notebookUri: NotebookId,
       ) {
         const current = yield* find(notebookUri);
@@ -126,14 +126,14 @@ export class SessionsService extends Context.Service<SessionsService>()(
         return undefined;
       });
 
-      const shutdown = Effect.fn("SessionsService.shutdown")(function* (
+      const shutdown = Effect.fn("LiveSessions.shutdown")(function* (
         notebookUri: NotebookId,
       ) {
         yield* marimo.closeSession({ notebookUri, inner: {} });
         yield* refresh();
       });
 
-      const move = Effect.fn("SessionsService.move")(function* (
+      const move = Effect.fn("LiveSessions.move")(function* (
         notebookUri: NotebookId,
         newNotebookUri: NotebookId,
       ) {
@@ -151,7 +151,7 @@ export class SessionsService extends Context.Service<SessionsService>()(
         refresh,
         restart,
         shutdown,
-        restore: Effect.fn("SessionsService.restore")(function* (
+        restore: Effect.fn("LiveSessions.restore")(function* (
           notebookUri: NotebookId,
           executable: string,
           workingDirectory: string,
@@ -166,7 +166,7 @@ export class SessionsService extends Context.Service<SessionsService>()(
           });
           yield* refresh();
         }),
-        shutdownAll: Effect.fn("SessionsService.shutdownAll")(function* () {
+        shutdownAll: Effect.fn("LiveSessions.shutdownAll")(function* () {
           yield* marimo.shutdownAllSessions({});
           yield* refresh();
         }),
