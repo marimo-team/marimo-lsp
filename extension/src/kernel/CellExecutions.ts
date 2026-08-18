@@ -433,21 +433,20 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                 drive: Option.none<DriveBinding>(),
               };
               const next = transitionCell(record.run.state, wire);
+              const retainUncorrelatedState = Effect.sync(() => {
+                if (wire.status === "queued") takeSubmittedSource(cellId);
+                // Keep the kernel's state fold even for an op we cannot
+                // correlate to a run — only presentation is withheld.
+                // Late console appends from threads of a finished run
+                // land here, and the kernel remains the source of truth
+                // for cell state.
+                records.set(cellId, {
+                  ...record,
+                  run: { ...record.run, state: next },
+                });
+              });
               const op = yield* correlate(record, next, wire).pipe(
-                Effect.tapError(() =>
-                  Effect.sync(() => {
-                    if (wire.status === "queued") takeSubmittedSource(cellId);
-                    // Keep the kernel's state fold even for an op we cannot
-                    // correlate to a run — only presentation is withheld.
-                    // Late console appends from threads of a finished run
-                    // land here, and the kernel remains the source of truth
-                    // for cell state.
-                    records.set(cellId, {
-                      ...record,
-                      run: { ...record.run, state: next },
-                    });
-                  }),
-                ),
+                Effect.tapError(() => retainUncorrelatedState),
               );
               if (
                 wire.status === "idle" &&
