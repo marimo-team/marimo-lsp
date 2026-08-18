@@ -371,9 +371,10 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         controller: Ref.Ref<Option.Option<NotebookController>>,
       ): NotebookDocumentHandle => ({
         executeCells: (request, executable) =>
-          runInNotebook(
-            session.notebookId,
-            Effect.raceFirst(
+          executor
+            .submitIn(
+              session.scope,
+              session.notebookId,
               Effect.gen(function* () {
                 const notebookId = session.notebookId;
                 const notebook = MarimoNotebookDocument.from(session.document);
@@ -416,17 +417,16 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                   ),
                 ),
               ),
-              session.ended.pipe(
-                Effect.andThen(
-                  Effect.fail(
-                    new NoActiveKernelError({
-                      notebookUri: session.notebookId,
-                    }),
-                  ),
+            )
+            .pipe(
+              Effect.catchTag("NotebookExecutionScopeClosedError", () =>
+                Effect.fail(
+                  new NoActiveKernelError({
+                    notebookUri: session.notebookId,
+                  }),
                 ),
               ),
             ),
-          ),
       });
 
       const makeHandle = (
@@ -688,17 +688,6 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           ),
           Stream.runForEach((message) => {
             const run = Effect.gen(function* () {
-              // The session is captured when the operation enters the runtime,
-              // not when its per-notebook worker eventually processes it.
-              // This keeps queued operations from an old session out of a
-              // rapidly reopened notebook with the same URI.
-              if (
-                documentSessions.current(message.notebookUri) !==
-                message.session
-              ) {
-                return;
-              }
-
               // The kernel-session gate covers one race: sessionsChanged and
               // kernel notifications arrive on independent streams, so a
               // notification from a kernel replaced by restart can reach this
@@ -733,19 +722,15 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                 "notification.type",
                 message.notification.op,
               );
-              yield* Effect.raceFirst(
-                processOperation(message, {
-                  forNotebook,
-                  respondToStdin,
-                  session: message.session,
-                }).pipe(
-                  Effect.catchTag(
-                    "NotebookDocumentSessionEndedError",
-                    () => Effect.void,
-                  ),
+              yield* processOperation(message, {
+                forNotebook,
+                respondToStdin,
+                session: message.session,
+              }).pipe(
+                Effect.catchTag(
+                  "NotebookDocumentSessionEndedError",
+                  () => Effect.void,
                 ),
-                message.session.ended,
-              ).pipe(
                 Effect.catchCause(
                   Effect.fn(function* (cause) {
                     yield* Effect.logError(
@@ -777,7 +762,11 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
               ),
               Effect.withSpan("NotebookRuntime.processOperation"),
             );
-            return executor.post(message.notebookUri, run);
+            return executor.postIn(
+              message.session.scope,
+              message.notebookUri,
+              run,
+            );
           }),
         ),
       );
@@ -786,14 +775,10 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           Stream.runForEach((message) => {
             const session = documentSessions.current(message.notebookUri);
             if (session === undefined) return Effect.void;
-            return executor.post(
+            return executor.postIn(
+              session.scope,
               message.notebookUri,
-              Effect.gen(function* () {
-                if (documentSessions.current(message.notebookUri) !== session) {
-                  return;
-                }
-                yield* variables.updateVariables(session, message.analysis);
-              }),
+              variables.updateVariables(session, message.analysis),
             );
           }),
         ),

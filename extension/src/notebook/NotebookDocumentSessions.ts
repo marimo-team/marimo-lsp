@@ -1,11 +1,13 @@
 import {
   Context,
   Data,
-  Deferred,
   Effect,
   Exit,
+  HashMap,
   Layer,
+  Option,
   PubSub,
+  Ref,
   Scope,
   Stream,
 } from "effect";
@@ -32,20 +34,16 @@ export interface NotebookDocumentSession {
   readonly id: NotebookDocumentSessionId;
   readonly notebookId: NotebookId;
   readonly document: vscode.NotebookDocument;
-  readonly ended: Effect.Effect<void>;
-  /** Lifetime of work owned by this opening of the document. */
+  /** Lifetime of work and resources tied to this exact document opening. */
   readonly scope: Scope.Scope;
 }
 
-export type NotebookDocumentSessionChange =
-  | {
-      readonly _tag: "Opened";
-      readonly session: NotebookDocumentSession;
-    }
-  | {
-      readonly _tag: "Ended";
-      readonly session: NotebookDocumentSession;
-    };
+export type NotebookDocumentSessionChange = Data.TaggedEnum<{
+  Opened: { readonly session: NotebookDocumentSession };
+  Ended: { readonly session: NotebookDocumentSession };
+}>;
+export const NotebookDocumentSessionChange =
+  Data.taggedEnum<NotebookDocumentSessionChange>();
 
 export class NotebookDocumentSessionEndedError extends Data.TaggedError(
   "NotebookDocumentSessionEndedError",
@@ -53,9 +51,14 @@ export class NotebookDocumentSessionEndedError extends Data.TaggedError(
 
 interface SessionEntry {
   readonly session: NotebookDocumentSession;
-  readonly end: Deferred.Deferred<void>;
   readonly scope: Scope.Closeable;
 }
+
+type InstallResult = Data.TaggedEnum<{
+  Existing: { readonly current: SessionEntry };
+  Installed: { readonly displaced: SessionEntry | undefined };
+}>;
+const InstallResult = Data.taggedEnum<InstallResult>();
 
 /** Tracks the current document session for each notebook URI. */
 export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSessions>()(
@@ -64,62 +67,99 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
     make: Effect.gen(function* () {
       const code = yield* VsCode;
       const serviceScope = yield* Effect.scope;
-      const sessions = new Map<NotebookId, SessionEntry>();
+      const sessions = yield* Ref.make(
+        HashMap.empty<NotebookId, SessionEntry>(),
+      );
       const changes = yield* PubSub.unbounded<NotebookDocumentSessionChange>();
 
-      const end = Effect.fn(function* (entry: SessionEntry) {
-        yield* Deferred.succeed(entry.end, undefined);
-        yield* Scope.close(entry.scope, Exit.void);
-        const change: NotebookDocumentSessionChange = {
-          _tag: "Ended",
-          session: entry.session,
-        };
-        yield* PubSub.publish(changes, change);
-      });
-
-      const markOpen = Effect.fn(function* (document: vscode.NotebookDocument) {
-        // The lifecycle replay can deliver an opened event for a document
-        // that was since closed or replaced at the same URI; a closed
-        // document never starts a session.
-        if (document.isClosed) return undefined;
-        const notebook = MarimoNotebookDocument.tryFrom(document);
-        if (notebook._tag === "None") return undefined;
-
-        const existing = sessions.get(notebook.value.id);
-        if (existing?.session.document === document) return existing.session;
-
-        const ended = yield* Deferred.make<void>();
-        const scope = yield* Scope.fork(serviceScope, "parallel");
-        const session: NotebookDocumentSession = {
-          id: makeNotebookDocumentSessionId(),
-          notebookId: notebook.value.id,
-          document,
-          ended: Deferred.await(ended),
-          scope,
-        };
-        sessions.set(notebook.value.id, { session, end: ended, scope });
-
-        if (existing) yield* end(existing);
-        const change: NotebookDocumentSessionChange = {
-          _tag: "Opened",
-          session,
-        };
-        yield* PubSub.publish(changes, change);
-        return session;
-      });
-
-      const markClosed = Effect.fn(function* (
-        document: vscode.NotebookDocument,
+      const end = Effect.fn("NotebookDocumentSessions.end")(function* (
+        entry: SessionEntry,
       ) {
-        const notebook = MarimoNotebookDocument.tryFrom(document);
-        if (notebook._tag === "None") return;
-
-        const current = sessions.get(notebook.value.id);
-        if (current?.session.document !== document) return;
-
-        sessions.delete(notebook.value.id);
-        yield* end(current);
+        yield* Scope.close(entry.scope, Exit.void);
+        yield* PubSub.publish(
+          changes,
+          NotebookDocumentSessionChange.Ended({
+            session: entry.session,
+          }),
+        );
       });
+
+      const markOpen = Effect.fn("NotebookDocumentSessions.markOpen")(
+        function* (document: vscode.NotebookDocument) {
+          // The lifecycle replay can deliver an opened event for a document
+          // that was since closed or replaced at the same URI; a closed
+          // document never starts a session.
+          if (document.isClosed) return undefined;
+          const notebook = MarimoNotebookDocument.tryFrom(document);
+          if (notebook._tag === "None") return undefined;
+
+          const scope = yield* Scope.fork(serviceScope, "parallel");
+          const session: NotebookDocumentSession = {
+            id: makeNotebookDocumentSessionId(),
+            notebookId: notebook.value.id,
+            document,
+            scope,
+          };
+          const candidate: SessionEntry = { session, scope };
+          const result = yield* Ref.modify(
+            sessions,
+            (
+              current,
+            ): readonly [
+              InstallResult,
+              HashMap.HashMap<NotebookId, SessionEntry>,
+            ] => {
+              const existing = HashMap.get(current, notebook.value.id);
+              if (
+                Option.isSome(existing) &&
+                existing.value.session.document === document
+              ) {
+                return [
+                  InstallResult.Existing({ current: existing.value }),
+                  current,
+                ];
+              }
+              return [
+                InstallResult.Installed({
+                  displaced: Option.getOrUndefined(existing),
+                }),
+                HashMap.set(current, notebook.value.id, candidate),
+              ];
+            },
+          );
+
+          if (InstallResult.$is("Existing")(result)) {
+            yield* Scope.close(scope, Exit.void);
+            return result.current.session;
+          }
+
+          if (result.displaced !== undefined) yield* end(result.displaced);
+          yield* PubSub.publish(
+            changes,
+            NotebookDocumentSessionChange.Opened({ session }),
+          );
+          return session;
+        },
+      );
+
+      const markClosed = Effect.fn("NotebookDocumentSessions.markClosed")(
+        function* (document: vscode.NotebookDocument) {
+          const notebook = MarimoNotebookDocument.tryFrom(document);
+          if (notebook._tag === "None") return;
+
+          const removed = yield* Ref.modify(sessions, (current) => {
+            const entry = HashMap.get(current, notebook.value.id);
+            if (
+              Option.isNone(entry) ||
+              entry.value.session.document !== document
+            ) {
+              return [Option.none<SessionEntry>(), current];
+            }
+            return [entry, HashMap.remove(current, notebook.value.id)];
+          });
+          if (Option.isSome(removed)) yield* end(removed.value);
+        },
+      );
 
       const lifecycle = yield* code.workspace.subscribeNotebookLifecycle;
       const openDocuments = yield* code.workspace.getNotebookDocuments;
@@ -136,17 +176,28 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
 
       yield* Effect.addFinalizer(() =>
         Effect.gen(function* () {
-          yield* Effect.forEach(sessions.values(), end, { discard: true });
+          const current = yield* Ref.getAndSet(
+            sessions,
+            HashMap.empty<NotebookId, SessionEntry>(),
+          );
+          yield* Effect.forEach(HashMap.values(current), end, {
+            discard: true,
+          });
           yield* PubSub.shutdown(changes);
         }),
       );
 
       return {
-        current: (notebookId: NotebookId) => sessions.get(notebookId)?.session,
+        current: (notebookId: NotebookId) =>
+          Option.getOrUndefined(
+            HashMap.get(Ref.getUnsafe(sessions), notebookId),
+          )?.session,
         forDocument(document: vscode.NotebookDocument) {
           const notebook = MarimoNotebookDocument.tryFrom(document);
           if (notebook._tag === "None") return undefined;
-          const session = sessions.get(notebook.value.id)?.session;
+          const session = Option.getOrUndefined(
+            HashMap.get(Ref.getUnsafe(sessions), notebook.value.id),
+          )?.session;
           return session?.document === document ? session : undefined;
         },
         changes: Stream.fromPubSub(changes),
