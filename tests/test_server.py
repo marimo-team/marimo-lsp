@@ -503,7 +503,7 @@ if __name__ == "__main__":
                             },
                         }
                     ],
-                    "metadata": {"marimo_version": "0.23.16"},
+                    "metadata": {"marimo_version": "0.24.0"},
                 },
                 "appConfig": {
                     "width": "compact",
