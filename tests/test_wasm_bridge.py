@@ -6,6 +6,7 @@ import importlib.util
 import io
 import json
 import logging
+import os
 import queue
 import subprocess
 import sys
@@ -15,7 +16,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
-from unittest.mock import ANY, Mock
+from unittest.mock import Mock
 
 import pytest
 from marimo._ast.app_config import _AppConfig
@@ -57,64 +58,146 @@ def _load_bridge_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     return module
 
 
-def test_interrupt_delegates_to_marimo_kernel_manager(
+def test_windows_interrupt_uses_positional_queue_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bridge_module = _load_bridge_module(monkeypatch)
     bridge = bridge_module._Bridge()
-    bridge._manager = Mock()
+    bridge._process = Mock(pid=42)
+    bridge._process.poll.return_value = None
+    bridge._queues = Mock()
+    interrupt_queue = bridge._queues.win32_interrupt_queue
+    monkeypatch.setattr(sys, "platform", "win32")
 
     bridge.interrupt()
 
-    bridge._manager.interrupt_kernel.assert_called_once_with()
+    interrupt_queue.put_nowait.assert_called_once_with(True)  # noqa: FBT003
 
 
-def test_bridge_uses_normal_edit_mode_multiprocessing_manager(
+def test_watcher_reports_a_kernel_that_exits_after_readiness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge_module = _load_bridge_module(monkeypatch)
+    write_frame = Mock()
+    monkeypatch.setattr(bridge_module, "_write_frame", write_frame)
+    bridge = bridge_module._Bridge()
+    bridge._process = Mock()
+    bridge._process.wait.return_value = 3
+
+    bridge._watch_kernel_exit()
+
+    error = write_frame.call_args.args[0]
+    assert isinstance(error, bridge_module.Error)
+    assert "code=3" in error.message
+
+
+def test_watcher_stays_quiet_once_the_bridge_is_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge_module = _load_bridge_module(monkeypatch)
+    write_frame = Mock()
+    monkeypatch.setattr(bridge_module, "_write_frame", write_frame)
+    bridge = bridge_module._Bridge()
+    bridge._process = Mock()
+    bridge._process.wait.return_value = 0
+    bridge._closed = True
+
+    bridge._watch_kernel_exit()
+
+    write_frame.assert_not_called()
+
+
+def test_close_terminates_an_unready_kernel_without_a_stop_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A kernel that never became ready has no connected control socket, so
+    the stop command would block. close() must go straight to terminate."""
+    bridge_module = _load_bridge_module(monkeypatch)
+    bridge = bridge_module._Bridge()
+    process = Mock()
+    process.poll.return_value = None
+    bridge._process = process
+    bridge._queues = Mock()
+    bridge._ipc_queues = Mock()
+
+    bridge.close()
+
+    bridge._queues.put_control_request.assert_not_called()
+    process.terminate.assert_called_once_with()
+    bridge._ipc_queues.close_queues.assert_called_once_with()
+
+
+def test_close_asks_a_ready_kernel_to_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge_module = _load_bridge_module(monkeypatch)
+    bridge = bridge_module._Bridge()
+    process = Mock()
+    process.poll.return_value = None
+    bridge._process = process
+    bridge._queues = Mock()
+    bridge._ipc_queues = Mock()
+    bridge._kernel_ready = True
+
+    bridge.close()
+
+    request = bridge._queues.put_control_request.call_args.args[0]
+    assert isinstance(request, bridge_module.StopKernelCommand)
+
+
+def test_kernel_readiness_has_a_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge_module = _load_bridge_module(monkeypatch)
+    bridge = bridge_module._Bridge()
+    release_reader = threading.Event()
+    bridge._process = Mock()
+    bridge._process.stdout.readline.side_effect = lambda: (
+        release_reader.wait(),
+        b"KERNEL_READY\n",
+    )[1]
+
+    with pytest.raises(TimeoutError, match="did not become ready"):
+        bridge._wait_for_kernel_ready(timeout=0.01)
+
+    release_reader.set()
+
+
+def test_bridge_launches_kernel_subprocess_over_marimo_ipc(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """The kernel is a plain subprocess with piped standard streams.
+
+    Pinning the launch path guards against reintroducing multiprocessing
+    spawn, whose dangling standard handle values hang cell subprocesses
+    (marimo-lsp#734) and DLL initialization during imports (marimo-lsp#763)
+    on Windows.
+    """
     bridge_module = _load_bridge_module(monkeypatch)
-    queues = Mock()
-    manager = Mock()
-    manager.kernel_connection.recv.side_effect = EOFError
-    queue_manager = Mock(return_value=queues)
-    kernel_manager = Mock(return_value=manager)
+    process = Mock()
+    process.stdout.readline.return_value = b"KERNEL_READY\n"
+    process.stderr = None
+    popen = Mock(return_value=process)
     write_frame = Mock()
-    monkeypatch.setattr(bridge_module, "QueueManagerImpl", queue_manager)
-    monkeypatch.setattr(bridge_module, "KernelManagerImpl", kernel_manager)
+    monkeypatch.setattr(bridge_module.subprocess, "Popen", popen)
     monkeypatch.setattr(bridge_module, "_write_frame", write_frame)
     bridge = bridge_module._Bridge()
-    args = SimpleNamespace(
-        configs={},
-        app_metadata=Mock(),
-        user_config=Mock(),
-        redirect_console_to_browser=True,
-    )
 
-    bridge.start(
-        SimpleNamespace(
-            working_directory=str(tmp_path),
-            kernel_args=args,
-        )
-    )
-    assert bridge._operation_thread is not None
-    bridge._operation_thread.join(timeout=1)
+    try:
+        bridge.start(_start_frame(tmp_path))
 
-    queue_manager.assert_called_once_with(use_multiprocessing=True)
-    kernel_manager.assert_called_once_with(
-        queue_manager=queues,
-        mode=bridge_module.SessionMode.EDIT,
-        configs={},
-        app_metadata=args.app_metadata,
-        config_manager=ANY,
-        virtual_file_storage=None,
-        redirect_console_to_browser=True,
-    )
-    config_manager = kernel_manager.call_args.kwargs["config_manager"]
-    assert isinstance(config_manager, bridge_module._StaticConfigManager)
-    assert config_manager.get_config() is args.user_config
-    manager.start_kernel.assert_called_once_with()
-    write_frame.assert_any_call(bridge_module.Ready())
+        popen.assert_called_once()
+        command = popen.call_args.args[0]
+        assert command == [sys.executable, "-m", "marimo._ipc.launch_kernel"]
+        assert popen.call_args.kwargs["cwd"] == str(tmp_path)
+        assert popen.call_args.kwargs["stdin"] is bridge_module.subprocess.PIPE
+        assert popen.call_args.kwargs["stdout"] is bridge_module.subprocess.PIPE
+        assert popen.call_args.kwargs["stderr"] is bridge_module.subprocess.PIPE
+        sent = KernelLaunchArgs.decode_json(process.stdin.write.call_args.args[0])
+        assert sent.connection_info is not None
+        assert sent.parent_pid == os.getpid()
+        write_frame.assert_any_call(bridge_module.Ready())
+    finally:
+        bridge.close()
 
 
 class _BridgeProcess:
@@ -279,6 +362,36 @@ def test_cell_running_subprocess_completes_without_further_messages(
         received = bridge.wait_for(_is_completed_run, timeout=60)
 
         assert "cell finished sub-ok" in _console_text(received)
+    finally:
+        bridge.close()
+
+
+def test_kernel_stdin_reads_eof_instead_of_hanging(tmp_path: Path) -> None:
+    """The kernel's standard streams are real handles from birth.
+
+    Regression test for marimo-lsp#763: multiprocessing spawn left the
+    kernel's CRT fds 0-2 holding the bridge's dangling standard-handle
+    values, which later aliased live IPC pipes inside the kernel. Anything
+    touching a standard stream -- a cell subprocess, or the CRT
+    initialization of numpy's OpenBLAS DLL during ``import scipy`` -- then
+    blocked behind the aliased pipe's pending read until unrelated kernel
+    traffic arrived (minutes in VS Code). With a real, already-drained stdin
+    pipe, reading fd 0 returns EOF immediately.
+    """
+    bridge = _BridgeProcess(tmp_path)
+    try:
+        bridge.send(_start_frame(tmp_path))
+        bridge.wait_for(lambda m: isinstance(m, Ready), timeout=90)
+
+        code = "import os; print('stdin:', os.read(0, 1))"
+        bridge.send(
+            Control(
+                request=ExecuteCellsCommand(cell_ids=[CellId_t("c1")], codes=[code])
+            )
+        )
+        received = bridge.wait_for(_is_completed_run, timeout=60)
+
+        assert "stdin: b''" in _console_text(received)
     finally:
         bridge.close()
 

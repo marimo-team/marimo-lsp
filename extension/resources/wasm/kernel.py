@@ -2,25 +2,35 @@
 
 """Run a marimo kernel behind the WASM language server's stdio protocol.
 
-This script runs in the notebook's selected Python. It adapts Node's opaque
-stdin and stdout bytes to marimo's normal edit-mode kernel manager.
+This script runs in the notebook's selected Python. It owns marimo IPC and
+ZeroMQ; Node only brokers its opaque stdin and stdout bytes.
+
+The kernel is launched with ``subprocess``, the same path as the native
+language server. ``multiprocessing`` spawn is deliberately avoided: on
+Windows it starts children with dangling standard handle values, which later
+alias live pipes inside the kernel and stall anything that touches a
+standard stream -- cell subprocesses (marimo-lsp#734) and the CRT
+initialization of extension-module DLLs during imports (marimo-lsp#763).
 """
 
 from __future__ import annotations
 
 import atexit
+import collections
 import contextlib
 import os
+import queue
+import signal
+import subprocess
 import sys
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import marimo._ipc as ipc
 import msgspec
-from marimo._config.manager import MarimoConfigReader
-from marimo._session.managers.kernel import KernelManagerImpl
-from marimo._session.managers.queue import QueueManagerImpl
-from marimo._session.model import SessionMode
+from marimo._runtime.commands import StopKernelCommand
+from marimo._session.managers import IPCQueueManagerImpl
 from protocol import (
     HEADER_SIZE,
     MAX_FRAME_SIZE,
@@ -30,6 +40,7 @@ from protocol import (
     FromBridge,
     Input,
     Interrupt,
+    Log,
     Operation,
     Ready,
     Start,
@@ -39,58 +50,11 @@ from protocol import (
 )
 
 if TYPE_CHECKING:
-    from marimo._config.config import MarimoConfig
     from marimo._messaging.types import KernelMessage
 
 _write_lock = threading.Lock()
 _decoder = msgspec.json.Decoder(ToBridge)
-
-
-def _bind_std_handles_to_nul() -> None:
-    """Point this process's Win32 standard handles at the NUL device.
-
-    ``multiprocessing`` spawns children on Windows with ``bInheritHandles=FALSE``
-    and no ``STARTUPINFO``, so the kernel process inherits this bridge's
-    standard handle *values* without the handles themselves. Those dangling
-    numbers end up aliasing whatever unrelated objects reuse them inside the
-    kernel — multiprocessing pipes among them. ``subprocess`` forwards
-    ``GetStdHandle(...)`` results to every child it launches, so a notebook
-    cell's ``subprocess.run(...)`` hands its child an aliased pipe as stdin and
-    the child hangs at startup behind that pipe's pending reads until the next
-    control message happens to complete them (marimo-lsp#734). Rebinding the
-    slots to NUL gives cell subprocesses real, inert handles; streams a cell
-    doesn't redirect land in NUL, matching a windowless host.
-    """
-    import ctypes  # noqa: PLC0415 - Windows-only, in the hook that needs it.
-    import msvcrt  # noqa: PLC0415
-
-    kernel32 = ctypes.windll.kernel32
-    for slot, flags in (
-        (-10, os.O_RDONLY),  # STD_INPUT_HANDLE
-        (-11, os.O_WRONLY),  # STD_OUTPUT_HANDLE
-        (-12, os.O_WRONLY),  # STD_ERROR_HANDLE
-    ):
-        # Deliberately left open for the life of the process.
-        fd = os.open(os.devnull, flags)
-        if not kernel32.SetStdHandle(slot, msvcrt.get_osfhandle(fd)):
-            raise ctypes.WinError()
-
-
-# multiprocessing re-imports this script in every spawned child before running
-# its target, which is the only hook we get into the kernel process itself.
-if sys.platform == "win32" and __name__ == "__mp_main__":
-    _bind_std_handles_to_nul()
-
-
-class _StaticConfigManager(MarimoConfigReader):
-    """Expose the launch-time user config through marimo's manager API."""
-
-    def __init__(self, config: MarimoConfig) -> None:
-        self._user_config = config
-
-    def get_config(self, *, hide_secrets: bool = True) -> MarimoConfig:
-        del hide_secrets
-        return self._user_config
+KERNEL_READY_TIMEOUT = 10.0
 
 
 def _read_frame() -> ToBridge | None:
@@ -116,52 +80,133 @@ def _write_frame(message: FromBridge) -> None:
 
 
 class _Bridge:
-    """Own marimo's edit-mode kernel manager and its stdio adapter."""
+    """Own one native kernel subprocess and its marimo IPC queues."""
 
     def __init__(self) -> None:
-        self._queues: QueueManagerImpl | None = None
-        self._manager: KernelManagerImpl | None = None
-        self._operation_thread: threading.Thread | None = None
+        self._queues: IPCQueueManagerImpl | None = None
+        self._ipc_queues: ipc.QueueManager | None = None
+        self._process: subprocess.Popen[bytes] | None = None
+        self._stderr_tail: collections.deque[str] = collections.deque(maxlen=20)
+        self._stderr_lock = threading.Lock()
+        self._kernel_ready = False
         self._closed = False
 
     def start(self, message: Start) -> None:
-        """Start a regular marimo edit-mode kernel subprocess."""
+        """Create IPC queues and start the kernel subprocess."""
         working_directory = message.working_directory
         path = Path(working_directory)
         if not path.is_absolute() or not path.is_dir():
             msg = f"Invalid kernel working directory: {working_directory}"
             raise ValueError(msg)
 
-        args = message.kernel_args
-        self._queues = QueueManagerImpl(use_multiprocessing=True)
-        self._manager = KernelManagerImpl(
-            queue_manager=self._queues,
-            mode=SessionMode.EDIT,
-            configs=args.configs,
-            app_metadata=args.app_metadata,
-            config_manager=_StaticConfigManager(args.user_config),
-            virtual_file_storage=None,
-            redirect_console_to_browser=args.redirect_console_to_browser,
+        ipc_queues, connection_info = ipc.QueueManager.create()
+        self._ipc_queues = ipc_queues
+        self._queues = IPCQueueManagerImpl.from_ipc(ipc_queues)
+
+        kernel_args = msgspec.structs.replace(
+            message.kernel_args,
+            connection_info=connection_info,
+            parent_pid=os.getpid(),
         )
-        self._manager.start_kernel()
-        self._operation_thread = threading.Thread(
-            target=self._forward_operations,
-            name="kernel-operation-forwarder",
-            daemon=True,
+
+        # Piped standard streams make CreateProcess hand the kernel real
+        # handles, so its fds 0-2 are valid from birth.
+        process = subprocess.Popen(
+            [sys.executable, "-m", "marimo._ipc.launch_kernel"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=working_directory,
         )
-        self._operation_thread.start()
+        self._process = process
+        assert process.stdin is not None
+        process.stdin.write(kernel_args.encode_json())
+        process.stdin.flush()
+        process.stdin.close()
+
+        # Drain stderr before waiting for readiness so a noisy child cannot
+        # fill its pipe and deadlock startup.
+        threading.Thread(target=self._forward_stderr, daemon=True).start()
+        ready = self._wait_for_kernel_ready()
+        if ready != "KERNEL_READY":
+            msg = f"Expected KERNEL_READY, received {ready!r}"
+            raise RuntimeError(self._with_stderr_tail(msg))
+        self._kernel_ready = True
+
+        # Failures before this point are reported by start() alone. Exits
+        # after it are reported by this watcher alone, which cannot exist
+        # during startup.
+        threading.Thread(target=self._watch_kernel_exit, daemon=True).start()
+        threading.Thread(target=self._forward_operations, daemon=True).start()
         _write_frame(Ready())
 
-    def _forward_operations(self) -> None:
-        assert self._manager is not None
-        connection = self._manager.kernel_connection
+    def _with_stderr_tail(self, message: str) -> str:
+        with self._stderr_lock:
+            tail = "\n".join(self._stderr_tail)
+        if tail:
+            return f"{message}\nKernel stderr:\n{tail}"
+        return message
+
+    def _wait_for_kernel_ready(
+        self,
+        timeout: float = KERNEL_READY_TIMEOUT,
+    ) -> str:
+        """Read the readiness line without allowing startup to hang forever."""
+        assert self._process is not None
+        stdout = self._process.stdout
+        assert stdout is not None
+        result: queue.Queue[str | Exception] = queue.Queue(maxsize=1)
+
+        def read_ready() -> None:
+            try:
+                ready = stdout.readline().decode(errors="replace").strip()
+                result.put(ready)
+            except Exception as error:  # noqa: BLE001
+                result.put(error)
+
+        threading.Thread(target=read_ready, daemon=True).start()
         try:
-            while True:
-                message: KernelMessage = connection.recv()
-                _write_frame(Operation(message=msgspec.Raw(message)))
-        except (EOFError, OSError):
-            if not self._closed:
-                _write_frame(Error(message="Kernel connection closed unexpectedly"))
+            ready = result.get(timeout=timeout)
+        except queue.Empty as error:
+            msg = f"Kernel did not become ready within {timeout:g} seconds"
+            raise TimeoutError(msg) from error
+        if isinstance(ready, Exception):
+            raise ready
+        return ready
+
+    def _forward_operations(self) -> None:
+        assert self._queues is not None
+        stream_queue = self._queues.stream_queue
+        if stream_queue is None:
+            return
+        while not self._closed:
+            try:
+                message: KernelMessage | None = stream_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if message is None:
+                return
+            _write_frame(Operation(message=msgspec.Raw(message)))
+
+    def _forward_stderr(self) -> None:
+        """Relay kernel stderr lines as logs."""
+        process = self._process
+        if process is None or process.stderr is None:
+            return
+        for line in process.stderr:
+            text = line.decode(errors="replace").rstrip()
+            with self._stderr_lock:
+                self._stderr_tail.append(text)
+            _write_frame(Log(message=text))
+
+    def _watch_kernel_exit(self) -> None:
+        """Report a kernel that exits after it became ready."""
+        assert self._process is not None
+        code = self._process.wait()
+        if not self._closed:
+            _write_frame(
+                Error(message=f"Kernel process exited unexpectedly (code={code})")
+            )
 
     def handle(self, message: ToBridge) -> bool:
         """Apply one command and return whether to keep reading."""
@@ -182,21 +227,39 @@ class _Bridge:
         return True
 
     def interrupt(self) -> None:
-        """Interrupt the kernel subprocess."""
-        if self._closed or self._manager is None:
+        """Interrupt the running kernel."""
+        if self._process is None or self._process.poll() is not None:
             return
-        self._manager.interrupt_kernel()
+        assert self._queues is not None
+        interrupt_queue = self._queues.win32_interrupt_queue
+        if sys.platform == "win32" and interrupt_queue is not None:
+            interrupt_queue.put_nowait(True)  # noqa: FBT003
+        else:
+            os.kill(self._process.pid, signal.SIGINT)
 
     def close(self) -> None:
-        """Stop the kernel exactly once."""
+        """Stop the kernel exactly once and release its queues."""
         if self._closed:
             return
         self._closed = True
-        if self._manager is not None:
-            with contextlib.suppress(Exception):
-                self._manager.close_kernel()
-        if self._operation_thread is not None:
-            self._operation_thread.join(timeout=1)
+        process = self._process
+        if process is not None and process.poll() is None:
+            # Only ask a ready kernel to stop. Before readiness the control
+            # socket may have no connected peer, and the zmq send would block
+            # instead of being dropped.
+            if self._queues is not None and self._kernel_ready:
+                with contextlib.suppress(Exception):
+                    self._queues.put_control_request(StopKernelCommand())
+                    with contextlib.suppress(subprocess.TimeoutExpired):
+                        process.wait(timeout=2)
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+        if self._ipc_queues is not None:
+            self._ipc_queues.close_queues()
 
 
 def _read_start_frame() -> Start:
