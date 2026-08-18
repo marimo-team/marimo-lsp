@@ -92,6 +92,7 @@ CONCRETE: list[tuple[str, type | object]] = [
     ("SetDisplayThemeRequest", models.SetDisplayThemeRequest),
 ]
 
+
 def _ts_string(value: str) -> str:
     return json.dumps(value)
 
