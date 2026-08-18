@@ -16,6 +16,7 @@ initialization of extension-module DLLs during imports (marimo-lsp#763).
 from __future__ import annotations
 
 import atexit
+import collections
 import contextlib
 import os
 import queue
@@ -85,6 +86,9 @@ class _Bridge:
         self._queues: IPCQueueManagerImpl | None = None
         self._ipc_queues: ipc.QueueManager | None = None
         self._process: subprocess.Popen[bytes] | None = None
+        self._stderr_tail: collections.deque[str] = collections.deque(maxlen=20)
+        self._stderr_lock = threading.Lock()
+        self._kernel_ready = False
         self._closed = False
 
     def start(self, message: Start) -> None:
@@ -107,17 +111,18 @@ class _Bridge:
 
         # Piped standard streams make CreateProcess hand the kernel real
         # handles, so its fds 0-2 are valid from birth.
-        self._process = subprocess.Popen(
+        process = subprocess.Popen(
             [sys.executable, "-m", "marimo._ipc.launch_kernel"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=working_directory,
         )
-        assert self._process.stdin is not None
-        self._process.stdin.write(kernel_args.encode_json())
-        self._process.stdin.flush()
-        self._process.stdin.close()
+        self._process = process
+        assert process.stdin is not None
+        process.stdin.write(kernel_args.encode_json())
+        process.stdin.flush()
+        process.stdin.close()
 
         # Drain stderr before waiting for readiness so a noisy child cannot
         # fill its pipe and deadlock startup.
@@ -125,10 +130,22 @@ class _Bridge:
         ready = self._wait_for_kernel_ready()
         if ready != "KERNEL_READY":
             msg = f"Expected KERNEL_READY, received {ready!r}"
-            raise RuntimeError(msg)
+            raise RuntimeError(self._with_stderr_tail(msg))
+        self._kernel_ready = True
 
+        # Failures before this point are reported by start() alone. Exits
+        # after it are reported by this watcher alone, which cannot exist
+        # during startup.
+        threading.Thread(target=self._watch_kernel_exit, daemon=True).start()
         threading.Thread(target=self._forward_operations, daemon=True).start()
         _write_frame(Ready())
+
+    def _with_stderr_tail(self, message: str) -> str:
+        with self._stderr_lock:
+            tail = "\n".join(self._stderr_tail)
+        if tail:
+            return f"{message}\nKernel stderr:\n{tail}"
+        return message
 
     def _wait_for_kernel_ready(
         self,
@@ -172,13 +189,20 @@ class _Bridge:
             _write_frame(Operation(message=msgspec.Raw(message)))
 
     def _forward_stderr(self) -> None:
-        """Relay kernel stderr as logs and report an unexpected exit."""
+        """Relay kernel stderr lines as logs."""
         process = self._process
         if process is None or process.stderr is None:
             return
         for line in process.stderr:
-            _write_frame(Log(message=line.decode(errors="replace").rstrip()))
-        code = process.wait()
+            text = line.decode(errors="replace").rstrip()
+            with self._stderr_lock:
+                self._stderr_tail.append(text)
+            _write_frame(Log(message=text))
+
+    def _watch_kernel_exit(self) -> None:
+        """Report a kernel that exits after it became ready."""
+        assert self._process is not None
+        code = self._process.wait()
         if not self._closed:
             _write_frame(
                 Error(message=f"Kernel process exited unexpectedly (code={code})")
@@ -218,24 +242,22 @@ class _Bridge:
         if self._closed:
             return
         self._closed = True
-        # Only ask a live kernel to stop: with no connected peer, the zmq
-        # send would block instead of being dropped.
-        if (
-            self._queues is not None
-            and self._process is not None
-            and self._process.poll() is None
-        ):
-            with contextlib.suppress(Exception):
-                self._queues.put_control_request(StopKernelCommand())
-        if self._process is not None and self._process.poll() is None:
-            try:
-                self._process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self._process.terminate()
+        process = self._process
+        if process is not None and process.poll() is None:
+            # Only ask a ready kernel to stop. Before readiness the control
+            # socket may have no connected peer, and the zmq send would block
+            # instead of being dropped.
+            if self._queues is not None and self._kernel_ready:
+                with contextlib.suppress(Exception):
+                    self._queues.put_control_request(StopKernelCommand())
+                    with contextlib.suppress(subprocess.TimeoutExpired):
+                        process.wait(timeout=2)
+            if process.poll() is None:
+                process.terminate()
                 try:
-                    self._process.wait(timeout=2)
+                    process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
-                    self._process.kill()
+                    process.kill()
         if self._ipc_queues is not None:
             self._ipc_queues.close_queues()
 

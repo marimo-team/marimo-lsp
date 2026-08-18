@@ -74,6 +74,77 @@ def test_windows_interrupt_uses_positional_queue_value(
     interrupt_queue.put_nowait.assert_called_once_with(True)  # noqa: FBT003
 
 
+def test_watcher_reports_a_kernel_that_exits_after_readiness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge_module = _load_bridge_module(monkeypatch)
+    write_frame = Mock()
+    monkeypatch.setattr(bridge_module, "_write_frame", write_frame)
+    bridge = bridge_module._Bridge()
+    bridge._process = Mock()
+    bridge._process.wait.return_value = 3
+
+    bridge._watch_kernel_exit()
+
+    error = write_frame.call_args.args[0]
+    assert isinstance(error, bridge_module.Error)
+    assert "code=3" in error.message
+
+
+def test_watcher_stays_quiet_once_the_bridge_is_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge_module = _load_bridge_module(monkeypatch)
+    write_frame = Mock()
+    monkeypatch.setattr(bridge_module, "_write_frame", write_frame)
+    bridge = bridge_module._Bridge()
+    bridge._process = Mock()
+    bridge._process.wait.return_value = 0
+    bridge._closed = True
+
+    bridge._watch_kernel_exit()
+
+    write_frame.assert_not_called()
+
+
+def test_close_terminates_an_unready_kernel_without_a_stop_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A kernel that never became ready has no connected control socket, so
+    the stop command would block. close() must go straight to terminate."""
+    bridge_module = _load_bridge_module(monkeypatch)
+    bridge = bridge_module._Bridge()
+    process = Mock()
+    process.poll.return_value = None
+    bridge._process = process
+    bridge._queues = Mock()
+    bridge._ipc_queues = Mock()
+
+    bridge.close()
+
+    bridge._queues.put_control_request.assert_not_called()
+    process.terminate.assert_called_once_with()
+    bridge._ipc_queues.close_queues.assert_called_once_with()
+
+
+def test_close_asks_a_ready_kernel_to_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge_module = _load_bridge_module(monkeypatch)
+    bridge = bridge_module._Bridge()
+    process = Mock()
+    process.poll.return_value = None
+    bridge._process = process
+    bridge._queues = Mock()
+    bridge._ipc_queues = Mock()
+    bridge._kernel_ready = True
+
+    bridge.close()
+
+    request = bridge._queues.put_control_request.call_args.args[0]
+    assert isinstance(request, bridge_module.StopKernelCommand)
+
+
 def test_kernel_readiness_has_a_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     bridge_module = _load_bridge_module(monkeypatch)
     bridge = bridge_module._Bridge()
