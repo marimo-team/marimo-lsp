@@ -742,23 +742,24 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                     "NotebookDocumentSessionEndedError",
                     () => Effect.void,
                   ),
-                  Effect.catchCause(
-                    Effect.fn(function* (cause) {
-                      yield* Effect.logError(
-                        "Failed to process marimo operation",
-                      ).pipe(Effect.annotateLogs({ cause }));
-                      yield* Effect.forkChild(
-                        showErrorAndPromptLogs(
-                          "Failed to process marimo operation.",
-                        ),
-                      );
-                    }),
-                  ),
-                  Effect.annotateLogs({
-                    "notification.type": message.notification.op,
-                  }),
                 ),
                 message.session.ended,
+              ).pipe(
+                Effect.catchCause(
+                  Effect.fn(function* (cause) {
+                    yield* Effect.logError(
+                      "Failed to process marimo operation",
+                    ).pipe(Effect.annotateLogs({ cause }));
+                    yield* Effect.forkChild(
+                      showErrorAndPromptLogs(
+                        "Failed to process marimo operation.",
+                      ),
+                    );
+                  }),
+                ),
+                Effect.annotateLogs({
+                  "notification.type": message.notification.op,
+                }),
               );
             }).pipe(
               Effect.catchCause(
