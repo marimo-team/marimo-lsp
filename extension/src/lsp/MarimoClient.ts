@@ -124,61 +124,62 @@ export function makeMarimoCommands<Error>(transport: MarimoTransport<Error>) {
   };
 }
 
-export const makeKernelNotificationStream = Effect.fn(function* (
-  register: (handler: (message: unknown) => void) => {
+interface NotificationChannel<A> {
+  readonly decode: (message: unknown) => Option.Option<A>;
+  readonly ignoredMessage: string;
+  readonly register: (handler: (message: unknown) => void) => {
     readonly dispose: () => void;
-  },
-) {
-  const notifications = yield* PubSub.unbounded<KernelNotification>();
-  const runSync = Effect.runSyncWith(yield* Effect.context());
-  yield* Effect.addFinalizer(() => PubSub.shutdown(notifications));
+  };
+}
 
-  // vscode-languageclient stores one notification handler per method, so
-  // register once and fan out to every consumer.
-  yield* acquireDisposable(() =>
-    register((message) => {
-      const decoded = decodeKernelNotification(message);
-      if (Option.isNone(decoded)) {
-        runSync(
-          Effect.logWarning("Ignored invalid kernel notification").pipe(
-            Effect.annotateLogs(describeIgnored(message)),
-          ),
-        );
-        return;
-      }
-      runSync(PubSub.publish(notifications, decoded.value));
-    }),
-  );
+function makeNotificationStream<A>({
+  decode,
+  ignoredMessage,
+  register,
+}: NotificationChannel<A>) {
+  return Effect.gen(function* () {
+    const notifications = yield* PubSub.unbounded<A>();
+    const runFork = Effect.runForkWith(yield* Effect.context());
+    yield* Effect.addFinalizer(() => PubSub.shutdown(notifications));
 
-  return Stream.fromPubSub(notifications);
-});
+    // vscode-languageclient stores one notification handler per method, so
+    // register once and fan out to every consumer.
+    yield* acquireDisposable(() =>
+      register((message) => {
+        const decoded = decode(message);
+        if (Option.isNone(decoded)) {
+          runFork(
+            Effect.logWarning(ignoredMessage).pipe(
+              Effect.annotateLogs(describeIgnored(message)),
+            ),
+          );
+          return;
+        }
+        PubSub.publishUnsafe(notifications, decoded.value);
+      }),
+    );
 
-export const makeDocumentAnalysisStream = Effect.fn(function* (
-  register: (handler: (message: unknown) => void) => {
-    readonly dispose: () => void;
-  },
-) {
-  const analyses = yield* PubSub.unbounded<DocumentAnalysis>();
-  const runSync = Effect.runSyncWith(yield* Effect.context());
-  yield* Effect.addFinalizer(() => PubSub.shutdown(analyses));
+    return Stream.fromPubSub(notifications);
+  });
+}
 
-  yield* acquireDisposable(() =>
-    register((message) => {
-      const decoded = decodeDocumentAnalysis(message);
-      if (Option.isNone(decoded)) {
-        runSync(
-          Effect.logWarning("Ignored invalid document analysis").pipe(
-            Effect.annotateLogs(describeIgnored(message)),
-          ),
-        );
-        return;
-      }
-      runSync(PubSub.publish(analyses, decoded.value));
-    }),
-  );
+export const makeKernelNotificationStream = (
+  register: NotificationChannel<KernelNotification>["register"],
+) =>
+  makeNotificationStream({
+    decode: decodeKernelNotification,
+    ignoredMessage: "Ignored invalid kernel notification",
+    register,
+  });
 
-  return Stream.fromPubSub(analyses);
-});
+export const makeDocumentAnalysisStream = (
+  register: NotificationChannel<DocumentAnalysis>["register"],
+) =>
+  makeNotificationStream({
+    decode: decodeDocumentAnalysis,
+    ignoredMessage: "Ignored invalid document analysis",
+    register,
+  });
 
 /**
  * Communication with marimo-lsp.
