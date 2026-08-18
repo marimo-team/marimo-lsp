@@ -69,14 +69,6 @@ export type NotebookId = typeof NotebookIdFromString.Type;
 _StructLike = mi.StructType | mi.DataclassType | mi.TypedDictType
 """IR nodes with a `cls` and `fields` that emit as `Schema.Struct`."""
 
-
-class _Inner(msgspec.Struct):
-    """Placeholder substituted for generic type parameters.
-
-    Fields typed as `_Inner` are emitted as the TS generic parameter `inner`.
-    """
-
-
 # (exported name, type) pairs. The emitter topologically orders dependencies.
 CONCRETE: list[tuple[str, type | object]] = [
     ("PackageSource", models.PackageSource),
@@ -98,16 +90,6 @@ CONCRETE: list[tuple[str, type | object]] = [
     ("ExecuteScratchRequest", models.ExecuteScratchRequest),
     ("UpdateConfigurationRequest", models.UpdateConfigurationRequest),
     ("SetDisplayThemeRequest", models.SetDisplayThemeRequest),
-]
-
-# Generic wrappers become TS functions of the `inner` schema. Parameterized
-# with the `_Inner` placeholder so msgspec resolves the type variable to a
-# marker the emitter can recognize.
-GENERIC: list[tuple[type, type]] = [
-    (models.NotebookCommand, models.NotebookCommand[_Inner]),
-    (models.KernelCommand, models.KernelCommand[_Inner]),
-    (models.SessionCommand, models.SessionCommand[_Inner]),
-    (models.PackageCommand, models.PackageCommand[_Inner]),
 ]
 
 
@@ -271,8 +253,6 @@ class Emitter:
     def struct_ref(self, t: _StructLike) -> str:
         """Emit a struct/dataclass/TypedDict definition (once); return its name."""
         cls = t.cls
-        if cls is _Inner:
-            return "inner"
         if cls in self.emitted:
             name = self.emitted[cls]
             if cls in self.in_flight:
@@ -455,18 +435,6 @@ class Emitter:
             f"export type {name} = typeof {name}.Type;\n"
         )
 
-    def emit_generic(self, cls: type, parameterized: type) -> None:
-        info = mi.type_info(parameterized)
-        if not isinstance(info, mi.StructType):
-            msg = f"expected a struct, got {type(info).__name__}"
-            raise TypeError(msg)
-        fields = self.fields_src(info, indent="    ")
-        self.definitions.append(
-            f"{_jsdoc(cls.__doc__)}"
-            f"export const {cls.__name__} = <S extends Schema.Top>(inner: S) =>\n"
-            f"  Schema.Struct({{\n{fields}  }});\n"
-        )
-
     def emit_api_method(self, method: ApiMethod) -> tuple[str, str]:
         """Emit the payload schema for one registry entry.
 
@@ -523,8 +491,6 @@ def generate() -> str:
     emitter = Emitter()
     for name, t in CONCRETE:
         emitter.emit_named(name, t)
-    for cls, parameterized in GENERIC:
-        emitter.emit_generic(cls, parameterized)
     api = [emitter.emit_api_method(method) for method in API_METHODS]
     members = "\n".join(
         f"  | {{ readonly method: {_ts_string(method.name)}; "

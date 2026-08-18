@@ -422,54 +422,6 @@ export const SetDisplayThemeRequest = Schema.Struct({
 export type SetDisplayThemeRequest = typeof SetDisplayThemeRequest.Type;
 
 /**
- * Wraps a marimo command with its target notebook context.
- *
- * Associates any marimo command/request with the specific notebook
- * it should operate on, enabling proper routing in multi-notebook
- * environments.
- */
-export const NotebookCommand = <S extends Schema.Top>(inner: S) =>
-  Schema.Struct({
-    notebookUri: NotebookIdFromString,
-    inner,
-  });
-
-/**
- * A command addressed to one exact live kernel.
- */
-export const KernelCommand = <S extends Schema.Top>(inner: S) =>
-  Schema.Struct({
-    notebookUri: NotebookIdFromString,
-    inner,
-    sessionId: KernelSessionIdFromString,
-  });
-
-/**
- * A notebook command that is further routed to a specific runtime/session.
- */
-export const SessionCommand = <S extends Schema.Top>(inner: S) =>
-  Schema.Struct({
-    notebookUri: NotebookIdFromString,
-    inner,
-    executable: Schema.String,
-    workingDirectory: Schema.String,
-  });
-
-/**
- * A notebook command that describes its python environment via a `PackageSource`.
- *
- * Distinct from `SessionCommand`: package endpoints don't talk to a live
- * marimo kernel — they shell out to `uv` — and sandbox notebooks have no
- * pre-resolved python executable for the client to send.
- */
-export const PackageCommand = <S extends Schema.Top>(inner: S) =>
-  Schema.Struct({
-    notebookUri: NotebookIdFromString,
-    inner,
-    source: PackageSource,
-  });
-
-/**
  * Serializable HTTP request representation.
  *
  * Mimics Starlette/FastAPI Request but is pickle-able and contains only a safe

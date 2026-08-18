@@ -34,7 +34,6 @@ import {
   toLspDiagnosticSeverity,
   toLspFoldingRangeKind,
   toLspInlayHint,
-  toLspPosition,
   toLspRange,
   toSelectionRange,
   toSignatureHelp,
@@ -1354,21 +1353,6 @@ describe("toCodeAction", () => {
 // ---------------------------------------------------------------------------
 // Trivial LSP-side converters
 // ---------------------------------------------------------------------------
-
-describe("toLspPosition", () => {
-  it.effect(
-    "extracts line and character",
-    Effect.fn(function* () {
-      const code = yield* withVsCode;
-      expect(toLspPosition(new code.Position(3, 7))).toMatchInlineSnapshot(`
-      	{
-      	  "character": 7,
-      	  "line": 3,
-      	}
-      `);
-    }),
-  );
-});
 
 describe("toLspRange", () => {
   it.effect(

@@ -21,20 +21,12 @@ export type ProjectDependencyInspection = {
 };
 
 /**
- * Find every pyproject location in which a package is declared directly.
+ * Read and index the nearest pyproject once for a package-install batch.
  *
  * uv only updates the dependency field selected by `--group` / `--optional`;
  * an unqualified `uv add` always targets `project.dependencies`. Inspecting the
  * existing declarations lets us preserve the user's chosen location.
  */
-export function findProjectDependencyTargets(
-  directory: string,
-  requirement: string,
-): ReadonlyArray<ProjectDependencyTarget> {
-  return inspectProjectDependencies(directory).findTargets(requirement);
-}
-
-/** Read and index the nearest pyproject once for a package-install batch. */
 export function inspectProjectDependencies(
   directory: string,
 ): ProjectDependencyInspection {
