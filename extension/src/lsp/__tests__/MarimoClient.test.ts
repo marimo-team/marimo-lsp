@@ -442,6 +442,23 @@ it.effect(
 );
 
 it.effect(
+  "disposes the transport notification handler with its scope",
+  Effect.fn(function* () {
+    let disposals = 0;
+
+    yield* Effect.scoped(
+      makeKernelNotificationStream(() => ({
+        dispose() {
+          disposals += 1;
+        },
+      })).pipe(Effect.asVoid),
+    );
+
+    expect(disposals).toBe(1);
+  }),
+);
+
+it.effect(
   "decodes document analysis on its own channel",
   Effect.fn(function* () {
     let notify: ((message: unknown) => void) | undefined;
