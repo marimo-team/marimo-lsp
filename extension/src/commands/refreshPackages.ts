@@ -33,7 +33,10 @@ const handler = Effect.fn("command.refreshPackages")(function* () {
         Effect.flatMap((dependencies) => dependencies.refresh),
       ),
     )
-    .pipe(Scope.provide(session.value.scope));
+    .pipe(
+      Scope.provide(session.value.scope),
+      Effect.catchTag("NotebookDocumentSessionEndedError", () => Effect.void),
+    );
 });
 
 export default defineCommand(MarimoCommands.refreshPackages, handler);

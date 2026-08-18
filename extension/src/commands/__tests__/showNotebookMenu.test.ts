@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref } from "effect";
+import { Deferred, Effect, Fiber, Layer, Option, Ref, Scope } from "effect";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
@@ -70,20 +70,23 @@ const targetFor = (
     editor,
   }));
 
-const testLayer = (vscode: TestVsCode) => {
+const testLayer = (
+  vscode: TestVsCode,
+  runtime: ReturnType<typeof makeTestNotebookRuntime> = runtimeLayer,
+) => {
   const documentSessions = NotebookDocumentSessions.layer.pipe(
     Layer.provide(vscode.layer),
   );
   const sessionResources = NotebookSessionResources.layer.pipe(
     Layer.provide(documentSessions),
-    Layer.provide(runtimeLayer),
+    Layer.provide(runtime),
   );
   return Layer.mergeAll(
     vscode.layer,
     documentSessions,
     sessionResources,
     constantsLayer,
-    runtimeLayer,
+    runtime,
     serializerLayer,
     githubLayer,
     OutputChannel.layer.pipe(Layer.provide(vscode.layer)),
@@ -249,6 +252,65 @@ describe("showNotebookMenu", () => {
           .pipe(Effect.provide(testLayer(vscode)));
 
         expect(yield* Ref.get(descriptions)).toEqual(["Lazy", "Auto-run"]);
+      }),
+  );
+
+  it.effect(
+    "ends quietly if the notebook closes while loading reactivity",
+    () =>
+      Effect.gen(function* () {
+        const requestStarted = yield* Deferred.make<void>();
+        const releaseRequest = yield* Deferred.make<void>();
+        const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
+        const vscode = yield* TestVsCode.make({
+          initialDocuments: [editor.notebook],
+          window: {
+            showQuickPickItems: (items) =>
+              Effect.succeed(
+                Option.fromNullishOr(
+                  items.find((item) => item.label.includes("Reactivity")),
+                ),
+              ),
+          },
+        });
+        const runtime = makeTestNotebookRuntime({
+          execute: (request) =>
+            request.method === "get-configuration"
+              ? Deferred.succeed(requestStarted, undefined).pipe(
+                  Effect.andThen(Deferred.await(releaseRequest)),
+                  Effect.andThen(
+                    Effect.succeed({
+                      config: marimoConfigFixture({}),
+                    }),
+                  ),
+                )
+              : Effect.die("not implemented"),
+        });
+
+        yield* Effect.gen(function* () {
+          const sessions = yield* NotebookDocumentSessions;
+          const session = Option.getOrThrow(
+            sessions.forDocument(editor.notebook),
+          );
+          const sessionEnded = yield* Deferred.make<void>();
+
+          const running = yield* showNotebookMenu
+            .invoke(targetFor(editor))
+            .pipe(Effect.forkChild);
+          yield* Deferred.await(requestStarted);
+          yield* Scope.addFinalizer(
+            session.scope,
+            Deferred.succeed(sessionEnded, undefined),
+          );
+          const closing = yield* vscode
+            .closeNotebook(editor.notebook)
+            .pipe(Effect.forkChild);
+          yield* Deferred.await(sessionEnded);
+          yield* Deferred.succeed(releaseRequest, undefined);
+
+          yield* Fiber.join(closing);
+          yield* Fiber.join(running);
+        }).pipe(Effect.provide(testLayer(vscode, runtime)));
       }),
   );
 });

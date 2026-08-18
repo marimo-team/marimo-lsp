@@ -1,4 +1,4 @@
-import { Effect, Layer, Option, Scope, Stream } from "effect";
+import { Effect, Layer, Option, Scope, Stream, SubscriptionRef } from "effect";
 
 import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
@@ -18,6 +18,9 @@ export const ConfigContextManagerLive = Layer.effectDiscard(
     const code = yield* VsCode;
     const documentSessions = yield* NotebookDocumentSessions;
     const sessionResources = yield* NotebookSessionResources;
+    const desiredConfiguration = yield* SubscriptionRef.make(
+      Option.none<MarimoConfig>(),
+    );
 
     const updateContext = (configuration: Option.Option<MarimoConfig>) => {
       const onCellChange = Option.map(
@@ -50,11 +53,16 @@ export const ConfigContextManagerLive = Layer.effectDiscard(
       );
     };
 
-    const watchActiveConfiguration = documentSessions.active.pipe(
+    const publishActiveConfiguration = documentSessions.active.pipe(
       Stream.switchMap(
         Option.match({
           onNone: () =>
-            Stream.fromEffect(updateContext(Option.none<MarimoConfig>())),
+            Stream.fromEffect(
+              SubscriptionRef.set(
+                desiredConfiguration,
+                Option.none<MarimoConfig>(),
+              ),
+            ),
           onSome: (session) =>
             Stream.fromEffect(
               sessionResources
@@ -63,7 +71,9 @@ export const ConfigContextManagerLive = Layer.effectDiscard(
                   NotebookConfiguration.pipe(
                     Effect.flatMap((configuration) =>
                       configuration.changes.pipe(
-                        Stream.runForEach(updateContext),
+                        Stream.runForEach((value) =>
+                          SubscriptionRef.set(desiredConfiguration, value),
+                        ),
                       ),
                     ),
                   ),
@@ -81,6 +91,14 @@ export const ConfigContextManagerLive = Layer.effectDiscard(
       Stream.runDrain,
     );
 
-    yield* Effect.forkScoped(watchActiveConfiguration);
+    // Keep the external writes outside the switched session stream. A switch
+    // can interrupt an Effect.promise waiter, but cannot cancel the underlying
+    // VS Code command. One manager-owned consumer preserves write order.
+    yield* Effect.forkScoped(
+      SubscriptionRef.changes(desiredConfiguration).pipe(
+        Stream.runForEach(updateContext),
+      ),
+    );
+    yield* Effect.forkScoped(publishActiveConfiguration);
   }).pipe(Effect.annotateLogs("service", "ConfigContextManager")),
 );

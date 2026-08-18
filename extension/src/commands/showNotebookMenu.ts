@@ -80,14 +80,22 @@ const handler = Effect.fn("command.showNotebookMenu")(function* (
     );
     return;
   }
-  const config = yield* sessionResources
+  const maybeConfig = yield* sessionResources
     .runScoped(
       session.value,
       NotebookConfiguration.pipe(
         Effect.flatMap((configuration) => configuration.get),
       ),
     )
-    .pipe(Scope.provide(session.value.scope));
+    .pipe(
+      Scope.provide(session.value.scope),
+      Effect.map(Option.some),
+      Effect.catchTag("NotebookDocumentSessionEndedError", () =>
+        Effect.succeed(Option.none()),
+      ),
+    );
+  if (Option.isNone(maybeConfig)) return;
+  const config = maybeConfig.value;
   const onCellChange = config.runtime?.on_cell_change ?? "autorun";
   const autoReload = config.runtime?.auto_reload ?? "off";
   const reactivity = yield* code.window.showQuickPickItems(

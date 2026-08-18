@@ -107,6 +107,7 @@ export const createConfigToggle = <T extends string>({
       )
       .pipe(Scope.provide(session.value.scope));
   }).pipe(
+    Effect.catchTag("NotebookDocumentSessionEndedError", () => Effect.void),
     Effect.tapCause(Effect.logError),
     Effect.catchCause(() =>
       showErrorAndPromptLogs(`Could not update ${settingName.toLowerCase()}.`),
