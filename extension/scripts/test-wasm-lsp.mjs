@@ -184,6 +184,13 @@ NodeAssert.ok(
   sliderId,
   `Could not find slider ID in output:\n${initialOutput}`,
 );
+// Kernel-addressed commands name the exact live session; every kernel
+// notification carries the id.
+const sessionId = initialOutput.match(/"sessionId":"([^"]+)"/)?.[1];
+NodeAssert.ok(
+  sessionId,
+  `Could not find kernel session ID in output:\n${initialOutput}`,
+);
 
 /** @type {Promise<unknown>[]} */
 const updates = [];
@@ -201,6 +208,7 @@ for (let value = 1; value <= 100; value++) {
           method: "update-ui-element",
           params: {
             notebookUri,
+            sessionId,
             inner: { objectIds: [sliderId], values: [value] },
           },
         },
@@ -251,7 +259,7 @@ send({
     arguments: [
       {
         method: "interrupt",
-        params: { notebookUri, inner: {} },
+        params: { notebookUri, inner: { sessionId } },
       },
     ],
   },
@@ -284,7 +292,7 @@ const errors = Buffer.concat(stderr).toString("utf8");
 const output = Buffer.concat(stdout).toString("utf8");
 NodeAssert.equal(exitCode, 0, errors);
 NodeAssert.equal(initializeMessage.result.serverInfo.name, "marimo-lsp");
-NodeAssert.match(output, /"method":"marimo\/operation"/);
+NodeAssert.match(output, /"method":"marimo\/kernelNotification"/);
 NodeAssert.match(output, /"op":"completed-run"/);
 NodeAssert.match(output, /slider-value:100/);
 NodeAssert.match(output, /"op":"interrupted"/);
