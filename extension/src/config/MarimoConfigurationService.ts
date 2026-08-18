@@ -1,6 +1,9 @@
 import {
+  Cache,
   Context,
+  Duration,
   Effect,
+  Exit,
   HashMap,
   Layer,
   Option,
@@ -17,12 +20,21 @@ import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 import type { MarimoConfig } from "../types.ts";
 
+type ConfigurationCacheKey = readonly [
+  notebookId: NotebookId,
+  sessionId: NotebookDocumentSession["id"],
+];
+
+const keyFor = (session: NotebookDocumentSession): ConfigurationCacheKey => [
+  session.notebookId,
+  session.id,
+];
+
 /**
  * Manages marimo configuration state across all notebooks.
  *
- * Tracks configuration for each notebook using SubscriptionRef for reactive
- * state management. Configurations are fetched from the LSP server, updated
- * both locally and remotely, and evicted when the notebook closes.
+ * Caches configuration lookups by document session. A SubscriptionRef keeps a
+ * reactive projection of resolved values for stream consumers.
  */
 export class MarimoConfigurationService extends Context.Service<MarimoConfigurationService>()(
   "MarimoConfigurationService",
@@ -32,42 +44,70 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
       const editorRegistry = yield* NotebookEditorRegistry;
       const documentSessions = yield* NotebookDocumentSessions;
 
-      // Track configurations: NotebookUri -> MarimoConfig
-      const configRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, MarimoConfig>(),
+      const fetchConfiguration = (notebookUri: NotebookId) =>
+        Effect.gen(function* () {
+          yield* Effect.logTrace("Fetching configuration from LSP").pipe(
+            Effect.annotateLogs({ notebookUri }),
+          );
+          const result = yield* marimo.getConfiguration({
+            notebookUri,
+            inner: {},
+          });
+          yield* Effect.logTrace("Configuration fetched").pipe(
+            Effect.annotateLogs({ notebookUri }),
+          );
+          return result.config;
+        });
+
+      const configurationCache = yield* Cache.makeWith(
+        ([notebookUri]: ConfigurationCacheKey) =>
+          // Cache starts its lookup fiber before publishing the entry. Yield
+          // once so invalidation can always observe an in-flight request.
+          Effect.yieldNow.pipe(Effect.andThen(fetchConfiguration(notebookUri))),
+        {
+          capacity: Number.POSITIVE_INFINITY,
+          // Preserve the previous retry behavior for failed LSP requests.
+          timeToLive: (exit) =>
+            Exit.isSuccess(exit) ? Duration.infinity : Duration.zero,
+        },
       );
-      const cacheOwners = new Map<NotebookId, NotebookDocumentSession>();
-      const cacheGenerations = new Map<NotebookId, symbol>();
-      const generationFor = (notebookUri: NotebookId) => {
-        const existing = cacheGenerations.get(notebookUri);
-        if (existing !== undefined) return existing;
-        const generation = Symbol("configuration cache generation");
-        cacheGenerations.set(notebookUri, generation);
-        return generation;
-      };
+      const configProjection = yield* SubscriptionRef.make(
+        HashMap.empty<ConfigurationCacheKey, MarimoConfig>(),
+      );
+      const projectCurrent = (key: ConfigurationCacheKey) =>
+        Effect.gen(function* () {
+          const current = yield* Cache.getSuccess(configurationCache, key);
+          yield* SubscriptionRef.update(configProjection, (projection) =>
+            Option.match(current, {
+              onNone: () => HashMap.remove(projection, key),
+              onSome: (config) => HashMap.set(projection, key, config),
+            }),
+          );
+        });
       const clearCache = (
         notebookUri: NotebookId,
-        expectedOwner?: NotebookDocumentSession,
+        expectedSession?: NotebookDocumentSession,
       ) =>
-        SubscriptionRef.update(configRef, (map) => {
-          if (
-            expectedOwner !== undefined &&
-            cacheOwners.get(notebookUri) !== expectedOwner
-          ) {
-            return map;
+        Effect.gen(function* () {
+          const keys: ReadonlyArray<ConfigurationCacheKey> = expectedSession
+            ? [keyFor(expectedSession)]
+            : Array.from(yield* Cache.keys(configurationCache)).filter(
+                ([cachedNotebookId]) => cachedNotebookId === notebookUri,
+              );
+          for (const key of keys) {
+            yield* Cache.invalidate(configurationCache, key);
           }
-          cacheOwners.delete(notebookUri);
-          // Deleting keeps the map bounded; an in-flight operation holding
-          // the old symbol fails the equality check either way.
-          cacheGenerations.delete(notebookUri);
-          return HashMap.remove(map, notebookUri);
-        }).pipe(
-          Effect.tap(() =>
-            Effect.logTrace("Cleared configuration cache").pipe(
-              Effect.annotateLogs({ notebookUri }),
-            ),
-          ),
-        );
+          yield* SubscriptionRef.update(configProjection, (projection) => {
+            let next = projection;
+            for (const key of keys) {
+              next = HashMap.remove(next, key);
+            }
+            return next;
+          });
+          yield* Effect.logTrace("Cleared configuration cache").pipe(
+            Effect.annotateLogs({ notebookUri }),
+          );
+        });
 
       yield* Effect.forkScoped(
         documentSessions.changes.pipe(
@@ -87,14 +127,19 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
        */
       const streamActiveConfigChanges = () =>
         Stream.zipLatest(
-          SubscriptionRef.changes(configRef),
+          SubscriptionRef.changes(configProjection),
           editorRegistry.streamActiveNotebookChanges,
         ).pipe(
-          Stream.map(([map, activeNotebookUri]) => {
+          Stream.map(([projection, activeNotebookUri]) => {
             if (Option.isNone(activeNotebookUri)) {
               return Option.none<MarimoConfig>();
             }
-            return HashMap.get(map, activeNotebookUri.value);
+            const currentSession = documentSessions.current(
+              activeNotebookUri.value,
+            );
+            return currentSession === undefined
+              ? Option.none<MarimoConfig>()
+              : HashMap.get(projection, keyFor(currentSession));
           }),
           Stream.changes,
         );
@@ -106,48 +151,14 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
         getConfig(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             const session = documentSessions.current(notebookUri);
-            const generation = generationFor(notebookUri);
-            // First check if we have it cached
-            const map = yield* SubscriptionRef.get(configRef);
-            const cached = HashMap.get(map, notebookUri);
-
-            if (
-              session !== undefined &&
-              cacheOwners.get(notebookUri) === session &&
-              Option.isSome(cached)
-            ) {
-              return cached.value;
+            if (session === undefined) {
+              return yield* fetchConfiguration(notebookUri);
             }
 
-            // Fetch from LSP server
-            yield* Effect.logTrace("Fetching configuration from LSP").pipe(
-              Effect.annotateLogs({ notebookUri }),
-            );
-
-            const result = yield* marimo.getConfiguration({
-              notebookUri,
-              inner: {},
-            });
-
-            // A close may have invalidated this request while it was in
-            // flight. Return its result to the original caller, but never
-            // repopulate a cache belonging to a newer notebook session.
-            let cacheIsCurrent = false;
-            yield* SubscriptionRef.update(configRef, (map) => {
-              cacheIsCurrent =
-                session !== undefined &&
-                documentSessions.current(notebookUri) === session &&
-                cacheGenerations.get(notebookUri) === generation;
-              if (!cacheIsCurrent || session === undefined) return map;
-              cacheOwners.set(notebookUri, session);
-              return HashMap.set(map, notebookUri, result.config);
-            });
-
-            yield* Effect.logTrace("Configuration fetched").pipe(
-              Effect.annotateLogs({ notebookUri, cached: cacheIsCurrent }),
-            );
-
-            return result.config;
+            const key = keyFor(session);
+            const config = yield* Cache.get(configurationCache, key);
+            yield* projectCurrent(key);
+            return config;
           });
         },
 
@@ -160,7 +171,6 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
         ) {
           return Effect.gen(function* () {
             const session = documentSessions.current(notebookUri);
-            const generation = generationFor(notebookUri);
             yield* Effect.logTrace("Updating configuration").pipe(
               Effect.annotateLogs({ notebookUri, config: partialConfig }),
             );
@@ -173,17 +183,14 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
               },
             });
 
-            yield* SubscriptionRef.update(configRef, (map) => {
-              if (
-                session === undefined ||
-                documentSessions.current(notebookUri) !== session ||
-                cacheGenerations.get(notebookUri) !== generation
-              ) {
-                return map;
-              }
-              cacheOwners.set(notebookUri, session);
-              return HashMap.set(map, notebookUri, result);
-            });
+            if (
+              session !== undefined &&
+              documentSessions.current(notebookUri) === session
+            ) {
+              const key = keyFor(session);
+              yield* Cache.set(configurationCache, key, result);
+              yield* projectCurrent(key);
+            }
 
             yield* Effect.logTrace("Configuration updated successfully").pipe(
               Effect.annotateLogs({ notebookUri }),

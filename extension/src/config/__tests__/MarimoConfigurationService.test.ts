@@ -177,6 +177,44 @@ describe("MarimoConfigurationService", () => {
   );
 
   it.effect(
+    "shares an in-flight configuration lookup",
+    Effect.fn(function* () {
+      const requestStarted = yield* Deferred.make<void>();
+      const releaseRequest = yield* Deferred.make<void>();
+      let requests = 0;
+      const ctx = yield* withTestCtx({
+        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
+        beforeGetResponse: () =>
+          Effect.sync(() => {
+            requests += 1;
+          }).pipe(
+            Effect.andThen(Deferred.succeed(requestStarted, undefined)),
+            Effect.andThen(Deferred.await(releaseRequest)),
+          ),
+      });
+
+      yield* Effect.gen(function* () {
+        const service = yield* MarimoConfigurationService;
+        const lookups = yield* Effect.forkChild(
+          Effect.all(
+            [service.getConfig(NOTEBOOK_URI), service.getConfig(NOTEBOOK_URI)],
+            { concurrency: "unbounded" },
+          ),
+        );
+        yield* Deferred.await(requestStarted);
+        yield* TestClock.adjust("1 millis");
+
+        expect(requests).toBe(1);
+        yield* Deferred.succeed(releaseRequest, undefined);
+        expect(yield* Fiber.join(lookups)).toEqual([
+          AUTORUN_CONFIG,
+          AUTORUN_CONFIG,
+        ]);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
     "should update configuration and cache",
     Effect.fn(function* () {
       const notebookUri = NOTEBOOK_URI;
@@ -291,6 +329,47 @@ describe("MarimoConfigurationService", () => {
           "autorun",
         );
         // The invalid response was not cached; this fetch reaches the server.
+        expect(
+          (yield* service.getConfig(NOTEBOOK_URI)).runtime?.on_cell_change,
+        ).toBe("lazy");
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "does not restore configuration from a request invalidated by close",
+    Effect.fn(function* () {
+      const requestStarted = yield* Deferred.make<void>();
+      const releaseRequest = yield* Deferred.make<void>();
+      const ctx = yield* withTestCtx({
+        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
+        beforeGetResponse: () =>
+          Deferred.succeed(requestStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseRequest)),
+          ),
+      });
+
+      yield* Effect.gen(function* () {
+        const service = yield* MarimoConfigurationService;
+        const document = ctx.initialDocuments[0];
+        assert(document !== undefined);
+        const pending = yield* Effect.forkChild(
+          service.getConfig(NOTEBOOK_URI),
+        );
+        yield* Deferred.await(requestStarted);
+
+        yield* ctx.vscode.closeNotebook(document);
+        yield* TestClock.adjust("1 millis");
+        yield* ctx.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
+        yield* Deferred.succeed(releaseRequest, undefined);
+
+        expect((yield* Fiber.join(pending)).runtime?.on_cell_change).toBe(
+          "autorun",
+        );
+
+        const replacement = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI));
+        yield* ctx.vscode.openNotebook(replacement);
+        yield* TestClock.adjust("1 millis");
         expect(
           (yield* service.getConfig(NOTEBOOK_URI)).runtime?.on_cell_change,
         ).toBe("lazy");
