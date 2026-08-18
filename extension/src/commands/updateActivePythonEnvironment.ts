@@ -27,7 +27,8 @@ const handler = Effect.fn("command.updateActivePythonEnvironment")(function* (
 
   const { document: notebook, editor } = target.value;
 
-  const controller = yield* notebooks.forNotebook(notebook.id).getController;
+  const handle = yield* notebooks.forNotebook(notebook.id);
+  const controller = yield* handle.getController;
 
   if (Option.isNone(controller)) {
     yield* code.window.showInformationMessage(

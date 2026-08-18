@@ -69,56 +69,59 @@ export function makeTestNotebookRuntime(options: Options = {}) {
           yield* PubSub.unbounded<NotebookControllerSelection>();
         yield* Effect.addFinalizer(() => PubSub.shutdown(selections));
 
-        const forNotebook = (notebookId: NotebookId): NotebookHandle => {
-          const existing = handles.get(notebookId);
-          if (existing !== undefined) return existing;
-          const handle: NotebookHandle = {
-            id: notebookId,
-            getController: Effect.sync(() =>
-              Option.fromNullishOr(controllers.get(notebookId)),
-            ),
-            executeScratchpad: () => Stream.empty,
-            updateUIElements: (inner) =>
-              client.updateUiElement({
+        const forNotebook = (
+          notebookId: NotebookId,
+        ): Effect.Effect<NotebookHandle> =>
+          Effect.sync(() => {
+            const existing = handles.get(notebookId);
+            if (existing !== undefined) return existing;
+            const handle: NotebookHandle = {
+              id: notebookId,
+              getController: Effect.sync(() =>
+                Option.fromNullishOr(controllers.get(notebookId)),
+              ),
+              executeScratchpad: () => Stream.empty,
+              updateUIElements: (inner) =>
+                client.updateUiElement({
+                  notebookUri: notebookId,
+                  sessionId: TEST_KERNEL_SESSION_ID,
+                  inner,
+                }),
+              updateModel: (inner) =>
+                client.setModelValue({
+                  notebookUri: notebookId,
+                  sessionId: TEST_KERNEL_SESSION_ID,
+                  inner,
+                }),
+              invokeFunction: (inner) =>
+                client.invokeFunction({
+                  notebookUri: notebookId,
+                  sessionId: TEST_KERNEL_SESSION_ID,
+                  inner,
+                }),
+              deleteCell: (inner) =>
+                client.deleteCell({
+                  notebookUri: notebookId,
+                  sessionId: TEST_KERNEL_SESSION_ID,
+                  inner,
+                }),
+              interrupt: client.interrupt({
                 notebookUri: notebookId,
-                sessionId: TEST_KERNEL_SESSION_ID,
-                inner,
+                inner: { sessionId: TEST_KERNEL_SESSION_ID },
               }),
-            updateModel: (inner) =>
-              client.setModelValue({
-                notebookUri: notebookId,
-                sessionId: TEST_KERNEL_SESSION_ID,
-                inner,
-              }),
-            invokeFunction: (inner) =>
-              client.invokeFunction({
-                notebookUri: notebookId,
-                sessionId: TEST_KERNEL_SESSION_ID,
-                inner,
-              }),
-            deleteCell: (inner) =>
-              client.deleteCell({
-                notebookUri: notebookId,
-                sessionId: TEST_KERNEL_SESSION_ID,
-                inner,
-              }),
-            interrupt: client.interrupt({
-              notebookUri: notebookId,
-              inner: { sessionId: TEST_KERNEL_SESSION_ID },
-            }),
-            restart: client
-              .restartSession({
-                notebookUri: notebookId,
-                inner: { executable: "", workingDirectory: "" },
-              })
-              .pipe(Effect.as(undefined)),
-            close: client
-              .closeSession({ notebookUri: notebookId, inner: {} })
-              .pipe(Effect.asVoid),
-          };
-          handles.set(notebookId, handle);
-          return handle;
-        };
+              restart: client
+                .restartSession({
+                  notebookUri: notebookId,
+                  inner: { executable: "", workingDirectory: "" },
+                })
+                .pipe(Effect.as(undefined)),
+              close: client
+                .closeSession({ notebookUri: notebookId, inner: {} })
+                .pipe(Effect.asVoid),
+            };
+            handles.set(notebookId, handle);
+            return handle;
+          });
 
         const forDocument = (
           document: Parameters<typeof MarimoNotebookDocument.from>[0],

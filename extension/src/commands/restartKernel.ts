@@ -40,7 +40,8 @@ const handler = Effect.fn("command.restartKernel")(function* (
     Effect.fn(function* (progress) {
       progress.report({ message: "Restarting session..." });
 
-      const succeeded = yield* runtime.forNotebook(notebook.id).restart.pipe(
+      const handle = yield* runtime.forNotebook(notebook.id);
+      const succeeded = yield* handle.restart.pipe(
         Effect.as(true),
         Effect.catchCause(
           Effect.fn(function* (cause) {

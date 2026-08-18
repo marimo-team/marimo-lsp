@@ -118,7 +118,10 @@ export const SessionFileLifecycleLive = Layer.effectDiscard(
                     deletedWhileOpen.add(session.notebookId);
                     continue;
                   }
-                  yield* runtime.forNotebook(session.notebookId).close;
+                  const notebook = yield* runtime.forNotebook(
+                    session.notebookId,
+                  );
+                  yield* notebook.close;
                 }
               }).pipe(Effect.ignore),
             { discard: true },
@@ -134,7 +137,8 @@ export const SessionFileLifecycleLive = Layer.effectDiscard(
             const uri = document.uri.toString();
             if (!deletedWhileOpen.delete(uri)) return;
             const notebookUri = yield* decodeNotebookId(uri);
-            yield* runtime.forNotebook(notebookUri).close;
+            const notebook = yield* runtime.forNotebook(notebookUri);
+            yield* notebook.close;
           }).pipe(Effect.ignore),
         ),
       ),

@@ -8,8 +8,9 @@ import {
   FiberSet,
   Predicate,
   Queue,
-  type Scope,
+  Scope,
 } from "effect";
+import type { TaggedEnum } from "effect/Data";
 
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 
@@ -27,6 +28,19 @@ interface Actor<R> {
   readonly queue: Queue.Queue<Work<R>, Cause.Done>;
 }
 
+type Ingress<R> = Data.TaggedEnum<{
+  Work: { readonly work: Work<R> };
+  Idle: {
+    readonly notebookId: NotebookId;
+    readonly actor: Actor<R>;
+    readonly retire: Deferred.Deferred<boolean>;
+  };
+}>;
+interface IngressDef extends TaggedEnum.WithGenerics<1> {
+  readonly taggedEnum: Ingress<this["A"]>;
+}
+const Ingress = Data.taggedEnum<IngressDef>();
+
 /** The scope that owned an admitted notebook command closed before it ended. */
 export class NotebookExecutionScopeClosedError extends Data.TaggedError(
   "NotebookExecutionScopeClosedError",
@@ -38,27 +52,20 @@ export interface NotebookExecutor<R> {
     notebookId: NotebookId,
     effect: Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E>;
-  /** Like `submit`, but interrupts queued or running work when `scope` closes. */
-  readonly submitIn: <A, E>(
-    scope: Scope.Scope,
+  /** Like `submit`, but owned by the `Scope` in the Effect environment. */
+  readonly submitScoped: <A, E>(
     notebookId: NotebookId,
     effect: Effect.Effect<A, E, R>,
-  ) => Effect.Effect<A, E | NotebookExecutionScopeClosedError>;
+  ) => Effect.Effect<A, E | NotebookExecutionScopeClosedError, Scope.Scope>;
   readonly post: (
     notebookId: NotebookId,
     effect: Effect.Effect<void, never, R>,
   ) => Effect.Effect<void>;
-  /** Like `post`, but interrupts queued or running work when `scope` closes. */
-  readonly postIn: (
-    scope: Scope.Scope,
+  /** Like `post`, but owned by the `Scope` in the Effect environment. */
+  readonly postScoped: (
     notebookId: NotebookId,
     effect: Effect.Effect<void, never, R>,
-  ) => Effect.Effect<void>;
-  /**
-   * Releases the notebook's worker after all previously admitted work has
-   * run. Later submissions for the same notebook start a fresh worker.
-   */
-  readonly retire: (notebookId: NotebookId) => Effect.Effect<void>;
+  ) => Effect.Effect<void, never, Scope.Scope>;
 }
 
 /** Makes a scoped executor that owns every successfully admitted effect. */
@@ -69,7 +76,7 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
 > {
   return Effect.uninterruptible(
     Effect.gen(function* () {
-      const ingress = yield* Queue.unbounded<Work<R>, Cause.Done>();
+      const ingress = yield* Queue.unbounded<Ingress<R>, Cause.Done>();
       const actors = new Map<NotebookId, Actor<R>>();
       const fibers = yield* FiberSet.make<void, never>();
 
@@ -84,26 +91,38 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
           yield* Queue.shutdown(actor.queue);
         });
 
-      const runWorker = (queue: Queue.Queue<Work<R>, Cause.Done>) =>
-        Effect.forever(
+      const runWorker = (notebookId: NotebookId, actor: Actor<R>) => {
+        const loop = (): Effect.Effect<void, Cause.Done, R> =>
           Effect.uninterruptibleMask((restore) =>
-            restore(Queue.take(queue)).pipe(
-              Effect.flatMap((work) =>
-                work
-                  .run(restore)
-                  .pipe(
-                    Effect.catchCause((cause) =>
-                      Cause.hasInterruptsOnly(cause)
-                        ? Effect.void
-                        : Effect.logError(
-                            "Notebook executor event failed",
-                          ).pipe(Effect.annotateLogs({ cause })),
-                    ),
+            Effect.gen(function* () {
+              const work = yield* restore(Queue.take(actor.queue));
+              yield* work
+                .run(restore)
+                .pipe(
+                  Effect.catchCause((cause) =>
+                    Cause.hasInterruptsOnly(cause)
+                      ? Effect.void
+                      : Effect.logError("Notebook executor event failed").pipe(
+                          Effect.annotateLogs({ cause }),
+                        ),
                   ),
-              ),
+                );
+
+              if ((yield* Queue.size(actor.queue)) > 0) return false;
+              const retire = yield* Deferred.make<boolean>();
+              const offered = yield* Queue.offer(
+                ingress,
+                Ingress.Idle({ notebookId, actor, retire }),
+              );
+              return offered ? yield* Deferred.await(retire) : true;
+            }),
+          ).pipe(
+            Effect.flatMap((retire) =>
+              retire ? Effect.void : Effect.suspend(loop),
             ),
-          ),
-        ).pipe(Effect.catchTag("Done", () => Effect.void));
+          );
+        return loop().pipe(Effect.catchTag("Done", () => Effect.void));
+      };
 
       const actorFor = (notebookId: NotebookId) =>
         Effect.gen(function* () {
@@ -115,7 +134,7 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
           actors.set(notebookId, actor);
           yield* FiberSet.run(
             fibers,
-            runWorker(queue).pipe(
+            runWorker(notebookId, actor).pipe(
               Effect.ensuring(closeActor(notebookId, actor)),
             ),
           );
@@ -126,19 +145,29 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
         fibers,
         Effect.forever(
           Queue.take(ingress).pipe(
-            Effect.flatMap((work) =>
-              Effect.gen(function* () {
-                const actor = yield* actorFor(work.notebookId);
-                if (!(yield* Queue.offer(actor.queue, work))) {
-                  // The actor retired between lookup and offer. Retirement
-                  // removes the map entry before ending the queue, so one
-                  // retry lands on a fresh actor.
-                  const fresh = yield* actorFor(work.notebookId);
-                  if (!(yield* Queue.offer(fresh.queue, work))) {
-                    yield* work.reject;
-                  }
-                }
-              }),
+            Effect.flatMap((message) =>
+              Ingress.$is("Work")(message)
+                ? Effect.gen(function* () {
+                    const { work } = message;
+                    const actor = yield* actorFor(work.notebookId);
+                    if (!(yield* Queue.offer(actor.queue, work))) {
+                      const fresh = yield* actorFor(work.notebookId);
+                      if (!(yield* Queue.offer(fresh.queue, work))) {
+                        yield* work.reject;
+                      }
+                    }
+                  })
+                : Effect.gen(function* () {
+                    const current = actors.get(message.notebookId);
+                    const shouldRetire =
+                      current !== message.actor ||
+                      (yield* Queue.size(message.actor.queue)) === 0;
+                    if (shouldRetire && current === message.actor) {
+                      actors.delete(message.notebookId);
+                      yield* Queue.end(message.actor.queue);
+                    }
+                    yield* Deferred.succeed(message.retire, shouldRetire);
+                  }),
             ),
           ),
         ).pipe(Effect.catchTag("Done", () => Effect.void)),
@@ -200,7 +229,7 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
               reject: Deferred.interrupt(reply).pipe(Effect.asVoid),
             };
 
-            if (!(yield* Queue.offer(ingress, work))) {
+            if (!(yield* Queue.offer(ingress, Ingress.Work({ work })))) {
               yield* work.reject;
             }
 
@@ -212,11 +241,29 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
 
       const submit: NotebookExecutor<R>["submit"] = (notebookId, effect) =>
         submitWork(notebookId, effect);
-      const submitIn: NotebookExecutor<R>["submitIn"] = (
-        scope,
+      const submitScoped: NotebookExecutor<R>["submitScoped"] = (
         notebookId,
         effect,
-      ) => submitWork(notebookId, inScope(effect, scope, notebookId));
+      ) =>
+        Effect.gen(function* () {
+          const scope = yield* Effect.scope;
+          const watcherScope = yield* Scope.fork(scope);
+          const closed = yield* Deferred.make<void>();
+          yield* Scope.addFinalizer(
+            watcherScope,
+            Deferred.succeed(closed, undefined),
+          );
+          return yield* Effect.raceFirst(
+            submitWork(notebookId, inScope(effect, scope, notebookId)),
+            Deferred.await(closed).pipe(
+              Effect.andThen(
+                Effect.fail(
+                  new NotebookExecutionScopeClosedError({ notebookId }),
+                ),
+              ),
+            ),
+          ).pipe(Effect.ensuring(Scope.close(watcherScope, Exit.void)));
+        });
 
       const postWork = (
         notebookId: NotebookId,
@@ -224,51 +271,40 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
       ) =>
         Effect.uninterruptible(
           Effect.gen(function* () {
-            const admitted = yield* Queue.offer(ingress, {
-              notebookId,
-              run: (restore) => restore(effect),
-              reject: Effect.void,
-            });
+            const admitted = yield* Queue.offer(
+              ingress,
+              Ingress.Work({
+                work: {
+                  notebookId,
+                  run: (restore) => restore(effect),
+                  reject: Effect.void,
+                },
+              }),
+            );
             if (!admitted) return yield* Effect.interrupt;
             return undefined;
           }),
         );
       const post: NotebookExecutor<R>["post"] = (notebookId, effect) =>
         postWork(notebookId, effect);
-      const postIn: NotebookExecutor<R>["postIn"] = (
-        scope,
+      const postScoped: NotebookExecutor<R>["postScoped"] = (
         notebookId,
         effect,
       ) =>
-        postWork(
-          notebookId,
-          inScope(effect, scope, notebookId).pipe(
-            Effect.catchTag(
-              "NotebookExecutionScopeClosedError",
-              () => Effect.void,
-            ),
-          ),
-        );
-
-      // Routed through ingress like any work so it runs after everything
-      // admitted for the notebook before it. Draining the queue after end
-      // lets the worker finish those items and exit on Done.
-      const retire: NotebookExecutor<R>["retire"] = (notebookId) =>
-        Effect.uninterruptible(
-          Queue.offer(ingress, {
+        Effect.gen(function* () {
+          const scope = yield* Effect.scope;
+          yield* postWork(
             notebookId,
-            run: () =>
-              Effect.suspend(() => {
-                const actor = actors.get(notebookId);
-                if (actor === undefined) return Effect.void;
-                actors.delete(notebookId);
-                return Queue.end(actor.queue).pipe(Effect.asVoid);
-              }),
-            reject: Effect.void,
-          }).pipe(Effect.asVoid),
-        );
+            inScope(effect, scope, notebookId).pipe(
+              Effect.catchTag(
+                "NotebookExecutionScopeClosedError",
+                () => Effect.void,
+              ),
+            ),
+          );
+        });
 
-      return { submit, submitIn, post, postIn, retire };
+      return { submit, submitScoped, post, postScoped };
     }),
   );
 }

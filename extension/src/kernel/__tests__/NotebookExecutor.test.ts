@@ -101,20 +101,17 @@ describe("NotebookExecutor", () => {
       const notebook = notebookId("notebook");
 
       const active = yield* executor
-        .submitIn(
-          documentScope,
-          notebook,
-          started.open.pipe(Effect.andThen(Effect.never)),
-        )
+        .submitScoped(notebook, started.open.pipe(Effect.andThen(Effect.never)))
+        .pipe(Scope.provide(documentScope))
         .pipe(Effect.forkDetach);
       yield* started.await;
 
       const buffered = yield* executor
-        .submitIn(
-          documentScope,
+        .submitScoped(
           notebook,
           Ref.set(bufferedStarted, true).pipe(Effect.andThen(Effect.never)),
         )
+        .pipe(Scope.provide(documentScope))
         .pipe(Effect.forkDetach);
       yield* Effect.yieldNow;
 
@@ -139,6 +136,69 @@ describe("NotebookExecutor", () => {
   );
 
   it.effect(
+    "rejects queued scoped work as soon as its scope closes",
+    Effect.fn(function* () {
+      const executor = yield* makeNotebookExecutor<never>();
+      const documentScope = yield* Scope.make();
+      const blockerStarted = yield* Latch.make();
+      const releaseBlocker = yield* Latch.make();
+      const queuedStarted = yield* Ref.make(false);
+      const notebook = notebookId("notebook");
+
+      yield* executor.post(
+        notebook,
+        blockerStarted.open.pipe(Effect.andThen(releaseBlocker.await)),
+      );
+      yield* blockerStarted.await;
+
+      const queued = yield* executor
+        .submitScoped(
+          notebook,
+          Ref.set(queuedStarted, true).pipe(Effect.andThen(Effect.never)),
+        )
+        .pipe(Scope.provide(documentScope), Effect.forkDetach);
+      yield* Effect.yieldNow;
+
+      yield* Scope.close(documentScope, Exit.void);
+      const exit = yield* Fiber.await(queued);
+      assert.isTrue(Exit.isFailure(exit));
+      if (Exit.isFailure(exit)) {
+        const failure = exit.cause.reasons.find(Cause.isFailReason);
+        assert.instanceOf(failure?.error, NotebookExecutionScopeClosedError);
+      }
+
+      yield* releaseBlocker.open;
+      assert.strictEqual(
+        yield* executor.submit(notebook, Effect.succeed("done")),
+        "done",
+      );
+      assert.isFalse(yield* Ref.get(queuedStarted));
+    }),
+  );
+
+  it.effect(
+    "releases scope-close watchers after submissions finish",
+    Effect.fn(function* () {
+      const executor = yield* makeNotebookExecutor<never>();
+      const documentScope = yield* Scope.make();
+      const notebook = notebookId("notebook");
+
+      for (let index = 0; index < 100; index++) {
+        yield* executor
+          .submitScoped(notebook, Effect.void)
+          .pipe(Scope.provide(documentScope));
+      }
+
+      const finalizerCount =
+        documentScope.state._tag === "Open"
+          ? documentScope.state.finalizers.size
+          : 0;
+      assert.strictEqual(finalizerCount, 0);
+      yield* Scope.close(documentScope, Exit.void);
+    }),
+  );
+
+  it.effect(
     "preserves self-interruption while the owning scope remains open",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -146,8 +206,8 @@ describe("NotebookExecutor", () => {
       const notebook = notebookId("notebook");
 
       const submitted = yield* executor
-        .submitIn(documentScope, notebook, Effect.interrupt)
-        .pipe(Effect.forkDetach);
+        .submitScoped(notebook, Effect.interrupt)
+        .pipe(Scope.provide(documentScope), Effect.forkDetach);
 
       assert.isTrue(Exit.hasInterrupts(yield* Fiber.await(submitted)));
       yield* Scope.close(documentScope, Exit.void);
@@ -169,79 +229,23 @@ describe("NotebookExecutor", () => {
   );
 
   it.effect(
-    "interrupts a retired worker that is still draining",
-    Effect.fn(function* () {
-      const scope = yield* Scope.make();
-      const executor = yield* makeNotebookExecutor<never>().pipe(
-        Effect.provideService(Scope.Scope, scope),
-      );
-      const blockerStarted = yield* Latch.make();
-      const releaseBlocker = yield* Latch.make();
-      const routed = yield* Latch.make();
-      const trailingStarted = yield* Latch.make();
-      const bufferedStarted = yield* Ref.make(false);
-      const notebook = notebookId("notebook");
-
-      yield* executor.post(
-        notebook,
-        blockerStarted.open.pipe(Effect.andThen(releaseBlocker.await)),
-      );
-      yield* blockerStarted.await;
-
-      yield* executor.retire(notebook);
-      const trailing = yield* executor
-        .submit(
-          notebook,
-          trailingStarted.open.pipe(Effect.andThen(Effect.never)),
-        )
-        .pipe(Effect.forkDetach);
-      const buffered = yield* executor
-        .submit(
-          notebook,
-          Ref.set(bufferedStarted, true).pipe(Effect.andThen(Effect.never)),
-        )
-        .pipe(Effect.forkDetach);
-
-      // Work for another notebook proves the coordinator routed everything
-      // above while the first actor was still blocked. The retire marker will
-      // remove that actor from the lookup map before its trailing work runs.
-      yield* executor.post(notebookId("barrier"), routed.open);
-      yield* routed.await;
-      yield* releaseBlocker.open;
-      yield* trailingStarted.await;
-
-      yield* Scope.close(scope, Exit.void);
-      const [trailingExit, bufferedExit] = yield* Effect.all([
-        Fiber.await(trailing),
-        Fiber.await(buffered),
-      ]);
-
-      assert.isTrue(Exit.hasInterrupts(trailingExit));
-      assert.isTrue(Exit.hasInterrupts(bufferedExit));
-      assert.isFalse(yield* Ref.get(bufferedStarted));
-    }),
-  );
-
-  it.effect(
-    "retires a notebook after draining admitted work",
+    "preserves FIFO while idle workers retire",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
       const order = yield* Ref.make<ReadonlyArray<string>>([]);
       const notebook = notebookId("notebook");
 
-      yield* executor.post(
-        notebook,
-        Ref.update(order, (events) => [...events, "before"]),
-      );
-      yield* executor.retire(notebook);
-      yield* executor.post(
-        notebook,
-        Ref.update(order, (events) => [...events, "after"]),
-      );
+      for (let index = 0; index < 100; index++) {
+        yield* executor.submit(
+          notebook,
+          Ref.update(order, (events) => [...events, String(index)]),
+        );
+      }
 
-      const result = yield* executor.submit(notebook, Effect.succeed("done"));
-      assert.strictEqual(result, "done");
-      assert.deepStrictEqual(yield* Ref.get(order), ["before", "after"]);
+      assert.deepStrictEqual(
+        yield* Ref.get(order),
+        Array.from({ length: 100 }, (_, index) => String(index)),
+      );
     }),
   );
 });

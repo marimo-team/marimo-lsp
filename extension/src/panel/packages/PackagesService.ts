@@ -6,6 +6,7 @@ import {
   Layer,
   Option,
   Result,
+  Scope,
   Stream,
   SubscriptionRef,
 } from "effect";
@@ -98,9 +99,10 @@ export class PackagesService extends Context.Service<PackagesService>()(
             return null;
           }
 
-          const activeController = yield* notebooks.forNotebook(
+          const notebook = yield* notebooks.forNotebook(
             activeNotebook.value.id,
-          ).getController;
+          );
+          const activeController = yield* notebook.getController;
           if (Option.isNone(activeController)) {
             yield* Effect.logDebug(
               "No active controller; skipping dependency tree fetch",
@@ -260,13 +262,19 @@ export class PackagesService extends Context.Service<PackagesService>()(
           );
         });
 
-      yield* Effect.forkScoped(
-        documentSessions.changes.pipe(
-          Stream.runForEach((change) =>
-            change._tag === "Ended"
-              ? clearCache(change.session.notebookId, change.session)
-              : Effect.void,
-          ),
+      const registeredSessionCleanups = new WeakSet<NotebookDocumentSession>();
+      const registerSessionCleanup = Effect.fn(
+        "PackagesService.registerSessionCleanup",
+      )((session: NotebookDocumentSession) =>
+        Effect.uninterruptible(
+          Effect.suspend(() => {
+            if (registeredSessionCleanups.has(session)) return Effect.void;
+            registeredSessionCleanups.add(session);
+            return Scope.addFinalizer(
+              session.scope,
+              clearCache(session.notebookId, session),
+            );
+          }),
         ),
       );
 
@@ -296,6 +304,7 @@ export class PackagesService extends Context.Service<PackagesService>()(
             }
 
             const key = keyFor(session);
+            yield* registerSessionCleanup(session);
             const existing = yield* Cache.getSuccess(dependencyTreeCache, key);
             if (
               Option.isSome(existing) &&
@@ -313,7 +322,11 @@ export class PackagesService extends Context.Service<PackagesService>()(
             }
 
             const next = yield* Cache.get(dependencyTreeCache, key);
-            yield* projectCurrent(key);
+            if (documentSessions.current(notebookUri) === session) {
+              yield* projectCurrent(key);
+            } else {
+              yield* clearCache(notebookUri, session);
+            }
             return next?.tree ?? null;
           });
         },

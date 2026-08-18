@@ -86,13 +86,10 @@ it.effect(
       const notebooks = yield* NotebookRuntime;
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
 
-      expect(
-        Option.isNone(
-          yield* notebooks.forNotebook(
-            notebookId(editor.notebook.uri.toString()),
-          ).getController,
-        ),
-      ).toBe(true);
+      const initial = yield* notebooks.forNotebook(
+        notebookId(editor.notebook.uri.toString()),
+      );
+      expect(Option.isNone(yield* initial.getController)).toBe(true);
 
       // No drain before selecting: the controller's selection listener is
       // acquired in the same fiber turn as its creation, so an event fired
@@ -105,9 +102,10 @@ it.effect(
       );
       yield* TestClock.adjust("10 millis");
 
-      const selected = yield* notebooks.forNotebook(
+      const selectedNotebook = yield* notebooks.forNotebook(
         notebookId(editor.notebook.uri.toString()),
-      ).getController;
+      );
+      const selected = yield* selectedNotebook.getController;
       assert(Option.isSome(selected));
       expect(selected.value.id).toBe(`marimo-${executable}`);
     }).pipe(Effect.provide(ctx.layer));

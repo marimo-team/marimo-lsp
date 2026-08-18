@@ -144,8 +144,8 @@ export const RegisterLanguageModelToolsLive = Layer.effectDiscard(
         );
       }
 
-      const ops = yield* notebooks
-        .forNotebook(notebookId.value)
+      const notebook = yield* notebooks.forNotebook(notebookId.value);
+      const ops = yield* notebook
         .executeScratchpad(input.code)
         .pipe(Stream.runCollect);
 

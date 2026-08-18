@@ -97,9 +97,8 @@ export class Api extends Context.Service<Api>()("Api", {
 
       // Just check if we have a controller.
       // TODO: Have proper statuses?
-      const isKernelActive = Option.isSome(
-        yield* notebooks.forNotebook(doc.value.id).getController,
-      );
+      const notebook = yield* notebooks.forNotebook(doc.value.id);
+      const isKernelActive = Option.isSome(yield* notebook.getController);
 
       if (!isKernelActive) {
         yield* Effect.logWarning("Kernel not active for notebook").pipe(
@@ -123,8 +122,7 @@ export class Api extends Context.Service<Api>()("Api", {
             return Effect.sync(() => disposable?.dispose());
           });
 
-          return notebooks
-            .forNotebook(doc.value.id)
+          return notebook
             .executeScratchpad(cellCode)
             .pipe(
               Stream.filterMap(

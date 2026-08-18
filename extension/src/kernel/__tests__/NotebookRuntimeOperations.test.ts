@@ -679,7 +679,8 @@ describe("NotebookRuntime stdin", () => {
         );
         yield* ctx.inputRequested.await;
 
-        yield* runtime.forNotebook(ctx.notebookUri).restart;
+        const notebook = yield* runtime.forNotebook(ctx.notebookUri);
+        yield* notebook.restart;
         yield* Queue.offer(ctx.inputQueue, Option.some("stale response"));
         yield* TestClock.adjust("1 millis");
 
@@ -700,7 +701,8 @@ describe("NotebookRuntime scratch stream", () => {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        const notebook = (yield* NotebookRuntime).forNotebook(ctx.notebookUri);
+        const runtime = yield* NotebookRuntime;
+        const notebook = yield* runtime.forNotebook(ctx.notebookUri);
         const first = yield* Effect.forkChild(
           notebook.executeScratchpad("print('first')").pipe(Stream.runDrain),
         );
@@ -796,16 +798,16 @@ describe("NotebookRuntime scratch stream", () => {
         yield* ctx.vscode.openNotebook(otherEditor.notebook);
         yield* TestClock.adjust("1 millis");
         yield* runtime.attachController(otherNotebook.id, ctx.mockController);
+        const firstNotebook = yield* runtime.forNotebook(ctx.notebookUri);
+        const secondNotebook = yield* runtime.forNotebook(otherNotebook.id);
 
         const first = yield* Effect.forkChild(
-          runtime
-            .forNotebook(ctx.notebookUri)
+          firstNotebook
             .executeScratchpad("print('first')")
             .pipe(Stream.runDrain),
         );
         const second = yield* Effect.forkChild(
-          runtime
-            .forNotebook(otherNotebook.id)
+          secondNotebook
             .executeScratchpad("print('second')")
             .pipe(Stream.runDrain),
         );
@@ -874,12 +876,10 @@ describe("NotebookRuntime scratch stream", () => {
         // Route cell-op notifications through processSessionOperation.
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
+        const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
-          runtime
-            .forNotebook(ctx.notebookUri)
-            .executeScratchpad("print('hi')")
-            .pipe(Stream.runCollect),
+          notebook.executeScratchpad("print('hi')").pipe(Stream.runCollect),
         );
 
         // Wait for executeScratchpad to enqueue marimo.api with its generated
@@ -975,12 +975,10 @@ describe("NotebookRuntime scratch stream", () => {
 
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
+        const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
-          runtime
-            .forNotebook(ctx.notebookUri)
-            .executeScratchpad("print('hi')")
-            .pipe(Stream.runCollect),
+          notebook.executeScratchpad("print('hi')").pipe(Stream.runCollect),
         );
 
         // Wait until executeScratchpad sends the command and arms the
@@ -1029,12 +1027,10 @@ describe("NotebookRuntime scratch stream", () => {
 
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust("1 millis");
+        const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
-          runtime
-            .forNotebook(ctx.notebookUri)
-            .executeScratchpad("print('hi')")
-            .pipe(Stream.runCollect),
+          notebook.executeScratchpad("print('hi')").pipe(Stream.runCollect),
         );
 
         // Wait until the command is recorded. Do not count scheduler
@@ -1101,10 +1097,10 @@ describe("NotebookRuntime state eviction", () => {
           sessionId: activeSessionId,
           notification: { op: "variables", variables: [] },
         });
-        yield* TestClock.adjust("10 millis");
-        expect(
-          Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
-        ).toBe(true);
+        yield* variables.getVariables(ctx.notebookUri).pipe(
+          Effect.filterOrFail(Option.isSome, () => "variables not settled"),
+          Effect.eventually,
+        );
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -1165,14 +1161,17 @@ describe("NotebookRuntime state eviction", () => {
         ).toBe(true);
 
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
-        yield* TestClock.adjust("10 millis");
-
-        expect(
-          Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
-        ).toBe(false);
-        expect(
-          Option.isSome(yield* datasources.getDatasets(ctx.notebookUri)),
-        ).toBe(false);
+        yield* Effect.all([
+          variables.getVariables(ctx.notebookUri),
+          datasources.getDatasets(ctx.notebookUri),
+        ]).pipe(
+          Effect.filterOrFail(
+            ([currentVariables, currentDatasets]) =>
+              Option.isNone(currentVariables) && Option.isNone(currentDatasets),
+            () => "runtime projections not evicted" as const,
+          ),
+          Effect.eventually,
+        );
 
         // Notifications already queued, or delivered late by the old kernel
         // session, must not recreate state after eviction.

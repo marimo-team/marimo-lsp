@@ -7,6 +7,7 @@ import {
   HashMap,
   Layer,
   Option,
+  Scope,
   Stream,
   SubscriptionRef,
 } from "effect";
@@ -109,13 +110,19 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
           );
         });
 
-      yield* Effect.forkScoped(
-        documentSessions.changes.pipe(
-          Stream.runForEach((change) =>
-            change._tag === "Ended"
-              ? clearCache(change.session.notebookId, change.session)
-              : Effect.void,
-          ),
+      const registeredSessionCleanups = new WeakSet<NotebookDocumentSession>();
+      const registerSessionCleanup = Effect.fn(
+        "MarimoConfigurationService.registerSessionCleanup",
+      )((session: NotebookDocumentSession) =>
+        Effect.uninterruptible(
+          Effect.suspend(() => {
+            if (registeredSessionCleanups.has(session)) return Effect.void;
+            registeredSessionCleanups.add(session);
+            return Scope.addFinalizer(
+              session.scope,
+              clearCache(session.notebookId, session),
+            );
+          }),
         ),
       );
 
@@ -156,8 +163,13 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
             }
 
             const key = keyFor(session);
+            yield* registerSessionCleanup(session);
             const config = yield* Cache.get(configurationCache, key);
-            yield* projectCurrent(key);
+            if (documentSessions.current(notebookUri) === session) {
+              yield* projectCurrent(key);
+            } else {
+              yield* clearCache(notebookUri, session);
+            }
             return config;
           });
         },
@@ -171,6 +183,9 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
         ) {
           return Effect.gen(function* () {
             const session = documentSessions.current(notebookUri);
+            if (session !== undefined) {
+              yield* registerSessionCleanup(session);
+            }
             yield* Effect.logTrace("Updating configuration").pipe(
               Effect.annotateLogs({ notebookUri, config: partialConfig }),
             );
