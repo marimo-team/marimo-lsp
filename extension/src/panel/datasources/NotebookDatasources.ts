@@ -107,8 +107,8 @@ const EXPANSION_TIMEOUT = "30 seconds";
  * Uses SubscriptionRef for reactive state management.
  * Converts list-based data to Maps for efficient lookups.
  */
-export class DatasourcesService extends Context.Service<DatasourcesService>()(
-  "DatasourcesService",
+export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
+  "NotebookDatasources",
   {
     make: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
@@ -123,7 +123,7 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
       const pendingByRequest = new Map<string, PendingExpansion>();
       const registeredSessionCleanups = new WeakSet<NotebookDocumentSession>();
 
-      const releaseSession = Effect.fn("DatasourcesService.releaseSession")(
+      const releaseSession = Effect.fn("NotebookDatasources.releaseSession")(
         function* (session: NotebookDocumentSession) {
           const notebookUri = session.notebookId;
           registeredSessionCleanups.delete(session);
@@ -150,7 +150,7 @@ export class DatasourcesService extends Context.Service<DatasourcesService>()(
       );
 
       const registerSessionCleanup = Effect.fn(
-        "DatasourcesService.registerSessionCleanup",
+        "NotebookDatasources.registerSessionCleanup",
       )((session: NotebookDocumentSession) =>
         Effect.suspend(() => {
           if (registeredSessionCleanups.has(session)) return Effect.void;

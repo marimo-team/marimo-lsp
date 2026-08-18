@@ -3,7 +3,7 @@ import { Effect, HashMap, Layer, Option, Ref, Stream } from "effect";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import { TreeView } from "../TreeView.ts";
-import { VariablesService } from "./VariablesService.ts";
+import { NotebookVariables } from "./NotebookVariables.ts";
 
 interface VariableTreeItem {
   type: "variable";
@@ -23,7 +23,7 @@ interface VariableTreeItem {
 export const VariablesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const treeView = yield* TreeView;
-    const variablesService = yield* VariablesService;
+    const variables = yield* NotebookVariables;
     const editorRegistry = yield* NotebookEditorRegistry;
 
     // Track the current variable items for the active notebook
@@ -67,8 +67,7 @@ export const VariablesViewLive = Layer.effectDiscard(
       }
 
       const notebookUri = activeNotebookUri.value;
-      const variablesData =
-        yield* variablesService.getAllVariableData(notebookUri);
+      const variablesData = yield* variables.getAllVariableData(notebookUri);
 
       // Create a map of variable values for quick lookup
       const valueMap = new Map<string, { value?: string; datatype?: string }>();
@@ -114,14 +113,14 @@ export const VariablesViewLive = Layer.effectDiscard(
 
     // Subscribe to variable declarations changes
     yield* Effect.forkScoped(
-      variablesService.streamVariablesChanges.pipe(
+      variables.streamVariablesChanges.pipe(
         Stream.runForEach(() => refreshVariables()),
       ),
     );
 
     // Subscribe to variable values changes
     yield* Effect.forkScoped(
-      variablesService.streamVariableValuesChanges.pipe(
+      variables.streamVariableValuesChanges.pipe(
         Stream.runForEach(
           Effect.fn(function* (valuesMap) {
             const activeNotebookUri =

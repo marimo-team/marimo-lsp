@@ -35,7 +35,7 @@ import type {
   SqlTableListPreviewNotification,
 } from "../../../types.ts";
 import type { MarimoApiCall } from "../../../types.ts";
-import { DatasourcesService } from "../DatasourcesService.ts";
+import { NotebookDatasources } from "../NotebookDatasources.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 const KERNEL_SESSION_ID = kernelSessionId(
@@ -52,7 +52,7 @@ const makeLayer = (
     Effect.succeed(null),
   currentSession: () => NotebookDocumentSession = () => SESSION,
 ) =>
-  Layer.effect(DatasourcesService, DatasourcesService.make).pipe(
+  Layer.effect(NotebookDatasources, NotebookDatasources.make).pipe(
     Layer.provide([
       makeTestMarimoClient({ execute }),
       Layer.succeed(NotebookDocumentSessions, {
@@ -151,7 +151,7 @@ const connections = (
 });
 
 const getDatabase = Effect.fn(function* () {
-  const service = yield* DatasourcesService;
+  const service = yield* NotebookDatasources;
   const state = yield* service.getConnections(NOTEBOOK_URI);
   assert(Option.isSome(state));
   const database = state.value.connections
@@ -163,7 +163,7 @@ const getDatabase = Effect.fn(function* () {
 
 it.effect("preserves recursive schemas and deferred discovery", () =>
   Effect.gen(function* () {
-    const service = yield* DatasourcesService;
+    const service = yield* NotebookDatasources;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -207,7 +207,7 @@ it.effect("isolates datasource state by document session", () => {
   );
 
   return Effect.gen(function* () {
-    const service = yield* DatasourcesService;
+    const service = yield* NotebookDatasources;
     yield* service.updateConnections(
       displaced,
       KERNEL_SESSION_ID,
@@ -256,7 +256,7 @@ it.effect(
     );
 
     return Effect.gen(function* () {
-      const service = yield* DatasourcesService;
+      const service = yield* NotebookDatasources;
       yield* service.updateConnections(
         SESSION,
         KERNEL_SESSION_ID,
@@ -295,7 +295,7 @@ it.effect(
 it.effect("merges child schemas at their parent path", () => {
   const { layer, nextCall } = makeRecordingLayer();
   return Effect.gen(function* () {
-    const service = yield* DatasourcesService;
+    const service = yield* NotebookDatasources;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -337,7 +337,7 @@ it.effect("merges child schemas at their parent path", () => {
 it.effect("merges tables at a nested schema path", () => {
   const { layer, nextCall } = makeRecordingLayer();
   return Effect.gen(function* () {
-    const service = yield* DatasourcesService;
+    const service = yield* NotebookDatasources;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -383,7 +383,7 @@ it.effect("merges tables at a nested schema path", () => {
 it.effect("does not resolve deferred state after an error", () => {
   const { layer, nextCall } = makeRecordingLayer();
   return Effect.gen(function* () {
-    const service = yield* DatasourcesService;
+    const service = yield* NotebookDatasources;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -422,7 +422,7 @@ it.effect("does not resolve deferred state after an error", () => {
 
 it.effect("ignores uncorrelated expansion responses", () =>
   Effect.gen(function* () {
-    const service = yield* DatasourcesService;
+    const service = yield* NotebookDatasources;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -459,7 +459,7 @@ it.effect("deduplicates concurrent schema expansion requests", () => {
   const { calls, layer, nextCall } = makeRecordingLayer();
 
   return Effect.gen(function* () {
-    const service = yield* DatasourcesService;
+    const service = yield* NotebookDatasources;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -519,7 +519,7 @@ it.effect("interrupts an expansion send when its document session closes", () =>
     );
 
     yield* Effect.gen(function* () {
-      const service = yield* DatasourcesService;
+      const service = yield* NotebookDatasources;
       yield* service.updateConnections(
         session,
         KERNEL_SESSION_ID,
@@ -553,7 +553,7 @@ it.effect("detaches completed expansions from the session scope", () => {
   const { layer, nextCall } = makeRecordingLayer(() => session);
 
   return Effect.gen(function* () {
-    const service = yield* DatasourcesService;
+    const service = yield* NotebookDatasources;
     yield* service.updateConnections(
       session,
       KERNEL_SESSION_ID,
@@ -599,7 +599,7 @@ it.effect("retries nested table expansion after an error", () => {
   const { calls, layer, nextCall } = makeRecordingLayer();
 
   return Effect.gen(function* () {
-    const service = yield* DatasourcesService;
+    const service = yield* NotebookDatasources;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -658,7 +658,7 @@ it.effect("shares one timeout deadline and retries after it expires", () => {
   const { calls, layer, nextCall } = makeRecordingLayer();
 
   return Effect.gen(function* () {
-    const service = yield* DatasourcesService;
+    const service = yield* NotebookDatasources;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -675,7 +675,6 @@ it.effect("shares one timeout deadline and retries after it expires", () => {
     const joined = yield* Effect.forkChild(
       Effect.result(service.loadSchemas(SESSION, "warehouse", "analytics", [])),
     );
-
     yield* TestClock.adjust("10 seconds");
     expect((yield* Fiber.join(first))._tag).toBe("Failure");
     expect((yield* Fiber.join(joined))._tag).toBe("Failure");

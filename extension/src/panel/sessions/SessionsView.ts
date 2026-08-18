@@ -7,14 +7,14 @@ import shutdownSession from "../../commands/shutdownSession.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import { type TreeItem, TreeView } from "../TreeView.ts";
-import { type SessionViewItem, SessionsService } from "./SessionsService.ts";
+import { type SessionViewItem, LiveSessions } from "./LiveSessions.ts";
 
 /** Native VS Code tree view for live marimo kernel sessions. */
 export const SessionsViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const treeView = yield* TreeView;
-    const sessions = yield* SessionsService;
+    const sessions = yield* LiveSessions;
     const provider = yield* treeView.createTreeDataProvider({
       viewId: "marimo-explorer-sessions",
       showCollapseAll: false,

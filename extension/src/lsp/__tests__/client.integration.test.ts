@@ -18,14 +18,14 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
-import { VariablesService } from "../../panel/variables/VariablesService.ts";
+import { NotebookVariables } from "../../panel/variables/NotebookVariables.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import { makeNotebookLspClient } from "../client.ts";
 
 const variablesLayer = Layer.effect(
-  VariablesService,
-  VariablesService.make,
+  NotebookVariables,
+  NotebookVariables.make,
 ).pipe(
   Layer.provide(
     Layer.succeed(NotebookDocumentSessions, {

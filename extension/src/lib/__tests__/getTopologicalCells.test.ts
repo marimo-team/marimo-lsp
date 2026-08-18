@@ -8,7 +8,7 @@ import {
   type NotebookDocumentSession,
   NotebookDocumentSessions,
 } from "../../notebook/NotebookDocumentSessions.ts";
-import { VariablesService } from "../../panel/variables/VariablesService.ts";
+import { NotebookVariables } from "../../panel/variables/NotebookVariables.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -68,7 +68,7 @@ const documentSessions = Layer.succeed(NotebookDocumentSessions, {
   active: Stream.empty,
 });
 const withTestLayer = () =>
-  Layer.effect(VariablesService, VariablesService.make).pipe(
+  Layer.effect(NotebookVariables, NotebookVariables.make).pipe(
     Layer.provide(documentSessions),
   );
 
@@ -122,7 +122,7 @@ describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" }, // defines x
       ]);
 
-      const service = yield* VariablesService;
+      const service = yield* NotebookVariables;
 
       yield* service.updateVariables(
         sessionFor(doc),
@@ -150,7 +150,7 @@ describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" }, // defines x
       ]);
 
-      const service = yield* VariablesService;
+      const service = yield* NotebookVariables;
 
       yield* service.updateVariables(
         sessionFor(doc),
@@ -205,7 +205,7 @@ describe("getTopologicalCells", () => {
       });
       const doc = MarimoNotebookDocument.from(raw);
 
-      const service = yield* VariablesService;
+      const service = yield* NotebookVariables;
 
       yield* service.updateVariables(
         sessionFor(doc),
@@ -232,7 +232,7 @@ describe("getTopologicalCells", () => {
         { stableId: "cell-c", code: "z = 3" },
       ]);
 
-      const service = yield* VariablesService;
+      const service = yield* NotebookVariables;
 
       // Each cell defines its own variable, no cross-cell dependencies
       yield* service.updateVariables(
@@ -266,7 +266,7 @@ describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" },
       ]);
 
-      const service = yield* VariablesService;
+      const service = yield* NotebookVariables;
 
       yield* service.updateVariables(
         sessionFor(doc),
