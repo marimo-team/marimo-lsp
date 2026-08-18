@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Option, Stream } from "effect";
+import { Deferred, Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import {
@@ -27,7 +27,7 @@ interface ExecutedCommand {
 const makeContext = Effect.fn(function* (options: {
   controller: Option.Option<NotebookController>;
   treeResponse?: unknown;
-  treeEffect?: Effect.Effect<unknown>;
+  treeEffect?: Effect.Effect<unknown, Schema.SchemaError>;
 }) {
   const document = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
     notebookType: "marimo-notebook",
@@ -186,6 +186,60 @@ describe("PackagesService", () => {
 
       expect(tree).toBeNull();
       expect(recorded).toEqual([]);
+    }),
+  );
+
+  it.effect(
+    "preserves a script dependency-tree failure in package state",
+    Effect.fn(function* () {
+      const failure = Schema.decodeUnknownEffect(Schema.Number)("not a number");
+      const error = yield* Effect.flip(failure);
+      const { layer } = yield* makeContext({
+        controller: Option.some(makeNonPythonController()),
+        treeEffect: failure,
+      });
+
+      yield* Effect.gen(function* () {
+        const svc = yield* PackagesService;
+
+        expect(yield* svc.fetchDependencyTree(NOTEBOOK_URI)).toBeNull();
+        expect(
+          Option.getOrThrow(yield* svc.getDependencyTree(NOTEBOOK_URI)),
+        ).toEqual({
+          tree: null,
+          loading: false,
+          error: String(error),
+        });
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect(
+    "preserves dependency-tree and package-list failures in package state",
+    Effect.fn(function* () {
+      const failure = Schema.decodeUnknownEffect(Schema.Number)("not a number");
+      const error = yield* Effect.flip(failure);
+      const vscode = yield* TestVsCode.make();
+      const controller = yield* makePythonController(
+        "/home/user/.venv/bin/python",
+      ).pipe(Effect.scoped, Effect.provide(vscode.layer));
+      const { layer } = yield* makeContext({
+        controller: Option.some(controller),
+        treeEffect: failure,
+      });
+
+      yield* Effect.gen(function* () {
+        const svc = yield* PackagesService;
+
+        expect(yield* svc.fetchDependencyTree(NOTEBOOK_URI)).toBeNull();
+        expect(
+          Option.getOrThrow(yield* svc.getDependencyTree(NOTEBOOK_URI)),
+        ).toEqual({
+          tree: null,
+          loading: false,
+          error: `${String(error)}; fallback also failed: ${String(error)}`,
+        });
+      }).pipe(Effect.provide(layer));
     }),
   );
 

@@ -213,7 +213,7 @@ export class PackagesService extends Context.Service<PackagesService>()(
             );
 
             // Fetch from language server
-            const rawResult = yield* marimo
+            const next = yield* marimo
               .getDependencyTree({
                 notebookUri,
                 source,
@@ -225,6 +225,13 @@ export class PackagesService extends Context.Service<PackagesService>()(
                     Effect.annotateLogs({ notebookUri, result }),
                   ),
                 ),
+                Effect.map(
+                  (result): DependencyTreeState => ({
+                    tree: result.tree,
+                    loading: false,
+                    error: null,
+                  }),
+                ),
                 Effect.catch((error) =>
                   Effect.gen(function* () {
                     const errorMsg = String(error);
@@ -232,19 +239,16 @@ export class PackagesService extends Context.Service<PackagesService>()(
                     // Script mode has no useful fallback — `uv tree --script`
                     // is the only path that resolves PEP 723 metadata.
                     if (source.kind === "script") {
-                      yield* updateIfCurrent((map) =>
-                        HashMap.set(map, notebookUri, {
-                          tree: null,
-                          loading: false,
-                          error: errorMsg,
-                        }),
-                      );
                       yield* Effect.logError(
                         "Dependency tree failed for script mode",
                       ).pipe(
                         Effect.annotateLogs({ notebookUri, error: errorMsg }),
                       );
-                      return { tree: null };
+                      return {
+                        tree: null,
+                        loading: false,
+                        error: errorMsg,
+                      } satisfies DependencyTreeState;
                     }
 
                     yield* Effect.logWarning(
@@ -256,23 +260,35 @@ export class PackagesService extends Context.Service<PackagesService>()(
                     // Venv fallback: fetch the flat package list (which the
                     // server backs with `uv pip list -p <exe>`) and synthesize
                     // a single-level tree from it.
-                    const packageListRaw = yield* marimo
+                    return yield* marimo
                       .getPackageList({
                         notebookUri,
                         source,
                         inner: {},
                       })
                       .pipe(
+                        Effect.map(
+                          (packageListRaw): DependencyTreeState => ({
+                            tree: {
+                              name: "installed-packages",
+                              version: null,
+                              tags: [],
+                              dependencies: packageListRaw.packages.map(
+                                (pkg) => ({
+                                  name: pkg.name,
+                                  version: pkg.version,
+                                  tags: [],
+                                  dependencies: [],
+                                }),
+                              ),
+                            },
+                            loading: false,
+                            error: null,
+                          }),
+                        ),
                         Effect.catch((fallbackError) =>
                           Effect.gen(function* () {
                             const fallbackErrorMsg = String(fallbackError);
-                            yield* updateIfCurrent((map) =>
-                              HashMap.set(map, notebookUri, {
-                                tree: null,
-                                loading: false,
-                                error: `${errorMsg}; fallback also failed: ${fallbackErrorMsg}`,
-                              }),
-                            );
                             yield* Effect.logError(
                               "Package list fallback also failed",
                             ).pipe(
@@ -281,34 +297,20 @@ export class PackagesService extends Context.Service<PackagesService>()(
                                 error: fallbackErrorMsg,
                               }),
                             );
-                            return { packages: [] };
+                            return {
+                              tree: null,
+                              loading: false,
+                              error: `${errorMsg}; fallback also failed: ${fallbackErrorMsg}`,
+                            } satisfies DependencyTreeState;
                           }),
                         ),
                       );
-
-                    const flatTree: DependencyTreeNode = {
-                      name: "installed-packages",
-                      version: null,
-                      tags: [],
-                      dependencies: packageListRaw.packages.map((pkg) => ({
-                        name: pkg.name,
-                        version: pkg.version,
-                        tags: [],
-                        dependencies: [],
-                      })),
-                    };
-
-                    return { tree: flatTree };
                   }),
                 ),
               );
 
             yield* updateIfCurrent((map) =>
-              HashMap.set(map, notebookUri, {
-                tree: rawResult.tree,
-                loading: false,
-                error: null,
-              }),
+              HashMap.set(map, notebookUri, next),
             );
             if (
               session !== undefined &&
@@ -318,12 +320,12 @@ export class PackagesService extends Context.Service<PackagesService>()(
               yield* Effect.logTrace("Cached dependency tree").pipe(
                 Effect.annotateLogs({
                   notebookUri,
-                  hasTree: rawResult.tree !== null,
+                  hasTree: next.tree !== null,
                 }),
               );
             }
 
-            return rawResult.tree;
+            return next.tree;
           });
         },
 
