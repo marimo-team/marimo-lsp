@@ -18,7 +18,7 @@ const NotebookId = Brand.nominal<NotebookId>();
 // (openapi codegen types, not Effect Brand). No runtime check — callers pass
 // strings originating from the LSP's typed responses.
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-const NotebookCellId = (id: string) => id as CellId;
+export const NotebookCellId = (id: string) => id as CellId;
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion
 const VariableName = (name: string) => name as VariableName;
 

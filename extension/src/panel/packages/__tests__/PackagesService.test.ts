@@ -84,15 +84,18 @@ const makePythonController = Effect.fn(function* (executable: string) {
     NOTEBOOK_TYPE,
     "Test Python",
   );
-  return new PythonController(controller, executable, Stream.never);
+  return new PythonController(
+    controller,
+    executable,
+    Stream.never,
+    () => () => Effect.void,
+  );
 });
 
 function makeNonPythonController(): NotebookController {
   return {
     id: "test-sandbox-controller",
-    createNotebookCellExecution() {
-      throw new Error("Not used by PackagesService tests");
-    },
+    drive: () => () => Effect.void,
     resolveExecutable: () => Effect.succeed("/unused"),
   };
 }

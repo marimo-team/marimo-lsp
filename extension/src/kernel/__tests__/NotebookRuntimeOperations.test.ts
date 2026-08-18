@@ -30,6 +30,7 @@ import {
   processRuntimeOperations,
 } from "../../kernel/NotebookRuntime.ts";
 import { PythonController } from "../../kernel/PythonController.ts";
+import { VsCodeCellDrive } from "../../kernel/VsCodeCellDrive.ts";
 import {
   cellId,
   notebookId,
@@ -92,6 +93,9 @@ const withTestCtx = Effect.fn(function* () {
         inputRequested.open.pipe(Effect.andThen(Queue.take(inputQueue))),
     },
   });
+  const cellDrive = yield* VsCodeCellDrive.make.pipe(
+    Effect.provide(vscode.layer),
+  );
 
   const mockController = yield* Effect.gen(function* () {
     const code = yield* VsCode;
@@ -100,7 +104,19 @@ const withTestCtx = Effect.fn(function* () {
       NOTEBOOK_TYPE,
       "Test Controller",
     );
-    return new PythonController(controller, "/usr/bin/python3", Stream.never);
+    return new PythonController(
+      controller,
+      "/usr/bin/python3",
+      Stream.never,
+      (document) =>
+        cellDrive.bind({
+          notebook: document,
+          controller: {
+            createNotebookCellExecution: (cell) =>
+              controller.createNotebookCellExecution(cell.rawNotebookCell),
+          },
+        }),
+    );
   }).pipe(Effect.provide(vscode.layer));
 
   const layer = Layer.empty.pipe(

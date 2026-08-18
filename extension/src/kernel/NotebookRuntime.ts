@@ -46,8 +46,10 @@ import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
 import { Uv } from "../python/Uv.ts";
 import {
   extractCellIdFromCellMessage,
+  findNotebookCell,
   MarimoNotebookCell,
   MarimoNotebookDocument,
+  NotebookCellId as makeNotebookCellId,
   type NotebookCellId,
   type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
@@ -56,7 +58,7 @@ import type {
   MarimoOperation,
   NotificationOf,
 } from "../types.ts";
-import { CellExecutions } from "./CellExecutions.ts";
+import { CellExecutions, type Drive } from "./CellExecutions.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import {
   NotebookFileRootError,
@@ -82,9 +84,7 @@ type InnerRequest<K extends keyof MarimoClientService> =
 export interface NotebookController {
   readonly id: string;
   readonly executable?: string;
-  readonly createNotebookCellExecution: (
-    cell: MarimoNotebookCell,
-  ) => vscode.NotebookCellExecution;
+  readonly drive: (notebook: MarimoNotebookDocument) => Drive;
   readonly resolveExecutable: (
     notebook: MarimoNotebookDocument,
   ) => Effect.Effect<string, ExecutableResolutionError | UnsavedNotebookError>;
@@ -257,12 +257,22 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
               notebookId,
               executable,
             );
-            const result = yield* marimo.executeCells({
+            const send = marimo.executeCells({
               notebookUri: notebookId,
               executable,
               workingDirectory,
               inner: request,
             });
+            const result = yield* executions.submit(
+              notebookId,
+              request.cellIds.flatMap((cellId, index) => {
+                const source = request.codes[index];
+                return source === undefined
+                  ? []
+                  : [{ cellId: makeNotebookCellId(cellId), source }];
+              }),
+              send,
+            );
             runtimeSessions.set(notebookId, {
               executable,
               workingDirectory,
@@ -975,9 +985,19 @@ function processNotebookOperation(
         if (extractCellIdFromCellMessage(operation) === SCRATCH_CELL_ID) {
           break;
         }
+        const cellId = extractCellIdFromCellMessage(operation);
+        const cell = yield* findNotebookCell(notebook, cellId).pipe(
+          Effect.option,
+        );
+        if (Option.isNone(cell)) {
+          yield* Effect.logWarning(
+            "Notebook cell not found for cell operation",
+          ).pipe(Effect.annotateLogs({ cellId }));
+          break;
+        }
         yield* executions.handleOperation(operation, {
-          editor: editor.value,
-          controller: controller.value,
+          notebookId: notebook.id,
+          drive: controller.value.drive(notebook),
           renderOutput: options.renderCellOutput,
         });
         yield* forkForSession(
@@ -986,7 +1006,7 @@ function processNotebookOperation(
         break;
       }
       case "interrupted":
-        yield* executions.handleInterrupt(editor.value);
+        yield* executions.handleInterrupt(notebook.id);
         break;
       case "missing-package-alert":
         yield* forkForSession(
@@ -1091,7 +1111,7 @@ function syncCellIdentity(
     for (const cellId of removedCellIds) {
       if (addedCellIds.has(cellId)) continue;
 
-      yield* options.executions.forgetCell(event.notebook.id, cellId);
+      yield* options.executions.removeCell(event.notebook.id, cellId);
       yield* options.notebook.deleteCell({ cellId }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning(

@@ -3,7 +3,6 @@ import { Effect, Option } from "effect";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { SessionsService } from "../panel/sessions/SessionsService.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { type NotebookId } from "../schemas/MarimoNotebookDocument.ts";
@@ -32,12 +31,8 @@ const openSessionNotebook = Effect.fn("command.openSessionNotebook")(function* (
 const endExecutions = Effect.fn("command.endSessionExecutions")(function* (
   notebookUri: NotebookId,
 ) {
-  const editors = yield* NotebookEditorRegistry;
   const executions = yield* CellExecutions;
-  const editor = yield* editors.getLastNotebookEditor(notebookUri);
-  if (Option.isSome(editor)) {
-    yield* executions.handleInterrupt(editor.value);
-  }
+  yield* executions.handleInterrupt(notebookUri);
 });
 
 export const openSession = Effect.fn("command.openSession")(function* ({

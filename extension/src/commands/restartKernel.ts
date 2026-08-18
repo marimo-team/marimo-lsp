@@ -22,7 +22,7 @@ const handler = Effect.fn("command.restartKernel")(function* (
     return;
   }
 
-  const { document: notebook, editor } = target.value;
+  const { document: notebook } = target.value;
 
   if (Option.isNone(yield* sessions.find(notebook.id))) {
     yield* code.window.showInformationMessage(
@@ -55,7 +55,7 @@ const handler = Effect.fn("command.restartKernel")(function* (
 
       if (!succeeded) return false;
 
-      yield* executions.handleInterrupt(editor);
+      yield* executions.handleInterrupt(notebook.id);
 
       progress.report({ message: "Kernel restarted." });
       yield* Effect.sleep("500 millis");
