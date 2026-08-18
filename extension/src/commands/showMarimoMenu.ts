@@ -5,12 +5,14 @@ import { defineCommand } from "../commands.ts";
 import { Links } from "../lib/links.ts";
 import { openExternalUrl } from "../lib/openExternalUrl.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { WebPreview } from "../platform/WebPreview.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
 import openTutorial from "./openTutorial.ts";
 import showDiagnostics from "./showDiagnostics.ts";
 
 const handler = Effect.fn("command.showMarimoMenu")(function* () {
   const code = yield* VsCode;
+  const webPreview = yield* WebPreview;
   const selection = yield* code.window.showQuickPickItems(
     [
       {
@@ -35,7 +37,7 @@ const handler = Effect.fn("command.showMarimoMenu")(function* () {
 
   switch (selection.value.value) {
     case "documentation":
-      yield* openExternalUrl(Links.documentation);
+      yield* webPreview.open(Links.documentation);
       break;
     case "tutorials":
       yield* code.commands.execute(openTutorial.command);
