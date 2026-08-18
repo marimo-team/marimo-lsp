@@ -25,6 +25,11 @@ type ConfigurationCacheKey = readonly [
   sessionId: NotebookDocumentSession["id"],
 ];
 
+const keyFor = (session: NotebookDocumentSession): ConfigurationCacheKey => [
+  session.notebookId,
+  session.id,
+];
+
 /**
  * Manages marimo configuration state across all notebooks.
  *
@@ -85,7 +90,7 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
       ) =>
         Effect.gen(function* () {
           const keys: ReadonlyArray<ConfigurationCacheKey> = expectedSession
-            ? [[expectedSession.notebookId, expectedSession.id]]
+            ? [keyFor(expectedSession)]
             : Array.from(yield* Cache.keys(configurationCache)).filter(
                 ([cachedNotebookId]) => cachedNotebookId === notebookUri,
               );
@@ -134,10 +139,7 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
             );
             return currentSession === undefined
               ? Option.none<MarimoConfig>()
-              : HashMap.get(projection, [
-                  currentSession.notebookId,
-                  currentSession.id,
-                ]);
+              : HashMap.get(projection, keyFor(currentSession));
           }),
           Stream.changes,
         );
@@ -153,7 +155,7 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
               return yield* fetchConfiguration(notebookUri);
             }
 
-            const key: ConfigurationCacheKey = [session.notebookId, session.id];
+            const key = keyFor(session);
             const config = yield* Cache.get(configurationCache, key);
             yield* projectCurrent(key);
             return config;
@@ -185,10 +187,7 @@ export class MarimoConfigurationService extends Context.Service<MarimoConfigurat
               session !== undefined &&
               documentSessions.current(notebookUri) === session
             ) {
-              const key: ConfigurationCacheKey = [
-                session.notebookId,
-                session.id,
-              ];
+              const key = keyFor(session);
               yield* Cache.set(configurationCache, key, result);
               yield* projectCurrent(key);
             }

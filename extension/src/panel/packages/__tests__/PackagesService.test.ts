@@ -134,6 +134,46 @@ describe("PackagesService", () => {
   );
 
   it.effect(
+    "shares an in-flight dependency tree lookup",
+    Effect.fn(function* () {
+      const requestStarted = yield* Deferred.make<void>();
+      const releaseRequest = yield* Deferred.make<void>();
+      const tree = {
+        name: "<root>",
+        version: null,
+        tags: [],
+        dependencies: [],
+      };
+      const { layer, recorded } = yield* makeContext({
+        controller: Option.some(makeNonPythonController()),
+        treeEffect: Deferred.succeed(requestStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseRequest)),
+          Effect.as({ tree }),
+        ),
+      });
+
+      yield* Effect.gen(function* () {
+        const svc = yield* PackagesService;
+        const lookups = yield* Effect.forkChild(
+          Effect.all(
+            [
+              svc.fetchDependencyTree(NOTEBOOK_URI),
+              svc.fetchDependencyTree(NOTEBOOK_URI),
+            ],
+            { concurrency: "unbounded" },
+          ),
+        );
+        yield* Deferred.await(requestStarted);
+        yield* TestClock.adjust("1 millis");
+
+        expect(recorded).toHaveLength(1);
+        yield* Deferred.succeed(releaseRequest, undefined);
+        expect(yield* Fiber.join(lookups)).toEqual([tree, tree]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect(
     "fetchDependencyTree sends `source: venv` with the executable for a python controller",
     Effect.fn(function* () {
       const vscode = yield* TestVsCode.make();

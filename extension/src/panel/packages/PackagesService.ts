@@ -1,9 +1,11 @@
 import {
+  Cache,
   Context,
   Effect,
   HashMap,
   Layer,
   Option,
+  Result,
   Stream,
   SubscriptionRef,
 } from "effect";
@@ -43,11 +45,21 @@ interface DependencyTreeState {
   error: string | null;
 }
 
+type DependencyTreeCacheKey = readonly [
+  notebookId: NotebookId,
+  sessionId: NotebookDocumentSession["id"],
+];
+
+const keyFor = (session: NotebookDocumentSession): DependencyTreeCacheKey => [
+  session.notebookId,
+  session.id,
+];
+
 /**
  * Manages dependency trees for notebooks.
  *
- * Stores dependency trees (NotebookUri -> DependencyTreeState) in a
- * SubscriptionRef for reactive state management.
+ * Caches dependency-tree lookups by document session. A SubscriptionRef keeps
+ * the loading and result projection consumed by the packages view.
  */
 export class PackagesService extends Context.Service<PackagesService>()(
   "PackagesService",
@@ -58,42 +70,195 @@ export class PackagesService extends Context.Service<PackagesService>()(
       const editors = yield* NotebookEditorRegistry;
       const documentSessions = yield* NotebookDocumentSessions;
 
-      // Track dependency trees: NotebookUri -> DependencyTreeState
-      const dependencyTreesRef = yield* SubscriptionRef.make(
-        HashMap.empty<NotebookId, DependencyTreeState>(),
+      const dependencyTreeProjection = yield* SubscriptionRef.make(
+        HashMap.empty<DependencyTreeCacheKey, DependencyTreeState>(),
       );
-      const cacheOwners = new Map<NotebookId, NotebookDocumentSession>();
-      const cacheGenerations = new Map<NotebookId, symbol>();
-      const generationFor = (notebookUri: NotebookId) => {
-        const existing = cacheGenerations.get(notebookUri);
-        if (existing !== undefined) return existing;
-        const generation = Symbol("package cache generation");
-        cacheGenerations.set(notebookUri, generation);
-        return generation;
-      };
+      const projectLoading = (key: DependencyTreeCacheKey) =>
+        SubscriptionRef.update(dependencyTreeProjection, (projection) =>
+          HashMap.set(projection, key, {
+            tree: null,
+            loading: true,
+            error: null,
+          }),
+        );
+
+      const loadDependencyTree = (
+        notebookUri: NotebookId,
+        key?: DependencyTreeCacheKey,
+      ) =>
+        Effect.gen(function* () {
+          // Get the active controller; its `target` describes how to ask
+          // the server about the env (`venv` with an executable, or `script`).
+          const activeNotebook = Option.flatMap(
+            yield* editors.getActiveNotebookEditor,
+            (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
+          );
+          if (Option.isNone(activeNotebook)) {
+            yield* Effect.logWarning("Could not find marimo-notebook editor");
+            return null;
+          }
+
+          const activeController = yield* notebooks.forNotebook(
+            activeNotebook.value.id,
+          ).getController;
+          if (Option.isNone(activeController)) {
+            yield* Effect.logDebug(
+              "No active controller; skipping dependency tree fetch",
+            ).pipe(Effect.annotateLogs({ notebookUri }));
+            return {
+              tree: null,
+              loading: false,
+              error: "No kernel selected",
+            } satisfies DependencyTreeState;
+          }
+
+          const source = controllerSource(activeController.value);
+          if (key !== undefined) yield* projectLoading(key);
+
+          return yield* marimo
+            .getDependencyTree({
+              notebookUri,
+              source,
+              inner: {},
+            })
+            .pipe(
+              Effect.tap((result) =>
+                Effect.logTrace("Fetched dependency tree").pipe(
+                  Effect.annotateLogs({ notebookUri, result }),
+                ),
+              ),
+              Effect.map(
+                (result): DependencyTreeState => ({
+                  tree: result.tree,
+                  loading: false,
+                  error: null,
+                }),
+              ),
+              Effect.catch((error) =>
+                Effect.gen(function* () {
+                  const errorMsg = String(error);
+
+                  // Script mode has no useful fallback — `uv tree --script`
+                  // is the only path that resolves PEP 723 metadata.
+                  if (source.kind === "script") {
+                    yield* Effect.logError(
+                      "Dependency tree failed for script mode",
+                    ).pipe(
+                      Effect.annotateLogs({ notebookUri, error: errorMsg }),
+                    );
+                    return {
+                      tree: null,
+                      loading: false,
+                      error: errorMsg,
+                    } satisfies DependencyTreeState;
+                  }
+
+                  yield* Effect.logWarning(
+                    "Dependency tree failed, falling back to package list",
+                  ).pipe(Effect.annotateLogs({ notebookUri, error: errorMsg }));
+
+                  // Venv fallback: fetch the flat package list (which the
+                  // server backs with `uv pip list -p <exe>`) and synthesize
+                  // a single-level tree from it.
+                  return yield* marimo
+                    .getPackageList({
+                      notebookUri,
+                      source,
+                      inner: {},
+                    })
+                    .pipe(
+                      Effect.map(
+                        (packageListRaw): DependencyTreeState => ({
+                          tree: {
+                            name: "installed-packages",
+                            version: null,
+                            tags: [],
+                            dependencies: packageListRaw.packages.map(
+                              (pkg) => ({
+                                name: pkg.name,
+                                version: pkg.version,
+                                tags: [],
+                                dependencies: [],
+                              }),
+                            ),
+                          },
+                          loading: false,
+                          error: null,
+                        }),
+                      ),
+                      Effect.catch((fallbackError) =>
+                        Effect.gen(function* () {
+                          const fallbackErrorMsg = String(fallbackError);
+                          yield* Effect.logError(
+                            "Package list fallback also failed",
+                          ).pipe(
+                            Effect.annotateLogs({
+                              notebookUri,
+                              error: fallbackErrorMsg,
+                            }),
+                          );
+                          return {
+                            tree: null,
+                            loading: false,
+                            error: `${errorMsg}; fallback also failed: ${fallbackErrorMsg}`,
+                          } satisfies DependencyTreeState;
+                        }),
+                      ),
+                    );
+                }),
+              ),
+            );
+        });
+
+      const dependencyTreeCache = yield* Cache.make({
+        capacity: Number.POSITIVE_INFINITY,
+        lookup: (key: DependencyTreeCacheKey) =>
+          // Cache starts its lookup fiber before publishing the entry. Yield
+          // once so invalidation can always observe an in-flight request.
+          Effect.yieldNow.pipe(Effect.andThen(loadDependencyTree(key[0], key))),
+      });
+      const projectCurrent = (key: DependencyTreeCacheKey) =>
+        Effect.gen(function* () {
+          const current = yield* Cache.getSuccess(dependencyTreeCache, key);
+          yield* SubscriptionRef.update(
+            dependencyTreeProjection,
+            (projection) =>
+              Option.match(current, {
+                onNone: () => HashMap.remove(projection, key),
+                onSome: (state) =>
+                  state === null
+                    ? HashMap.remove(projection, key)
+                    : HashMap.set(projection, key, state),
+              }),
+          );
+        });
       const clearCache = (
         notebookUri: NotebookId,
-        expectedOwner?: NotebookDocumentSession,
+        expectedSession?: NotebookDocumentSession,
       ) =>
-        SubscriptionRef.update(dependencyTreesRef, (map) => {
-          if (
-            expectedOwner !== undefined &&
-            cacheOwners.get(notebookUri) !== expectedOwner
-          ) {
-            return map;
+        Effect.gen(function* () {
+          const keys: ReadonlyArray<DependencyTreeCacheKey> = expectedSession
+            ? [keyFor(expectedSession)]
+            : Array.from(yield* Cache.keys(dependencyTreeCache)).filter(
+                ([cachedNotebookId]) => cachedNotebookId === notebookUri,
+              );
+          for (const key of keys) {
+            yield* Cache.invalidate(dependencyTreeCache, key);
           }
-          cacheOwners.delete(notebookUri);
-          // Deleting keeps the map bounded; an in-flight operation holding
-          // the old symbol fails the equality check either way.
-          cacheGenerations.delete(notebookUri);
-          return HashMap.remove(map, notebookUri);
-        }).pipe(
-          Effect.tap(() =>
-            Effect.logTrace("Cleared package data").pipe(
-              Effect.annotateLogs({ notebookUri }),
-            ),
-          ),
-        );
+          yield* SubscriptionRef.update(
+            dependencyTreeProjection,
+            (projection) =>
+              expectedSession === undefined
+                ? HashMap.filter(
+                    projection,
+                    (_, [cachedNotebookId]) => cachedNotebookId !== notebookUri,
+                  )
+                : HashMap.remove(projection, keyFor(expectedSession)),
+          );
+          yield* Effect.logTrace("Cleared package data").pipe(
+            Effect.annotateLogs({ notebookUri }),
+          );
+        });
 
       yield* Effect.forkScoped(
         documentSessions.changes.pipe(
@@ -110,222 +275,46 @@ export class PackagesService extends Context.Service<PackagesService>()(
          * Get dependency tree state for a notebook
          */
         getDependencyTree(notebookUri: NotebookId) {
-          // Eviction on session end is asynchronous; never serve an entry a
-          // previous document session cached.
-          return Effect.map(SubscriptionRef.get(dependencyTreesRef), (map) =>
-            HashMap.get(map, notebookUri).pipe(
-              Option.filter(() => {
-                const owner = cacheOwners.get(notebookUri);
-                return (
-                  owner !== undefined &&
-                  owner === documentSessions.current(notebookUri)
-                );
-              }),
-            ),
-          );
+          const session = documentSessions.current(notebookUri);
+          return session === undefined
+            ? Effect.succeed(Option.none<DependencyTreeState>())
+            : Effect.map(
+                SubscriptionRef.get(dependencyTreeProjection),
+                HashMap.get(keyFor(session)),
+              );
         },
 
         /**
          * Fetch dependency tree from the language server
-         * Caches the result in dependencyTreesRef and re-uses if already cached
+         * Re-uses successful results from dependencyTreeCache.
          */
         fetchDependencyTree(notebookUri: NotebookId) {
           return Effect.gen(function* () {
             const session = documentSessions.current(notebookUri);
-            const generation = generationFor(notebookUri);
-            const updateIfCurrent = (
-              update: (
-                map: HashMap.HashMap<NotebookId, DependencyTreeState>,
-              ) => HashMap.HashMap<NotebookId, DependencyTreeState>,
-            ) =>
-              SubscriptionRef.update(dependencyTreesRef, (map) => {
-                if (
-                  session === undefined ||
-                  documentSessions.current(notebookUri) !== session ||
-                  cacheGenerations.get(notebookUri) !== generation
-                ) {
-                  return map;
-                }
-                cacheOwners.set(notebookUri, session);
-                return update(map);
-              });
+            if (session === undefined) {
+              return (yield* loadDependencyTree(notebookUri))?.tree ?? null;
+            }
 
-            // Check if we already have a cached tree
-            const cached = yield* SubscriptionRef.get(dependencyTreesRef);
-            const existing = HashMap.get(cached, notebookUri);
-
-            // If we have a tree and it's not in error state, re-use it
+            const key = keyFor(session);
+            const existing = yield* Cache.getSuccess(dependencyTreeCache, key);
             if (
               Option.isSome(existing) &&
-              session !== undefined &&
-              cacheOwners.get(notebookUri) === session &&
-              existing.value.tree &&
-              !existing.value.error
+              existing.value !== null &&
+              existing.value.tree !== null &&
+              existing.value.error === null
             ) {
               yield* Effect.logTrace("Re-using cached dependency tree").pipe(
                 Effect.annotateLogs({ notebookUri }),
               );
               return existing.value.tree;
             }
-
-            // Get the active controller; its `target` describes how to ask
-            // the server about the env (`venv` with an executable, or `script`).
-            const activeNotebook = Option.flatMap(
-              yield* editors.getActiveNotebookEditor,
-              (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
-            );
-            if (Option.isNone(activeNotebook)) {
-              yield* Effect.logWarning("Could not find marimo-notebook editor");
-              return null;
+            if (Option.isSome(existing)) {
+              yield* Cache.invalidate(dependencyTreeCache, key);
             }
 
-            const activeController = yield* notebooks.forNotebook(
-              activeNotebook.value.id,
-            ).getController;
-            if (Option.isNone(activeController)) {
-              yield* updateIfCurrent((map) =>
-                HashMap.set(map, notebookUri, {
-                  tree: null,
-                  loading: false,
-                  error: "No kernel selected",
-                }),
-              );
-              yield* Effect.logDebug(
-                "No active controller; skipping dependency tree fetch",
-              ).pipe(Effect.annotateLogs({ notebookUri }));
-              return null;
-            }
-
-            const source = controllerSource(activeController.value);
-            yield* updateIfCurrent((map) =>
-              HashMap.set(
-                map,
-                notebookUri,
-                Option.match(HashMap.get(map, notebookUri), {
-                  onNone: () => ({
-                    tree: null,
-                    loading: true,
-                    error: null,
-                  }),
-                  onSome: (value) => ({ ...value, loading: true }),
-                }),
-              ),
-            );
-
-            // Fetch from language server
-            const next = yield* marimo
-              .getDependencyTree({
-                notebookUri,
-                source,
-                inner: {},
-              })
-              .pipe(
-                Effect.tap((result) =>
-                  Effect.logTrace("Fetched dependency tree").pipe(
-                    Effect.annotateLogs({ notebookUri, result }),
-                  ),
-                ),
-                Effect.map(
-                  (result): DependencyTreeState => ({
-                    tree: result.tree,
-                    loading: false,
-                    error: null,
-                  }),
-                ),
-                Effect.catch((error) =>
-                  Effect.gen(function* () {
-                    const errorMsg = String(error);
-
-                    // Script mode has no useful fallback — `uv tree --script`
-                    // is the only path that resolves PEP 723 metadata.
-                    if (source.kind === "script") {
-                      yield* Effect.logError(
-                        "Dependency tree failed for script mode",
-                      ).pipe(
-                        Effect.annotateLogs({ notebookUri, error: errorMsg }),
-                      );
-                      return {
-                        tree: null,
-                        loading: false,
-                        error: errorMsg,
-                      } satisfies DependencyTreeState;
-                    }
-
-                    yield* Effect.logWarning(
-                      "Dependency tree failed, falling back to package list",
-                    ).pipe(
-                      Effect.annotateLogs({ notebookUri, error: errorMsg }),
-                    );
-
-                    // Venv fallback: fetch the flat package list (which the
-                    // server backs with `uv pip list -p <exe>`) and synthesize
-                    // a single-level tree from it.
-                    return yield* marimo
-                      .getPackageList({
-                        notebookUri,
-                        source,
-                        inner: {},
-                      })
-                      .pipe(
-                        Effect.map(
-                          (packageListRaw): DependencyTreeState => ({
-                            tree: {
-                              name: "installed-packages",
-                              version: null,
-                              tags: [],
-                              dependencies: packageListRaw.packages.map(
-                                (pkg) => ({
-                                  name: pkg.name,
-                                  version: pkg.version,
-                                  tags: [],
-                                  dependencies: [],
-                                }),
-                              ),
-                            },
-                            loading: false,
-                            error: null,
-                          }),
-                        ),
-                        Effect.catch((fallbackError) =>
-                          Effect.gen(function* () {
-                            const fallbackErrorMsg = String(fallbackError);
-                            yield* Effect.logError(
-                              "Package list fallback also failed",
-                            ).pipe(
-                              Effect.annotateLogs({
-                                notebookUri,
-                                error: fallbackErrorMsg,
-                              }),
-                            );
-                            return {
-                              tree: null,
-                              loading: false,
-                              error: `${errorMsg}; fallback also failed: ${fallbackErrorMsg}`,
-                            } satisfies DependencyTreeState;
-                          }),
-                        ),
-                      );
-                  }),
-                ),
-              );
-
-            yield* updateIfCurrent((map) =>
-              HashMap.set(map, notebookUri, next),
-            );
-            if (
-              session !== undefined &&
-              documentSessions.current(notebookUri) === session &&
-              cacheGenerations.get(notebookUri) === generation
-            ) {
-              yield* Effect.logTrace("Cached dependency tree").pipe(
-                Effect.annotateLogs({
-                  notebookUri,
-                  hasTree: next.tree !== null,
-                }),
-              );
-            }
-
-            return next.tree;
+            const next = yield* Cache.get(dependencyTreeCache, key);
+            yield* projectCurrent(key);
+            return next?.tree ?? null;
           });
         },
 
@@ -339,8 +328,18 @@ export class PackagesService extends Context.Service<PackagesService>()(
          *
          * Emits the current value on subscription, then all subsequent changes.
          */
-        streamDependencyTreeChanges:
-          SubscriptionRef.changes(dependencyTreesRef),
+        streamDependencyTreeChanges: SubscriptionRef.changes(
+          dependencyTreeProjection,
+        ).pipe(
+          Stream.map((projection) =>
+            HashMap.filterMap(projection, (state, [notebookUri, sessionId]) =>
+              documentSessions.current(notebookUri)?.id === sessionId
+                ? Result.succeed(state)
+                : Result.failVoid,
+            ),
+          ),
+          Stream.changes,
+        ),
       };
     }),
   },
