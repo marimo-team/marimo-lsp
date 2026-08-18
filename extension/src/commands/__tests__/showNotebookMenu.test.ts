@@ -3,11 +3,12 @@ import { Effect, Layer, Option, Ref, Stream } from "effect";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { MarimoLspServer } from "../../config/Config.ts";
-import { MarimoConfigurationService } from "../../config/MarimoConfigurationService.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { marimoConfigFixture } from "../../lib/__tests__/branded.ts";
 import { makeMarimoCommands, MarimoClient } from "../../lsp/MarimoClient.ts";
+import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookSerializer } from "../../notebook/NotebookSerializer.ts";
+import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
 import { Constants } from "../../platform/Constants.ts";
 import { GitHubClient } from "../../platform/GitHubClient.ts";
 import { OutputChannel } from "../../platform/OutputChannel.ts";
@@ -17,21 +18,6 @@ import {
 } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotebookTarget } from "../Invocation.ts";
 import showNotebookMenu, { NOTEBOOK_MENU_ITEMS } from "../showNotebookMenu.ts";
-
-const configLayer = Layer.succeed(
-  MarimoConfigurationService,
-  MarimoConfigurationService.of({
-    getConfig: () =>
-      Effect.succeed(
-        marimoConfigFixture({
-          runtime: { on_cell_change: "lazy", auto_reload: "autorun" },
-        }),
-      ),
-    updateConfig: () => Effect.die("not implemented"),
-    clearNotebook: () => Effect.die("not implemented"),
-    streamOf: () => Stream.empty,
-  }),
-);
 
 const constantsLayer = Layer.succeed(
   Constants,
@@ -51,7 +37,17 @@ const marimoLayer = Layer.succeed(
     channel: { name: "marimo-lsp-test", show() {} },
     restart: Effect.void,
     ...makeMarimoCommands({
-      execute: () => Effect.die("not implemented"),
+      execute: (request) =>
+        request.method === "get-configuration"
+          ? Effect.succeed({
+              config: marimoConfigFixture({
+                runtime: {
+                  on_cell_change: "lazy",
+                  auto_reload: "autorun",
+                },
+              }),
+            })
+          : Effect.die("not implemented"),
       kernelNotifications: Stream.empty,
     }),
   }),
@@ -84,16 +80,25 @@ const targetFor = (
     editor,
   }));
 
-const testLayer = (vscode: TestVsCode) =>
-  Layer.mergeAll(
+const testLayer = (vscode: TestVsCode) => {
+  const documentSessions = NotebookDocumentSessions.layer.pipe(
+    Layer.provide(vscode.layer),
+  );
+  const sessionResources = NotebookSessionResources.layer.pipe(
+    Layer.provide(documentSessions),
+    Layer.provide(marimoLayer),
+  );
+  return Layer.mergeAll(
     vscode.layer,
-    configLayer,
+    documentSessions,
+    sessionResources,
     constantsLayer,
     marimoLayer,
     serializerLayer,
     githubLayer,
     OutputChannel.layer.pipe(Layer.provide(vscode.layer)),
   );
+};
 
 describe("showNotebookMenu", () => {
   it.effect("offers a focused four-item notebook menu", () =>

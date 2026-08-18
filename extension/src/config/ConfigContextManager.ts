@@ -1,7 +1,11 @@
 import { Effect, Layer, Option, Stream } from "effect";
 
+import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
+import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
+import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { MarimoConfigurationService } from "./MarimoConfigurationService.ts";
+import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
+import { NotebookConfiguration } from "./NotebookConfiguration.ts";
 
 /**
  * Mirrors kernel configuration into VS Code context keys for UI:
@@ -13,49 +17,79 @@ import { MarimoConfigurationService } from "./MarimoConfigurationService.ts";
 export const ConfigContextManagerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const configService = yield* MarimoConfigurationService;
+    const documentSessions = yield* NotebookDocumentSessions;
+    const editors = yield* NotebookEditorRegistry;
+    const sessionResources = yield* NotebookSessionResources;
 
-    // Update on_cell_change context based on current state
-    yield* Effect.forkScoped(
-      configService
-        .streamOf((config) => config.runtime?.on_cell_change)
-        .pipe(
-          Stream.tap((mode) =>
-            Effect.logTrace("Updated onCellChangeMode context").pipe(
-              Effect.annotateLogs({ mode }),
-            ),
-          ),
-          Stream.tap((mode) =>
-            code.commands.setContext(
-              "marimo.config.runtime.on_cell_change",
-              Option.getOrElse(mode, () => "autorun"),
-            ),
-          ),
-          Stream.runDrain,
-        ),
+    const sessionFor = (notebookId: Option.Option<NotebookId>) =>
+      Option.flatMap(notebookId, (id) =>
+        Option.fromUndefinedOr(documentSessions.current(id)),
+      );
+    const activeSessions = Stream.merge(
+      editors.streamActiveNotebookChanges.pipe(Stream.map(sessionFor)),
+      documentSessions.changes.pipe(
+        Stream.mapEffect(() => editors.getActiveNotebookUri),
+        Stream.map(sessionFor),
+      ),
+    ).pipe(
+      Stream.changesWith((left, right) =>
+        Option.isNone(left)
+          ? Option.isNone(right)
+          : Option.isSome(right) && left.value.id === right.value.id,
+      ),
     );
 
-    // Update auto_reload context based on current state
-    yield* Effect.forkScoped(
-      configService
-        .streamOf((config) => config.runtime?.auto_reload)
-        .pipe(
-          Stream.tap((mode) =>
-            Effect.logTrace("Updated autoReloadMode context").pipe(
-              Effect.annotateLogs({ mode }),
-            ),
-          ),
-          Stream.tap((mode) =>
-            code.commands.setContext(
-              "marimo.config.runtime.auto_reload",
-              Option.getOrElse(
-                Option.map(mode, (m) => m ?? ("off" as const)),
-                () => "off" as const,
+    const activeConfiguration = activeSessions.pipe(
+      Stream.switchMap(
+        Option.match({
+          onNone: () => Stream.succeed(Option.none()),
+          onSome: (session) =>
+            sessionResources.stream(
+              session,
+              Stream.unwrap(
+                NotebookConfiguration.pipe(
+                  Effect.map((configuration) => configuration.changes),
+                ),
               ),
             ),
-          ),
-          Stream.runDrain,
-        ),
+        }),
+      ),
+      Stream.changes,
+    );
+
+    yield* Effect.forkScoped(
+      activeConfiguration.pipe(
+        Stream.runForEach((configuration) => {
+          const onCellChange = Option.map(
+            configuration,
+            (config) => config.runtime?.on_cell_change ?? "autorun",
+          ).pipe(Option.getOrElse(() => "autorun" as const));
+          const autoReload = Option.map(
+            configuration,
+            (config) => config.runtime?.auto_reload ?? "off",
+          ).pipe(Option.getOrElse(() => "off" as const));
+
+          return Effect.all(
+            [
+              code.commands.setContext(
+                "marimo.config.runtime.on_cell_change",
+                onCellChange,
+              ),
+              code.commands.setContext(
+                "marimo.config.runtime.auto_reload",
+                autoReload,
+              ),
+            ],
+            { discard: true },
+          ).pipe(
+            Effect.tap(() =>
+              Effect.logTrace("Updated configuration context").pipe(
+                Effect.annotateLogs({ onCellChange, autoReload }),
+              ),
+            ),
+          );
+        }),
+      ),
     );
   }).pipe(Effect.annotateLogs("service", "ConfigContextManager")),
 );

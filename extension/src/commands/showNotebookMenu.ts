@@ -1,7 +1,9 @@
 import { Effect, Option } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { MarimoConfigurationService } from "../config/MarimoConfigurationService.ts";
+import { NotebookConfiguration } from "../config/NotebookConfiguration.ts";
+import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
+import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { configureAutoExport } from "./configureAutoExport.ts";
 import createSetupCell from "./createSetupCell.ts";
@@ -60,7 +62,6 @@ const handler = Effect.fn("command.showNotebookMenu")(function* (
       break;
   }
 
-  const configService = yield* MarimoConfigurationService;
   if (Option.isNone(notebook)) {
     yield* code.window.showWarningMessage(
       "Open a marimo notebook to configure reactivity.",
@@ -68,7 +69,23 @@ const handler = Effect.fn("command.showNotebookMenu")(function* (
     return;
   }
 
-  const config = yield* configService.getConfig(notebook.value.id);
+  const documentSessions = yield* NotebookDocumentSessions;
+  const sessionResources = yield* NotebookSessionResources;
+  const session = documentSessions.forDocument(
+    notebook.value.rawNotebookDocument,
+  );
+  if (session === undefined) {
+    yield* code.window.showWarningMessage(
+      "The notebook was closed before its configuration could be loaded.",
+    );
+    return;
+  }
+  const config = yield* sessionResources.run(
+    session,
+    NotebookConfiguration.pipe(
+      Effect.flatMap((configuration) => configuration.get),
+    ),
+  );
   const onCellChange = config.runtime?.on_cell_change ?? "autorun";
   const autoReload = config.runtime?.auto_reload ?? "off";
   const reactivity = yield* code.window.showQuickPickItems(
