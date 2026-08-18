@@ -1050,11 +1050,14 @@ export type DiagnosticsConfig = typeof DiagnosticsConfig.Type;
  * - `default_table_page_size`: default number of rows to display in tables
  * - `default_table_max_columns`: default maximum number of columns to display in tables
  * - `reference_highlighting`: if `True`, highlight reactive variable references
+ * - `code_lens`: if `True`, show inline icons in cell editors linking
+ *   datasources, storage buckets, and caches to their panels
  * - `locale`: locale for date formatting and internationalization (e.g., "en-US", "en-GB", "de-DE")
  */
 export const DisplayConfig = Schema.Struct({
   cell_output: Schema.Literals(["above", "below"]),
   code_editor_font_size: Schema.Int,
+  code_lens: Schema.optional(Schema.Boolean),
   custom_css: Schema.optional(Schema.Array(Schema.String)),
   dataframes: Schema.Literals(["plain", "rich"]),
   default_table_max_columns: Schema.Int,

@@ -414,7 +414,7 @@ def _():
 
 
 @pytest.mark.asyncio
-async def test_deserialize_reports_unrecoverable_indentation_location() -> None:
+async def test_deserialize_recovers_indentation_error_inside_cell() -> None:
     source = """\
 import marimo
 app = marimo.App()
@@ -430,9 +430,10 @@ def _():
         DeserializeRequest(source=source),
     )
 
-    assert isinstance(result, DeserializeInvalidSyntax)
-    assert result.line == 7
-    assert result.column is not None
+    assert isinstance(result, DeserializeSuccess)
+    assert [cell["code"] for cell in result.notebook.notebook["cells"]] == [
+        "if True:\n    x = 1\n  y = 2"
+    ]
 
 
 @pytest.mark.asyncio
