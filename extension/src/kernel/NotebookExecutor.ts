@@ -1,4 +1,14 @@
-import { Cause, Deferred, Effect, Fiber, Queue, type Scope } from "effect";
+import {
+  Cause,
+  Data,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Predicate,
+  Queue,
+  type Scope,
+} from "effect";
 
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 
@@ -17,13 +27,30 @@ interface Actor<R> {
   readonly worker: Fiber.Fiber<void>;
 }
 
+/** The scope that owned an admitted notebook command closed before it ended. */
+export class NotebookExecutionScopeClosedError extends Data.TaggedError(
+  "NotebookExecutionScopeClosedError",
+)<{ readonly notebookId: NotebookId }> {}
+
 /** Runs admitted work in FIFO order, independently for each notebook. */
 export interface NotebookExecutor<R> {
   readonly submit: <A, E>(
     notebookId: NotebookId,
     effect: Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E>;
+  /** Like `submit`, but interrupts queued or running work when `scope` closes. */
+  readonly submitIn: <A, E>(
+    scope: Scope.Scope,
+    notebookId: NotebookId,
+    effect: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E | NotebookExecutionScopeClosedError>;
   readonly post: (
+    notebookId: NotebookId,
+    effect: Effect.Effect<void, never, R>,
+  ) => Effect.Effect<void>;
+  /** Like `post`, but interrupts queued or running work when `scope` closes. */
+  readonly postIn: (
+    scope: Scope.Scope,
     notebookId: NotebookId,
     effect: Effect.Effect<void, never, R>,
   ) => Effect.Effect<void>;
@@ -149,7 +176,36 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
         ),
       );
 
-      const submit = <A, E>(
+      const inScope = <A, E, R2>(
+        effect: Effect.Effect<A, E, R2>,
+        scope: Scope.Scope,
+        notebookId: NotebookId,
+      ): Effect.Effect<A, E | NotebookExecutionScopeClosedError, R2> =>
+        Effect.gen(function* () {
+          if (Predicate.isTagged(scope.state, "Closed")) {
+            return yield* new NotebookExecutionScopeClosedError({
+              notebookId,
+            });
+          }
+          const fiber = yield* Effect.forkIn(effect, scope, {
+            startImmediately: true,
+          });
+          const exit = yield* Fiber.await(fiber).pipe(
+            Effect.onInterrupt(() => Fiber.interrupt(fiber)),
+          );
+          if (
+            Predicate.isTagged(scope.state, "Closed") &&
+            Exit.isFailure(exit) &&
+            Cause.hasInterruptsOnly(exit.cause)
+          ) {
+            return yield* new NotebookExecutionScopeClosedError({
+              notebookId,
+            });
+          }
+          return yield* exit;
+        });
+
+      const submitWork = <A, E>(
         notebookId: NotebookId,
         effect: Effect.Effect<A, E, R>,
       ): Effect.Effect<A, E> =>
@@ -173,7 +229,18 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
           }),
         );
 
-      const post: NotebookExecutor<R>["post"] = (notebookId, effect) =>
+      const submit: NotebookExecutor<R>["submit"] = (notebookId, effect) =>
+        submitWork(notebookId, effect);
+      const submitIn: NotebookExecutor<R>["submitIn"] = (
+        scope,
+        notebookId,
+        effect,
+      ) => submitWork(notebookId, inScope(effect, scope, notebookId));
+
+      const postWork = (
+        notebookId: NotebookId,
+        effect: Effect.Effect<void, never, R>,
+      ) =>
         Effect.uninterruptible(
           Effect.gen(function* () {
             const admitted = yield* Queue.offer(ingress, {
@@ -184,6 +251,22 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
             if (!admitted) return yield* Effect.interrupt;
             return undefined;
           }),
+        );
+      const post: NotebookExecutor<R>["post"] = (notebookId, effect) =>
+        postWork(notebookId, effect);
+      const postIn: NotebookExecutor<R>["postIn"] = (
+        scope,
+        notebookId,
+        effect,
+      ) =>
+        postWork(
+          notebookId,
+          inScope(effect, scope, notebookId).pipe(
+            Effect.catchTag(
+              "NotebookExecutionScopeClosedError",
+              () => Effect.void,
+            ),
+          ),
         );
 
       // Routed through ingress like any work so it runs after everything
@@ -204,7 +287,7 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
           }).pipe(Effect.asVoid),
         );
 
-      return { submit, post, retire };
+      return { submit, submitIn, post, postIn, retire };
     }),
   );
 }

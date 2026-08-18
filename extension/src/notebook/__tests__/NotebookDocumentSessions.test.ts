@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Fiber, Layer } from "effect";
+import { Deferred, Effect, Layer } from "effect";
 
 import {
   createTestNotebookDocument,
@@ -27,9 +27,13 @@ it.effect(
       expect(firstSession?.document).toBe(first);
       if (firstSession === undefined) return;
 
-      const firstEnded = yield* Effect.forkChild(firstSession.ended);
+      const firstEnded = yield* Deferred.make<void>();
+      yield* sessions.addFinalizer(
+        firstSession,
+        Deferred.succeed(firstEnded, undefined),
+      );
       yield* vscode.openNotebook(replacement);
-      yield* Fiber.join(firstEnded);
+      yield* Deferred.await(firstEnded);
 
       const replacementSession = sessions.current(id);
       expect(replacementSession?.document).toBe(replacement);
@@ -41,11 +45,13 @@ it.effect(
       yield* Effect.yieldNow;
       expect(sessions.current(id)).toBe(replacementSession);
 
-      const replacementEnded = yield* Effect.forkChild(
-        replacementSession.ended,
+      const replacementEnded = yield* Deferred.make<void>();
+      yield* sessions.addFinalizer(
+        replacementSession,
+        Deferred.succeed(replacementEnded, undefined),
       );
       yield* vscode.closeNotebook(replacement);
-      yield* Fiber.join(replacementEnded);
+      yield* Deferred.await(replacementEnded);
       expect(sessions.current(id)).toBeUndefined();
     }).pipe(Effect.provide(layer));
   }),

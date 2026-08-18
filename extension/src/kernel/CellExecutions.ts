@@ -158,7 +158,6 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
       const code = yield* VsCode;
       const editorRegistry = yield* NotebookEditorRegistry;
       const documentSessions = yield* NotebookDocumentSessions;
-      const serviceScope = yield* Effect.scope;
       const notebooks = new Map<NotebookId, NotebookEntry>();
       const opening = Semaphore.makeUnsafe(1);
       const allStaleCells = yield* SubscriptionRef.make(
@@ -662,19 +661,22 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             const entry: NotebookEntry = { session, ...made };
             notebooks.set(notebookId, entry);
 
-            yield* session.ended.pipe(
-              Effect.andThen(
-                Effect.suspend(() => {
-                  if (notebooks.get(notebookId)?.session !== session) {
-                    return Effect.void;
-                  }
-                  notebooks.delete(notebookId);
-                  return made.close;
-                }),
-              ),
-              Effect.forkIn(serviceScope),
+            yield* documentSessions.addFinalizer(
+              session,
+              Effect.suspend(() => {
+                if (notebooks.get(notebookId)?.session !== session) {
+                  return Effect.void;
+                }
+                notebooks.delete(notebookId);
+                return made.close;
+              }),
             );
             if (displaced !== undefined) yield* displaced.close;
+            if (documentSessions.current(notebookId) !== session) {
+              return yield* new NotebookDocumentSessionEndedError({
+                notebookId,
+              });
+            }
             return made.executions;
           }),
         );
