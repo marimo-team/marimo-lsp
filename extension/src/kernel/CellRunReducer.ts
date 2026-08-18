@@ -23,6 +23,14 @@ export type RunPhase = Data.TaggedEnum<{
 }>;
 export const RunPhase = Data.taggedEnum<RunPhase>();
 
+/** The source most recently accepted by the kernel. */
+export type AcceptedSource = Data.TaggedEnum<{
+  Unknown: {};
+  Invalidated: {};
+  Accepted: { readonly source: string };
+}>;
+export const AcceptedSource = Data.taggedEnum<AcceptedSource>();
+
 /**
  * A `cell-op`, normalized for the reducer.
  *
@@ -56,8 +64,6 @@ export type Action = Data.TaggedEnum<{
   };
   ApplyRuntimeError: { readonly state: CellRuntimeState };
   ClearRuntimeError: {};
-  RecordExecution: {};
-  InvalidateCell: {};
 }>;
 export const Action = Data.taggedEnum<Action>();
 
@@ -66,10 +72,16 @@ export interface CellRunEntry {
   readonly id: NotebookCellId;
   readonly state: CellRuntimeState;
   readonly phase: RunPhase;
+  readonly acceptedSource: AcceptedSource;
 }
 
 export function makeCellRunEntry(id: NotebookCellId): CellRunEntry {
-  return { id, state: createCellRuntimeState(), phase: RunPhase.Idle() };
+  return {
+    id,
+    state: createCellRuntimeState(),
+    phase: RunPhase.Idle(),
+    acceptedSource: AcceptedSource.Unknown(),
+  };
 }
 
 /** Type-safe wrapper around marimo's imported `transitionCell`. */
@@ -129,6 +141,7 @@ const isError = (state: CellRuntimeState): boolean =>
 export function step(
   entry: CellRunEntry,
   op: Op,
+  source?: string,
 ): { readonly entry: CellRunEntry; readonly actions: ReadonlyArray<Action> } {
   return Op.$match(op, {
     Interrupt: () => {
@@ -141,9 +154,13 @@ export function step(
 
     Queue: ({ runId, next }) => {
       const actions: Action[] = [];
-      if (next.staleInputs) actions.push(Action.InvalidateCell());
-      // Record clears stale; clear any prior runtime-error squiggle.
-      actions.push(Action.RecordExecution(), Action.ClearRuntimeError());
+      // Queue is the kernel's acknowledgement that it accepted this source.
+      // It wins over `staleInputs` when both arrive on the same operation.
+      const acceptedSource =
+        source === undefined
+          ? entry.acceptedSource
+          : AcceptedSource.Accepted({ source });
+      actions.push(Action.ClearRuntimeError());
       // End any still-running prior execution before creating the new one.
       if (hasExecution(entry.phase)) {
         actions.push(
@@ -152,14 +169,18 @@ export function step(
       }
       actions.push(Action.CreateExecution());
       return {
-        entry: { ...entry, state: next, phase: RunPhase.Queued({ runId }) },
+        entry: {
+          ...entry,
+          state: next,
+          phase: RunPhase.Queued({ runId }),
+          acceptedSource,
+        },
         actions,
       };
     },
 
     Start: ({ startTime, next }) => {
       const actions: Action[] = [];
-      if (next.staleInputs) actions.push(Action.InvalidateCell());
       let phase = entry.phase;
       if (entry.phase._tag === "Queued") {
         actions.push(Action.StartExecution({ startTime }));
@@ -170,23 +191,43 @@ export function step(
       } else if (isError(next)) {
         actions.push(...ephemeralError(next, { applyDiagnostic: false }));
       }
-      return { entry: { ...entry, state: next, phase }, actions };
+      return {
+        entry: {
+          ...entry,
+          state: next,
+          phase,
+          acceptedSource: next.staleInputs
+            ? AcceptedSource.Invalidated()
+            : entry.acceptedSource,
+        },
+        actions,
+      };
     },
 
     Update: ({ next }) => {
       const actions: Action[] = [];
-      if (next.staleInputs) actions.push(Action.InvalidateCell());
       if (hasExecution(entry.phase)) {
         actions.push(Action.EmitOutputs({ state: next }));
       } else if (isError(next)) {
         actions.push(...ephemeralError(next, { applyDiagnostic: false }));
       }
-      return { entry: { ...entry, state: next, phase: entry.phase }, actions };
+      return {
+        entry: {
+          ...entry,
+          state: next,
+          acceptedSource: next.staleInputs
+            ? AcceptedSource.Invalidated()
+            : entry.acceptedSource,
+        },
+        actions,
+      };
     },
 
     Settle: ({ success, endTime, next }) => {
       const actions: Action[] = [];
-      if (next.staleInputs) actions.push(Action.InvalidateCell());
+      const acceptedSource = next.staleInputs
+        ? AcceptedSource.Invalidated()
+        : entry.acceptedSource;
       if (hasExecution(entry.phase)) {
         actions.push(
           Action.FinalizeOutputs({ state: next }),
@@ -194,7 +235,12 @@ export function step(
           Action.EndExecution({ success, endTime }),
         );
         return {
-          entry: { ...entry, state: next, phase: RunPhase.Completed() },
+          entry: {
+            ...entry,
+            state: next,
+            phase: RunPhase.Completed(),
+            acceptedSource,
+          },
           actions,
         };
       }
@@ -205,7 +251,10 @@ export function step(
       } else {
         actions.push(Action.ApplyRuntimeError({ state: next }));
       }
-      return { entry: { ...entry, state: next, phase: entry.phase }, actions };
+      return {
+        entry: { ...entry, state: next, acceptedSource },
+        actions,
+      };
     },
   });
 }
