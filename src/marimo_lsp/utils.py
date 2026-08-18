@@ -13,7 +13,6 @@ from marimo._convert.common.format import (
     DEFAULT_MARKDOWN_PREFIX,
     markdown_to_marimo,
 )
-from marimo._types.ids import CellId_t
 
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
@@ -90,12 +89,6 @@ def decode_notebook_document_metadata(
         return MarimoNotebookMetadata()
     envelope = msgspec.convert({"marimo": raw_dict["marimo"]}, NotebookDocumentMetadata)
     return envelope.marimo
-
-
-def get_stable_id(cell: lsp.NotebookCell) -> CellId_t | None:
-    """Get the stable ID of a marimo notebook cell."""
-    stable_id = decode_cell_metadata(cell).marimo_runtime.stable_id
-    return CellId_t(stable_id) if stable_id is not None else None
 
 
 def normalize_cell_code(

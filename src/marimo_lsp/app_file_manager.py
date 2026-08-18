@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import pathlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from urllib.parse import unquote
 
 from lsprotocol.types import NotebookDocument
@@ -71,62 +71,6 @@ class LspAppFileManager:
     def move(self, notebook_uri: str) -> None:
         """Update the URI after the backing notebook is renamed."""
         self._notebook_uri = notebook_uri
-
-    @property
-    def is_notebook_named(self) -> bool:
-        """Check if the notebook has a name.
-
-        LSP notebooks always have a URI, so this always returns True.
-        """
-        return True
-
-    def save(self, request: object) -> str:
-        """Save is not supported in LSP."""
-        msg = "Save not supported in LSP mode. LSP handles file operations."
-        raise NotImplementedError(msg)
-
-    def rename(self, new_filename: str) -> None:
-        """Rename is not supported in LSP."""
-        msg = "Rename not supported in LSP mode. LSP handles file operations."
-        raise NotImplementedError(msg)
-
-    def save_app_config(self, config: dict[str, Any]) -> str:
-        """Save app config is not supported in LSP."""
-        msg = "Save app config not supported in LSP mode. LSP handles file operations."
-        raise NotImplementedError(msg)
-
-    def to_code(self) -> str:
-        """Export to Python code is not supported in LSP."""
-        msg = "Export not supported in LSP mode. Notebook serializer handles document."
-        raise NotImplementedError(msg)
-
-    def read_file(self) -> str:
-        """Read raw file content is not supported in LSP mode."""
-        msg = "Read raw file not supported in LSP mode. LSP handles file operations."
-        raise NotImplementedError(msg)
-
-    def reload(self) -> set[CellId_t]:
-        """Relad file is not supported in LSP mode."""
-        msg = "Reload file si not supported in LSP mode. LSP handles file operations."
-        raise NotImplementedError(msg)
-
-    def read_layout_config(self) -> object | None:
-        """Read layout configuration."""
-        return None
-
-    def read_css_file(self) -> str | None:
-        """Read CSS file content.
-
-        Custom CSS is not applicable in LSP.
-        """
-        return None
-
-    def read_html_head_file(self) -> str | None:
-        """Read HTML head file content.
-
-        Custom HTML is not applicable in LSP.
-        """
-        return None
 
 
 def find_notebook_document(

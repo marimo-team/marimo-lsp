@@ -27,7 +27,6 @@ from marimo_lsp.models import (
 )
 from marimo_lsp.utils import (
     decode_cell_metadata,
-    get_stable_id,
     normalize_cell_code,
 )
 
@@ -366,38 +365,6 @@ class TestSnapshotVariables:
 
 class TestCellMetadataHelpers:
     """Unit tests for cell metadata helper functions."""
-
-    def test_get_stable_id_with_id(self) -> None:
-        """Test get_stable_id returns the stable ID when present."""
-        cell = lsp.NotebookCell(
-            kind=lsp.NotebookCellKind.Code,
-            document="file:///test.py#cell1",
-            metadata=_cell_metadata(stable_id="abc-123"),
-        )
-
-        stable_id = get_stable_id(cell)
-        assert stable_id == CellId_t("abc-123")
-
-    def test_get_stable_id_without_id(self) -> None:
-        """Test get_stable_id returns None when stable ID is missing."""
-        cell = lsp.NotebookCell(
-            kind=lsp.NotebookCellKind.Code,
-            document="file:///test.py#cell1",
-            metadata=_cell_metadata(),
-        )
-
-        stable_id = get_stable_id(cell)
-        assert stable_id is None
-
-    def test_get_stable_id_no_metadata(self) -> None:
-        """Test get_stable_id returns None when metadata is missing."""
-        cell = lsp.NotebookCell(
-            kind=lsp.NotebookCellKind.Code,
-            document="file:///test.py#cell1",
-        )
-
-        stable_id = get_stable_id(cell)
-        assert stable_id is None
 
     def test_decode_cell_metadata_complete(self) -> None:
         """Test decode_cell_metadata with all metadata."""
