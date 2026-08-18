@@ -8,7 +8,7 @@ import {
   FiberSet,
   Predicate,
   Queue,
-  type Scope,
+  Scope,
 } from "effect";
 import type { TaggedEnum } from "effect/Data";
 
@@ -247,8 +247,12 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
       ) =>
         Effect.gen(function* () {
           const scope = yield* Effect.scope;
+          const watcherScope = yield* Scope.fork(scope);
           const closed = yield* Deferred.make<void>();
-          yield* Effect.addFinalizer(() => Deferred.succeed(closed, undefined));
+          yield* Scope.addFinalizer(
+            watcherScope,
+            Deferred.succeed(closed, undefined),
+          );
           return yield* Effect.raceFirst(
             submitWork(notebookId, inScope(effect, scope, notebookId)),
             Deferred.await(closed).pipe(
@@ -258,7 +262,7 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
                 ),
               ),
             ),
-          );
+          ).pipe(Effect.ensuring(Scope.close(watcherScope, Exit.void)));
         });
 
       const postWork = (

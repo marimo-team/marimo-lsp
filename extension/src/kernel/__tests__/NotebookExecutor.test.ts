@@ -166,13 +166,35 @@ describe("NotebookExecutor", () => {
         const failure = exit.cause.reasons.find(Cause.isFailReason);
         assert.instanceOf(failure?.error, NotebookExecutionScopeClosedError);
       }
-      assert.isFalse(yield* Ref.get(queuedStarted));
 
       yield* releaseBlocker.open;
       assert.strictEqual(
         yield* executor.submit(notebook, Effect.succeed("done")),
         "done",
       );
+      assert.isFalse(yield* Ref.get(queuedStarted));
+    }),
+  );
+
+  it.effect(
+    "releases scope-close watchers after submissions finish",
+    Effect.fn(function* () {
+      const executor = yield* makeNotebookExecutor<never>();
+      const documentScope = yield* Scope.make();
+      const notebook = notebookId("notebook");
+
+      for (let index = 0; index < 100; index++) {
+        yield* executor
+          .submitScoped(notebook, Effect.void)
+          .pipe(Scope.provide(documentScope));
+      }
+
+      const finalizerCount =
+        documentScope.state._tag === "Open"
+          ? documentScope.state.finalizers.size
+          : 0;
+      assert.strictEqual(finalizerCount, 0);
+      yield* Scope.close(documentScope, Exit.void);
     }),
   );
 
