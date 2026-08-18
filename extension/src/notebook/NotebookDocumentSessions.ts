@@ -63,6 +63,10 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
       };
 
       const markOpen = (document: vscode.NotebookDocument) => {
+        // The lifecycle replay can deliver an opened event for a document
+        // that was since closed or replaced at the same URI; a closed
+        // document never starts a session.
+        if (document.isClosed) return undefined;
         const notebook = MarimoNotebookDocument.tryFrom(document);
         if (notebook._tag === "None") return undefined;
 

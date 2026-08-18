@@ -379,9 +379,14 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
             }),
           );
 
-          yield* vscode.openNotebook(editor.notebook);
+          // Reopening a URI creates a fresh document object; a closed one
+          // is never resurrected.
+          const reopened = TestVsCode.makeNotebookEditor(
+            NodePath.join(temporary.path, "notebook.py"),
+          );
+          yield* vscode.openNotebook(reopened.notebook);
           yield* Effect.yieldNow;
-          const secondDocument = yield* runtime.forDocument(editor.notebook);
+          const secondDocument = yield* runtime.forDocument(reopened.notebook);
           yield* secondDocument.executeCells(
             { cellIds: [], codes: [] },
             "/python-two",

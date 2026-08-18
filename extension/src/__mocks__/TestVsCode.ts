@@ -1084,17 +1084,23 @@ class NotebookCell implements vscode.NotebookCell {
   }
 }
 
+// Module-private so the mock's public surface stays identical to VS Code's.
+const closedNotebooks = new WeakSet<vscode.NotebookDocument>();
+
 class NotebookDocument implements vscode.NotebookDocument {
   readonly uri: Uri;
   readonly notebookType: string;
   readonly version: number;
   readonly isDirty: boolean;
   readonly isUntitled: boolean;
-  readonly isClosed: boolean;
   readonly metadata: Record<string, unknown>;
   readonly cellCount: number;
 
   #cells: vscode.NotebookCell[];
+
+  get isClosed(): boolean {
+    return closedNotebooks.has(this);
+  }
 
   constructor(notebookType: string, uri: Uri, content?: vscode.NotebookData) {
     this.uri = uri;
@@ -1102,7 +1108,6 @@ class NotebookDocument implements vscode.NotebookDocument {
     this.version = 1;
     this.isDirty = false;
     this.isUntitled = false;
-    this.isClosed = false;
     this.metadata = content?.metadata ?? {};
 
     const cellData = content?.cells ?? [];
@@ -1624,6 +1629,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   }
 
   closeNotebook(doc: vscode.NotebookDocument) {
+    // VS Code marks a document closed before firing onDidCloseNotebookDocument.
+    closedNotebooks.add(doc);
     return this.removeNotebookDocument(doc).pipe(
       Effect.andThen(PubSub.publish(this.documentClosedPubSub, doc)),
       Effect.andThen(

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
@@ -68,11 +68,10 @@ const withTestCtx = Effect.fn(function* (
   } = {},
 ) {
   const { configStore = new Map<string, MarimoConfig>() } = options;
-  const vscode = yield* TestVsCode.make({
-    initialDocuments: Array.from(configStore.keys(), (uri) =>
-      createTestNotebookDocument(Uri.parse(uri)),
-    ),
-  });
+  const initialDocuments = Array.from(configStore.keys(), (uri) =>
+    createTestNotebookDocument(Uri.parse(uri)),
+  );
+  const vscode = yield* TestVsCode.make({ initialDocuments });
 
   const layer = MarimoConfigurationService.layer.pipe(
     Layer.provide(NotebookEditorRegistry.layer),
@@ -123,6 +122,7 @@ const withTestCtx = Effect.fn(function* (
   return {
     vscode,
     layer,
+    initialDocuments,
     setConfig(uri: NotebookId, config: MarimoConfig) {
       configStore.set(uri, config);
       return Effect.void;
@@ -242,16 +242,10 @@ describe("MarimoConfigurationService", () => {
       });
 
       yield* Effect.gen(function* () {
-        const code = yield* VsCode;
         const service = yield* MarimoConfigurationService;
 
-        const doc = createTestNotebookDocument(
-          code.Uri.parse(notebookUri, true),
-        );
-        yield* ctx.vscode.openNotebook(doc);
-        // No drain needed: the service's lifecycle subscription is live
-        // before its layer finishes building, so the close below cannot
-        // outrun it.
+        const doc = ctx.initialDocuments[0];
+        assert(doc !== undefined);
 
         const config1 = yield* service.getConfig(notebookUri);
         expect(config1.runtime?.on_cell_change).toBe("autorun");

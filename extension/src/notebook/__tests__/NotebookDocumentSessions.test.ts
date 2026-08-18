@@ -50,3 +50,30 @@ it.effect(
     }).pipe(Effect.provide(layer));
   }),
 );
+
+it.effect(
+  "ignores a replayed open for a document that already closed",
+  Effect.fn(function* () {
+    const uri = Uri.parse("file:///test/notebook.py");
+    const id = notebookId(uri.toString());
+    const first = createTestNotebookDocument(uri);
+    const replacement = createTestNotebookDocument(uri);
+    const vscode = yield* TestVsCode.make();
+    // The lifecycle snapshot can hold a document that closes before the
+    // consumer observes its open. Model that stale entry directly.
+    yield* vscode.closeNotebook(first);
+    yield* vscode.addNotebookDocument(first);
+    const layer = NotebookDocumentSessions.layer.pipe(
+      Layer.provideMerge(vscode.layer),
+    );
+
+    yield* Effect.gen(function* () {
+      const sessions = yield* NotebookDocumentSessions;
+      expect(sessions.current(id)).toBeUndefined();
+
+      yield* vscode.openNotebook(replacement);
+      yield* Effect.yieldNow;
+      expect(sessions.current(id)?.document).toBe(replacement);
+    }).pipe(Effect.provide(layer));
+  }),
+);
