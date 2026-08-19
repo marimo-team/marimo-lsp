@@ -1965,6 +1965,140 @@ describe("NotebookExecutions", () => {
   );
 
   it.effect(
+    "acknowledges multiple submissions for one cell in order",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 2",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(executions, editor.notebook);
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+        const firstStarted = yield* Latch.make();
+        const secondStarted = yield* Latch.make();
+        const release = yield* Latch.make();
+
+        const first = yield* notebook
+          .submit(
+            [{ cellId: id, source: "x = 1" }],
+            firstStarted.open.pipe(Effect.andThen(release.await)),
+          )
+          .pipe(Effect.forkChild);
+        yield* firstStarted.await;
+        const second = yield* notebook
+          .submit(
+            [{ cellId: id, source: "x = 2" }],
+            secondStarted.open.pipe(Effect.andThen(release.await)),
+          )
+          .pipe(Effect.forkChild);
+        yield* secondStarted.await;
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        });
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-2",
+        });
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+
+        yield* release.open;
+        yield* Fiber.join(first);
+        yield* Fiber.join(second);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "rolls back one submission without disturbing a later submission",
+    Effect.fn(function* () {
+      const cellData = {
+        kind: 1,
+        value: "x = 3",
+        languageId: "python",
+        metadata: MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-1" },
+        }),
+      };
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: { cells: [cellData] },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(executions, editor.notebook);
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+        const firstStarted = yield* Latch.make();
+        const failFirst = yield* Latch.make();
+
+        const first = yield* notebook
+          .submit(
+            [{ cellId: id, source: "x = 1" }],
+            firstStarted.open.pipe(
+              Effect.andThen(failFirst.await),
+              Effect.andThen(Effect.fail("no")),
+            ),
+          )
+          .pipe(Effect.ignore, Effect.forkChild);
+        yield* firstStarted.await;
+        yield* notebook.submit([{ cellId: id, source: "x = 2" }], Effect.void);
+        yield* failFirst.open;
+        yield* Fiber.join(first);
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        });
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+
+        cellData.value = "x = 2";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
     "drops source provenance when interrupted before queued",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
