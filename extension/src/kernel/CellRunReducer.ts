@@ -100,6 +100,26 @@ export function transitionCell(
 }
 
 /**
+ * Accept kernel-owned cell state without changing the host run lifecycle.
+ *
+ * Some state-only notifications are tagged with the run that caused them,
+ * rather than a run of the target cell. Their presentation may not correlate,
+ * but their state remains authoritative.
+ */
+export function acceptKernelState(
+  entry: CellRunState,
+  state: CellRuntimeState,
+): CellRunState {
+  return {
+    ...entry,
+    state,
+    acceptedSource: state.staleInputs
+      ? AcceptedSource.Invalidated()
+      : entry.acceptedSource,
+  };
+}
+
+/**
  * Categorize a `cell-op` into an {@link Op}.
  *
  * `next` is the folded state (`transitionCell(prev, msg)`); the caller folds it
@@ -140,8 +160,13 @@ export function parseOp(
   }
 }
 
-const activeRunId = (phase: RunPhase): RunId | undefined =>
-  phase._tag === "Queued" || phase._tag === "Running" ? phase.runId : undefined;
+export const activeRunId: (phase: RunPhase) => RunId | undefined =
+  RunPhase.$match({
+    Idle: () => undefined,
+    Queued: ({ runId }) => runId,
+    Running: ({ runId }) => runId,
+    Completed: () => undefined,
+  });
 
 const isError = (state: CellRuntimeState): boolean =>
   state.output?.channel === "marimo-error";
@@ -232,7 +257,7 @@ export function step(
     Start: ({ startTime, next, ephemeralRunId }) => {
       const commands: CellCommand[] = [];
       let phase = entry.phase;
-      if (entry.phase._tag === "Queued") {
+      if (RunPhase.$is("Queued")(entry.phase)) {
         commands.push(
           CellCommand.StartRun({
             runId: entry.phase.runId,
@@ -255,12 +280,8 @@ export function step(
       }
       return {
         entry: {
-          ...entry,
-          state: next,
+          ...acceptKernelState(entry, next),
           phase,
-          acceptedSource: next.staleInputs
-            ? AcceptedSource.Invalidated()
-            : entry.acceptedSource,
         },
         commands,
       };
@@ -281,22 +302,14 @@ export function step(
         );
       }
       return {
-        entry: {
-          ...entry,
-          state: next,
-          acceptedSource: next.staleInputs
-            ? AcceptedSource.Invalidated()
-            : entry.acceptedSource,
-        },
+        entry: acceptKernelState(entry, next),
         commands,
       };
     },
 
     Settle: ({ success, endTime, next, ephemeralRunId }) => {
       const commands: CellCommand[] = [];
-      const acceptedSource = next.staleInputs
-        ? AcceptedSource.Invalidated()
-        : entry.acceptedSource;
+      const accepted = acceptKernelState(entry, next);
       const runId = activeRunId(entry.phase);
       if (runId !== undefined) {
         commands.push(
@@ -306,10 +319,8 @@ export function step(
         );
         return {
           entry: {
-            ...entry,
-            state: next,
+            ...accepted,
             phase: RunPhase.Completed(),
-            acceptedSource,
           },
           commands,
         };
@@ -326,7 +337,7 @@ export function step(
         commands.push(CellCommand.SetDiagnostic({ state: Option.some(next) }));
       }
       return {
-        entry: { ...entry, state: next, acceptedSource },
+        entry: accepted,
         commands,
       };
     },
