@@ -65,9 +65,30 @@ interface DriveBinding {
   readonly value: Drive;
 }
 
-interface CellRecord {
+interface CellExecutionState {
   readonly run: CellRunState;
-  readonly drive: Option.Option<DriveBinding>;
+  readonly editorSource: Option.Option<string>;
+  readonly pendingSources: ReadonlyArray<SubmittedSource>;
+}
+
+type DocumentExecutionState = HashMap.HashMap<
+  NotebookCellId,
+  CellExecutionState
+>;
+
+interface CellTransition {
+  readonly cellId: NotebookCellId;
+  readonly current: CellRunState;
+  readonly commands: ReadonlyArray<CellCommand>;
+}
+
+interface DocumentTransition {
+  readonly state: DocumentExecutionState;
+  readonly cells: ReadonlyArray<CellTransition>;
+}
+
+interface OperationTransition extends DocumentTransition {
+  readonly error: Option.Option<RunCorrelationError>;
 }
 
 export class RunCorrelationError extends Data.TaggedError(
@@ -178,10 +199,252 @@ const cellRef = (notebookId: NotebookId, cellId: NotebookCellId): CellRef => ({
   cellId,
 });
 
-/** The drive bound when the given run opened, if the record still holds it. */
-const boundDrive = (record: CellRecord, runId: RunId): Option.Option<Drive> =>
-  Option.filter(record.drive, (binding) => binding.runId === runId).pipe(
+/** The drive bound when the given run opened, if the binding still holds it. */
+const boundDrive = (
+  binding: Option.Option<DriveBinding>,
+  runId: RunId,
+): Option.Option<Drive> =>
+  Option.filter(binding, (candidate) => candidate.runId === runId).pipe(
     Option.map((binding) => binding.value),
+  );
+
+const makeCellState = (
+  editorSource: Option.Option<string> = Option.none(),
+): CellExecutionState => ({
+  run: makeCellRunState(),
+  editorSource,
+  pendingSources: [],
+});
+
+const getCell = (
+  state: DocumentExecutionState,
+  cellId: NotebookCellId,
+): CellExecutionState =>
+  Option.getOrElse(HashMap.get(state, cellId), () => makeCellState());
+
+const setCell = (
+  state: DocumentExecutionState,
+  cellId: NotebookCellId,
+  cell: CellExecutionState,
+): DocumentExecutionState => HashMap.set(state, cellId, cell);
+
+const makeDocumentExecutionState = (
+  sources: ReadonlyArray<CellSource>,
+): DocumentExecutionState => updateExecutionSources(HashMap.empty(), sources);
+
+function updateExecutionSources(
+  state: DocumentExecutionState,
+  sources: ReadonlyArray<CellSource>,
+): DocumentExecutionState {
+  for (const { cellId, source } of sources) {
+    state = setCell(state, cellId, {
+      ...getCell(state, cellId),
+      editorSource: Option.some(source),
+    });
+  }
+  return state;
+}
+
+const registerSubmission = (
+  state: DocumentExecutionState,
+  token: symbol,
+  sources: ReadonlyArray<CellSource>,
+): DocumentExecutionState => {
+  for (const { cellId, source } of sources) {
+    const cell = getCell(state, cellId);
+    state = setCell(state, cellId, {
+      ...cell,
+      pendingSources: [...cell.pendingSources, { token, source }],
+    });
+  }
+  return state;
+};
+
+const rollbackSubmission = (
+  state: DocumentExecutionState,
+  token: symbol,
+  cellIds: ReadonlyArray<NotebookCellId>,
+): DocumentExecutionState => {
+  for (const cellId of cellIds) {
+    const cell = HashMap.get(state, cellId);
+    if (Option.isNone(cell)) continue;
+    state = setCell(state, cellId, {
+      ...cell.value,
+      pendingSources: cell.value.pendingSources.filter(
+        (submitted) => submitted.token !== token,
+      ),
+    });
+  }
+  return state;
+};
+
+const clearPendingSources = (
+  state: DocumentExecutionState,
+): DocumentExecutionState => {
+  for (const [cellId, cell] of state) {
+    if (cell.pendingSources.length === 0) continue;
+    state = setCell(state, cellId, { ...cell, pendingSources: [] });
+  }
+  return state;
+};
+
+const dequeueSubmittedSource = (
+  cell: CellExecutionState,
+): readonly [Option.Option<string>, CellExecutionState] => {
+  const [submitted, ...pendingSources] = cell.pendingSources;
+  return [
+    Option.fromNullishOr(submitted).pipe(Option.map(({ source }) => source)),
+    { ...cell, pendingSources },
+  ];
+};
+
+const correlationError = (
+  run: CellRunState,
+  wire: CellOperationNotification,
+): Option.Option<RunCorrelationError> => {
+  const cellId = extractCellIdFromCellMessage(wire);
+  const expectedRunId = activeRunId(run.phase);
+  const receivedRunId = runIdFromWire(wire.run_id);
+  if (
+    wire.status !== "queued" &&
+    Option.isSome(receivedRunId) &&
+    !Equal.equals(expectedRunId, receivedRunId)
+  ) {
+    return Option.some(
+      new RunCorrelationError({
+        cellId,
+        expectedRunId,
+        receivedRunId,
+        status: wire.status,
+        reason: "superseded-run",
+      }),
+    );
+  }
+  return Option.none();
+};
+
+const transitionFor = (
+  cellId: NotebookCellId,
+  current: CellRunState,
+  commands: ReadonlyArray<CellCommand>,
+): CellTransition => ({ cellId, current, commands });
+
+const applyKernelOperation = (
+  state: DocumentExecutionState,
+  wire: CellOperationNotification,
+): OperationTransition => {
+  const cellId = extractCellIdFromCellMessage(wire);
+  const previousCell = getCell(state, cellId);
+  const nextRuntime = transitionCell(previousCell.run.state, wire);
+  const parsed = parseOp(nextRuntime, wire);
+
+  if (Option.isNone(parsed)) {
+    const [, dequeued] =
+      wire.status === "queued"
+        ? dequeueSubmittedSource(previousCell)
+        : [Option.none<string>(), previousCell];
+    const current = acceptKernelState(dequeued.run, nextRuntime);
+    return {
+      state: setCell(state, cellId, { ...dequeued, run: current }),
+      cells: [transitionFor(cellId, current, [])],
+      error: Option.some(
+        new RunCorrelationError({
+          cellId,
+          expectedRunId: activeRunId(previousCell.run.phase),
+          receivedRunId: Option.none(),
+          status: wire.status,
+          reason: "untracked-queue",
+        }),
+      ),
+    };
+  }
+
+  const op = parsed.value;
+  let nextCell = previousCell;
+  let source = Option.none<string>();
+  if (Op.$is("Queue")(op)) {
+    const [submittedSource, dequeued] = dequeueSubmittedSource(previousCell);
+    nextCell = dequeued;
+    source = submittedSource.pipe(
+      Option.orElse(() => previousCell.editorSource),
+    );
+  }
+
+  const result = step(previousCell.run, op, source);
+  const mismatch = correlationError(previousCell.run, wire);
+  if (Option.isSome(mismatch) && result.commands.length > 0) {
+    const current = acceptKernelState(previousCell.run, nextRuntime);
+    return {
+      state: setCell(state, cellId, { ...previousCell, run: current }),
+      cells: [transitionFor(cellId, current, [])],
+      error: mismatch,
+    };
+  }
+
+  if (
+    wire.status === "idle" &&
+    Option.isNone(activeRunId(previousCell.run.phase))
+  ) {
+    [, nextCell] = dequeueSubmittedSource(nextCell);
+  }
+  nextCell = { ...nextCell, run: result.entry };
+  return {
+    state: setCell(state, cellId, nextCell),
+    cells: [transitionFor(cellId, result.entry, result.commands)],
+    error: Option.none(),
+  };
+};
+
+const releaseAll = (
+  state: DocumentExecutionState,
+  operation: Op,
+  remove: boolean,
+): DocumentTransition => {
+  const cells: CellTransition[] = [];
+  state = clearPendingSources(state);
+  for (const [cellId, cell] of state) {
+    const result = step(cell.run, operation);
+    cells.push(transitionFor(cellId, result.entry, result.commands));
+    state = remove
+      ? HashMap.remove(state, cellId)
+      : setCell(state, cellId, { ...cell, run: result.entry });
+  }
+  return { state, cells };
+};
+
+const interruptAll = (state: DocumentExecutionState): DocumentTransition =>
+  releaseAll(state, Op.Interrupt(), false);
+
+const invalidateAll = (state: DocumentExecutionState): DocumentTransition =>
+  releaseAll(state, Op.Invalidate(), false);
+
+const closeExecution = (state: DocumentExecutionState): DocumentTransition =>
+  releaseAll(state, Op.Interrupt(), true);
+
+const removeExecutionCell = (
+  state: DocumentExecutionState,
+  cellId: NotebookCellId,
+): DocumentTransition => {
+  const cell = HashMap.get(state, cellId);
+  if (Option.isNone(cell)) return { state, cells: [] };
+  const result = step(cell.value.run, Op.Interrupt());
+  return {
+    state: HashMap.remove(state, cellId),
+    cells: [transitionFor(cellId, result.entry, result.commands)],
+  };
+};
+
+const isCellStale = (
+  state: DocumentExecutionState,
+  cellId: NotebookCellId,
+): boolean =>
+  Option.exists(HashMap.get(state, cellId), (cell) =>
+    AcceptedSource.$match(cell.run.acceptedSource, {
+      Unknown: () => false,
+      Invalidated: () => true,
+      Accepted: ({ source }) =>
+        Option.exists(cell.editorSource, (current) => current !== source),
+    }),
   );
 
 /** Owns one ordered collection of cell runs per exact notebook session. */
@@ -275,17 +538,14 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         binding: NotebookExecutionBinding,
       ) {
         const notebookId = notebook.id;
-        const records = new Map<NotebookCellId, CellRecord>();
-        const submittedSources = new Map<
-          NotebookCellId,
-          Array<SubmittedSource>
-        >();
-        const currentSources = new Map<NotebookCellId, string>();
-        for (const cell of notebook.getCells()) {
-          if (Option.isSome(cell.id)) {
-            currentSources.set(cell.id.value, cell.document.getText());
-          }
-        }
+        const initialSources = notebook.getCells().flatMap((cell) =>
+          Option.match(cell.id, {
+            onNone: () => [],
+            onSome: (cellId) => [{ cellId, source: cell.document.getText() }],
+          }),
+        );
+        let state = makeDocumentExecutionState(initialSources);
+        const driveBindings = new Map<NotebookCellId, DriveBinding>();
         const staleRef = yield* SubscriptionRef.make(
           HashSet.empty<NotebookCellId>(),
         );
@@ -307,18 +567,8 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           });
 
         /** Returns whether a cell is invalidated or differs from its accepted source. */
-        const isStale = (cellId: NotebookCellId): boolean => {
-          const record = records.get(cellId);
-          if (record === undefined) return false;
-          return AcceptedSource.$match(record.run.acceptedSource, {
-            Unknown: () => false,
-            Invalidated: () => true,
-            Accepted: ({ source }) => {
-              const currentSource = currentSources.get(cellId);
-              return currentSource !== undefined && source !== currentSource;
-            },
-          });
-        };
+        const isStale = (cellId: NotebookCellId): boolean =>
+          isCellStale(state, cellId);
 
         /** Recomputes staleness for the given cells. */
         const refreshStale = (cellIds: Iterable<NotebookCellId>) =>
@@ -337,9 +587,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           ordering.withPermit(
             Effect.gen(function* () {
               if (closed) return;
-              for (const { cellId, source } of sources) {
-                currentSources.set(cellId, source);
-              }
+              state = updateExecutionSources(state, sources);
               yield* refreshStale(sources.map(({ cellId }) => cellId));
             }),
           );
@@ -411,160 +659,70 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             ),
           );
 
-        /** Returns an error when an operation names a different run. */
-        const correlationError = (
-          record: CellRecord,
-          wire: CellOperationNotification,
-        ): Option.Option<RunCorrelationError> => {
-          const cellId = extractCellIdFromCellMessage(wire);
-          const expectedRunId = activeRunId(record.run.phase);
-          const receivedRunId = runIdFromWire(wire.run_id);
-          if (
-            wire.status !== "queued" &&
-            Option.isSome(receivedRunId) &&
-            !Equal.equals(expectedRunId, receivedRunId)
-          ) {
-            return Option.some(
-              new RunCorrelationError({
-                cellId,
-                expectedRunId,
-                receivedRunId,
-                status: wire.status,
-                reason: "superseded-run",
-              }),
-            );
-          }
-          return Option.none();
-        };
-
-        /** Removes and returns the oldest submitted source for a cell. */
-        const dequeueSubmittedSource = Effect.fn(
-          "CellExecutions.dequeueSubmittedSource",
-        )((cellId: NotebookCellId) =>
-          Effect.sync(() => {
-            const pending = submittedSources.get(cellId);
-            if (pending === undefined || pending.length === 0) {
-              return Option.none<string>();
-            }
-            const submitted = pending.shift();
-            if (pending.length === 0) {
-              submittedSources.delete(cellId);
-            }
-            return Option.fromNullishOr(submitted).pipe(
-              Option.map(({ source }) => source),
-            );
-          }),
-        );
-
-        const apply: NotebookExecutions["apply"] = (wire) =>
-          ordering.withPermit(
-            Effect.gen(function* () {
-              if (closed) return;
-              const cellId = extractCellIdFromCellMessage(wire);
-              const record = records.get(cellId) ?? {
-                run: makeCellRunState(cellId),
-                drive: Option.none<DriveBinding>(),
-              };
-              const next = transitionCell(record.run.state, wire);
-              const retainKernelState = Effect.gen(function* () {
-                if (wire.status === "queued") {
-                  yield* dequeueSubmittedSource(cellId);
-                }
-                // Keep kernel-owned state even when this operation cannot
-                // drive a host run. Lazy execution tags descendant staleness
-                // with the ancestor's run ID; late console appends likewise
-                // arrive after their presentation run has closed.
-                records.set(cellId, {
-                  ...record,
-                  run: acceptKernelState(record.run, next),
-                });
-                yield* refreshStale([cellId]);
-              });
-              const op = yield* Option.match(parseOp(next, wire), {
-                onNone: () =>
-                  retainKernelState.pipe(
-                    Effect.andThen(
-                      Effect.fail(
-                        new RunCorrelationError({
-                          cellId,
-                          expectedRunId: activeRunId(record.run.phase),
-                          receivedRunId: Option.none(),
-                          status: wire.status,
-                          reason: "untracked-queue",
-                        }),
-                      ),
-                    ),
-                  ),
-                onSome: Effect.succeed,
-              });
-              let source = Option.none<string>();
-              if (Op.$is("Queue")(op)) {
-                const submittedSource = yield* dequeueSubmittedSource(cellId);
-                source = submittedSource.pipe(
-                  Option.orElse(() =>
-                    Option.fromNullishOr(currentSources.get(cellId)),
-                  ),
-                );
-              }
-
-              const result = step(record.run, op, source);
-              const mismatch = correlationError(record, wire);
-              const enforceCorrelation =
-                Option.isSome(mismatch) && result.commands.length > 0
-                  ? retainKernelState.pipe(
-                      Effect.andThen(Effect.fail(mismatch.value)),
-                    )
-                  : Effect.void;
-              yield* enforceCorrelation;
-              if (
-                wire.status === "idle" &&
-                Option.isNone(activeRunId(record.run.phase))
-              ) {
-                yield* dequeueSubmittedSource(cellId);
-              }
-              const currentDrive = yield* binding.getDrive;
+        /** Binds commands to the drive that owns each transitioned run. */
+        const admitTransition = (
+          transition: DocumentTransition,
+          currentDrive: Option.Option<Drive>,
+        ) =>
+          Effect.gen(function* () {
+            for (const result of transition.cells) {
+              const previousBinding = Option.fromNullishOr(
+                driveBindings.get(result.cellId),
+              );
               const opened = new Set<RunId>();
               for (const command of result.commands) {
                 if (CellCommand.$is("OpenRun")(command)) {
                   opened.add(command.runId);
                 }
               }
-              /** Returns the drive captured when this run opened. */
               const driveForRun = (runId: RunId): Option.Option<Drive> =>
-                boundDrive(record, runId).pipe(
+                boundDrive(previousBinding, runId).pipe(
                   Option.orElse(() =>
                     opened.has(runId) ? currentDrive : Option.none(),
                   ),
                 );
-              const phase = result.entry.phase;
-              const runId = activeRunId(phase);
-              records.set(cellId, {
-                run: result.entry,
-                drive: runId.pipe(
-                  Option.flatMap((runId) =>
-                    driveForRun(runId).pipe(
-                      Option.map((value) => ({
-                        runId,
-                        value,
-                      })),
-                    ),
+              const nextBinding = activeRunId(result.current.phase).pipe(
+                Option.flatMap((runId) =>
+                  driveForRun(runId).pipe(
+                    Option.map((value) => ({ runId, value })),
                   ),
                 ),
-              });
-              yield* refreshStale([cellId]);
+              );
+              if (Option.isSome(nextBinding)) {
+                driveBindings.set(result.cellId, nextBinding.value);
+              } else {
+                driveBindings.delete(result.cellId);
+              }
 
-              const cell = cellRef(notebookId, cellId);
               const driveForCommand = selectCommandDrive(
                 currentDrive,
                 driveForRun,
               );
               for (const command of result.commands) {
                 yield* present({
-                  cell,
+                  cell: cellRef(notebookId, result.cellId),
                   command,
                   drive: driveForCommand(command),
                 });
               }
+            }
+          });
+
+        const apply: NotebookExecutions["apply"] = (wire) =>
+          ordering.withPermit(
+            Effect.gen(function* () {
+              if (closed) return;
+              const cellId = extractCellIdFromCellMessage(wire);
+              const result = applyKernelOperation(state, wire);
+              state = result.state;
+              yield* refreshStale([cellId]);
+              yield* Option.match(result.error, {
+                onNone: () =>
+                  binding.getDrive.pipe(
+                    Effect.flatMap((drive) => admitTransition(result, drive)),
+                  ),
+                onSome: Effect.fail,
+              });
             }).pipe(
               Effect.annotateLogs({
                 notebookId,
@@ -573,55 +731,25 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             ),
           );
 
-        /** Applies an operation and releases matching presentation state. */
-        const release = (
-          target: (cellId: NotebookCellId) => boolean,
-          remove: boolean,
-          operation: Op = Op.Interrupt(),
-        ) =>
+        /** Applies a bulk transition and releases matching presentation state. */
+        const release = (result: DocumentTransition) =>
           Effect.gen(function* () {
-            const released: NotebookCellId[] = [];
-            for (const [cellId, record] of records) {
-              if (!target(cellId)) continue;
-              released.push(cellId);
-              const result = step(record.run, operation);
-              const cell = cellRef(notebookId, cellId);
-              const driveForCommand = selectCommandDrive(
-                Option.none(),
-                (runId) => boundDrive(record, runId),
-              );
-              for (const command of result.commands) {
-                yield* present({
-                  cell,
-                  command,
-                  drive: driveForCommand(command),
-                });
-              }
-              if (remove) {
-                records.delete(cellId);
-              } else {
-                records.set(cellId, {
-                  run: result.entry,
-                  drive: Option.none(),
-                });
-              }
-            }
-            yield* refreshStale(released);
+            state = result.state;
+            yield* admitTransition(result, Option.none());
+            yield* refreshStale(result.cells.map(({ cellId }) => cellId));
           });
 
         const interrupt = ordering.withPermit(
           Effect.gen(function* () {
             if (closed) return;
-            submittedSources.clear();
-            yield* release(() => true, false);
+            yield* release(interruptAll(state));
           }),
         );
 
         const invalidate = ordering.withPermit(
           Effect.gen(function* () {
             if (closed) return;
-            submittedSources.clear();
-            yield* release(() => true, false, Op.Invalidate());
+            yield* release(invalidateAll(state));
           }),
         );
 
@@ -629,10 +757,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           ordering.withPermit(
             Effect.gen(function* () {
               if (closed) return;
-              yield* release((candidate) => candidate === cellId, true);
-              currentSources.delete(cellId);
-              submittedSources.delete(cellId);
-              yield* refreshStale([cellId]);
+              yield* release(removeExecutionCell(state, cellId));
             }),
           );
 
@@ -640,24 +765,16 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           const token = Symbol("cell submission");
           const register = ordering.withPermit(
             Effect.sync(() => {
-              for (const { cellId, source } of cells) {
-                const pending = submittedSources.get(cellId) ?? [];
-                pending.push({ token, source });
-                submittedSources.set(cellId, pending);
-              }
+              state = registerSubmission(state, token, cells);
             }),
           );
           const rollback = ordering.withPermit(
             Effect.sync(() => {
-              for (const { cellId } of cells) {
-                const pending = submittedSources.get(cellId);
-                if (pending === undefined) continue;
-                const remaining = pending.filter(
-                  (submitted) => submitted.token !== token,
-                );
-                if (remaining.length === 0) submittedSources.delete(cellId);
-                else submittedSources.set(cellId, remaining);
-              }
+              state = rollbackSubmission(
+                state,
+                token,
+                cells.map(({ cellId }) => cellId),
+              );
             }),
           );
           return register.pipe(
@@ -673,11 +790,10 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             Effect.gen(function* () {
               if (closed) return;
               closed = true;
-              yield* release(() => true, true);
+              yield* release(closeExecution(state));
               yield* Queue.end(presentation);
               yield* Fiber.join(presentationWorker);
-              submittedSources.clear();
-              currentSources.clear();
+              driveBindings.clear();
               yield* SubscriptionRef.set(staleRef, HashSet.empty());
               yield* SubscriptionRef.update(allStaleCells, (all) =>
                 HashMap.remove(all, notebookId),
