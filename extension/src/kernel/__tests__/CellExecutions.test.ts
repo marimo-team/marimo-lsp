@@ -25,10 +25,11 @@ import {
   type Drive,
   type NotebookExecutions,
 } from "../../kernel/CellExecutions.ts";
-import { CellCommand, RunId } from "../../kernel/CellRunReducer.ts";
+import { CellCommand } from "../../kernel/CellRunReducer.ts";
 import { buildCellOutputs } from "../../kernel/VsCodeCellOutputs.ts";
 import {
   cellId,
+  runId,
   UNSAFE_castForNegativeTest,
 } from "../../lib/__tests__/branded.ts";
 import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
@@ -1170,7 +1171,7 @@ describe("NotebookExecutions", () => {
               if (
                 name === "second" &&
                 command._tag === "RenderOutputs" &&
-                command.runId === RunId("run-2")
+                command.runId === runId("run-2")
               ) {
                 yield* presented.open;
               }
@@ -1249,9 +1250,9 @@ describe("NotebookExecutions", () => {
         }> = [];
         const drive: Drive = (_cell, command) =>
           Effect.gen(function* () {
-            const runId = "runId" in command ? `:${command.runId}` : "";
+            const runIdSuffix = "runId" in command ? `:${command.runId}` : "";
             events.push({
-              label: `${command._tag}${runId}`,
+              label: `${command._tag}${runIdSuffix}`,
               console:
                 command._tag === "RenderOutputs"
                   ? command.state.consoleOutputs.map((output) => output.data)
@@ -1259,7 +1260,7 @@ describe("NotebookExecutions", () => {
             });
             if (
               command._tag === "RenderOutputs" &&
-              command.runId === RunId("run-1") &&
+              command.runId === runId("run-1") &&
               !command.final
             ) {
               yield* projectionStarted.open;
@@ -1267,7 +1268,7 @@ describe("NotebookExecutions", () => {
             }
             if (
               command._tag === "CloseRun" &&
-              command.runId === RunId("run-2")
+              command.runId === runId("run-2")
             ) {
               yield* latestClosed.open;
             }
@@ -1885,7 +1886,7 @@ describe("NotebookExecutions", () => {
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
         expect(commands.at(-1)).toEqual(
           CellCommand.CloseRun({
-            runId: RunId("run-1"),
+            runId: runId("run-1"),
             success: false,
             at: Option.none(),
           }),
@@ -2141,8 +2142,8 @@ describe("NotebookExecutions", () => {
           .pipe(Effect.flip);
 
         expect(error._tag).toBe("RunCorrelationError");
-        expect(error.expectedRunId).toEqual(Option.some(RunId("run-2")));
-        expect(error.receivedRunId).toEqual(Option.some(RunId("run-1")));
+        expect(error.expectedRunId).toEqual(Option.some(runId("run-2")));
+        expect(error.receivedRunId).toEqual(Option.some(runId("run-1")));
         expect(error.reason).toBe("superseded-run");
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -2370,7 +2371,7 @@ describe("NotebookExecutions", () => {
 
         expect(error._tag).toBe("RunCorrelationError");
         expect(error.expectedRunId).toEqual(Option.none());
-        expect(error.receivedRunId).toEqual(Option.some(RunId("run-1")));
+        expect(error.receivedRunId).toEqual(Option.some(runId("run-1")));
         expect(opened).toBe(1);
       }).pipe(Effect.provide(ctx.layer));
     }),

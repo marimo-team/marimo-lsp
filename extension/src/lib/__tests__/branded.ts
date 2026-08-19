@@ -16,6 +16,7 @@
 import type { components as Api } from "@marimo-team/openapi/src/api";
 import { Schema } from "effect";
 
+import type { RunId } from "../../kernel/CellRunReducer.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import {
   KernelSessionIdFromString,
@@ -39,6 +40,7 @@ export const uiElementId = (s: string) => s as UIElementId;
 export const widgetModelId = (s: string) => s as WidgetModelId;
 export const base64String = (s: string) => s as Base64String;
 export const notebookId = (s: string) => s as NotebookId;
+export const runId = (s: string) => s as RunId;
 export const kernelSessionId = Schema.decodeUnknownSync(
   KernelSessionIdFromString,
 );
