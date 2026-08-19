@@ -1,5 +1,4 @@
 import {
-  Cause,
   Context,
   Data,
   Effect,
@@ -44,6 +43,7 @@ import {
 } from "../commands.ts";
 import type { MarimoContextKey } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
+import { isExpectedCancellation } from "../lib/isExpectedCancellation.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
 import { tokenFromSignal } from "../lib/tokenFromSignal.ts";
 
@@ -324,16 +324,6 @@ type ContextMap = {
   "marimo.notebook.hasStaleCells": boolean;
   "marimo.notebook.hasKernel": boolean;
 };
-
-const isExpectedCancellation = (cause: Cause.Cause<unknown>) =>
-  Cause.hasInterruptsOnly(cause) ||
-  cause.reasons
-    .filter(Cause.isDieReason)
-    .map((reason) => reason.defect)
-    .some(
-      (defect: unknown) =>
-        defect instanceof Error && defect.name === "Canceled",
-    );
 
 export const withCommandContext = (command: MarimoCommand) => {
   const wireId = commandId(command);

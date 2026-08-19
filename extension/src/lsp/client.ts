@@ -23,6 +23,7 @@ import * as NodeProcess from "node:process";
 import * as NodeReadline from "node:readline";
 
 import {
+  Cause,
   Data,
   Effect,
   HashMap,
@@ -38,6 +39,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { getTopologicalCells } from "../lib/getTopologicalCells.ts";
+import { isExpectedCancellation } from "../lib/isExpectedCancellation.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
@@ -61,6 +63,30 @@ export class LspRequestError extends Data.TaggedError("LspRequestError")<{
   readonly code: number;
   readonly message: string;
 }> {}
+
+class LspCleanupError extends Data.TaggedError("LspCleanupError")<{
+  readonly cause: unknown;
+}> {}
+
+/** Run dependency cleanup without allowing it to fail the owning LSP scope. */
+export function runLspCleanup(
+  stage: string,
+  cleanup: () => unknown,
+): Effect.Effect<void> {
+  return Effect.try({
+    try: cleanup,
+    catch: (cause) => new LspCleanupError({ cause }),
+  }).pipe(
+    Effect.asVoid,
+    Effect.catchTag("LspCleanupError", (error) => {
+      const cause = Cause.die(error.cause);
+      if (isExpectedCancellation(cause)) return Effect.void;
+      return Effect.logWarning(`LSP cleanup failed during ${stage}`).pipe(
+        Effect.annotateLogs({ cause, "lsp.cleanup.stage": stage }),
+      );
+    }),
+  );
+}
 
 function hasCode(value: unknown): value is { code: number } {
   return (
@@ -621,7 +647,9 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
       env: { ...NodeProcess.env, ...config.env },
     });
 
-    yield* Effect.addFinalizer(() => Effect.sync(() => proc.kill()));
+    yield* Effect.addFinalizer(() =>
+      runLspCleanup("process.kill", () => proc.kill()),
+    );
 
     // Pipe stderr to output channel, line by line
     if (proc.stderr) {
@@ -649,7 +677,9 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
     );
     conn.listen();
 
-    yield* Effect.addFinalizer(() => Effect.sync(() => conn.dispose()));
+    yield* Effect.addFinalizer(() =>
+      runLspCleanup("connection.dispose", () => conn.dispose()),
+    );
 
     // -- 3. Initialize handshake --------------------------------------------
 
