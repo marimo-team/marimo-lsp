@@ -2,21 +2,19 @@ import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/
 import { Option } from "effect";
 import { describe, expect, it } from "vite-plus/test";
 
-import { cellId } from "../../lib/__tests__/branded.ts";
+import { cellId, runId } from "../../lib/__tests__/branded.ts";
 import type { CellRuntimeState } from "../../types.ts";
 import {
   AcceptedSource,
   CellCommand,
   type CellRunState,
   Op,
-  RunId,
   RunPhase,
   step,
 } from "../CellRunReducer.ts";
 
 const ID = cellId("cell-1");
-const RUN = RunId("run-1");
-const EPHEMERAL_RUN = RunId("ephemeral-run");
+const RUN = runId("run-1");
 
 const entry = (phase: RunPhase): CellRunState => ({
   id: ID,
@@ -65,17 +63,13 @@ describe("cell run reducer", () => {
       Op.Start({
         startTime: 5,
         next: okState(),
-        ephemeralRunId: EPHEMERAL_RUN,
       }),
     );
     expect(tags(started.commands)).toEqual(["StartRun", "RenderOutputs"]);
     expect(started.entry.phase).toEqual(RunPhase.Running({ runId: RUN }));
     e = started.entry;
 
-    const updated = step(
-      e,
-      Op.Update({ next: okState(), ephemeralRunId: EPHEMERAL_RUN }),
-    );
+    const updated = step(e, Op.Update({ next: okState() }));
     expect(tags(updated.commands)).toEqual(["RenderOutputs"]);
     e = updated.entry;
 
@@ -85,7 +79,6 @@ describe("cell run reducer", () => {
         success: true,
         endTime: Option.some(9),
         next: okState(),
-        ephemeralRunId: EPHEMERAL_RUN,
       }),
     );
     expect(tags(settled.commands)).toEqual([
@@ -104,7 +97,6 @@ describe("cell run reducer", () => {
         success: false,
         endTime: Option.none(),
         next: errorState(),
-        ephemeralRunId: EPHEMERAL_RUN,
       }),
     );
     const end = commands.find((command) => command._tag === "CloseRun");
@@ -121,7 +113,7 @@ describe("cell run reducer", () => {
     const running = entry(RunPhase.Running({ runId: RUN }));
     const { commands } = step(
       running,
-      Op.Queue({ runId: RunId("run-2"), next: okState() }),
+      Op.Queue({ runId: runId("run-2"), next: okState() }),
     );
     expect(tags(commands)).toEqual(["SetDiagnostic", "CloseRun", "OpenRun"]);
     // The prior run is ended as a success — it's superseded, not failed.
@@ -168,29 +160,22 @@ describe("cell run reducer", () => {
     ]);
   });
 
-  it("renders a compile error with no prior run via an ephemeral execution", () => {
+  it("renders a compile error with no prior run as one untracked execution", () => {
+    const error = errorState();
     const { commands, entry: next } = step(
       entry(RunPhase.Idle()),
       Op.Settle({
         success: false,
         endTime: Option.none(),
-        next: errorState(),
-        ephemeralRunId: EPHEMERAL_RUN,
+        next: error,
       }),
     );
-    expect(tags(commands)).toEqual([
-      "OpenRun",
-      "StartRun",
-      "RenderOutputs",
-      "SetDiagnostic",
-      "CloseRun",
+    expect(commands).toEqual([
+      CellCommand.PresentUntrackedError({
+        state: error,
+        applyDiagnostic: true,
+      }),
     ]);
-    expect(
-      commands.every(
-        (command) =>
-          command._tag === "SetDiagnostic" || command.runId === EPHEMERAL_RUN,
-      ),
-    ).toBe(true);
     // The cell never entered a tracked run, so it stays Idle.
     expect(next.phase).toEqual(RunPhase.Idle());
   });
@@ -202,7 +187,6 @@ describe("cell run reducer", () => {
         success: true,
         endTime: Option.none(),
         next: okState(),
-        ephemeralRunId: EPHEMERAL_RUN,
       }),
     );
     expect(tags(commands)).toEqual(["SetDiagnostic"]);
@@ -211,7 +195,7 @@ describe("cell run reducer", () => {
   it("invalidates the accepted source when an op carries stale inputs", () => {
     const { entry: next } = step(
       entry(RunPhase.Running({ runId: RUN })),
-      Op.Update({ next: staleState(), ephemeralRunId: EPHEMERAL_RUN }),
+      Op.Update({ next: staleState() }),
     );
     expect(next.acceptedSource).toEqual(AcceptedSource.Invalidated());
   });

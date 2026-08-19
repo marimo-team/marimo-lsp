@@ -68,6 +68,7 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
         }),
       );
 
+      /** Applies a function while a cell run still has live resources. */
       const withResource = (
         cell: CellRef,
         runId: RunId,
@@ -81,6 +82,7 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
           : apply(resource);
       };
 
+      /** Resolves a cell within the notebook bound to this drive. */
       const resolveCell = (cell: CellRef, binding: VsCodeDriveBinding) =>
         Effect.gen(function* () {
           if (binding.notebook.id !== cell.notebookId) {
@@ -92,6 +94,19 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
           return yield* findNotebookCell(binding.notebook, cell.cellId);
         });
 
+      /** Creates a VS Code execution for a resolved cell. */
+      const createExecution = (cell: CellRef, binding: VsCodeDriveBinding) =>
+        Effect.gen(function* () {
+          const notebookCell = yield* resolveCell(cell, binding);
+          return yield* Effect.try({
+            try: () =>
+              binding.controller.createNotebookCellExecution(notebookCell),
+            catch: (cause) =>
+              new InvalidCellError({ cellId: cell.cellId, cause }),
+          });
+        });
+
+      /** Projects state onto a tracked run's live execution. */
       const renderOutputs = (
         cell: CellRef,
         runId: RunId,
@@ -116,6 +131,7 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
           );
         });
 
+      /** Reconciles the runtime diagnostic for a cell. */
       const setDiagnostic = (
         cell: CellRef,
         binding: VsCodeDriveBinding,
@@ -152,6 +168,43 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
           ),
         );
 
+      /** Presents an untracked error in one self-contained execution. */
+      const presentUntrackedError = (
+        cell: CellRef,
+        binding: VsCodeDriveBinding,
+        state: CellRuntimeState,
+        applyDiagnostic: boolean,
+      ) =>
+        Effect.gen(function* () {
+          const execution = yield* createExecution(cell, binding);
+          return yield* Effect.gen(function* () {
+            yield* Effect.sync(() => execution.start());
+            const outputs = buildKeyedCellOutputs(
+              cell.cellId,
+              state,
+              code,
+              binding.notebook.rawNotebookDocument,
+            );
+            yield* Effect.tryPromise(() =>
+              new CellOutputProjection(execution).commit(outputs),
+            ).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Failed to update cell output").pipe(
+                  Effect.annotateLogs({ cause, ...cell }),
+                ),
+              ),
+            );
+            if (applyDiagnostic) {
+              yield* setDiagnostic(cell, binding, Option.some(state));
+            }
+          }).pipe(
+            Effect.ensuring(
+              Effect.try(() => execution.end(false)).pipe(Effect.ignore),
+            ),
+          );
+        });
+
+      /** Interprets one reducer command against a VS Code binding. */
       const apply = (
         cell: CellRef,
         binding: VsCodeDriveBinding,
@@ -160,13 +213,7 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
         CellCommand.$match(command, {
           OpenRun: ({ runId }) =>
             Effect.gen(function* () {
-              const notebookCell = yield* resolveCell(cell, binding);
-              const execution = yield* Effect.try({
-                try: () =>
-                  binding.controller.createNotebookCellExecution(notebookCell),
-                catch: (cause) =>
-                  new InvalidCellError({ cellId: cell.cellId, cause }),
-              });
+              const execution = yield* createExecution(cell, binding);
               resources.set(resourceKey(cell, runId), {
                 execution,
                 projection: new CellOutputProjection(execution),
@@ -188,6 +235,8 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
                 resources.delete(resourceKey(cell, runId));
               }),
             ),
+          PresentUntrackedError: ({ state, applyDiagnostic }) =>
+            presentUntrackedError(cell, binding, state, applyDiagnostic),
           SetDiagnostic: ({ state }) => setDiagnostic(cell, binding, state),
         }).pipe(
           Effect.catchTag("NotebookCellNotFoundError", () =>

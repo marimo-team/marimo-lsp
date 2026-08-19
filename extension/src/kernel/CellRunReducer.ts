@@ -7,7 +7,7 @@ import type { NotebookCellId } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellOperationNotification, CellRuntimeState } from "../types.ts";
 
 export type RunId = Brand.Branded<string, "RunId">;
-export const RunId = Brand.nominal<RunId>();
+const brandRunId = Brand.nominal<RunId>();
 
 /**
  * Where a cell is in its current run.
@@ -42,18 +42,13 @@ export type Op = Data.TaggedEnum<{
   Start: {
     readonly startTime: number;
     readonly next: CellRuntimeState;
-    readonly ephemeralRunId: RunId;
   };
   Settle: {
     readonly success: boolean;
     readonly endTime: Option.Option<number>;
     readonly next: CellRuntimeState;
-    readonly ephemeralRunId: RunId;
   };
-  Update: {
-    readonly next: CellRuntimeState;
-    readonly ephemeralRunId: RunId;
-  };
+  Update: { readonly next: CellRuntimeState };
   Interrupt: {};
   Invalidate: {};
 }>;
@@ -75,6 +70,11 @@ export type CellCommand = Data.TaggedEnum<{
     readonly runId: RunId;
     readonly success: boolean;
     readonly at: Option.Option<number>;
+  };
+  /** Present an error that arrived without a kernel-tracked run. */
+  PresentUntrackedError: {
+    readonly state: CellRuntimeState;
+    readonly applyDiagnostic: boolean;
   };
   SetDiagnostic: { readonly state: Option.Option<CellRuntimeState> };
 }>;
@@ -125,13 +125,13 @@ export function acceptKernelState(
   };
 }
 
-/** Normalize the nullable wire representation of a run ID. */
+/** The sole production boundary from a nullable wire string to a RunId. */
 export const runIdFromWire = (
   runId: CellOperationNotification["run_id"],
 ): Option.Option<RunId> =>
   Option.fromNullishOr(runId).pipe(
     Option.filter((value) => value.length > 0),
-    Option.map(RunId),
+    Option.map(brandRunId),
   );
 
 /**
@@ -144,7 +144,6 @@ export const runIdFromWire = (
 export function parseOp(
   next: CellRuntimeState,
   msg: CellOperationNotification,
-  ephemeralRunId: RunId,
 ): Option.Option<Op> {
   switch (msg.status) {
     case "queued": {
@@ -157,7 +156,6 @@ export function parseOp(
         Op.Start({
           startTime: (msg.timestamp ?? 0) * 1000,
           next,
-          ephemeralRunId,
         }),
       );
     case "idle":
@@ -170,14 +168,14 @@ export function parseOp(
             Option.map((timestamp) => timestamp * 1000),
           ),
           next,
-          ephemeralRunId,
         }),
       );
     default:
-      return Option.some(Op.Update({ next, ephemeralRunId }));
+      return Option.some(Op.Update({ next }));
   }
 }
 
+/** Returns the active RunId, if this phase owns one. */
 export const activeRunId: (phase: RunPhase) => Option.Option<RunId> =
   RunPhase.$match({
     Idle: () => Option.none(),
@@ -186,7 +184,7 @@ export const activeRunId: (phase: RunPhase) => Option.Option<RunId> =
     Completed: () => Option.none(),
   });
 
-const isError = (state: CellRuntimeState): boolean =>
+const hasMarimoErrorOutput = (state: CellRuntimeState): boolean =>
   state.output?.channel === "marimo-error";
 
 /**
@@ -282,7 +280,7 @@ export function step(
       };
     },
 
-    Start: ({ startTime, next, ephemeralRunId }) => {
+    Start: ({ startTime, next }) => {
       const commands: CellCommand[] = [];
       let phase = entry.phase;
       if (RunPhase.$is("Queued")(entry.phase)) {
@@ -303,9 +301,10 @@ export function step(
             final: false,
           }),
         );
-      } else if (isError(next)) {
+      } else if (hasMarimoErrorOutput(next)) {
         commands.push(
-          ...ephemeralError(ephemeralRunId, next, {
+          CellCommand.PresentUntrackedError({
+            state: next,
             applyDiagnostic: false,
           }),
         );
@@ -319,7 +318,7 @@ export function step(
       };
     },
 
-    Update: ({ next, ephemeralRunId }) => {
+    Update: ({ next }) => {
       const commands: CellCommand[] = [];
       const runId = activeRunId(entry.phase);
       if (Option.isSome(runId)) {
@@ -330,9 +329,10 @@ export function step(
             final: false,
           }),
         );
-      } else if (isError(next)) {
+      } else if (hasMarimoErrorOutput(next)) {
         commands.push(
-          ...ephemeralError(ephemeralRunId, next, {
+          CellCommand.PresentUntrackedError({
+            state: next,
             applyDiagnostic: false,
           }),
         );
@@ -343,7 +343,7 @@ export function step(
       };
     },
 
-    Settle: ({ success, endTime, next, ephemeralRunId }) => {
+    Settle: ({ success, endTime, next }) => {
       const commands: CellCommand[] = [];
       const accepted = acceptKernelState(entry, next);
       const runId = activeRunId(entry.phase);
@@ -367,9 +367,10 @@ export function step(
       }
       // No live execution: show a one-off execution for an error, and always
       // reconcile the squiggle (clears it when there's no in-cell frame).
-      if (isError(next)) {
+      if (hasMarimoErrorOutput(next)) {
         commands.push(
-          ...ephemeralError(ephemeralRunId, next, {
+          CellCommand.PresentUntrackedError({
+            state: next,
             applyDiagnostic: true,
           }),
         );
@@ -382,26 +383,4 @@ export function step(
       };
     },
   });
-}
-
-/**
- * Commands to render an error from a cell that never queued (e.g. a compile
- * error), which has no live execution: spin up a one-off execution, emit the
- * error, end it. `applyDiagnostic` also reconciles the squiggle, which only the
- * terminal `idle` op does.
- */
-function ephemeralError(
-  runId: RunId,
-  next: CellRuntimeState,
-  opts: { readonly applyDiagnostic: boolean },
-): CellCommand[] {
-  return [
-    CellCommand.OpenRun({ runId }),
-    CellCommand.StartRun({ runId, at: Option.none() }),
-    CellCommand.RenderOutputs({ runId, state: next, final: true }),
-    ...(opts.applyDiagnostic
-      ? [CellCommand.SetDiagnostic({ state: Option.some(next) })]
-      : []),
-    CellCommand.CloseRun({ runId, success: false, at: Option.none() }),
-  ];
 }

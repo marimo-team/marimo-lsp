@@ -42,7 +42,7 @@ import {
   makeCellRunState,
   Op,
   parseOp,
-  RunId,
+  type RunId,
   runIdFromWire,
   step,
   transitionCell,
@@ -86,6 +86,7 @@ export class RunCorrelationError extends Data.TaggedError(
 }> {}
 
 export interface CellStaleness {
+  /** Returns the cells currently considered stale. */
   readonly current: Effect.Effect<HashSet.HashSet<NotebookCellId>>;
   /** Emits the current set immediately, followed by changed sets. */
   readonly changes: Stream.Stream<HashSet.HashSet<NotebookCellId>>;
@@ -96,6 +97,7 @@ export interface NotebookExecutionBinding {
   readonly getDrive: Effect.Effect<Option.Option<Drive>>;
 }
 
+/** Controls execution state for one exact notebook session. */
 export interface NotebookExecutions {
   /**
    * Folds one Wire Cell Operation, then admits its presentation commands when
@@ -104,9 +106,13 @@ export interface NotebookExecutions {
   readonly apply: (
     operation: CellOperationNotification,
   ) => Effect.Effect<void, RunCorrelationError>;
+  /** Interrupts every active run and clears pending submissions. */
   readonly interrupt: Effect.Effect<void>;
+  /** Invalidates every cell and ends its active run. */
   readonly invalidate: Effect.Effect<void>;
+  /** Removes a cell and its execution state. */
   readonly remove: (cellId: NotebookCellId) => Effect.Effect<void>;
+  /** Tracks submitted sources while sending them to the kernel. */
   readonly submit: <A, E, R>(
     cells: ReadonlyArray<{
       readonly cellId: NotebookCellId;
@@ -114,6 +120,7 @@ export interface NotebookExecutions {
     }>,
     send: Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E, R>;
+  /** Exposes current and changing stale-cell state. */
   readonly staleCells: CellStaleness;
 }
 
@@ -141,6 +148,31 @@ interface Work {
   readonly drive: Option.Option<Drive>;
 }
 
+/** Returns true when a command supersedes older pending output. */
+const isConflatableOutput: (command: CellCommand) => boolean =
+  CellCommand.$match({
+    OpenRun: () => false,
+    StartRun: () => false,
+    RenderOutputs: () => true,
+    CloseRun: () => false,
+    PresentUntrackedError: () => true,
+    SetDiagnostic: () => false,
+  });
+
+/** Selects the current or run-bound drive that owns a command. */
+const selectCommandDrive = (
+  current: Option.Option<Drive>,
+  forRun: (runId: RunId) => Option.Option<Drive>,
+): ((command: CellCommand) => Option.Option<Drive>) =>
+  CellCommand.$match({
+    OpenRun: () => current,
+    StartRun: ({ runId }) => forRun(runId),
+    RenderOutputs: ({ runId }) => forRun(runId),
+    CloseRun: ({ runId }) => forRun(runId),
+    PresentUntrackedError: () => current,
+    SetDiagnostic: () => current,
+  });
+
 const cellRef = (notebookId: NotebookId, cellId: NotebookCellId): CellRef => ({
   notebookId,
   cellId,
@@ -167,6 +199,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
       );
       let staleContextValue: boolean | undefined;
 
+      /** Updates VS Code's stale-cell context for the active notebook. */
       const updateStaleContext = Effect.fn("CellExecutions.updateStaleContext")(
         function* () {
           const activeNotebook = yield* editorRegistry.getActiveNotebookUri;
@@ -262,6 +295,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         const presentation = yield* Queue.unbounded<Work, Cause.Done>();
         let closed = false;
 
+        /** Publishes a changed stale-cell set locally and globally. */
         const publishStale = (next: HashSet.HashSet<NotebookCellId>) =>
           Effect.gen(function* () {
             const current = yield* SubscriptionRef.get(staleRef);
@@ -272,6 +306,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             );
           });
 
+        /** Returns whether a cell is invalidated or differs from its accepted source. */
         const isStale = (cellId: NotebookCellId): boolean => {
           const record = records.get(cellId);
           if (record === undefined) return false;
@@ -285,6 +320,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           });
         };
 
+        /** Recomputes staleness for the given cells. */
         const refreshStale = (cellIds: Iterable<NotebookCellId>) =>
           Effect.gen(function* () {
             let next = yield* SubscriptionRef.get(staleRef);
@@ -296,6 +332,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             yield* publishStale(next);
           });
 
+        /** Records current sources and refreshes their staleness. */
         const updateSources = (sources: ReadonlyArray<CellSource>) =>
           ordering.withPermit(
             Effect.gen(function* () {
@@ -307,6 +344,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             }),
           );
 
+        /** Runs one presentation command and logs non-interruption failures. */
         const drive = ({ cell, command, drive: target }: Work) =>
           Option.match(target, {
             onNone: () =>
@@ -338,12 +376,11 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               ),
           });
 
+        /** Runs a batch while conflating pending output for each cell. */
         const driveBatch = (batch: ReadonlyArray<Work>) => {
-          // Preserve every lifecycle command, but project only the newest
-          // output pending for each cell while the previous batch was driven.
           const newestOutput = new Map<NotebookCellId, number>();
           for (const [index, work] of batch.entries()) {
-            if (work.command._tag === "RenderOutputs") {
+            if (isConflatableOutput(work.command)) {
               newestOutput.set(work.cell.cellId, index);
             }
           }
@@ -351,7 +388,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           return Effect.forEach(
             batch,
             (work, index) =>
-              work.command._tag === "RenderOutputs" &&
+              isConflatableOutput(work.command) &&
               newestOutput.get(work.cell.cellId) !== index
                 ? Effect.void
                 : drive(work),
@@ -364,6 +401,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           Effect.forkIn(presentationScope),
         );
 
+        /** Enqueues one command for ordered presentation. */
         const present = (work: Work) =>
           Queue.offer(presentation, work).pipe(
             Effect.flatMap((admitted) =>
@@ -373,6 +411,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             ),
           );
 
+        /** Returns an error when an operation names a different run. */
         const correlationError = (
           record: CellRecord,
           wire: CellOperationNotification,
@@ -398,6 +437,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           return Option.none();
         };
 
+        /** Removes and returns the oldest submitted source for a cell. */
         const dequeueSubmittedSource = Effect.fn(
           "CellExecutions.dequeueSubmittedSource",
         )((cellId: NotebookCellId) =>
@@ -440,26 +480,23 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                 });
                 yield* refreshStale([cellId]);
               });
-              const op = yield* Option.match(
-                parseOp(next, wire, RunId(crypto.randomUUID())),
-                {
-                  onNone: () =>
-                    retainKernelState.pipe(
-                      Effect.andThen(
-                        Effect.fail(
-                          new RunCorrelationError({
-                            cellId,
-                            expectedRunId: activeRunId(record.run.phase),
-                            receivedRunId: Option.none(),
-                            status: wire.status,
-                            reason: "untracked-queue",
-                          }),
-                        ),
+              const op = yield* Option.match(parseOp(next, wire), {
+                onNone: () =>
+                  retainKernelState.pipe(
+                    Effect.andThen(
+                      Effect.fail(
+                        new RunCorrelationError({
+                          cellId,
+                          expectedRunId: activeRunId(record.run.phase),
+                          receivedRunId: Option.none(),
+                          status: wire.status,
+                          reason: "untracked-queue",
+                        }),
                       ),
                     ),
-                  onSome: Effect.succeed,
-                },
-              );
+                  ),
+                onSome: Effect.succeed,
+              });
               let source = Option.none<string>();
               if (Op.$is("Queue")(op)) {
                 const submittedSource = yield* dequeueSubmittedSource(cellId);
@@ -486,14 +523,13 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                 yield* dequeueSubmittedSource(cellId);
               }
               const currentDrive = yield* binding.getDrive;
-              // A run's presentation stays on the drive that opened it:
-              // OpenRun binds the drive current at open time, and later
-              // commands for that run reuse the binding even after the
-              // controller changes or detaches.
               const opened = new Set<RunId>();
               for (const command of result.commands) {
-                if (command._tag === "OpenRun") opened.add(command.runId);
+                if (CellCommand.$is("OpenRun")(command)) {
+                  opened.add(command.runId);
+                }
               }
+              /** Returns the drive captured when this run opened. */
               const driveForRun = (runId: RunId): Option.Option<Drive> =>
                 boundDrive(record, runId).pipe(
                   Option.orElse(() =>
@@ -518,15 +554,15 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               yield* refreshStale([cellId]);
 
               const cell = cellRef(notebookId, cellId);
+              const driveForCommand = selectCommandDrive(
+                currentDrive,
+                driveForRun,
+              );
               for (const command of result.commands) {
                 yield* present({
                   cell,
                   command,
-                  drive:
-                    command._tag === "OpenRun" ||
-                    command._tag === "SetDiagnostic"
-                      ? currentDrive
-                      : driveForRun(command.runId),
+                  drive: driveForCommand(command),
                 });
               }
             }).pipe(
@@ -537,6 +573,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
             ),
           );
 
+        /** Applies an operation and releases matching presentation state. */
         const release = (
           target: (cellId: NotebookCellId) => boolean,
           remove: boolean,
@@ -549,15 +586,15 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               released.push(cellId);
               const result = step(record.run, operation);
               const cell = cellRef(notebookId, cellId);
+              const driveForCommand = selectCommandDrive(
+                Option.none(),
+                (runId) => boundDrive(record, runId),
+              );
               for (const command of result.commands) {
                 yield* present({
                   cell,
                   command,
-                  drive:
-                    command._tag === "OpenRun" ||
-                    command._tag === "SetDiagnostic"
-                      ? Option.none()
-                      : boundDrive(record, command.runId),
+                  drive: driveForCommand(command),
                 });
               }
               if (remove) {
