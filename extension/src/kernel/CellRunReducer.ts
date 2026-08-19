@@ -46,11 +46,14 @@ export type Op = Data.TaggedEnum<{
   };
   Settle: {
     readonly success: boolean;
-    readonly endTime: number | undefined;
+    readonly endTime: Option.Option<number>;
     readonly next: CellRuntimeState;
     readonly ephemeralRunId: RunId;
   };
-  Update: { readonly next: CellRuntimeState; readonly ephemeralRunId: RunId };
+  Update: {
+    readonly next: CellRuntimeState;
+    readonly ephemeralRunId: RunId;
+  };
   Interrupt: {};
   Invalidate: {};
 }>;
@@ -59,7 +62,10 @@ export const Op = Data.taggedEnum<Op>();
 /** One host effect requested by the reducer. */
 export type CellCommand = Data.TaggedEnum<{
   OpenRun: { readonly runId: RunId };
-  StartRun: { readonly runId: RunId; readonly at: number | undefined };
+  StartRun: {
+    readonly runId: RunId;
+    readonly at: Option.Option<number>;
+  };
   RenderOutputs: {
     readonly runId: RunId;
     readonly state: CellRuntimeState;
@@ -68,7 +74,7 @@ export type CellCommand = Data.TaggedEnum<{
   CloseRun: {
     readonly runId: RunId;
     readonly success: boolean;
-    readonly at: number | undefined;
+    readonly at: Option.Option<number>;
   };
   SetDiagnostic: { readonly state: Option.Option<CellRuntimeState> };
 }>;
@@ -119,6 +125,15 @@ export function acceptKernelState(
   };
 }
 
+/** Normalize the nullable wire representation of a run ID. */
+export const runIdFromWire = (
+  runId: CellOperationNotification["run_id"],
+): Option.Option<RunId> =>
+  Option.fromNullishOr(runId).pipe(
+    Option.filter((value) => value.length > 0),
+    Option.map(RunId),
+  );
+
 /**
  * Categorize a `cell-op` into an {@link Op}.
  *
@@ -133,8 +148,9 @@ export function parseOp(
 ): Option.Option<Op> {
   switch (msg.status) {
     case "queued": {
-      const runId = Option.fromNullishOr(msg.run_id).pipe(Option.map(RunId));
-      return Option.map(runId, (id) => Op.Queue({ runId: id, next }));
+      return runIdFromWire(msg.run_id).pipe(
+        Option.map((runId) => Op.Queue({ runId, next })),
+      );
     }
     case "running":
       return Option.some(
@@ -150,7 +166,9 @@ export function parseOp(
           // A marimo-error output channel is the kernel's signal that the run
           // raised — report failure so VS Code shows the red error icon.
           success: next.output?.channel !== "marimo-error",
-          endTime: msg.timestamp == null ? undefined : msg.timestamp * 1000,
+          endTime: Option.fromNullishOr(msg.timestamp).pipe(
+            Option.map((timestamp) => timestamp * 1000),
+          ),
           next,
           ephemeralRunId,
         }),
@@ -160,12 +178,12 @@ export function parseOp(
   }
 }
 
-export const activeRunId: (phase: RunPhase) => RunId | undefined =
+export const activeRunId: (phase: RunPhase) => Option.Option<RunId> =
   RunPhase.$match({
-    Idle: () => undefined,
-    Queued: ({ runId }) => runId,
-    Running: ({ runId }) => runId,
-    Completed: () => undefined,
+    Idle: () => Option.none(),
+    Queued: ({ runId }) => Option.some(runId),
+    Running: ({ runId }) => Option.some(runId),
+    Completed: () => Option.none(),
   });
 
 const isError = (state: CellRuntimeState): boolean =>
@@ -180,7 +198,7 @@ const isError = (state: CellRuntimeState): boolean =>
 export function step(
   entry: CellRunState,
   op: Op,
-  source?: string,
+  source: Option.Option<string> = Option.none(),
 ): {
   readonly entry: CellRunState;
   readonly commands: ReadonlyArray<CellCommand>;
@@ -193,7 +211,7 @@ export function step(
         Invalidated: () => entry.acceptedSource,
         Accepted: () => AcceptedSource.Invalidated(),
       });
-      if (runId === undefined) {
+      if (Option.isNone(runId)) {
         return {
           entry: { ...entry, acceptedSource },
           commands: [],
@@ -206,18 +224,28 @@ export function step(
           acceptedSource,
         },
         commands: [
-          CellCommand.CloseRun({ runId, success: false, at: undefined }),
+          CellCommand.CloseRun({
+            runId: runId.value,
+            success: false,
+            at: Option.none(),
+          }),
         ],
       };
     },
 
     Interrupt: () => {
       const runId = activeRunId(entry.phase);
-      if (runId === undefined) return { entry, commands: [] };
+      if (Option.isNone(runId)) {
+        return { entry, commands: [] };
+      }
       return {
         entry: { ...entry, phase: RunPhase.Completed() },
         commands: [
-          CellCommand.CloseRun({ runId, success: false, at: undefined }),
+          CellCommand.CloseRun({
+            runId: runId.value,
+            success: false,
+            at: Option.none(),
+          }),
         ],
       };
     },
@@ -226,19 +254,19 @@ export function step(
       const commands: CellCommand[] = [];
       // Queue is the kernel's acknowledgement that it accepted this source.
       // It wins over `staleInputs` when both arrive on the same operation.
-      const acceptedSource =
-        source === undefined
-          ? entry.acceptedSource
-          : AcceptedSource.Accepted({ source });
+      const acceptedSource = Option.match(source, {
+        onNone: () => entry.acceptedSource,
+        onSome: (source) => AcceptedSource.Accepted({ source }),
+      });
       commands.push(CellCommand.SetDiagnostic({ state: Option.none() }));
       // End any still-running prior execution before creating the new one.
       const previousRunId = activeRunId(entry.phase);
-      if (previousRunId !== undefined) {
+      if (Option.isSome(previousRunId)) {
         commands.push(
           CellCommand.CloseRun({
-            runId: previousRunId,
+            runId: previousRunId.value,
             success: true,
-            at: undefined,
+            at: Option.none(),
           }),
         );
       }
@@ -261,15 +289,19 @@ export function step(
         commands.push(
           CellCommand.StartRun({
             runId: entry.phase.runId,
-            at: startTime,
+            at: Option.some(startTime),
           }),
         );
         phase = RunPhase.Running({ runId: entry.phase.runId });
       }
       const runId = activeRunId(phase);
-      if (runId !== undefined) {
+      if (Option.isSome(runId)) {
         commands.push(
-          CellCommand.RenderOutputs({ runId, state: next, final: false }),
+          CellCommand.RenderOutputs({
+            runId: runId.value,
+            state: next,
+            final: false,
+          }),
         );
       } else if (isError(next)) {
         commands.push(
@@ -290,9 +322,13 @@ export function step(
     Update: ({ next, ephemeralRunId }) => {
       const commands: CellCommand[] = [];
       const runId = activeRunId(entry.phase);
-      if (runId !== undefined) {
+      if (Option.isSome(runId)) {
         commands.push(
-          CellCommand.RenderOutputs({ runId, state: next, final: false }),
+          CellCommand.RenderOutputs({
+            runId: runId.value,
+            state: next,
+            final: false,
+          }),
         );
       } else if (isError(next)) {
         commands.push(
@@ -311,11 +347,15 @@ export function step(
       const commands: CellCommand[] = [];
       const accepted = acceptKernelState(entry, next);
       const runId = activeRunId(entry.phase);
-      if (runId !== undefined) {
+      if (Option.isSome(runId)) {
         commands.push(
-          CellCommand.RenderOutputs({ runId, state: next, final: true }),
+          CellCommand.RenderOutputs({
+            runId: runId.value,
+            state: next,
+            final: true,
+          }),
           CellCommand.SetDiagnostic({ state: Option.some(next) }),
-          CellCommand.CloseRun({ runId, success, at: endTime }),
+          CellCommand.CloseRun({ runId: runId.value, success, at: endTime }),
         );
         return {
           entry: {
@@ -357,11 +397,11 @@ function ephemeralError(
 ): CellCommand[] {
   return [
     CellCommand.OpenRun({ runId }),
-    CellCommand.StartRun({ runId, at: undefined }),
+    CellCommand.StartRun({ runId, at: Option.none() }),
     CellCommand.RenderOutputs({ runId, state: next, final: true }),
     ...(opts.applyDiagnostic
       ? [CellCommand.SetDiagnostic({ state: Option.some(next) })]
       : []),
-    CellCommand.CloseRun({ runId, success: false, at: undefined }),
+    CellCommand.CloseRun({ runId, success: false, at: Option.none() }),
   ];
 }
