@@ -175,16 +175,16 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
             }),
           StartRun: ({ runId, at }) =>
             withResource(cell, runId, ({ execution }) =>
-              Effect.sync(() => execution.start(at)),
+              Effect.sync(() => execution.start(Option.getOrUndefined(at))),
             ),
           RenderOutputs: ({ runId, state, final }) =>
             renderOutputs(cell, runId, state, final),
           CloseRun: ({ runId, success, at }) =>
             withResource(cell, runId, ({ execution }) =>
               Effect.gen(function* () {
-                yield* Effect.try(() => execution.end(success, at)).pipe(
-                  Effect.ignore,
-                );
+                yield* Effect.try(() =>
+                  execution.end(success, Option.getOrUndefined(at)),
+                ).pipe(Effect.ignore);
                 resources.delete(resourceKey(cell, runId));
               }),
             ),

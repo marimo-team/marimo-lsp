@@ -1887,7 +1887,7 @@ describe("NotebookExecutions", () => {
           CellCommand.CloseRun({
             runId: RunId("run-1"),
             success: false,
-            at: undefined,
+            at: Option.none(),
           }),
         );
       }).pipe(Effect.provide(ctx.layer));
@@ -2141,8 +2141,8 @@ describe("NotebookExecutions", () => {
           .pipe(Effect.flip);
 
         expect(error._tag).toBe("RunCorrelationError");
-        expect(error.expectedRunId).toBe("run-2");
-        expect(error.receivedRunId).toBe("run-1");
+        expect(error.expectedRunId).toEqual(Option.some(RunId("run-2")));
+        expect(error.receivedRunId).toEqual(Option.some(RunId("run-1")));
         expect(error.reason).toBe("superseded-run");
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -2369,8 +2369,8 @@ describe("NotebookExecutions", () => {
           .pipe(Effect.flip);
 
         expect(error._tag).toBe("RunCorrelationError");
-        expect(error.expectedRunId).toBeUndefined();
-        expect(error.receivedRunId).toBe("run-1");
+        expect(error.expectedRunId).toEqual(Option.none());
+        expect(error.receivedRunId).toEqual(Option.some(RunId("run-1")));
         expect(opened).toBe(1);
       }).pipe(Effect.provide(ctx.layer));
     }),

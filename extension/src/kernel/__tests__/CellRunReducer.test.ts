@@ -1,4 +1,5 @@
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
+import { Option } from "effect";
 import { describe, expect, it } from "vite-plus/test";
 
 import { cellId } from "../../lib/__tests__/branded.ts";
@@ -47,7 +48,11 @@ describe("cell run reducer", () => {
   it("drives a normal run: queue → start → update → settle", () => {
     let e = entry(RunPhase.Idle());
 
-    const queued = step(e, Op.Queue({ runId: RUN, next: okState() }), "x = 1");
+    const queued = step(
+      e,
+      Op.Queue({ runId: RUN, next: okState() }),
+      Option.some("x = 1"),
+    );
     expect(tags(queued.commands)).toEqual(["SetDiagnostic", "OpenRun"]);
     expect(queued.entry.phase).toEqual(RunPhase.Queued({ runId: RUN }));
     expect(queued.entry.acceptedSource).toEqual(
@@ -78,7 +83,7 @@ describe("cell run reducer", () => {
       e,
       Op.Settle({
         success: true,
-        endTime: 9,
+        endTime: Option.some(9),
         next: okState(),
         ephemeralRunId: EPHEMERAL_RUN,
       }),
@@ -97,14 +102,18 @@ describe("cell run reducer", () => {
       running,
       Op.Settle({
         success: false,
-        endTime: undefined,
+        endTime: Option.none(),
         next: errorState(),
         ephemeralRunId: EPHEMERAL_RUN,
       }),
     );
     const end = commands.find((command) => command._tag === "CloseRun");
     expect(end).toEqual(
-      CellCommand.CloseRun({ runId: RUN, success: false, at: undefined }),
+      CellCommand.CloseRun({
+        runId: RUN,
+        success: false,
+        at: Option.none(),
+      }),
     );
   });
 
@@ -118,7 +127,11 @@ describe("cell run reducer", () => {
     // The prior run is ended as a success — it's superseded, not failed.
     const end = commands.find((command) => command._tag === "CloseRun");
     expect(end).toEqual(
-      CellCommand.CloseRun({ runId: RUN, success: true, at: undefined }),
+      CellCommand.CloseRun({
+        runId: RUN,
+        success: true,
+        at: Option.none(),
+      }),
     );
   });
 
@@ -147,7 +160,11 @@ describe("cell run reducer", () => {
       AcceptedSource.Invalidated(),
     );
     expect(invalidated.commands).toEqual([
-      CellCommand.CloseRun({ runId: RUN, success: false, at: undefined }),
+      CellCommand.CloseRun({
+        runId: RUN,
+        success: false,
+        at: Option.none(),
+      }),
     ]);
   });
 
@@ -156,7 +173,7 @@ describe("cell run reducer", () => {
       entry(RunPhase.Idle()),
       Op.Settle({
         success: false,
-        endTime: undefined,
+        endTime: Option.none(),
         next: errorState(),
         ephemeralRunId: EPHEMERAL_RUN,
       }),
@@ -183,7 +200,7 @@ describe("cell run reducer", () => {
       entry(RunPhase.Idle()),
       Op.Settle({
         success: true,
-        endTime: undefined,
+        endTime: Option.none(),
         next: okState(),
         ephemeralRunId: EPHEMERAL_RUN,
       }),
@@ -203,7 +220,7 @@ describe("cell run reducer", () => {
     const { entry: next } = step(
       entry(RunPhase.Idle()),
       Op.Queue({ runId: RUN, next: staleState() }),
-      "x = 1",
+      Option.some("x = 1"),
     );
     expect(next.acceptedSource).toEqual(
       AcceptedSource.Accepted({ source: "x = 1" }),

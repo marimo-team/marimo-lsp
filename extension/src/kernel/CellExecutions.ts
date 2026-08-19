@@ -43,6 +43,7 @@ import {
   Op,
   parseOp,
   RunId,
+  runIdFromWire,
   step,
   transitionCell,
 } from "./CellRunReducer.ts";
@@ -73,8 +74,8 @@ export class RunCorrelationError extends Data.TaggedError(
   "RunCorrelationError",
 )<{
   readonly cellId: NotebookCellId;
-  readonly expectedRunId: string | undefined;
-  readonly receivedRunId: string | undefined;
+  readonly expectedRunId: Option.Option<RunId>;
+  readonly receivedRunId: Option.Option<RunId>;
   readonly status: CellOperationNotification["status"];
   /**
    * `superseded-run`: a tagged operation named a run other than the active
@@ -375,37 +376,45 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
         const correlationError = (
           record: CellRecord,
           wire: CellOperationNotification,
-        ): RunCorrelationError | undefined => {
+        ): Option.Option<RunCorrelationError> => {
           const cellId = extractCellIdFromCellMessage(wire);
           const expectedRunId = activeRunId(record.run.phase);
-          const receivedRunId =
-            typeof wire.run_id === "string" && wire.run_id.length > 0
-              ? wire.run_id
-              : undefined;
-
+          const receivedRunId = runIdFromWire(wire.run_id);
           if (
             wire.status !== "queued" &&
-            receivedRunId !== undefined &&
-            receivedRunId !== expectedRunId
+            Option.isSome(receivedRunId) &&
+            !Equal.equals(expectedRunId, receivedRunId)
           ) {
-            return new RunCorrelationError({
-              cellId,
-              expectedRunId,
-              receivedRunId,
-              status: wire.status,
-              reason: "superseded-run",
-            });
+            return Option.some(
+              new RunCorrelationError({
+                cellId,
+                expectedRunId,
+                receivedRunId,
+                status: wire.status,
+                reason: "superseded-run",
+              }),
+            );
           }
-          return undefined;
+          return Option.none();
         };
 
-        const takeSubmittedSource = (cellId: NotebookCellId) => {
-          const pending = submittedSources.get(cellId);
-          if (pending === undefined || pending.length === 0) return undefined;
-          const submitted = pending.shift();
-          if (pending.length === 0) submittedSources.delete(cellId);
-          return submitted?.source;
-        };
+        const dequeueSubmittedSource = Effect.fn(
+          "CellExecutions.dequeueSubmittedSource",
+        )((cellId: NotebookCellId) =>
+          Effect.sync(() => {
+            const pending = submittedSources.get(cellId);
+            if (pending === undefined || pending.length === 0) {
+              return Option.none<string>();
+            }
+            const submitted = pending.shift();
+            if (pending.length === 0) {
+              submittedSources.delete(cellId);
+            }
+            return Option.fromNullishOr(submitted).pipe(
+              Option.map(({ source }) => source),
+            );
+          }),
+        );
 
         const apply: NotebookExecutions["apply"] = (wire) =>
           ordering.withPermit(
@@ -418,7 +427,9 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               };
               const next = transitionCell(record.run.state, wire);
               const retainKernelState = Effect.gen(function* () {
-                if (wire.status === "queued") takeSubmittedSource(cellId);
+                if (wire.status === "queued") {
+                  yield* dequeueSubmittedSource(cellId);
+                }
                 // Keep kernel-owned state even when this operation cannot
                 // drive a host run. Lazy execution tags descendant staleness
                 // with the ancestor's run ID; late console appends likewise
@@ -439,7 +450,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                           new RunCorrelationError({
                             cellId,
                             expectedRunId: activeRunId(record.run.phase),
-                            receivedRunId: undefined,
+                            receivedRunId: Option.none(),
                             status: wire.status,
                             reason: "untracked-queue",
                           }),
@@ -449,19 +460,30 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
                   onSome: Effect.succeed,
                 },
               );
-              const source = Op.$is("Queue")(op)
-                ? (takeSubmittedSource(cellId) ?? currentSources.get(cellId))
-                : undefined;
+              let source = Option.none<string>();
+              if (Op.$is("Queue")(op)) {
+                const submittedSource = yield* dequeueSubmittedSource(cellId);
+                source = submittedSource.pipe(
+                  Option.orElse(() =>
+                    Option.fromNullishOr(currentSources.get(cellId)),
+                  ),
+                );
+              }
+
               const result = step(record.run, op, source);
               const mismatch = correlationError(record, wire);
-              yield* mismatch !== undefined && result.commands.length > 0
-                ? retainKernelState.pipe(Effect.andThen(Effect.fail(mismatch)))
-                : Effect.void;
+              const enforceCorrelation =
+                Option.isSome(mismatch) && result.commands.length > 0
+                  ? retainKernelState.pipe(
+                      Effect.andThen(Effect.fail(mismatch.value)),
+                    )
+                  : Effect.void;
+              yield* enforceCorrelation;
               if (
                 wire.status === "idle" &&
-                activeRunId(record.run.phase) === undefined
+                Option.isNone(activeRunId(record.run.phase))
               ) {
-                takeSubmittedSource(cellId);
+                yield* dequeueSubmittedSource(cellId);
               }
               const currentDrive = yield* binding.getDrive;
               // A run's presentation stays on the drive that opened it:
@@ -482,13 +504,16 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
               const runId = activeRunId(phase);
               records.set(cellId, {
                 run: result.entry,
-                drive:
-                  runId !== undefined
-                    ? Option.map(driveForRun(runId), (value) => ({
+                drive: runId.pipe(
+                  Option.flatMap((runId) =>
+                    driveForRun(runId).pipe(
+                      Option.map((value) => ({
                         runId,
                         value,
-                      }))
-                    : Option.none(),
+                      })),
+                    ),
+                  ),
+                ),
               });
               yield* refreshStale([cellId]);
 
