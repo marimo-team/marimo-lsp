@@ -22,6 +22,7 @@ import {
   validateBinary,
 } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
+import { isExpectedCancellation } from "../lib/isExpectedCancellation.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
@@ -280,7 +281,7 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
             ),
             Effect.catchCause((cause) =>
               Effect.gen(function* () {
-                if (Cause.hasInterruptsOnly(cause)) return;
+                if (isExpectedCancellation(cause)) return;
                 const message = "Failed to start ty language server";
                 yield* Ref.set(
                   statusRef,
