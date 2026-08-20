@@ -20,7 +20,11 @@ const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 const controller: NotebookController = {
   id: "script",
   drive: () => () => Effect.void,
-  resolveExecutable: () => Effect.succeed("/unused/python"),
+  resolveEnvironment: () =>
+    Effect.succeed({
+      executable: "/unused/python",
+      marimoVersion: Option.none(),
+    }),
 };
 
 it.effect("refreshes dependencies for the active document session", () =>

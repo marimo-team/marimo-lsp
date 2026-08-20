@@ -43,10 +43,12 @@ class NativeKernel:
         self._listener_thread: threading.Thread | None = None
         self.executable = manager.executable
         self.working_directory = manager.working_directory
+        self.marimo_version: str | None = None
 
     def start(self, receive: Callable[[KernelMessage], None]) -> None:
         """Start the kernel process and operation listener."""
         self._manager.start_kernel()
+        self.marimo_version = self._manager.marimo_version
 
         def listen() -> None:
             stream_queue = self._queue_manager.stream_queue

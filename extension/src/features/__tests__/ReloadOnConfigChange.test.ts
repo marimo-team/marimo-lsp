@@ -202,6 +202,7 @@ it.effect(
     const session = {
       executable: "/python",
       workingDirectory: "/project",
+      marimoVersion: null,
     };
     const services = Layer.merge(
       vscode.layer,

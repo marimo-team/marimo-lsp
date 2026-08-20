@@ -18,6 +18,7 @@ from __future__ import annotations
 import atexit
 import collections
 import contextlib
+import json
 import os
 import queue
 import signal
@@ -55,6 +56,11 @@ if TYPE_CHECKING:
 _write_lock = threading.Lock()
 _decoder = msgspec.json.Decoder(ToBridge)
 KERNEL_READY_TIMEOUT = 10.0
+_KERNEL_LAUNCH_CODE = """\
+import json, runpy, marimo
+print(json.dumps({"marimo_version": marimo.__version__}), flush=True)
+runpy.run_module("marimo._ipc.launch_kernel", run_name="__main__")
+"""
 
 
 def _read_frame() -> ToBridge | None:
@@ -111,8 +117,8 @@ class _Bridge:
 
         # Piped standard streams make CreateProcess hand the kernel real
         # handles, so its fds 0-2 are valid from birth.
-        process = subprocess.Popen(
-            [sys.executable, "-m", "marimo._ipc.launch_kernel"],
+        process = subprocess.Popen(  # noqa: S603 -- selected Python launches marimo
+            [sys.executable, "-c", _KERNEL_LAUNCH_CODE],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -127,6 +133,21 @@ class _Bridge:
         # Drain stderr before waiting for readiness so a noisy child cannot
         # fill its pipe and deadlock startup.
         threading.Thread(target=self._forward_stderr, daemon=True).start()
+        version_line = self._wait_for_kernel_ready()
+        try:
+            version_payload = json.loads(version_line)
+        except json.JSONDecodeError as error:
+            msg = f"Invalid kernel version response: {version_line!r}"
+            raise RuntimeError(self._with_stderr_tail(msg)) from error
+        marimo_version = (
+            version_payload.get("marimo_version")
+            if isinstance(version_payload, dict)
+            else None
+        )
+        if not isinstance(marimo_version, str):
+            msg = f"Invalid kernel version response: {version_line!r}"
+            raise TypeError(self._with_stderr_tail(msg))
+
         ready = self._wait_for_kernel_ready()
         if ready != "KERNEL_READY":
             msg = f"Expected KERNEL_READY, received {ready!r}"
@@ -138,7 +159,7 @@ class _Bridge:
         # during startup.
         threading.Thread(target=self._watch_kernel_exit, daemon=True).start()
         threading.Thread(target=self._forward_operations, daemon=True).start()
-        _write_frame(Ready())
+        _write_frame(Ready(marimo_version=marimo_version))
 
     def _with_stderr_tail(self, message: str) -> str:
         with self._stderr_lock:

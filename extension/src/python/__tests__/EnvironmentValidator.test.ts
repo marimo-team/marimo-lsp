@@ -4,7 +4,7 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Context, Effect, Exit, Layer, Result, Schema } from "effect";
+import { Context, Effect, Exit, Layer, Option, Result, Schema } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
@@ -156,6 +156,10 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       assert(Result.isSuccess(result), "Expected validation to succeed");
       assert.strictEqual(result.success._tag, "ValidPythonEnvironment");
+      assert(
+        Option.isSome(result.success.marimoVersion),
+        "Expected the installed marimo version",
+      );
     }),
     { timeout: 60_000 },
   );
@@ -293,7 +297,9 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
         const tmpdir = yield* TempDir;
-        const json = JSON.stringify([{ name: "marimo", version: "1.0.0" }]);
+        const json = JSON.stringify([
+          { name: "marimo", version: "1.0.0-rc1+build.7" },
+        ]);
         const script = makeFakeExecutable(tmpdir.path, "extra-whitespace", {
           stdout: `\n  ${json}  \n`,
           exitCode: 0,
@@ -305,6 +311,9 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
         assert(Result.isSuccess(result), "Expected validation to succeed");
         assert.strictEqual(result.success._tag, "ValidPythonEnvironment");
+        expect(result.success.marimoVersion).toEqual(
+          Option.some("1.0.0-rc1+build.7"),
+        );
       }),
     );
 
@@ -354,6 +363,35 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         assert.strictEqual(first._tag, "ValidPythonEnvironment");
         assert.strictEqual(second._tag, "ValidPythonEnvironment");
         expect(runCount(countFile)).toBe(1);
+      }),
+    );
+
+    it.effect(
+      "should inspect a changed executable without using its cached version",
+      Effect.fn(function* () {
+        const validator = yield* EnvironmentValidator;
+        const tmpdir = yield* TempDir;
+        const countFile = NodePath.join(tmpdir.path, "fresh-version-count");
+        const script = makeFakeExecutable(tmpdir.path, "fresh-version", {
+          stdout: JSON.stringify([{ name: "marimo", version: "1.0.0" }]),
+          exitCode: 0,
+          countFile,
+        });
+        const env = TestPythonExtension.makeGlobalEnv(script);
+
+        const first = yield* validator.validate(env);
+        makeFakeExecutable(tmpdir.path, "fresh-version", {
+          stdout: JSON.stringify([{ name: "marimo", version: "1.1.0" }]),
+          exitCode: 0,
+          countFile,
+        });
+        const cached = yield* validator.validate(env);
+        const fresh = yield* validator.validateFresh(env);
+
+        expect(first.marimoVersion).toEqual(Option.some("1.0.0"));
+        expect(cached.marimoVersion).toEqual(Option.some("1.0.0"));
+        expect(fresh.marimoVersion).toEqual(Option.some("1.1.0"));
+        expect(runCount(countFile)).toBe(2);
       }),
     );
 

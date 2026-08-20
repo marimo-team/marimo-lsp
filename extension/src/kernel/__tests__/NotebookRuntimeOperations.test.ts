@@ -116,6 +116,7 @@ const withTestCtx = Effect.fn(function* (
         startedAt: 1,
         status: "idle",
         attached: true,
+        marimoVersion: null,
       },
     ],
   ]);
@@ -146,6 +147,11 @@ const withTestCtx = Effect.fn(function* (
     return new PythonController(
       controller,
       "/usr/bin/python3",
+      () =>
+        Effect.succeed({
+          executable: "/usr/bin/python3",
+          marimoVersion: Option.some("1.2.3"),
+        }),
       Stream.never,
       (document) =>
         cellDrive.bind({
@@ -186,6 +192,7 @@ const withTestCtx = Effect.fn(function* (
                 startedAt: 1,
                 status: "idle",
                 attached: true,
+                marimoVersion: request.params.marimoVersion ?? null,
               });
             }
             if (request.method === "restart-session") {
@@ -739,6 +746,7 @@ describe("NotebookRuntime scratch stream", () => {
           firstCommand !== undefined &&
             typeof firstCommand.inner.runId === "string",
         );
+        expect(firstCommand.marimoVersion).toBe("1.2.3");
 
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,

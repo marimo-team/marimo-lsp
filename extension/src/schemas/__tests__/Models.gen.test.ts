@@ -106,6 +106,17 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
     ).toThrow();
   });
 
+  it("decodes older session commands with an unknown marimo version", () => {
+    const decoded = Schema.decodeUnknownSync(ExecuteCellsPayload)({
+      notebookUri: "file:///nb.py",
+      executable: "/usr/bin/python",
+      workingDirectory: "/workspace",
+      inner: { cellIds: ["cell-1"], codes: ["print(1)"] },
+    });
+
+    expect(decoded.marimoVersion).toBeNull();
+  });
+
   it("names structs in parse errors via identifier annotations", () => {
     // The default formatter uses `identifier` as the expected label for a
     // type failure such as "Expected VenvSource". It does not use it for a

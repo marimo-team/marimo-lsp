@@ -1,6 +1,5 @@
 import { NodeServices } from "@effect/platform-node";
 import * as semver from "@std/semver";
-import type * as py from "@vscode/python-extension";
 import {
   Cache,
   Context,
@@ -24,16 +23,20 @@ import { VsCode } from "../platform/VsCode.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
 import { PythonEnvInvalidation } from "./PythonEnvInvalidation.ts";
 
+interface PythonEnvironment {
+  readonly path: string;
+}
+
 class InvalidExecutableError extends Data.TaggedError(
   "InvalidExecutableError",
 )<{
-  readonly env: py.Environment;
+  readonly env: PythonEnvironment;
 }> {}
 
 class EnvironmentInspectionError extends Data.TaggedError(
   "EnvironmentInspectionError",
 )<{
-  readonly env: py.Environment;
+  readonly env: PythonEnvironment;
   readonly cause?: PlatformError | Schema.SchemaError | InvalidExecutableError;
   readonly stdout?: string;
   readonly stderr?: string;
@@ -54,11 +57,11 @@ const INSPECTION_TIMEOUT = Duration.seconds(10);
 
 /**
  * Cache key comparing environments by interpreter path while carrying the
- * full `py.Environment` for the cache's lookup function.
+ * environment for the cache's lookup function.
  */
 class EnvironmentKey implements Equal.Equal {
-  readonly env: py.Environment;
-  constructor(env: py.Environment) {
+  readonly env: PythonEnvironment;
+  constructor(env: PythonEnvironment) {
     this.env = env;
   }
   [Equal.symbol](that: unknown): boolean {
@@ -72,7 +75,7 @@ class EnvironmentKey implements Equal.Equal {
 class EnvironmentRequirementError extends Data.TaggedError(
   "EnvironmentRequirementError",
 )<{
-  readonly env: py.Environment;
+  readonly env: PythonEnvironment;
   readonly diagnostics: ReadonlyArray<RequirementDiagnostic>;
 }> {}
 
@@ -106,11 +109,11 @@ export class EnvironmentValidator extends Context.Service<EnvironmentValidator>(
       const EnvCheck = Schema.Array(
         Schema.Struct({
           name: Schema.String,
-          version: Schema.NullOr(SemVerFromString),
+          version: Schema.NullOr(Schema.String),
         }),
       );
 
-      const inspect = Effect.fnUntraced(function* (env: py.Environment) {
+      const inspect = Effect.fnUntraced(function* (env: PythonEnvironment) {
         const packages = yield* ChildProcess.make(env.path, [
           "-c",
           `\
@@ -196,24 +199,39 @@ print(json.dumps(packages), flush=True)`,
                 `This can happen when the environment lives on a slow filesystem (e.g. a Windows drive mounted in WSL2).`,
             ),
           );
-          return new ValidPythonEnvironment({ inner: env });
+          return new ValidPythonEnvironment({
+            executable: env.path,
+            marimoVersion: Option.none(),
+          });
         }
 
         const diagnostics: Array<RequirementDiagnostic> = [];
+        let marimoVersion = Option.none<string>();
 
         for (const pkg of packages.value) {
           if (pkg.version == null) {
             diagnostics.push({ kind: "missing", package: pkg.name });
-          } else if (
-            pkg.name === "marimo" &&
-            !semver.greaterOrEqual(pkg.version, MINIMUM_MARIMO_KERNEL_VERSION)
-          ) {
-            diagnostics.push({
-              kind: "outdated",
-              package: "marimo",
-              currentVersion: pkg.version,
-              requiredVersion: MINIMUM_MARIMO_KERNEL_VERSION,
-            });
+          } else if (pkg.name === "marimo") {
+            const parsed = Schema.decodeOption(SemVerFromString)(pkg.version);
+            if (Option.isNone(parsed)) {
+              diagnostics.push({ kind: "unknown", package: pkg.name });
+              continue;
+            }
+            if (
+              !semver.greaterOrEqual(
+                parsed.value,
+                MINIMUM_MARIMO_KERNEL_VERSION,
+              )
+            ) {
+              diagnostics.push({
+                kind: "outdated",
+                package: "marimo",
+                currentVersion: parsed.value,
+                requiredVersion: MINIMUM_MARIMO_KERNEL_VERSION,
+              });
+              continue;
+            }
+            marimoVersion = Option.some(pkg.version);
           }
         }
 
@@ -224,7 +242,10 @@ print(json.dumps(packages), flush=True)`,
           });
         }
 
-        return new ValidPythonEnvironment({ inner: env });
+        return new ValidPythonEnvironment({
+          executable: env.path,
+          marimoVersion,
+        });
       });
 
       const cache = yield* Cache.make({
@@ -245,8 +266,9 @@ print(json.dumps(packages), flush=True)`,
       );
 
       return {
+        validateFresh: inspect,
         validate: Effect.fn("EnvironmentValidator.validate")(function* (
-          env: py.Environment,
+          env: PythonEnvironment,
         ) {
           const key = new EnvironmentKey(env);
           // Only reuse successes: drop failed entries so a just-fixed
@@ -267,19 +289,15 @@ print(json.dumps(packages), flush=True)`,
 }
 
 /**
- * A validated `py.Environment`. Cached by interpreter path, so only expose
- * path-derived data — anything else (version, sysPrefix, …) can be stale on a
- * cache hit.
+ * A validated Python environment and the exact marimo version string observed
+ * by its inspection. `validate` caches this value; `validateFresh` does not.
  */
 export class ValidPythonEnvironment extends Data.TaggedClass(
   "ValidPythonEnvironment",
 )<{
-  inner: py.Environment;
-}> {
-  get executable(): string {
-    return this.inner.path;
-  }
-}
+  readonly executable: string;
+  readonly marimoVersion: Option.Option<string>;
+}> {}
 
 type RequirementDiagnostic =
   | { kind: "unknown"; package: string }

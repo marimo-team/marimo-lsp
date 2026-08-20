@@ -270,7 +270,10 @@ async def run(
 ) -> None:
     logger.info(f"run for {args.notebook_uri}")
     session = await ctx.sessions.start(
-        args.notebook_uri, args.executable, args.working_directory
+        args.notebook_uri,
+        args.executable,
+        args.working_directory,
+        args.marimo_version,
     )
     # Reconcile document metadata before enqueueing execution. LSP change
     # notifications normally keep the session synchronized, but doing it here
@@ -464,7 +467,10 @@ async def execute_scratch(
         return
 
     session = await ctx.sessions.start(
-        args.notebook_uri, args.executable, args.working_directory
+        args.notebook_uri,
+        args.executable,
+        args.working_directory,
+        args.marimo_version,
     )
     while True:
         if not await session.wait_until_idle():

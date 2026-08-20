@@ -19,7 +19,11 @@ import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { Drive } from "./CellExecutions.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
-import { NotebookRuntime } from "./NotebookRuntime.ts";
+import type { KernelEnvironment } from "./KernelEnvironment.ts";
+import {
+  KernelEnvironmentResolutionError,
+  NotebookRuntime,
+} from "./NotebookRuntime.ts";
 import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
@@ -70,13 +74,13 @@ export const createPythonController = Effect.fn("createPythonController")(
             return;
           }
 
+          // Cell execution is the hot path. Package/environment mutations
+          // invalidate this cache explicitly; lifecycle resolution below uses
+          // a fresh inspection when it needs to reconcile a restored session.
           const validEnv = yield* validator.validate(options.env);
 
           const documentHandle = yield* notebooks.forDocument(rawNotebook);
-          yield* documentHandle.executeCells(
-            request.value,
-            validEnv.executable,
-          );
+          yield* documentHandle.executeCells(request.value, validEnv);
         }).pipe(
           Effect.withSpan("PythonController.execute", {
             attributes: {
@@ -246,6 +250,16 @@ export const createPythonController = Effect.fn("createPythonController")(
     return new PythonController(
       controller,
       options.env.path,
+      (notebook) =>
+        validator.validateFresh(options.env).pipe(
+          Effect.mapError(
+            (cause) =>
+              new KernelEnvironmentResolutionError({
+                notebookUri: notebook.id,
+                cause,
+              }),
+          ),
+        ),
       selectedNotebookChanges,
       (notebook) =>
         cellDrive.bind({
@@ -265,6 +279,9 @@ export class PythonController {
   readonly drive: (notebook: MarimoNotebookDocument) => Drive;
   /** The python interpreter this controller's environment runs on. */
   executable: string;
+  readonly resolveEnvironment: (
+    notebook: MarimoNotebookDocument,
+  ) => Effect.Effect<KernelEnvironment, KernelEnvironmentResolutionError>;
   /**
    * Selection events buffered from the moment the controller was created
    * (see createPythonController). Backed by a queue, so a single consumer
@@ -277,6 +294,9 @@ export class PythonController {
   constructor(
     inner: Omit<vscode.NotebookController, "dispose">,
     executable: string,
+    resolveEnvironment: (
+      notebook: MarimoNotebookDocument,
+    ) => Effect.Effect<KernelEnvironment, KernelEnvironmentResolutionError>,
     selectedNotebookChanges: Stream.Stream<{
       notebook: vscode.NotebookDocument;
       selected: boolean;
@@ -285,6 +305,7 @@ export class PythonController {
   ) {
     this.#inner = inner;
     this.executable = executable;
+    this.resolveEnvironment = resolveEnvironment;
     this.selectedNotebookChanges = selectedNotebookChanges;
     this.drive = drive;
   }
@@ -303,9 +324,6 @@ export class PythonController {
       this.#inner.description = description;
       return this;
     });
-  }
-  resolveExecutable(_notebook: MarimoNotebookDocument) {
-    return Effect.succeed(this.executable);
   }
   updateNotebookAffinity(
     notebook: vscode.NotebookDocument,

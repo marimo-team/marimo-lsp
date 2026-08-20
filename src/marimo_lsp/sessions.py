@@ -178,6 +178,7 @@ class Session:
         on_change: typing.Callable[[], None] | None = None,
         session_view: SessionView | None = None,
         started_at: float | None = None,
+        environment_version: str | None = None,
     ) -> None:
         self.session_id = session_id
         self._notebook_uri = notebook_uri
@@ -195,6 +196,8 @@ class Session:
         self._closed = False
         self._runtime_config = config_manager.get_config(hide_secrets=False)
         self.started_at = started_at if started_at is not None else time.time()
+        self._marimo_version = kernel.marimo_version
+        self._environment_version = environment_version
         self._status: typing.Literal["idle", "running"] = "idle"
         self._idle = asyncio.Event()
         self._idle.set()
@@ -218,6 +221,20 @@ class Session:
     def working_directory(self) -> str:
         """Return the configured kernel working directory."""
         return self._kernel.working_directory
+
+    @property
+    def marimo_version(self) -> str | None:
+        """Return the exact version reported by the launched kernel."""
+        return self._marimo_version
+
+    @property
+    def environment_version(self) -> str | None:
+        """Return the version observed when this environment was selected."""
+        return self._environment_version
+
+    def adopt_environment_version(self, marimo_version: str) -> None:
+        """Record an inspection already confirmed by this live kernel."""
+        self._environment_version = marimo_version
 
     @property
     def attached(self) -> bool:
@@ -377,6 +394,7 @@ class Session:
                 started_at=self.started_at,
                 status=self._status,
                 attached=self.attached,
+                marimo_version=self.marimo_version,
             )
 
     def set_on_change(self, on_change: typing.Callable[[], None]) -> None:
@@ -588,21 +606,34 @@ class Sessions:
         notebook_uri: str,
         executable: str,
         working_directory: str,
+        marimo_version: str | None = None,
     ) -> Session:
         """Start or reuse the notebook's session.
 
-        A different executable replaces the existing session only after the
-        replacement has started successfully.
+        A different executable or environment inspection replaces the existing
+        session only after the replacement has started successfully. Kernel
+        provenance is kept separate because its import context may report a
+        different version from the client's environment inspection.
         """
         async with self._lifecycle_lock(notebook_uri):
             current = self.get(notebook_uri)
             if current is not None and current.executable == executable:
-                current.attach()
-                return current
+                if marimo_version is None or (
+                    current.environment_version == marimo_version
+                ):
+                    current.attach()
+                    return current
+                if current.marimo_version == marimo_version:
+                    current.adopt_environment_version(marimo_version)
+                    current.attach()
+                    return current
 
             version = self._lifecycle_version(notebook_uri)
             replacement = await self._create(
-                notebook_uri, executable, working_directory
+                notebook_uri,
+                executable,
+                working_directory,
+                environment_version=marimo_version,
             )
             with self._lock:
                 if version != self._lifecycle_version(notebook_uri):
@@ -630,6 +661,7 @@ class Sessions:
         executable: str,
         working_directory: str,
         *,
+        environment_version: str | None = None,
         previous: Session | None = None,
     ) -> Session:
         app_file_manager = previous.app_file_manager if previous else None
@@ -668,6 +700,12 @@ class Sessions:
             receive=receive,
         )
         try:
+            keep_previous_view = (
+                previous is not None
+                and previous.marimo_version is not None
+                and kernel.marimo_version is not None
+                and previous.marimo_version == kernel.marimo_version
+            )
             session = Session(
                 session_id=session_id,
                 notebook_uri=notebook_uri,
@@ -675,8 +713,9 @@ class Sessions:
                 kernel=kernel,
                 app_file_manager=app_file_manager,
                 config_manager=config_manager,
-                session_view=previous.session_view if previous else None,
+                session_view=previous.session_view if keep_previous_view else None,
                 started_at=previous.started_at if previous else None,
+                environment_version=environment_version,
             )
             session.set_on_kernel_failure(_raise_kernel_failure)
             for message in pending_messages:
@@ -710,13 +749,16 @@ class Sessions:
             version = self._lifecycle_version(notebook_uri)
             if current is None:
                 replacement = await self._create(
-                    notebook_uri, executable, working_directory
+                    notebook_uri,
+                    executable,
+                    working_directory,
                 )
             else:
                 replacement = await self._create(
                     notebook_uri,
                     current.executable,
                     current.working_directory,
+                    environment_version=current.environment_version,
                     previous=current,
                 )
                 if not current.attached:

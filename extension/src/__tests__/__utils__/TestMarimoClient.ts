@@ -112,7 +112,10 @@ export function makeTestNotebookRuntime(options: Options = {}) {
               restart: client
                 .restartSession({
                   notebookUri: notebookId,
-                  inner: { executable: "", workingDirectory: "" },
+                  inner: {
+                    executable: "",
+                    workingDirectory: "",
+                  },
                 })
                 .pipe(Effect.as(undefined)),
               close: client
@@ -128,10 +131,11 @@ export function makeTestNotebookRuntime(options: Options = {}) {
         ): Effect.Effect<NotebookDocumentHandle> => {
           const notebookId = MarimoNotebookDocument.from(document).id;
           return Effect.succeed({
-            executeCells: (inner, executable) =>
+            executeCells: (inner, environment) =>
               client.executeCells({
                 notebookUri: notebookId,
-                executable,
+                executable: environment.executable,
+                marimoVersion: Option.getOrNull(environment.marimoVersion),
                 workingDirectory:
                   options.runtimeSession?.workingDirectory ?? process.cwd(),
                 inner,

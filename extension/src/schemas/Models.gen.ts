@@ -463,6 +463,9 @@ export const ExecuteCellsPayload = Schema.Struct({
   inner: ExecuteCellsRequest,
   executable: Schema.String,
   workingDirectory: Schema.String,
+  marimoVersion: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
 });
 
 export const UpdateUIElementRequest = Schema.Struct({
@@ -666,6 +669,9 @@ export const SessionInfo = Schema.Struct({
   startedAt: Schema.Number,
   status: Schema.Literals(["idle", "running"]),
   attached: Schema.Boolean,
+  marimoVersion: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
 }).annotate({ identifier: "SessionInfo" });
 export type SessionInfo = typeof SessionInfo.Type;
 
@@ -686,6 +692,9 @@ export const ExecuteScratchpadPayload = Schema.Struct({
   inner: ExecuteScratchRequest,
   executable: Schema.String,
   workingDirectory: Schema.String,
+  marimoVersion: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
 });
 
 export const PackageDescription = Schema.Struct({
