@@ -1466,7 +1466,7 @@ describe("NotebookExecutions", () => {
   );
 
   it.effect(
-    "removing a cell closes its active presented run",
+    "removing a cell closes its run and ignores late operations",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: {
@@ -1488,12 +1488,19 @@ describe("NotebookExecutions", () => {
         const executions = yield* CellExecutions;
         const events: string[] = [];
         const removed = yield* Latch.make();
+        const restored = yield* Latch.make();
         const drive: Drive = (_cell, command) =>
           Effect.gen(function* () {
             if ("runId" in command) {
               events.push(`${command._tag}:${command.runId}`);
             }
             if (command._tag === "CloseRun") yield* removed.open;
+            if (
+              command._tag === "OpenRun" &&
+              command.runId === runId("restored-run")
+            ) {
+              yield* restored.open;
+            }
           });
         const { notebook } = yield* openNotebook(
           executions,
@@ -1514,6 +1521,38 @@ describe("NotebookExecutions", () => {
         yield* removed.await;
 
         expect(events).toEqual(["OpenRun:run-1", "CloseRun:run-1"]);
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "late-run",
+        });
+        yield* notebook
+          .submit(
+            [{ cellId: id, source: "never sent" }],
+            Effect.fail("send failed"),
+          )
+          .pipe(Effect.ignore);
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "failed-run",
+        });
+        yield* notebook.submit([{ cellId: id, source: "x = 2" }], Effect.void);
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "restored-run",
+        });
+        yield* restored.await;
+
+        expect(events).toEqual([
+          "OpenRun:run-1",
+          "CloseRun:run-1",
+          "OpenRun:restored-run",
+        ]);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

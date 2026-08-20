@@ -6,6 +6,7 @@ import {
   Exit,
   Fiber,
   HashMap,
+  HashSet,
   Option,
   Queue,
   Scope,
@@ -96,10 +97,10 @@ interface CellExecutionState {
   readonly pendingSources: ReadonlyArray<SubmittedSource>;
 }
 
-type DocumentExecutionState = HashMap.HashMap<
-  NotebookCellId,
-  CellExecutionState
->;
+interface DocumentExecutionState {
+  readonly cells: HashMap.HashMap<NotebookCellId, CellExecutionState>;
+  readonly removedCells: HashSet.HashSet<NotebookCellId>;
+}
 
 interface CellTransition {
   readonly cellId: NotebookCellId;
@@ -172,24 +173,40 @@ const getCell = (
   state: DocumentExecutionState,
   cellId: NotebookCellId,
 ): CellExecutionState =>
-  Option.getOrElse(HashMap.get(state, cellId), () => makeCellState());
+  Option.getOrElse(HashMap.get(state.cells, cellId), () => makeCellState());
 
 const setCell = (
   state: DocumentExecutionState,
   cellId: NotebookCellId,
   cell: CellExecutionState,
-): DocumentExecutionState => HashMap.set(state, cellId, cell);
+): DocumentExecutionState => ({
+  cells: HashMap.set(state.cells, cellId, cell),
+  removedCells: state.removedCells,
+});
+
+const restoreCell = (
+  state: DocumentExecutionState,
+  cellId: NotebookCellId,
+  cell: CellExecutionState,
+): DocumentExecutionState => ({
+  cells: HashMap.set(state.cells, cellId, cell),
+  removedCells: HashSet.remove(state.removedCells, cellId),
+});
 
 const makeDocumentExecutionState = (
   sources: ReadonlyArray<CellSource>,
-): DocumentExecutionState => updateExecutionSources(HashMap.empty(), sources);
+): DocumentExecutionState =>
+  updateExecutionSources(
+    { cells: HashMap.empty(), removedCells: HashSet.empty() },
+    sources,
+  );
 
 function updateExecutionSources(
   state: DocumentExecutionState,
   sources: ReadonlyArray<CellSource>,
 ): DocumentExecutionState {
   for (const { cellId, source } of sources) {
-    state = setCell(state, cellId, {
+    state = restoreCell(state, cellId, {
       ...getCell(state, cellId),
       editorSource: Option.some(source),
     });
@@ -212,19 +229,44 @@ const registerSubmission = (
   return state;
 };
 
+const confirmSubmission = (
+  state: DocumentExecutionState,
+  token: symbol,
+  cellIds: ReadonlyArray<NotebookCellId>,
+): DocumentExecutionState => {
+  for (const cellId of cellIds) {
+    const cell = HashMap.get(state.cells, cellId);
+    if (
+      Option.isSome(cell) &&
+      cell.value.pendingSources.some((submitted) => submitted.token === token)
+    ) {
+      state = restoreCell(state, cellId, cell.value);
+    }
+  }
+  return state;
+};
+
 const rollbackSubmission = (
   state: DocumentExecutionState,
   token: symbol,
   cellIds: ReadonlyArray<NotebookCellId>,
 ): DocumentExecutionState => {
   for (const cellId of cellIds) {
-    const cell = HashMap.get(state, cellId);
+    const cell = HashMap.get(state.cells, cellId);
     if (Option.isNone(cell)) continue;
+    const pendingSources = cell.value.pendingSources.filter(
+      (submitted) => submitted.token !== token,
+    );
+    if (
+      pendingSources.length === 0 &&
+      HashSet.has(state.removedCells, cellId)
+    ) {
+      state = { ...state, cells: HashMap.remove(state.cells, cellId) };
+      continue;
+    }
     state = setCell(state, cellId, {
       ...cell.value,
-      pendingSources: cell.value.pendingSources.filter(
-        (submitted) => submitted.token !== token,
-      ),
+      pendingSources,
     });
   }
   return state;
@@ -233,7 +275,7 @@ const rollbackSubmission = (
 const clearPendingSources = (
   state: DocumentExecutionState,
 ): DocumentExecutionState => {
-  for (const [cellId, cell] of state) {
+  for (const [cellId, cell] of state.cells) {
     if (cell.pendingSources.length === 0) continue;
     state = setCell(state, cellId, { ...cell, pendingSources: [] });
   }
@@ -354,11 +396,11 @@ const releaseAll = (
 ): DocumentTransition => {
   const cells: CellTransition[] = [];
   state = clearPendingSources(state);
-  for (const [cellId, cell] of state) {
+  for (const [cellId, cell] of state.cells) {
     const result = step(cell.run, operation);
     cells.push(transitionFor(cellId, result.entry, result.commands));
     state = remove
-      ? HashMap.remove(state, cellId)
+      ? { ...state, cells: HashMap.remove(state.cells, cellId) }
       : setCell(state, cellId, { ...cell, run: result.entry });
   }
   return { state, cells };
@@ -377,11 +419,15 @@ const removeExecutionCell = (
   state: DocumentExecutionState,
   cellId: NotebookCellId,
 ): DocumentTransition => {
-  const cell = HashMap.get(state, cellId);
-  if (Option.isNone(cell)) return { state, cells: [] };
+  const cell = HashMap.get(state.cells, cellId);
+  const removed = {
+    cells: HashMap.remove(state.cells, cellId),
+    removedCells: HashSet.add(state.removedCells, cellId),
+  };
+  if (Option.isNone(cell)) return { state: removed, cells: [] };
   const result = step(cell.value.run, Op.Interrupt());
   return {
-    state: HashMap.remove(state, cellId),
+    state: removed,
     cells: [transitionFor(cellId, result.entry, result.commands)],
   };
 };
@@ -390,7 +436,7 @@ const isCellStale = (
   state: DocumentExecutionState,
   cellId: NotebookCellId,
 ): boolean =>
-  Option.exists(HashMap.get(state, cellId), (cell) =>
+  Option.exists(HashMap.get(state.cells, cellId), (cell) =>
     AcceptedSource.$match(cell.run.acceptedSource, {
       Unknown: () => false,
       Invalidated: () => true,
@@ -570,6 +616,7 @@ export class DocumentExecutionSession {
       Effect.gen({ self: this }, function* () {
         if (this.closed) return;
         const cellId = extractCellIdFromCellMessage(wire);
+        if (HashSet.has(this.state.removedCells, cellId)) return;
         const result = applyKernelOperation(this.state, wire);
         this.state = result.state;
         yield* this.publishStale([cellId]);
@@ -636,9 +683,18 @@ export class DocumentExecutionSession {
         );
       }),
     );
+    const confirm = this.ordering.withPermit(
+      Effect.sync(() => {
+        this.state = confirmSubmission(
+          this.state,
+          token,
+          cells.map(({ cellId }) => cellId),
+        );
+      }),
+    );
     return register.pipe(
       Effect.andThen(send),
-      Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : rollback)),
+      Effect.onExit((exit) => (Exit.isSuccess(exit) ? confirm : rollback)),
     );
   };
 
