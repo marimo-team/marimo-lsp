@@ -3,7 +3,6 @@ import { transitionCell as untypedTransitionCell } from "@marimo-team/frontend/u
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import { Brand, Data, Option } from "effect";
 
-import type { NotebookCellId } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellOperationNotification, CellRuntimeState } from "../types.ts";
 
 export type RunId = Brand.Branded<string, "RunId">;
@@ -82,15 +81,13 @@ export const CellCommand = Data.taggedEnum<CellCommand>();
 
 /** Pure, vscode-free per-cell reducer state. */
 export interface CellRunState {
-  readonly id: NotebookCellId;
   readonly state: CellRuntimeState;
   readonly phase: RunPhase;
   readonly acceptedSource: AcceptedSource;
 }
 
-export function makeCellRunState(id: NotebookCellId): CellRunState {
+export function makeCellRunState(): CellRunState {
   return {
-    id,
     state: createCellRuntimeState(),
     phase: RunPhase.Idle(),
     acceptedSource: AcceptedSource.Unknown(),

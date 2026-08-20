@@ -1466,7 +1466,7 @@ describe("NotebookExecutions", () => {
   );
 
   it.effect(
-    "removing a cell closes its active presented run",
+    "removing a cell closes its run and ignores late operations",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: {
@@ -1488,12 +1488,19 @@ describe("NotebookExecutions", () => {
         const executions = yield* CellExecutions;
         const events: string[] = [];
         const removed = yield* Latch.make();
+        const restored = yield* Latch.make();
         const drive: Drive = (_cell, command) =>
           Effect.gen(function* () {
             if ("runId" in command) {
               events.push(`${command._tag}:${command.runId}`);
             }
             if (command._tag === "CloseRun") yield* removed.open;
+            if (
+              command._tag === "OpenRun" &&
+              command.runId === runId("restored-run")
+            ) {
+              yield* restored.open;
+            }
           });
         const { notebook } = yield* openNotebook(
           executions,
@@ -1514,6 +1521,38 @@ describe("NotebookExecutions", () => {
         yield* removed.await;
 
         expect(events).toEqual(["OpenRun:run-1", "CloseRun:run-1"]);
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "late-run",
+        });
+        yield* notebook
+          .submit(
+            [{ cellId: id, source: "never sent" }],
+            Effect.fail("send failed"),
+          )
+          .pipe(Effect.ignore);
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "failed-run",
+        });
+        yield* notebook.submit([{ cellId: id, source: "x = 2" }], Effect.void);
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "restored-run",
+        });
+        yield* restored.await;
+
+        expect(events).toEqual([
+          "OpenRun:run-1",
+          "CloseRun:run-1",
+          "OpenRun:restored-run",
+        ]);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -1959,6 +1998,140 @@ describe("NotebookExecutions", () => {
           .pipe(Effect.ignore);
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
 
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "acknowledges multiple submissions for one cell in order",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 2",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(executions, editor.notebook);
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+        const firstStarted = yield* Latch.make();
+        const secondStarted = yield* Latch.make();
+        const release = yield* Latch.make();
+
+        const first = yield* notebook
+          .submit(
+            [{ cellId: id, source: "x = 1" }],
+            firstStarted.open.pipe(Effect.andThen(release.await)),
+          )
+          .pipe(Effect.forkChild);
+        yield* firstStarted.await;
+        const second = yield* notebook
+          .submit(
+            [{ cellId: id, source: "x = 2" }],
+            secondStarted.open.pipe(Effect.andThen(release.await)),
+          )
+          .pipe(Effect.forkChild);
+        yield* secondStarted.await;
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        });
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-2",
+        });
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+
+        yield* release.open;
+        yield* Fiber.join(first);
+        yield* Fiber.join(second);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "rolls back one submission without disturbing a later submission",
+    Effect.fn(function* () {
+      const cellData = {
+        kind: 1,
+        value: "x = 3",
+        languageId: "python",
+        metadata: MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-1" },
+        }),
+      };
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: { cells: [cellData] },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(executions, editor.notebook);
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+        const firstStarted = yield* Latch.make();
+        const failFirst = yield* Latch.make();
+
+        const first = yield* notebook
+          .submit(
+            [{ cellId: id, source: "x = 1" }],
+            firstStarted.open.pipe(
+              Effect.andThen(failFirst.await),
+              Effect.andThen(Effect.fail("no")),
+            ),
+          )
+          .pipe(Effect.ignore, Effect.forkChild);
+        yield* firstStarted.await;
+        yield* notebook.submit([{ cellId: id, source: "x = 2" }], Effect.void);
+        yield* failFirst.open;
+        yield* Fiber.join(first);
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        });
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+
+        cellData.value = "x = 2";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
     }),

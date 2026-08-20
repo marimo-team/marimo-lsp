@@ -2,7 +2,7 @@ import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/
 import { Option } from "effect";
 import { describe, expect, it } from "vite-plus/test";
 
-import { cellId, runId } from "../../lib/__tests__/branded.ts";
+import { runId } from "../../lib/__tests__/branded.ts";
 import type { CellRuntimeState } from "../../types.ts";
 import {
   AcceptedSource,
@@ -13,11 +13,9 @@ import {
   step,
 } from "../CellRunReducer.ts";
 
-const ID = cellId("cell-1");
 const RUN = runId("run-1");
 
 const entry = (phase: RunPhase): CellRunState => ({
-  id: ID,
   state: createCellRuntimeState(),
   phase,
   acceptedSource: AcceptedSource.Unknown(),
