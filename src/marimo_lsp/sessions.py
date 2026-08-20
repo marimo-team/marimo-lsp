@@ -580,6 +580,14 @@ class Sessions:
         with self._lock:
             return self._sessions.get(notebook_uri)
 
+    def is_live_or_starting(self, notebook_uri: str) -> bool:
+        """Return whether live state owns this notebook URI."""
+        with self._lock:
+            lifecycle_lock = self._lifecycle_locks.get(notebook_uri)
+            return notebook_uri in self._sessions or (
+                lifecycle_lock is not None and lifecycle_lock.locked()
+            )
+
     def cancel_scratchpad(self, notebook_uri: str, run_id: str) -> None:
         """Remember a cancellation and interrupt only its active scratchpad."""
         key = (notebook_uri, run_id)

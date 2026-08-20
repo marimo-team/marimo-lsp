@@ -51,6 +51,19 @@ const VariablesNotification = Schema.declare<VariablesNotification>(
     Schema.is(MarimoNotification)(value) && value.op === "variables",
 );
 
+type CellOperationNotification = Extract<MarimoNotification, { op: "cell-op" }>;
+type MarimoCellOutput = NonNullable<CellOperationNotification["output"]>;
+const MarimoCellOutput = Schema.declare<MarimoCellOutput>(
+  (value): value is MarimoCellOutput =>
+    typeof value === "object" &&
+    value !== null &&
+    "channel" in value &&
+    typeof value.channel === "string" &&
+    "mimetype" in value &&
+    typeof value.mimetype === "string" &&
+    "data" in value,
+);
+
 // The id is an opaque token minted by the server; only equality matters.
 // Validating its shape here would turn a harmless server-side format
 // change into silently dropped notifications.
@@ -90,6 +103,9 @@ CONCRETE: list[tuple[str, type | object]] = [
     ("ExecuteScratchRequest", models.ExecuteScratchRequest),
     ("UpdateConfigurationRequest", models.UpdateConfigurationRequest),
     ("SetDisplayThemeRequest", models.SetDisplayThemeRequest),
+    ("DecodeSavedSessionRequest", models.DecodeSavedSessionRequest),
+    ("SavedCellOutput", models.SavedCellOutput),
+    ("DecodeSavedSessionResponse", models.DecodeSavedSessionResponse),
 ]
 
 
@@ -361,7 +377,10 @@ class Emitter:
             tag = _ts_string(str(t.tag))
             lines.append(f"{indent}{_prop(t.tag_field)}: Schema.Literal({tag}),")
         for field in t.fields:
-            if t.cls is models.KernelNotification and field.name == "notification":
+            saved_output = self.saved_output_field_expr(t, field)
+            if saved_output is not None:
+                expr = saved_output
+            elif t.cls is models.KernelNotification and field.name == "notification":
                 expr = "MarimoNotification"
             elif t.cls is models.DocumentAnalysis and field.name == "analysis":
                 expr = "VariablesNotification"
@@ -398,6 +417,16 @@ class Emitter:
                     )
             lines.append(f"{indent}{rendered},")
         return "\n".join(lines) + "\n" if lines else ""
+
+    @staticmethod
+    def saved_output_field_expr(t: _StructLike, field: mi.Field) -> str | None:
+        if t.cls is not models.SavedCellOutput:
+            return None
+        if field.name == "output":
+            return "Schema.NullOr(MarimoCellOutput)"
+        if field.name == "console":
+            return "Schema.Array(MarimoCellOutput)"
+        return None
 
     def default_expr(self, field: mi.Field) -> str | None:
         """Render the field default so decode fills omitted fields, like msgspec."""
