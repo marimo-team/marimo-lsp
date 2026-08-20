@@ -29,6 +29,8 @@ from marimo_lsp.api import (
     interrupt,
     list_sql_schemas,
     list_sql_tables,
+    restart_session,
+    run,
     send_stdin,
     set_model_value,
     set_ui_element_value,
@@ -40,6 +42,7 @@ from marimo_lsp.models import (
     DeserializeInvalidSyntax,
     DeserializeRequest,
     DeserializeSuccess,
+    ExecuteCellsRequest,
     ExecuteScratchRequest,
     ExportAsMarkdownRequest,
     GetConfigurationRequest,
@@ -49,6 +52,7 @@ from marimo_lsp.models import (
     ListSQLTablesRequest,
     ModelRequest,
     NotebookCommand,
+    RestartSessionRequest,
     SessionCommand,
     SetDisplayThemeRequest,
     StdinRequest,
@@ -60,6 +64,65 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
 NOTEBOOK_URI = "file:///notebook.py"
+
+
+def test_old_session_command_decodes_with_unknown_marimo_version() -> None:
+    command = msgspec.json.decode(
+        b'{"notebookUri":"file:///notebook.py",'
+        b'"executable":"/usr/bin/python",'
+        b'"workingDirectory":"/workspace",'
+        b'"inner":{"cellIds":[],"codes":[]}}',
+        type=SessionCommand[ExecuteCellsRequest],
+    )
+
+    assert command.marimo_version is None
+
+
+@pytest.mark.asyncio
+async def test_run_starts_session_with_inspected_marimo_version() -> None:
+    sessions = MagicMock()
+    session = MagicMock()
+    sessions.start = AsyncMock(return_value=session)
+
+    await run(
+        _context(sessions),
+        SessionCommand(
+            notebook_uri=NOTEBOOK_URI,
+            executable="/usr/bin/python",
+            working_directory="/workspace",
+            marimo_version="1.2.3",
+            inner=ExecuteCellsRequest(cell_ids=[], codes=[]),
+        ),
+    )
+
+    sessions.start.assert_awaited_once_with(
+        NOTEBOOK_URI, "/usr/bin/python", "/workspace", "1.2.3"
+    )
+
+
+@pytest.mark.asyncio
+async def test_restart_forwards_restore_environment() -> None:
+    sessions = MagicMock()
+    sessions.restart = AsyncMock(return_value=MagicMock())
+
+    await restart_session(
+        _context(sessions),
+        NotebookCommand(
+            notebook_uri=NOTEBOOK_URI,
+            inner=RestartSessionRequest(
+                executable="/usr/bin/python",
+                working_directory="/workspace",
+                create_if_missing=True,
+            ),
+        ),
+    )
+
+    sessions.restart.assert_awaited_once_with(
+        NOTEBOOK_URI,
+        executable="/usr/bin/python",
+        working_directory="/workspace",
+        create_if_missing=True,
+    )
 
 
 @pytest.mark.asyncio
@@ -124,12 +187,19 @@ async def test_execute_scratch_claims_idle_session_before_dispatch() -> None:
                 notebook_uri=NOTEBOOK_URI,
                 executable="/usr/bin/python",
                 working_directory="/workspace",
+                marimo_version="1.2.3-rc1+build.7",
                 inner=ExecuteScratchRequest(code="print('later')", run_id="run-1"),
             ),
         )
 
     assert session.wait_until_idle.await_count == 2
     assert session.try_start_scratchpad.call_count == 2
+    sessions.start.assert_awaited_once_with(
+        NOTEBOOK_URI,
+        "/usr/bin/python",
+        "/workspace",
+        "1.2.3-rc1+build.7",
+    )
     session.put_control_request.assert_called_once()
 
 

@@ -30,7 +30,11 @@ import {
 const controller: NotebookController = {
   id: "test-controller",
   drive: () => () => Effect.void,
-  resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+  resolveEnvironment: () =>
+    Effect.succeed({
+      executable: "/usr/bin/python",
+      marimoVersion: Option.none(),
+    }),
 };
 const SESSION_ID = kernelSessionId("00000000-0000-4000-8000-000000000001");
 
@@ -105,7 +109,11 @@ const withTestCtx = Effect.fn(function* (
     runtimeSession:
       options.hasRuntimeSession === false
         ? undefined
-        : { executable: "/usr/bin/python", workingDirectory: "/test" },
+        : {
+            executable: "/usr/bin/python",
+            workingDirectory: "/test",
+            marimoVersion: null,
+          },
     kernelNotifications: Stream.fromPubSub(operations),
     execute: (request) =>
       Ref.update(calls, (current) => [...current, request]).pipe(

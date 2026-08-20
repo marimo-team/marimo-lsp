@@ -104,6 +104,9 @@ class SessionCommand(NotebookCommand[T]):
     working_directory: str
     """Absolute working directory for the launched kernel."""
 
+    marimo_version: str | None = None
+    """Inspected marimo version for the target environment, when known."""
+
 
 class VenvSource(msgspec.Struct, tag="venv", tag_field="kind", rename="camel"):
     """The notebook's environment is a concrete venv with a known python executable."""
@@ -371,6 +374,8 @@ class SessionInfo(msgspec.Struct, rename="camel", frozen=True):
     started_at: float
     status: typing.Literal["idle", "running"]
     attached: bool
+    marimo_version: str | None = None
+    """Exact version reported by the live kernel process, when known."""
 
 
 class ListSessionsResponse(msgspec.Struct, rename="camel"):

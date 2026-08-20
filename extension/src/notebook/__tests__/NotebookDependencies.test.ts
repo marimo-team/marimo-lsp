@@ -48,8 +48,11 @@ function makeController(options: {
   return {
     ...options,
     drive: () => () => Effect.void,
-    resolveExecutable: () =>
-      Effect.succeed(options.executable ?? "/unused/python"),
+    resolveEnvironment: () =>
+      Effect.succeed({
+        executable: options.executable ?? "/unused/python",
+        marimoVersion: Option.none(),
+      }),
   };
 }
 

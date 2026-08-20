@@ -29,6 +29,11 @@ import {
 
 const notebook = notebookId("notebook-a");
 
+const kernelEnvironment = (executable: string) => ({
+  executable,
+  marimoVersion: Option.none(),
+});
+
 const makeTestLayer = Effect.fn(function* (
   options: Parameters<typeof makeTestMarimoClient>[0] = {},
   vscodeOptions: Parameters<typeof TestVsCode.make>[0] = {},
@@ -45,6 +50,7 @@ const makeTestLayer = Effect.fn(function* (
       startedAt: number;
       status: "idle";
       attached: boolean;
+      marimoVersion: string | null;
     }
   >();
   const execute = options.execute ?? (() => Effect.succeed(null));
@@ -69,6 +75,7 @@ const makeTestLayer = Effect.fn(function* (
               startedAt: 1,
               status: "idle",
               attached: true,
+              marimoVersion: request.params.marimoVersion ?? null,
             });
             break;
           }
@@ -122,7 +129,10 @@ it.effect(
       expect(first).toBe(second);
 
       yield* document
-        .executeCells({ cellIds: [], codes: [] }, "/usr/bin/python")
+        .executeCells(
+          { cellIds: [], codes: [] },
+          kernelEnvironment("/usr/bin/python"),
+        )
         .pipe(Effect.orDie);
       yield* first.interrupt.pipe(Effect.orDie);
 
@@ -136,6 +146,7 @@ it.effect(
           params: {
             notebookUri: id,
             executable: "/usr/bin/python",
+            marimoVersion: null,
             workingDirectory: process.cwd(),
             inner: { cellIds: [], codes: [] },
           },
@@ -156,6 +167,55 @@ it.effect(
           },
         },
       ]);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "sends the inspected marimo version with cell execution",
+  Effect.fn(function* () {
+    const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+    const editor = TestVsCode.makeNotebookEditor(
+      NodePath.join(process.cwd(), "notebook.py"),
+    );
+    const { layer } = yield* makeTestLayer(
+      {
+        execute: (request) =>
+          Ref.update(requests, (current) => [...current, request]).pipe(
+            Effect.as(
+              request.method === "list-sessions" ? { sessions: [] } : null,
+            ),
+          ),
+      },
+      { initialDocuments: [editor.notebook] },
+    );
+
+    yield* Effect.gen(function* () {
+      const runtime = yield* NotebookRuntime;
+      const document = yield* runtime.forDocument(editor.notebook);
+      yield* document.executeCells(
+        { cellIds: [], codes: [] },
+        {
+          executable: "/usr/bin/python",
+          marimoVersion: Option.some("1.2.3-rc1+build.7"),
+        },
+      );
+
+      const execute = (yield* Ref.get(requests)).find(
+        (request) => request.method === "execute-cells",
+      );
+      expect(execute?.params.marimoVersion).toBe("1.2.3-rc1+build.7");
+      expect(
+        yield* runtime.getRuntimeSession(
+          notebookId(editor.notebook.uri.toString()),
+        ),
+      ).toEqual(
+        Option.some({
+          executable: "/usr/bin/python",
+          workingDirectory: process.cwd(),
+          marimoVersion: "1.2.3-rc1+build.7",
+        }),
+      );
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -194,11 +254,14 @@ it.effect(
       const document = yield* runtime.forDocument(editor.notebook);
       yield* document.executeCells(
         { cellIds: [], codes: [] },
-        "/usr/bin/python",
+        kernelEnvironment("/usr/bin/python"),
       );
 
       const execution = yield* document
-        .executeCells({ cellIds: [], codes: [] }, "/usr/bin/python")
+        .executeCells(
+          { cellIds: [], codes: [] },
+          kernelEnvironment("/usr/bin/python"),
+        )
         .pipe(Effect.forkChild);
       yield* Deferred.await(secondExecutionStarted);
 
@@ -267,7 +330,10 @@ it.effect(
       const runtime = yield* NotebookRuntime;
       const firstDocument = yield* runtime.forDocument(first.notebook);
       const pending = yield* firstDocument
-        .executeCells({ cellIds: [], codes: [] }, "/old-python")
+        .executeCells(
+          { cellIds: [], codes: [] },
+          kernelEnvironment("/old-python"),
+        )
         .pipe(Effect.exit, Effect.forkChild);
       yield* Deferred.await(requestStarted);
 
@@ -278,7 +344,7 @@ it.effect(
         .pipe(Effect.retry(Schedule.recurs(100)), Effect.orDie);
       yield* replacementDocument.executeCells(
         { cellIds: [], codes: [] },
-        "/new-python",
+        kernelEnvironment("/new-python"),
       );
 
       yield* Deferred.succeed(releaseRequest, undefined);
@@ -287,11 +353,15 @@ it.effect(
         Option.some({
           executable: "/new-python",
           workingDirectory: process.cwd(),
+          marimoVersion: null,
         }),
       );
 
       const ended = yield* firstDocument
-        .executeCells({ cellIds: [], codes: [] }, "/old-python")
+        .executeCells(
+          { cellIds: [], codes: [] },
+          kernelEnvironment("/old-python"),
+        )
         .pipe(Effect.flip);
       expect(ended._tag).toBe("NoActiveKernelError");
     }).pipe(Effect.provide(layer));
@@ -355,18 +425,19 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
           const firstDocument = yield* runtime.forDocument(editor.notebook);
           yield* firstDocument.executeCells(
             { cellIds: [], codes: [] },
-            "/python-one",
+            kernelEnvironment("/python-one"),
           );
 
           configuredRoot = secondRoot;
           yield* firstDocument.executeCells(
             { cellIds: [], codes: [] },
-            "/python-one",
+            kernelEnvironment("/python-one"),
           );
           expect(yield* runtime.getRuntimeSession(id)).toEqual(
             Option.some({
               executable: "/python-one",
               workingDirectory: firstRoot,
+              marimoVersion: null,
             }),
           );
 
@@ -376,6 +447,7 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
             Option.some({
               executable: "/python-one",
               workingDirectory: firstRoot,
+              marimoVersion: null,
             }),
           );
 
@@ -389,7 +461,7 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
           const secondDocument = yield* runtime.forDocument(reopened.notebook);
           yield* secondDocument.executeCells(
             { cellIds: [], codes: [] },
-            "/python-two",
+            kernelEnvironment("/python-two"),
           );
           const notebook = yield* runtime.forNotebook(id);
           yield* notebook.close;
@@ -400,7 +472,7 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
           configuredRoot = firstRoot;
           yield* secondDocument.executeCells(
             { cellIds: [], codes: [] },
-            "/python-two",
+            kernelEnvironment("/python-two"),
           );
 
           const launches = (yield* Ref.get(requests)).filter(
@@ -449,7 +521,8 @@ it.effect(
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
       drive: () => () => Effect.void,
-      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+      resolveEnvironment: () =>
+        Effect.succeed(kernelEnvironment("/usr/bin/python")),
     };
 
     yield* Effect.gen(function* () {
@@ -472,7 +545,8 @@ it.effect(
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
       drive: () => () => Effect.void,
-      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+      resolveEnvironment: () =>
+        Effect.succeed(kernelEnvironment("/usr/bin/python")),
     };
 
     yield* Effect.gen(function* () {
@@ -550,6 +624,7 @@ it.effect(
         startedAt: number;
         status: "idle";
         attached: boolean;
+        marimoVersion: string | null;
       }>;
     }>();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
@@ -573,6 +648,7 @@ it.effect(
             startedAt: 1,
             status: "idle",
             attached: true,
+            marimoVersion: null,
           },
         ],
       });
@@ -595,7 +671,8 @@ it.effect(
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
       drive: () => () => Effect.void,
-      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+      resolveEnvironment: () =>
+        Effect.succeed(kernelEnvironment("/usr/bin/python")),
     };
 
     yield* Effect.gen(function* () {

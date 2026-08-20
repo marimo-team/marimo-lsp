@@ -21,6 +21,7 @@ class Kernel(typing.Protocol):
 
     executable: str
     working_directory: str
+    marimo_version: str | None
 
     def send(self, request: CommandMessage) -> None:
         """Send a command to the kernel."""

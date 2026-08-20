@@ -13,6 +13,7 @@ import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { Constants } from "../platform/Constants.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
+import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
 import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
@@ -20,7 +21,7 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { SemVerFromString } from "../schemas/SemVerFromString.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import {
-  ExecutableResolutionError,
+  KernelEnvironmentResolutionError,
   NotebookRuntime,
   UnsavedNotebookError,
 } from "./NotebookRuntime.ts";
@@ -34,6 +35,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
     const marimo = yield* MarimoClient;
     const notebooks = yield* NotebookRuntime;
     const python = yield* PythonExtension;
+    const validator = yield* EnvironmentValidator;
     const { LanguageId } = yield* Constants;
 
     const runPromise = Effect.runPromiseWith(
@@ -51,37 +53,37 @@ export const createSandboxController = Effect.fn("createSandboxController")(
     controller.description = "marimo sandbox controller";
 
     // Sync the script's PEP 723 env and return the venv interpreter.
-    const resolveExecutable = Effect.fn("SandboxController.resolveExecutable")(
-      function* (notebook: MarimoNotebookDocument) {
-        // The sandbox venv is derived from the script file on disk; an unsaved
-        // notebook has no path to sync. The run handler guards this earlier
-        // (prompts to save); the scratchpad path reaches here directly.
-        if (notebook.isUntitled) {
-          return yield* new UnsavedNotebookError({ notebookUri: notebook.id });
-        }
+    const resolveEnvironment = Effect.fn(
+      "SandboxController.resolveEnvironment",
+    )(function* (notebook: MarimoNotebookDocument) {
+      // The sandbox venv is derived from the script file on disk; an unsaved
+      // notebook has no path to sync. The run handler guards this earlier
+      // (prompts to save); the scratchpad path reaches here directly.
+      if (notebook.isUntitled) {
+        return yield* new UnsavedNotebookError({ notebookUri: notebook.id });
+      }
 
-        const requirements = yield* findRequirements(notebook);
+      const requirements = yield* findRequirements(notebook);
 
-        if (requirements.length > 0) {
-          yield* uvAddScriptSafe(requirements, notebook).pipe(
-            Effect.provideService(VsCode, code),
-            Effect.provideService(Uv, uv),
-          );
-        }
-
-        // always ensure the env is up to date
-        const venv = yield* uv.syncScript({ script: notebook.uri.fsPath }).pipe(
-          // Should be added by findRequirements or uvAddScriptSafe
-          Effect.catchTag("UvMissingPep723MetadataError", () =>
-            Effect.die("Expected PEP 723 metadata to be present"),
-          ),
+      if (requirements.length > 0) {
+        yield* uvAddScriptSafe(requirements, notebook).pipe(
+          Effect.provideService(VsCode, code),
+          Effect.provideService(Uv, uv),
         );
+      }
 
-        const executable = getVenvPythonPath(venv);
-        yield* python.updateActiveEnvironmentPath(executable);
-        return executable;
-      },
-    );
+      // always ensure the env is up to date
+      const venv = yield* uv.syncScript({ script: notebook.uri.fsPath }).pipe(
+        // Should be added by findRequirements or uvAddScriptSafe
+        Effect.catchTag("UvMissingPep723MetadataError", () =>
+          Effect.die("Expected PEP 723 metadata to be present"),
+        ),
+      );
+
+      const executable = getVenvPythonPath(venv);
+      yield* python.updateActiveEnvironmentPath(executable);
+      return yield* validator.validateFresh({ path: executable });
+    });
 
     // Set up execution handler
     controller.executeHandler = (rawCells, rawNotebook) =>
@@ -106,14 +108,14 @@ export const createSandboxController = Effect.fn("createSandboxController")(
             return;
           }
 
-          // resolveExecutable rejects unsaved notebooks (UnsavedNotebookError),
+          // resolveEnvironment rejects unsaved notebooks (UnsavedNotebookError),
           // handled below with an interactive save prompt.
-          const executable = yield* resolveExecutable(notebook).pipe(
+          const environment = yield* resolveEnvironment(notebook).pipe(
             Effect.provideService(Uv, uv),
           );
 
           const documentHandle = yield* notebooks.forDocument(rawNotebook);
-          yield* documentHandle.executeCells(request.value, executable);
+          yield* documentHandle.executeCells(request.value, environment);
         }).pipe(
           // Handle the expected "unsaved notebook" path before logging, so a
           // normal save prompt isn't recorded as an error. (sandboxing only
@@ -158,6 +160,16 @@ export const createSandboxController = Effect.fn("createSandboxController")(
               { channel: uv.channel },
             ),
           ),
+          Effect.catchTags({
+            EnvironmentInspectionError: () =>
+              showErrorAndPromptLogs(
+                "Failed to inspect the marimo sandbox environment.",
+              ),
+            EnvironmentRequirementError: () =>
+              showErrorAndPromptLogs(
+                "The marimo sandbox environment does not meet the kernel requirements.",
+              ),
+          }),
           Effect.catchTag("MarimoCommandError", (error) => {
             const detail = extractPythonError(error.cause);
             return showErrorAndPromptLogs(
@@ -215,13 +227,13 @@ export const createSandboxController = Effect.fn("createSandboxController")(
 
     return {
       id: controller.id,
-      resolveExecutable: (notebook: MarimoNotebookDocument) =>
-        resolveExecutable(notebook).pipe(
+      resolveEnvironment: (notebook: MarimoNotebookDocument) =>
+        resolveEnvironment(notebook).pipe(
           Effect.provideService(Uv, uv),
           Effect.mapError((error) =>
             error._tag === "UnsavedNotebookError"
               ? error
-              : new ExecutableResolutionError({
+              : new KernelEnvironmentResolutionError({
                   notebookUri: notebook.id,
                   cause: error,
                 }),

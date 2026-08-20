@@ -380,6 +380,7 @@ def test_sessions_changed_notification_contains_public_snapshot() -> None:
         started_at=42,
         status="idle",
         attached=False,
+        marimo_version="1.2.3",
     )
     sessions._sessions["file:///test.py"] = session
 
@@ -398,6 +399,7 @@ def test_sessions_changed_notification_contains_public_snapshot() -> None:
                     "startedAt": 42,
                     "status": "idle",
                     "attached": False,
+                    "marimoVersion": "1.2.3",
                 }
             ]
         },
@@ -409,10 +411,14 @@ async def test_start_reuses_session_with_same_executable() -> None:
     sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)
     current.executable = "/usr/bin/python"
+    current.marimo_version = "1.2.3"
+    current.environment_version = "1.2.3"
     sessions._sessions["file:///test.py"] = current
     sessions._create = AsyncMock()
 
-    result = await sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
+    result = await sessions.start(
+        "file:///test.py", "/usr/bin/python", "/workspace", "1.2.3"
+    )
 
     assert result is current
     current.attach.assert_called_once_with()
@@ -424,6 +430,8 @@ async def test_start_reuses_same_executable_despite_new_working_directory() -> N
     sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)
     current.executable = "/usr/bin/python"
+    current.marimo_version = "1.2.3"
+    current.environment_version = "1.2.3"
     sessions._sessions["file:///test.py"] = current
     sessions._create = AsyncMock()
 
@@ -437,6 +445,107 @@ async def test_start_reuses_same_executable_despite_new_working_directory() -> N
 
 
 @pytest.mark.asyncio
+async def test_start_reuses_known_version_when_request_is_unknown() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    current = Mock(spec=Session)
+    current.executable = "/usr/bin/python"
+    current.marimo_version = "1.2.3"
+    current.environment_version = "1.2.3"
+    sessions._sessions["file:///test.py"] = current
+    sessions._create = AsyncMock()
+
+    result = await sessions.start(
+        "file:///test.py", "/usr/bin/python", "/workspace", None
+    )
+
+    assert result is current
+    assert result.marimo_version == "1.2.3"
+    sessions._create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_start_compares_environment_hint_instead_of_kernel_version() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    current = Mock(spec=Session)
+    current.executable = "/usr/bin/python"
+    current.environment_version = "1.2.3"
+    current.marimo_version = "1.2.4"
+    sessions._sessions["file:///test.py"] = current
+    sessions._create = AsyncMock()
+
+    result = await sessions.start(
+        "file:///test.py", "/usr/bin/python", "/workspace", "1.2.3"
+    )
+
+    assert result is current
+    assert result.marimo_version == "1.2.4"
+    current.attach.assert_called_once_with()
+    sessions._create.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("environment_version", [None, "1.2.3"])
+async def test_start_adopts_version_confirmed_by_live_kernel(
+    environment_version: str | None,
+) -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    current = Mock(spec=Session)
+    current.executable = "/usr/bin/python"
+    current.environment_version = environment_version
+    current.marimo_version = "1.2.4"
+    current.adopt_environment_version.side_effect = lambda value: setattr(
+        current, "environment_version", value
+    )
+    sessions._sessions["file:///test.py"] = current
+    sessions._create = AsyncMock()
+
+    result = await sessions.start(
+        "file:///test.py", "/usr/bin/python", "/workspace", "1.2.4"
+    )
+
+    assert result is current
+    assert result.environment_version == "1.2.4"
+    current.adopt_environment_version.assert_called_once_with("1.2.4")
+    current.attach.assert_called_once_with()
+    sessions._create.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("current_version", "requested_version"),
+    [("1.2.3", "1.2.4"), (None, "1.2.3")],
+)
+async def test_start_replaces_session_when_known_version_changes(
+    current_version: str | None,
+    requested_version: str,
+) -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    current = Mock(spec=Session)
+    current.executable = "/usr/bin/python"
+    current.environment_version = current_version
+    current.marimo_version = "kernel-version"
+    replacement = Mock(spec=Session)
+    replacement.marimo_version = requested_version
+    sessions._sessions["file:///test.py"] = current
+    sessions._create = AsyncMock(return_value=replacement)
+    sessions._notify_changed = Mock()
+
+    result = await sessions.start(
+        "file:///test.py", "/usr/bin/python", "/workspace", requested_version
+    )
+
+    assert result is replacement
+    sessions._create.assert_awaited_once_with(
+        "file:///test.py",
+        "/usr/bin/python",
+        "/workspace",
+        environment_version=requested_version,
+    )
+    assert result.marimo_version == requested_version
+    current.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
 async def test_start_replaces_session_after_replacement_starts() -> None:
     events: list[str] = []
     sessions = Sessions(Mock(), kernels=Mock())
@@ -444,6 +553,7 @@ async def test_start_replaces_session_after_replacement_starts() -> None:
     current.executable = "/old/python"
     current.close.side_effect = lambda: events.append("old closed")
     replacement = Mock(spec=Session)
+    replacement.marimo_version = "1.2.4"
     replacement.describe.return_value = Mock()
     replacement.activate.side_effect = lambda: events.append("new activated")
     sessions._sessions["file:///test.py"] = current
@@ -570,6 +680,7 @@ async def test_startup_message_handoff_preserves_order(
     second = KernelMessage(b'{"op": "second"}')
     third = KernelMessage(b'{"op": "third"}')
     kernel = Mock()
+    kernel.marimo_version = "1.2.3-rc1+build.7"
     receive_callback: list[Callable[[KernelMessage], None]] = []
 
     async def launch(**kwargs: object) -> object:
@@ -595,6 +706,7 @@ async def test_startup_message_handoff_preserves_order(
     previous.config_manager.get_config.return_value = DEFAULT_CONFIG
     previous.session_view = Mock()
     previous.started_at = 42
+    previous.marimo_version = "1.2.3-rc1+build.7"
     loop_thread = threading.get_ident()
     observed: list[tuple[KernelMessage, int]] = []
     third_delivered = asyncio.Event()
@@ -606,12 +718,15 @@ async def test_startup_message_handoff_preserves_order(
 
     monkeypatch.setattr(Session, "accept_kernel_message", accept)
 
-    await sessions._create(
+    created = await sessions._create(
         "file:///test.py",
         "/usr/bin/python",
         "/workspace",
         previous=previous,
     )
+    assert created.marimo_version == "1.2.3-rc1+build.7"
+    assert created.environment_version is None
+    assert created.session_view is previous.session_view
     threading.Thread(target=receive_callback[0], args=(third,), daemon=True).start()
     await asyncio.wait_for(third_delivered.wait(), timeout=1)
 
@@ -620,6 +735,46 @@ async def test_startup_message_handoff_preserves_order(
         (second, loop_thread),
         (third, loop_thread),
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("previous_version", "kernel_version"),
+    [
+        ("1.2.3", "1.2.4"),
+        (None, None),
+        (None, "1.2.4"),
+        ("1.2.3", None),
+    ],
+)
+async def test_session_creation_drops_view_without_known_matching_versions(
+    previous_version: str | None,
+    kernel_version: str | None,
+) -> None:
+    kernel = Mock()
+    kernel.marimo_version = kernel_version
+    kernels = Mock()
+    kernels.launch = AsyncMock(return_value=kernel)
+    sessions = Sessions(Mock(), kernels=kernels)
+    previous = Mock(spec=Session)
+    previous.app_file_manager = Mock()
+    previous.config_manager = Mock()
+    previous.config_manager.get_config.return_value = DEFAULT_CONFIG
+    previous.session_view = SessionView()
+    previous.started_at = 42
+    previous.marimo_version = previous_version
+
+    created = await sessions._create(
+        "file:///test.py",
+        "/usr/bin/python",
+        "/workspace",
+        environment_version="1.2.3",
+        previous=previous,
+    )
+
+    assert created.marimo_version == kernel_version
+    assert created.environment_version == "1.2.3"
+    assert created.session_view is not previous.session_view
 
 
 @pytest.mark.asyncio
@@ -661,11 +816,14 @@ async def test_restart_replaces_kernel_without_reloading_closed_notebook() -> No
     current = Mock(spec=Session)
     current.executable = "/usr/bin/python"
     current.working_directory = "/workspace"
+    current.marimo_version = "1.2.3"
+    current.environment_version = "1.2.3"
     current.attached = False
     current.session_view = Mock()
     current.started_at = 42
     current.close.side_effect = lambda: events.append("old closed")
     replacement = Mock(spec=Session)
+    replacement.marimo_version = "1.2.4"
     replacement.activate.side_effect = lambda: events.append("new activated")
     sessions._sessions["file:///test.py"] = current
     sessions._create = AsyncMock(return_value=replacement)
@@ -684,8 +842,10 @@ async def test_restart_replaces_kernel_without_reloading_closed_notebook() -> No
         "file:///test.py",
         "/usr/bin/python",
         "/workspace",
+        environment_version="1.2.3",
         previous=current,
     )
+    assert result.marimo_version == "1.2.4"
     replacement.detach.assert_called_once_with(notify=False)
     current.close.assert_called_once_with()
     sessions._notify_changed.assert_called_once_with()
@@ -697,6 +857,7 @@ async def test_restart_replaces_kernel_without_reloading_closed_notebook() -> No
 async def test_restore_uses_requested_working_directory() -> None:
     sessions = Sessions(Mock(), kernels=Mock())
     replacement = Mock(spec=Session)
+    replacement.marimo_version = "1.2.4"
     sessions._create = AsyncMock(return_value=replacement)
     sessions._notify_changed = Mock()
 
@@ -709,8 +870,11 @@ async def test_restore_uses_requested_working_directory() -> None:
 
     assert result is replacement
     sessions._create.assert_called_once_with(
-        "file:///test.py", "/usr/bin/python", "/workspace"
+        "file:///test.py",
+        "/usr/bin/python",
+        "/workspace",
     )
+    assert result.marimo_version == "1.2.4"
 
 
 @pytest.mark.asyncio

@@ -19,6 +19,7 @@ const SNAPSHOT = {
       startedAt: 42,
       status: "idle",
       attached: false,
+      marimoVersion: "1.2.3",
     },
   ],
 } as const;
@@ -49,6 +50,25 @@ it.effect(
 
     expect(live).toEqual(SNAPSHOT.sessions);
     expect(recorded).toEqual([{ method: "list-sessions", params: {} }]);
+  }),
+);
+
+it.effect(
+  "decodes an older session snapshot with an unknown marimo version",
+  Effect.fn(function* () {
+    const recorded: MarimoApiCall[] = [];
+    const legacy = {
+      sessions: SNAPSHOT.sessions.map(
+        ({ marimoVersion: _, ...session }) => session,
+      ),
+    };
+
+    const live = yield* Effect.gen(function* () {
+      const sessions = yield* LiveSessions;
+      return yield* sessions.get;
+    }).pipe(Effect.provide(makeLayer(recorded, legacy)));
+
+    expect(live[0]?.marimoVersion).toBeNull();
   }),
 );
 

@@ -57,6 +57,7 @@ import type {
 } from "../types.ts";
 import { CellExecutions, type Drive } from "./CellExecutions.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
+import type { KernelEnvironment } from "./KernelEnvironment.ts";
 import { makeNotebookExecutor } from "./NotebookExecutor.ts";
 import {
   NotebookFileRootError,
@@ -95,9 +96,12 @@ export interface NotebookController {
   readonly id: string;
   readonly executable?: string;
   readonly drive: (notebook: MarimoNotebookDocument) => Drive;
-  readonly resolveExecutable: (
+  readonly resolveEnvironment: (
     notebook: MarimoNotebookDocument,
-  ) => Effect.Effect<string, ExecutableResolutionError | UnsavedNotebookError>;
+  ) => Effect.Effect<
+    KernelEnvironment,
+    KernelEnvironmentResolutionError | UnsavedNotebookError
+  >;
 }
 
 export interface NotebookControllerSelection {
@@ -110,9 +114,9 @@ export class NoActiveKernelError extends Data.TaggedError(
   "NoActiveKernelError",
 )<{ readonly notebookUri: NotebookId }> {}
 
-/** A controller could not resolve a Python executable for the notebook. */
-export class ExecutableResolutionError extends Data.TaggedError(
-  "ExecutableResolutionError",
+/** A controller could not resolve the kernel environment for the notebook. */
+export class KernelEnvironmentResolutionError extends Data.TaggedError(
+  "KernelEnvironmentResolutionError",
 )<{ readonly notebookUri: NotebookId; readonly cause: unknown }> {}
 
 /** A sandbox controller needs a saved notebook to resolve its environment. */
@@ -133,7 +137,7 @@ export interface NotebookHandle {
     code: string,
   ) => Stream.Stream<
     CellOperationNotification,
-    | ExecutableResolutionError
+    | KernelEnvironmentResolutionError
     | MarimoClientStartError
     | MarimoCommandError
     | NoActiveKernelError
@@ -164,7 +168,7 @@ export interface NotebookHandle {
 export interface NotebookDocumentHandle {
   readonly executeCells: (
     request: InnerRequest<"executeCells">,
-    executable: string,
+    environment: KernelEnvironment,
   ) => Effect.Effect<
     null,
     | MarimoClientStartError
@@ -187,6 +191,7 @@ type SessionNotification = KernelNotification & {
 export interface RuntimeSession {
   readonly executable: string;
   readonly workingDirectory: string;
+  readonly marimoVersion: string | null;
 }
 
 export interface RuntimeSessionEntry {
@@ -240,7 +245,7 @@ function isScratchpadOutput(
  * const documentHandle = yield* runtime.forDocument(rawNotebook);
  * const notebook = yield* runtime.forNotebook(notebookId);
  *
- * yield* documentHandle.executeCells(request, executable);
+ * yield* documentHandle.executeCells(request, environment);
  * yield* notebook.updateUIElements(update);
  * yield* notebook.interrupt;
  * ```
@@ -373,7 +378,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         session: NotebookDocumentSession,
         controller: Ref.Ref<Option.Option<NotebookController>>,
       ): NotebookDocumentHandle => ({
-        executeCells: (request, executable) =>
+        executeCells: (request, environment) =>
           stateForDocumentSession(session).pipe(
             Effect.andThen(
               executor
@@ -386,12 +391,15 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                     );
                     const workingDirectory = yield* resolveWorkingDirectory(
                       notebookId,
-                      executable,
+                      environment.executable,
                       notebook,
                     );
                     const send = marimo.executeCells({
                       notebookUri: notebookId,
-                      executable,
+                      executable: environment.executable,
+                      marimoVersion: Option.getOrNull(
+                        environment.marimoVersion,
+                      ),
                       workingDirectory,
                       inner: request,
                     });
@@ -503,18 +511,21 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                       });
                     }
                     const notebook = yield* findOpenNotebook(notebookId);
-                    const executable =
-                      yield* selectedController.value.resolveExecutable(
+                    const environment =
+                      yield* selectedController.value.resolveEnvironment(
                         notebook,
                       );
                     const workingDirectory = yield* resolveWorkingDirectory(
                       notebookId,
-                      executable,
+                      environment.executable,
                       notebook,
                     );
                     yield* marimo.executeScratchpad({
                       notebookUri: notebookId,
-                      executable,
+                      executable: environment.executable,
+                      marimoVersion: Option.getOrNull(
+                        environment.marimoVersion,
+                      ),
                       workingDirectory,
                       inner: { code: sourceCode, runId },
                     });
@@ -934,19 +945,27 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         getRuntimeSession(notebookId: NotebookId) {
           return liveSessions.find(notebookId).pipe(
             Effect.map(
-              Option.map(({ executable, workingDirectory }) => ({
+              Option.map(({ executable, workingDirectory, marimoVersion }) => ({
                 executable,
                 workingDirectory,
+                marimoVersion,
               })),
             ),
           );
         },
         getRuntimeSessions: liveSessions.get.pipe(
           Effect.map((sessions) =>
-            sessions.map(({ notebookUri, executable, workingDirectory }) => ({
-              notebookId: notebookUri,
-              session: { executable, workingDirectory },
-            })),
+            sessions.map(
+              ({
+                notebookUri,
+                executable,
+                workingDirectory,
+                marimoVersion,
+              }) => ({
+                notebookId: notebookUri,
+                session: { executable, workingDirectory, marimoVersion },
+              }),
+            ),
           ),
         ),
         activeRuntimeSession: Effect.gen(function* () {
@@ -959,9 +978,10 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           }
           return Option.map(
             yield* liveSessions.find(activeNotebook.value.id),
-            ({ executable, workingDirectory }) => ({
+            ({ executable, workingDirectory, marimoVersion }) => ({
               executable,
               workingDirectory,
+              marimoVersion,
             }),
           );
         }),

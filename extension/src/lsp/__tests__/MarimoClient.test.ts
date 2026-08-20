@@ -158,6 +158,7 @@ it.effect(
     yield* marimo.executeCells({
       notebookUri: notebook,
       executable: "/python",
+      marimoVersion: "1.2.3",
       workingDirectory: "/workspace",
       inner: { cellIds: [], codes: [] },
     });
@@ -169,6 +170,7 @@ it.effect(
         params: {
           notebookUri: notebook,
           executable: "/python",
+          marimoVersion: "1.2.3",
           workingDirectory: "/workspace",
           inner: { cellIds: [], codes: [] },
         },
