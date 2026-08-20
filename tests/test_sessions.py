@@ -426,6 +426,51 @@ async def test_start_reuses_session_with_same_executable() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["start", "restore"])
+async def test_session_lifecycle_is_reserved_during_creation(
+    operation: str,
+) -> None:
+    notebook_uri = "file:///test.py"
+    started = asyncio.Event()
+    release = asyncio.Event()
+    sessions = Sessions(Mock(), kernels=Mock())
+    replacement = Mock(spec=Session)
+
+    async def create(*args: object, **kwargs: object) -> Session:
+        del args, kwargs
+        started.set()
+        await release.wait()
+        return replacement
+
+    sessions._create = AsyncMock(side_effect=create)
+    sessions._notify_changed = Mock()
+    if operation == "start":
+        task = asyncio.create_task(
+            sessions.start(notebook_uri, "/usr/bin/python", "/workspace")
+        )
+    else:
+        task = asyncio.create_task(
+            sessions.restart(
+                notebook_uri,
+                executable="/usr/bin/python",
+                working_directory="/workspace",
+                create_if_missing=True,
+            )
+        )
+
+    await started.wait()
+    assert sessions.get(notebook_uri) is None
+    assert sessions.is_live_or_starting(notebook_uri)
+
+    release.set()
+    assert await task is replacement
+    assert sessions.is_live_or_starting(notebook_uri)
+
+    sessions.close(notebook_uri)
+    assert not sessions.is_live_or_starting(notebook_uri)
+
+
+@pytest.mark.asyncio
 async def test_start_reuses_same_executable_despite_new_working_directory() -> None:
     sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)

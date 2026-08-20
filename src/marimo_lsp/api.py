@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import dataclasses
 import inspect
 import json
@@ -26,6 +27,7 @@ from marimo._export.requests import (
     MarkdownExportRequest,
 )
 from marimo._export.serialization import serialize_notebook_snapshot
+from marimo._messaging.cell_output import CellOutput
 from marimo._runtime.commands import (
     ExecuteScratchpadCommand,
     InvokeFunctionCommand,
@@ -43,10 +45,16 @@ from marimo._session.state.serialize import serialize_session_view
 from pygls.uris import to_fs_path
 from typing_extensions import TypeForm
 
-from marimo_lsp.app_file_manager import find_notebook_document, snapshot_for_scratchpad
+from marimo_lsp.app_file_manager import (
+    LspAppFileManager,
+    find_notebook_document,
+    snapshot_for_scratchpad,
+)
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     CloseSessionRequest,
+    DecodeSavedSessionRequest,
+    DecodeSavedSessionResponse,
     DeleteCellRequest,
     DependencyTreeRequest,
     DependencyTreeResponse,
@@ -75,6 +83,7 @@ from marimo_lsp.models import (
     NotebookDocument,
     PackageCommand,
     RestartSessionRequest,
+    SavedCellOutput,
     ScriptSource,
     SerializeResponse,
     SessionCommand,
@@ -87,6 +96,8 @@ from marimo_lsp.models import (
     VenvSource,
 )
 from marimo_lsp.package_manager import LspPackageManager
+from marimo_lsp.saved_sessions import decode_saved_session_view
+from marimo_lsp.utils import decode_notebook_document_metadata
 
 if TYPE_CHECKING:
     from marimo._config.config import (
@@ -815,6 +826,79 @@ async def set_display_theme(
         )
         session.update_runtime_config(updated)
     return SetDisplayThemeResponse(success=True)
+
+
+@marimo_api("decode-saved-session")
+async def decode_saved_session(
+    ctx: ApiContext,
+    args: NotebookCommand[DecodeSavedSessionRequest],
+) -> DecodeSavedSessionResponse:
+    """Decode saved display outputs against the synchronized notebook."""
+    empty = DecodeSavedSessionResponse(
+        outputs=[],
+        marimo_version=args.inner.marimo_version,
+        notebook_version=args.inner.notebook_version,
+    )
+    if ctx.sessions.is_live_or_starting(args.notebook_uri):
+        return empty
+
+    notebook = find_notebook_document(ctx.ls.workspace, args.notebook_uri)
+    if notebook.version != args.inner.notebook_version:
+        return empty
+
+    file_manager = LspAppFileManager(
+        server=ctx.ls,
+        notebook_uri=args.notebook_uri,
+    )
+    metadata = decode_notebook_document_metadata(notebook)
+    cell_manager = file_manager.app.cell_manager
+    codes = tuple(cell_manager.codes())
+    cell_ids = tuple(cell_manager.cell_ids())
+    view = await asyncio.to_thread(
+        decode_saved_session_view,
+        args.inner.contents,
+        codes=codes,
+        cell_ids=cell_ids,
+        marimo_version=args.inner.marimo_version,
+        header=metadata.header,
+    )
+    if view is None:
+        return empty
+    current_notebook = find_notebook_document(ctx.ls.workspace, args.notebook_uri)
+    if (
+        current_notebook is not notebook
+        or current_notebook.version != args.inner.notebook_version
+        or ctx.sessions.is_live_or_starting(args.notebook_uri)
+    ):
+        return empty
+
+    outputs = [
+        SavedCellOutput(
+            cell_id=cell_id,
+            output=notification.output,
+            console=[
+                output
+                for output in (
+                    notification.console
+                    if isinstance(notification.console, list)
+                    else [notification.console]
+                )
+                if isinstance(output, CellOutput)
+            ],
+        )
+        for cell_id in cell_ids
+        if (notification := view.cell_notifications.get(cell_id)) is not None
+        and (notification.output is not None or bool(notification.console))
+    ]
+    try:
+        json.dumps(msgspec.to_builtins(outputs), allow_nan=False)
+    except (TypeError, ValueError):
+        return empty
+    return DecodeSavedSessionResponse(
+        outputs=outputs,
+        marimo_version=args.inner.marimo_version,
+        notebook_version=args.inner.notebook_version,
+    )
 
 
 @marimo_api("export-as-html")

@@ -3,6 +3,7 @@ import { Effect, Result, Schema } from "effect";
 
 import {
   CellMetadata,
+  DecodeSavedSessionResponse,
   ExecuteCellsPayload,
   ExecuteScratchRequest,
   GetPackageListPayload,
@@ -84,6 +85,34 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
       runId: "abc",
     });
     expect(Result.isFailure(missingCode)).toBe(true);
+  });
+
+  it("validates archived outputs independently from live cell operations", () => {
+    const valid = Schema.decodeUnknownResult(DecodeSavedSessionResponse)({
+      outputs: [
+        {
+          cellId: "cell-1",
+          output: {
+            channel: "output",
+            mimetype: "text/plain",
+            data: "42",
+          },
+          console: [],
+        },
+      ],
+      marimoVersion: "0.24.0",
+      notebookVersion: 3,
+    });
+    expect(Result.isSuccess(valid)).toBe(true);
+
+    const liveOperation = Schema.decodeUnknownResult(
+      DecodeSavedSessionResponse,
+    )({
+      outputs: [{ op: "cell-op", cell_id: "cell-1" }],
+      marimoVersion: "0.24.0",
+      notebookVersion: 3,
+    });
+    expect(Result.isFailure(liveOperation)).toBe(true);
   });
 
   it("decodes a generated package command payload", () => {

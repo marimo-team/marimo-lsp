@@ -14,6 +14,7 @@ import msgspec
 # are first encoded/inspected, which fails under TYPE_CHECKING-only imports.
 from marimo._config.config import MarimoConfig  # noqa: TC002
 from marimo._convert.common.format import DEFAULT_MARKDOWN_PREFIX
+from marimo._messaging.cell_output import CellOutput  # noqa: TC002
 from marimo._messaging.notification import (  # noqa: TC002
     NotificationMessage,
     VariablesNotification,
@@ -25,7 +26,7 @@ from marimo._schemas.notebook import (
     NotebookV1,
 )
 from marimo._server.models.packages import DependencyTreeNode  # noqa: TC002
-from marimo._types.ids import SessionId  # noqa: TC002
+from marimo._types.ids import CellId_t, SessionId  # noqa: TC002
 
 # NOTE: the generic structs below use the legacy TypeVar spelling (noqa: UP046)
 # because msgspec's annotation resolver cannot see PEP 695 type parameters —
@@ -421,6 +422,19 @@ class SetDisplayThemeRequest(msgspec.Struct, rename="camel"):
     """The theme to set ('light' or 'dark')."""
 
 
+class DecodeSavedSessionRequest(msgspec.Struct, rename="camel"):
+    """Saved-session contents read by the extension from the kernel environment."""
+
+    contents: str
+    """The bounded UTF-8 contents of the marimo session sidecar."""
+
+    marimo_version: str
+    """Exact version reported by the environment that located the sidecar."""
+
+    notebook_version: int
+    """Client revision expected to be synchronized in the language server."""
+
+
 class ApiRequest(msgspec.Struct, rename="camel"):
     """A unified API request for all marimo internal methods."""
 
@@ -463,6 +477,22 @@ class SetDisplayThemeResponse(msgspec.Struct, rename="camel"):
     """Response for ``set-display-theme``."""
 
     success: bool
+
+
+class SavedCellOutput(msgspec.Struct, rename="camel"):
+    """Archived display data for one current notebook cell."""
+
+    cell_id: CellId_t
+    output: CellOutput | None
+    console: list[CellOutput]
+
+
+class DecodeSavedSessionResponse(msgspec.Struct, rename="camel"):
+    """Compatible display outputs and the snapshot provenance they require."""
+
+    outputs: list[SavedCellOutput]
+    marimo_version: str
+    notebook_version: int
 
 
 ExecuteCellsRequest = core.ExecuteCellsRequest

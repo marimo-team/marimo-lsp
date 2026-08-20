@@ -21,6 +21,19 @@ const VariablesNotification = Schema.declare<VariablesNotification>(
     Schema.is(MarimoNotification)(value) && value.op === "variables",
 );
 
+type CellOperationNotification = Extract<MarimoNotification, { op: "cell-op" }>;
+type MarimoCellOutput = NonNullable<CellOperationNotification["output"]>;
+const MarimoCellOutput = Schema.declare<MarimoCellOutput>(
+  (value): value is MarimoCellOutput =>
+    typeof value === "object" &&
+    value !== null &&
+    "channel" in value &&
+    typeof value.channel === "string" &&
+    "mimetype" in value &&
+    typeof value.mimetype === "string" &&
+    "data" in value,
+);
+
 // The id is an opaque token minted by the server; only equality matters.
 // Validating its shape here would turn a harmless server-side format
 // change into silently dropped notifications.
@@ -420,6 +433,36 @@ export const SetDisplayThemeRequest = Schema.Struct({
   theme: Schema.Literals(["dark", "light"]),
 }).annotate({ identifier: "SetDisplayThemeRequest" });
 export type SetDisplayThemeRequest = typeof SetDisplayThemeRequest.Type;
+
+/**
+ * Saved-session contents read by the extension from the kernel environment.
+ */
+export const DecodeSavedSessionRequest = Schema.Struct({
+  contents: Schema.String,
+  marimoVersion: Schema.String,
+  notebookVersion: Schema.Int,
+}).annotate({ identifier: "DecodeSavedSessionRequest" });
+export type DecodeSavedSessionRequest = typeof DecodeSavedSessionRequest.Type;
+
+/**
+ * Archived display data for one current notebook cell.
+ */
+export const SavedCellOutput = Schema.Struct({
+  cellId: Schema.String,
+  output: Schema.NullOr(MarimoCellOutput),
+  console: Schema.Array(MarimoCellOutput),
+}).annotate({ identifier: "SavedCellOutput" });
+export type SavedCellOutput = typeof SavedCellOutput.Type;
+
+/**
+ * Compatible display outputs and the snapshot provenance they require.
+ */
+export const DecodeSavedSessionResponse = Schema.Struct({
+  outputs: Schema.Array(SavedCellOutput),
+  marimoVersion: Schema.String,
+  notebookVersion: Schema.Int,
+}).annotate({ identifier: "DecodeSavedSessionResponse" });
+export type DecodeSavedSessionResponse = typeof DecodeSavedSessionResponse.Type;
 
 /**
  * Serializable HTTP request representation.
@@ -1402,6 +1445,11 @@ export const SetDisplayThemePayload = Schema.Struct({
   theme: Schema.Literals(["dark", "light"]),
 });
 
+export const DecodeSavedSessionPayload = Schema.Struct({
+  notebookUri: NotebookIdFromString,
+  inner: DecodeSavedSessionRequest,
+});
+
 export const ExportAsHTMLRequest = Schema.Struct({
   download: Schema.Boolean,
   files: Schema.Array(Schema.String),
@@ -1529,6 +1577,10 @@ export type MarimoApiCall =
   | {
       readonly method: "set-display-theme";
       readonly params: typeof SetDisplayThemePayload.Encoded;
+    }
+  | {
+      readonly method: "decode-saved-session";
+      readonly params: typeof DecodeSavedSessionPayload.Encoded;
     }
   | {
       readonly method: "export-as-html";
@@ -1726,6 +1778,13 @@ export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({
       { method: "set-display-theme", params },
       SetDisplayThemePayload,
       SetDisplayThemeResponse,
+    ),
+  decodeSavedSession: (params: typeof DecodeSavedSessionPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "decode-saved-session", params },
+      DecodeSavedSessionPayload,
+      DecodeSavedSessionResponse,
     ),
   exportAsHtml: (params: typeof ExportAsHtmlPayload.Encoded) =>
     dispatch(
