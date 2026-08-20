@@ -83,8 +83,12 @@ async def _begin_launch():
 async def _launch_kernel():
     callbacks, kernels, launch, messages = await _begin_launch()
     process_id = callbacks.spawns[0][0]
-    kernels.accept(process_id, encode(Ready()))
+    kernels.accept(
+        process_id,
+        encode(Ready(marimo_version="1.2.3-rc1+build.7")),
+    )
     kernel = await launch
+    assert kernel.marimo_version == "1.2.3-rc1+build.7"
     return callbacks, kernels, kernel, messages
 
 
@@ -98,6 +102,32 @@ async def test_wasm_launch_fails_before_publishing_unready_kernel() -> None:
     with pytest.raises(KernelOpenError, match="failed to start"):
         await launch
     assert callbacks.closes == snapshot([process_id])
+
+
+@pytest.mark.asyncio
+async def test_wasm_launch_accepts_legacy_ready_without_version() -> None:
+    callbacks, kernels, launch, _messages = await _begin_launch()
+    process_id = callbacks.spawns[0][0]
+    payload = b'{"type":"ready","version":1}'
+
+    kernels.accept(
+        process_id,
+        len(payload).to_bytes(4, byteorder="big") + payload,
+    )
+
+    kernel = await launch
+    assert kernel.marimo_version is None
+
+
+@pytest.mark.asyncio
+async def test_wasm_launch_treats_unknown_marimo_version_as_unavailable() -> None:
+    callbacks, kernels, launch, _messages = await _begin_launch()
+    process_id = callbacks.spawns[0][0]
+
+    kernels.accept(process_id, encode(Ready(marimo_version="unknown")))
+
+    kernel = await launch
+    assert kernel.marimo_version is None
 
 
 @pytest.mark.asyncio

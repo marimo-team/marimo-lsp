@@ -33,7 +33,7 @@ from marimo._session.state.session_view import SessionView
 from marimo._types.ids import SessionId
 
 from marimo_lsp.app_file_manager import LspAppFileManager, sync_app_with_workspace
-from marimo_lsp.kernels import KernelOpenError
+from marimo_lsp.kernels import KernelOpenError, normalize_marimo_version
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import KernelNotification, ListSessionsResponse, SessionInfo
 
@@ -218,6 +218,11 @@ class Session:
     def working_directory(self) -> str:
         """Return the configured kernel working directory."""
         return self._kernel.working_directory
+
+    @property
+    def marimo_version(self) -> str | None:
+        """Return the exact version reported by the launched kernel."""
+        return normalize_marimo_version(self._kernel.marimo_version)
 
     @property
     def attached(self) -> bool:
@@ -668,6 +673,16 @@ class Sessions:
             receive=receive,
         )
         try:
+            previous_version = normalize_marimo_version(
+                previous.marimo_version if previous is not None else None
+            )
+            kernel_version = normalize_marimo_version(kernel.marimo_version)
+            keep_previous_view = (
+                previous is not None
+                and previous_version is not None
+                and kernel_version is not None
+                and previous_version == kernel_version
+            )
             session = Session(
                 session_id=session_id,
                 notebook_uri=notebook_uri,
@@ -675,7 +690,7 @@ class Sessions:
                 kernel=kernel,
                 app_file_manager=app_file_manager,
                 config_manager=config_manager,
-                session_view=previous.session_view if previous else None,
+                session_view=previous.session_view if keep_previous_view else None,
                 started_at=previous.started_at if previous else None,
             )
             session.set_on_kernel_failure(_raise_kernel_failure)
@@ -710,7 +725,9 @@ class Sessions:
             version = self._lifecycle_version(notebook_uri)
             if current is None:
                 replacement = await self._create(
-                    notebook_uri, executable, working_directory
+                    notebook_uri,
+                    executable,
+                    working_directory,
                 )
             else:
                 replacement = await self._create(

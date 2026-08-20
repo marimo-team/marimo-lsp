@@ -21,6 +21,7 @@ class Kernel(typing.Protocol):
 
     executable: str
     working_directory: str
+    marimo_version: str | None
 
     def send(self, request: CommandMessage) -> None:
         """Send a command to the kernel."""
@@ -57,3 +58,8 @@ class Kernels(typing.Protocol):
 
 class KernelOpenError(RuntimeError):
     """A kernel failed before it became ready."""
+
+
+def normalize_marimo_version(version: str | None) -> str | None:
+    """Return a version only when marimo can identify it."""
+    return None if version == "unknown" else version

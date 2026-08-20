@@ -13,7 +13,7 @@ from marimo._config.settings import GLOBAL_SETTINGS
 from marimo._messaging.types import KernelMessage
 from marimo._runtime.commands import AppMetadata
 
-from marimo_lsp.kernels import KernelOpenError
+from marimo_lsp.kernels import KernelOpenError, normalize_marimo_version
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.wasm.protocol import (
     Close,
@@ -88,6 +88,7 @@ class WasmKernel:
         self._closed = False
         self.executable = executable
         self.working_directory = working_directory
+        self.marimo_version: str | None = None
 
     def accept(self, chunk: bytes) -> None:
         """Decode operations received from the kernel bridge."""
@@ -95,6 +96,7 @@ class WasmKernel:
             return
         for message in self._decoder.feed(chunk):
             if isinstance(message, Ready):
+                self.marimo_version = normalize_marimo_version(message.marimo_version)
                 if not self._ready.done():
                     self._ready.set_result(None)
             elif isinstance(message, Operation):

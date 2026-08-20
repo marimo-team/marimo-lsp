@@ -10,7 +10,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from marimo_lsp.kernels.manager import Manager
+from marimo_lsp.kernels.manager import Manager, launch_kernel
 from marimo_lsp.kernels.native import NativeKernels
 
 if TYPE_CHECKING:
@@ -32,7 +32,8 @@ def _manager(notebook: Path, working_directory: str) -> Manager:
 def test_supplied_working_directory_reaches_launch_kernel(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    launch = Mock(return_value=Mock())
+    launched = Mock(marimo_version="1.2.3-rc1+build.7")
+    launch = Mock(return_value=launched)
     monkeypatch.setattr("marimo_lsp.kernels.manager.launch_kernel", launch)
     selected = tmp_path / "selected"
     selected.mkdir()
@@ -41,6 +42,131 @@ def test_supplied_working_directory_reaches_launch_kernel(
     manager.start_kernel()
 
     assert launch.call_args.kwargs["cwd"] == str(selected)
+    assert manager.marimo_version == "1.2.3-rc1+build.7"
+
+
+def test_kernel_reports_exact_marimo_version_from_launched_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = Mock()
+    process.stdout.readline.side_effect = [
+        b'{"marimo_version":"1.2.3-rc1+build.7"}\n',
+        b"KERNEL_READY\n",
+    ]
+    popen = Mock(return_value=process)
+    monkeypatch.setattr("marimo_lsp.kernels.manager.subprocess.Popen", popen)
+    args = Mock()
+    args.encode_json.return_value = b"{}"
+
+    kernel_process = launch_kernel("/python", args, cwd="/workspace")
+
+    assert kernel_process.marimo_version == "1.2.3-rc1+build.7"
+    command = popen.call_args.args[0]
+    assert command[:2] == ["/python", "-c"]
+    assert "runpy.run_module" in command[2]
+    assert popen.call_args.kwargs["cwd"] == "/workspace"
+
+
+def test_kernel_treats_unknown_marimo_version_as_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = Mock()
+    process.stdout.readline.side_effect = [
+        b'{"marimo_version":"unknown"}\n',
+        b"KERNEL_READY\n",
+    ]
+    monkeypatch.setattr(
+        "marimo_lsp.kernels.manager.subprocess.Popen",
+        Mock(return_value=process),
+    )
+    args = Mock()
+    args.encode_json.return_value = b"{}"
+
+    kernel_process = launch_kernel("/python", args)
+
+    assert kernel_process.marimo_version is None
+
+
+@pytest.mark.parametrize(
+    ("version_line", "error_type"),
+    [
+        (b"", RuntimeError),
+        (b"not-json\n", RuntimeError),
+        (b'{"marimo_version": 123}\n', TypeError),
+    ],
+)
+def test_invalid_kernel_version_response_cleans_up_process(
+    version_line: bytes,
+    error_type: type[Exception],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = Mock()
+    process.stdout.readline.return_value = version_line
+    process.stderr.read.return_value = b"bootstrap failed"
+    process.poll.side_effect = [None, 1]
+    monkeypatch.setattr(
+        "marimo_lsp.kernels.manager.subprocess.Popen",
+        Mock(return_value=process),
+    )
+    args = Mock()
+    args.encode_json.return_value = b"{}"
+
+    with pytest.raises(error_type, match="bootstrap failed"):
+        launch_kernel("/python", args)
+
+    process.terminate.assert_called_once_with()
+    process.wait.assert_called_once()
+
+
+def test_invalid_ready_response_cleans_up_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = Mock()
+    process.stdout.readline.side_effect = [
+        b'{"marimo_version":"1.2.3"}\n',
+        b"NOT_READY\n",
+    ]
+    process.stderr.read.return_value = b"kernel failed"
+    process.poll.side_effect = [None, None, 1]
+    monkeypatch.setattr(
+        "marimo_lsp.kernels.manager.subprocess.Popen",
+        Mock(return_value=process),
+    )
+    args = Mock()
+    args.encode_json.return_value = b"{}"
+
+    with pytest.raises(RuntimeError, match="kernel failed"):
+        launch_kernel("/python", args)
+
+    process.terminate.assert_called_once_with()
+    process.wait.assert_called_once()
+
+
+@pytest.mark.parametrize("failure", ["write", "decode"])
+def test_unexpected_bootstrap_failure_cleans_up_process(
+    failure: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = Mock()
+    process.poll.return_value = None
+    if failure == "write":
+        process.stdin.write.side_effect = BrokenPipeError("closed pipe")
+        error_type = BrokenPipeError
+    else:
+        process.stdout.readline.return_value = b"\xff\n"
+        error_type = UnicodeDecodeError
+    monkeypatch.setattr(
+        "marimo_lsp.kernels.manager.subprocess.Popen",
+        Mock(return_value=process),
+    )
+    args = Mock()
+    args.encode_json.return_value = b"{}"
+
+    with pytest.raises(error_type):
+        launch_kernel("/python", args)
+
+    process.terminate.assert_called_once_with()
+    process.wait.assert_called_once()
 
 
 @pytest.mark.parametrize("kind", ["relative", "missing", "file"])

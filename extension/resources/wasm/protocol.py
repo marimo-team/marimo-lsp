@@ -28,6 +28,7 @@ MAX_FRAME_SIZE = 64 * 1024 * 1024
 class Ready(msgspec.Struct, tag="ready", tag_field="type", rename="camel"):
     """The kernel bridge is ready."""
 
+    marimo_version: str | None = None
     version: Literal[1] = VERSION
 
 

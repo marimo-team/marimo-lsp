@@ -570,6 +570,7 @@ async def test_startup_message_handoff_preserves_order(
     second = KernelMessage(b'{"op": "second"}')
     third = KernelMessage(b'{"op": "third"}')
     kernel = Mock()
+    kernel.marimo_version = "1.2.3-rc1+build.7"
     receive_callback: list[Callable[[KernelMessage], None]] = []
 
     async def launch(**kwargs: object) -> object:
@@ -595,6 +596,7 @@ async def test_startup_message_handoff_preserves_order(
     previous.config_manager.get_config.return_value = DEFAULT_CONFIG
     previous.session_view = Mock()
     previous.started_at = 42
+    previous.marimo_version = "1.2.3-rc1+build.7"
     loop_thread = threading.get_ident()
     observed: list[tuple[KernelMessage, int]] = []
     third_delivered = asyncio.Event()
@@ -606,12 +608,14 @@ async def test_startup_message_handoff_preserves_order(
 
     monkeypatch.setattr(Session, "accept_kernel_message", accept)
 
-    await sessions._create(
+    created = await sessions._create(
         "file:///test.py",
         "/usr/bin/python",
         "/workspace",
         previous=previous,
     )
+    assert created.marimo_version == "1.2.3-rc1+build.7"
+    assert created.session_view is previous.session_view
     threading.Thread(target=receive_callback[0], args=(third,), daemon=True).start()
     await asyncio.wait_for(third_delivered.wait(), timeout=1)
 
@@ -620,6 +624,47 @@ async def test_startup_message_handoff_preserves_order(
         (second, loop_thread),
         (third, loop_thread),
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("previous_version", "kernel_version"),
+    [
+        ("1.2.3", "1.2.4"),
+        (None, None),
+        (None, "1.2.4"),
+        ("1.2.3", None),
+        ("unknown", "unknown"),
+    ],
+)
+async def test_session_creation_drops_view_without_known_matching_versions(
+    previous_version: str | None,
+    kernel_version: str | None,
+) -> None:
+    kernel = Mock()
+    kernel.marimo_version = kernel_version
+    kernels = Mock()
+    kernels.launch = AsyncMock(return_value=kernel)
+    sessions = Sessions(Mock(), kernels=kernels)
+    previous = Mock(spec=Session)
+    previous.app_file_manager = Mock()
+    previous.config_manager = Mock()
+    previous.config_manager.get_config.return_value = DEFAULT_CONFIG
+    previous.session_view = SessionView()
+    previous.started_at = 42
+    previous.marimo_version = previous_version
+
+    created = await sessions._create(
+        "file:///test.py",
+        "/usr/bin/python",
+        "/workspace",
+        previous=previous,
+    )
+
+    assert created.marimo_version == (
+        None if kernel_version == "unknown" else kernel_version
+    )
+    assert created.session_view is not previous.session_view
 
 
 @pytest.mark.asyncio

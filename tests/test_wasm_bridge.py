@@ -174,7 +174,10 @@ def test_bridge_launches_kernel_subprocess_over_marimo_ipc(
     """
     bridge_module = _load_bridge_module(monkeypatch)
     process = Mock()
-    process.stdout.readline.return_value = b"KERNEL_READY\n"
+    process.stdout.readline.side_effect = [
+        b'{"marimo_version":"1.2.3-rc1+build.7"}\n',
+        b"KERNEL_READY\n",
+    ]
     process.stderr = None
     popen = Mock(return_value=process)
     write_frame = Mock()
@@ -187,7 +190,8 @@ def test_bridge_launches_kernel_subprocess_over_marimo_ipc(
 
         popen.assert_called_once()
         command = popen.call_args.args[0]
-        assert command == [sys.executable, "-m", "marimo._ipc.launch_kernel"]
+        assert command[:2] == [sys.executable, "-c"]
+        assert "runpy.run_module" in command[2]
         assert popen.call_args.kwargs["cwd"] == str(tmp_path)
         assert popen.call_args.kwargs["stdin"] is bridge_module.subprocess.PIPE
         assert popen.call_args.kwargs["stdout"] is bridge_module.subprocess.PIPE
@@ -195,7 +199,9 @@ def test_bridge_launches_kernel_subprocess_over_marimo_ipc(
         sent = KernelLaunchArgs.decode_json(process.stdin.write.call_args.args[0])
         assert sent.connection_info is not None
         assert sent.parent_pid == os.getpid()
-        write_frame.assert_any_call(bridge_module.Ready())
+        write_frame.assert_any_call(
+            bridge_module.Ready(marimo_version="1.2.3-rc1+build.7")
+        )
     finally:
         bridge.close()
 

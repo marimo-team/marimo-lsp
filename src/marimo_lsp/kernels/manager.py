@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import typing
 from pathlib import Path
@@ -15,6 +16,7 @@ from marimo._session.managers import KernelManagerImpl
 from marimo._session.model import SessionMode
 from marimo._session.queue import ProcessLike
 
+from marimo_lsp.kernels import normalize_marimo_version
 from marimo_lsp.loggers import get_logger
 
 if typing.TYPE_CHECKING:
@@ -26,6 +28,13 @@ if typing.TYPE_CHECKING:
 
 
 logger = get_logger()
+
+_KERNEL_LAUNCH_CODE = """\
+import json, runpy, marimo
+print(json.dumps({"marimo_version": marimo.__version__}), flush=True)
+runpy.run_module("marimo._ipc.launch_kernel", run_name="__main__")
+"""
+_MAX_STARTUP_STDERR_CHARS = 16_000
 
 
 class InvalidWorkingDirectoryError(ValueError):
@@ -45,14 +54,61 @@ def _validate_working_directory(path: Path) -> None:
         raise InvalidWorkingDirectoryError(path, "is not a directory")
 
 
+def _with_stderr_tail(
+    process: subprocess.Popen[bytes],
+    message: str,
+) -> str:
+    """Include stderr from a kernel process that has stopped."""
+    if process.poll() is None or process.stderr is None:
+        return message
+    stderr = process.stderr.read().decode("utf-8", errors="replace").strip()
+    if not stderr:
+        return message
+    return f"{message} Stderr: {stderr[-_MAX_STARTUP_STDERR_CHARS:]}"
+
+
+def _parse_kernel_version(version_line: str) -> str | None:
+    try:
+        version_payload = json.loads(version_line)
+    except json.JSONDecodeError as error:
+        msg = f"Invalid kernel version response: {version_line!r}"
+        raise RuntimeError(msg) from error
+    marimo_version = (
+        version_payload.get("marimo_version")
+        if isinstance(version_payload, dict)
+        else None
+    )
+    if not isinstance(marimo_version, str):
+        msg = f"Invalid kernel version response: {version_line!r}"
+        raise TypeError(msg)
+    return normalize_marimo_version(marimo_version)
+
+
+def _require_kernel_ready(
+    process: subprocess.Popen[bytes],
+    ready_line: str,
+) -> None:
+    if ready_line == "KERNEL_READY":
+        return
+    exit_code = process.poll()
+    if exit_code is not None and exit_code != 0:
+        msg = f"Kernel failed to start (exit code {exit_code})"
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    msg = f"Invalid kernel response. Expected 'KERNEL_READY', got: {ready_line!r}."
+    logger.error(msg)
+    raise RuntimeError(msg)
+
+
 def launch_kernel(
     executable: str,
     args: ipc.KernelArgs,
     cwd: str | None = None,
 ) -> Process:
     """Launch kernel as a subprocess."""
-    cmd = [executable, "-m", "marimo._ipc.launch_kernel"]
-    logger.info(f"Launching kernel subprocess: {' '.join(cmd)}")
+    cmd = [executable, "-c", _KERNEL_LAUNCH_CODE]
+    logger.info(f"Launching kernel subprocess: {executable} -c <kernel bootstrap>")
     logger.debug(f"Connection info: {args.connection_info}")
     if cwd:
         logger.debug(f"Setting kernel working directory to: {cwd}")
@@ -64,39 +120,36 @@ def launch_kernel(
         stderr=subprocess.PIPE,
         cwd=cwd,
     )
+    owner = Process(inner=process)
+    try:
+        assert process.stdin, "Expect subprocess stdin pipe"
+        assert process.stdout, "Expect subprocess stdout pipe"
+        assert process.stderr, "Expect subprocess stderr pipe"
 
-    assert process.stdin, "Expect subprocess stdin pipe"
-    assert process.stdout, "Expect subprocess stdout pipe"
-    assert process.stderr, "Expect subprocess stderr pipe"
+        # Send over stdin
+        process.stdin.write(args.encode_json())
+        process.stdin.flush()
+        process.stdin.close()
 
-    # Send over stdin
-    process.stdin.write(args.encode_json())
-    process.stdin.flush()
-    process.stdin.close()
+        logger.debug("Waiting for marimo version from kernel subprocess")
 
-    logger.debug("Waiting for KERNEL_READY signal from kernel subprocess")
+        version_line = process.stdout.readline().decode("utf-8").strip()
+        marimo_version = _parse_kernel_version(version_line)
 
-    # Wait for "KERNEL_READY" message
-    ready_line = process.stdout.readline().decode("utf-8").strip()
-    if ready_line != "KERNEL_READY":
-        exit_code = process.poll()
-        stderr = process.stderr.read().decode("utf-8", errors="replace")
+        # Wait for "KERNEL_READY" message
+        ready_line = process.stdout.readline().decode("utf-8").strip()
+        _require_kernel_ready(process, ready_line)
+    except BaseException as error:
+        owner.terminate()
+        if isinstance(error, (RuntimeError, TypeError)):
+            message = _with_stderr_tail(process, str(error))
+            if message != str(error):
+                raise type(error)(message) from error
+        raise
 
-        if exit_code is not None and exit_code != 0:
-            msg = f"Kernel failed to start (exit code {exit_code}): {stderr}"
-            logger.error(msg)
-            raise RuntimeError(msg)
-
-        msg = (
-            f"Invalid kernel response. Expected 'KERNEL_READY', got: '{ready_line}'. "
-            f"Stderr: {stderr}"
-        )
-        logger.error(msg)
-        process.terminate()
-        raise RuntimeError(msg)
-
+    owner.marimo_version = marimo_version
     logger.info(f"Kernel subprocess started successfully with PID: {process.pid}")
-    return Process(inner=process)
+    return owner
 
 
 class Manager(KernelManagerImpl):
@@ -139,6 +192,7 @@ class Manager(KernelManagerImpl):
         self.executable = executable
         self.connection_info = connection_info
         self.working_directory = working_directory
+        self.marimo_version: str | None = None
 
     def start_kernel(self) -> None:
         """Start an instance of the marimo kernel using ZeroMQ IPC."""
@@ -157,6 +211,7 @@ class Manager(KernelManagerImpl):
             ),
             cwd=str(working_directory),
         )
+        self.marimo_version = self.kernel_task.marimo_version
 
 
 class Process(ProcessLike):
@@ -168,9 +223,14 @@ class Process(ProcessLike):
     # Timeout in seconds to wait for graceful termination before force killing
     TERMINATE_TIMEOUT = 2.0
 
-    def __init__(self, inner: subprocess.Popen[bytes]) -> None:
+    def __init__(
+        self,
+        inner: subprocess.Popen[bytes],
+        marimo_version: str | None = None,
+    ) -> None:
         """Initialize with a subprocess.Popen instance."""
         self.inner = inner
+        self.marimo_version = marimo_version
 
     @property
     def pid(self) -> int | None:
