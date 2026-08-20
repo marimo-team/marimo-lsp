@@ -32,6 +32,7 @@ it.effect(
         Option.exists(firstSession, (session) => session.document === first),
       ).toBe(true);
       if (Option.isNone(firstSession)) return;
+      expect(yield* sessions.register(first)).toEqual(firstSession);
 
       const firstEnded = yield* Deferred.make<void>();
       yield* Effect.addFinalizer(() =>
@@ -90,6 +91,7 @@ it.effect(
     yield* Effect.gen(function* () {
       const sessions = yield* NotebookDocumentSessions;
       expect(Option.isNone(sessions.current(id))).toBe(true);
+      expect(Option.isNone(yield* sessions.register(first))).toBe(true);
 
       yield* vscode.openNotebook(replacement);
       yield* Effect.yieldNow;

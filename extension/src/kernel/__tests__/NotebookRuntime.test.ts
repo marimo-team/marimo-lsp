@@ -1,8 +1,9 @@
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
+import * as NodeProcess from "node:process";
 
-import { assert, expect, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import {
   Deferred,
   Effect,
@@ -21,6 +22,10 @@ import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
+import {
+  MarimoNotebookCell,
+  NotebookCellId,
+} from "../../schemas/MarimoNotebookDocument.ts";
 import type { MarimoApiCall } from "../../types.ts";
 import {
   type NotebookController,
@@ -100,6 +105,390 @@ const makeTestLayer = Effect.fn(function* (
     ),
   };
 });
+
+describe.skipIf(NodeProcess.platform === "win32")(
+  "saved output hydration",
+  () => {
+    it.effect("presents a cold document's saved outputs", () =>
+      Effect.acquireUseRelease(
+        Effect.sync(() =>
+          NodeFs.mkdtempDisposableSync(
+            NodePath.join(NodeOs.tmpdir(), "marimo-runtime-hydration-"),
+          ),
+        ),
+        (temporary) =>
+          Effect.gen(function* () {
+            const notebookPath = NodePath.join(temporary.path, "notebook.py");
+            const cachePath = NodePath.join(temporary.path, "session.json");
+            NodeFs.writeFileSync(notebookPath, "# notebook");
+            NodeFs.writeFileSync(cachePath, "saved contents");
+            const executable = makeSavedSessionProbe(temporary.path, cachePath);
+            const editor = TestVsCode.makeNotebookEditor(notebookPath, {
+              data: {
+                cells: [
+                  {
+                    kind: 1,
+                    value: "1 + 1",
+                    languageId: "python",
+                    metadata: MarimoNotebookCell.createMetadata({
+                      marimoRuntime: { stableId: "cell-1" },
+                    }),
+                  },
+                ],
+              },
+            });
+            const decoded = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+            const presented = yield* Deferred.make<{
+              readonly notebook: string;
+              readonly notebookVersion: number;
+              readonly cellIds: ReadonlyArray<string>;
+            }>();
+            const { layer, vscode } = yield* makeTestLayer({
+              execute: (request) =>
+                Ref.update(decoded, (current) => [...current, request]).pipe(
+                  Effect.andThen(
+                    request.method === "decode-saved-session"
+                      ? Effect.succeed(
+                          savedSessionResult(editor.notebook.version),
+                        )
+                      : Effect.succeed(null),
+                  ),
+                ),
+            });
+            const controller: NotebookController = {
+              id: "marimo-test",
+              executable,
+              presentation: (notebook) => ({
+                present: () => Effect.void,
+                presentSavedOutputs: (outputs, notebookVersion, onPresented) =>
+                  Deferred.succeed(presented, {
+                    notebook: notebook.id,
+                    notebookVersion,
+                    cellIds: outputs.map((output) => output.cellId),
+                  }).pipe(
+                    Effect.andThen(
+                      Effect.forEach(
+                        outputs,
+                        (output) => onPresented(NotebookCellId(output.cellId)),
+                        { discard: true },
+                      ),
+                    ),
+                  ),
+              }),
+              resolveEnvironment: () =>
+                Effect.succeed(kernelEnvironment(executable)),
+            };
+
+            yield* Effect.gen(function* () {
+              const runtime = yield* NotebookRuntime;
+              // Model controller selection winning the race with the
+              // lifecycle subscriber after VS Code has opened the document.
+              yield* vscode.addNotebookDocument(editor.notebook);
+              yield* runtime.attachController(editor.notebook, controller);
+
+              expect(
+                yield* Deferred.await(presented).pipe(
+                  Effect.timeout("5 seconds"),
+                ),
+              ).toEqual({
+                notebook: editor.notebook.uri.toString(),
+                notebookVersion: editor.notebook.version,
+                cellIds: ["cell-1"],
+              });
+              expect(
+                (yield* Ref.get(decoded)).filter(
+                  (request) => request.method === "decode-saved-session",
+                ),
+              ).toEqual([
+                {
+                  method: "decode-saved-session",
+                  params: {
+                    notebookUri: editor.notebook.uri.toString(),
+                    inner: {
+                      contents: "saved contents",
+                      marimoVersion: "0.24.0",
+                      notebookVersion: editor.notebook.version,
+                    },
+                  },
+                },
+              ]);
+              yield* vscode.setActiveNotebookEditor(Option.some(editor));
+              const staleContexts = yield* eventually(
+                Ref.get(vscode.executions).pipe(
+                  Effect.map((executions) =>
+                    executions
+                      .filter(
+                        (execution) =>
+                          execution.command === "setContext" &&
+                          execution.args[0] === "marimo.notebook.hasStaleCells",
+                      )
+                      .map((execution) => execution.args[1]),
+                  ),
+                ),
+                (values) => values.at(-1) === true,
+              );
+              expect(staleContexts.at(-1)).toBe(true);
+            }).pipe(Effect.provide(layer));
+          }),
+        (temporary) => Effect.sync(() => temporary.remove()),
+      ),
+    );
+
+    for (const cancellation of [
+      "controller change",
+      "document close",
+    ] as const) {
+      it.effect(`cancels decoding on ${cancellation}`, () =>
+        Effect.acquireUseRelease(
+          Effect.sync(() =>
+            NodeFs.mkdtempDisposableSync(
+              NodePath.join(NodeOs.tmpdir(), "marimo-runtime-hydration-"),
+            ),
+          ),
+          (temporary) =>
+            Effect.gen(function* () {
+              const notebookPath = NodePath.join(temporary.path, "notebook.py");
+              const cachePath = NodePath.join(temporary.path, "session.json");
+              NodeFs.writeFileSync(notebookPath, "# notebook");
+              NodeFs.writeFileSync(cachePath, "saved contents");
+              const executable = makeSavedSessionProbe(
+                temporary.path,
+                cachePath,
+              );
+              const editor = TestVsCode.makeNotebookEditor(notebookPath);
+              const decodeStarted = yield* Deferred.make<void>();
+              const decodeInterrupted = yield* Deferred.make<void>();
+              const presentations = yield* Ref.make(0);
+              const { layer, vscode } = yield* makeTestLayer(
+                {
+                  execute: (request) =>
+                    request.method === "decode-saved-session"
+                      ? Deferred.succeed(decodeStarted, undefined).pipe(
+                          Effect.andThen(Effect.never),
+                          Effect.ensuring(
+                            Deferred.succeed(decodeInterrupted, undefined),
+                          ),
+                        )
+                      : Effect.succeed(null),
+                },
+                { initialDocuments: [editor.notebook] },
+              );
+              const first: NotebookController = {
+                id: "marimo-first",
+                executable,
+                presentation: () => ({
+                  present: () => Effect.void,
+                  presentSavedOutputs: (outputs, _version, onPresented) =>
+                    Effect.forEach(
+                      outputs,
+                      (output) =>
+                        onPresented(NotebookCellId(output.cellId)).pipe(
+                          Effect.andThen(
+                            Ref.update(presentations, (count) => count + 1),
+                          ),
+                        ),
+                      { discard: true },
+                    ),
+                }),
+                resolveEnvironment: () =>
+                  Effect.succeed(kernelEnvironment(executable)),
+              };
+              const second: NotebookController = {
+                id: "marimo-second",
+                presentation: () => ({
+                  present: () => Effect.void,
+                  presentSavedOutputs: () => Effect.die("unexpected hydration"),
+                }),
+                resolveEnvironment: () =>
+                  Effect.succeed(kernelEnvironment("/second-python")),
+              };
+
+              yield* Effect.gen(function* () {
+                const runtime = yield* NotebookRuntime;
+                yield* runtime.attachController(editor.notebook, first);
+                yield* Deferred.await(decodeStarted).pipe(
+                  Effect.timeout("5 seconds"),
+                );
+                yield* cancellation === "controller change"
+                  ? runtime.attachController(editor.notebook, second)
+                  : vscode.closeNotebook(editor.notebook);
+                yield* Deferred.await(decodeInterrupted).pipe(
+                  Effect.timeout("5 seconds"),
+                );
+                expect(yield* Ref.get(presentations)).toBe(0);
+              }).pipe(Effect.provide(layer));
+            }),
+          (temporary) => Effect.sync(() => temporary.remove()),
+        ),
+      );
+    }
+
+    it.effect(
+      "stops presenting saved cells when the selected controller changes",
+      () =>
+        Effect.acquireUseRelease(
+          Effect.sync(() =>
+            NodeFs.mkdtempDisposableSync(
+              NodePath.join(NodeOs.tmpdir(), "marimo-runtime-hydration-"),
+            ),
+          ),
+          (temporary) =>
+            Effect.gen(function* () {
+              const notebookPath = NodePath.join(temporary.path, "notebook.py");
+              const cachePath = NodePath.join(temporary.path, "session.json");
+              NodeFs.writeFileSync(notebookPath, "# notebook");
+              NodeFs.writeFileSync(cachePath, "saved contents");
+              const executable = makeSavedSessionProbe(
+                temporary.path,
+                cachePath,
+              );
+              const editor = TestVsCode.makeNotebookEditor(notebookPath, {
+                data: {
+                  cells: ["cell-1", "cell-2"].map((stableId) => ({
+                    kind: 1,
+                    value: stableId,
+                    languageId: "python",
+                    metadata: MarimoNotebookCell.createMetadata({
+                      marimoRuntime: { stableId },
+                    }),
+                  })),
+                },
+              });
+              const firstPresented = yield* Deferred.make<void>();
+              const presentationInterrupted = yield* Deferred.make<void>();
+              const presented = yield* Ref.make<ReadonlyArray<string>>([]);
+              const { layer, vscode } = yield* makeTestLayer(
+                {
+                  execute: (request) =>
+                    request.method === "decode-saved-session"
+                      ? Effect.succeed(
+                          savedSessionResult(editor.notebook.version, [
+                            "cell-1",
+                            "cell-2",
+                          ]),
+                        )
+                      : Effect.succeed(null),
+                },
+                { initialDocuments: [editor.notebook] },
+              );
+              const first: NotebookController = {
+                id: "marimo-first",
+                executable,
+                presentation: () => ({
+                  present: () => Effect.void,
+                  presentSavedOutputs: (outputs, _version, onPresented) => {
+                    const first = outputs[0];
+                    if (first === undefined) return Effect.void;
+                    return onPresented(NotebookCellId(first.cellId)).pipe(
+                      Effect.andThen(
+                        Ref.update(presented, (current) => [
+                          ...current,
+                          first.cellId,
+                        ]),
+                      ),
+                      Effect.andThen(
+                        Deferred.succeed(firstPresented, undefined),
+                      ),
+                      Effect.andThen(Effect.never),
+                      Effect.ensuring(
+                        Deferred.succeed(presentationInterrupted, undefined),
+                      ),
+                    );
+                  },
+                }),
+                resolveEnvironment: () =>
+                  Effect.succeed(kernelEnvironment(executable)),
+              };
+              const second: NotebookController = {
+                id: "marimo-second",
+                presentation: () => ({
+                  present: () => Effect.void,
+                  presentSavedOutputs: () => Effect.die("unexpected hydration"),
+                }),
+                resolveEnvironment: () =>
+                  Effect.succeed(kernelEnvironment("/second-python")),
+              };
+
+              yield* Effect.gen(function* () {
+                const runtime = yield* NotebookRuntime;
+                yield* runtime.attachController(editor.notebook, first);
+                yield* Deferred.await(firstPresented).pipe(
+                  Effect.timeout("5 seconds"),
+                );
+                yield* runtime.attachController(editor.notebook, second);
+                yield* Deferred.await(presentationInterrupted).pipe(
+                  Effect.timeout("5 seconds"),
+                );
+                expect(yield* Ref.get(presented)).toEqual(["cell-1"]);
+                yield* vscode.setActiveNotebookEditor(Option.some(editor));
+                const staleContexts = yield* eventually(
+                  Ref.get(vscode.executions).pipe(
+                    Effect.map((executions) =>
+                      executions
+                        .filter(
+                          (execution) =>
+                            execution.command === "setContext" &&
+                            execution.args[0] ===
+                              "marimo.notebook.hasStaleCells",
+                        )
+                        .map((execution) => execution.args[1]),
+                    ),
+                  ),
+                  (values) => values.at(-1) === true,
+                );
+                expect(staleContexts.at(-1)).toBe(true);
+              }).pipe(Effect.provide(layer));
+            }),
+          (temporary) => Effect.sync(() => temporary.remove()),
+        ),
+    );
+
+    it.effect("does not probe after a live kernel exists", () =>
+      Effect.gen(function* () {
+        const editor = TestVsCode.makeNotebookEditor(
+          NodePath.join(process.cwd(), "notebook.py"),
+        );
+        const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+        const { layer } = yield* makeTestLayer(
+          {
+            execute: (request) =>
+              Ref.update(requests, (current) => [...current, request]).pipe(
+                Effect.as(null),
+              ),
+          },
+          { initialDocuments: [editor.notebook] },
+        );
+        const controller: NotebookController = {
+          id: "marimo-live",
+          executable: "/must-not-be-probed",
+          presentation: () => ({
+            present: () => Effect.void,
+            presentSavedOutputs: () => Effect.die("unexpected hydration"),
+          }),
+          resolveEnvironment: () =>
+            Effect.succeed(kernelEnvironment("/must-not-be-probed")),
+        };
+
+        yield* Effect.gen(function* () {
+          const runtime = yield* NotebookRuntime;
+          const document = yield* runtime.forDocument(editor.notebook);
+          yield* document.executeCells(
+            { cellIds: [], codes: [] },
+            kernelEnvironment("/live-python"),
+          );
+          yield* runtime.attachController(editor.notebook, controller);
+          yield* Effect.yieldNow;
+
+          expect(
+            (yield* Ref.get(requests)).some(
+              (request) => request.method === "decode-saved-session",
+            ),
+          ).toBe(false);
+        }).pipe(Effect.provide(layer));
+      }),
+    );
+  },
+);
 
 it.effect(
   "returns a stable handle that binds the notebook ID",
@@ -517,20 +906,28 @@ it.effect(
 it.effect(
   "owns the selected controller",
   Effect.fn(function* () {
-    const { layer } = yield* makeTestLayer();
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    const id = notebookId(editor.notebook.uri.toString());
+    const { layer } = yield* makeTestLayer(
+      {},
+      { initialDocuments: [editor.notebook] },
+    );
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
-      drive: () => () => Effect.void,
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () => Effect.void,
+      }),
       resolveEnvironment: () =>
         Effect.succeed(kernelEnvironment("/usr/bin/python")),
     };
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime;
-      const handle = yield* notebooks.forNotebook(notebook);
+      const handle = yield* notebooks.forNotebook(id);
 
       expect(Option.isNone(yield* handle.getController)).toBe(true);
-      yield* notebooks.attachController(notebook, controller);
+      yield* notebooks.attachController(editor.notebook, controller);
 
       expect(yield* handle.getController).toEqual(Option.some(controller));
     }).pipe(Effect.provide(layer));
@@ -544,7 +941,10 @@ it.effect(
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
-      drive: () => () => Effect.void,
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () => Effect.void,
+      }),
       resolveEnvironment: () =>
         Effect.succeed(kernelEnvironment("/usr/bin/python")),
     };
@@ -552,10 +952,7 @@ it.effect(
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
-      yield* notebooks.attachController(
-        notebookId(editor.notebook.uri.toString()),
-        controller,
-      );
+      yield* notebooks.attachController(editor.notebook, controller);
 
       const contexts = (yield* Ref.get(vscode.executions)).filter(
         (execution) =>
@@ -590,6 +987,43 @@ const eventually = <A>(
     Effect.retry(Schedule.recurs(100)),
     Effect.catch(() => get),
   );
+
+function makeSavedSessionProbe(directory: string, cachePath: string) {
+  const executable = NodePath.join(directory, "python-probe");
+  const result = JSON.stringify({
+    marimoVersion: "0.24.0",
+    cachePath,
+  });
+  NodeFs.writeFileSync(
+    executable,
+    ["#!/bin/bash", `printf '%s' ${shellEscape(result)} > "$4"`].join("\n"),
+    { mode: 0o755 },
+  );
+  return executable;
+}
+
+function savedSessionResult(
+  notebookVersion: number,
+  cellIds: ReadonlyArray<string> = ["cell-1"],
+) {
+  return {
+    outputs: cellIds.map((cellId) => ({
+      cellId,
+      output: {
+        channel: "output",
+        mimetype: "text/plain",
+        data: "42",
+      },
+      console: [],
+    })),
+    marimoVersion: "0.24.0",
+    notebookVersion,
+  };
+}
+
+function shellEscape(value: string) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
 
 it.effect(
   "reports no kernel for an active notebook with no controller",
@@ -670,7 +1104,10 @@ it.effect(
     const id = notebookId(editor.notebook.uri.toString());
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
-      drive: () => () => Effect.void,
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () => Effect.void,
+      }),
       resolveEnvironment: () =>
         Effect.succeed(kernelEnvironment("/usr/bin/python")),
     };
@@ -680,7 +1117,7 @@ it.effect(
       yield* vscode.openNotebook(editor.notebook);
       yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
-      yield* notebooks.attachController(id, controller);
+      yield* notebooks.attachController(editor.notebook, controller);
       expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
 
       yield* Effect.yieldNow;

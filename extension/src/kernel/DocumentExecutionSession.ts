@@ -95,6 +95,7 @@ interface CellExecutionState {
   readonly run: CellRunState;
   readonly editorSource: Option.Option<string>;
   readonly pendingSources: ReadonlyArray<SubmittedSource>;
+  readonly savedOutputStale: boolean;
 }
 
 interface DocumentExecutionState {
@@ -167,6 +168,7 @@ const makeCellState = (
   run: makeCellRunState(),
   editorSource,
   pendingSources: [],
+  savedOutputStale: false,
 });
 
 const getCell = (
@@ -328,7 +330,11 @@ const applyKernelOperation = (
   wire: CellOperationNotification,
 ): OperationTransition => {
   const cellId = extractCellIdFromCellMessage(wire);
-  const previousCell = getCell(state, cellId);
+  // Any admitted kernel state supersedes display-only output from disk.
+  const previousCell = {
+    ...getCell(state, cellId),
+    savedOutputStale: false,
+  };
   const nextRuntime = transitionCell(previousCell.run.state, wire);
   const parsed = parseOp(nextRuntime, wire);
 
@@ -436,13 +442,16 @@ const isCellStale = (
   state: DocumentExecutionState,
   cellId: NotebookCellId,
 ): boolean =>
-  Option.exists(HashMap.get(state.cells, cellId), (cell) =>
-    AcceptedSource.$match(cell.run.acceptedSource, {
-      Unknown: () => false,
-      Invalidated: () => true,
-      Accepted: ({ source }) =>
-        Option.exists(cell.editorSource, (current) => current !== source),
-    }),
+  Option.exists(
+    HashMap.get(state.cells, cellId),
+    (cell) =>
+      cell.savedOutputStale ||
+      AcceptedSource.$match(cell.run.acceptedSource, {
+        Unknown: () => false,
+        Invalidated: () => true,
+        Accepted: ({ source }) =>
+          Option.exists(cell.editorSource, (current) => current !== source),
+      }),
   );
 
 /** Execution state and presentation for one exact notebook document session. */
@@ -661,6 +670,25 @@ export class DocumentExecutionSession {
       Effect.gen({ self: this }, function* () {
         if (this.closed) return;
         yield* this.release(removeExecutionCell(this.state, cellId));
+      }),
+    );
+
+  readonly markSavedOutputsStale = (cellIds: ReadonlyArray<NotebookCellId>) =>
+    this.ordering.withPermit(
+      Effect.gen({ self: this }, function* () {
+        if (this.closed) return;
+        const marked: NotebookCellId[] = [];
+        for (const cellId of cellIds) {
+          if (HashSet.has(this.state.removedCells, cellId)) continue;
+          const cell = HashMap.get(this.state.cells, cellId);
+          if (Option.isNone(cell)) continue;
+          this.state = setCell(this.state, cellId, {
+            ...cell.value,
+            savedOutputStale: true,
+          });
+          marked.push(cellId);
+        }
+        yield* this.publishStale(marked);
       }),
     );
 

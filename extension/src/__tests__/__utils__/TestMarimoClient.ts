@@ -144,8 +144,9 @@ export function makeTestNotebookRuntime(options: Options = {}) {
         };
 
         const runtime: Context.Service.Shape<typeof NotebookRuntime> = {
-          attachController: (notebookId, controller) =>
+          attachController: (document, controller) =>
             Effect.gen(function* () {
+              const notebookId = MarimoNotebookDocument.from(document).id;
               controllers.set(notebookId, controller);
               yield* PubSub.publish(selections, {
                 notebookUri: notebookId,

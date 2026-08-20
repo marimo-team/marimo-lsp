@@ -58,6 +58,14 @@ function makeNotebookWithCells(
 
 const sessions = new Map<NotebookId, NotebookDocumentSession>();
 const documentSessions = Layer.succeed(NotebookDocumentSessions, {
+  register: (document) =>
+    Effect.succeed(
+      Option.fromNullishOr(
+        Array.from(sessions.values()).find(
+          (session) => session.document === document,
+        ),
+      ),
+    ),
   current: (id: NotebookId) => Option.fromNullishOr(sessions.get(id)),
   forDocument: (document) =>
     Option.fromNullishOr(
