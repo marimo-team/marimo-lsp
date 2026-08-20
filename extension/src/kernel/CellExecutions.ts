@@ -57,6 +57,10 @@ export interface NotebookExecutions {
   ) => Effect.Effect<void, RunCorrelationError>;
   readonly interrupt: Effect.Effect<void>;
   readonly invalidate: Effect.Effect<void>;
+  /** Mark display-only output restored from disk as stale. */
+  readonly markSavedOutputsStale: (
+    cellIds: ReadonlyArray<NotebookCellId>,
+  ) => Effect.Effect<void>;
   readonly remove: (cellId: NotebookCellId) => Effect.Effect<void>;
   readonly submit: <A, E, R>(
     cells: ReadonlyArray<CellSource>,
@@ -212,6 +216,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           apply: session.apply,
           interrupt: session.interrupt,
           invalidate: session.invalidate,
+          markSavedOutputsStale: session.markSavedOutputsStale,
           remove: session.remove,
           submit: session.submit,
           staleCells: {

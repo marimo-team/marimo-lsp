@@ -49,6 +49,7 @@ interface SessionEntry {
 type InstallResult = Data.TaggedEnum<{
   Existing: { readonly current: SessionEntry };
   Installed: { readonly displaced: SessionEntry | undefined };
+  Rejected: {};
 }>;
 const InstallResult = Data.taggedEnum<InstallResult>();
 
@@ -69,57 +70,76 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
         yield* Scope.close(entry.scope, Exit.void);
       });
 
-      const markOpen = Effect.fn("NotebookDocumentSessions.markOpen")(
+      const register = Effect.fn("NotebookDocumentSessions.register")(
         function* (document: vscode.NotebookDocument) {
           // The lifecycle replay can deliver an opened event for a document
           // that was since closed or replaced at the same URI; a closed
           // document never starts a session.
-          if (document.isClosed) return undefined;
+          if (document.isClosed) return Option.none<NotebookDocumentSession>();
           const notebook = MarimoNotebookDocument.tryFrom(document);
-          if (notebook._tag === "None") return undefined;
-
-          const scope = yield* Scope.fork(serviceScope, "parallel");
-          const session: NotebookDocumentSession = {
-            id: makeNotebookDocumentSessionId(),
-            notebookId: notebook.value.id,
-            document,
-            scope,
-          };
-          const candidate: SessionEntry = { session, scope };
-          const result = yield* SubscriptionRef.modify(
-            sessions,
-            (
-              current,
-            ): readonly [
-              InstallResult,
-              HashMap.HashMap<NotebookId, SessionEntry>,
-            ] => {
-              const existing = HashMap.get(current, notebook.value.id);
-              if (
-                Option.isSome(existing) &&
-                existing.value.session.document === document
-              ) {
-                return [
-                  InstallResult.Existing({ current: existing.value }),
-                  current,
-                ];
-              }
-              return [
-                InstallResult.Installed({
-                  displaced: Option.getOrUndefined(existing),
-                }),
-                HashMap.set(current, notebook.value.id, candidate),
-              ];
-            },
-          );
-
-          if (InstallResult.$is("Existing")(result)) {
-            yield* Scope.close(scope, Exit.void);
-            return result.current.session;
+          if (notebook._tag === "None") {
+            return Option.none<NotebookDocumentSession>();
           }
 
-          if (result.displaced !== undefined) yield* end(result.displaced);
-          return session;
+          return yield* Effect.uninterruptible(
+            Effect.gen(function* () {
+              const scope = yield* Scope.fork(serviceScope, "parallel");
+              const session: NotebookDocumentSession = {
+                id: makeNotebookDocumentSessionId(),
+                notebookId: notebook.value.id,
+                document,
+                scope,
+              };
+              const candidate: SessionEntry = { session, scope };
+              const result = yield* SubscriptionRef.modify(
+                sessions,
+                (
+                  current,
+                ): readonly [
+                  InstallResult,
+                  HashMap.HashMap<NotebookId, SessionEntry>,
+                ] => {
+                  // The document can close while its candidate scope is being
+                  // allocated. Reject it atomically with the registry update
+                  // so a close already observed by the lifecycle consumer
+                  // cannot be followed by a stale install.
+                  if (document.isClosed) {
+                    return [InstallResult.Rejected(), current];
+                  }
+                  const existing = HashMap.get(current, notebook.value.id);
+                  if (
+                    Option.isSome(existing) &&
+                    existing.value.session.document === document
+                  ) {
+                    return [
+                      InstallResult.Existing({ current: existing.value }),
+                      current,
+                    ];
+                  }
+                  return [
+                    InstallResult.Installed({
+                      displaced: Option.getOrUndefined(existing),
+                    }),
+                    HashMap.set(current, notebook.value.id, candidate),
+                  ];
+                },
+              );
+
+              if (InstallResult.$is("Rejected")(result)) {
+                yield* Scope.close(scope, Exit.void);
+                return Option.none<NotebookDocumentSession>();
+              }
+              if (InstallResult.$is("Existing")(result)) {
+                yield* Scope.close(scope, Exit.void);
+                return Option.some(result.current.session);
+              }
+
+              if (result.displaced !== undefined) {
+                yield* end(result.displaced);
+              }
+              return Option.some(session);
+            }),
+          );
         },
       );
 
@@ -144,12 +164,12 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
 
       const lifecycle = yield* code.workspace.subscribeNotebookLifecycle;
       const openDocuments = yield* code.workspace.getNotebookDocuments;
-      yield* Effect.forEach(openDocuments, markOpen, { discard: true });
+      yield* Effect.forEach(openDocuments, register, { discard: true });
       yield* Effect.forkScoped(
         lifecycle.pipe(
           Stream.runForEach((event) =>
             event.type === "opened"
-              ? markOpen(event.document)
+              ? register(event.document)
               : markClosed(event.document),
           ),
         ),
@@ -198,6 +218,8 @@ export class NotebookDocumentSessions extends Context.Service<NotebookDocumentSe
       );
 
       return {
+        /** Register an open document, returning its idempotent session. */
+        register,
         current,
         forDocument,
         /** The current document session for VS Code's active notebook editor. */

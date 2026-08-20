@@ -1,4 +1,5 @@
-import { Cause, Context, Data, Effect, Layer, Option } from "effect";
+import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
+import { Cause, Context, Data, Effect, Exit, Layer, Option } from "effect";
 import type * as vscode from "vscode";
 
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
@@ -7,13 +8,16 @@ import {
   findNotebookCell,
   type MarimoNotebookCell,
   MarimoNotebookDocument,
-  type NotebookCellId,
+  NotebookCellId,
 } from "../schemas/MarimoNotebookDocument.ts";
+import type { SavedCellOutput } from "../schemas/Models.gen.ts";
 import type { CellRuntimeState } from "../types.ts";
-import type { CellRef, Drive } from "./CellExecutions.ts";
 import { CellOutputProjection } from "./CellOutputProjection.ts";
 import { CellCommand, type RunId } from "./CellRunReducer.ts";
+import type { CellRef } from "./DocumentExecutionSession.ts";
+import type { NotebookCellPresentation } from "./NotebookCellPresentation.ts";
 import {
+  buildCellOutputs,
   buildKeyedCellOutputs,
   cellTracebackFrame,
   diagnosticMessage,
@@ -25,7 +29,7 @@ interface CellController {
   ) => vscode.NotebookCellExecution;
 }
 
-export interface VsCodeDriveBinding {
+export interface VsCodePresentationBinding {
   readonly notebook: MarimoNotebookDocument;
   readonly controller: CellController;
 }
@@ -44,9 +48,9 @@ interface PresentedRun {
 const resourceKey = (cell: CellRef, runId: RunId): string =>
   JSON.stringify([cell.notebookId, cell.cellId, runId]);
 
-/** Owns VS Code's live execution handles behind the {@link Drive} seam. */
-export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
-  "VsCodeCellDrive",
+/** Presents notebook cell state through VS Code's notebook execution API. */
+export class VsCodeCellPresentation extends Context.Service<VsCodeCellPresentation>()(
+  "VsCodeCellPresentation",
   {
     make: Effect.gen(function* () {
       const code = yield* VsCode;
@@ -68,7 +72,6 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
         }),
       );
 
-      /** Applies a function while a cell run still has live resources. */
       const withResource = (
         cell: CellRef,
         runId: RunId,
@@ -82,20 +85,21 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
           : apply(resource);
       };
 
-      /** Resolves a cell within the notebook bound to this drive. */
-      const resolveCell = (cell: CellRef, binding: VsCodeDriveBinding) =>
+      const resolveCell = (cell: CellRef, binding: VsCodePresentationBinding) =>
         Effect.gen(function* () {
           if (binding.notebook.id !== cell.notebookId) {
             return yield* new InvalidCellError({
               cellId: cell.cellId,
-              cause: new Error("Drive is bound to another notebook"),
+              cause: new Error("Presentation is bound to another notebook"),
             });
           }
           return yield* findNotebookCell(binding.notebook, cell.cellId);
         });
 
-      /** Creates a VS Code execution for a resolved cell. */
-      const createExecution = (cell: CellRef, binding: VsCodeDriveBinding) =>
+      const createExecution = (
+        cell: CellRef,
+        binding: VsCodePresentationBinding,
+      ) =>
         Effect.gen(function* () {
           const notebookCell = yield* resolveCell(cell, binding);
           return yield* Effect.try({
@@ -106,7 +110,6 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
           });
         });
 
-      /** Projects state onto a tracked run's live execution. */
       const renderOutputs = (
         cell: CellRef,
         runId: RunId,
@@ -131,10 +134,9 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
           );
         });
 
-      /** Reconciles the runtime diagnostic for a cell. */
       const setDiagnostic = (
         cell: CellRef,
-        binding: VsCodeDriveBinding,
+        binding: VsCodePresentationBinding,
         state: Option.Option<CellRuntimeState>,
       ) =>
         resolveCell(cell, binding).pipe(
@@ -168,10 +170,9 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
           ),
         );
 
-      /** Presents an untracked error in one self-contained execution. */
       const presentUntrackedError = (
         cell: CellRef,
-        binding: VsCodeDriveBinding,
+        binding: VsCodePresentationBinding,
         state: CellRuntimeState,
         applyDiagnostic: boolean,
       ) =>
@@ -204,10 +205,9 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
           );
         });
 
-      /** Interprets one reducer command against a VS Code binding. */
       const apply = (
         cell: CellRef,
-        binding: VsCodeDriveBinding,
+        binding: VsCodePresentationBinding,
         command: CellCommand,
       ) =>
         CellCommand.$match(command, {
@@ -255,11 +255,146 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
           ),
         );
 
+      const presentSavedOutputs = (
+        binding: VsCodePresentationBinding,
+        outputs: ReadonlyArray<SavedCellOutput>,
+        notebookVersion: number,
+        onPresented: (cellId: NotebookCellId) => Effect.Effect<void>,
+      ) =>
+        Effect.flatten(
+          Effect.sync(() => {
+            const document = binding.notebook.rawNotebookDocument;
+            if (document.isClosed || document.version !== notebookVersion) {
+              return Effect.void;
+            }
+
+            return Effect.forEach(
+              outputs,
+              (saved) => {
+                const cellId = NotebookCellId(saved.cellId);
+                return Effect.gen(function* () {
+                  // VS Code advances NotebookDocument.version for the transient
+                  // output and execution-summary changes below. Provenance was
+                  // checked before hydration; later source edits may retain this
+                  // display because every restored output is explicitly stale.
+                  if (document.isClosed) return;
+
+                  const cell = yield* resolveCell(
+                    { notebookId: binding.notebook.id, cellId },
+                    binding,
+                  );
+                  if (cell.outputs.length > 0) return;
+
+                  const state: CellRuntimeState = {
+                    ...createCellRuntimeState(),
+                    output: saved.output,
+                    consoleOutputs: [...saved.console],
+                    // marimo's cold edit-mode startup marks restored, unrun
+                    // cells stale after replaying their saved display state.
+                    staleInputs: true,
+                  };
+                  yield* Effect.acquireUseRelease(
+                    Effect.try({
+                      try: () =>
+                        binding.controller.createNotebookCellExecution(cell),
+                      catch: (cause) => new InvalidCellError({ cellId, cause }),
+                    }),
+                    (execution) =>
+                      Effect.uninterruptibleMask((restore) =>
+                        Effect.gen(function* () {
+                          yield* Effect.try({
+                            try: () => execution.start(),
+                            catch: (cause) =>
+                              new InvalidCellError({ cellId, cause }),
+                          });
+                          const replacement = yield* Effect.try({
+                            try: () =>
+                              execution.replaceOutput(
+                                buildCellOutputs(cellId, state, code, document),
+                              ),
+                            catch: (cause) =>
+                              new InvalidCellError({ cellId, cause }),
+                          });
+                          const exit = yield* restore(
+                            Effect.tryPromise(() => replacement),
+                          ).pipe(Effect.exit);
+
+                          // replaceOutput is a non-cancellable host operation.
+                          // Once submitted, cancellation cannot prove that VS
+                          // Code did not apply it, so commit its stale marker
+                          // before propagating the interrupt.
+                          if (
+                            Exit.isSuccess(exit) ||
+                            (Exit.isFailure(exit) &&
+                              Cause.hasInterrupts(exit.cause))
+                          ) {
+                            yield* onPresented(cellId);
+                          }
+                          return yield* exit;
+                        }),
+                      ),
+                    (execution) =>
+                      Effect.sync(() => {
+                        try {
+                          execution.end(undefined);
+                        } catch {
+                          // The controller or document changed during hydration.
+                        }
+                      }),
+                  );
+                }).pipe(
+                  Effect.catchTag("NotebookCellNotFoundError", () =>
+                    Effect.logDebug(
+                      "Saved output cell is no longer present",
+                    ).pipe(
+                      Effect.annotateLogs({
+                        notebookId: binding.notebook.id,
+                        cellId,
+                      }),
+                    ),
+                  ),
+                  Effect.catch((error) =>
+                    Effect.logDebug("Failed to restore saved cell output").pipe(
+                      Effect.annotateLogs({
+                        cause: Cause.fail(error),
+                        notebookId: binding.notebook.id,
+                        cellId,
+                      }),
+                    ),
+                  ),
+                  Effect.catchCause((cause) =>
+                    Cause.hasInterrupts(cause)
+                      ? Effect.failCause(cause)
+                      : Effect.logDebug(
+                          "Failed to restore saved cell output",
+                        ).pipe(
+                          Effect.annotateLogs({
+                            cause,
+                            notebookId: binding.notebook.id,
+                            cellId,
+                          }),
+                        ),
+                  ),
+                );
+              },
+              { concurrency: 1, discard: true },
+            );
+          }),
+        );
+
       return {
-        bind:
-          (binding: VsCodeDriveBinding): Drive =>
-          (cell, command) =>
-            apply(cell, binding, command),
+        bind(binding: VsCodePresentationBinding): NotebookCellPresentation {
+          return {
+            present: (cell, command) => apply(cell, binding, command),
+            presentSavedOutputs: (outputs, notebookVersion, onPresented) =>
+              presentSavedOutputs(
+                binding,
+                outputs,
+                notebookVersion,
+                onPresented,
+              ),
+          };
+        },
       };
     }),
   },

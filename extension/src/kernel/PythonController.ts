@@ -17,14 +17,14 @@ import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import type { Drive } from "./CellExecutions.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import type { KernelEnvironment } from "./KernelEnvironment.ts";
 import {
   KernelEnvironmentResolutionError,
+  type NotebookController,
   NotebookRuntime,
 } from "./NotebookRuntime.ts";
-import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
+import { VsCodeCellPresentation } from "./VsCodeCellPresentation.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
 export type NotebookControllerId = Brand.Branded<string, "ControllerId">;
@@ -37,7 +37,7 @@ export const createPythonController = Effect.fn("createPythonController")(
   }) {
     const uv = yield* Uv;
     const code = yield* VsCode;
-    const cellDrive = yield* VsCodeCellDrive;
+    const cellPresentation = yield* VsCodeCellPresentation;
     const config = yield* Config;
     const notebooks = yield* NotebookRuntime;
     const validator = yield* EnvironmentValidator;
@@ -262,7 +262,7 @@ export const createPythonController = Effect.fn("createPythonController")(
         ),
       selectedNotebookChanges,
       (notebook) =>
-        cellDrive.bind({
+        cellPresentation.bind({
           notebook,
           controller: {
             createNotebookCellExecution: (cell) =>
@@ -276,7 +276,7 @@ export const createPythonController = Effect.fn("createPythonController")(
 export class PythonController {
   readonly _tag = "PythonController";
   #inner: Omit<vscode.NotebookController, "dispose">;
-  readonly drive: (notebook: MarimoNotebookDocument) => Drive;
+  readonly presentation: NotebookController["presentation"];
   /** The python interpreter this controller's environment runs on. */
   executable: string;
   readonly resolveEnvironment: (
@@ -301,13 +301,13 @@ export class PythonController {
       notebook: vscode.NotebookDocument;
       selected: boolean;
     }>,
-    drive: (notebook: MarimoNotebookDocument) => Drive,
+    presentation: NotebookController["presentation"],
   ) {
     this.#inner = inner;
     this.executable = executable;
     this.resolveEnvironment = resolveEnvironment;
     this.selectedNotebookChanges = selectedNotebookChanges;
-    this.drive = drive;
+    this.presentation = presentation;
   }
   static getId(env: py.Environment) {
     return NotebookControllerId(`marimo-${env.path}`);

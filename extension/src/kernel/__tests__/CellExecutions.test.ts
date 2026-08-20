@@ -1139,6 +1139,70 @@ describe("NotebookExecutions", () => {
   });
 
   it.effect(
+    "marks restored output stale without inventing a live run",
+    Effect.fn(function* () {
+      const cellData = {
+        kind: 1,
+        value: "x = 1",
+        languageId: "python",
+        metadata: MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-1" },
+        }),
+      };
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: { cells: [cellData] },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const commands: CellCommand[] = [];
+        const drive: Drive = (_cell, command) =>
+          Effect.sync(() => commands.push(command));
+        const { notebook } = yield* openNotebook(
+          executions,
+          editor.notebook,
+          Effect.succeed(Option.some(drive)),
+        );
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+
+        yield* notebook.markSavedOutputsStale([id]);
+
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+        expect(commands).toEqual([]);
+
+        cellData.value = "x = 2";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "run-1",
+        });
+
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
     "keeps presentation commands on the drive that opened their run",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
@@ -1519,8 +1583,10 @@ describe("NotebookExecutions", () => {
         });
         yield* notebook.remove(id);
         yield* removed.await;
+        yield* notebook.markSavedOutputsStale([id]);
 
         expect(events).toEqual(["OpenRun:run-1", "CloseRun:run-1"]);
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
         yield* notebook.apply({
           op: "cell-op",
           cell_id: id,

@@ -25,13 +25,13 @@ import {
   NotebookRuntime,
   UnsavedNotebookError,
 } from "./NotebookRuntime.ts";
-import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
+import { VsCodeCellPresentation } from "./VsCodeCellPresentation.ts";
 
 export const createSandboxController = Effect.fn("createSandboxController")(
   function* () {
     const uv = yield* Uv;
     const code = yield* VsCode;
-    const cellDrive = yield* VsCodeCellDrive;
+    const cellPresentation = yield* VsCodeCellPresentation;
     const marimo = yield* MarimoClient;
     const notebooks = yield* NotebookRuntime;
     const python = yield* PythonExtension;
@@ -239,8 +239,8 @@ export const createSandboxController = Effect.fn("createSandboxController")(
                 }),
           ),
         ),
-      drive: (notebook: MarimoNotebookDocument) =>
-        cellDrive.bind({
+      presentation: (notebook: MarimoNotebookDocument) =>
+        cellPresentation.bind({
           notebook,
           controller: {
             createNotebookCellExecution: (cell) =>

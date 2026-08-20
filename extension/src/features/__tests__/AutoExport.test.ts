@@ -29,7 +29,10 @@ import {
 
 const controller: NotebookController = {
   id: "test-controller",
-  drive: () => () => Effect.void,
+  presentation: () => ({
+    present: () => Effect.void,
+    presentSavedOutputs: () => Effect.void,
+  }),
   resolveEnvironment: () =>
     Effect.succeed({
       executable: "/usr/bin/python",
