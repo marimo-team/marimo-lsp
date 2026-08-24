@@ -47,7 +47,10 @@ function makeController(options: {
 }): NotebookController {
   return {
     ...options,
-    drive: () => () => Effect.void,
+    presentation: () => ({
+      present: () => Effect.void,
+      presentSavedOutputs: () => Effect.void,
+    }),
     resolveExecutable: () =>
       Effect.succeed(options.executable ?? "/unused/python"),
   };

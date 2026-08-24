@@ -36,7 +36,7 @@ import {
   PythonController,
 } from "./PythonController.ts";
 import { createSandboxController } from "./SandboxController.ts";
-import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
+import { VsCodeCellPresentation } from "./VsCodeCellPresentation.ts";
 
 export interface NotebookController extends RuntimeNotebookController {
   readonly selectedNotebookChanges: Stream.Stream<{
@@ -157,7 +157,7 @@ export const NotebookControllersLive = Layer.effectDiscard(
     );
   }),
 ).pipe(
-  Layer.provide(VsCodeCellDrive.layer),
+  Layer.provide(VsCodeCellPresentation.layer),
   Layer.provide(Uv.layer),
   Layer.provide(OutputChannel.layer),
   Layer.provide(Config.layer),
@@ -246,7 +246,7 @@ const trackControllerSelections = (
           return;
         }
         const notebook = MarimoNotebookDocument.from(e.notebook);
-        yield* notebooks.attachController(notebook.id, controller);
+        yield* notebooks.attachController(e.notebook, controller);
         yield* Effect.logTrace("Updated controller for notebook").pipe(
           Effect.annotateLogs({
             controllerId: controller.id,

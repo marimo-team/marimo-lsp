@@ -5,12 +5,14 @@ const NodeAssert = require("node:assert");
 const NodeChildProcess = require("node:child_process");
 const NodeFs = require("node:fs/promises");
 const NodeUtil = require("node:util");
+const tinyspy = require("tinyspy");
 const vscode = require("vscode");
 
 const {
   createTestContext,
   ensureSharedVenv,
   selectKernel,
+  cellOutputText,
 } = require("./helpers.cjs");
 
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
@@ -280,5 +282,49 @@ suite("saved session output", function () {
     NodeAssert.strictEqual(after[0].output, "cli first");
     NodeAssert.notStrictEqual(after[1].output, "cli second");
     NodeAssert.match(after[1].output, /42/);
+  });
+
+  test("presents marimo output before starting a kernel", async function () {
+    await using ctx = createTestContext();
+    const uri = await ctx.writeTempFile(SOURCE);
+    await writeMarimoSavedSession(uri);
+    const notebook = await ctx.openNotebook(uri);
+    await selectKernel(notebook);
+
+    await ctx.waitUntil(() => {
+      NodeAssert.match(cellOutputText(notebook.cellAt(0)), /cli first/);
+      NodeAssert.match(cellOutputText(notebook.cellAt(1)), /cli second/);
+    });
+    NodeAssert.strictEqual(
+      notebook.cellAt(0).executionSummary?.success,
+      undefined,
+    );
+    NodeAssert.strictEqual(
+      notebook.cellAt(1).executionSummary?.success,
+      undefined,
+    );
+
+    const information = tinyspy.spyOn(
+      vscode.window,
+      "showInformationMessage",
+      async () => undefined,
+    );
+    try {
+      // oxlint-disable-next-line marimo/no-marimo-command-id-literals -- exercises the external VS Code seam
+      await vscode.commands.executeCommand("marimo.restartKernel");
+      NodeAssert.strictEqual(
+        information.calls.at(-1)?.[0],
+        "This notebook does not have a live kernel",
+      );
+    } finally {
+      information.restore();
+    }
+
+    await runCell(notebook, 0, ctx);
+    await ctx.waitUntil(() => {
+      const output = cellOutputText(notebook.cellAt(0));
+      NodeAssert.match(output, /live output/);
+      NodeAssert.doesNotMatch(output, /cli first/);
+    });
   });
 });

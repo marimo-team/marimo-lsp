@@ -1,9 +1,13 @@
+import { NodeServices } from "@effect/platform-node";
 import {
+  Cause,
   Context,
   Data,
   Deferred,
   Effect,
   Exit,
+  FileSystem,
+  Fiber,
   Filter,
   Layer,
   Option,
@@ -15,6 +19,7 @@ import {
   Stream,
   Array as EffectArray,
 } from "effect";
+import { ChildProcessSpawner } from "effect/unstable/process";
 import type * as vscode from "vscode";
 
 import { unreachable } from "../assert.ts";
@@ -33,6 +38,10 @@ import {
 } from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
+import {
+  readSessionOutputs,
+  type SelectedEnvironment,
+} from "../notebook/readSessionOutputs.ts";
 import { NotebookDatasources } from "../panel/datasources/NotebookDatasources.ts";
 import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
@@ -55,8 +64,9 @@ import type {
   KernelNotification,
   NotificationOf,
 } from "../types.ts";
-import { CellExecutions, type Drive } from "./CellExecutions.ts";
+import { CellExecutions } from "./CellExecutions.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
+import type { NotebookCellPresentation } from "./NotebookCellPresentation.ts";
 import { makeNotebookExecutor } from "./NotebookExecutor.ts";
 import {
   NotebookFileRootError,
@@ -94,7 +104,12 @@ type RespondToStdin = (
 export interface NotebookController {
   readonly id: string;
   readonly executable?: string;
-  readonly drive: (notebook: MarimoNotebookDocument) => Drive;
+  readonly resolveSavedSessionEnvironment?: (
+    notebook: MarimoNotebookDocument,
+  ) => Effect.Effect<Omit<SelectedEnvironment, "workingDirectory">, unknown>;
+  readonly presentation: (
+    notebook: MarimoNotebookDocument,
+  ) => NotebookCellPresentation;
   readonly resolveExecutable: (
     notebook: MarimoNotebookDocument,
   ) => Effect.Effect<string, ExecutableResolutionError | UnsavedNotebookError>;
@@ -178,6 +193,9 @@ export interface NotebookDocumentHandle {
 interface NotebookState {
   readonly handle: NotebookHandle;
   readonly controller: Ref.Ref<Option.Option<NotebookController>>;
+  readonly hydration: Ref.Ref<Option.Option<Fiber.Fiber<void, unknown>>>;
+  readonly notificationAdmission: Semaphore.Semaphore;
+  readonly selection: Semaphore.Semaphore;
 }
 
 type SessionNotification = KernelNotification & {
@@ -252,6 +270,9 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
   {
     make: Effect.gen(function* () {
       const code = yield* VsCode;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const childProcessSpawner =
+        yield* ChildProcessSpawner.ChildProcessSpawner;
       const config = yield* Config;
       const marimo = yield* MarimoClient;
       const renderer = yield* NotebookRenderer;
@@ -346,6 +367,29 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           effect.pipe(Effect.tap(() => reconcileKernelSession(notebookId))),
         );
 
+      const awaitHydration = (
+        hydration: Ref.Ref<Option.Option<Fiber.Fiber<void, unknown>>>,
+        selection: Semaphore.Semaphore,
+      ): Effect.Effect<void> =>
+        Effect.suspend(() =>
+          Effect.gen(function* () {
+            const observed = yield* Ref.get(hydration);
+            if (Option.isSome(observed)) {
+              yield* Fiber.await(observed.value);
+            }
+
+            const current = yield* selection.withPermit(Ref.get(hydration));
+            const unchanged = Option.match(observed, {
+              onNone: () => Option.isNone(current),
+              onSome: (fiber) =>
+                Option.exists(current, (candidate) => candidate === fiber),
+            });
+            if (!unchanged) {
+              yield* awaitHydration(hydration, selection);
+            }
+          }),
+        );
+
       const respondToStdin: RespondToStdin = (
         notebookId: NotebookId,
         sessionId: KernelSessionId,
@@ -371,67 +415,58 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
 
       const makeDocumentHandle = (
         session: NotebookDocumentSession,
-        controller: Ref.Ref<Option.Option<NotebookController>>,
+        state: NotebookState,
       ): NotebookDocumentHandle => ({
         executeCells: (request, executable) =>
-          stateForDocumentSession(session).pipe(
-            Effect.andThen(
-              executor
-                .submitScoped(
-                  session.notebookId,
-                  Effect.gen(function* () {
-                    const notebookId = session.notebookId;
-                    const notebook = MarimoNotebookDocument.from(
-                      session.document,
-                    );
-                    const workingDirectory = yield* resolveWorkingDirectory(
-                      notebookId,
-                      executable,
-                      notebook,
-                    );
-                    const send = marimo.executeCells({
-                      notebookUri: notebookId,
-                      executable,
-                      workingDirectory,
-                      inner: request,
-                    });
-                    const notebookExecutions = yield* executions.open(session, {
-                      getDrive: Ref.get(controller).pipe(
-                        Effect.map(
-                          Option.map((selected) => selected.drive(notebook)),
+          Effect.gen(function* () {
+            yield* awaitHydration(state.hydration, state.selection);
+            return yield* executor
+              .submitScoped(
+                session.notebookId,
+                Effect.gen(function* () {
+                  const notebookId = session.notebookId;
+                  const notebook = MarimoNotebookDocument.from(
+                    session.document,
+                  );
+                  const workingDirectory = yield* resolveWorkingDirectory(
+                    notebookId,
+                    executable,
+                    notebook,
+                  );
+                  const send = marimo.executeCells({
+                    notebookUri: notebookId,
+                    executable,
+                    workingDirectory,
+                    inner: request,
+                  });
+                  const notebookExecutions = yield* executions.open(session, {
+                    getDrive: Ref.get(state.controller).pipe(
+                      Effect.map(
+                        Option.map(
+                          (selected) => selected.presentation(notebook).present,
                         ),
                       ),
-                    });
-                    const result = yield* notebookExecutions.submit(
-                      request.cellIds.flatMap((cellId, index) => {
-                        const source = request.codes[index];
-                        return source === undefined
-                          ? []
-                          : [
-                              {
-                                cellId: makeNotebookCellId(cellId),
-                                source,
-                              },
-                            ];
-                      }),
-                      send,
-                    );
-                    yield* liveSessions.refresh();
-                    yield* reconcileKernelSession(notebookId);
-                    return result;
-                  }).pipe(
-                    Effect.catchTag("NotebookDocumentSessionEndedError", () =>
-                      Effect.fail(
-                        new NoActiveKernelError({
-                          notebookUri: session.notebookId,
-                        }),
-                      ),
                     ),
-                  ),
-                )
-                .pipe(
-                  Scope.provide(session.scope),
-                  Effect.catchTag("NotebookExecutionScopeClosedError", () =>
+                  });
+                  const result = yield* notebookExecutions.submit(
+                    request.cellIds.flatMap((cellId, index) => {
+                      const source = request.codes[index];
+                      return source === undefined
+                        ? []
+                        : [
+                            {
+                              cellId: makeNotebookCellId(cellId),
+                              source,
+                            },
+                          ];
+                    }),
+                    send,
+                  );
+                  yield* liveSessions.refresh();
+                  yield* reconcileKernelSession(notebookId);
+                  return result;
+                }).pipe(
+                  Effect.catchTag("NotebookDocumentSessionEndedError", () =>
                     Effect.fail(
                       new NoActiveKernelError({
                         notebookUri: session.notebookId,
@@ -439,13 +474,25 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                     ),
                   ),
                 ),
-            ),
-          ),
+              )
+              .pipe(
+                Scope.provide(session.scope),
+                Effect.catchTag("NotebookExecutionScopeClosedError", () =>
+                  Effect.fail(
+                    new NoActiveKernelError({
+                      notebookUri: session.notebookId,
+                    }),
+                  ),
+                ),
+              );
+          }),
       });
 
       const makeHandle = (
         notebookId: NotebookId,
         controller: Ref.Ref<Option.Option<NotebookController>>,
+        hydration: Ref.Ref<Option.Option<Fiber.Fiber<void, unknown>>>,
+        selection: Semaphore.Semaphore,
         scratchpadLock: Semaphore.Semaphore,
       ): NotebookHandle => ({
         id: notebookId,
@@ -484,6 +531,11 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                     )
                   : Effect.void,
               );
+
+              // A cold read and its presentation must finish before the first
+              // kernel command, matching marimo's cache replay before
+              // notebook instantiation.
+              yield* awaitHydration(hydration, selection);
 
               return yield* runInNotebook(
                 notebookId,
@@ -583,13 +635,15 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
             inner: { sessionId },
           }),
         ),
-        restart: mutateKernelSession(
-          notebookId,
-          liveSessions.restart(notebookId),
+        restart: awaitHydration(hydration, selection).pipe(
+          Effect.andThen(
+            mutateKernelSession(notebookId, liveSessions.restart(notebookId)),
+          ),
         ),
-        close: mutateKernelSession(
-          notebookId,
-          liveSessions.shutdown(notebookId),
+        close: awaitHydration(hydration, selection).pipe(
+          Effect.andThen(
+            mutateKernelSession(notebookId, liveSessions.shutdown(notebookId)),
+          ),
         ),
       });
 
@@ -617,9 +671,22 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         const controller = Ref.makeUnsafe<Option.Option<NotebookController>>(
           Option.none(),
         );
+        const hydration = Ref.makeUnsafe(
+          Option.none<Fiber.Fiber<void, unknown>>(),
+        );
+        const selection = Semaphore.makeUnsafe(1);
         return {
           controller,
-          handle: makeHandle(notebookId, controller, Semaphore.makeUnsafe(1)),
+          hydration,
+          notificationAdmission: Semaphore.makeUnsafe(1),
+          selection,
+          handle: makeHandle(
+            notebookId,
+            controller,
+            hydration,
+            selection,
+            Semaphore.makeUnsafe(1),
+          ),
         };
       };
 
@@ -670,6 +737,107 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
 
       const forNotebook = (notebookId: NotebookId) =>
         stateForNotebook(notebookId).pipe(Effect.map((state) => state.handle));
+
+      const restoreSavedOutputs = Effect.fn(
+        "NotebookRuntime.restoreSavedOutputs",
+      )(function* (
+        session: NotebookDocumentSession,
+        controller: NotebookController,
+      ) {
+        const notebookVersion = session.document.version;
+        const notebook = MarimoNotebookDocument.from(session.document);
+        const directExecutable = controller.executable;
+        const probe = yield* typeof directExecutable === "string"
+          ? Effect.succeed(
+              Option.some({ executable: directExecutable } as const),
+            )
+          : controller.resolveSavedSessionEnvironment === undefined
+            ? Effect.succeed(Option.none())
+            : controller
+                .resolveSavedSessionEnvironment(notebook)
+                .pipe(Effect.option);
+        const environment = yield* Option.match(probe, {
+          onNone: () => Effect.succeed(undefined),
+          onSome: (selected) =>
+            resolveWorkingDirectory(
+              session.notebookId,
+              directExecutable ?? selected.executable,
+              notebook,
+            ).pipe(
+              Effect.map((workingDirectory) => ({
+                ...selected,
+                workingDirectory,
+              })),
+            ),
+        });
+        const notifications = yield* readSessionOutputs({
+          notebook: session.document,
+          environment,
+        }).pipe(
+          Effect.provideService(MarimoClient, marimo),
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(
+            ChildProcessSpawner.ChildProcessSpawner,
+            childProcessSpawner,
+          ),
+        );
+        if (notifications.length === 0) return;
+
+        yield* executor.submitScoped(
+          session.notebookId,
+          Effect.gen(function* () {
+            if (
+              session.document.isClosed ||
+              session.document.version !== notebookVersion ||
+              !Option.exists(
+                documentSessions.current(session.notebookId),
+                (current) => current === session,
+              )
+            ) {
+              return;
+            }
+
+            const state = yield* stateForDocumentSession(session);
+            const selected = yield* Ref.get(state.controller);
+            if (!Option.exists(selected, (current) => current === controller)) {
+              return;
+            }
+
+            const presentation = controller.presentation(notebook);
+            const notebookExecutions = yield* executions.open(session, {
+              getDrive: Ref.get(state.controller).pipe(
+                Effect.map(
+                  Option.map(
+                    (current) => current.presentation(notebook).present,
+                  ),
+                ),
+              ),
+            });
+            const sources = new Map<NotebookCellId, string>();
+            for (const cell of notebook.getCells()) {
+              if (Option.isSome(cell.id)) {
+                sources.set(cell.id.value, cell.document.getText());
+              }
+            }
+            yield* presentation.presentSavedOutputs(
+              notifications,
+              notebookVersion,
+              (notification) => {
+                const cellId = makeNotebookCellId(notification.cell_id);
+                const source = sources.get(cellId);
+                return source === undefined
+                  ? Effect.void
+                  : Effect.uninterruptible(
+                      notebookExecutions.restoreSavedOutput(
+                        { cellId, source },
+                        notification,
+                      ),
+                    );
+              },
+            );
+          }),
+        );
+      });
 
       yield* Effect.forkScoped(
         liveSessions.changes.pipe(
@@ -782,9 +950,20 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
               );
             return stateForDocumentSession(message.session).pipe(
               Effect.flatMap((state) =>
-                executor
-                  .postScoped(message.notebookUri, run(state.handle))
-                  .pipe(Scope.provide(message.session.scope)),
+                Effect.forkIn(
+                  state.notificationAdmission.withPermit(
+                    Effect.gen(function* () {
+                      // Replay saved/live display before admitting subsequent
+                      // kernel notifications for this document session.
+                      yield* awaitHydration(state.hydration, state.selection);
+                      yield* executor
+                        .postScoped(message.notebookUri, run(state.handle))
+                        .pipe(Scope.provide(message.session.scope));
+                    }),
+                  ),
+                  message.session.scope,
+                  { startImmediately: true },
+                ).pipe(Effect.asVoid),
               ),
             );
           }),
@@ -913,19 +1092,74 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
 
       return {
         attachController(
-          notebookId: NotebookId,
+          document: vscode.NotebookDocument,
           controller: NotebookController,
         ) {
           return Effect.gen(function* () {
-            yield* Effect.uninterruptible(
-              Effect.gen(function* () {
-                const state = yield* stateForNotebook(notebookId);
-                yield* Ref.set(state.controller, Option.some(controller));
-                yield* PubSub.publish(controllerSelections, {
-                  notebookUri: notebookId,
-                  controller,
-                });
-              }),
+            const notebook = MarimoNotebookDocument.from(document);
+            const notebookId = notebook.id;
+            const session = yield* documentSessions.register(document);
+            if (Option.isNone(session)) return;
+            const state = yield* stateForDocumentSession(session.value);
+            yield* state.selection.withPermit(
+              Effect.uninterruptible(
+                Effect.gen(function* () {
+                  const selected = yield* Ref.get(state.controller);
+                  const activeHydration = yield* Ref.get(state.hydration);
+                  if (
+                    Option.exists(
+                      selected,
+                      (current) => current === controller,
+                    ) &&
+                    Option.isSome(activeHydration)
+                  ) {
+                    return;
+                  }
+                  const previous = yield* Ref.getAndSet(
+                    state.hydration,
+                    Option.none(),
+                  );
+                  if (Option.isSome(previous)) {
+                    yield* Fiber.interrupt(previous.value);
+                  }
+                  if (
+                    document.isClosed ||
+                    !Option.exists(
+                      documentSessions.current(notebookId),
+                      (current) => current === session.value,
+                    )
+                  ) {
+                    return;
+                  }
+
+                  yield* Ref.set(state.controller, Option.some(controller));
+                  yield* PubSub.publish(controllerSelections, {
+                    notebookUri: notebookId,
+                    controller,
+                  });
+                  const hydration = yield* restoreSavedOutputs(
+                    session.value,
+                    controller,
+                  ).pipe(
+                    Effect.catchCause((cause) =>
+                      Cause.hasInterrupts(cause)
+                        ? Effect.failCause(cause)
+                        : Effect.logDebug(
+                            "Saved output presentation unavailable",
+                          ).pipe(
+                            Effect.annotateLogs({
+                              cause,
+                              notebookUri: notebookId,
+                              controllerId: controller.id,
+                            }),
+                          ),
+                    ),
+                    Effect.scoped,
+                    Effect.forkIn(session.value.scope),
+                  );
+                  yield* Ref.set(state.hydration, Option.some(hydration));
+                }),
+              ),
             );
             yield* updateKernelContext();
           });
@@ -1005,7 +1239,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
               });
             }
             const state = yield* stateForDocumentSession(session.value);
-            return makeDocumentHandle(session.value, state.controller);
+            return makeDocumentHandle(session.value, state);
           });
         },
         forNotebook,
@@ -1074,6 +1308,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       PythonEnvInvalidation.layer,
       LiveSessions.layer,
       NotebookDocumentSessions.layer,
+      NodeServices.layer,
     ]),
   );
 }
@@ -1239,7 +1474,9 @@ function processNotebookOperation(
     const notebookExecutions = yield* executions.open(options.session, {
       getDrive: options.notebook.getController.pipe(
         Effect.map(
-          Option.map((controller) => controller.drive(sessionNotebook)),
+          Option.map(
+            (controller) => controller.presentation(sessionNotebook).present,
+          ),
         ),
       ),
     });
