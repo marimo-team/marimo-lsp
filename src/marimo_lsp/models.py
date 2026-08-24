@@ -15,6 +15,7 @@ import msgspec
 from marimo._config.config import MarimoConfig  # noqa: TC002
 from marimo._convert.common.format import DEFAULT_MARKDOWN_PREFIX
 from marimo._messaging.notification import (  # noqa: TC002
+    CellNotification,
     NotificationMessage,
     VariablesNotification,
 )
@@ -416,6 +417,19 @@ class SetDisplayThemeRequest(msgspec.Struct, rename="camel"):
     """The theme to set ('light' or 'dark')."""
 
 
+class SavedSessionLocation(msgspec.Struct, rename="camel", frozen=True):
+    """A sidecar located by the notebook's selected marimo environment."""
+
+    cache_path: str
+    marimo_version: str
+
+
+class ReadSessionOutputsRequest(msgspec.Struct, rename="camel"):
+    """Read display outputs from the live session or a compatible sidecar."""
+
+    location: SavedSessionLocation | None = None
+
+
 class ApiRequest(msgspec.Struct, rename="camel"):
     """A unified API request for all marimo internal methods."""
 
@@ -458,6 +472,12 @@ class SetDisplayThemeResponse(msgspec.Struct, rename="camel"):
     """Response for ``set-display-theme``."""
 
     success: bool
+
+
+class ReadSessionOutputsResponse(msgspec.Struct, rename="camel"):
+    """Display outputs retained by the authoritative session snapshot."""
+
+    notifications: list[CellNotification]
 
 
 ExecuteCellsRequest = core.ExecuteCellsRequest

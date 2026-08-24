@@ -87,6 +87,31 @@ def decode_saved_session_view(
     header: str | None,
 ) -> SessionView | None:
     """Decode a compatible marimo session sidecar, if one can be proven."""
+    try:
+        decoded = json.loads(contents)
+        if not isinstance(decoded, dict):
+            return None
+        return restore_saved_session_view(
+            cast("NotebookSessionV1", decoded),
+            codes=codes,
+            cell_ids=cell_ids,
+            marimo_version=marimo_version,
+            header=header,
+        )
+    except Exception:
+        logger.exception("Ignored malformed saved session")
+        return None
+
+
+def restore_saved_session_view(
+    notebook_session: NotebookSessionV1,
+    *,
+    codes: Iterable[str],
+    cell_ids: Iterable[CellId_t],
+    marimo_version: str | None,
+    header: str | None,
+) -> SessionView | None:
+    """Restore a compatible marimo session snapshot into current cell IDs."""
     marimo_version = normalize_marimo_version(marimo_version)
     if marimo_version is None:
         return None
@@ -108,13 +133,11 @@ def decode_saved_session_view(
         interval=1,
     )
     try:
-        decoded = json.loads(contents)
-        if not isinstance(decoded, dict) or decoded.get("version") != "1":
+        if notebook_session.get("version") != "1":
             return None
         # Delegate field and output compatibility to marimo. In particular,
         # its V1 reader skips future output tags instead of rejecting the
         # otherwise-compatible session.
-        notebook_session = cast("NotebookSessionV1", decoded)
         key = SessionCacheKey(
             codes=current_codes,
             marimo_version=marimo_version,

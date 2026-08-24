@@ -36,7 +36,13 @@ from marimo_lsp.saved_sessions import (
     decode_saved_session_view,
     serialize_saved_session_view,
 )
-from marimo_lsp.sessions import Session, Sessions, _OperationSink
+from marimo_lsp.sessions import (
+    Session,
+    Sessions,
+    _initial_session_view,
+    _OperationSink,
+    _SessionViewSource,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -64,11 +70,22 @@ def _make_session() -> tuple[Session, Mock]:
     session._scratchpad_run_id = None
     session._closed = False
     session._activated = True
+    session._requires_restart = False
     session._saved_session_pending = False
     session._saved_session_writer = None
     session._saved_session_location = None
     session._state_lock = threading.RLock()
+    session._operation_sink = _OperationSink(Mock(), "file:///test.py", SESSION_ID)
     return session, ipc_queue_manager
+
+
+def _mark_replacement_source_current(session: Mock) -> None:
+    source = object()
+    document = object()
+    session.app_file_manager.source_snapshot.return_value = source
+    session.app_file_manager.workspace_source_snapshot.return_value = source
+    session.app_file_manager.document_snapshot.return_value = document
+    session.app_file_manager.workspace_document_snapshot.return_value = document
 
 
 def test_ui_element_updates_use_marimo_ipc_batching_route() -> None:
@@ -147,6 +164,128 @@ def test_sync_does_not_notify_kernel_when_configs_are_unchanged() -> None:
 
     session.sync(Mock())
 
+    queue_manager.control_queue.put.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("previous_codes", "current_codes", "expected"),
+    [
+        ({}, {}, "reuse"),
+        ({}, {CellId_t("new"): "value = 1"}, "restart"),
+        ({CellId_t("old"): "value = 1"}, {}, "restart"),
+        (
+            {CellId_t("old"): "value = 1"},
+            {CellId_t("old"): "value = 1"},
+            "reuse",
+        ),
+        (
+            {CellId_t("old"): "value = 1"},
+            {CellId_t("new"): "value = 1"},
+            "restart",
+        ),
+        (
+            {CellId_t("cell"): "value = 1"},
+            {CellId_t("cell"): "value = 2"},
+            "restart",
+        ),
+    ],
+)
+def test_detached_sync_requires_a_fresh_graph_when_source_identity_changes(
+    previous_codes: dict[CellId_t, str],
+    current_codes: dict[CellId_t, str],
+    expected: str,
+) -> None:
+    session, queue_manager = _make_session()
+    if previous_codes:
+        [cell_id] = previous_codes
+        session.session_view.add_control_request(
+            ExecuteCellsCommand(
+                cell_ids=[cell_id],
+                codes=[previous_codes[cell_id]],
+            )
+        )
+        session.session_view.add_notification(
+            CellNotification(
+                cell_id=cell_id,
+                status="idle",
+                output=CellOutput(
+                    channel=CellChannel.OUTPUT,
+                    mimetype="text/plain",
+                    data="old output",
+                ),
+                console=[],
+                timestamp=1,
+            )
+        )
+
+    cell_manager = Mock()
+    cell_manager.config_map.return_value = {}
+    session._app_file_manager = Mock()
+    session._app_file_manager.app.cell_manager = cell_manager
+    session._app_file_manager.source_snapshot.return_value = previous_codes
+    session._app_file_manager.workspace_source_snapshot.return_value = current_codes
+    session._operation_sink.detach()
+
+    session.sync(Mock())
+
+    assert session.requires_restart is (expected == "restart")
+    assert session.session_view.last_executed_code == previous_codes
+    assert session._app_file_manager.sync.called is (expected == "reuse")
+    queue_manager.control_queue.put.assert_not_called()
+
+
+def test_detached_sync_accepts_header_change_without_restarting_graph() -> None:
+    session, queue_manager = _make_session()
+    source = object()
+    session._app_file_manager = Mock()
+    session._app_file_manager.source_snapshot.return_value = source
+    session._app_file_manager.workspace_source_snapshot.return_value = source
+    session._app_file_manager.document_snapshot.side_effect = [
+        ("old header", source),
+        ("new header", source),
+    ]
+    session._app_file_manager.app.cell_manager.config_map.side_effect = [{}, {}]
+    session._operation_sink.detach()
+
+    changed = session.sync(Mock())
+
+    assert changed
+    assert not session.requires_restart
+    session._app_file_manager.sync.assert_called_once()
+    queue_manager.control_queue.put.assert_not_called()
+
+
+def test_attached_sync_preserves_session_view_cell_ids() -> None:
+    session, queue_manager = _make_session()
+    old_id = CellId_t("old")
+    session.session_view.add_control_request(
+        ExecuteCellsCommand(cell_ids=[old_id], codes=["value = 1"])
+    )
+    session.session_view.add_notification(
+        CellNotification(
+            cell_id=old_id,
+            status="idle",
+            output=CellOutput(
+                channel=CellChannel.OUTPUT,
+                mimetype="text/plain",
+                data="old output",
+            ),
+            console=[],
+            timestamp=1,
+        )
+    )
+
+    cell_manager = Mock()
+    cell_manager.config_map.side_effect = [{}, {}]
+    session._app_file_manager = Mock()
+    session._app_file_manager.app.cell_manager = cell_manager
+
+    session.sync(Mock())
+
+    assert list(session.session_view.cell_notifications) == [old_id]
+    assert session.session_view.last_executed_code == {old_id: "value = 1"}
+    assert not session.requires_restart
+    cell_manager.code_lookup.assert_not_called()
     queue_manager.control_queue.put.assert_not_called()
 
 
@@ -571,6 +710,7 @@ async def test_start_reuses_session_with_same_executable() -> None:
     sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)
     current.executable = "/usr/bin/python"
+    current.requires_restart = False
     sessions._sessions["file:///test.py"] = current
     sessions._create = AsyncMock()
 
@@ -586,6 +726,7 @@ async def test_start_reuses_same_executable_despite_new_working_directory() -> N
     sessions = Sessions(Mock(), kernels=Mock())
     current = Mock(spec=Session)
     current.executable = "/usr/bin/python"
+    current.requires_restart = False
     sessions._sessions["file:///test.py"] = current
     sessions._create = AsyncMock()
 
@@ -599,6 +740,86 @@ async def test_start_reuses_same_executable_despite_new_working_directory() -> N
 
 
 @pytest.mark.asyncio
+async def test_start_replaces_a_live_graph_invalidated_while_detached() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    current = Mock(spec=Session)
+    current.executable = "/usr/bin/python"
+    current.requires_restart = True
+    replacement = Mock(spec=Session)
+    _mark_replacement_source_current(replacement)
+    replacement.describe.return_value = Mock()
+    sessions._sessions["file:///test.py"] = current
+    sessions._create = AsyncMock(return_value=replacement)
+    sessions._notify_changed = Mock()
+
+    result = await sessions.start(
+        "file:///test.py",
+        "/usr/bin/python",
+        "/workspace",
+    )
+
+    assert result is replacement
+    sessions._create.assert_awaited_once_with(
+        "file:///test.py",
+        "/usr/bin/python",
+        "/workspace",
+        previous=current,
+    )
+    current.close.assert_called_once_with()
+    replacement.activate.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_start_checks_a_detached_graph_before_reusing_it() -> None:
+    server = Mock()
+    sessions = Sessions(server, kernels=Mock())
+    current = Mock(spec=Session)
+    current.executable = "/usr/bin/python"
+    current.attached = False
+    current.requires_restart = False
+    current.sync.side_effect = lambda _workspace: setattr(
+        current, "requires_restart", True
+    )
+    replacement = Mock(spec=Session)
+    _mark_replacement_source_current(replacement)
+    sessions._sessions["file:///test.py"] = current
+    sessions._create = AsyncMock(return_value=replacement)
+    sessions._notify_changed = Mock()
+
+    result = await sessions.start(
+        "file:///test.py",
+        "/usr/bin/python",
+        "/workspace",
+    )
+
+    assert result is replacement
+    current.sync.assert_called_once_with(server.workspace)
+    current.attach.assert_not_called()
+    sessions._create.assert_awaited_once_with(
+        "file:///test.py",
+        "/usr/bin/python",
+        "/workspace",
+        previous=current,
+    )
+
+
+def test_attach_keeps_an_invalidated_live_graph_quarantined() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    current = Mock(spec=Session)
+    current.requires_restart = False
+    current.sync.side_effect = lambda _workspace: setattr(
+        current, "requires_restart", True
+    )
+    sessions._sessions["file:///test.py"] = current
+    workspace = Mock()
+
+    sessions.attach("file:///test.py", workspace)
+
+    current.sync.assert_called_once_with(workspace)
+    current.attach.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_start_replaces_session_after_replacement_starts() -> None:
     events: list[str] = []
     sessions = Sessions(Mock(), kernels=Mock())
@@ -606,6 +827,7 @@ async def test_start_replaces_session_after_replacement_starts() -> None:
     current.executable = "/old/python"
     current.close.side_effect = lambda: events.append("old closed")
     replacement = Mock(spec=Session)
+    _mark_replacement_source_current(replacement)
     replacement.describe.return_value = Mock()
     replacement.activate.side_effect = lambda: events.append("new activated")
     sessions._sessions["file:///test.py"] = current
@@ -618,6 +840,12 @@ async def test_start_replaces_session_after_replacement_starts() -> None:
 
     assert result is replacement
     assert sessions.get("file:///test.py") is replacement
+    sessions._create.assert_awaited_once_with(
+        "file:///test.py",
+        "/new/python",
+        "/workspace",
+        saved_session_source=current,
+    )
     current.close.assert_called_once_with()
     sessions._notify_changed.assert_called_once_with()
     replacement.activate.assert_called_once_with()
@@ -645,7 +873,9 @@ async def test_concurrent_starts_share_one_kernel_launch() -> None:
     launch_started = asyncio.Event()
     finish_launch = asyncio.Event()
     replacement = Mock(spec=Session)
+    _mark_replacement_source_current(replacement)
     replacement.executable = "/usr/bin/python"
+    replacement.requires_restart = False
     replacement.describe.return_value = Mock()
 
     async def create(*_args: object, **_kwargs: object) -> Session:
@@ -671,6 +901,67 @@ async def test_concurrent_starts_share_one_kernel_launch() -> None:
     assert await first is replacement
     assert await second is replacement
     sessions._create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_source_neutral_change_does_not_cancel_kernel_start() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    launch_started = asyncio.Event()
+    finish_launch = asyncio.Event()
+    replacement = Mock(spec=Session)
+    _mark_replacement_source_current(replacement)
+
+    async def create(*_args: object, **_kwargs: object) -> Session:
+        launch_started.set()
+        await finish_launch.wait()
+        return replacement
+
+    sessions._create = AsyncMock(side_effect=create)
+    sessions._notify_changed = Mock()
+    start = asyncio.create_task(
+        sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
+    )
+    await launch_started.wait()
+
+    # Output and execution-summary changes use notebookDocument/didChange too,
+    # but they do not change the graph captured by the launched kernel.
+    sessions.sync("file:///test.py", Mock())
+    finish_launch.set()
+
+    assert await start is replacement
+    replacement.activate.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_invalid_source_after_launch_closes_replacement() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    replacement = Mock(spec=Session)
+    replacement.app_file_manager.document_snapshot.return_value = object()
+    replacement.app_file_manager.workspace_document_snapshot.side_effect = ValueError(
+        "invalid notebook metadata"
+    )
+    sessions._create = AsyncMock(return_value=replacement)
+
+    with pytest.raises(KernelOpenError, match="changed while its kernel was starting"):
+        await sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
+
+    assert sessions.get("file:///test.py") is None
+    replacement.close.assert_called_once_with()
+
+
+def test_sync_failure_after_source_change_invalidates_kernel_start() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    session = Mock(spec=Session)
+    session.requires_restart = False
+    session.app_file_manager.document_snapshot.side_effect = ["before", "after"]
+    session.sync.side_effect = RuntimeError("kernel send failed")
+    sessions._sessions["file:///test.py"] = session
+    previous = sessions._lifecycle_version("file:///test.py")
+
+    with pytest.raises(RuntimeError, match="kernel send failed"):
+        sessions.sync("file:///test.py", Mock())
+
+    assert sessions._lifecycle_version("file:///test.py") == previous + 1
 
 
 @pytest.mark.asyncio
@@ -701,6 +992,41 @@ async def test_close_during_start_discards_launched_kernel() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("event", ["open", "change", "close"])
+async def test_document_lifecycle_change_during_start_discards_launched_kernel(
+    event: str,
+) -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    launch_started = asyncio.Event()
+    finish_launch = asyncio.Event()
+    replacement = Mock(spec=Session)
+
+    async def create(*_args: object, **_kwargs: object) -> Session:
+        launch_started.set()
+        await finish_launch.wait()
+        return replacement
+
+    sessions._create = AsyncMock(side_effect=create)
+    start = asyncio.create_task(
+        sessions.start("file:///test.py", "/usr/bin/python", "/workspace")
+    )
+    await launch_started.wait()
+
+    if event == "open":
+        sessions.attach("file:///test.py", Mock())
+    elif event == "change":
+        sessions.sync("file:///test.py", Mock())
+    else:
+        sessions.detach("file:///test.py")
+    finish_launch.set()
+
+    with pytest.raises(KernelOpenError, match="changed while its kernel was starting"):
+        await start
+    assert sessions.get("file:///test.py") is None
+    replacement.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
 async def test_session_creation_failure_closes_launched_kernel() -> None:
     kernel = Mock()
     kernels = Mock()
@@ -712,6 +1038,7 @@ async def test_session_creation_failure_closes_launched_kernel() -> None:
     previous.config_manager.get_config.side_effect = RuntimeError("bad config")
     previous.session_view = Mock()
     previous.started_at = 42
+    previous.requires_restart = False
 
     with pytest.raises(RuntimeError, match="bad config"):
         await sessions._create(
@@ -759,6 +1086,7 @@ async def test_startup_message_handoff_preserves_order(
     previous.session_view = Mock()
     previous.started_at = 42
     previous.marimo_version = "1.2.3-rc1+build.7"
+    previous.requires_restart = False
     loop_thread = threading.get_ident()
     observed: list[tuple[KernelMessage, int]] = []
     third_delivered = asyncio.Event()
@@ -815,6 +1143,7 @@ async def test_session_creation_drops_view_without_known_matching_versions(
     previous.session_view = SessionView()
     previous.started_at = 42
     previous.marimo_version = previous_version
+    previous.requires_restart = False
 
     created = await sessions._create(
         "file:///test.py",
@@ -847,6 +1176,7 @@ async def test_session_creation_binds_the_selected_kernel_cache_path() -> None:
     previous.session_view = SessionView()
     previous.started_at = 42
     previous.marimo_version = "1.2.3"
+    previous.requires_restart = False
 
     created = await sessions._create(
         "file:///workspace/notebook.py",
@@ -867,6 +1197,7 @@ async def test_session_creation_binds_the_selected_kernel_cache_path() -> None:
 @pytest.mark.asyncio
 async def test_session_creation_restores_the_selected_kernel_cache_before_writing(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cell_id = CellId_t("cell")
     restored = SessionView()
@@ -901,6 +1232,18 @@ async def test_session_creation_restores_the_selected_kernel_cache_before_writin
     kernel.locate_saved_session = AsyncMock(return_value=str(tmp_path / "session.json"))
     kernels = Mock()
     kernels.launch = AsyncMock(return_value=kernel)
+    current_app_file_manager = Mock()
+    current_app_file_manager.path = str(tmp_path / "notebook.py")
+    current_app_file_manager.header = None
+    current_app_file_manager.app.cell_manager.codes.return_value = ["value = 1"]
+    current_app_file_manager.app.cell_manager.cell_ids.return_value = [cell_id]
+    current_app_file_manager.app.cell_manager.code_map.return_value = {
+        cell_id: "value = 1"
+    }
+    monkeypatch.setattr(
+        "marimo_lsp.sessions.LspAppFileManager",
+        Mock(return_value=current_app_file_manager),
+    )
     sessions = Sessions(Mock(), kernels=kernels, saved_session_files=files)
     previous = Mock(spec=Session)
     previous.app_file_manager = Mock()
@@ -915,7 +1258,8 @@ async def test_session_creation_restores_the_selected_kernel_cache_before_writin
     previous.config_manager.get_config.return_value = DEFAULT_CONFIG
     previous.session_view = SessionView()
     previous.started_at = 42
-    previous.marimo_version = "1.2.3"
+    previous.marimo_version = "1.2.4"
+    previous.requires_restart = True
 
     created = await sessions._create(
         "file:///workspace/notebook.py",
@@ -955,6 +1299,146 @@ async def test_session_creation_restores_the_selected_kernel_cache_before_writin
         is not None
     )
     created.close()
+
+
+@pytest.mark.asyncio
+async def test_session_creation_rebases_an_unflushed_invalidated_view(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    previous_id = CellId_t("previous")
+    current_id = CellId_t("current")
+    code = "value = 1"
+    previous_view = SessionView()
+    previous_view.add_control_request(
+        ExecuteCellsCommand(cell_ids=[previous_id], codes=[code])
+    )
+    previous_view.add_notification(
+        CellNotification(
+            cell_id=previous_id,
+            status="idle",
+            output=CellOutput(
+                channel=CellChannel.OUTPUT,
+                mimetype="text/plain",
+                data="not yet flushed",
+            ),
+            console=[],
+            timestamp=1,
+        )
+    )
+    files = Mock()
+    files.read = AsyncMock(return_value=None)
+    files.replace = AsyncMock()
+    kernel = Mock()
+    kernel.marimo_version = "1.2.4"
+    kernel.locate_saved_session = AsyncMock(return_value=str(tmp_path / "session.json"))
+    kernels = Mock()
+    kernels.launch = AsyncMock(return_value=kernel)
+    current_app_file_manager = Mock()
+    current_app_file_manager.path = str(tmp_path / "notebook.py")
+    current_app_file_manager.header = None
+    current_app_file_manager.app.cell_manager.codes.return_value = [code]
+    current_app_file_manager.app.cell_manager.cell_ids.return_value = [current_id]
+    current_app_file_manager.app.cell_manager.code_map.return_value = {current_id: code}
+    monkeypatch.setattr(
+        "marimo_lsp.sessions.LspAppFileManager",
+        Mock(return_value=current_app_file_manager),
+    )
+    sessions = Sessions(Mock(), kernels=kernels, saved_session_files=files)
+    previous = Mock(spec=Session)
+    previous.app_file_manager = Mock()
+    previous.app_file_manager.path = str(tmp_path / "notebook.py")
+    previous.app_file_manager.header = None
+    previous.app_file_manager.app.cell_manager.cell_ids.return_value = [previous_id]
+    previous.config_manager = Mock()
+    previous.config_manager.get_config.return_value = DEFAULT_CONFIG
+    previous.session_view = previous_view
+    previous.started_at = 42
+    previous.marimo_version = "1.2.4"
+    previous.requires_restart = True
+
+    created = await sessions._create(
+        "file:///workspace/notebook.py",
+        "/usr/bin/python",
+        "/workspace",
+        previous=previous,
+    )
+
+    notification = created.session_view.cell_notifications[current_id]
+    assert notification.output is not None
+    assert notification.output.data == "not yet flushed"
+    assert created.app_file_manager is current_app_file_manager
+    files.read.assert_not_awaited()
+
+    writer = created._saved_session_writer
+    assert writer is not None
+    assert await writer.flush_once()
+    replace_args = files.replace.await_args
+    assert replace_args is not None
+    written = replace_args.args[1]
+    rebased = decode_saved_session_view(
+        written,
+        codes=(code,),
+        cell_ids=(current_id,),
+        marimo_version="1.2.4",
+        header=None,
+    )
+    assert rebased is not None
+    rebased_output = rebased.cell_notifications[current_id].output
+    assert rebased_output is not None
+    assert rebased_output.data == "not yet flushed"
+    created.close()
+
+
+@pytest.mark.asyncio
+async def test_saved_session_source_rebases_across_executables() -> None:
+    previous_id = CellId_t("previous")
+    current_id = CellId_t("current")
+    code = "value = 1"
+    source = Mock(spec=Session)
+    source.marimo_version = "1.2.4"
+    source.session_view = SessionView()
+    source.session_view.add_control_request(
+        ExecuteCellsCommand(cell_ids=[previous_id], codes=[code])
+    )
+    source.session_view.add_notification(
+        CellNotification(
+            cell_id=previous_id,
+            status="idle",
+            output=CellOutput(
+                channel=CellChannel.OUTPUT,
+                mimetype="text/plain",
+                data="from another executable",
+            ),
+            console=[],
+            timestamp=1,
+        )
+    )
+    source.app_file_manager.header = None
+    source.app_file_manager.app.cell_manager.cell_ids.return_value = [previous_id]
+    current = Mock()
+    current.header = None
+    current.app.cell_manager.codes.return_value = [code]
+    current.app.cell_manager.cell_ids.return_value = [current_id]
+    kernel = Mock(marimo_version="1.2.4")
+    files = Mock()
+    files.read = AsyncMock(return_value=None)
+
+    restored, pending = await _initial_session_view(
+        _SessionViewSource(source, reuse_live_view=False),
+        kernel,
+        files,
+        "/workspace/session.json",
+        current,
+    )
+
+    assert restored is not None
+    output = restored.cell_notifications[current_id].output
+    assert output is not None
+    assert output.data == "from another executable"
+    assert restored.last_executed_code == {current_id: code}
+    assert pending
+    files.read.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1021,6 +1505,7 @@ async def test_terminal_error_during_startup_handoff_aborts_session() -> None:
     previous.config_manager.get_config.return_value = DEFAULT_CONFIG
     previous.session_view = Mock()
     previous.started_at = 42
+    previous.requires_restart = False
 
     with pytest.raises(KernelOpenError, match="bridge exited"):
         await sessions._create(
@@ -1041,10 +1526,12 @@ async def test_restart_replaces_kernel_without_reloading_closed_notebook() -> No
     current.executable = "/usr/bin/python"
     current.working_directory = "/workspace"
     current.attached = False
+    current.requires_restart = False
     current.session_view = Mock()
     current.started_at = 42
     current.close.side_effect = lambda: events.append("old closed")
     replacement = Mock(spec=Session)
+    _mark_replacement_source_current(replacement)
     replacement.activate.side_effect = lambda: events.append("new activated")
     sessions._sessions["file:///test.py"] = current
     sessions._create = AsyncMock(return_value=replacement)
@@ -1073,9 +1560,41 @@ async def test_restart_replaces_kernel_without_reloading_closed_notebook() -> No
 
 
 @pytest.mark.asyncio
+async def test_restart_rebases_an_invalidated_live_graph_snapshot() -> None:
+    sessions = Sessions(Mock(), kernels=Mock())
+    current = Mock(spec=Session)
+    current.executable = "/usr/bin/python"
+    current.working_directory = "/workspace"
+    current.attached = False
+    current.requires_restart = True
+    replacement = Mock(spec=Session)
+    _mark_replacement_source_current(replacement)
+    sessions._sessions["file:///test.py"] = current
+    sessions._create = AsyncMock(return_value=replacement)
+    sessions._notify_changed = Mock()
+
+    result = await sessions.restart(
+        "file:///test.py",
+        executable="/usr/bin/python",
+        working_directory="/workspace",
+    )
+
+    assert result is replacement
+    sessions._create.assert_awaited_once_with(
+        "file:///test.py",
+        "/usr/bin/python",
+        "/workspace",
+        previous=current,
+    )
+    replacement.detach.assert_not_called()
+    current.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
 async def test_restore_uses_requested_working_directory() -> None:
     sessions = Sessions(Mock(), kernels=Mock())
     replacement = Mock(spec=Session)
+    _mark_replacement_source_current(replacement)
     sessions._create = AsyncMock(return_value=replacement)
     sessions._notify_changed = Mock()
 

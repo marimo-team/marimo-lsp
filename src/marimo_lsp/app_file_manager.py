@@ -67,6 +67,36 @@ class LspAppFileManager:
             app=self.app,
         )
 
+    def workspace_code_lookup(self, workspace: Workspace) -> dict[CellId_t, str]:
+        """Read the notebook's current cell identity without changing the live app."""
+        return sync_app_with_workspace(
+            workspace,
+            self._notebook_uri,
+            None,
+        ).cell_manager.code_lookup()
+
+    def source_snapshot(self) -> tuple[object, ...]:
+        """Return the notebook state that determines a kernel graph."""
+        return _source_snapshot(self.app)
+
+    def workspace_source_snapshot(self, workspace: Workspace) -> tuple[object, ...]:
+        """Read the current kernel graph state without changing this manager."""
+        app = sync_app_with_workspace(workspace, self._notebook_uri, None)
+        return _source_snapshot(app)
+
+    def document_snapshot(self) -> tuple[object, ...]:
+        """Return source and metadata synchronized from the LSP document."""
+        return (self._header, self.source_snapshot())
+
+    def workspace_document_snapshot(
+        self,
+        workspace: Workspace,
+    ) -> tuple[object, ...]:
+        """Read current source and metadata without changing this manager."""
+        notebook = find_notebook_document(workspace, self._notebook_uri)
+        header = decode_notebook_document_metadata(notebook).header
+        return (header, self.workspace_source_snapshot(workspace))
+
     @property
     def filename(self) -> str | None:
         """The notebook file name."""
@@ -108,6 +138,17 @@ def find_notebook_document(
             return doc
 
     raise KeyError(notebook_uri)
+
+
+def _source_snapshot(app: InternalApp) -> tuple[object, ...]:
+    cells = app.cell_manager
+    return (
+        app.config.asdict(),
+        tuple(cells.cell_ids()),
+        tuple(cells.codes()),
+        tuple(cells.names()),
+        tuple(config.asdict() for config in cells.configs()),
+    )
 
 
 def _iter_notebook_cells(

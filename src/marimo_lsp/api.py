@@ -26,6 +26,8 @@ from marimo._export.requests import (
     MarkdownExportRequest,
 )
 from marimo._export.serialization import serialize_notebook_snapshot
+from marimo._messaging.msgspec_encoder import encode_json_bytes
+from marimo._messaging.notification import CellNotification
 from marimo._runtime.commands import (
     ExecuteScratchpadCommand,
     InvokeFunctionCommand,
@@ -74,6 +76,8 @@ from marimo_lsp.models import (
     NotebookCommand,
     NotebookDocument,
     PackageCommand,
+    ReadSessionOutputsRequest,
+    ReadSessionOutputsResponse,
     RestartSessionRequest,
     ScriptSource,
     SerializeResponse,
@@ -250,8 +254,15 @@ def _require_kernel_session(
     session = ctx.sessions.get(notebook_uri)
     if session is None:
         raise SessionNotFoundError(notebook_uri)
-    if session.session_id != session_id:
+    if session.session_id != session_id or session.requires_restart:
         raise KernelSessionMismatchError(notebook_uri)
+    return session
+
+
+def _require_current_session(ctx: ApiContext, notebook_uri: str) -> Session:
+    session = ctx.sessions.get(notebook_uri)
+    if session is None or session.requires_restart:
+        raise SessionNotFoundError(notebook_uri)
     return session
 
 
@@ -811,6 +822,30 @@ async def set_display_theme(
     return SetDisplayThemeResponse(success=True)
 
 
+@marimo_api("read-session-outputs")
+async def read_session_outputs(
+    ctx: ApiContext,
+    args: NotebookCommand[ReadSessionOutputsRequest],
+) -> ReadSessionOutputsResponse:
+    """Read display outputs without restoring kernel state."""
+    snapshot = await ctx.sessions.read_session_outputs(
+        args.notebook_uri,
+        args.inner.location,
+    )
+    normalized: list[CellNotification] = []
+    for notification in snapshot:
+        try:
+            normalized.append(
+                msgspec.json.decode(
+                    encode_json_bytes(notification),
+                    type=CellNotification,
+                )
+            )
+        except Exception:
+            logger.exception("Ignored unserializable saved output notification")
+    return ReadSessionOutputsResponse(notifications=normalized)
+
+
 @marimo_api("export-as-html")
 async def export_as_html(
     ctx: ApiContext,
@@ -818,8 +853,7 @@ async def export_as_html(
 ) -> str:
     """Export the notebook as HTML with current outputs."""
     logger.info(f"export_as_html for {args.notebook_uri}")
-    session = ctx.sessions.get(args.notebook_uri)
-    assert session, f"No session in workspace for {args.notebook_uri}"
+    session = _require_current_session(ctx, args.notebook_uri)
 
     # Export the notebook with current outputs using the Exporter
     app = session.app
@@ -851,8 +885,7 @@ async def export_as_ipynb(
 ) -> str:
     """Export the notebook as ipynb with current outputs."""
     logger.info(f"export_as_ipynb for {args.notebook_uri}")
-    session = ctx.sessions.get(args.notebook_uri)
-    assert session, f"No session in workspace for {args.notebook_uri}"
+    session = _require_current_session(ctx, args.notebook_uri)
 
     ipynb_str = Exporter().export_as_ipynb(
         IPYNBExportRequest(
@@ -881,8 +914,7 @@ async def export_as_markdown(
 ) -> str:
     """Export the notebook as Markdown."""
     logger.info(f"export_as_markdown for {args.notebook_uri}")
-    session = ctx.sessions.get(args.notebook_uri)
-    assert session, f"No session in workspace for {args.notebook_uri}"
+    session = _require_current_session(ctx, args.notebook_uri)
 
     result = export_markdown(
         MarkdownExportRequest(

@@ -18,6 +18,7 @@ from marimo_lsp.api import (
     ApiContext,
     KernelSessionMismatchError,
     KernelSessionRequiredError,
+    SessionNotFoundError,
     _restore_unknown_app_options,
     delete_cell,
     deserialize,
@@ -153,6 +154,7 @@ async def test_run_correlated_interrupt_records_scratchpad_cancellation() -> Non
 async def test_send_stdin_targets_one_exact_kernel_session() -> None:
     session_id = SessionId("00000000-0000-4000-8000-000000000001")
     session = MagicMock(session_id=session_id)
+    session.requires_restart = False
     sessions = MagicMock()
     sessions.get.return_value = session
 
@@ -166,6 +168,27 @@ async def test_send_stdin_targets_one_exact_kernel_session() -> None:
     )
 
     session.put_input.assert_called_once_with("answer")
+
+
+@pytest.mark.asyncio
+async def test_send_stdin_rejects_an_invalidated_live_graph() -> None:
+    session_id = SessionId("00000000-0000-4000-8000-000000000001")
+    session = MagicMock(session_id=session_id)
+    session.requires_restart = True
+    sessions = MagicMock()
+    sessions.get.return_value = session
+
+    with pytest.raises(KernelSessionMismatchError):
+        await send_stdin(
+            _context(sessions),
+            KernelCommand(
+                notebook_uri=NOTEBOOK_URI,
+                session_id=session_id,
+                inner=StdinRequest(text="stale"),
+            ),
+        )
+
+    session.put_input.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -377,6 +400,7 @@ if __name__ == "__main__":
     app.run()
 """
     session = MagicMock()
+    session.requires_restart = False
     session.filename = "/workspace/report.py"
     session.app.to_ir.return_value = MarimoConvert.from_py(source).to_ir()
     sessions = MagicMock()
@@ -392,6 +416,25 @@ if __name__ == "__main__":
 
     assert "title: Report" in markdown
     assert "```python {.marimo}\nx = 1\n```" in markdown
+
+
+@pytest.mark.asyncio
+async def test_export_rejects_an_invalidated_live_graph() -> None:
+    session = MagicMock()
+    session.requires_restart = True
+    sessions = MagicMock()
+    sessions.get.return_value = session
+
+    with pytest.raises(SessionNotFoundError):
+        await export_as_markdown(
+            _context(sessions),
+            NotebookCommand(
+                notebook_uri=NOTEBOOK_URI,
+                inner=ExportAsMarkdownRequest(),
+            ),
+        )
+
+    session.app.to_ir.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -664,6 +707,7 @@ async def test_list_sql_schemas_is_forwarded_to_the_kernel() -> None:
     )
     session_id = SessionId("00000000-0000-4000-8000-000000000001")
     session = MagicMock(session_id=session_id)
+    session.requires_restart = False
     sessions = MagicMock()
     sessions.get.return_value = session
 
@@ -692,6 +736,7 @@ async def test_list_sql_tables_is_forwarded_to_the_kernel() -> None:
     )
     session_id = SessionId("00000000-0000-4000-8000-000000000001")
     session = MagicMock(session_id=session_id)
+    session.requires_restart = False
     sessions = MagicMock()
     sessions.get.return_value = session
 
