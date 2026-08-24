@@ -24,9 +24,11 @@ from marimo_lsp.wasm.protocol import (
     Input,
     Interrupt,
     KernelLaunchArgs,
+    LocateSessionCache,
     Log,
     Operation,
     Ready,
+    SessionCacheLocation,
     Start,
     ToBridge,
     encode,
@@ -76,6 +78,7 @@ class WasmKernel:
         process_id: str,
         executable: str,
         working_directory: str,
+        notebook_path: str | None,
         receive: Callable[[KernelMessage], None],
         on_close: Callable[[], None],
     ) -> None:
@@ -85,6 +88,10 @@ class WasmKernel:
         self._on_close = on_close
         self._decoder = Decoder(FromBridge)
         self._ready = asyncio.get_running_loop().create_future()
+        self._locations: dict[str, asyncio.Future[str | None]] = {}
+        self._notebook_path = notebook_path
+        self._initial_session_cache_path: str | None = None
+        self._can_locate_session_cache = False
         self._closed = False
         self.executable = executable
         self.working_directory = working_directory
@@ -97,8 +104,16 @@ class WasmKernel:
         for message in self._decoder.feed(chunk):
             if isinstance(message, Ready):
                 self.marimo_version = normalize_marimo_version(message.marimo_version)
+                # The path belongs to the native host. Pyodide's POSIX pathlib
+                # cannot validate Windows paths, so keep it opaque here.
+                self._initial_session_cache_path = message.session_cache_path
+                self._can_locate_session_cache = message.can_locate_session_cache
                 if not self._ready.done():
                     self._ready.set_result(None)
+            elif isinstance(message, SessionCacheLocation):
+                future = self._locations.get(message.request_id)
+                if future is not None and not future.done():
+                    future.set_result(message.path)
             elif isinstance(message, Operation):
                 self._receive(KernelMessage(bytes(message.message)))
             elif isinstance(message, Error):
@@ -128,6 +143,28 @@ class WasmKernel:
         """Wait until the kernel bridge reports readiness."""
         await self._ready
 
+    async def locate_saved_session(self, notebook_path: str) -> str | None:
+        """Resolve a renamed notebook through the selected-Python bridge."""
+        if self._closed:
+            return None
+        if notebook_path == self._notebook_path:
+            return self._initial_session_cache_path
+        if not self._can_locate_session_cache:
+            return None
+        request_id = str(uuid4())
+        future: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
+        self._locations[request_id] = future
+        try:
+            self._write(
+                LocateSessionCache(
+                    request_id=request_id,
+                    notebook_path=notebook_path,
+                )
+            )
+            return await future
+        finally:
+            self._locations.pop(request_id, None)
+
     def abort(self) -> None:
         """Release a kernel bridge that failed before readiness."""
         self._release(close_process=True)
@@ -153,6 +190,10 @@ class WasmKernel:
         if self._closed:
             return
         self._closed = True
+        for future in self._locations.values():
+            if not future.done():
+                future.cancel()
+        self._locations.clear()
         try:
             if request_close:
                 self._write(Close())
@@ -210,6 +251,7 @@ class WasmKernels:
             process_id=process_id,
             executable=executable,
             working_directory=working_directory,
+            notebook_path=app_file_manager.path,
             receive=receive,
             on_close=forget,
         )

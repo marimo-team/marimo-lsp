@@ -23,6 +23,10 @@ class Kernel(typing.Protocol):
     working_directory: str
     marimo_version: str | None
 
+    async def locate_saved_session(self, notebook_path: str) -> str | None:
+        """Resolve marimo's cache path in this kernel's environment."""
+        ...
+
     def send(self, request: CommandMessage) -> None:
         """Send a command to the kernel."""
         ...

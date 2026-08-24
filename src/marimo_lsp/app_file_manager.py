@@ -48,8 +48,23 @@ class LspAppFileManager:
     def __init__(self, *, server: LanguageServer, notebook_uri: str) -> None:
         self._server = server
         self._notebook_uri = notebook_uri
+        self.app = InternalApp(App())
+        self._header: str | None = None
+        self.sync(server.workspace)
+
+    @property
+    def header(self) -> str | None:
+        """Return the latest synchronized notebook header."""
+        return self._header
+
+    def sync(self, workspace: Workspace) -> None:
+        """Synchronize app state and source metadata from the LSP document."""
+        notebook = find_notebook_document(workspace, self._notebook_uri)
+        self._header = decode_notebook_document_metadata(notebook).header
         self.app = sync_app_with_workspace(
-            workspace=server.workspace, notebook_uri=notebook_uri, app=None
+            workspace=workspace,
+            notebook_uri=self._notebook_uri,
+            app=self.app,
         )
 
     @property

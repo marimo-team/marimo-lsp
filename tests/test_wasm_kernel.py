@@ -21,8 +21,10 @@ from marimo_lsp.wasm.protocol import (
     Decoder,
     Error,
     FromBridge,
+    LocateSessionCache,
     Operation,
     Ready,
+    SessionCacheLocation,
     ToBridge,
     encode,
 )
@@ -85,10 +87,20 @@ async def _launch_kernel():
     process_id = callbacks.spawns[0][0]
     kernels.accept(
         process_id,
-        encode(Ready(marimo_version="1.2.3-rc1+build.7")),
+        encode(
+            Ready(
+                marimo_version="1.2.3-rc1+build.7",
+                session_cache_path=("/workspace/__marimo__/session/notebook.py.json"),
+                can_locate_session_cache=True,
+            )
+        ),
     )
     kernel = await launch
     assert kernel.marimo_version == "1.2.3-rc1+build.7"
+    assert (
+        await kernel.locate_saved_session("/workspace/notebook.py")
+        == "/workspace/__marimo__/session/notebook.py.json"
+    )
     return callbacks, kernels, kernel, messages
 
 
@@ -117,6 +129,28 @@ async def test_wasm_launch_accepts_legacy_ready_without_version() -> None:
 
     kernel = await launch
     assert kernel.marimo_version is None
+    writes = len(callbacks.writes)
+
+    assert await kernel.locate_saved_session("/workspace/renamed.py") is None
+    assert len(callbacks.writes) == writes
+
+
+@pytest.mark.asyncio
+async def test_wasm_does_not_relocate_without_bridge_capability() -> None:
+    callbacks, kernels, launch, _messages = await _begin_launch()
+    process_id = callbacks.spawns[0][0]
+    payload = b'{"type":"ready","marimoVersion":"1.2.3","version":1}'
+
+    kernels.accept(
+        process_id,
+        len(payload).to_bytes(4, byteorder="big") + payload,
+    )
+
+    kernel = await launch
+    writes = len(callbacks.writes)
+
+    assert await kernel.locate_saved_session("/workspace/renamed.py") is None
+    assert len(callbacks.writes) == writes
 
 
 @pytest.mark.asyncio
@@ -128,6 +162,38 @@ async def test_wasm_launch_treats_unknown_marimo_version_as_unavailable() -> Non
 
     kernel = await launch
     assert kernel.marimo_version is None
+
+
+@pytest.mark.asyncio
+async def test_wasm_keeps_windows_saved_session_paths_opaque() -> None:
+    callbacks, kernels, launch, _messages = await _begin_launch()
+    process_id = callbacks.spawns[0][0]
+    initial = r"C:\workspace\__marimo__\session\notebook.py.json"
+    kernels.accept(
+        process_id,
+        encode(
+            Ready(
+                marimo_version="1.2.3",
+                session_cache_path=initial,
+                can_locate_session_cache=True,
+            )
+        ),
+    )
+    kernel = await launch
+
+    assert await kernel.locate_saved_session("/workspace/notebook.py") == initial
+
+    locate = asyncio.create_task(kernel.locate_saved_session(r"C:\workspace\moved.py"))
+    await asyncio.sleep(0)
+    request = Decoder(ToBridge).feed(callbacks.writes[-1][1])[0]
+    assert isinstance(request, LocateSessionCache)
+    moved = r"C:\workspace\__marimo__\session\moved.py.json"
+    kernels.accept(
+        process_id,
+        encode(SessionCacheLocation(request_id=request.request_id, path=moved)),
+    )
+
+    assert await locate == moved
 
 
 @pytest.mark.asyncio
@@ -213,6 +279,30 @@ async def test_wasm_kernel_forwards_lifecycle_and_messages() -> None:
             "operations": [KernelMessage(b'{"op":"ready"}')],
         }
     )
+
+
+@pytest.mark.asyncio
+async def test_wasm_kernel_resolves_a_moved_notebook_in_selected_python() -> None:
+    callbacks, kernels, kernel, _messages = await _launch_kernel()
+    process_id = callbacks.spawns[0][0]
+
+    locate = asyncio.create_task(kernel.locate_saved_session("/workspace/renamed.py"))
+    await asyncio.sleep(0)
+    request = Decoder(ToBridge).feed(callbacks.writes[-1][1])[0]
+    assert isinstance(request, LocateSessionCache)
+    assert request.notebook_path == "/workspace/renamed.py"
+
+    kernels.accept(
+        process_id,
+        encode(
+            SessionCacheLocation(
+                request_id=request.request_id,
+                path="/workspace/__marimo__/session/renamed.py.json",
+            )
+        ),
+    )
+
+    assert await locate == "/workspace/__marimo__/session/renamed.py.json"
 
 
 @pytest.mark.asyncio

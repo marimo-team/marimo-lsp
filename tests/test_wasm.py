@@ -17,6 +17,7 @@ async def test_wasm_server_handles_initialize_message() -> None:
     server = create_bridge(
         lambda message: messages.append(msgspec.json.decode(message)),
         Mock(),
+        Mock(),
     )
 
     await server.handle_message(
@@ -84,6 +85,7 @@ async def test_wasm_server_drives_async_api_handler() -> None:
     server = create_bridge(
         lambda message: messages.append(msgspec.json.decode(message)),
         Mock(),
+        Mock(),
     )
 
     await server.handle_message(
@@ -112,7 +114,7 @@ async def test_wasm_server_drives_async_api_handler() -> None:
 
 
 def test_wasm_server_close_releases_tracked_kernels() -> None:
-    server = create_bridge(Mock(), Mock())
+    server = create_bridge(Mock(), Mock(), Mock())
     kernel = Mock()
     server._kernels._kernels["kernel"] = kernel
 

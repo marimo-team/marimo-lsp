@@ -6,12 +6,12 @@ import asyncio
 import threading
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from marimo_lsp.kernels.manager import Manager, launch_kernel
-from marimo_lsp.kernels.native import NativeKernels
+from marimo_lsp.kernels.native import NativeKernel, NativeKernels
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -32,7 +32,10 @@ def _manager(notebook: Path, working_directory: str) -> Manager:
 def test_supplied_working_directory_reaches_launch_kernel(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    launched = Mock(marimo_version="1.2.3-rc1+build.7")
+    launched = Mock(
+        marimo_version="1.2.3-rc1+build.7",
+        session_cache_path=str(tmp_path / "session.json"),
+    )
     launch = Mock(return_value=launched)
     monkeypatch.setattr("marimo_lsp.kernels.manager.launch_kernel", launch)
     selected = tmp_path / "selected"
@@ -43,6 +46,49 @@ def test_supplied_working_directory_reaches_launch_kernel(
 
     assert launch.call_args.kwargs["cwd"] == str(selected)
     assert manager.marimo_version == "1.2.3-rc1+build.7"
+    assert manager.session_cache_path == str(tmp_path / "session.json")
+
+
+@pytest.mark.asyncio
+async def test_native_kernel_reuses_the_startup_cache_path() -> None:
+    manager = Mock(
+        executable="/python",
+        working_directory="/workspace",
+        app_metadata=Mock(filename="/workspace/notebook.py"),
+        session_cache_path="/workspace/__marimo__/session/notebook.py.json",
+    )
+    kernel = NativeKernel(Mock(), manager)
+
+    assert (
+        await kernel.locate_saved_session("/workspace/notebook.py")
+        == "/workspace/__marimo__/session/notebook.py.json"
+    )
+
+
+@pytest.mark.asyncio
+async def test_native_kernel_resolves_a_renamed_notebook_in_selected_python(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = Mock(
+        executable="/python",
+        working_directory="/workspace",
+        app_metadata=Mock(filename="/workspace/notebook.py"),
+        session_cache_path="/workspace/__marimo__/session/notebook.py.json",
+    )
+    kernel = NativeKernel(Mock(), manager)
+    process = Mock(returncode=0)
+    process.communicate = AsyncMock(
+        return_value=(b'"/workspace/__marimo__/session/renamed.py.json"', b"")
+    )
+    launch = AsyncMock(return_value=process)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", launch)
+
+    located = await kernel.locate_saved_session("/workspace/renamed.py")
+
+    assert located == "/workspace/__marimo__/session/renamed.py.json"
+    assert launch.call_args.args[:2] == ("/python", "-c")
+    assert launch.call_args.args[3] == "/workspace/renamed.py"
+    assert launch.call_args.kwargs["cwd"] == "/workspace"
 
 
 def test_kernel_reports_exact_marimo_version_from_launched_process(
@@ -50,20 +96,29 @@ def test_kernel_reports_exact_marimo_version_from_launched_process(
 ) -> None:
     process = Mock()
     process.stdout.readline.side_effect = [
-        b'{"marimo_version":"1.2.3-rc1+build.7"}\n',
+        (
+            b'{"marimo_version":"1.2.3-rc1+build.7",'
+            b'"session_cache_path":"/workspace/__marimo__/session/notebook.py.json"}\n'
+        ),
         b"KERNEL_READY\n",
     ]
     popen = Mock(return_value=process)
     monkeypatch.setattr("marimo_lsp.kernels.manager.subprocess.Popen", popen)
     args = Mock()
+    args.app_metadata.filename = "/workspace/notebook.py"
     args.encode_json.return_value = b"{}"
 
     kernel_process = launch_kernel("/python", args, cwd="/workspace")
 
     assert kernel_process.marimo_version == "1.2.3-rc1+build.7"
+    assert (
+        kernel_process.session_cache_path
+        == "/workspace/__marimo__/session/notebook.py.json"
+    )
     command = popen.call_args.args[0]
     assert command[:2] == ["/python", "-c"]
     assert "runpy.run_module" in command[2]
+    assert command[3] == "/workspace/notebook.py"
     assert popen.call_args.kwargs["cwd"] == "/workspace"
 
 

@@ -32,10 +32,13 @@ from marimo._runtime.commands import (
 from marimo._session.state.session_view import SessionView
 from marimo._types.ids import SessionId
 
-from marimo_lsp.app_file_manager import LspAppFileManager, sync_app_with_workspace
+from marimo_lsp.app_file_manager import LspAppFileManager
 from marimo_lsp.kernels import KernelOpenError, normalize_marimo_version
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import KernelNotification, ListSessionsResponse, SessionInfo
+from marimo_lsp.saved_session_store import LocalSavedSessionFiles
+from marimo_lsp.saved_session_writer import SavedSessionWriter
+from marimo_lsp.saved_sessions import decode_saved_session_view
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -55,6 +58,7 @@ if TYPE_CHECKING:
     from pygls.workspace import Workspace
 
     from marimo_lsp.kernels import Kernel, Kernels
+    from marimo_lsp.saved_session_store import SavedSessionFiles
 
 
 logger = get_logger()
@@ -73,6 +77,78 @@ def _notification_name(message: KernelMessage) -> str:
         return deserialize_kernel_notification_name(message)
     except Exception:  # noqa: BLE001
         return "<undecodable>"
+
+
+async def _locate_saved_session(
+    kernel: Kernel,
+    notebook_path: str | None,
+) -> str | None:
+    """Resolve an optional cache path without making kernel startup fail."""
+    if notebook_path is None:
+        return None
+    try:
+        return await kernel.locate_saved_session(notebook_path)
+    except Exception:
+        logger.exception("Unable to locate saved session")
+        return None
+
+
+async def _read_saved_session(
+    files: SavedSessionFiles,
+    target: str | None,
+    app_file_manager: LspAppFileManager,
+    marimo_version: str | None,
+) -> SessionView | None:
+    """Read one compatible view before its authoritative Session starts."""
+    if target is None or marimo_version is None:
+        return None
+    try:
+        contents = await files.read(target)
+        if contents is None:
+            return None
+        cell_manager = app_file_manager.app.cell_manager
+        return await asyncio.to_thread(
+            decode_saved_session_view,
+            contents,
+            codes=tuple(cell_manager.codes()),
+            cell_ids=tuple(cell_manager.cell_ids()),
+            marimo_version=marimo_version,
+            header=app_file_manager.header,
+        )
+    except Exception:
+        logger.exception("Unable to read saved session")
+        return None
+
+
+async def _initial_session_view(
+    previous: Session | None,
+    kernel: Kernel,
+    files: SavedSessionFiles,
+    target: str | None,
+    app_file_manager: LspAppFileManager,
+) -> tuple[SessionView | None, bool]:
+    """Reuse a compatible live view, otherwise restore the selected cache."""
+    previous_version = normalize_marimo_version(
+        previous.marimo_version if previous is not None else None
+    )
+    kernel_version = normalize_marimo_version(kernel.marimo_version)
+    reuse_previous = (
+        previous is not None
+        and previous_version is not None
+        and kernel_version is not None
+        and previous_version == kernel_version
+    )
+    if reuse_previous:
+        return previous.session_view, True
+    return (
+        await _read_saved_session(
+            files,
+            target,
+            app_file_manager,
+            kernel_version,
+        ),
+        False,
+    )
 
 
 class _OperationSink:
@@ -178,6 +254,9 @@ class Session:
         on_change: typing.Callable[[], None] | None = None,
         session_view: SessionView | None = None,
         started_at: float | None = None,
+        saved_session_files: SavedSessionFiles | None = None,
+        saved_session_target: str | None = None,
+        saved_session_pending: bool = False,
     ) -> None:
         self.session_id = session_id
         self._notebook_uri = notebook_uri
@@ -185,6 +264,11 @@ class Session:
         self._config_manager = config_manager
         # Used by exporters and scratchpad snapshots.
         self.session_view = session_view if session_view is not None else SessionView()
+        # A new or disk-restored view must not overwrite the sidecar before a
+        # kernel request supplies current code hashes. A reused live view is
+        # retried because its previous writer may have been interrupted.
+        if not saved_session_pending:
+            self.session_view.mark_auto_export_session()
 
         self._operation_sink = _OperationSink(
             server,
@@ -192,6 +276,7 @@ class Session:
             session_id,
             activated=False,
         )
+        self._activated = False
         self._closed = False
         self._runtime_config = config_manager.get_config(hide_secrets=False)
         self.started_at = started_at if started_at is not None else time.time()
@@ -207,7 +292,40 @@ class Session:
         self._state_lock = threading.RLock()
 
         self._kernel = kernel
+        self._saved_session_files = (
+            saved_session_files
+            if saved_session_files is not None
+            else LocalSavedSessionFiles()
+        )
+        self._saved_session_pending = saved_session_pending
+        self._saved_session_writer = self._make_saved_session_writer(
+            saved_session_target
+        )
+        self._saved_session_location: asyncio.Task[None] | None = None
         logger.info(f"Started session {session_id}")
+
+    def _make_saved_session_writer(
+        self,
+        target: str | None,
+    ) -> SavedSessionWriter | None:
+        if self.marimo_version is None or target is None:
+            return None
+        writer = SavedSessionWriter(
+            view=self.session_view,
+            app_file_manager=self._app_file_manager,
+            marimo_version=self.marimo_version,
+            target=target,
+            files=self._saved_session_files,
+            pending=self._saved_session_pending,
+        )
+        self._saved_session_pending = False
+        return writer
+
+    def _stop_saved_session_writer(self) -> None:
+        writer = self._saved_session_writer
+        self._saved_session_writer = None
+        if writer is not None:
+            self._saved_session_pending |= writer.stop()
 
     @property
     def executable(self) -> str:
@@ -265,11 +383,7 @@ class Session:
             cell_id: config.asdict()
             for cell_id, config in self._app_file_manager.app.cell_manager.config_map().items()
         }
-        sync_app_with_workspace(
-            workspace=workspace,
-            notebook_uri=self._notebook_uri,
-            app=self._app_file_manager.app,
-        )
+        self._app_file_manager.sync(workspace)
         current_configs = {
             cell_id: config.asdict()
             for cell_id, config in self._app_file_manager.app.cell_manager.config_map().items()
@@ -456,10 +570,19 @@ class Session:
 
     def move(self, notebook_uri: str, *, notify: bool = True) -> None:
         """Move this session to a renamed notebook URI."""
+        self._stop_saved_session_writer()
+        if self._saved_session_location is not None:
+            self._saved_session_location.cancel()
+            self._saved_session_location = None
         with self._state_lock:
             self._notebook_uri = notebook_uri
             self._operation_sink.move(notebook_uri)
             self._app_file_manager.move(notebook_uri)
+        notebook_path = self._app_file_manager.path
+        if notebook_path is not None:
+            self._saved_session_location = asyncio.create_task(
+                self._relocate_saved_session(notebook_path)
+            )
         if notify:
             self._on_change()
 
@@ -492,18 +615,53 @@ class Session:
 
     def activate(self) -> None:
         """Release operations after this session becomes authoritative."""
+        self._activated = True
         self._operation_sink.activate()
+        if self._saved_session_writer is not None:
+            self._saved_session_writer.start()
+
+    async def _relocate_saved_session(self, notebook_path: str) -> None:
+        """Rebind persistence after a notebook rename."""
+        try:
+            target = await self._kernel.locate_saved_session(notebook_path)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Unable to locate saved session after notebook move")
+            return
+        if self._closed or self._app_file_manager.path != notebook_path:
+            return
+        self._saved_session_writer = self._make_saved_session_writer(target)
+        if self._activated and self._saved_session_writer is not None:
+            self._saved_session_writer.start()
 
     def close(self) -> None:
         """Close the session and its owned kernel resources."""
         if self._closed:
             return
         self._closed = True
-        self._idle.set()
-        self._on_change = lambda: None
-        logger.info(f"Closing session {self.session_id}")
-        self._kernel.close()
-        self._operation_sink.detach()
+        try:
+            if self._saved_session_location is not None:
+                try:
+                    self._saved_session_location.cancel()
+                except RuntimeError:
+                    logger.exception("Unable to cancel saved-session relocation")
+                self._saved_session_location = None
+            try:
+                self._stop_saved_session_writer()
+            except RuntimeError:
+                logger.exception("Unable to stop saved-session writer")
+            try:
+                self._idle.set()
+            except RuntimeError:
+                logger.exception("Unable to release idle-session waiters")
+            self._on_change = lambda: None
+            logger.info(f"Closing session {self.session_id}")
+        finally:
+            try:
+                self._kernel.close()
+            finally:
+                self._operation_sink.detach()
 
 
 class Sessions:
@@ -514,9 +672,11 @@ class Sessions:
         server: LanguageServer,
         *,
         kernels: Kernels,
+        saved_session_files: SavedSessionFiles | None = None,
     ) -> None:
         self._server = server
         self._kernels = kernels
+        self._saved_session_files = saved_session_files or LocalSavedSessionFiles()
         self._sessions: dict[str, Session] = {}
         self._lock = threading.RLock()
         self._lifecycle_locks: dict[str, asyncio.Lock] = {}
@@ -673,15 +833,16 @@ class Sessions:
             receive=receive,
         )
         try:
-            previous_version = normalize_marimo_version(
-                previous.marimo_version if previous is not None else None
+            saved_session_target = await _locate_saved_session(
+                kernel,
+                app_file_manager.path,
             )
-            kernel_version = normalize_marimo_version(kernel.marimo_version)
-            keep_previous_view = (
-                previous is not None
-                and previous_version is not None
-                and kernel_version is not None
-                and previous_version == kernel_version
+            session_view, keep_previous_view = await _initial_session_view(
+                previous,
+                kernel,
+                self._saved_session_files,
+                saved_session_target,
+                app_file_manager,
             )
             session = Session(
                 session_id=session_id,
@@ -690,8 +851,11 @@ class Sessions:
                 kernel=kernel,
                 app_file_manager=app_file_manager,
                 config_manager=config_manager,
-                session_view=previous.session_view if keep_previous_view else None,
+                session_view=session_view,
                 started_at=previous.started_at if previous else None,
+                saved_session_files=self._saved_session_files,
+                saved_session_target=saved_session_target,
+                saved_session_pending=keep_previous_view,
             )
             session.set_on_kernel_failure(_raise_kernel_failure)
             for message in pending_messages:

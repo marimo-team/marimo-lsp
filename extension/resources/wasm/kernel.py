@@ -41,9 +41,11 @@ from protocol import (
     FromBridge,
     Input,
     Interrupt,
+    LocateSessionCache,
     Log,
     Operation,
     Ready,
+    SessionCacheLocation,
     Start,
     ToBridge,
     encode,
@@ -61,6 +63,24 @@ import json, runpy, marimo
 print(json.dumps({"marimo_version": marimo.__version__}), flush=True)
 runpy.run_module("marimo._ipc.launch_kernel", run_name="__main__")
 """
+
+
+def _locate_session_cache(notebook_path: str | None) -> str | None:
+    if not notebook_path:
+        return None
+    try:
+        # Older selected environments may not provide this private helper;
+        # importing it eagerly would make optional persistence block startup.
+        from marimo._session.state.serialize import (  # noqa: PLC0415
+            get_session_cache_file,
+        )
+
+        path = Path(notebook_path)
+        if not path.is_file():
+            return None
+        return str(get_session_cache_file(path).absolute())
+    except Exception:  # noqa: BLE001 - cache support must not block startup
+        return None
 
 
 def _read_frame() -> ToBridge | None:
@@ -159,7 +179,15 @@ class _Bridge:
         # during startup.
         threading.Thread(target=self._watch_kernel_exit, daemon=True).start()
         threading.Thread(target=self._forward_operations, daemon=True).start()
-        _write_frame(Ready(marimo_version=marimo_version))
+        _write_frame(
+            Ready(
+                marimo_version=marimo_version,
+                session_cache_path=_locate_session_cache(
+                    kernel_args.app_metadata.filename
+                ),
+                can_locate_session_cache=True,
+            )
+        )
 
     def _with_stderr_tail(self, message: str) -> str:
         with self._stderr_lock:
@@ -239,6 +267,13 @@ class _Bridge:
             self._queues.put_input(message.text)
         elif isinstance(message, Interrupt):
             self.interrupt()
+        elif isinstance(message, LocateSessionCache):
+            _write_frame(
+                SessionCacheLocation(
+                    request_id=message.request_id,
+                    path=_locate_session_cache(message.notebook_path),
+                )
+            )
         elif isinstance(message, Close):
             self.close()
             return False

@@ -30,8 +30,24 @@ if typing.TYPE_CHECKING:
 logger = get_logger()
 
 _KERNEL_LAUNCH_CODE = """\
-import json, runpy, marimo
-print(json.dumps({"marimo_version": marimo.__version__}), flush=True)
+import json, os, runpy, sys, marimo
+try:
+    from pathlib import Path
+    from marimo._session.state.serialize import get_session_cache_file
+    _notebook_path = sys.argv[1] if len(sys.argv) > 1 else ""
+    _notebook = Path(_notebook_path) if _notebook_path else None
+    _session_cache_path = (
+        os.path.abspath(os.fspath(get_session_cache_file(_notebook)))
+        if _notebook is not None and _notebook.is_file()
+        else None
+    )
+except Exception:
+    _session_cache_path = None
+print(json.dumps({
+    "marimo_version": marimo.__version__,
+    "session_cache_path": _session_cache_path,
+}), flush=True)
+sys.argv[:] = [sys.argv[0]]
 runpy.run_module("marimo._ipc.launch_kernel", run_name="__main__")
 """
 _MAX_STARTUP_STDERR_CHARS = 16_000
@@ -67,7 +83,7 @@ def _with_stderr_tail(
     return f"{message} Stderr: {stderr[-_MAX_STARTUP_STDERR_CHARS:]}"
 
 
-def _parse_kernel_version(version_line: str) -> str | None:
+def _parse_kernel_metadata(version_line: str) -> tuple[str | None, str | None]:
     try:
         version_payload = json.loads(version_line)
     except json.JSONDecodeError as error:
@@ -81,7 +97,13 @@ def _parse_kernel_version(version_line: str) -> str | None:
     if not isinstance(marimo_version, str):
         msg = f"Invalid kernel version response: {version_line!r}"
         raise TypeError(msg)
-    return normalize_marimo_version(marimo_version)
+    session_cache_path = version_payload.get("session_cache_path")
+    if (
+        not isinstance(session_cache_path, str)
+        or not Path(session_cache_path).is_absolute()
+    ):
+        session_cache_path = None
+    return normalize_marimo_version(marimo_version), session_cache_path
 
 
 def _require_kernel_ready(
@@ -107,7 +129,12 @@ def launch_kernel(
     cwd: str | None = None,
 ) -> Process:
     """Launch kernel as a subprocess."""
-    cmd = [executable, "-c", _KERNEL_LAUNCH_CODE]
+    cmd = [
+        executable,
+        "-c",
+        _KERNEL_LAUNCH_CODE,
+        str(args.app_metadata.filename or ""),
+    ]
     logger.info(f"Launching kernel subprocess: {executable} -c <kernel bootstrap>")
     logger.debug(f"Connection info: {args.connection_info}")
     if cwd:
@@ -134,7 +161,7 @@ def launch_kernel(
         logger.debug("Waiting for marimo version from kernel subprocess")
 
         version_line = process.stdout.readline().decode("utf-8").strip()
-        marimo_version = _parse_kernel_version(version_line)
+        marimo_version, session_cache_path = _parse_kernel_metadata(version_line)
 
         # Wait for "KERNEL_READY" message
         ready_line = process.stdout.readline().decode("utf-8").strip()
@@ -148,6 +175,7 @@ def launch_kernel(
         raise
 
     owner.marimo_version = marimo_version
+    owner.session_cache_path = session_cache_path
     logger.info(f"Kernel subprocess started successfully with PID: {process.pid}")
     return owner
 
@@ -193,6 +221,7 @@ class Manager(KernelManagerImpl):
         self.connection_info = connection_info
         self.working_directory = working_directory
         self.marimo_version: str | None = None
+        self.session_cache_path: str | None = None
 
     def start_kernel(self) -> None:
         """Start an instance of the marimo kernel using ZeroMQ IPC."""
@@ -212,6 +241,7 @@ class Manager(KernelManagerImpl):
             cwd=str(working_directory),
         )
         self.marimo_version = self.kernel_task.marimo_version
+        self.session_cache_path = self.kernel_task.session_cache_path
 
 
 class Process(ProcessLike):
@@ -227,10 +257,12 @@ class Process(ProcessLike):
         self,
         inner: subprocess.Popen[bytes],
         marimo_version: str | None = None,
+        session_cache_path: str | None = None,
     ) -> None:
         """Initialize with a subprocess.Popen instance."""
         self.inner = inner
         self.marimo_version = marimo_version
+        self.session_cache_path = session_cache_path
 
     @property
     def pid(self) -> int | None:
