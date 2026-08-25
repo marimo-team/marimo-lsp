@@ -15,6 +15,7 @@ import msgspec
 from marimo._config.config import MarimoConfig  # noqa: TC002
 from marimo._convert.common.format import DEFAULT_MARKDOWN_PREFIX
 from marimo._messaging.notification import (  # noqa: TC002
+    CellNotification,
     NotificationMessage,
     VariablesNotification,
 )
@@ -416,6 +417,13 @@ class SetDisplayThemeRequest(msgspec.Struct, rename="camel"):
     """The theme to set ('light' or 'dark')."""
 
 
+class ReadNotebookOutputsRequest(msgspec.Struct, rename="camel"):
+    """Resolve outputs for an opened notebook without starting a kernel."""
+
+    session_cache_path: str | None = None
+    """Conventional cold-cache path, or ``None`` for live-session replay only."""
+
+
 class ApiRequest(msgspec.Struct, rename="camel"):
     """A unified API request for all marimo internal methods."""
 
@@ -458,6 +466,40 @@ class SetDisplayThemeResponse(msgspec.Struct, rename="camel"):
     """Response for ``set-display-theme``."""
 
     success: bool
+
+
+class LiveCellReplay(
+    msgspec.Struct,
+    tag="live",
+    tag_field="kind",
+    rename="camel",
+    frozen=True,
+):
+    """One cell projected from an authoritative live SessionView."""
+
+    notification: CellNotification
+    executed_source: str | None
+
+
+class SavedCellReplay(
+    msgspec.Struct,
+    tag="saved",
+    tag_field="kind",
+    rename="camel",
+    frozen=True,
+):
+    """One cell restored from a compatible saved-session sidecar."""
+
+    notification: CellNotification
+
+
+type CellOutputReplay = LiveCellReplay | SavedCellReplay
+
+
+class ReadNotebookOutputsResponse(msgspec.Struct, rename="camel", frozen=True):
+    """Cell outputs replayed from live memory or a saved-session sidecar."""
+
+    cells: list[CellOutputReplay]
 
 
 ExecuteCellsRequest = core.ExecuteCellsRequest

@@ -39,6 +39,7 @@ interface PresentedRun {
   readonly execution: vscode.NotebookCellExecution;
   readonly projection: CellOutputProjection;
   readonly notebook: vscode.NotebookDocument;
+  started: boolean;
 }
 
 const resourceKey = (cell: CellRef, runId: RunId): string =>
@@ -113,7 +114,8 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
         state: CellRuntimeState,
         final: boolean,
       ) =>
-        withResource(cell, runId, ({ notebook, projection }) => {
+        withResource(cell, runId, ({ notebook, projection, started }) => {
+          if (!started) return Effect.void;
           const outputs = buildKeyedCellOutputs(
             cell.cellId,
             state,
@@ -218,11 +220,15 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
                 execution,
                 projection: new CellOutputProjection(execution),
                 notebook: binding.notebook.rawNotebookDocument,
+                started: false,
               });
             }),
           StartRun: ({ runId, at }) =>
-            withResource(cell, runId, ({ execution }) =>
-              Effect.sync(() => execution.start(Option.getOrUndefined(at))),
+            withResource(cell, runId, (resource) =>
+              Effect.sync(() => {
+                resource.execution.start(Option.getOrUndefined(at));
+                resource.started = true;
+              }),
             ),
           RenderOutputs: ({ runId, state, final }) =>
             renderOutputs(cell, runId, state, final),

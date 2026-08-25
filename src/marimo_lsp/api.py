@@ -26,6 +26,7 @@ from marimo._export.requests import (
     MarkdownExportRequest,
 )
 from marimo._export.serialization import serialize_notebook_snapshot
+from marimo._messaging.msgspec_encoder import encode_json_bytes
 from marimo._runtime.commands import (
     ExecuteScratchpadCommand,
     InvokeFunctionCommand,
@@ -74,6 +75,8 @@ from marimo_lsp.models import (
     NotebookCommand,
     NotebookDocument,
     PackageCommand,
+    ReadNotebookOutputsRequest,
+    ReadNotebookOutputsResponse,
     RestartSessionRequest,
     ScriptSource,
     SerializeResponse,
@@ -809,6 +812,24 @@ async def set_display_theme(
         )
         session.update_runtime_config(updated)
     return SetDisplayThemeResponse(success=True)
+
+
+@marimo_api("read-notebook-outputs")
+async def read_notebook_outputs(
+    ctx: ApiContext,
+    args: NotebookCommand[ReadNotebookOutputsRequest],
+) -> ReadNotebookOutputsResponse:
+    """Replay the live SessionView, falling back to a compatible sidecar."""
+    replay = await ctx.sessions.read_notebook_outputs(
+        args.notebook_uri,
+        session_cache_path=args.inner.session_cache_path,
+    )
+    # Match marimo's websocket JSON normalization before pygls serializes the
+    # response (for example, non-finite output numbers become JSON null).
+    return msgspec.json.decode(
+        encode_json_bytes(replay),
+        type=ReadNotebookOutputsResponse,
+    )
 
 
 @marimo_api("export-as-html")

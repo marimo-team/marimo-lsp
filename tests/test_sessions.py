@@ -12,6 +12,8 @@ from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
 from marimo._config.config import DEFAULT_CONFIG, MarimoConfig, RuntimeConfig
+from marimo._messaging.cell_output import CellChannel, CellOutput
+from marimo._messaging.notification import CellNotification
 from marimo._messaging.types import KernelMessage
 from marimo._runtime.commands import (
     CodeCompletionCommand,
@@ -26,7 +28,7 @@ from marimo._types.ids import CellId_t, RequestId, SessionId, UIElementId
 
 from marimo_lsp.kernels import KernelOpenError
 from marimo_lsp.kernels.native import NativeKernel
-from marimo_lsp.models import SessionInfo
+from marimo_lsp.models import LiveCellReplay, SavedCellReplay, SessionInfo
 from marimo_lsp.sessions import Session, Sessions, _OperationSink
 
 if TYPE_CHECKING:
@@ -75,6 +77,95 @@ def test_control_requests_update_live_session_snapshot() -> None:
 
     assert session.session_view.ui_values == {UIElementId("slider"): 1}
     assert session.session_view.needs_export("html")
+
+
+def test_live_output_replay_carries_execution_source_and_staleness() -> None:
+    session, _queue_manager = _make_session()
+    cell_id = CellId_t("cell-1")
+    session._app_file_manager = Mock()
+    session._app_file_manager.app.cell_manager.code_map.return_value = {
+        cell_id: "edited = True"
+    }
+    session.session_view.last_executed_code[cell_id] = "edited = False"
+    session.session_view.add_notification(
+        CellNotification(
+            cell_id=cell_id,
+            status="idle",
+            output=CellOutput(
+                channel=CellChannel.OUTPUT,
+                mimetype="text/plain",
+                data="old output",
+            ),
+        )
+    )
+
+    [replay] = session.output_replay()
+
+    assert isinstance(replay, LiveCellReplay)
+    assert replay.executed_source == "edited = False"
+    assert replay.notification.stale_inputs is True
+    assert replay.notification.output is not None
+    assert replay.notification.output.data == "old output"
+
+
+@pytest.mark.asyncio
+async def test_live_output_replay_wins_without_reading_the_sidecar() -> None:
+    files = Mock(read=AsyncMock())
+    sessions = Sessions(Mock(), kernels=Mock(), saved_session_files=files)
+    session = Mock(output_replay=Mock(return_value=[]))
+    sessions._sessions["file:///notebook.py"] = session
+
+    replay = await sessions.read_notebook_outputs(
+        "file:///notebook.py",
+        session_cache_path="/workspace/__marimo__/session/notebook.py.json",
+    )
+
+    assert replay.cells == []
+    session.output_replay.assert_called_once_with()
+    files.read.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cold_output_replay_uses_the_canonical_lsp_app(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cell_id = CellId_t("cell-1")
+    notification = CellNotification(
+        cell_id=cell_id,
+        status="idle",
+        output=CellOutput(
+            channel=CellChannel.OUTPUT,
+            mimetype="text/plain",
+            data="saved output",
+        ),
+    )
+    app_file_manager = Mock(header="# header")
+    app_file_manager.app.cell_manager.codes.return_value = ["mo.md('hello')"]
+    app_file_manager.app.cell_manager.cell_ids.return_value = [cell_id]
+    monkeypatch.setattr(
+        "marimo_lsp.sessions.LspAppFileManager",
+        Mock(return_value=app_file_manager),
+    )
+    decode = Mock(return_value=[notification])
+    monkeypatch.setattr("marimo_lsp.sessions.decode_saved_session_outputs", decode)
+    files = Mock(read=AsyncMock(return_value="{}"))
+    sessions = Sessions(Mock(), kernels=Mock(), saved_session_files=files)
+
+    replay = await sessions.read_notebook_outputs(
+        "file:///notebook.py",
+        session_cache_path="/workspace/__marimo__/session/notebook.py.json",
+    )
+
+    [cell] = replay.cells
+    assert isinstance(cell, SavedCellReplay)
+    assert cell.notification.output is not None
+    assert cell.notification.output.data == "saved output"
+    decode.assert_called_once_with(
+        "{}",
+        codes=["mo.md('hello')"],
+        cell_ids=[cell_id],
+        header="# header",
+    )
 
 
 def test_sync_forwards_changed_document_configs_to_the_kernel() -> None:

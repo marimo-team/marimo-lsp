@@ -49,8 +49,17 @@ class LspAppFileManager:
         self._server = server
         self._notebook_uri = notebook_uri
         self.app = sync_app_with_workspace(
-            workspace=server.workspace, notebook_uri=notebook_uri, app=None
+            workspace=server.workspace,
+            notebook_uri=notebook_uri,
+            app=None,
         )
+        self.header: str | None = None
+        self.sync_header(server.workspace)
+
+    def sync_header(self, workspace: Workspace) -> None:
+        """Synchronize the notebook header used by saved sessions."""
+        notebook = find_notebook_document(workspace, self._notebook_uri)
+        self.header = decode_notebook_document_metadata(notebook).header
 
     @property
     def filename(self) -> str | None:

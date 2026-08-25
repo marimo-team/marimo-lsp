@@ -33,6 +33,7 @@ import {
 } from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
+import { readNotebookOutputs } from "../notebook/readNotebookOutputs.ts";
 import { NotebookDatasources } from "../panel/datasources/NotebookDatasources.ts";
 import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
@@ -49,7 +50,10 @@ import {
   type NotebookCellId,
   type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
-import type { KernelSessionId } from "../schemas/Models.gen.ts";
+import type {
+  CellOutputReplay,
+  KernelSessionId,
+} from "../schemas/Models.gen.ts";
 import type {
   CellOperationNotification,
   KernelNotification,
@@ -95,6 +99,10 @@ export interface NotebookController {
   readonly id: string;
   readonly executable?: string;
   readonly drive: (notebook: MarimoNotebookDocument) => Drive;
+  readonly presentOutputs: (
+    notebook: MarimoNotebookDocument,
+    replays: ReadonlyArray<CellOutputReplay>,
+  ) => Effect.Effect<void>;
   readonly resolveExecutable: (
     notebook: MarimoNotebookDocument,
   ) => Effect.Effect<string, ExecutableResolutionError | UnsavedNotebookError>;
@@ -928,6 +936,49 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
               }),
             );
             yield* updateKernelContext();
+
+            const documentSession = documentSessions.current(notebookId);
+            if (Option.isNone(documentSession)) return;
+            const session = documentSession.value;
+            const notebook = MarimoNotebookDocument.from(session.document);
+            yield* readNotebookOutputs(notebook, marimo).pipe(
+              Effect.flatMap(({ cells }) => {
+                if (cells.length === 0 || session.document.isClosed) {
+                  return Effect.void;
+                }
+                return executor
+                  .submitScoped(
+                    notebookId,
+                    Effect.gen(function* () {
+                      const state = yield* stateForDocumentSession(session);
+                      const selected = yield* Ref.get(state.controller);
+                      if (!Option.contains(selected, controller)) return;
+
+                      const notebookExecutions = yield* executions.open(
+                        session,
+                        {
+                          getDrive: Effect.succeed(
+                            Option.some(controller.drive(notebook)),
+                          ),
+                        },
+                      );
+                      yield* Effect.forEach(
+                        cells,
+                        notebookExecutions.restoreOutput,
+                        { discard: true },
+                      );
+                      yield* controller.presentOutputs(notebook, cells);
+                    }),
+                  )
+                  .pipe(Scope.provide(session.scope));
+              }),
+              Effect.catchCause((cause) =>
+                Effect.logDebug("Notebook output replay unavailable").pipe(
+                  Effect.annotateLogs({ cause, notebookUri: notebookId }),
+                ),
+              ),
+              Effect.forkIn(session.scope),
+            );
           });
         },
         controllerChanges: Stream.fromPubSub(controllerSelections),

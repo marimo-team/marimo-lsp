@@ -9,7 +9,7 @@ import {
   MarimoNotebookDocument,
 } from "../../schemas/MarimoNotebookDocument.ts";
 import type { CellRuntimeState } from "../../types.ts";
-import { CellCommand } from "../CellRunReducer.ts";
+import { CellCommand, runIdFromWire } from "../CellRunReducer.ts";
 import { VsCodeCellDrive } from "../VsCodeCellDrive.ts";
 
 const errorState = (): CellRuntimeState => ({
@@ -23,6 +23,91 @@ const errorState = (): CellRuntimeState => ({
 });
 
 describe("VsCodeCellDrive", () => {
+  it.effect(
+    "does not update outputs before the execution starts",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              outputs: [
+                {
+                  items: [
+                    {
+                      mime: "text/plain",
+                      data: new TextEncoder().encode("saved"),
+                    },
+                  ],
+                },
+              ],
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      });
+      const code = yield* TestVsCode.make({
+        initialDocuments: [editor.notebook],
+      });
+      const notebook = MarimoNotebookDocument.from(editor.notebook);
+      const cellId = Option.getOrThrow(notebook.cellAt(0).id);
+      const runId = Option.getOrThrow(runIdFromWire("run-1"));
+      const events: string[] = [];
+      const execution: vscode.NotebookCellExecution = {
+        cell: editor.notebook.cellAt(0),
+        executionOrder: undefined,
+        token: {
+          isCancellationRequested: false,
+          onCancellationRequested: () => ({ dispose() {} }),
+        },
+        start: () => events.push("start"),
+        end: () => {},
+        clearOutput: async () => {
+          events.push("clear");
+        },
+        appendOutput: async () => {
+          events.push("append");
+        },
+        replaceOutput: async () => {},
+        appendOutputItems: async () => {},
+        replaceOutputItems: async () => {},
+      };
+      const drive = (yield* VsCodeCellDrive.make.pipe(
+        Effect.provide(code.layer),
+      )).bind({
+        notebook,
+        controller: { createNotebookCellExecution: () => execution },
+      });
+      const cell = { notebookId: notebook.id, cellId };
+
+      yield* drive(cell, CellCommand.OpenRun({ runId }));
+      yield* drive(
+        cell,
+        CellCommand.RenderOutputs({
+          runId,
+          state: errorState(),
+          final: false,
+        }),
+      );
+      expect(events).toEqual([]);
+
+      yield* drive(cell, CellCommand.StartRun({ runId, at: Option.none() }));
+      yield* drive(
+        cell,
+        CellCommand.RenderOutputs({
+          runId,
+          state: errorState(),
+          final: false,
+        }),
+      );
+      expect(events).toEqual(["start", "clear", "append"]);
+    }),
+  );
+
   it.effect(
     "presents an untracked error in one execution lifecycle",
     Effect.fn(function* () {

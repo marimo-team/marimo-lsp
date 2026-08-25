@@ -155,6 +155,7 @@ const withTestCtx = Effect.fn(function* (
               controller.createNotebookCellExecution(cell.rawNotebookCell),
           },
         }),
+      () => Effect.void,
     );
   }).pipe(Effect.provide(vscode.layer));
 

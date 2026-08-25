@@ -20,6 +20,7 @@ import {
   type NotebookCellId,
   type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
+import type { CellOutputReplay } from "../schemas/Models.gen.ts";
 import type { CellOperationNotification } from "../types.ts";
 import {
   acceptKernelState,
@@ -445,6 +446,30 @@ const isCellStale = (
     }),
   );
 
+const restoreOutput = (
+  state: DocumentExecutionState,
+  replay: CellOutputReplay,
+): DocumentExecutionState => {
+  const cellId = extractCellIdFromCellMessage(replay.notification);
+  if (HashSet.has(state.removedCells, cellId)) return state;
+  const cell = getCell(state, cellId);
+  const runtime = transitionCell(cell.run.state, replay.notification);
+  const acceptedSource =
+    replay.kind === "saved" || runtime.staleInputs
+      ? AcceptedSource.Invalidated()
+      : replay.executedSource === null
+        ? AcceptedSource.Unknown()
+        : AcceptedSource.Accepted({ source: replay.executedSource });
+  return restoreCell(state, cellId, {
+    ...cell,
+    run: {
+      ...cell.run,
+      state: runtime,
+      acceptedSource,
+    },
+  });
+};
+
 /** Execution state and presentation for one exact notebook document session. */
 export class DocumentExecutionSession {
   private state: DocumentExecutionState;
@@ -628,6 +653,16 @@ export class DocumentExecutionSession {
           onSome: Effect.fail,
         });
       }).pipe(Effect.annotateLogs({ notebookId: this.options.notebook.id })),
+    );
+
+  readonly restoreOutput = (replay: CellOutputReplay) =>
+    this.ordering.withPermit(
+      Effect.gen({ self: this }, function* () {
+        if (this.closed) return;
+        const cellId = extractCellIdFromCellMessage(replay.notification);
+        this.state = restoreOutput(this.state, replay);
+        yield* this.publishStale([cellId]);
+      }),
     );
 
   private release(result: DocumentTransition) {

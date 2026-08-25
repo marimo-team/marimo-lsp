@@ -301,6 +301,7 @@ function cellOutputText(cell) {
 module.exports = {
   activateExtension,
   createTestContext,
+  ensureSharedVenv,
   selectKernel,
   runCell,
   editCell,

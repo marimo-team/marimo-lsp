@@ -20,7 +20,12 @@ import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
+import {
+  cellId,
+  kernelSessionId,
+  notebookId,
+} from "../../lib/__tests__/branded.ts";
+import type { CellOutputReplay } from "../../schemas/Models.gen.ts";
 import type { MarimoApiCall } from "../../types.ts";
 import {
   type NotebookController,
@@ -449,6 +454,7 @@ it.effect(
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
       drive: () => () => Effect.void,
+      presentOutputs: () => Effect.void,
       resolveExecutable: () => Effect.succeed("/usr/bin/python"),
     };
 
@@ -472,6 +478,7 @@ it.effect(
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
       drive: () => () => Effect.void,
+      presentOutputs: () => Effect.void,
       resolveExecutable: () => Effect.succeed("/usr/bin/python"),
     };
 
@@ -489,6 +496,67 @@ it.effect(
           execution.args[0] === "marimo.notebook.hasKernel",
       );
       expect(contexts.at(-1)?.args[1]).toBe(false);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "restores notebook output without starting a kernel",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
+    const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+    const presented = yield* Deferred.make<ReadonlyArray<CellOutputReplay>>();
+    const replay: CellOutputReplay = {
+      kind: "saved",
+      notification: {
+        op: "cell-op",
+        cell_id: cellId("cell-1"),
+        status: "idle",
+        output: {
+          channel: "output",
+          mimetype: "text/plain",
+          data: "42",
+        },
+        stale_inputs: true,
+      },
+    };
+    const { layer, vscode } = yield* makeTestLayer(
+      {
+        execute: (request) =>
+          Ref.update(requests, (current) => [...current, request]).pipe(
+            Effect.as(
+              request.method === "read-notebook-outputs"
+                ? { cells: [replay] }
+                : null,
+            ),
+          ),
+      },
+      { initialDocuments: [editor.notebook] },
+    );
+    const controller: NotebookController = {
+      id: "marimo-/usr/bin/python",
+      drive: () => () => Effect.void,
+      presentOutputs: (_notebook, cells) => Deferred.succeed(presented, cells),
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      yield* vscode.openNotebook(editor.notebook);
+      yield* Effect.yieldNow;
+      const id = notebookId(editor.notebook.uri.toString());
+      yield* notebooks.forDocument(editor.notebook);
+      yield* notebooks.attachController(id, controller);
+
+      const restored = yield* Deferred.await(presented);
+      expect(restored).toEqual([replay]);
+      expect(Option.isNone(yield* notebooks.getRuntimeSession(id))).toBe(true);
+      const methods = (yield* Ref.get(requests)).map(
+        (request) => request.method,
+      );
+      expect(methods).toContain("read-notebook-outputs");
+      expect(methods).not.toContain("execute-cells");
+      expect(methods).not.toContain("restart-session");
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -595,6 +663,7 @@ it.effect(
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
       drive: () => () => Effect.void,
+      presentOutputs: () => Effect.void,
       resolveExecutable: () => Effect.succeed("/usr/bin/python"),
     };
 

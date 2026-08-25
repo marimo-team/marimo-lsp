@@ -83,9 +83,27 @@ async def _begin_launch():
 async def _launch_kernel():
     callbacks, kernels, launch, messages = await _begin_launch()
     process_id = callbacks.spawns[0][0]
-    kernels.accept(process_id, encode(Ready()))
+    kernels.accept(
+        process_id,
+        encode(
+            Ready(
+                marimo_version="1.2.3",
+                session_cache_path="/workspace/session.json",
+            )
+        ),
+    )
     kernel = await launch
     return callbacks, kernels, kernel, messages
+
+
+@pytest.mark.asyncio
+async def test_wasm_kernel_owns_selected_marimo_cache_identity() -> None:
+    _callbacks, _kernels, kernel, _messages = await _launch_kernel()
+
+    assert kernel.marimo_version == "1.2.3"
+    assert kernel.session_cache_path == "/workspace/session.json"
+
+    kernel.close()
 
 
 @pytest.mark.asyncio

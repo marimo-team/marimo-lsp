@@ -48,6 +48,7 @@ function makeController(options: {
   return {
     ...options,
     drive: () => () => Effect.void,
+    presentOutputs: () => Effect.void,
     resolveExecutable: () =>
       Effect.succeed(options.executable ?? "/unused/python"),
   };

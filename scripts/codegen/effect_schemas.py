@@ -45,6 +45,15 @@ const MarimoNotification = Schema.declare<MarimoNotification>(
     typeof value.op === "string",
 );
 
+type CellOperationNotification = Extract<
+  MarimoNotification,
+  { op: "cell-op" }
+>;
+const CellOperationNotification = Schema.declare<CellOperationNotification>(
+  (value): value is CellOperationNotification =>
+    Schema.is(MarimoNotification)(value) && value.op === "cell-op",
+);
+
 type VariablesNotification = Extract<MarimoNotification, { op: "variables" }>;
 const VariablesNotification = Schema.declare<VariablesNotification>(
   (value): value is VariablesNotification =>
@@ -90,6 +99,8 @@ CONCRETE: list[tuple[str, type | object]] = [
     ("ExecuteScratchRequest", models.ExecuteScratchRequest),
     ("UpdateConfigurationRequest", models.UpdateConfigurationRequest),
     ("SetDisplayThemeRequest", models.SetDisplayThemeRequest),
+    ("ReadNotebookOutputsRequest", models.ReadNotebookOutputsRequest),
+    ("CellOutputReplay", models.CellOutputReplay),
 ]
 
 
@@ -361,7 +372,11 @@ class Emitter:
             tag = _ts_string(str(t.tag))
             lines.append(f"{indent}{_prop(t.tag_field)}: Schema.Literal({tag}),")
         for field in t.fields:
-            if t.cls is models.KernelNotification and field.name == "notification":
+            if t.cls in {models.LiveCellReplay, models.SavedCellReplay} and (
+                field.name == "notification"
+            ):
+                expr = "CellOperationNotification"
+            elif t.cls is models.KernelNotification and field.name == "notification":
                 expr = "MarimoNotification"
             elif t.cls is models.DocumentAnalysis and field.name == "analysis":
                 expr = "VariablesNotification"

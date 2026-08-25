@@ -197,7 +197,11 @@ function makeTestMarimoClientValue(
         options.execute ??
         ((request) =>
           Effect.succeed(
-            request.method === "list-sessions" ? { sessions: [] } : null,
+            request.method === "list-sessions"
+              ? { sessions: [] }
+              : request.method === "read-notebook-outputs"
+                ? { cells: [] }
+                : null,
           )),
       kernelNotifications: options.kernelNotifications ?? Stream.never,
       documentAnalysis: options.documentAnalysis ?? Stream.never,

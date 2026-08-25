@@ -25,6 +25,7 @@ const alert: NotificationOf<"missing-package-alert"> = {
 const controller: NotebookController = {
   id: "test-controller",
   drive: () => () => Effect.void,
+  presentOutputs: () => Effect.void,
   resolveExecutable: () => Effect.die("not implemented"),
 };
 

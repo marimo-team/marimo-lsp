@@ -15,6 +15,12 @@ const MarimoNotification = Schema.declare<MarimoNotification>(
     typeof value.op === "string",
 );
 
+type CellOperationNotification = Extract<MarimoNotification, { op: "cell-op" }>;
+const CellOperationNotification = Schema.declare<CellOperationNotification>(
+  (value): value is CellOperationNotification =>
+    Schema.is(MarimoNotification)(value) && value.op === "cell-op",
+);
+
 type VariablesNotification = Extract<MarimoNotification, { op: "variables" }>;
 const VariablesNotification = Schema.declare<VariablesNotification>(
   (value): value is VariablesNotification =>
@@ -420,6 +426,41 @@ export const SetDisplayThemeRequest = Schema.Struct({
   theme: Schema.Literals(["dark", "light"]),
 }).annotate({ identifier: "SetDisplayThemeRequest" });
 export type SetDisplayThemeRequest = typeof SetDisplayThemeRequest.Type;
+
+/**
+ * Resolve outputs for an opened notebook without starting a kernel.
+ */
+export const ReadNotebookOutputsRequest = Schema.Struct({
+  sessionCachePath: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({ identifier: "ReadNotebookOutputsRequest" });
+export type ReadNotebookOutputsRequest = typeof ReadNotebookOutputsRequest.Type;
+
+/**
+ * One cell projected from an authoritative live SessionView.
+ */
+export const LiveCellReplay = Schema.Struct({
+  kind: Schema.Literal("live"),
+  notification: CellOperationNotification,
+  executedSource: Schema.NullOr(Schema.String),
+}).annotate({ identifier: "LiveCellReplay" });
+export type LiveCellReplay = typeof LiveCellReplay.Type;
+
+/**
+ * One cell restored from a compatible saved-session sidecar.
+ */
+export const SavedCellReplay = Schema.Struct({
+  kind: Schema.Literal("saved"),
+  notification: CellOperationNotification,
+}).annotate({ identifier: "SavedCellReplay" });
+export type SavedCellReplay = typeof SavedCellReplay.Type;
+
+export const CellOutputReplay = Schema.Union([
+  LiveCellReplay,
+  SavedCellReplay,
+]).annotate({ identifier: "CellOutputReplay" });
+export type CellOutputReplay = typeof CellOutputReplay.Type;
 
 /**
  * Serializable HTTP request representation.
@@ -1393,6 +1434,20 @@ export const SetDisplayThemePayload = Schema.Struct({
   theme: Schema.Literals(["dark", "light"]),
 });
 
+/**
+ * Cell outputs replayed from live memory or a saved-session sidecar.
+ */
+export const ReadNotebookOutputsResponse = Schema.Struct({
+  cells: Schema.Array(CellOutputReplay),
+}).annotate({ identifier: "ReadNotebookOutputsResponse" });
+export type ReadNotebookOutputsResponse =
+  typeof ReadNotebookOutputsResponse.Type;
+
+export const ReadNotebookOutputsPayload = Schema.Struct({
+  notebookUri: NotebookIdFromString,
+  inner: ReadNotebookOutputsRequest,
+});
+
 export const ExportAsHTMLRequest = Schema.Struct({
   download: Schema.Boolean,
   files: Schema.Array(Schema.String),
@@ -1520,6 +1575,10 @@ export type MarimoApiCall =
   | {
       readonly method: "set-display-theme";
       readonly params: typeof SetDisplayThemePayload.Encoded;
+    }
+  | {
+      readonly method: "read-notebook-outputs";
+      readonly params: typeof ReadNotebookOutputsPayload.Encoded;
     }
   | {
       readonly method: "export-as-html";
@@ -1717,6 +1776,13 @@ export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({
       { method: "set-display-theme", params },
       SetDisplayThemePayload,
       SetDisplayThemeResponse,
+    ),
+  readNotebookOutputs: (params: typeof ReadNotebookOutputsPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "read-notebook-outputs", params },
+      ReadNotebookOutputsPayload,
+      ReadNotebookOutputsResponse,
     ),
   exportAsHtml: (params: typeof ExportAsHtmlPayload.Encoded) =>
     dispatch(

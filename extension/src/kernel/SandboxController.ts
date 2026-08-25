@@ -21,16 +21,19 @@ import { SemVerFromString } from "../schemas/SemVerFromString.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import {
   ExecutableResolutionError,
+  type NotebookController,
   NotebookRuntime,
   UnsavedNotebookError,
 } from "./NotebookRuntime.ts";
 import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
+import { VsCodeNotebookOutputPresenter } from "./VsCodeNotebookOutputPresenter.ts";
 
 export const createSandboxController = Effect.fn("createSandboxController")(
   function* () {
     const uv = yield* Uv;
     const code = yield* VsCode;
     const cellDrive = yield* VsCodeCellDrive;
+    const outputPresenter = yield* VsCodeNotebookOutputPresenter;
     const marimo = yield* MarimoClient;
     const notebooks = yield* NotebookRuntime;
     const python = yield* PythonExtension;
@@ -213,6 +216,19 @@ export const createSandboxController = Effect.fn("createSandboxController")(
     const selectedNotebookChanges =
       yield* makeControllerSelectionChanges(controller);
 
+    const presentOutputs: NotebookController["presentOutputs"] = (
+      notebook,
+      replays,
+    ) =>
+      outputPresenter.present(
+        notebook,
+        {
+          createNotebookCellExecution: (cell) =>
+            controller.createNotebookCellExecution(cell),
+        },
+        replays,
+      );
+
     return {
       id: controller.id,
       resolveExecutable: (notebook: MarimoNotebookDocument) =>
@@ -235,6 +251,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
               controller.createNotebookCellExecution(cell.rawNotebookCell),
           },
         }),
+      presentOutputs,
       selectedNotebookChanges,
       updateNotebookAffinity(
         notebook: vscode.NotebookDocument,

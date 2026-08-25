@@ -37,6 +37,7 @@ import {
 } from "./PythonController.ts";
 import { createSandboxController } from "./SandboxController.ts";
 import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
+import { VsCodeNotebookOutputPresenter } from "./VsCodeNotebookOutputPresenter.ts";
 
 export interface NotebookController extends RuntimeNotebookController {
   readonly selectedNotebookChanges: Stream.Stream<{
@@ -158,6 +159,7 @@ export const NotebookControllersLive = Layer.effectDiscard(
   }),
 ).pipe(
   Layer.provide(VsCodeCellDrive.layer),
+  Layer.provide(VsCodeNotebookOutputPresenter.layer),
   Layer.provide(Uv.layer),
   Layer.provide(OutputChannel.layer),
   Layer.provide(Config.layer),

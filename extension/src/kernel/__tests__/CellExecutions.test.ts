@@ -39,6 +39,7 @@ import {
   MarimoNotebookDocument,
   type NotebookCellId,
 } from "../../schemas/MarimoNotebookDocument.ts";
+import type { CellOutputReplay } from "../../schemas/Models.gen.ts";
 import type { CellRuntimeState } from "../../types.ts";
 
 const TestNotebookRuntime = makeTestNotebookRuntime();
@@ -1592,6 +1593,7 @@ describe("NotebookExecutions", () => {
         );
         yield* Effect.yieldNow;
         cellData.value = "x = 2";
+        expect(editor.notebook.cellAt(0).document.getText()).toBe("x = 2");
         yield* ctx.vscode.notebookChange({
           notebook: editor.notebook,
           metadata: undefined,
@@ -1876,6 +1878,128 @@ describe("NotebookExecutions", () => {
 
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-2");
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "marks saved output stale without inventing a live run",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const commands: CellCommand[] = [];
+        const drive: Drive = (_cell, command) =>
+          Effect.sync(() => commands.push(command));
+        const { notebook } = yield* openNotebook(
+          executions,
+          editor.notebook,
+          Effect.succeed(Option.some(drive)),
+        );
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+        const replay: CellOutputReplay = {
+          kind: "saved",
+          notification: {
+            op: "cell-op",
+            cell_id: id,
+            status: "idle",
+            output: {
+              channel: "output",
+              mimetype: "text/plain",
+              data: "cached",
+            },
+            stale_inputs: true,
+          },
+        };
+
+        yield* notebook.restoreOutput(replay);
+
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+        expect(commands).toEqual([]);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "restores live output with its executed source",
+    Effect.fn(function* () {
+      const cellData = {
+        kind: 1,
+        value: "x = 1",
+        languageId: "python",
+        metadata: MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-1" },
+        }),
+      };
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: { cells: [cellData] },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(executions, editor.notebook);
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+
+        yield* notebook.restoreOutput({
+          kind: "live",
+          executedSource: "x = 1",
+          notification: {
+            op: "cell-op",
+            cell_id: id,
+            status: "idle",
+            output: {
+              channel: "output",
+              mimetype: "text/plain",
+              data: "1",
+            },
+            stale_inputs: false,
+          },
+        });
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+
+        const becomesStale = yield* notebook.staleCells.changes.pipe(
+          Stream.filter((stale) => HashSet.has(stale, id)),
+          Stream.runHead,
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+        cellData.value = "x = 2";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
+
+        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

@@ -57,6 +57,21 @@ _decoder = msgspec.json.Decoder(ToBridge)
 KERNEL_READY_TIMEOUT = 10.0
 
 
+def _session_cache_path(notebook_path: str | None) -> str | None:
+    if not notebook_path:
+        return None
+    try:
+        # Optional persistence must not prevent an older marimo from starting.
+        from marimo._session.state.serialize import (  # noqa: PLC0415
+            get_session_cache_file,
+        )
+
+        path = Path(notebook_path)
+        return str(get_session_cache_file(path).absolute()) if path.is_file() else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _read_frame() -> ToBridge | None:
     header = sys.stdin.buffer.read(HEADER_SIZE)
     if not header:
@@ -138,7 +153,14 @@ class _Bridge:
         # during startup.
         threading.Thread(target=self._watch_kernel_exit, daemon=True).start()
         threading.Thread(target=self._forward_operations, daemon=True).start()
-        _write_frame(Ready())
+        _write_frame(
+            Ready(
+                marimo_version=__import__("marimo").__version__,
+                session_cache_path=_session_cache_path(
+                    kernel_args.app_metadata.filename
+                ),
+            )
+        )
 
     def _with_stderr_tail(self, message: str) -> str:
         with self._stderr_lock:
