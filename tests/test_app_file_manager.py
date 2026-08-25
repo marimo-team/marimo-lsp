@@ -11,7 +11,11 @@ import lsprotocol.types as lsp
 import msgspec
 import pytest
 
-from marimo_lsp.app_file_manager import find_notebook_document, sync_app_with_workspace
+from marimo_lsp.app_file_manager import (
+    LspAppFileManager,
+    find_notebook_document,
+    sync_app_with_workspace,
+)
 
 
 def _lsp_object(d: dict[str, object] | None) -> lsp.LSPObject | None:
@@ -90,6 +94,18 @@ def _make_workspace_with_metadata(
 
 
 class TestSyncAppWithWorkspace:
+    def test_manager_keeps_the_synchronized_notebook_header(self) -> None:
+        uri = "file:///test/notebook.py"
+        workspace = _make_workspace_with_metadata(
+            uri,
+            metadata={"marimo": {"header": "# /// script\n# ///"}},
+        )
+        server = MagicMock(workspace=workspace)
+
+        manager = LspAppFileManager(server=server, notebook_uri=uri)
+
+        assert manager.header == "# /// script\n# ///"
+
     def test_extracts_app_options_from_metadata(self) -> None:
         """App config should come from namespaced notebook metadata."""
         uri = "file:///test/notebook.py"

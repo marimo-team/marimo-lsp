@@ -21,7 +21,12 @@ import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
-import type { MarimoApiCall } from "../../types.ts";
+import {
+  MarimoNotebookCell,
+  NotebookCellId,
+} from "../../schemas/MarimoNotebookDocument.ts";
+import type { KernelNotification, MarimoApiCall } from "../../types.ts";
+import type { CellCommand } from "../CellRunReducer.ts";
 import {
   type NotebookController,
   NotebookRuntime,
@@ -29,24 +34,30 @@ import {
 
 const notebook = notebookId("notebook-a");
 
+interface TestServerSession {
+  readonly sessionId: ReturnType<typeof kernelSessionId>;
+  readonly notebookUri: ReturnType<typeof notebookId>;
+  readonly filename: string;
+  readonly executable: string;
+  readonly workingDirectory: string;
+  readonly startedAt: number;
+  readonly status: "idle";
+  readonly attached: boolean;
+}
+
 const makeTestLayer = Effect.fn(function* (
   options: Parameters<typeof makeTestMarimoClient>[0] = {},
   vscodeOptions: Parameters<typeof TestVsCode.make>[0] = {},
+  initialServerSessions: ReadonlyArray<TestServerSession> = [],
 ) {
   const vscode = yield* TestVsCode.make(vscodeOptions);
   const serverSessions = new Map<
     ReturnType<typeof notebookId>,
-    {
-      sessionId: ReturnType<typeof kernelSessionId>;
-      notebookUri: ReturnType<typeof notebookId>;
-      filename: string;
-      executable: string;
-      workingDirectory: string;
-      startedAt: number;
-      status: "idle";
-      attached: boolean;
-    }
+    TestServerSession
   >();
+  for (const session of initialServerSessions) {
+    serverSessions.set(session.notebookUri, session);
+  }
   const execute = options.execute ?? (() => Effect.succeed(null));
   const client = makeTestMarimoClient({
     ...options,
@@ -445,21 +456,739 @@ it.effect(
 it.effect(
   "owns the selected controller",
   Effect.fn(function* () {
-    const { layer } = yield* makeTestLayer();
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    const id = notebookId(editor.notebook.uri.toString());
+    const { layer } = yield* makeTestLayer(
+      {},
+      { initialDocuments: [editor.notebook] },
+    );
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
-      drive: () => () => Effect.void,
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () => Effect.void,
+      }),
       resolveExecutable: () => Effect.succeed("/usr/bin/python"),
     };
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime;
-      const handle = yield* notebooks.forNotebook(notebook);
+      const handle = yield* notebooks.forNotebook(id);
 
       expect(Option.isNone(yield* handle.getController)).toBe(true);
-      yield* notebooks.attachController(notebook, controller);
+      yield* notebooks.attachController(editor.notebook, controller);
 
       expect(yield* handle.getController).toEqual(Option.some(controller));
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "hydrates the exact selected document without starting a kernel",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+      data: {
+        cells: [
+          {
+            kind: 1,
+            value: "answer = 42",
+            languageId: "python",
+            metadata: MarimoNotebookCell.createMetadata({
+              marimoRuntime: { stableId: "cell-1" },
+            }),
+          },
+        ],
+      },
+    });
+    const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+    const presented = yield* Deferred.make<void>();
+    const { layer } = yield* makeTestLayer(
+      {
+        execute: (request) =>
+          Ref.update(requests, (current) => [...current, request]).pipe(
+            Effect.as(
+              request.method === "read-session-outputs"
+                ? {
+                    notifications: [
+                      {
+                        op: "cell-op",
+                        cell_id: NotebookCellId("cell-1"),
+                        output: {
+                          channel: "output",
+                          mimetype: "text/plain",
+                          data: "saved",
+                        },
+                        console: [],
+                        stale_inputs: true,
+                      },
+                    ],
+                  }
+                : null,
+            ),
+          ),
+      },
+      { initialDocuments: [editor.notebook] },
+    );
+    const controller: NotebookController = {
+      id: "marimo-/usr/bin/python",
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: (notifications, _version, onPresented) =>
+          Effect.forEach(
+            notifications,
+            (notification) => onPresented(notification),
+            { discard: true },
+          ).pipe(Effect.andThen(Deferred.succeed(presented, undefined))),
+      }),
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      yield* notebooks.attachController(editor.notebook, controller);
+      yield* Deferred.await(presented);
+
+      const calls = yield* Ref.get(requests);
+      expect(
+        calls.some((request) => request.method === "read-session-outputs"),
+      ).toBe(true);
+      expect(calls.some((request) => request.method === "execute-cells")).toBe(
+        false,
+      );
+      expect(
+        calls.some((request) => request.method === "restart-session"),
+      ).toBe(false);
+      expect(
+        Option.isNone(
+          yield* notebooks.getRuntimeSession(
+            notebookId(editor.notebook.uri.toString()),
+          ),
+        ),
+      ).toBe(true);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "orders a live completion behind in-flight replay",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+      data: {
+        cells: [
+          {
+            kind: 1,
+            value: "answer = 42",
+            languageId: "python",
+            metadata: MarimoNotebookCell.createMetadata({
+              marimoRuntime: { stableId: "cell-1" },
+            }),
+          },
+        ],
+      },
+    });
+    const id = notebookId(editor.notebook.uri.toString());
+    const sessionId = kernelSessionId("00000000-0000-4000-8000-000000000001");
+    const requested = yield* Deferred.make<void>();
+    const response = yield* Deferred.make<{
+      notifications: KernelNotification["notification"][];
+    }>();
+    const completed = yield* Deferred.make<void>();
+    const operations = yield* PubSub.unbounded<KernelNotification>();
+    const commands: CellCommand[] = [];
+    const { layer } = yield* makeTestLayer(
+      {
+        execute: (request) => {
+          if (request.method !== "read-session-outputs") {
+            return Effect.succeed(null);
+          }
+          return Deferred.succeed(requested, undefined).pipe(
+            Effect.andThen(Deferred.await(response)),
+          );
+        },
+        kernelNotifications: Stream.fromPubSub(operations),
+      },
+      { initialDocuments: [editor.notebook] },
+      [
+        {
+          sessionId,
+          notebookUri: id,
+          filename: "notebook_mo.py",
+          executable: "/usr/bin/python",
+          workingDirectory: process.cwd(),
+          startedAt: 1,
+          status: "idle",
+          attached: true,
+        },
+      ],
+    );
+    const controller: NotebookController = {
+      id: "marimo-/usr/bin/python",
+      presentation: () => ({
+        present: (_cell, command) =>
+          Effect.sync(() => {
+            commands.push(command);
+          }).pipe(
+            Effect.andThen(
+              command._tag === "CloseRun"
+                ? Deferred.succeed(completed, undefined)
+                : Effect.void,
+            ),
+          ),
+        presentSavedOutputs: (notifications, _version, onPresented) =>
+          Effect.forEach(
+            notifications,
+            (notification) => onPresented(notification),
+            { discard: true },
+          ),
+      }),
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      yield* notebooks.attachController(editor.notebook, controller);
+      yield* Deferred.await(requested);
+      yield* PubSub.publish(operations, {
+        notebookUri: id,
+        sessionId,
+        notification: {
+          op: "cell-op",
+          cell_id: NotebookCellId("cell-1"),
+          status: "idle",
+          run_id: "surviving-run",
+          output: {
+            channel: "output",
+            mimetype: "text/plain",
+            data: "finished",
+          },
+        },
+      });
+      yield* Deferred.succeed(response, {
+        notifications: [
+          {
+            op: "cell-op",
+            cell_id: NotebookCellId("cell-1"),
+            status: "running",
+            run_id: "surviving-run",
+            stale_inputs: false,
+          },
+        ],
+      });
+      yield* Deferred.await(completed);
+
+      expect(commands.map((command) => command._tag)).toEqual([
+        "SetDiagnostic",
+        "OpenRun",
+        "StartRun",
+        "RenderOutputs",
+        "RenderOutputs",
+        "SetDiagnostic",
+        "CloseRun",
+      ]);
+      expect(
+        commands.find(
+          (command) => command._tag === "RenderOutputs" && command.final,
+        ),
+      ).toMatchObject({ state: { output: { data: "finished" } } });
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "does not hold other notebooks behind hydration",
+  Effect.fn(function* () {
+    const first = TestVsCode.makeNotebookEditor("/test/first_mo.py");
+    const second = TestVsCode.makeNotebookEditor("/test/second_mo.py", {
+      data: {
+        cells: [
+          {
+            kind: 1,
+            value: "answer = 0",
+            languageId: "python",
+            metadata: MarimoNotebookCell.createMetadata({
+              marimoRuntime: { stableId: "cell-1" },
+            }),
+          },
+        ],
+      },
+    });
+    const firstId = notebookId(first.notebook.uri.toString());
+    const secondId = notebookId(second.notebook.uri.toString());
+    const sessionId = kernelSessionId("00000000-0000-4000-8000-000000000001");
+    const requested = yield* Deferred.make<void>();
+    const applied = yield* Deferred.make<void>();
+    const operations = yield* PubSub.unbounded<KernelNotification>();
+    const sessions = [firstId, secondId].map(
+      (notebookUri): TestServerSession => ({
+        sessionId,
+        notebookUri,
+        filename: NodePath.basename(notebookUri),
+        executable: "/usr/bin/python",
+        workingDirectory: process.cwd(),
+        startedAt: 1,
+        status: "idle",
+        attached: true,
+      }),
+    );
+    const { layer, vscode } = yield* makeTestLayer(
+      {
+        execute: (request) =>
+          request.method === "read-session-outputs" &&
+          request.params.notebookUri === firstId
+            ? Deferred.succeed(requested, undefined).pipe(
+                Effect.andThen(Effect.never),
+              )
+            : Effect.succeed(
+                request.method === "read-session-outputs"
+                  ? { notifications: [] }
+                  : null,
+              ),
+        kernelNotifications: Stream.fromPubSub(operations),
+      },
+      {
+        initialDocuments: [first.notebook, second.notebook],
+        workspace: {
+          applyEdit: () =>
+            Deferred.succeed(applied, undefined).pipe(Effect.as(true)),
+        },
+      },
+      sessions,
+    );
+    const controller: NotebookController = {
+      id: "first",
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () => Effect.void,
+      }),
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      yield* notebooks.attachController(first.notebook, controller);
+      yield* Deferred.await(requested);
+      yield* vscode.setActiveNotebookEditor(Option.some(second));
+      yield* PubSub.publish(operations, {
+        notebookUri: secondId,
+        sessionId,
+        notification: {
+          op: "notebook-document-transaction",
+          transaction: {
+            changes: [
+              {
+                type: "set-code",
+                cellId: NotebookCellId("cell-1"),
+                code: "answer = 42",
+              },
+            ],
+            source: "code-mode",
+            version: 1,
+          },
+        },
+      });
+      yield* Deferred.await(applied);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "interrupts hydration when the controller changes",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    const requested = yield* Deferred.make<void>();
+    const interrupted = yield* Deferred.make<void>();
+    let reads = 0;
+    let presented = false;
+    const { layer } = yield* makeTestLayer(
+      {
+        execute: (request) => {
+          if (request.method !== "read-session-outputs") {
+            return Effect.succeed(null);
+          }
+          reads += 1;
+          return reads === 1
+            ? Deferred.succeed(requested, undefined).pipe(
+                Effect.andThen(Effect.never),
+                Effect.ensuring(Deferred.succeed(interrupted, undefined)),
+              )
+            : Effect.succeed({ notifications: [] });
+        },
+      },
+      { initialDocuments: [editor.notebook] },
+    );
+    const first: NotebookController = {
+      id: "first",
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () =>
+          Effect.sync(() => {
+            presented = true;
+          }),
+      }),
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+    const second: NotebookController = {
+      ...first,
+      id: "second",
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () => Effect.void,
+      }),
+    };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      yield* notebooks.attachController(editor.notebook, first);
+      yield* Deferred.await(requested);
+      yield* notebooks.attachController(editor.notebook, second);
+      yield* Deferred.await(interrupted);
+
+      expect(presented).toBe(false);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "does not present a read from an older notebook version",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    const requested = yield* Deferred.make<void>();
+    const response = yield* Deferred.make<{
+      notifications: Array<{
+        op: string;
+        cell_id: ReturnType<typeof NotebookCellId>;
+      }>;
+    }>();
+    let reads = 0;
+    let presented = false;
+    const { layer } = yield* makeTestLayer(
+      {
+        execute: (request) => {
+          if (request.method !== "read-session-outputs") {
+            return Effect.succeed(null);
+          }
+          reads += 1;
+          return reads === 1
+            ? Deferred.succeed(requested, undefined).pipe(
+                Effect.andThen(Deferred.await(response)),
+              )
+            : Effect.succeed({ notifications: [] });
+        },
+      },
+      { initialDocuments: [editor.notebook] },
+    );
+    const first: NotebookController = {
+      id: "first",
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () =>
+          Effect.sync(() => {
+            presented = true;
+          }),
+      }),
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+    const second: NotebookController = {
+      ...first,
+      id: "second",
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () => Effect.void,
+      }),
+    };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      yield* notebooks.attachController(editor.notebook, first);
+      yield* Deferred.await(requested);
+      Reflect.set(editor.notebook, "version", editor.notebook.version + 1);
+      yield* Deferred.succeed(response, {
+        notifications: [
+          {
+            op: "cell-op",
+            cell_id: NotebookCellId("cell-1"),
+          },
+        ],
+      });
+      yield* notebooks.attachController(editor.notebook, second);
+
+      expect(presented).toBe(false);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "interrupts an admitted presentation before its next cell",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+      data: {
+        cells: ["cell-1", "cell-2"].map((stableId) => ({
+          kind: 1,
+          value: stableId,
+          languageId: "python",
+          metadata: MarimoNotebookCell.createMetadata({
+            marimoRuntime: { stableId },
+          }),
+        })),
+      },
+    });
+    const firstPresented = yield* Deferred.make<void>();
+    const interrupted = yield* Deferred.make<void>();
+    const presented: NotebookCellId[] = [];
+    let reads = 0;
+    const { layer } = yield* makeTestLayer(
+      {
+        execute: (request) => {
+          if (request.method !== "read-session-outputs") {
+            return Effect.succeed(null);
+          }
+          reads += 1;
+          return Effect.succeed({
+            notifications:
+              reads === 1
+                ? [
+                    {
+                      op: "cell-op",
+                      cell_id: NotebookCellId("cell-1"),
+                      stale_inputs: true,
+                    },
+                    {
+                      op: "cell-op",
+                      cell_id: NotebookCellId("cell-2"),
+                      stale_inputs: true,
+                    },
+                  ]
+                : [],
+          });
+        },
+      },
+      { initialDocuments: [editor.notebook] },
+    );
+    const first: NotebookController = {
+      id: "first",
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: (notifications, _version, onPresented) =>
+          Effect.gen(function* () {
+            const firstNotification = notifications[0];
+            if (firstNotification !== undefined) {
+              const cellId = NotebookCellId(firstNotification.cell_id);
+              presented.push(cellId);
+              yield* onPresented(firstNotification);
+            }
+            yield* Deferred.succeed(firstPresented, undefined);
+            return yield* Effect.never;
+          }).pipe(Effect.ensuring(Deferred.succeed(interrupted, undefined))),
+      }),
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+    const second: NotebookController = {
+      ...first,
+      id: "second",
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () => Effect.void,
+      }),
+    };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      yield* notebooks.attachController(editor.notebook, first);
+      yield* Deferred.await(firstPresented);
+      yield* notebooks.attachController(editor.notebook, second);
+      yield* Deferred.await(interrupted);
+
+      expect(presented).toEqual([NotebookCellId("cell-1")]);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "interrupts hydration when the document closes",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    const requested = yield* Deferred.make<void>();
+    const interrupted = yield* Deferred.make<void>();
+    let presented = false;
+    const { layer, vscode } = yield* makeTestLayer(
+      {
+        execute: (request) =>
+          request.method === "read-session-outputs"
+            ? Deferred.succeed(requested, undefined).pipe(
+                Effect.andThen(Effect.never),
+                Effect.ensuring(Deferred.succeed(interrupted, undefined)),
+              )
+            : Effect.succeed(null),
+      },
+      { initialDocuments: [editor.notebook] },
+    );
+    const controller: NotebookController = {
+      id: "marimo-/usr/bin/python",
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () =>
+          Effect.sync(() => {
+            presented = true;
+          }),
+      }),
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      yield* notebooks.attachController(editor.notebook, controller);
+      yield* Deferred.await(requested);
+      yield* vscode.closeNotebook(editor.notebook);
+      yield* Deferred.await(interrupted);
+
+      expect(presented).toBe(false);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "waits for hydration before executing cells",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor(
+      NodePath.join(process.cwd(), "notebook_mo.py"),
+    );
+    const requested = yield* Deferred.make<void>();
+    const response = yield* Deferred.make<{ notifications: never[] }>();
+    const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+    const { layer } = yield* makeTestLayer(
+      {
+        execute: (request) =>
+          Ref.update(requests, (current) => [...current, request]).pipe(
+            Effect.andThen(
+              request.method === "read-session-outputs"
+                ? Deferred.succeed(requested, undefined).pipe(
+                    Effect.andThen(Deferred.await(response)),
+                  )
+                : Effect.succeed(null),
+            ),
+          ),
+      },
+      { initialDocuments: [editor.notebook] },
+    );
+    const controller: NotebookController = {
+      id: "marimo-/usr/bin/python",
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () => Effect.void,
+      }),
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      yield* notebooks.attachController(editor.notebook, controller);
+      yield* Deferred.await(requested);
+      const handle = yield* notebooks.forDocument(editor.notebook);
+      const execution = yield* handle
+        .executeCells({ cellIds: [], codes: [] }, "/usr/bin/python")
+        .pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
+      expect(
+        (yield* Ref.get(requests)).some(
+          (request) => request.method === "execute-cells",
+        ),
+      ).toBe(false);
+
+      yield* Deferred.succeed(response, { notifications: [] });
+      yield* Fiber.join(execution);
+      expect(
+        (yield* Ref.get(requests)).some(
+          (request) => request.method === "execute-cells",
+        ),
+      ).toBe(true);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "waits for replacement hydration during a controller handoff",
+  Effect.fn(function* () {
+    const editor = TestVsCode.makeNotebookEditor(
+      NodePath.join(process.cwd(), "notebook_mo.py"),
+    );
+    const firstRequested = yield* Deferred.make<void>();
+    const firstInterrupted = yield* Deferred.make<void>();
+    const releaseFirst = yield* Deferred.make<void>();
+    const secondRequested = yield* Deferred.make<void>();
+    const secondResponse = yield* Deferred.make<{ notifications: never[] }>();
+    const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+    let reads = 0;
+    const { layer } = yield* makeTestLayer(
+      {
+        execute: (request) =>
+          Ref.update(requests, (current) => [...current, request]).pipe(
+            Effect.andThen(
+              request.method !== "read-session-outputs"
+                ? Effect.succeed(null)
+                : ++reads === 1
+                  ? Deferred.succeed(firstRequested, undefined).pipe(
+                      Effect.andThen(Effect.never),
+                      Effect.ensuring(
+                        Deferred.succeed(firstInterrupted, undefined).pipe(
+                          Effect.andThen(Deferred.await(releaseFirst)),
+                        ),
+                      ),
+                    )
+                  : Deferred.succeed(secondRequested, undefined).pipe(
+                      Effect.andThen(Deferred.await(secondResponse)),
+                    ),
+            ),
+          ),
+      },
+      { initialDocuments: [editor.notebook] },
+    );
+    const first: NotebookController = {
+      id: "first",
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () => Effect.void,
+      }),
+      resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+    };
+    const second: NotebookController = { ...first, id: "second" };
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      yield* notebooks.attachController(editor.notebook, first);
+      yield* Deferred.await(firstRequested);
+
+      const handoff = yield* notebooks
+        .attachController(editor.notebook, second)
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(firstInterrupted);
+
+      const handle = yield* notebooks.forDocument(editor.notebook);
+      const execution = yield* handle
+        .executeCells({ cellIds: [], codes: [] }, "/usr/bin/python")
+        .pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
+      expect(
+        (yield* Ref.get(requests)).some(
+          (request) => request.method === "execute-cells",
+        ),
+      ).toBe(false);
+
+      yield* Deferred.succeed(releaseFirst, undefined);
+      yield* Deferred.await(secondRequested);
+      expect(
+        (yield* Ref.get(requests)).some(
+          (request) => request.method === "execute-cells",
+        ),
+      ).toBe(false);
+
+      yield* Deferred.succeed(secondResponse, { notifications: [] });
+      yield* Fiber.join(handoff);
+      yield* Fiber.join(execution);
+      expect(
+        (yield* Ref.get(requests)).some(
+          (request) => request.method === "execute-cells",
+        ),
+      ).toBe(true);
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -471,17 +1200,17 @@ it.effect(
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
-      drive: () => () => Effect.void,
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () => Effect.void,
+      }),
       resolveExecutable: () => Effect.succeed("/usr/bin/python"),
     };
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
-      yield* notebooks.attachController(
-        notebookId(editor.notebook.uri.toString()),
-        controller,
-      );
+      yield* notebooks.attachController(editor.notebook, controller);
 
       const contexts = (yield* Ref.get(vscode.executions)).filter(
         (execution) =>
@@ -594,7 +1323,10 @@ it.effect(
     const id = notebookId(editor.notebook.uri.toString());
     const controller: NotebookController = {
       id: "marimo-/usr/bin/python",
-      drive: () => () => Effect.void,
+      presentation: () => ({
+        present: () => Effect.void,
+        presentSavedOutputs: () => Effect.void,
+      }),
       resolveExecutable: () => Effect.succeed("/usr/bin/python"),
     };
 
@@ -603,7 +1335,7 @@ it.effect(
       yield* vscode.openNotebook(editor.notebook);
       yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
-      yield* notebooks.attachController(id, controller);
+      yield* notebooks.attachController(editor.notebook, controller);
       expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
 
       yield* Effect.yieldNow;

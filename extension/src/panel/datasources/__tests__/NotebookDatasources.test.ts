@@ -56,6 +56,12 @@ const makeLayer = (
     Layer.provide([
       makeTestMarimoClient({ execute }),
       Layer.succeed(NotebookDocumentSessions, {
+        register: (document) =>
+          Effect.succeed(
+            document === currentSession().document
+              ? Option.some(currentSession())
+              : Option.none(),
+          ),
         current: (notebookUri) =>
           notebookUri === currentSession().notebookId
             ? Option.some(currentSession())

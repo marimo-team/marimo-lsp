@@ -1,6 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
 import type * as py from "@vscode/python-extension";
-import { Effect, Fiber, Layer, Option, Stream } from "effect";
+import { Effect, Fiber, Layer, Option, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import type * as vscode from "vscode";
 
@@ -15,6 +15,7 @@ import {
 import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import { Constants } from "../../platform/Constants.ts";
+import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import { makeControllerSelectionChanges } from "../ControllerSelectionChanges.ts";
 
 const withTestCtx = Effect.fn(function* (
@@ -106,6 +107,55 @@ it.effect(
         notebookId(editor.notebook.uri.toString()),
       );
       const selected = yield* selectedNotebook.getController;
+      assert(Option.isSome(selected));
+      expect(selected.value.id).toBe(`marimo-${executable}`);
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
+  "attaches the controller before the first execution",
+  Effect.fn(function* () {
+    const executable = "/usr/local/bin/python3.11";
+    const ctx = yield* withTestCtx({
+      initialEnvs: [TestPythonExtension.makeVenv(executable)],
+    });
+    const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+      data: {
+        cells: [
+          {
+            kind: 1,
+            value: "answer = 42",
+            languageId: "mo-python",
+            metadata: MarimoNotebookCell.createMetadata({
+              marimoRuntime: { stableId: "cell-1" },
+            }),
+          },
+        ],
+      },
+    });
+
+    yield* Effect.gen(function* () {
+      const notebooks = yield* NotebookRuntime;
+      const controllers = yield* Ref.get(ctx.vscode.controllers);
+      const controller = [...controllers].find(
+        (candidate) => candidate.id === `marimo-${executable}`,
+      );
+      assert(controller !== undefined);
+
+      // Execute immediately, before the asynchronous selection consumer has
+      // a chance to observe VS Code's selected-controller event.
+      controller.executeHandler(
+        [editor.notebook.cellAt(0)],
+        editor.notebook,
+        controller,
+      );
+
+      yield* TestClock.adjust("1 millis");
+      const notebook = yield* notebooks.forNotebook(
+        notebookId(editor.notebook.uri.toString()),
+      );
+      const selected = yield* notebook.getController;
       assert(Option.isSome(selected));
       expect(selected.value.id).toBe(`marimo-${executable}`);
     }).pipe(Effect.provide(ctx.layer));

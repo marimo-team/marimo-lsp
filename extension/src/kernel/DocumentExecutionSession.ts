@@ -95,6 +95,7 @@ interface CellExecutionState {
   readonly run: CellRunState;
   readonly editorSource: Option.Option<string>;
   readonly pendingSources: ReadonlyArray<SubmittedSource>;
+  readonly savedOutputStale: boolean;
 }
 
 interface DocumentExecutionState {
@@ -137,13 +138,15 @@ const isConflatableOutput: (command: CellCommand) => boolean =
 /** Selects the current or run-bound drive that owns a command. */
 const selectCommandDrive = (
   current: Option.Option<Drive>,
-  forRun: (runId: RunId) => Option.Option<Drive>,
+  previous: (runId: RunId) => Option.Option<Drive>,
+  next: (runId: RunId) => Option.Option<Drive>,
 ): ((command: CellCommand) => Option.Option<Drive>) =>
   CellCommand.$match({
     OpenRun: () => current,
-    StartRun: ({ runId }) => forRun(runId),
-    RenderOutputs: ({ runId }) => forRun(runId),
-    CloseRun: ({ runId }) => forRun(runId),
+    StartRun: ({ runId }) => next(runId),
+    RenderOutputs: ({ runId }) => next(runId),
+    CloseRun: ({ runId }) =>
+      previous(runId).pipe(Option.orElse(() => next(runId))),
     PresentUntrackedError: () => current,
     SetDiagnostic: () => current,
   });
@@ -167,6 +170,7 @@ const makeCellState = (
   run: makeCellRunState(),
   editorSource,
   pendingSources: [],
+  savedOutputStale: false,
 });
 
 const getCell = (
@@ -328,7 +332,11 @@ const applyKernelOperation = (
   wire: CellOperationNotification,
 ): OperationTransition => {
   const cellId = extractCellIdFromCellMessage(wire);
-  const previousCell = getCell(state, cellId);
+  // Any admitted kernel state supersedes display-only output from storage.
+  const previousCell = {
+    ...getCell(state, cellId),
+    savedOutputStale: false,
+  };
   const nextRuntime = transitionCell(previousCell.run.state, wire);
   const parsed = parseOp(nextRuntime, wire);
 
@@ -436,13 +444,16 @@ const isCellStale = (
   state: DocumentExecutionState,
   cellId: NotebookCellId,
 ): boolean =>
-  Option.exists(HashMap.get(state.cells, cellId), (cell) =>
-    AcceptedSource.$match(cell.run.acceptedSource, {
-      Unknown: () => false,
-      Invalidated: () => true,
-      Accepted: ({ source }) =>
-        Option.exists(cell.editorSource, (current) => current !== source),
-    }),
+  Option.exists(
+    HashMap.get(state.cells, cellId),
+    (cell) =>
+      cell.savedOutputStale ||
+      AcceptedSource.$match(cell.run.acceptedSource, {
+        Unknown: () => false,
+        Invalidated: () => true,
+        Accepted: ({ source }) =>
+          Option.exists(cell.editorSource, (current) => current !== source),
+      }),
   );
 
 /** Execution state and presentation for one exact notebook document session. */
@@ -582,15 +593,15 @@ export class DocumentExecutionSession {
         for (const command of result.commands) {
           if (CellCommand.$is("OpenRun")(command)) opened.add(command.runId);
         }
-        const driveForRun = (runId: RunId): Option.Option<Drive> =>
-          boundDrive(previousBinding, runId).pipe(
-            Option.orElse(() =>
-              opened.has(runId) ? currentDrive : Option.none(),
-            ),
-          );
+        const previousDriveForRun = (runId: RunId): Option.Option<Drive> =>
+          boundDrive(previousBinding, runId);
+        const nextDriveForRun = (runId: RunId): Option.Option<Drive> =>
+          opened.has(runId) ? currentDrive : previousDriveForRun(runId);
         const nextBinding = activeRunId(result.current.phase).pipe(
           Option.flatMap((runId) =>
-            driveForRun(runId).pipe(Option.map((value) => ({ runId, value }))),
+            nextDriveForRun(runId).pipe(
+              Option.map((value) => ({ runId, value })),
+            ),
           ),
         );
         if (Option.isSome(nextBinding)) {
@@ -599,7 +610,11 @@ export class DocumentExecutionSession {
           this.driveBindings.delete(result.cellId);
         }
 
-        const driveForCommand = selectCommandDrive(currentDrive, driveForRun);
+        const driveForCommand = selectCommandDrive(
+          currentDrive,
+          previousDriveForRun,
+          nextDriveForRun,
+        );
         for (const command of result.commands) {
           yield* this.present({
             cell: cellRef(this.options.notebook.id, result.cellId),
@@ -617,6 +632,17 @@ export class DocumentExecutionSession {
         if (this.closed) return;
         const cellId = extractCellIdFromCellMessage(wire);
         if (HashSet.has(this.state.removedCells, cellId)) return;
+        const receivedRunId = runIdFromWire(wire.run_id);
+        if (
+          wire.status === "queued" &&
+          Option.isSome(receivedRunId) &&
+          Equal.equals(
+            activeRunId(getCell(this.state, cellId).run.phase),
+            receivedRunId,
+          )
+        ) {
+          return;
+        }
         const result = applyKernelOperation(this.state, wire);
         this.state = result.state;
         yield* this.publishStale([cellId]);
@@ -661,6 +687,73 @@ export class DocumentExecutionSession {
       Effect.gen({ self: this }, function* () {
         if (this.closed) return;
         yield* this.release(removeExecutionCell(this.state, cellId));
+      }),
+    );
+
+  /** Restores display provenance and any surviving live run. */
+  readonly restoreSavedOutput = (
+    restored: CellSource,
+    notification: CellOperationNotification,
+  ) =>
+    this.ordering.withPermit(
+      Effect.gen({ self: this }, function* () {
+        if (this.closed) return;
+        if (HashSet.has(this.state.removedCells, restored.cellId)) return;
+        const cell = HashMap.get(this.state.cells, restored.cellId);
+        if (Option.isNone(cell)) return;
+
+        const stale = notification.stale_inputs === true;
+        const runId =
+          notification.status === "queued" || notification.status === "running"
+            ? runIdFromWire(notification.run_id)
+            : Option.none();
+
+        if (Option.isSome(runId)) {
+          const token = Symbol("restored live cell run");
+          this.state = registerSubmission(this.state, token, [restored]);
+          const queued = applyKernelOperation(this.state, {
+            ...notification,
+            status: "queued",
+            run_id: runId.value,
+          });
+          this.state = queued.state;
+          const drive = yield* this.options.getDrive;
+          yield* this.admitTransition(queued, drive);
+
+          if (notification.status === "running") {
+            const running = applyKernelOperation(this.state, notification);
+            this.state = running.state;
+            yield* this.admitTransition(running, drive);
+          }
+        } else {
+          this.state = setCell(this.state, restored.cellId, {
+            ...cell.value,
+            run: stale
+              ? cell.value.run
+              : {
+                  ...cell.value.run,
+                  acceptedSource: AcceptedSource.Accepted({
+                    source: restored.source,
+                  }),
+                },
+          });
+        }
+
+        const restoredCell = HashMap.get(this.state.cells, restored.cellId);
+        if (Option.isSome(restoredCell)) {
+          this.state = setCell(this.state, restored.cellId, {
+            ...restoredCell.value,
+            run:
+              stale && Option.isSome(runId)
+                ? {
+                    ...restoredCell.value.run,
+                    acceptedSource: AcceptedSource.Invalidated(),
+                  }
+                : restoredCell.value.run,
+            savedOutputStale: stale,
+          });
+        }
+        yield* this.publishStale([restored.cellId]);
       }),
     );
 

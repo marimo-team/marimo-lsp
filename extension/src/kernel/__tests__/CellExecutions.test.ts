@@ -1139,6 +1139,355 @@ describe("NotebookExecutions", () => {
   });
 
   it.effect(
+    "tracks cold saved output as stale until the kernel reports the cell",
+    Effect.fn(function* () {
+      const cellData = {
+        kind: 1,
+        value: "x = 1",
+        languageId: "python",
+        metadata: MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-1" },
+        }),
+      };
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: { cells: [cellData] },
+      });
+      const commands: CellCommand[] = [];
+      const drive: Drive = (_cell, command) =>
+        Effect.sync(() => commands.push(command));
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(
+          executions,
+          editor.notebook,
+          Effect.succeed(Option.some(drive)),
+        );
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+        yield* Effect.yieldNow;
+
+        yield* notebook.restoreSavedOutput(
+          { cellId: id, source: "x = 1" },
+          {
+            op: "cell-op",
+            cell_id: id,
+            status: "idle",
+            stale_inputs: true,
+          },
+        );
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+        expect(commands).toEqual([]);
+
+        cellData.value = "x = 2";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "idle",
+        });
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+
+        yield* notebook.remove(id);
+        yield* notebook.restoreSavedOutput(
+          { cellId: id, source: "x = 1" },
+          {
+            op: "cell-op",
+            cell_id: id,
+            status: "idle",
+            stale_inputs: true,
+          },
+        );
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "restores fresh live output with its executed source",
+    Effect.fn(function* () {
+      const cellData = {
+        kind: 1,
+        value: "x = 1",
+        languageId: "python",
+        metadata: MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-1" },
+        }),
+      };
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: { cells: [cellData] },
+      });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(
+          executions,
+          editor.notebook,
+          Effect.succeed(Option.none()),
+        );
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+
+        yield* notebook.restoreSavedOutput(
+          { cellId: id, source: "x = 1" },
+          {
+            op: "cell-op",
+            cell_id: id,
+            status: "idle",
+            stale_inputs: false,
+          },
+        );
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+
+        const becomesStale = yield* notebook.staleCells.changes.pipe(
+          Stream.filter((stale) => HashSet.has(stale, id)),
+          Stream.runHead,
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+        cellData.value = "x = 2";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
+        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
+
+        // A host output update may finish after the editor change was already
+        // observed. Restoring its older execution provenance must not replace
+        // the newer editor source.
+        yield* notebook.restoreSavedOutput(
+          { cellId: id, source: "x = 1" },
+          {
+            op: "cell-op",
+            cell_id: id,
+            status: "idle",
+            stale_inputs: false,
+          },
+        );
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "resumes an in-flight live run before its completion arrives",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: {
+          cells: [
+            {
+              kind: 1,
+              value: "x = 1",
+              languageId: "python",
+              metadata: MarimoNotebookCell.createMetadata({
+                marimoRuntime: { stableId: "cell-1" },
+              }),
+            },
+          ],
+        },
+      });
+      const completed = yield* Latch.make();
+      const commands: CellCommand[] = [];
+      const drive: Drive = (_cell, command) =>
+        Effect.gen(function* () {
+          commands.push(command);
+          if (command._tag === "CloseRun") yield* completed.open;
+        });
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(
+          executions,
+          editor.notebook,
+          Effect.succeed(Option.some(drive)),
+        );
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+
+        yield* notebook.restoreSavedOutput(
+          { cellId: id, source: "x = 1" },
+          {
+            op: "cell-op",
+            cell_id: id,
+            status: "running",
+            run_id: "surviving-run",
+            stale_inputs: false,
+          },
+        );
+        // The same queued notification may already be buffered on the live
+        // stream when the SessionView snapshot is replayed. It must not
+        // restart or regress the adopted running phase.
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "queued",
+          run_id: "surviving-run",
+        });
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "idle",
+          run_id: "surviving-run",
+          output: {
+            channel: "output",
+            mimetype: "text/plain",
+            data: "finished",
+          },
+        });
+        yield* completed.await;
+
+        expect(commands.map((command) => command._tag)).toEqual([
+          "SetDiagnostic",
+          "OpenRun",
+          "StartRun",
+          "RenderOutputs",
+          "SetDiagnostic",
+          "CloseRun",
+        ]);
+        const final = commands.find(
+          (command) => command._tag === "RenderOutputs" && command.final,
+        );
+        expect(final).toMatchObject({
+          _tag: "RenderOutputs",
+          state: { output: { data: "finished" } },
+        });
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "rebinds a restored live run to the current drive",
+    Effect.fn(function* () {
+      const cellData = {
+        kind: 1,
+        value: "x = 1",
+        languageId: "python",
+        metadata: MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: "cell-1" },
+        }),
+      };
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+        data: { cells: [cellData] },
+      });
+      const events: string[] = [];
+      const completed = yield* Latch.make();
+      const namedDrive =
+        (name: string): Drive =>
+        (_cell, command) =>
+          Effect.gen(function* () {
+            if ("runId" in command) {
+              events.push(`${name}:${command._tag}:${command.runId}`);
+            }
+            if (
+              name === "second" &&
+              command._tag === "CloseRun" &&
+              command.runId === runId("surviving-run")
+            ) {
+              yield* completed.open;
+            }
+          });
+      const first = namedDrive("first");
+      const second = namedDrive("second");
+      const currentDrive = yield* Ref.make(Option.some(first));
+      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+
+      yield* Effect.gen(function* () {
+        const executions = yield* CellExecutions;
+        const { notebook } = yield* openNotebook(
+          executions,
+          editor.notebook,
+          Ref.get(currentDrive),
+        );
+        const id = Option.getOrThrow(
+          MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
+        );
+        yield* Effect.yieldNow;
+
+        yield* acknowledgeSubmission(notebook, id, "x = 1", "surviving-run");
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "running",
+          run_id: "surviving-run",
+        });
+
+        yield* Ref.set(currentDrive, Option.some(second));
+        yield* notebook.restoreSavedOutput(
+          { cellId: id, source: "x = 1" },
+          {
+            op: "cell-op",
+            cell_id: id,
+            status: "running",
+            run_id: "surviving-run",
+            stale_inputs: false,
+          },
+        );
+        yield* notebook.apply({
+          op: "cell-op",
+          cell_id: id,
+          status: "idle",
+          run_id: "surviving-run",
+        });
+        yield* completed.await;
+
+        expect(events).toContain("first:CloseRun:surviving-run");
+        expect(events).toContain("second:OpenRun:surviving-run");
+        expect(events).toContain("second:StartRun:surviving-run");
+        expect(events).toContain("second:CloseRun:surviving-run");
+
+        cellData.value = "x = 2";
+        yield* ctx.vscode.notebookChange({
+          notebook: editor.notebook,
+          metadata: undefined,
+          cellChanges: [
+            {
+              cell: editor.notebook.cellAt(0),
+              document: editor.notebook.cellAt(0).document,
+              metadata: undefined,
+              outputs: [],
+              executionSummary: undefined,
+            },
+          ],
+          contentChanges: [],
+        });
+        yield* acknowledgeSubmission(notebook, id, "x = 2", "next-run");
+        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
     "keeps presentation commands on the drive that opened their run",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {

@@ -29,6 +29,7 @@ const variablesLayer = Layer.effect(
 ).pipe(
   Layer.provide(
     Layer.succeed(NotebookDocumentSessions, {
+      register: () => Effect.succeed(Option.none()),
       current: () => Option.none(),
       forDocument: () => Option.none(),
       active: Stream.empty,

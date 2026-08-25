@@ -29,7 +29,7 @@ import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
 import { makeNotebookExecutor } from "../../kernel/NotebookExecutor.ts";
 import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { PythonController } from "../../kernel/PythonController.ts";
-import { VsCodeCellDrive } from "../../kernel/VsCodeCellDrive.ts";
+import { VsCodeCellPresentation } from "../../kernel/VsCodeCellPresentation.ts";
 import {
   cellId,
   kernelSessionId,
@@ -132,7 +132,7 @@ const withTestCtx = Effect.fn(function* (
         ),
     },
   });
-  const cellDrive = yield* VsCodeCellDrive.make.pipe(
+  const cellPresentation = yield* VsCodeCellPresentation.make.pipe(
     Effect.provide(vscode.layer),
   );
 
@@ -148,7 +148,7 @@ const withTestCtx = Effect.fn(function* (
       "/usr/bin/python3",
       Stream.never,
       (document) =>
-        cellDrive.bind({
+        cellPresentation.bind({
           notebook: document,
           controller: {
             createNotebookCellExecution: (cell) =>
@@ -215,7 +215,7 @@ const withTestCtx = Effect.fn(function* (
   const selectedLayer = Layer.effectDiscard(
     NotebookRuntime.pipe(
       Effect.flatMap((runtime) =>
-        runtime.attachController(notebookUri, mockController),
+        runtime.attachController(editor.notebook, mockController),
       ),
     ),
   ).pipe(Layer.provide(layer));
@@ -797,7 +797,10 @@ describe("NotebookRuntime scratch stream", () => {
         // open published this early is delivered rather than dropped.
         yield* ctx.vscode.openNotebook(otherEditor.notebook);
         yield* TestClock.adjust("1 millis");
-        yield* runtime.attachController(otherNotebook.id, ctx.mockController);
+        yield* runtime.attachController(
+          otherEditor.notebook,
+          ctx.mockController,
+        );
         const firstNotebook = yield* runtime.forNotebook(ctx.notebookUri);
         const secondNotebook = yield* runtime.forNotebook(otherNotebook.id);
 

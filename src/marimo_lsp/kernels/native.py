@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import queue
 import threading
 import typing
+from pathlib import Path
 
 from marimo._ipc import QueueManager as IpcQueues
 from marimo._session.managers import IPCQueueManagerImpl as IpcQueueManager
@@ -28,6 +30,18 @@ if typing.TYPE_CHECKING:
 
 logger = get_logger()
 
+_LOCATE_SAVED_SESSION_CODE = """\
+import json, os, sys
+from pathlib import Path
+from marimo._session.state.serialize import get_session_cache_file
+path = Path(sys.argv[1])
+print(json.dumps(
+    os.path.abspath(os.fspath(get_session_cache_file(path)))
+    if path.is_file()
+    else None
+))
+"""
+
 
 class NativeKernel:
     """Own a native marimo kernel and its direct IPC transport."""
@@ -43,10 +57,12 @@ class NativeKernel:
         self._listener_thread: threading.Thread | None = None
         self.executable = manager.executable
         self.working_directory = manager.working_directory
+        self.marimo_version: str | None = None
 
     def start(self, receive: Callable[[KernelMessage], None]) -> None:
         """Start the kernel process and operation listener."""
         self._manager.start_kernel()
+        self.marimo_version = self._manager.marimo_version
 
         def listen() -> None:
             stream_queue = self._queue_manager.stream_queue
@@ -63,6 +79,40 @@ class NativeKernel:
 
         self._listener_thread = threading.Thread(target=listen, daemon=True)
         self._listener_thread.start()
+
+    async def locate_saved_session(self, notebook_path: str) -> str | None:
+        """Resolve a renamed notebook through the selected Python."""
+        if (
+            notebook_path == self._manager.app_metadata.filename
+            and self._manager.session_cache_path is not None
+        ):
+            return self._manager.session_cache_path
+        process = await asyncio.create_subprocess_exec(
+            self.executable,
+            "-c",
+            _LOCATE_SAVED_SESSION_CODE,
+            notebook_path,
+            cwd=self.working_directory,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            stdout, _ = await process.communicate()
+        except asyncio.CancelledError:
+            if process.returncode is None:
+                process.terminate()
+            await process.wait()
+            raise
+        if process.returncode != 0:
+            return None
+        try:
+            path = json.loads(stdout)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return None
+        if not isinstance(path, str) or not Path(path).is_absolute():
+            return None
+        return path
 
     def send(self, request: CommandMessage) -> None:
         """Send a command over marimo IPC."""

@@ -45,6 +45,15 @@ const MarimoNotification = Schema.declare<MarimoNotification>(
     typeof value.op === "string",
 );
 
+type CellOperationNotification = Extract<
+  MarimoNotification,
+  { op: "cell-op" }
+>;
+const CellOperationNotification = Schema.declare<CellOperationNotification>(
+  (value): value is CellOperationNotification =>
+    Schema.is(MarimoNotification)(value) && value.op === "cell-op",
+);
+
 type VariablesNotification = Extract<MarimoNotification, { op: "variables" }>;
 const VariablesNotification = Schema.declare<VariablesNotification>(
   (value): value is VariablesNotification =>
@@ -90,6 +99,9 @@ CONCRETE: list[tuple[str, type | object]] = [
     ("ExecuteScratchRequest", models.ExecuteScratchRequest),
     ("UpdateConfigurationRequest", models.UpdateConfigurationRequest),
     ("SetDisplayThemeRequest", models.SetDisplayThemeRequest),
+    ("SavedSessionLocation", models.SavedSessionLocation),
+    ("ReadSessionOutputsRequest", models.ReadSessionOutputsRequest),
+    ("ReadSessionOutputsResponse", models.ReadSessionOutputsResponse),
 ]
 
 
@@ -361,7 +373,10 @@ class Emitter:
             tag = _ts_string(str(t.tag))
             lines.append(f"{indent}{_prop(t.tag_field)}: Schema.Literal({tag}),")
         for field in t.fields:
-            if t.cls is models.KernelNotification and field.name == "notification":
+            notification_field = self.notification_field_expr(t, field)
+            if notification_field is not None:
+                expr = notification_field
+            elif t.cls is models.KernelNotification and field.name == "notification":
                 expr = "MarimoNotification"
             elif t.cls is models.DocumentAnalysis and field.name == "analysis":
                 expr = "VariablesNotification"
@@ -398,6 +413,12 @@ class Emitter:
                     )
             lines.append(f"{indent}{rendered},")
         return "\n".join(lines) + "\n" if lines else ""
+
+    @staticmethod
+    def notification_field_expr(t: _StructLike, field: mi.Field) -> str | None:
+        if t.cls is models.ReadSessionOutputsResponse and field.name == "notifications":
+            return "Schema.Array(CellOperationNotification)"
+        return None
 
     def default_expr(self, field: mi.Field) -> str | None:
         """Render the field default so decode fills omitted fields, like msgspec."""

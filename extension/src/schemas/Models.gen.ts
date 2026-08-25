@@ -15,6 +15,12 @@ const MarimoNotification = Schema.declare<MarimoNotification>(
     typeof value.op === "string",
 );
 
+type CellOperationNotification = Extract<MarimoNotification, { op: "cell-op" }>;
+const CellOperationNotification = Schema.declare<CellOperationNotification>(
+  (value): value is CellOperationNotification =>
+    Schema.is(MarimoNotification)(value) && value.op === "cell-op",
+);
+
 type VariablesNotification = Extract<MarimoNotification, { op: "variables" }>;
 const VariablesNotification = Schema.declare<VariablesNotification>(
   (value): value is VariablesNotification =>
@@ -420,6 +426,33 @@ export const SetDisplayThemeRequest = Schema.Struct({
   theme: Schema.Literals(["dark", "light"]),
 }).annotate({ identifier: "SetDisplayThemeRequest" });
 export type SetDisplayThemeRequest = typeof SetDisplayThemeRequest.Type;
+
+/**
+ * A sidecar located by the notebook's selected marimo environment.
+ */
+export const SavedSessionLocation = Schema.Struct({
+  cachePath: Schema.String,
+  marimoVersion: Schema.String,
+}).annotate({ identifier: "SavedSessionLocation" });
+export type SavedSessionLocation = typeof SavedSessionLocation.Type;
+
+/**
+ * Read display outputs from the live session or a compatible sidecar.
+ */
+export const ReadSessionOutputsRequest = Schema.Struct({
+  location: Schema.NullOr(SavedSessionLocation).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({ identifier: "ReadSessionOutputsRequest" });
+export type ReadSessionOutputsRequest = typeof ReadSessionOutputsRequest.Type;
+
+/**
+ * Display outputs retained by the authoritative session snapshot.
+ */
+export const ReadSessionOutputsResponse = Schema.Struct({
+  notifications: Schema.Array(CellOperationNotification),
+}).annotate({ identifier: "ReadSessionOutputsResponse" });
+export type ReadSessionOutputsResponse = typeof ReadSessionOutputsResponse.Type;
 
 /**
  * Serializable HTTP request representation.
@@ -1393,6 +1426,11 @@ export const SetDisplayThemePayload = Schema.Struct({
   theme: Schema.Literals(["dark", "light"]),
 });
 
+export const ReadSessionOutputsPayload = Schema.Struct({
+  notebookUri: NotebookIdFromString,
+  inner: ReadSessionOutputsRequest,
+});
+
 export const ExportAsHTMLRequest = Schema.Struct({
   download: Schema.Boolean,
   files: Schema.Array(Schema.String),
@@ -1520,6 +1558,10 @@ export type MarimoApiCall =
   | {
       readonly method: "set-display-theme";
       readonly params: typeof SetDisplayThemePayload.Encoded;
+    }
+  | {
+      readonly method: "read-session-outputs";
+      readonly params: typeof ReadSessionOutputsPayload.Encoded;
     }
   | {
       readonly method: "export-as-html";
@@ -1717,6 +1759,13 @@ export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({
       { method: "set-display-theme", params },
       SetDisplayThemePayload,
       SetDisplayThemeResponse,
+    ),
+  readSessionOutputs: (params: typeof ReadSessionOutputsPayload.Encoded) =>
+    dispatch(
+      execute,
+      { method: "read-session-outputs", params },
+      ReadSessionOutputsPayload,
+      ReadSessionOutputsResponse,
     ),
   exportAsHtml: (params: typeof ExportAsHtmlPayload.Encoded) =>
     dispatch(

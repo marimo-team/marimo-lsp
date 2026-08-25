@@ -174,7 +174,10 @@ def test_bridge_launches_kernel_subprocess_over_marimo_ipc(
     """
     bridge_module = _load_bridge_module(monkeypatch)
     process = Mock()
-    process.stdout.readline.return_value = b"KERNEL_READY\n"
+    process.stdout.readline.side_effect = [
+        b'{"marimo_version":"1.2.3-rc1+build.7"}\n',
+        b"KERNEL_READY\n",
+    ]
     process.stderr = None
     popen = Mock(return_value=process)
     write_frame = Mock()
@@ -187,7 +190,8 @@ def test_bridge_launches_kernel_subprocess_over_marimo_ipc(
 
         popen.assert_called_once()
         command = popen.call_args.args[0]
-        assert command == [sys.executable, "-m", "marimo._ipc.launch_kernel"]
+        assert command[:2] == [sys.executable, "-c"]
+        assert "runpy.run_module" in command[2]
         assert popen.call_args.kwargs["cwd"] == str(tmp_path)
         assert popen.call_args.kwargs["stdin"] is bridge_module.subprocess.PIPE
         assert popen.call_args.kwargs["stdout"] is bridge_module.subprocess.PIPE
@@ -195,9 +199,42 @@ def test_bridge_launches_kernel_subprocess_over_marimo_ipc(
         sent = KernelLaunchArgs.decode_json(process.stdin.write.call_args.args[0])
         assert sent.connection_info is not None
         assert sent.parent_pid == os.getpid()
-        write_frame.assert_any_call(bridge_module.Ready())
+        write_frame.assert_any_call(
+            bridge_module.Ready(
+                marimo_version="1.2.3-rc1+build.7",
+                session_cache_path=str(
+                    tmp_path / "__marimo__" / "session" / "notebook.py.json"
+                ),
+                can_locate_session_cache=True,
+            )
+        )
     finally:
         bridge.close()
+
+
+def test_bridge_resolves_cache_paths_in_the_selected_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bridge_module = _load_bridge_module(monkeypatch)
+    write_frame = Mock()
+    monkeypatch.setattr(bridge_module, "_write_frame", write_frame)
+    bridge = bridge_module._Bridge()
+    (tmp_path / "renamed.py").touch()
+
+    assert bridge.handle(
+        bridge_module.LocateSessionCache(
+            request_id="request",
+            notebook_path=str(tmp_path / "renamed.py"),
+        )
+    )
+
+    write_frame.assert_called_once_with(
+        bridge_module.SessionCacheLocation(
+            request_id="request",
+            path=str(tmp_path / "__marimo__" / "session" / "renamed.py.json"),
+        )
+    )
 
 
 class _BridgeProcess:
@@ -281,6 +318,7 @@ class _BridgeProcess:
 
 
 def _start_frame(working_directory: Path) -> Start:
+    (working_directory / "notebook.py").touch(exist_ok=True)
     return Start(
         working_directory=str(working_directory),
         kernel_args=KernelLaunchArgs(

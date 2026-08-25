@@ -24,13 +24,13 @@ import {
   NotebookRuntime,
   UnsavedNotebookError,
 } from "./NotebookRuntime.ts";
-import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
+import { VsCodeCellPresentation } from "./VsCodeCellPresentation.ts";
 
 export const createSandboxController = Effect.fn("createSandboxController")(
   function* () {
     const uv = yield* Uv;
     const code = yield* VsCode;
-    const cellDrive = yield* VsCodeCellDrive;
+    const cellPresentation = yield* VsCodeCellPresentation;
     const marimo = yield* MarimoClient;
     const notebooks = yield* NotebookRuntime;
     const python = yield* PythonExtension;
@@ -83,6 +83,62 @@ export const createSandboxController = Effect.fn("createSandboxController")(
       },
     );
 
+    // Capture selections before VS Code can replay a persisted choice, and
+    // bind execution to the same controller synchronously at its entry point.
+    const selectedNotebookChanges =
+      yield* makeControllerSelectionChanges(controller);
+    const runtimeController = {
+      id: controller.id,
+      resolveSavedSessionEnvironment: (notebook: MarimoNotebookDocument) =>
+        Effect.gen(function* () {
+          if (notebook.isUntitled) {
+            return yield* new UnsavedNotebookError({
+              notebookUri: notebook.id,
+            });
+          }
+          const bin = yield* uv.bin;
+          return {
+            executable: bin.executable,
+            arguments: [
+              "run",
+              "--no-sync",
+              "--script",
+              notebook.uri.fsPath,
+              "python",
+            ],
+          };
+        }),
+      resolveExecutable: (notebook: MarimoNotebookDocument) =>
+        resolveExecutable(notebook).pipe(
+          Effect.provideService(Uv, uv),
+          Effect.mapError((error) =>
+            error._tag === "UnsavedNotebookError"
+              ? error
+              : new ExecutableResolutionError({
+                  notebookUri: notebook.id,
+                  cause: error,
+                }),
+          ),
+        ),
+      presentation: (notebook: MarimoNotebookDocument) =>
+        cellPresentation.bind({
+          notebook,
+          controller: {
+            createNotebookCellExecution: (cell) =>
+              controller.createNotebookCellExecution(cell.rawNotebookCell),
+          },
+        }),
+      selectedNotebookChanges,
+      updateNotebookAffinity(
+        notebook: vscode.NotebookDocument,
+        affinity: vscode.NotebookControllerAffinity,
+      ) {
+        return Effect.sync(() => {
+          controller.updateNotebookAffinity(notebook, affinity);
+        });
+      },
+    };
+
     // Set up execution handler
     controller.executeHandler = (rawCells, rawNotebook) =>
       runPromise<void, never>(
@@ -105,6 +161,8 @@ export const createSandboxController = Effect.fn("createSandboxController")(
             });
             return;
           }
+
+          yield* notebooks.attachController(rawNotebook, runtimeController);
 
           // resolveExecutable rejects unsaved notebooks (UnsavedNotebookError),
           // handled below with an interactive save prompt.
@@ -206,45 +264,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
         ),
       );
 
-    // VS Code restores a persisted controller selection as soon as the
-    // controller is registered, which can happen before any subscriber fiber
-    // runs. Attach the listener in the same fiber turn as creation so a
-    // restored selection buffers in the queue instead of firing unheard.
-    const selectedNotebookChanges =
-      yield* makeControllerSelectionChanges(controller);
-
-    return {
-      id: controller.id,
-      resolveExecutable: (notebook: MarimoNotebookDocument) =>
-        resolveExecutable(notebook).pipe(
-          Effect.provideService(Uv, uv),
-          Effect.mapError((error) =>
-            error._tag === "UnsavedNotebookError"
-              ? error
-              : new ExecutableResolutionError({
-                  notebookUri: notebook.id,
-                  cause: error,
-                }),
-          ),
-        ),
-      drive: (notebook: MarimoNotebookDocument) =>
-        cellDrive.bind({
-          notebook,
-          controller: {
-            createNotebookCellExecution: (cell) =>
-              controller.createNotebookCellExecution(cell.rawNotebookCell),
-          },
-        }),
-      selectedNotebookChanges,
-      updateNotebookAffinity(
-        notebook: vscode.NotebookDocument,
-        affinity: vscode.NotebookControllerAffinity,
-      ) {
-        return Effect.sync(() => {
-          controller.updateNotebookAffinity(notebook, affinity);
-        });
-      },
-    };
+    return runtimeController;
   },
 );
 

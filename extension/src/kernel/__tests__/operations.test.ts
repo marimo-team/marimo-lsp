@@ -24,7 +24,10 @@ const alert: NotificationOf<"missing-package-alert"> = {
 // script-install path and reaches the prompt without touching the filesystem.
 const controller: NotebookController = {
   id: "test-controller",
-  drive: () => () => Effect.void,
+  presentation: () => ({
+    present: () => Effect.void,
+    presentSavedOutputs: () => Effect.void,
+  }),
   resolveExecutable: () => Effect.die("not implemented"),
 };
 

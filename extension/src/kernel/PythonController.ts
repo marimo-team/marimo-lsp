@@ -17,10 +17,10 @@ import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import type { Drive } from "./CellExecutions.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
+import type { NotebookCellPresentation } from "./NotebookCellPresentation.ts";
 import { NotebookRuntime } from "./NotebookRuntime.ts";
-import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
+import { VsCodeCellPresentation } from "./VsCodeCellPresentation.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
 export type NotebookControllerId = Brand.Branded<string, "ControllerId">;
@@ -33,7 +33,7 @@ export const createPythonController = Effect.fn("createPythonController")(
   }) {
     const uv = yield* Uv;
     const code = yield* VsCode;
-    const cellDrive = yield* VsCodeCellDrive;
+    const cellPresentation = yield* VsCodeCellPresentation;
     const config = yield* Config;
     const notebooks = yield* NotebookRuntime;
     const validator = yield* EnvironmentValidator;
@@ -52,6 +52,24 @@ export const createPythonController = Effect.fn("createPythonController")(
     controller.supportedLanguages = [LanguageId.Python, LanguageId.Sql];
     controller.description = options.env.path;
 
+    // Capture selections before VS Code can replay a persisted choice, and
+    // bind execution to the same controller synchronously at its entry point.
+    const selectedNotebookChanges =
+      yield* makeControllerSelectionChanges(controller);
+    const runtimeController = new PythonController(
+      controller,
+      options.env.path,
+      selectedNotebookChanges,
+      (notebook) =>
+        cellPresentation.bind({
+          notebook,
+          controller: {
+            createNotebookCellExecution: (cell) =>
+              controller.createNotebookCellExecution(cell.rawNotebookCell),
+          },
+        }),
+    );
+
     // Set up execution handler
     controller.executeHandler = (rawCells, rawNotebook, controller) =>
       runPromise(
@@ -69,6 +87,8 @@ export const createPythonController = Effect.fn("createPythonController")(
             });
             return;
           }
+
+          yield* notebooks.attachController(rawNotebook, runtimeController);
 
           const validEnv = yield* validator.validate(options.env);
 
@@ -236,33 +256,16 @@ export const createPythonController = Effect.fn("createPythonController")(
         ),
       );
 
-    // VS Code restores a persisted controller selection as soon as the
-    // controller is registered, which can happen before any subscriber fiber
-    // runs. Attach the listener in the same fiber turn as creation so a
-    // restored selection buffers in the queue instead of firing unheard.
-    const selectedNotebookChanges =
-      yield* makeControllerSelectionChanges(controller);
-
-    return new PythonController(
-      controller,
-      options.env.path,
-      selectedNotebookChanges,
-      (notebook) =>
-        cellDrive.bind({
-          notebook,
-          controller: {
-            createNotebookCellExecution: (cell) =>
-              controller.createNotebookCellExecution(cell.rawNotebookCell),
-          },
-        }),
-    );
+    return runtimeController;
   },
 );
 
 export class PythonController {
   readonly _tag = "PythonController";
   #inner: Omit<vscode.NotebookController, "dispose">;
-  readonly drive: (notebook: MarimoNotebookDocument) => Drive;
+  readonly presentation: (
+    notebook: MarimoNotebookDocument,
+  ) => NotebookCellPresentation;
   /** The python interpreter this controller's environment runs on. */
   executable: string;
   /**
@@ -281,12 +284,14 @@ export class PythonController {
       notebook: vscode.NotebookDocument;
       selected: boolean;
     }>,
-    drive: (notebook: MarimoNotebookDocument) => Drive,
+    presentation: (
+      notebook: MarimoNotebookDocument,
+    ) => NotebookCellPresentation,
   ) {
     this.#inner = inner;
     this.executable = executable;
     this.selectedNotebookChanges = selectedNotebookChanges;
-    this.drive = drive;
+    this.presentation = presentation;
   }
   static getId(env: py.Environment) {
     return NotebookControllerId(`marimo-${env.path}`);

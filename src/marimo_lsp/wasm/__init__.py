@@ -12,13 +12,15 @@ import typing
 import msgspec
 
 from marimo_lsp.loggers import get_logger, lsp_handler
-from marimo_lsp.server import create_server
+from marimo_lsp.saved_session_store import (
+    CallbackSavedSessionFiles,
+    SavedSessionFileCallbacks,
+)
+from marimo_lsp.server import MarimoLanguageServer, create_server
 from marimo_lsp.wasm.kernels import ProcessCallbacks, WasmKernels
 
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
-
-    from pygls.lsp.server import LanguageServer
 
     from marimo_lsp.loggers import LspLoggingHandler
 
@@ -44,9 +46,13 @@ class WasmServer:
         self,
         write_message: Callable[[str], None],
         process_callbacks: ProcessCallbacks,
+        saved_session_callbacks: SavedSessionFileCallbacks,
     ) -> None:
         self._kernels = WasmKernels(process_callbacks)
-        self._server: LanguageServer = create_server(kernels=self._kernels)
+        self._server: MarimoLanguageServer = create_server(
+            kernels=self._kernels,
+            saved_session_files=CallbackSavedSessionFiles(saved_session_callbacks),
+        )
         self._server.protocol.set_writer(
             _MessageWriter(write_message),
             include_headers=False,
@@ -86,6 +92,7 @@ class WasmServer:
             return
         self._closed = True
         try:
+            self._server.sessions.close_all()
             self._kernels.close_all()
             self._server.shutdown()
         finally:
@@ -109,6 +116,11 @@ class WasmServer:
 def create_bridge(
     write_message: Callable[[str], None],
     process_callbacks: ProcessCallbacks,
+    saved_session_callbacks: SavedSessionFileCallbacks,
 ) -> WasmServer:
     """Create the message boundary exported to JavaScript."""
-    return WasmServer(write_message, process_callbacks)
+    return WasmServer(
+        write_message,
+        process_callbacks,
+        saved_session_callbacks,
+    )

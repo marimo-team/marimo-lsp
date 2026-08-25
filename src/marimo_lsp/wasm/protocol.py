@@ -26,6 +26,22 @@ MAX_FRAME_SIZE = 64 * 1024 * 1024
 class Ready(msgspec.Struct, tag="ready", tag_field="type", rename="camel"):
     """The kernel bridge is ready."""
 
+    marimo_version: str | None = None
+    session_cache_path: str | None = None
+    can_locate_session_cache: bool = False
+    version: Literal[1] = VERSION
+
+
+class SessionCacheLocation(
+    msgspec.Struct,
+    tag="session-cache-location",
+    tag_field="type",
+    rename="camel",
+):
+    """A cache path resolved by the selected Python."""
+
+    request_id: str
+    path: str | None
     version: Literal[1] = VERSION
 
 
@@ -50,7 +66,7 @@ class Log(msgspec.Struct, tag="log", tag_field="type", rename="camel"):
     version: Literal[1] = VERSION
 
 
-FromBridge: TypeAlias = Ready | Operation | Error | Log
+FromBridge: TypeAlias = Ready | SessionCacheLocation | Operation | Error | Log
 
 
 class KernelLaunchArgs(ipc.KernelArgs):
@@ -91,13 +107,26 @@ class Interrupt(msgspec.Struct, tag="interrupt", tag_field="type", rename="camel
     version: Literal[1] = VERSION
 
 
+class LocateSessionCache(
+    msgspec.Struct,
+    tag="locate-session-cache",
+    tag_field="type",
+    rename="camel",
+):
+    """Resolve marimo's cache path for a renamed notebook."""
+
+    request_id: str
+    notebook_path: str
+    version: Literal[1] = VERSION
+
+
 class Close(msgspec.Struct, tag="close", tag_field="type", rename="camel"):
     """Close the kernel."""
 
     version: Literal[1] = VERSION
 
 
-ToBridge: TypeAlias = Start | Control | Input | Interrupt | Close
+ToBridge: TypeAlias = Start | Control | Input | Interrupt | LocateSessionCache | Close
 
 Message = TypeVar("Message")
 

@@ -20,7 +20,7 @@
     "check": "vp check && node ./scripts/check-css-variables.mjs",
     "fix": "vp fmt && vp check --fix",
     "test": "vp test",
-    "pretest:extension": "pnpm run build:extension",
+    "pretest:extension": "node scripts/run-turbo.mjs build:wasm-lsp:bundle build:extension",
     "test:extension": "vscode-test",
     "embed-sdist": "node scripts/embed-sdist.mjs",
     "build:wasm-lsp": "node scripts/run-turbo.mjs build:wasm-lsp:bundle",

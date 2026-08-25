@@ -57,6 +57,11 @@ export interface NotebookExecutions {
   ) => Effect.Effect<void, RunCorrelationError>;
   readonly interrupt: Effect.Effect<void>;
   readonly invalidate: Effect.Effect<void>;
+  /** Restore execution provenance for display loaded from a saved session. */
+  readonly restoreSavedOutput: (
+    cell: CellSource,
+    notification: CellOperationNotification,
+  ) => Effect.Effect<void>;
   readonly remove: (cellId: NotebookCellId) => Effect.Effect<void>;
   readonly submit: <A, E, R>(
     cells: ReadonlyArray<CellSource>,
@@ -212,6 +217,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
           apply: session.apply,
           interrupt: session.interrupt,
           invalidate: session.invalidate,
+          restoreSavedOutput: session.restoreSavedOutput,
           remove: session.remove,
           submit: session.submit,
           staleCells: {
