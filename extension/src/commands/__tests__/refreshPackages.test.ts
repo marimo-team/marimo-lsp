@@ -20,6 +20,7 @@ const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 const controller: NotebookController = {
   id: "script",
   drive: () => () => Effect.void,
+  presentOutputs: () => Effect.void,
   resolveExecutable: () => Effect.succeed("/unused/python"),
 };
 

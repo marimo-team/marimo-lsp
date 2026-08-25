@@ -88,6 +88,8 @@ class WasmKernel:
         self._closed = False
         self.executable = executable
         self.working_directory = working_directory
+        self.marimo_version: str | None = None
+        self.session_cache_path: str | None = None
 
     def accept(self, chunk: bytes) -> None:
         """Decode operations received from the kernel bridge."""
@@ -95,6 +97,8 @@ class WasmKernel:
             return
         for message in self._decoder.feed(chunk):
             if isinstance(message, Ready):
+                self.marimo_version = message.marimo_version
+                self.session_cache_path = message.session_cache_path
                 if not self._ready.done():
                     self._ready.set_result(None)
             elif isinstance(message, Operation):

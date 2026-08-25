@@ -13,8 +13,14 @@ def main() -> None:
     # Keep native runtime imports out of the importable package so the WASM
     # entrypoint can provide its own kernel adapter.
     from marimo_lsp.kernels.native import NativeKernels  # noqa: PLC0415
+    from marimo_lsp.saved_session_store import (  # noqa: PLC0415
+        LocalSavedSessionFiles,
+    )
 
-    server = create_server(kernels=NativeKernels())
+    server = create_server(
+        kernels=NativeKernels(),
+        saved_session_files=LocalSavedSessionFiles(),
+    )
     logger = get_logger()
     logger.setLevel(logging.DEBUG)
     logger.addHandler(lsp_handler(server))

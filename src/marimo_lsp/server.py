@@ -25,9 +25,14 @@ logger = get_logger()
 
 if typing.TYPE_CHECKING:
     from marimo_lsp.kernels import Kernels
+    from marimo_lsp.saved_session_store import SavedSessionFiles
 
 
-def create_server(*, kernels: Kernels) -> LanguageServer:  # noqa: C901, PLR0915
+def create_server(  # noqa: C901, PLR0915
+    *,
+    kernels: Kernels,
+    saved_session_files: SavedSessionFiles | None = None,
+) -> LanguageServer:
     """Create the marimo LSP server."""
     server = LanguageServer(
         name="marimo-lsp",
@@ -47,7 +52,11 @@ def create_server(*, kernels: Kernels) -> LanguageServer:  # noqa: C901, PLR0915
             save=True,
         ),
     )
-    sessions = Sessions(server, kernels=kernels)
+    sessions = Sessions(
+        server,
+        kernels=kernels,
+        saved_session_files=saved_session_files,
+    )
     graph_registry = GraphUpdaterRegistry(server)
 
     # Register atexit handler to ensure kernel processes are cleaned up

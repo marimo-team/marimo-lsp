@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import pytest
+from marimo import __version__ as marimo_version
 from marimo._ast.app_config import _AppConfig
 from marimo._config.config import DEFAULT_CONFIG
 from marimo._runtime.commands import AppMetadata, ExecuteCellsCommand
@@ -195,7 +196,13 @@ def test_bridge_launches_kernel_subprocess_over_marimo_ipc(
         sent = KernelLaunchArgs.decode_json(process.stdin.write.call_args.args[0])
         assert sent.connection_info is not None
         assert sent.parent_pid == os.getpid()
-        write_frame.assert_any_call(bridge_module.Ready())
+        ready = next(
+            call.args[0]
+            for call in write_frame.call_args_list
+            if isinstance(call.args[0], bridge_module.Ready)
+        )
+        assert ready.marimo_version == marimo_version
+        assert ready.session_cache_path is None
     finally:
         bridge.close()
 

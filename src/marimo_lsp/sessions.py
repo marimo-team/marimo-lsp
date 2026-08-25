@@ -35,7 +35,20 @@ from marimo._types.ids import SessionId
 from marimo_lsp.app_file_manager import LspAppFileManager, sync_app_with_workspace
 from marimo_lsp.kernels import KernelOpenError
 from marimo_lsp.loggers import get_logger
-from marimo_lsp.models import KernelNotification, ListSessionsResponse, SessionInfo
+from marimo_lsp.models import (
+    CellOutputReplay,
+    KernelNotification,
+    ListSessionsResponse,
+    LiveCellReplay,
+    ReadNotebookOutputsResponse,
+    SavedCellReplay,
+    SessionInfo,
+)
+from marimo_lsp.saved_session_writer import SavedSessionWriter
+from marimo_lsp.saved_sessions import (
+    decode_saved_session_outputs,
+    decode_saved_session_view,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -55,6 +68,7 @@ if TYPE_CHECKING:
     from pygls.workspace import Workspace
 
     from marimo_lsp.kernels import Kernel, Kernels
+    from marimo_lsp.saved_session_store import SavedSessionFiles
 
 
 logger = get_logger()
@@ -177,6 +191,7 @@ class Session:
         config_manager: MarimoConfigManager,
         on_change: typing.Callable[[], None] | None = None,
         session_view: SessionView | None = None,
+        saved_session_files: SavedSessionFiles | None = None,
         started_at: float | None = None,
     ) -> None:
         self.session_id = session_id
@@ -207,6 +222,20 @@ class Session:
         self._state_lock = threading.RLock()
 
         self._kernel = kernel
+        self._instantiated = False
+        self._saved_session_writer = None
+        if (
+            saved_session_files is not None
+            and kernel.marimo_version is not None
+            and kernel.session_cache_path is not None
+        ):
+            self._saved_session_writer = SavedSessionWriter(
+                view=self.session_view,
+                app_file_manager=self._app_file_manager,
+                marimo_version=kernel.marimo_version,
+                target=kernel.session_cache_path,
+                files=saved_session_files,
+            )
         logger.info(f"Started session {session_id}")
 
     @property
@@ -254,6 +283,34 @@ class Session:
         self.update_runtime_config(updated)
         return updated
 
+    def output_replay(self) -> list[CellOutputReplay]:
+        """Project the authoritative live view for a newly attached client."""
+        codes = self._app_file_manager.app.cell_manager.code_map()
+        cells: list[CellOutputReplay] = []
+        for cell_id, notification in self.session_view.cell_notifications.items():
+            if cell_id not in codes:
+                continue
+            if (
+                notification.output is None
+                and not notification.console
+                and notification.status not in {"queued", "running"}
+            ):
+                continue
+            executed_source = self.session_view.last_executed_code.get(cell_id)
+            stale = notification.stale_inputs is True or (
+                executed_source != codes[cell_id]
+            )
+            cells.append(
+                LiveCellReplay(
+                    notification=msgspec.structs.replace(
+                        notification,
+                        stale_inputs=stale,
+                    ),
+                    executed_source=executed_source,
+                )
+            )
+        return cells
+
     def sync(self, workspace: Workspace) -> None:
         """Synchronize the live app with the current notebook document."""
         previous_configs = {
@@ -265,6 +322,7 @@ class Session:
             notebook_uri=self._notebook_uri,
             app=self._app_file_manager.app,
         )
+        self._app_file_manager.sync_header(workspace)
         current_configs = {
             cell_id: config.asdict()
             for cell_id, config in self._app_file_manager.app.cell_manager.config_map().items()
@@ -455,6 +513,10 @@ class Session:
             self._notebook_uri = notebook_uri
             self._operation_sink.move(notebook_uri)
             self._app_file_manager.move(notebook_uri)
+            # The target belongs to the filename reported at kernel startup.
+            if self._saved_session_writer is not None:
+                self._saved_session_writer.stop()
+                self._saved_session_writer = None
         if notify:
             self._on_change()
 
@@ -465,6 +527,8 @@ class Session:
         http_request: HTTPRequest | None,
     ) -> None:
         """Instantiate the notebook."""
+        if self._instantiated:
+            return
         codes = request.codes or self._app_file_manager.app.cell_manager.code_map()
 
         del http_request  # Unused in language-server sessions.
@@ -484,6 +548,9 @@ class Session:
             ),
             from_consumer_id=None,
         )
+        self._instantiated = True
+        if self._saved_session_writer is not None:
+            self._saved_session_writer.start()
 
     def activate(self) -> None:
         """Release operations after this session becomes authoritative."""
@@ -497,6 +564,8 @@ class Session:
         self._idle.set()
         self._on_change = lambda: None
         logger.info(f"Closing session {self.session_id}")
+        if self._saved_session_writer is not None:
+            self._saved_session_writer.stop()
         self._kernel.close()
         self._operation_sink.detach()
 
@@ -509,9 +578,11 @@ class Sessions:
         server: LanguageServer,
         *,
         kernels: Kernels,
+        saved_session_files: SavedSessionFiles | None = None,
     ) -> None:
         self._server = server
         self._kernels = kernels
+        self._saved_session_files = saved_session_files
         self._sessions: dict[str, Session] = {}
         self._lock = threading.RLock()
         self._lifecycle_locks: dict[str, asyncio.Lock] = {}
@@ -561,6 +632,48 @@ class Sessions:
         """Return the live session for a notebook, if one exists."""
         with self._lock:
             return self._sessions.get(notebook_uri)
+
+    async def read_notebook_outputs(
+        self,
+        notebook_uri: str,
+        *,
+        session_cache_path: str | None,
+    ) -> ReadNotebookOutputsResponse:
+        """Prefer a live SessionView and otherwise decode the supplied cache."""
+        session = self.get(notebook_uri)
+        if session is not None:
+            return ReadNotebookOutputsResponse(cells=session.output_replay())
+        if self._saved_session_files is None or session_cache_path is None:
+            return ReadNotebookOutputsResponse(cells=[])
+
+        try:
+            app_file_manager = LspAppFileManager(
+                server=self._server,
+                notebook_uri=notebook_uri,
+            )
+            contents = await self._saved_session_files.read(session_cache_path)
+            # A session created while the file was being read is authoritative.
+            session = self.get(notebook_uri)
+            if session is not None:
+                return ReadNotebookOutputsResponse(cells=session.output_replay())
+            if contents is None:
+                return ReadNotebookOutputsResponse(cells=[])
+            cells = app_file_manager.app.cell_manager
+            notifications = decode_saved_session_outputs(
+                contents,
+                codes=cells.codes(),
+                cell_ids=cells.cell_ids(),
+                header=app_file_manager.header,
+            )
+            return ReadNotebookOutputsResponse(
+                cells=[
+                    SavedCellReplay(notification=notification)
+                    for notification in notifications
+                ]
+            )
+        except Exception:
+            logger.exception("Ignored unreadable saved session")
+            return ReadNotebookOutputsResponse(cells=[])
 
     def cancel_scratchpad(self, notebook_uri: str, run_id: str) -> None:
         """Remember a cancellation and interrupt only its active scratchpad."""
@@ -624,7 +737,7 @@ class Sessions:
             replacement.activate()
             return replacement
 
-    async def _create(
+    async def _create(  # noqa: C901
         self,
         notebook_uri: str,
         executable: str,
@@ -668,6 +781,28 @@ class Sessions:
             receive=receive,
         )
         try:
+            session_view = previous.session_view if previous else None
+            if (
+                session_view is None
+                and self._saved_session_files is not None
+                and kernel.marimo_version is not None
+                and kernel.session_cache_path is not None
+            ):
+                try:
+                    contents = await self._saved_session_files.read(
+                        kernel.session_cache_path
+                    )
+                    if contents is not None:
+                        cells = app_file_manager.app.cell_manager
+                        session_view = decode_saved_session_view(
+                            contents,
+                            codes=cells.codes(),
+                            cell_ids=cells.cell_ids(),
+                            marimo_version=kernel.marimo_version,
+                            header=app_file_manager.header,
+                        )
+                except Exception:
+                    logger.exception("Ignored unreadable saved session")
             session = Session(
                 session_id=session_id,
                 notebook_uri=notebook_uri,
@@ -675,7 +810,8 @@ class Sessions:
                 kernel=kernel,
                 app_file_manager=app_file_manager,
                 config_manager=config_manager,
-                session_view=previous.session_view if previous else None,
+                session_view=session_view,
+                saved_session_files=self._saved_session_files,
                 started_at=previous.started_at if previous else None,
             )
             session.set_on_kernel_failure(_raise_kernel_failure)

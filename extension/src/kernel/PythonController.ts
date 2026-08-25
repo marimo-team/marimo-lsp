@@ -17,10 +17,12 @@ import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import type { CellOutputReplay } from "../schemas/Models.gen.ts";
 import type { Drive } from "./CellExecutions.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import { NotebookRuntime } from "./NotebookRuntime.ts";
 import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
+import { VsCodeNotebookOutputPresenter } from "./VsCodeNotebookOutputPresenter.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
 export type NotebookControllerId = Brand.Branded<string, "ControllerId">;
@@ -34,6 +36,7 @@ export const createPythonController = Effect.fn("createPythonController")(
     const uv = yield* Uv;
     const code = yield* VsCode;
     const cellDrive = yield* VsCodeCellDrive;
+    const outputPresenter = yield* VsCodeNotebookOutputPresenter;
     const config = yield* Config;
     const notebooks = yield* NotebookRuntime;
     const validator = yield* EnvironmentValidator;
@@ -255,6 +258,15 @@ export const createPythonController = Effect.fn("createPythonController")(
               controller.createNotebookCellExecution(cell.rawNotebookCell),
           },
         }),
+      (notebook, replays) =>
+        outputPresenter.present(
+          notebook,
+          {
+            createNotebookCellExecution: (cell) =>
+              controller.createNotebookCellExecution(cell),
+          },
+          replays,
+        ),
     );
   },
 );
@@ -263,6 +275,10 @@ export class PythonController {
   readonly _tag = "PythonController";
   #inner: Omit<vscode.NotebookController, "dispose">;
   readonly drive: (notebook: MarimoNotebookDocument) => Drive;
+  readonly presentOutputs: (
+    notebook: MarimoNotebookDocument,
+    replays: ReadonlyArray<CellOutputReplay>,
+  ) => Effect.Effect<void>;
   /** The python interpreter this controller's environment runs on. */
   executable: string;
   /**
@@ -282,11 +298,16 @@ export class PythonController {
       selected: boolean;
     }>,
     drive: (notebook: MarimoNotebookDocument) => Drive,
+    presentOutputs: (
+      notebook: MarimoNotebookDocument,
+      replays: ReadonlyArray<CellOutputReplay>,
+    ) => Effect.Effect<void>,
   ) {
     this.#inner = inner;
     this.executable = executable;
     this.selectedNotebookChanges = selectedNotebookChanges;
     this.drive = drive;
+    this.presentOutputs = presentOutputs;
   }
   static getId(env: py.Environment) {
     return NotebookControllerId(`marimo-${env.path}`);

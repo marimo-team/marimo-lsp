@@ -26,6 +26,7 @@ import {
   type NotebookCellId,
   type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
+import type { CellOutputReplay } from "../schemas/Models.gen.ts";
 import type { CellOperationNotification } from "../types.ts";
 import {
   type CellSource,
@@ -55,6 +56,7 @@ export interface NotebookExecutions {
   readonly apply: (
     operation: CellOperationNotification,
   ) => Effect.Effect<void, RunCorrelationError>;
+  readonly restoreOutput: (replay: CellOutputReplay) => Effect.Effect<void>;
   readonly interrupt: Effect.Effect<void>;
   readonly invalidate: Effect.Effect<void>;
   readonly remove: (cellId: NotebookCellId) => Effect.Effect<void>;
@@ -210,6 +212,7 @@ export class CellExecutions extends Context.Service<CellExecutions>()(
 
         const executions: NotebookExecutions = {
           apply: session.apply,
+          restoreOutput: session.restoreOutput,
           interrupt: session.interrupt,
           invalidate: session.invalidate,
           remove: session.remove,

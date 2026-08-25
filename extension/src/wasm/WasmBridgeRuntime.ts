@@ -1,3 +1,6 @@
+import * as NodeFs from "node:fs";
+import * as NodePath from "node:path";
+
 import { Processes } from "./Processes.ts";
 
 interface WasmBridge {
@@ -22,6 +25,7 @@ export interface WasmModule {
   readonly create_bridge: (
     writeMessage: (messageJson: string) => void,
     processes: object,
+    savedSessions: object,
   ) => WasmBridge;
   readonly destroy: () => void;
 }
@@ -83,9 +87,42 @@ export class WasmBridgeRuntime {
       },
       close: (processId: string) => this.#processes.close(processId),
     };
+    const savedSessions = {
+      read: async (target: string) => {
+        if (!NodePath.isAbsolute(target)) {
+          throw new TypeError("Saved session path must be absolute");
+        }
+        try {
+          return await NodeFs.promises.readFile(target, "utf8");
+        } catch (error) {
+          if (
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            error.code === "ENOENT"
+          ) {
+            return null;
+          }
+          throw error;
+        }
+      },
+      write: async (target: string, contents: string) => {
+        if (!NodePath.isAbsolute(target)) {
+          throw new TypeError("Saved session path must be absolute");
+        }
+        await NodeFs.promises.mkdir(NodePath.dirname(target), {
+          recursive: true,
+        });
+        await NodeFs.promises.writeFile(target, contents, "utf8");
+      },
+    };
 
     try {
-      const bridge = wasmModule.create_bridge(writeMessage, processCallbacks);
+      const bridge = wasmModule.create_bridge(
+        writeMessage,
+        processCallbacks,
+        savedSessions,
+      );
       this.#state = { status: "running", bridge };
     } catch (error) {
       this.#processes.closeAll();

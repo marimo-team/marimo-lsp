@@ -30,6 +30,7 @@ import {
 const controller: NotebookController = {
   id: "test-controller",
   drive: () => () => Effect.void,
+  presentOutputs: () => Effect.void,
   resolveExecutable: () => Effect.succeed("/usr/bin/python"),
 };
 const SESSION_ID = kernelSessionId("00000000-0000-4000-8000-000000000001");

@@ -12,6 +12,10 @@ import typing
 import msgspec
 
 from marimo_lsp.loggers import get_logger, lsp_handler
+from marimo_lsp.saved_session_store import (
+    CallbackSavedSessionFiles,
+    SavedSessionFileCallbacks,
+)
 from marimo_lsp.server import create_server
 from marimo_lsp.wasm.kernels import ProcessCallbacks, WasmKernels
 
@@ -44,9 +48,18 @@ class WasmServer:
         self,
         write_message: Callable[[str], None],
         process_callbacks: ProcessCallbacks,
+        saved_session_callbacks: SavedSessionFileCallbacks | None = None,
     ) -> None:
         self._kernels = WasmKernels(process_callbacks)
-        self._server: LanguageServer = create_server(kernels=self._kernels)
+        files = (
+            CallbackSavedSessionFiles(saved_session_callbacks)
+            if saved_session_callbacks is not None
+            else None
+        )
+        self._server: LanguageServer = create_server(
+            kernels=self._kernels,
+            saved_session_files=files,
+        )
         self._server.protocol.set_writer(
             _MessageWriter(write_message),
             include_headers=False,
@@ -109,6 +122,11 @@ class WasmServer:
 def create_bridge(
     write_message: Callable[[str], None],
     process_callbacks: ProcessCallbacks,
+    saved_session_callbacks: SavedSessionFileCallbacks | None = None,
 ) -> WasmServer:
     """Create the message boundary exported to JavaScript."""
-    return WasmServer(write_message, process_callbacks)
+    return WasmServer(
+        write_message,
+        process_callbacks,
+        saved_session_callbacks,
+    )
