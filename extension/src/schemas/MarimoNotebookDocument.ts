@@ -45,7 +45,6 @@ const notebookMetadataEquivalence = Schema.toEquivalence(
   Api.MarimoNotebookMetadata,
 );
 
-const parseOwnedAppConfig = Schema.decodeUnknownEffect(Api.OwnedAppConfig);
 const MARKUP_CELL_KIND: vscode.NotebookCellKind = 1;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -394,12 +393,6 @@ export class MarimoNotebookDocument {
     const raw = asRecord(this.#raw.metadata);
     return parseNotebookMetadata(
       Object.hasOwn(raw, "marimo") ? raw.marimo : {},
-    ).pipe(
-      Effect.flatMap((metadata) =>
-        parseOwnedAppConfig(metadata.appConfig).pipe(
-          Effect.map((appConfig) => ({ ...metadata, appConfig })),
-        ),
-      ),
     );
   }
 

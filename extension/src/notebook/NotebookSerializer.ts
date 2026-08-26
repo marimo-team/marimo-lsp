@@ -99,12 +99,12 @@ export class NotebookSerializer extends Context.Service<NotebookSerializer>()(
             return yield* new NotebookSourceError({ failure: result });
           }
           const {
-            notebook: { notebook: document, appConfig, header },
+            notebook: { notebook: document, appOptions, header },
           } = result;
 
           const notebook = {
             metadata: MarimoNotebookDocument.createMetadata({
-              appConfig,
+              appOptions,
               header,
               notebookMetadata: document.metadata,
             }),
@@ -394,7 +394,7 @@ function notebookDataToNotebookDocument(
           };
         }),
       },
-      appConfig: documentMetadata.appConfig,
+      appOptions: documentMetadata.appOptions,
       header: documentMetadata.header ?? null,
     };
   });

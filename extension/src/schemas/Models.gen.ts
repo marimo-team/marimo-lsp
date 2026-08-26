@@ -428,12 +428,41 @@ export const SerializedNotebookV1 = Schema.Struct({
 export type SerializedNotebookV1 = typeof SerializedNotebookV1.Type;
 
 /**
+ * Source-level app options managed by the extension.
+ */
+export const ManagedAppOptions = Schema.Struct({
+  autoDownload: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => [])),
+  ),
+}).annotate({
+  identifier: "ManagedAppOptions",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ManagedAppOptions = typeof ManagedAppOptions.Type;
+
+/**
+ * Managed app options plus an opaque lossless passthrough bag.
+ */
+export const AppOptions = Schema.Struct({
+  managed: ManagedAppOptions.pipe(
+    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+  ),
+  passthrough: Schema.Record(Schema.String, Schema.Unknown).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+  ),
+}).annotate({
+  identifier: "AppOptions",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type AppOptions = typeof AppOptions.Type;
+
+/**
  * Serialize notebook data to native marimo Python source.
  */
 export const Serialize = Schema.Struct({
   kind: Schema.Literal("serialize"),
   notebook: SerializedNotebookV1,
-  appConfig: Schema.Record(Schema.String, Schema.Unknown).pipe(
+  appOptions: AppOptions.pipe(
     Schema.withDecodingDefault(Effect.sync(() => ({}))),
   ),
   header: Schema.NullOr(Schema.String).pipe(
@@ -580,22 +609,6 @@ export const Command = Schema.Union([
   ExportMarkdown,
 ]).annotate({ identifier: "Command" });
 export type Command = typeof Command.Type;
-
-/**
- * App options understood by the extension, projected from ``AppConfig``.
- *
- * Codegen preserves excess properties in TypeScript so parsing this owned
- * subset never discards options belonging to marimo or a future extension.
- */
-export const OwnedAppConfig = Schema.Struct({
-  auto_download: Schema.Array(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => [])),
-  ),
-}).annotate({
-  identifier: "OwnedAppConfig",
-  parseOptions: { onExcessProperty: "preserve" },
-});
-export type OwnedAppConfig = typeof OwnedAppConfig.Type;
 
 /**
  * A notification emitted by one exact live kernel.
@@ -745,7 +758,7 @@ export type NotebookMetadata = typeof NotebookMetadata.Type;
  * Persisted marimo-owned metadata on an LSP notebook document.
  */
 export const MarimoNotebookMetadata = Schema.Struct({
-  appConfig: Schema.Record(Schema.String, Schema.Unknown).pipe(
+  appOptions: AppOptions.pipe(
     Schema.withDecodingDefault(Effect.sync(() => ({}))),
   ),
   header: Schema.NullOr(Schema.String).pipe(
@@ -798,7 +811,7 @@ export type NotebookV1 = typeof NotebookV1.Type;
  */
 export const NotebookDocument = Schema.Struct({
   notebook: NotebookV1,
-  appConfig: Schema.Record(Schema.String, Schema.Unknown).pipe(
+  appOptions: AppOptions.pipe(
     Schema.withDecodingDefault(Effect.sync(() => ({}))),
   ),
   header: Schema.NullOr(Schema.String).pipe(

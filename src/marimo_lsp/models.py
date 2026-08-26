@@ -28,31 +28,12 @@ from marimo._schemas.notebook import (
 from marimo._server.models.packages import DependencyTreeNode  # noqa: TC002
 from marimo._types.ids import SessionId  # noqa: TC002
 
+from marimo_lsp.protocol import AppOptions
+
 # Sentinel the frontend `@marimo-team/smart-cells` SQL parser writes into
 # `sourceProjections.sql.engine` for the implicit default engine. We must not
 # emit `engine=__marimo_duckdb` when round-tripping these cells.
 DEFAULT_SQL_ENGINE = "__marimo_duckdb"
-
-
-# Opaque ``marimo.App`` constructor options preserved across the wire.
-#
-# Marimo deliberately accepts ``**kwargs`` for forward/backward compatibility:
-# unknown keys are ignored by the installed runtime, while known keys accept
-# legacy values. The extension should therefore type and validate only options
-# it owns instead of duplicating marimo's evolving private ``_AppConfig``.
-type AppConfig = dict[str, object]
-
-
-class OwnedAppConfig(msgspec.Struct):
-    """App options understood by the extension, projected from ``AppConfig``.
-
-    Codegen preserves excess properties in TypeScript so parsing this owned
-    subset never discards options belonging to marimo or a future extension.
-    """
-
-    __preserve_unknown_fields__: typing.ClassVar[bool] = True
-
-    auto_download: list[str] = msgspec.field(default_factory=list)
 
 
 class KernelNotification(msgspec.Struct, rename="camel"):
@@ -167,7 +148,7 @@ class MarimoNotebookMetadata(
 ):
     """Persisted marimo-owned metadata on an LSP notebook document."""
 
-    app_config: AppConfig = msgspec.field(default_factory=dict)
+    app_options: AppOptions = msgspec.field(default_factory=AppOptions)
     header: str | None = None
     notebook_metadata: NotebookMetadata = msgspec.field(default_factory=dict)
 
@@ -186,7 +167,7 @@ class NotebookDocument(msgspec.Struct, rename="camel"):
     """Strict JSON notebook data plus source-level application metadata."""
 
     notebook: NotebookV1
-    app_config: AppConfig = msgspec.field(default_factory=dict)
+    app_options: AppOptions = msgspec.field(default_factory=AppOptions)
     header: str | None = None
 
 

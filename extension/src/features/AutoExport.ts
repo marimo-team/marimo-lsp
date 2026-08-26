@@ -179,7 +179,7 @@ export const AutoExportLive = Layer.effectDiscard(
         if (notebook.isUntitled) return;
 
         const metadata = yield* notebook.parseMetadata();
-        const enabled = metadata.appConfig.auto_download;
+        const enabled = metadata.appOptions.managed.autoDownload;
         const formats = (["html", "ipynb", "markdown"] as const).filter(
           (format) => enabled.includes(format),
         );

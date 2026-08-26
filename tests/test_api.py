@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
 import pytest
+from inline_snapshot import snapshot
 from marimo._config.config import DEFAULT_CONFIG
 from marimo._convert.converters import MarimoConvert
 from marimo._types.ids import RequestId, SessionId
@@ -30,10 +31,12 @@ from marimo_lsp.api import (
     list_sql_schemas,
     list_sql_tables,
     send_stdin,
+    serialize,
     set_model_value,
     set_ui_element_value,
     update_configuration,
 )
+from marimo_lsp.app_options import app_options_from_source, merge_app_options
 from marimo_lsp.models import (
     DeserializeConvertible,
     DeserializeInvalidSyntax,
@@ -315,7 +318,7 @@ if __name__ == "__main__":
 
 
 @pytest.mark.asyncio
-async def test_legacy_and_unknown_app_config_round_trip_over_command_wire() -> None:
+async def test_managed_and_passthrough_app_options_round_trip() -> None:
     source = """\
 import marimo
 
@@ -323,6 +326,7 @@ app = marimo.App(
     width="wide",
     auto_download=["html"],
     future_setting="keep",
+    future_object={"answer": 42},
     asdict="method-name collision",
 )
 
@@ -339,11 +343,18 @@ if __name__ == "__main__":
         ),
     )
     deserialized_notebook = cast("dict[str, object]", deserialized["notebook"])
-    app_config = cast("dict[str, object]", deserialized_notebook["appConfig"])
-    assert app_config["width"] == "wide"
-    assert app_config["auto_download"] == ["html"]
-    assert app_config["future_setting"] == "keep"
-    assert app_config["asdict"] == "method-name collision"
+    app_options = cast("dict[str, object]", deserialized_notebook["appOptions"])
+    assert app_options == snapshot(
+        {
+            "managed": {"autoDownload": ["html"]},
+            "passthrough": {
+                "width": "wide",
+                "future_setting": "keep",
+                "future_object": {"answer": 42},
+                "asdict": "method-name collision",
+            },
+        }
+    )
 
     serialized = cast(
         "dict[str, object]",
@@ -358,11 +369,46 @@ if __name__ == "__main__":
     )
     serialized_source = serialized["source"]
     assert isinstance(serialized_source, str)
-    reparsed_options = MarimoConvert.from_py(serialized_source).to_ir().app.options
-    assert reparsed_options["width"] == "wide"
-    assert reparsed_options["auto_download"] == ["html"]
-    assert reparsed_options["future_setting"] == "keep"
-    assert reparsed_options["asdict"] == "method-name collision"
+    parsed_options = MarimoConvert.from_py(serialized_source).to_ir().app.options
+    reparsed = app_options_from_source(serialized_source, parsed_options)
+    assert msgspec.to_builtins(reparsed) == snapshot(
+        {
+            "managed": {"autoDownload": ["html"]},
+            "passthrough": {
+                "width": "wide",
+                "future_setting": "keep",
+                "future_object": {"answer": 42},
+                "asdict": "method-name collision",
+            },
+        }
+    )
+
+
+def test_managed_app_options_win_passthrough_collisions() -> None:
+    options = protocol.AppOptions(
+        managed=protocol.ManagedAppOptions(auto_download=["html"]),
+        passthrough={
+            "auto_download": ["ipynb"],
+            "width": "full",
+        },
+    )
+
+    assert merge_app_options(options) == snapshot(
+        {"auto_download": ["html"], "width": "full"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_empty_auto_download_is_omitted_from_notebook_source() -> None:
+    result = await serialize(
+        _context(MagicMock()),
+        protocol.Serialize(
+            notebook={"version": "1", "metadata": {}, "cells": []},
+        ),
+    )
+
+    assert "auto_download" not in result.source
+    assert "app = marimo.App()" in result.source
 
 
 def test_restore_unknown_app_options_reports_non_literal_value() -> None:

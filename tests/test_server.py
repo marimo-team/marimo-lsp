@@ -489,14 +489,9 @@ if __name__ == "__main__":
                     ],
                     "metadata": {"marimo_version": "<marimo-version>"},
                 },
-                "appConfig": {
-                    "width": "compact",
-                    "app_title": None,
-                    "layout_file": None,
-                    "css_file": None,
-                    "html_head_file": None,
-                    "auto_download": [],
-                    "sql_output": "auto",
+                "appOptions": {
+                    "managed": {"autoDownload": []},
+                    "passthrough": {},
                 },
                 "header": "",
             },

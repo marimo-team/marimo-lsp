@@ -31,7 +31,27 @@ CellId = typing.NewType("CellId", str)
 """Opaque identifier for one notebook cell."""
 
 type JsonObject = dict[str, object]
-type AppConfig = dict[str, object]
+
+
+class ManagedAppOptions(
+    msgspec.Struct,
+    rename="camel",
+    forbid_unknown_fields=True,
+):
+    """Source-level app options managed by the extension."""
+
+    auto_download: list[str] = msgspec.field(default_factory=list)
+
+
+class AppOptions(
+    msgspec.Struct,
+    rename="camel",
+    forbid_unknown_fields=True,
+):
+    """Managed app options plus an opaque lossless passthrough bag."""
+
+    managed: ManagedAppOptions = msgspec.field(default_factory=ManagedAppOptions)
+    passthrough: dict[str, object] = msgspec.field(default_factory=dict)
 
 
 class SerializedNotebookCellConfig(typing.TypedDict, total=False):
@@ -74,7 +94,7 @@ class NotebookDocument(
     """Strict notebook data plus source-level application metadata."""
 
     notebook: SerializedNotebookV1
-    app_config: AppConfig = msgspec.field(default_factory=dict)
+    app_options: AppOptions = msgspec.field(default_factory=AppOptions)
     header: str | None = None
 
 
@@ -395,7 +415,7 @@ class Serialize(
     """Serialize notebook data to native marimo Python source."""
 
     notebook: SerializedNotebookV1
-    app_config: AppConfig = msgspec.field(default_factory=dict)
+    app_options: AppOptions = msgspec.field(default_factory=AppOptions)
     header: str | None = None
 
 

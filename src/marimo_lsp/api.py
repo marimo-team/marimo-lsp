@@ -13,7 +13,6 @@ import typing
 from typing import TYPE_CHECKING, cast
 
 import msgspec
-from marimo._ast.app_config import _AppConfig
 from marimo._ast.compiler import module_compile
 from marimo._ast.parse import MarimoFileError
 from marimo._config.config import MarimoConfig  # noqa: TC002 - API introspection
@@ -57,6 +56,12 @@ from typing_extensions import TypeForm
 
 from marimo_lsp import protocol
 from marimo_lsp.app_file_manager import find_notebook_document, snapshot_for_scratchpad
+from marimo_lsp.app_options import (
+    MARIMO_APP_OPTION_NAMES,
+    app_options_from_source,
+    known_marimo_app_options,
+    merge_app_options,
+)
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     DeleteCellRequest,
@@ -89,11 +94,6 @@ if TYPE_CHECKING:
     from pygls.lsp.server import LanguageServer
 
     from marimo_lsp.sessions import Session, Sessions
-
-
-_APP_CONFIG_FIELD_NAMES = frozenset(
-    field.name for field in dataclasses.fields(_AppConfig)
-)
 
 
 __all__ = ["COMMANDS", "CommandBuilder", "CommandSpec", "handle_command"]
@@ -666,11 +666,7 @@ def _package_manager_for(source: protocol.PackageSource) -> LspPackageManager:
 async def serialize(_ctx: ApiContext, args: protocol.Serialize) -> SerializeResponse:
     notebook = msgspec.convert(args.notebook, type=NotebookV1)
     ir = MarimoConvert.from_notebook_v1(notebook).to_ir()
-    known_options = {
-        name: value
-        for name, value in args.app_config.items()
-        if name in _APP_CONFIG_FIELD_NAMES
-    }
+    known_options = known_marimo_app_options(args.app_options)
     ir = dataclasses.replace(
         ir,
         app=AppInstantiation(options=known_options),
@@ -678,7 +674,10 @@ async def serialize(_ctx: ApiContext, args: protocol.Serialize) -> SerializeResp
     )
     source = MarimoConvert.from_ir(ir).to_py()
     return SerializeResponse(
-        source=_restore_unknown_app_options(source, args.app_config)
+        source=_restore_unknown_app_options(
+            source,
+            merge_app_options(args.app_options),
+        )
     )
 
 
@@ -690,7 +689,7 @@ def _restore_unknown_app_options(source: str, options: dict[str, object]) -> str
     only the generated ``marimo.App(...)`` expression so future options survive
     a save without reformatting the rest of the notebook.
     """
-    known_options = _APP_CONFIG_FIELD_NAMES
+    known_options = MARIMO_APP_OPTION_NAMES
     unknown_options = [
         (name, value) for name, value in options.items() if name not in known_options
     ]
@@ -766,7 +765,7 @@ async def deserialize(
     return DeserializeSuccess(
         notebook=NotebookDocument(
             notebook=converter.to_notebook_v1(),
-            app_config={**_AppConfig().asdict(), **ir.app.options},
+            app_options=app_options_from_source(args.source, ir.app.options),
             header=ir.header.value if ir.header is not None else None,
         )
     )

@@ -130,7 +130,10 @@
           }
         ]
       },
-      "appConfig": { "width": "full" },
+      "appOptions": {
+        "managed": { "autoDownload": ["html"] },
+        "passthrough": { "width": "full" }
+      },
       "header": null
     },
     { "kind": "deserialize", "source": "import marimo\n" },

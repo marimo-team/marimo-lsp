@@ -15,6 +15,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const appOptions = (
+  autoDownload: ReadonlyArray<string>,
+  passthrough: Readonly<Record<string, unknown>> = {},
+) => ({ managed: { autoDownload: [...autoDownload] }, passthrough });
+
 const notebookFor = (
   editor: ReturnType<typeof TestVsCode.makeNotebookEditor>,
 ) => MarimoNotebookDocument.tryFrom(editor.notebook);
@@ -48,7 +53,7 @@ it.effect(
     const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
       data: {
         metadata: MarimoNotebookDocument.createMetadata({
-          appConfig: { auto_download: ["html"] },
+          appOptions: appOptions(["html"]),
         }),
         cells: [
           {
@@ -99,7 +104,7 @@ it.effect(
       data: {
         cells: [],
         metadata: MarimoNotebookDocument.createMetadata({
-          appConfig: { auto_download: ["markdown", "html"] },
+          appOptions: appOptions(["markdown", "html"]),
         }),
       },
     });
@@ -137,7 +142,7 @@ it.effect(
       data: {
         cells: [],
         metadata: MarimoNotebookDocument.createMetadata({
-          appConfig: { auto_download: ["html", "ipynb", "markdown"] },
+          appOptions: appOptions(["html", "ipynb", "markdown"]),
         }),
       },
     });
@@ -176,7 +181,7 @@ it.effect(
       data: {
         cells: [],
         metadata: MarimoNotebookDocument.createMetadata({
-          appConfig: { auto_download: ["html"] },
+          appOptions: appOptions(["html"]),
         }),
       },
     });
@@ -189,13 +194,13 @@ it.effect(
             if (!isRecord(marimo)) {
               throw new Error("Expected marimo notebook metadata");
             }
-            const appConfig = marimo.appConfig;
-            if (!isRecord(appConfig)) {
-              throw new Error("Expected marimo app config");
+            const currentAppOptions = marimo.appOptions;
+            if (!isRecord(currentAppOptions)) {
+              throw new Error("Expected marimo app options");
             }
-            marimo.appConfig = {
-              ...appConfig,
-              width: "full",
+            marimo.appOptions = {
+              ...currentAppOptions,
+              passthrough: { width: "full" },
             };
             return Option.some(items.filter((item) => item.label === "IPYNB"));
           }),
@@ -223,8 +228,18 @@ it.effect(
     const parsed = yield* MarimoNotebookDocument.from(
       updated.notebook,
     ).parseMetadata();
-    expect(parsed.appConfig).toMatchObject({ width: "full" });
-    expect(parsed.appConfig.auto_download).toEqual(["ipynb"]);
+    expect(parsed.appOptions).toMatchInlineSnapshot(`
+      {
+        "managed": {
+          "autoDownload": [
+            "ipynb",
+          ],
+        },
+        "passthrough": {
+          "width": "full",
+        },
+      }
+    `);
   }),
 );
 
@@ -237,7 +252,7 @@ it.effect(
       data: {
         cells: [],
         metadata: MarimoNotebookDocument.createMetadata({
-          appConfig: { auto_download: ["html"] },
+          appOptions: appOptions(["html"]),
         }),
       },
     });
@@ -286,7 +301,7 @@ it.effect(
       data: {
         cells: [],
         metadata: MarimoNotebookDocument.createMetadata({
-          appConfig: { auto_download: ["html"] },
+          appOptions: appOptions(["html"]),
         }),
       },
     });

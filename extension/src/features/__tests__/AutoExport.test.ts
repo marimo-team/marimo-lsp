@@ -63,8 +63,11 @@ const withTestCtx = Effect.fn(function* (
   const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
     data: {
       metadata: MarimoNotebookDocument.createMetadata({
-        appConfig: {
-          auto_download: [...(options.autoDownload ?? ["html", "ipynb"])],
+        appOptions: {
+          managed: {
+            autoDownload: [...(options.autoDownload ?? ["html", "ipynb"])],
+          },
+          passthrough: {},
         },
       }),
       cells: [
@@ -316,7 +319,10 @@ describe("AutoExport", () => {
         const reopened = TestVsCode.makeNotebookEditor("/test/report.py", {
           data: {
             metadata: MarimoNotebookDocument.createMetadata({
-              appConfig: { auto_download: ["html", "ipynb"] },
+              appOptions: {
+                managed: { autoDownload: ["html", "ipynb"] },
+                passthrough: {},
+              },
             }),
             cells: [
               {

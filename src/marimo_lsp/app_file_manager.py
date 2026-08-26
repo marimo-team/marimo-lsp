@@ -16,6 +16,7 @@ from marimo._messaging.notebook.outputs import CellOutputs
 from marimo._types.ids import CellId_t
 from pygls.uris import to_fs_path
 
+from marimo_lsp.app_options import merge_app_options
 from marimo_lsp.utils import (
     decode_cell_metadata,
     decode_notebook_document_metadata,
@@ -132,7 +133,7 @@ def sync_app_with_workspace(
     notebook = find_notebook_document(workspace, notebook_uri)
 
     metadata = decode_notebook_document_metadata(notebook)
-    app_options = metadata.app_config
+    app_options = merge_app_options(metadata.app_options)
     if app is None:
         app = InternalApp(App(**app_options))
 
