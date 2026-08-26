@@ -1,0 +1,186 @@
+{
+  "valid": [
+    {
+      "kind": "execute",
+      "notebookUri": "file:///notebook.py",
+      "executable": "/venv/bin/python",
+      "workingDirectory": "/workspace",
+      "cells": [{ "cellId": "cell-1", "code": "answer = 42" }]
+    },
+    {
+      "kind": "update-ui-element",
+      "notebookUri": "file:///notebook.py",
+      "kernelSessionId": "kernel-1",
+      "objectIds": ["slider"],
+      "values": [42],
+      "request": null,
+      "token": null
+    },
+    {
+      "kind": "set-model-value",
+      "notebookUri": "file:///notebook.py",
+      "kernelSessionId": "kernel-1",
+      "modelId": "model-1",
+      "message": {
+        "method": "update",
+        "state": { "value": 42 },
+        "bufferPaths": []
+      },
+      "buffers": [],
+      "token": null
+    },
+    {
+      "kind": "invoke-function",
+      "notebookUri": "file:///notebook.py",
+      "kernelSessionId": "kernel-1",
+      "functionCallId": "call-1",
+      "namespace": "widget",
+      "functionName": "refresh",
+      "args": { "force": true }
+    },
+    {
+      "kind": "interrupt",
+      "notebookUri": "file:///notebook.py",
+      "kernelSessionId": "kernel-1",
+      "runId": null
+    },
+    {
+      "kind": "delete-cell",
+      "notebookUri": "file:///notebook.py",
+      "kernelSessionId": "kernel-1",
+      "cellId": "cell-1"
+    },
+    {
+      "kind": "list-sql-schemas",
+      "notebookUri": "file:///notebook.py",
+      "kernelSessionId": "kernel-1",
+      "requestId": "request-1",
+      "engine": "duckdb",
+      "database": "memory",
+      "schemaPath": []
+    },
+    {
+      "kind": "list-sql-tables",
+      "notebookUri": "file:///notebook.py",
+      "kernelSessionId": "kernel-1",
+      "requestId": "request-1",
+      "engine": "duckdb",
+      "database": "memory",
+      "schema": "main",
+      "schemaPath": ["catalog"]
+    },
+    {
+      "kind": "send-stdin",
+      "notebookUri": "file:///notebook.py",
+      "kernelSessionId": "kernel-1",
+      "text": "yes\n"
+    },
+    {
+      "kind": "close-session",
+      "notebookUri": "file:///notebook.py"
+    },
+    {
+      "kind": "restart-session",
+      "notebookUri": "file:///notebook.py",
+      "executable": "/venv/bin/python",
+      "workingDirectory": "/workspace",
+      "createIfMissing": false
+    },
+    {
+      "kind": "move-session",
+      "notebookUri": "file:///old.py",
+      "newNotebookUri": "file:///new.py"
+    },
+    { "kind": "list-sessions" },
+    { "kind": "shutdown-all-sessions" },
+    {
+      "kind": "execute-scratchpad",
+      "notebookUri": "file:///notebook.py",
+      "executable": "/venv/bin/python",
+      "workingDirectory": "/workspace",
+      "code": "answer + 1",
+      "runId": null
+    },
+    {
+      "kind": "list-packages",
+      "notebookUri": "file:///notebook.py",
+      "source": { "kind": "venv", "executable": "/venv/bin/python" }
+    },
+    {
+      "kind": "get-dependency-tree",
+      "notebookUri": "file:///notebook.py",
+      "source": { "kind": "script" }
+    },
+    {
+      "kind": "serialize",
+      "notebook": {
+        "version": "1",
+        "metadata": { "marimo_version": "0.24.0" },
+        "cells": [
+          {
+            "id": "cell-1",
+            "code": "answer = 42",
+            "code_hash": null,
+            "name": "answer",
+            "config": {
+              "column": null,
+              "disabled": false,
+              "hide_code": false
+            }
+          }
+        ]
+      },
+      "appConfig": { "width": "full" },
+      "header": null
+    },
+    { "kind": "deserialize", "source": "import marimo\n" },
+    {
+      "kind": "get-configuration",
+      "notebookUri": "file:///notebook.py"
+    },
+    {
+      "kind": "update-configuration",
+      "notebookUri": "file:///notebook.py",
+      "config": { "display": { "theme": "dark" } }
+    },
+    { "kind": "set-display-theme", "theme": "dark" },
+    {
+      "kind": "read-notebook-outputs",
+      "notebookUri": "file:///notebook.py",
+      "sessionCachePath": null
+    },
+    {
+      "kind": "export-html",
+      "notebookUri": "file:///notebook.py",
+      "download": false,
+      "files": [],
+      "includeCode": true,
+      "assetUrl": null
+    },
+    {
+      "kind": "export-ipynb",
+      "notebookUri": "file:///notebook.py"
+    },
+    {
+      "kind": "export-markdown",
+      "notebookUri": "file:///notebook.py"
+    }
+  ],
+  "invalid": [
+    {
+      "method": "execute",
+      "params": { "notebookUri": "file:///notebook.py" }
+    },
+    {
+      "kind": "execute-cells",
+      "notebookUri": "file:///notebook.py"
+    },
+    {
+      "kind": "delete-cell",
+      "notebookUri": "file:///notebook.py",
+      "kernelSessionId": "kernel-1",
+      "inner": { "cellId": "cell-1" }
+    },
+    { "kind": "list-sessions", "unexpected": true }
+  ]
+}

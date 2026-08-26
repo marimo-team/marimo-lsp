@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Result, Schema } from "effect";
 
+import commandProtocol from "../../../../tests/fixtures/command_protocol.json";
 import {
   CellMetadata,
   Command,
@@ -116,6 +117,19 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it("matches the shared command compatibility corpus", () => {
+    for (const command of commandProtocol.valid) {
+      const decoded = Schema.decodeUnknownSync(Command)(command);
+      expect(Schema.encodeSync(Command)(decoded)).toEqual(command);
+    }
+
+    for (const command of commandProtocol.invalid) {
+      expect(
+        Result.isFailure(Schema.decodeUnknownResult(Command)(command)),
+      ).toBe(true);
+    }
   });
 
   it("rejects payloads msgspec would reject", () => {
