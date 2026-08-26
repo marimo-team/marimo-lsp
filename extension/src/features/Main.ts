@@ -28,6 +28,7 @@ import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
 import { Api, type MarimoApi } from "../platform/Api.ts";
 import { Constants } from "../platform/Constants.ts";
 import { GitHubClient } from "../platform/GitHubClient.ts";
+import { HostPlatform } from "../platform/HostPlatform.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
 import { ExtensionContext, Storage } from "../platform/Storage.ts";
 import type { VsCode } from "../platform/VsCode.ts";
@@ -135,8 +136,12 @@ export function makeExtension(
         throw new Error("Extension is already active");
       }
 
+      const dependencies = Layer.empty.pipe(
+        Layer.provideMerge(HostPlatform.Live),
+        Layer.provideMerge(layer),
+      );
       const appLayer = Layer.provide(
-        Layer.provide(MainLive, layer),
+        Layer.provide(MainLive, dependencies),
         Layer.succeed(ExtensionContext, context),
       ).pipe(
         Layer.merge(Layer.succeed(References.MinimumLogLevel, minimumLogLevel)),
