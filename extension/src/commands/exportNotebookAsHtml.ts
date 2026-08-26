@@ -53,14 +53,12 @@ const handler = Effect.fn("command.exportNotebookAsHtml")(function* (
     Effect.fn(function* () {
       // Call the LSP API to export the notebook
       const result = yield* marimo
-        .exportAsHtml({
+        .exportHtml({
           notebookUri: notebook.id,
-          inner: {
-            download: false,
-            files: [],
-            includeCode: true,
-            assetUrl: null,
-          },
+          download: false,
+          files: [],
+          includeCode: true,
+          assetUrl: null,
         })
         .pipe(
           Effect.andThen(Schema.decodeUnknownEffect(Schema.String)),

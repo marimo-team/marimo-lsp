@@ -35,7 +35,7 @@ export function createRequestClient(
     async sendFunctionRequest(request) {
       context.postMessage({
         command: "invoke-function",
-        params: { type: "invoke-function", ...request },
+        params: request,
       });
       return null;
     },

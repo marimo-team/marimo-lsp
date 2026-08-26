@@ -1,13 +1,13 @@
 # Copyright 2026 Marimo. All rights reserved.
 
-"""Generate Effect `Schema` definitions from `marimo_lsp.models` msgspec Structs.
+"""Generate Effect `Schema` definitions from owned msgspec protocol types.
 
 Walks msgspec's introspection IR (`msgspec.inspect`) directly — no JSON Schema
 round-trip — and emits `extension/src/schemas/Models.gen.ts` so the TypeScript
 side *parses* our own wire types instead of assuming them.
 
-Only types owned by marimo-lsp are emitted. Types re-exported from marimo core
-(`ExecuteCellsRequest`, ...) stay on the `@marimo-team/openapi` path.
+The generated named client validates the owned tagged command union before it
+crosses the private LSP request and validates each declared response.
 
 Run through the repository codegen entry point: ``just codegen``.
 """
@@ -21,7 +21,7 @@ import msgspec
 import msgspec.inspect as mi
 
 from marimo_lsp import models, protocol
-from marimo_lsp.api import API_METHODS, ApiMethod
+from marimo_lsp.api import COMMANDS, CommandSpec
 from scripts.codegen.output import EXTENSION
 
 OUTPUT = EXTENSION / "src" / "schemas" / "Models.gen.ts"
@@ -31,7 +31,7 @@ HEADER = """\
 // AUTO-GENERATED FILE — DO NOT EDIT.
 //
 // Generated from `src/marimo_lsp/protocol.py`, `src/marimo_lsp/models.py`,
-// and the `marimo.api` registry (`API_METHODS` in `src/marimo_lsp/api.py`)
+// and the command registry (`COMMANDS` in `src/marimo_lsp/api.py`)
 // by `scripts.codegen`.
 // Regenerate with `just codegen`.
 import type { components as MarimoApi } from "@marimo-team/openapi/src/api";
@@ -82,26 +82,14 @@ _StructLike = mi.StructType | mi.DataclassType | mi.TypedDictType
 # (exported name, type) pairs. The emitter topologically orders dependencies.
 CONCRETE: list[tuple[str, type | object]] = [
     ("Command", protocol.Command),
-    ("PackageSource", models.PackageSource),
     ("OwnedAppConfig", models.OwnedAppConfig),
     ("KernelNotification", models.KernelNotification),
     ("DocumentAnalysis", models.DocumentAnalysis),
     ("CellMetadata", models.CellMetadata),
     ("NotebookDocumentMetadata", models.NotebookDocumentMetadata),
     ("NotebookDocument", models.NotebookDocument),
-    ("DeserializeRequest", models.DeserializeRequest),
     ("DeserializeResult", models.DeserializeResult),
     ("ConvertRequest", models.ConvertRequest),
-    ("InterruptRequest", models.InterruptRequest),
-    ("ListPackagesRequest", models.ListPackagesRequest),
-    ("DependencyTreeRequest", models.DependencyTreeRequest),
-    ("GetConfigurationRequest", models.GetConfigurationRequest),
-    ("CloseSessionRequest", models.CloseSessionRequest),
-    ("ExportAsIpynbRequest", models.ExportAsIpynbRequest),
-    ("ExecuteScratchRequest", models.ExecuteScratchRequest),
-    ("UpdateConfigurationRequest", models.UpdateConfigurationRequest),
-    ("SetDisplayThemeRequest", models.SetDisplayThemeRequest),
-    ("ReadNotebookOutputsRequest", models.ReadNotebookOutputsRequest),
     ("CellOutputReplay", models.CellOutputReplay),
 ]
 
@@ -502,54 +490,44 @@ class Emitter:
             f"export type {name} = typeof {name}.Type;\n"
         )
 
-    def emit_api_method(self, method: ApiMethod) -> tuple[str, str]:
-        """Emit the payload schema for one registry entry.
-
-        Returns the method's PascalCase name and success schema expression (the
-        client factory references the success schema statically per method).
-        """
-        class_name = _pascal(method.name)
-        info = mi.type_info(method.request)
-        if not isinstance(info, _StructLike):
-            msg = f"api method {method.name!r} request must be struct-like"
+    def emit_command(self, spec: CommandSpec) -> tuple[str, str, str, str]:
+        """Return a command's schema, method, tag, and success schema."""
+        info = mi.type_info(spec.request)
+        if not isinstance(info, mi.StructType) or info.tag is None:
+            msg = f"command {spec.request!r} must be a tagged struct"
             raise TypeError(msg)
-        payload = self.fields_src(info, indent="  ")
-        success = self.type_expr(mi.type_info(method.response))
-        self.definitions.append(
-            f"export const {class_name}Payload = Schema.Struct({{\n{payload}}});\n"
+        return (
+            info.cls.__name__,
+            _camel(str(info.tag)),
+            str(info.tag),
+            self.type_expr(mi.type_info(spec.response)),
         )
-        return class_name, success
 
 
 _DISPATCH_HELPER = """\
-type ApiTransport<E, R> = (call: MarimoApiCall) => Effect.Effect<unknown, E, R>;
+type CommandTransport<E, R> = (
+  command: typeof Command.Encoded,
+) => Effect.Effect<unknown, E, R>;
 
 /**
- * Validate the outgoing params against the payload schema (the wire/Encoded
- * side, so defaulted fields stay omittable), send them verbatim, and parse
- * the response against the method's success schema.
+ * Validate the complete outgoing command, send it verbatim, and parse the
+ * response against the command's declared success schema.
  */
 const dispatch = <
-  Payload extends Schema.Top,
   Success extends Schema.Top,
   E,
   R,
 >(
-  execute: ApiTransport<E, R>,
-  call: MarimoApiCall & { readonly params: Payload["Encoded"] },
-  payload: Payload,
+  send: CommandTransport<E, R>,
+  command: typeof Command.Encoded,
   success: Success,
 ): Effect.Effect<
   Success["Type"],
   E | Schema.SchemaError,
-  R | Payload["DecodingServices"] | Success["DecodingServices"]
+  R | Success["DecodingServices"]
 > =>
-  Effect.andThen(
-    Schema.decodeEffect(payload)(call.params),
-    Effect.flatMap(
-      execute(call),
-      Schema.decodeUnknownEffect(success),
-    ),
+  Effect.flatMap(Schema.decodeEffect(Command)(command), () =>
+    Effect.flatMap(send(command), Schema.decodeUnknownEffect(success)),
   );
 """
 
@@ -558,43 +536,23 @@ def generate() -> str:
     emitter = Emitter()
     for name, t in CONCRETE:
         emitter.emit_named(name, t)
-    api = [emitter.emit_api_method(method) for method in API_METHODS]
-    members = "\n".join(
-        f"  | {{ readonly method: {_ts_string(method.name)}; "
-        f"readonly params: typeof {class_name}Payload.Encoded }}"
-        for (class_name, _), method in zip(api, API_METHODS, strict=True)
-    )
-    emitter.definitions.append(
-        "/**\n"
-        " * Every command accepted by the `marimo.api` transport.\n"
-        " *\n"
-        " * Generated from the `API_METHODS` registry in `src/marimo_lsp/api.py`,\n"
-        " * which is also what the server dispatches and validates against.\n"
-        " */\n"
-        f"export type MarimoApiCall =\n{members};\n"
-    )
+    commands = [emitter.emit_command(spec) for spec in COMMANDS]
     emitter.definitions.append(_DISPATCH_HELPER)
     methods = "\n".join(
-        f"  {_camel(method.name)}: (\n"
-        f"    params: typeof {class_name}Payload.Encoded,\n"
-        f"  ) =>\n"
-        f"    dispatch(\n"
-        f"      execute,\n"
-        f"      {{ method: {_ts_string(method.name)}, params }},\n"
-        f"      {class_name}Payload,\n"
-        f"      {success},\n"
-        f"    ),"
-        for (class_name, success), method in zip(api, API_METHODS, strict=True)
+        f'  {method}: (params: Omit<typeof {class_name}.Encoded, "kind">) => {{\n'
+        f"    const command = {{ kind: {_ts_string(tag)}, ...params }} "
+        f"satisfies typeof {class_name}.Encoded;\n"
+        f"    return dispatch(send, command, {success});\n"
+        "  },"
+        for class_name, method, tag, success in commands
     )
     emitter.definitions.append(
         "/**\n"
-        " * Typed `marimo.api` client surface: one method per registry entry.\n"
+        " * Named extension methods over the private owned command protocol.\n"
         " *\n"
-        " * Each method encodes its payload, dispatches `{ method, params }` over\n"
-        " * `execute`, and parses the response against the method's success schema —\n"
-        " * both sides of the wire are earned, not asserted.\n"
+        " * Ordinary extension code never constructs or switches over the raw union.\n"
         " */\n"
-        "export const makeApiClient = <E, R>(execute: ApiTransport<E, R>) => ({\n"
+        "export const makeCommandClient = <E, R>(send: CommandTransport<E, R>) => ({\n"
         f"{methods}\n"
         "});\n"
     )

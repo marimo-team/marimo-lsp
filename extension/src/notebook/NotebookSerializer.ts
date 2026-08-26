@@ -302,7 +302,10 @@ function notebookDataToNotebookDocument(
   }: {
     LanguageId: Constants["Service"]["LanguageId"];
   },
-): Effect.Effect<typeof Api.SerializePayload.Encoded, Schema.SchemaError> {
+): Effect.Effect<
+  Omit<typeof Api.Serialize.Encoded, "kind">,
+  Schema.SchemaError
+> {
   const { cells, metadata = {} } = notebook;
   const sqlParser = new SQLParser();
   const markdownParser = new MarkdownParser();

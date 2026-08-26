@@ -30,8 +30,8 @@ const constantsLayer = Layer.succeed(
 );
 
 const runtimeLayer = makeTestNotebookRuntime({
-  execute: (request) =>
-    request.method === "get-configuration"
+  send: (request) =>
+    request.kind === "get-configuration"
       ? Effect.succeed({
           config: marimoConfigFixture({
             runtime: {
@@ -274,8 +274,8 @@ describe("showNotebookMenu", () => {
           },
         });
         const runtime = makeTestNotebookRuntime({
-          execute: (request) =>
-            request.method === "get-configuration"
+          send: (request) =>
+            request.kind === "get-configuration"
               ? Deferred.succeed(requestStarted, undefined).pipe(
                   Effect.andThen(Deferred.await(releaseRequest)),
                   Effect.andThen(

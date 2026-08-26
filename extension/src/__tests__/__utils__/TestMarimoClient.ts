@@ -23,17 +23,21 @@ import {
   MarimoNotebookDocument,
   type NotebookId,
 } from "../../schemas/MarimoNotebookDocument.ts";
-import { KernelSessionIdFromString } from "../../schemas/Models.gen.ts";
+import {
+  Command,
+  KernelSessionIdFromString,
+} from "../../schemas/Models.gen.ts";
 import type {
   DocumentAnalysis,
   KernelNotification,
-  MarimoApiCall,
   MarimoSessionsChanged,
 } from "../../types.ts";
 
+export type TestCommand = typeof Command.Encoded;
+
 interface Options {
-  readonly execute?: (
-    request: MarimoApiCall,
+  readonly send?: (
+    request: TestCommand,
   ) => Effect.Effect<unknown, Schema.SchemaError>;
   readonly kernelNotifications?: Stream.Stream<KernelNotification>;
   readonly documentAnalysis?: Stream.Stream<DocumentAnalysis>;
@@ -81,42 +85,43 @@ export function makeTestNotebookRuntime(options: Options = {}) {
                 Option.fromNullishOr(controllers.get(notebookId)),
               ),
               executeScratchpad: () => Stream.empty,
-              updateUIElements: (inner) =>
+              updateUIElements: (fields) =>
                 client.updateUiElement({
+                  ...fields,
                   notebookUri: notebookId,
-                  sessionId: TEST_KERNEL_SESSION_ID,
-                  inner,
+                  kernelSessionId: TEST_KERNEL_SESSION_ID,
                 }),
-              updateModel: (inner) =>
+              updateModel: (fields) =>
                 client.setModelValue({
+                  ...fields,
                   notebookUri: notebookId,
-                  sessionId: TEST_KERNEL_SESSION_ID,
-                  inner,
+                  kernelSessionId: TEST_KERNEL_SESSION_ID,
                 }),
-              invokeFunction: (inner) =>
+              invokeFunction: (fields) =>
                 client.invokeFunction({
+                  ...fields,
                   notebookUri: notebookId,
-                  sessionId: TEST_KERNEL_SESSION_ID,
-                  inner,
+                  kernelSessionId: TEST_KERNEL_SESSION_ID,
                 }),
-              deleteCell: (inner) =>
+              deleteCell: (fields) =>
                 client.deleteCell({
+                  ...fields,
                   notebookUri: notebookId,
-                  sessionId: TEST_KERNEL_SESSION_ID,
-                  inner,
+                  kernelSessionId: TEST_KERNEL_SESSION_ID,
                 }),
               interrupt: client.interrupt({
                 notebookUri: notebookId,
-                inner: { sessionId: TEST_KERNEL_SESSION_ID },
+                kernelSessionId: TEST_KERNEL_SESSION_ID,
               }),
               restart: client
                 .restartSession({
                   notebookUri: notebookId,
-                  inner: { executable: "", workingDirectory: "" },
+                  executable: "",
+                  workingDirectory: "",
                 })
                 .pipe(Effect.as(undefined)),
               close: client
-                .closeSession({ notebookUri: notebookId, inner: {} })
+                .closeSession({ notebookUri: notebookId })
                 .pipe(Effect.asVoid),
             };
             handles.set(notebookId, handle);
@@ -128,13 +133,13 @@ export function makeTestNotebookRuntime(options: Options = {}) {
         ): Effect.Effect<NotebookDocumentHandle> => {
           const notebookId = MarimoNotebookDocument.from(document).id;
           return Effect.succeed({
-            executeCells: (inner, executable) =>
-              client.executeCells({
+            execute: (request, executable) =>
+              client.execute({
                 notebookUri: notebookId,
                 executable,
                 workingDirectory:
                   options.runtimeSession?.workingDirectory ?? process.cwd(),
-                inner,
+                cells: request.cells,
               }),
           });
         };
@@ -161,18 +166,16 @@ export function makeTestNotebookRuntime(options: Options = {}) {
             client
               .moveSession({
                 notebookUri: notebookId,
-                inner: { newNotebookUri: newNotebookId },
+                newNotebookUri: newNotebookId,
               })
               .pipe(Effect.asVoid),
           restoreSession: (notebookId, executable, workingDirectory) =>
             client
               .restartSession({
                 notebookUri: notebookId,
-                inner: {
-                  executable,
-                  workingDirectory,
-                  createIfMissing: true,
-                },
+                executable,
+                workingDirectory,
+                createIfMissing: true,
               })
               .pipe(Effect.asVoid),
           shutdownAll: client.shutdownAllSessions({}).pipe(Effect.asVoid),
@@ -193,13 +196,13 @@ function makeTestMarimoClientValue(
     channel: { name: "marimo-lsp-test", show() {} },
     restart: Effect.void,
     ...makeMarimoCommands({
-      execute:
-        options.execute ??
+      send:
+        options.send ??
         ((request) =>
           Effect.succeed(
-            request.method === "list-sessions"
+            request.kind === "list-sessions"
               ? { sessions: [] }
-              : request.method === "read-notebook-outputs"
+              : request.kind === "read-notebook-outputs"
                 ? { cells: [] }
                 : null,
           )),

@@ -17,7 +17,8 @@ import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { MarimoClient } from "../lsp/MarimoClient.ts";
 import type {
   DependencyTreeNode,
-  PackageSource,
+  ScriptSource,
+  VenvSource,
 } from "../schemas/Models.gen.ts";
 import { NotebookSession } from "./NotebookSession.ts";
 
@@ -29,6 +30,8 @@ export type NotebookDependencyState = Data.TaggedEnum<{
 }>;
 export const NotebookDependencyState =
   Data.taggedEnum<NotebookDependencyState>();
+
+type PackageSource = VenvSource | ScriptSource;
 
 function controllerSource(controller: NotebookController): PackageSource {
   return typeof controller.executable === "string"
@@ -64,7 +67,6 @@ export class NotebookDependencies extends Context.Service<NotebookDependencies>(
           .getDependencyTree({
             notebookUri: session.notebookId,
             source,
-            inner: {},
           })
           .pipe(
             Effect.map(({ tree }) => NotebookDependencyState.Loaded({ tree })),
@@ -91,10 +93,9 @@ export class NotebookDependencies extends Context.Service<NotebookDependencies>(
                 }),
                 Effect.andThen(
                   marimo
-                    .getPackageList({
+                    .listPackages({
                       notebookUri: session.notebookId,
                       source,
-                      inner: {},
                     })
                     .pipe(
                       Effect.map((packageList) =>

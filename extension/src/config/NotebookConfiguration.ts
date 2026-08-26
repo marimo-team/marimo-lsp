@@ -35,7 +35,6 @@ export class NotebookConfiguration extends Context.Service<NotebookConfiguration
         );
         const result = yield* marimo.getConfiguration({
           notebookUri: session.notebookId,
-          inner: {},
         });
         yield* Effect.logTrace("Configuration fetched").pipe(
           Effect.annotateLogs({ notebookUri: session.notebookId }),
@@ -81,7 +80,7 @@ export class NotebookConfiguration extends Context.Service<NotebookConfiguration
             );
             const config = yield* marimo.updateConfiguration({
               notebookUri: session.notebookId,
-              inner: { config: partialConfig },
+              config: partialConfig,
             });
             yield* ScopedCache.set(cache, cacheKey, config);
             yield* SubscriptionRef.set(current, Option.some(config));

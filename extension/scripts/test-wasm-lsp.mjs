@@ -155,22 +155,15 @@ const executed = response(2);
 send({
   jsonrpc: "2.0",
   id: 2,
-  method: "workspace/executeCommand",
+  method: "marimo/command",
   params: {
-    command: "marimo.api",
-    arguments: [
-      {
-        method: "execute-cells",
-        params: {
-          notebookUri,
-          executable: kernelPython,
-          workingDirectory: repositoryDir,
-          inner: {
-            cellIds: ["slider-cell", "value-cell"],
-            codes: [sliderCode, valueCode],
-          },
-        },
-      },
+    kind: "execute",
+    notebookUri,
+    executable: kernelPython,
+    workingDirectory: repositoryDir,
+    cells: [
+      { cellId: "slider-cell", code: sliderCode },
+      { cellId: "value-cell", code: valueCode },
     ],
   },
 });
@@ -186,9 +179,9 @@ NodeAssert.ok(
 );
 // Kernel-addressed commands name the exact live session; every kernel
 // notification carries the id.
-const sessionId = initialOutput.match(/"sessionId":"([^"]+)"/)?.[1];
+const kernelSessionId = initialOutput.match(/"sessionId":"([^"]+)"/)?.[1];
 NodeAssert.ok(
-  sessionId,
+  kernelSessionId,
   `Could not find kernel session ID in output:\n${initialOutput}`,
 );
 
@@ -200,19 +193,13 @@ for (let value = 1; value <= 100; value++) {
   send({
     jsonrpc: "2.0",
     id,
-    method: "workspace/executeCommand",
+    method: "marimo/command",
     params: {
-      command: "marimo.api",
-      arguments: [
-        {
-          method: "update-ui-element",
-          params: {
-            notebookUri,
-            sessionId,
-            inner: { objectIds: [sliderId], values: [value] },
-          },
-        },
-      ],
+      kind: "update-ui-element",
+      notebookUri,
+      kernelSessionId,
+      objectIds: [sliderId],
+      values: [value],
     },
   });
 }
@@ -223,25 +210,19 @@ const longRun = response(300);
 send({
   jsonrpc: "2.0",
   id: 300,
-  method: "workspace/executeCommand",
+  method: "marimo/command",
   params: {
-    command: "marimo.api",
-    arguments: [
+    kind: "execute",
+    notebookUri,
+    executable: kernelPython,
+    workingDirectory: repositoryDir,
+    cells: [
       {
-        method: "execute-cells",
-        params: {
-          notebookUri,
-          executable: kernelPython,
-          workingDirectory: repositoryDir,
-          inner: {
-            cellIds: ["value-cell"],
-            codes: [
-              'print("interrupt-started", flush=True)\n' +
-                "time.sleep(60)\n" +
-                "value = slider.value",
-            ],
-          },
-        },
+        cellId: "value-cell",
+        code:
+          'print("interrupt-started", flush=True)\n' +
+          "time.sleep(60)\n" +
+          "value = slider.value",
       },
     ],
   },
@@ -253,15 +234,11 @@ const interrupted = response(301);
 send({
   jsonrpc: "2.0",
   id: 301,
-  method: "workspace/executeCommand",
+  method: "marimo/command",
   params: {
-    command: "marimo.api",
-    arguments: [
-      {
-        method: "interrupt",
-        params: { notebookUri, inner: { sessionId } },
-      },
-    ],
+    kind: "interrupt",
+    notebookUri,
+    kernelSessionId,
   },
 });
 await interrupted;

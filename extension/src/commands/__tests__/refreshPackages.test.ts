@@ -34,8 +34,8 @@ it.effect("refreshes dependencies for the active document session", () =>
     let requests = 0;
     const runtime = makeTestNotebookRuntime({
       initialControllers: [{ notebookUri: NOTEBOOK_URI, controller }],
-      execute: (request) =>
-        request.method === "get-dependency-tree"
+      send: (request) =>
+        request.kind === "get-dependency-tree"
           ? Effect.sync(() => {
               requests += 1;
               return {
@@ -47,7 +47,7 @@ it.effect("refreshes dependencies for the active document session", () =>
                 },
               };
             })
-          : Effect.die(`Unexpected method: ${request.method}`),
+          : Effect.die(`Unexpected command: ${request.kind}`),
     });
     const sessions = NotebookDocumentSessions.layer.pipe(
       Layer.provide(vscode.layer),

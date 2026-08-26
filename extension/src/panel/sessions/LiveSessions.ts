@@ -95,10 +95,8 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
         yield* marimo
           .restartSession({
             notebookUri,
-            inner: {
-              executable: current.value.executable,
-              workingDirectory: current.value.workingDirectory,
-            },
+            executable: current.value.executable,
+            workingDirectory: current.value.workingDirectory,
           })
           .pipe(
             Effect.tapError(() =>
@@ -129,7 +127,7 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
       const shutdown = Effect.fn("LiveSessions.shutdown")(function* (
         notebookUri: NotebookId,
       ) {
-        yield* marimo.closeSession({ notebookUri, inner: {} });
+        yield* marimo.closeSession({ notebookUri });
         yield* refresh();
       });
 
@@ -139,7 +137,7 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
       ) {
         yield* marimo.moveSession({
           notebookUri,
-          inner: { newNotebookUri },
+          newNotebookUri,
         });
         yield* refresh();
       });
@@ -158,11 +156,9 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
         ) {
           yield* marimo.restartSession({
             notebookUri,
-            inner: {
-              executable,
-              workingDirectory,
-              createIfMissing: true,
-            },
+            executable,
+            workingDirectory,
+            createIfMissing: true,
           });
           yield* refresh();
         }),

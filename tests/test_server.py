@@ -54,6 +54,12 @@ def asdict(obj: Any) -> dict[str, Any]:  # noqa: ANN401
     return obj
 
 
+async def send_command(client: LanguageClient, command: dict[str, object]) -> Any:  # noqa: ANN401 - pytest-lsp exposes dynamic JSON-RPC results
+    """Send one value from the private owned command union."""
+    result = await client.protocol.send_request_async("marimo/command", command)
+    return asdict(result)
+
+
 def assert_one_kernel_session(messages: list[dict[str, Any]]) -> None:
     session_ids = {
         message["sessionId"] for message in messages if "sessionId" in message
@@ -136,12 +142,7 @@ async def client(lsp_process: LanguageClient):  # noqa: ANN201
             )
         )
 
-    await lsp_process.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[{"method": "shutdown-all-sessions", "params": {}}],
-        )
-    )
+    await send_command(lsp_process, {"kind": "shutdown-all-sessions"})
 
     # Tests register per-test notification handlers on the shared client.
     lsp_process.protocol.fm.features.clear()
@@ -298,21 +299,15 @@ async def test_enabling_disabled_cell_runs_registered_source(
         )
     )
 
-    await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "execute-cells",
-                    "params": {
-                        "notebookUri": uri,
-                        "executable": sys.executable,
-                        "workingDirectory": str(Path.cwd()),
-                        "inner": {"cellIds": ["cell1"], "codes": [source]},
-                    },
-                }
-            ],
-        )
+    await send_command(
+        client,
+        {
+            "kind": "execute",
+            "notebookUri": uri,
+            "executable": sys.executable,
+            "workingDirectory": str(Path.cwd()),
+            "cells": [{"cellId": "cell1", "code": source}],
+        },
     )
     await asyncio.wait_for(initial_run_completed.wait(), timeout=5)
     assert not stdout.done()
@@ -426,16 +421,9 @@ async def test_marimo_serialize_command(client: LanguageClient) -> None:
         ],
     }
 
-    result = await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "serialize",
-                    "params": {"notebook": notebook, "header": "marimo app"},
-                }
-            ],
-        )
+    result = await send_command(
+        client,
+        {"kind": "serialize", "notebook": notebook, "header": "marimo app"},
     )
 
     assert result is not None
@@ -477,12 +465,8 @@ if __name__ == "__main__":
     app.run()
 """
 
-    result = await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[{"method": "deserialize", "params": {"source": source}}],
-        )
-    )
+    result = await send_command(client, {"kind": "deserialize", "source": source})
+    result["notebook"]["notebook"]["metadata"]["marimo_version"] = "<marimo-version>"
 
     assert result == snapshot(
         {
@@ -503,7 +487,7 @@ if __name__ == "__main__":
                             },
                         }
                     ],
-                    "metadata": {"marimo_version": "0.24.0"},
+                    "metadata": {"marimo_version": "<marimo-version>"},
                 },
                 "appConfig": {
                     "width": "compact",
@@ -524,20 +508,13 @@ async def test_marimo_get_package_list_venv_no_session(
     client: LanguageClient,
 ) -> None:
     """Package list with a venv source works without a live session."""
-    result = await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "get-package-list",
-                    "params": {
-                        "notebookUri": "file:///nonexistent.py",
-                        "source": {"kind": "venv", "executable": sys.executable},
-                        "inner": {},
-                    },
-                }
-            ],
-        )
+    result = await send_command(
+        client,
+        {
+            "kind": "list-packages",
+            "notebookUri": "file:///nonexistent.py",
+            "source": {"kind": "venv", "executable": sys.executable},
+        },
     )
 
     # Endpoint is session-free; uv lists packages from the executable directly.
@@ -576,44 +553,28 @@ async def test_marimo_get_package_list_with_session(client: LanguageClient) -> N
     )
 
     # Run a cell to ensure session is created
-    await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "execute-cells",
-                    "params": {
-                        "notebookUri": "file:///package_test.py",
-                        "executable": sys.executable,
-                        "workingDirectory": str(Path.cwd()),
-                        "inner": {
-                            "cellIds": ["cell1"],
-                            "codes": ["x = 1"],
-                        },
-                    },
-                }
-            ],
-        )
+    await send_command(
+        client,
+        {
+            "kind": "execute",
+            "notebookUri": "file:///package_test.py",
+            "executable": sys.executable,
+            "workingDirectory": str(Path.cwd()),
+            "cells": [{"cellId": "cell1", "code": "x = 1"}],
+        },
     )
 
     # Give the session a moment to start
     await asyncio.sleep(0.1)
 
     # Now get the package list
-    result = await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "get-package-list",
-                    "params": {
-                        "notebookUri": "file:///package_test.py",
-                        "source": {"kind": "venv", "executable": sys.executable},
-                        "inner": {},
-                    },
-                }
-            ],
-        )
+    result = await send_command(
+        client,
+        {
+            "kind": "list-packages",
+            "notebookUri": "file:///package_test.py",
+            "source": {"kind": "venv", "executable": sys.executable},
+        },
     )
 
     # Should return a list of packages (at least some common ones should be present)
@@ -679,45 +640,31 @@ async def test_execute_scratchpad_binds_code_mode_and_emits_transaction(
     )
 
     # Create + instantiate the session so we have a live kernel.
-    await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "execute-cells",
-                    "params": {
-                        "notebookUri": uri,
-                        "executable": sys.executable,
-                        "workingDirectory": str(Path.cwd()),
-                        "inner": {"cellIds": ["cell1"], "codes": ["x = 1"]},
-                    },
-                }
-            ],
-        )
+    await send_command(
+        client,
+        {
+            "kind": "execute",
+            "notebookUri": uri,
+            "executable": sys.executable,
+            "workingDirectory": str(Path.cwd()),
+            "cells": [{"cellId": "cell1", "code": "x = 1"}],
+        },
     )
 
     # Use code mode from inside the scratchpad to commit a new cell.
-    await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "execute-scratchpad",
-                    "params": {
-                        "notebookUri": uri,
-                        "executable": sys.executable,
-                        "workingDirectory": str(Path.cwd()),
-                        "inner": {
-                            "code": (
-                                "import marimo._code_mode as cm\n"
-                                "async with cm.get_context() as ctx:\n"
-                                "    ctx.create_cell('z = 1')\n"
-                            )
-                        },
-                    },
-                }
-            ],
-        )
+    await send_command(
+        client,
+        {
+            "kind": "execute-scratchpad",
+            "notebookUri": uri,
+            "executable": sys.executable,
+            "workingDirectory": str(Path.cwd()),
+            "code": (
+                "import marimo._code_mode as cm\n"
+                "async with cm.get_context() as ctx:\n"
+                "    ctx.create_cell('z = 1')\n"
+            ),
+        },
     )
 
     # The code-mode commit arrives asynchronously as a notebook-document
@@ -790,46 +737,32 @@ async def test_code_mode_edit_cell_config_on_existing_cell(
     )
 
     # Create + instantiate the session so we have a live kernel.
-    await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "execute-cells",
-                    "params": {
-                        "notebookUri": uri,
-                        "executable": sys.executable,
-                        "workingDirectory": str(Path.cwd()),
-                        "inner": {"cellIds": ["cell1"], "codes": ["x = 1"]},
-                    },
-                }
-            ],
-        )
+    await send_command(
+        client,
+        {
+            "kind": "execute",
+            "notebookUri": uri,
+            "executable": sys.executable,
+            "workingDirectory": str(Path.cwd()),
+            "cells": [{"cellId": "cell1", "code": "x = 1"}],
+        },
     )
 
     # Edit only the config of the existing cell — this reads its current
     # CellConfig (`existing.column`), which used to be a dict and crash.
-    await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "execute-scratchpad",
-                    "params": {
-                        "notebookUri": uri,
-                        "executable": sys.executable,
-                        "workingDirectory": str(Path.cwd()),
-                        "inner": {
-                            "code": (
-                                "import marimo._code_mode as cm\n"
-                                "async with cm.get_context() as ctx:\n"
-                                "    ctx.edit_cell(ctx.cells[0].id, hide_code=True)\n"
-                            )
-                        },
-                    },
-                }
-            ],
-        )
+    await send_command(
+        client,
+        {
+            "kind": "execute-scratchpad",
+            "notebookUri": uri,
+            "executable": sys.executable,
+            "workingDirectory": str(Path.cwd()),
+            "code": (
+                "import marimo._code_mode as cm\n"
+                "async with cm.get_context() as ctx:\n"
+                "    ctx.edit_cell(ctx.cells[0].id, hide_code=True)\n"
+            ),
+        },
     )
 
     change = await asyncio.wait_for(set_config, timeout=30)
@@ -852,20 +785,13 @@ async def test_marimo_get_dependency_tree_venv_no_session(
     `uv tree` requires a uv-managed project; against an arbitrary venv it returns
     None. The endpoint should answer regardless of session state.
     """
-    result = await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "get-dependency-tree",
-                    "params": {
-                        "notebookUri": "file:///nonexistent.py",
-                        "source": {"kind": "venv", "executable": sys.executable},
-                        "inner": {},
-                    },
-                }
-            ],
-        )
+    result = await send_command(
+        client,
+        {
+            "kind": "get-dependency-tree",
+            "notebookUri": "file:///nonexistent.py",
+            "source": {"kind": "venv", "executable": sys.executable},
+        },
     )
 
     assert result is not None
@@ -900,44 +826,28 @@ async def test_marimo_get_dependency_tree_with_session(client: LanguageClient) -
     )
 
     # Run a cell to ensure session is created
-    await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "execute-cells",
-                    "params": {
-                        "notebookUri": "file:///dep_tree_test.py",
-                        "executable": sys.executable,
-                        "workingDirectory": str(Path.cwd()),
-                        "inner": {
-                            "cellIds": ["cell1"],
-                            "codes": ["x = 1"],
-                        },
-                    },
-                }
-            ],
-        )
+    await send_command(
+        client,
+        {
+            "kind": "execute",
+            "notebookUri": "file:///dep_tree_test.py",
+            "executable": sys.executable,
+            "workingDirectory": str(Path.cwd()),
+            "cells": [{"cellId": "cell1", "code": "x = 1"}],
+        },
     )
 
     # Give the session a moment to start
     await asyncio.sleep(0.1)
 
     # Now get the dependency tree
-    result = await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "get-dependency-tree",
-                    "params": {
-                        "notebookUri": "file:///dep_tree_test.py",
-                        "source": {"kind": "venv", "executable": sys.executable},
-                        "inner": {},
-                    },
-                }
-            ],
-        )
+    result = await send_command(
+        client,
+        {
+            "kind": "get-dependency-tree",
+            "notebookUri": "file:///dep_tree_test.py",
+            "source": {"kind": "venv", "executable": sys.executable},
+        },
     )
 
     # Should return a tree or None
@@ -997,20 +907,13 @@ async def test_marimo_get_dependency_tree_script_source(
     without requiring a kernel session.
     """
     script = _build_local_script_fixture(tmp_path)
-    result = await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "get-dependency-tree",
-                    "params": {
-                        "notebookUri": script.as_uri(),
-                        "source": {"kind": "script"},
-                        "inner": {},
-                    },
-                }
-            ],
-        )
+    result = await send_command(
+        client,
+        {
+            "kind": "get-dependency-tree",
+            "notebookUri": script.as_uri(),
+            "source": {"kind": "script"},
+        },
     )
 
     assert result is not None
@@ -1034,20 +937,13 @@ async def test_marimo_get_dependency_tree_script_no_pep723(
     script = tmp_path / "plain_script.py"
     script.write_text("print('no metadata')\n")
 
-    result = await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "get-dependency-tree",
-                    "params": {
-                        "notebookUri": script.as_uri(),
-                        "source": {"kind": "script"},
-                        "inner": {},
-                    },
-                }
-            ],
-        )
+    result = await send_command(
+        client,
+        {
+            "kind": "get-dependency-tree",
+            "notebookUri": script.as_uri(),
+            "source": {"kind": "script"},
+        },
     )
 
     assert result == {"tree": None}
@@ -1062,20 +958,13 @@ async def test_marimo_get_package_list_script_source(
     the LSP's own Python — listing the wrong env entirely.
     """
     script = _build_local_script_fixture(tmp_path)
-    result = await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "get-package-list",
-                    "params": {
-                        "notebookUri": script.as_uri(),
-                        "source": {"kind": "script"},
-                        "inner": {},
-                    },
-                }
-            ],
-        )
+    result = await send_command(
+        client,
+        {
+            "kind": "list-packages",
+            "notebookUri": script.as_uri(),
+            "source": {"kind": "script"},
+        },
     )
 
     assert result is not None
@@ -1133,24 +1022,15 @@ x\
             await asyncio.sleep(0.1)
             completion_event.set()
 
-    await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "execute-cells",
-                    "params": {
-                        "notebookUri": "file:///exec_test.py",
-                        "executable": sys.executable,
-                        "workingDirectory": str(Path.cwd()),
-                        "inner": {
-                            "cellIds": ["cell1"],
-                            "codes": [code],
-                        },
-                    },
-                }
-            ],
-        )
+    await send_command(
+        client,
+        {
+            "kind": "execute",
+            "notebookUri": "file:///exec_test.py",
+            "executable": sys.executable,
+            "workingDirectory": str(Path.cwd()),
+            "cells": [{"cellId": "cell1", "code": code}],
+        },
     )
 
     await asyncio.wait_for(completion_event.wait(), timeout=5.0)
@@ -1393,25 +1273,16 @@ async def test_marimo_run_with_ancestor_cell(client: LanguageClient) -> None:
             await asyncio.sleep(0.1)
             completion_event.set()
 
-    await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "execute-cells",
-                    "params": {
-                        "notebookUri": "file:///exec_test.py",
-                        "executable": sys.executable,
-                        "workingDirectory": str(Path.cwd()),
-                        # Just run cell_y, and cell_x should be run automatically
-                        "inner": {
-                            "cellIds": ["cell2"],
-                            "codes": [code_y],
-                        },
-                    },
-                }
-            ],
-        )
+    await send_command(
+        client,
+        {
+            "kind": "execute",
+            "notebookUri": "file:///exec_test.py",
+            "executable": sys.executable,
+            "workingDirectory": str(Path.cwd()),
+            # Just run cell_y, and cell_x should be run automatically
+            "cells": [{"cellId": "cell2", "code": code_y}],
+        },
     )
 
     await asyncio.wait_for(completion_event.wait(), timeout=5.0)
@@ -1945,24 +1816,15 @@ async def test_scratchpad_execution(client: LanguageClient) -> None:
                 scratch_completion_event.set()
 
     # Execute a cell to start the kernel session
-    await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "execute-cells",
-                    "params": {
-                        "notebookUri": "file:///scratch_test.py",
-                        "executable": sys.executable,
-                        "workingDirectory": str(Path.cwd()),
-                        "inner": {
-                            "cellIds": ["cell1"],
-                            "codes": [notebook_code],
-                        },
-                    },
-                }
-            ],
-        )
+    await send_command(
+        client,
+        {
+            "kind": "execute",
+            "notebookUri": "file:///scratch_test.py",
+            "executable": sys.executable,
+            "workingDirectory": str(Path.cwd()),
+            "cells": [{"cellId": "cell1", "code": notebook_code}],
+        },
     )
 
     # Wait for the cell execution to complete (kernel is now running)
@@ -1977,23 +1839,15 @@ y = 42
 print("scratchpad output")
 y\
 """
-    await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "execute-scratchpad",
-                    "params": {
-                        "notebookUri": "file:///scratch_test.py",
-                        "executable": sys.executable,
-                        "workingDirectory": str(Path.cwd()),
-                        "inner": {
-                            "code": scratchpad_code,
-                        },
-                    },
-                }
-            ],
-        )
+    await send_command(
+        client,
+        {
+            "kind": "execute-scratchpad",
+            "notebookUri": "file:///scratch_test.py",
+            "executable": sys.executable,
+            "workingDirectory": str(Path.cwd()),
+            "code": scratchpad_code,
+        },
     )
 
     await asyncio.wait_for(scratch_completion_event.wait(), timeout=5.0)
@@ -2134,21 +1988,15 @@ async def test_scratchpad_creates_session_when_missing(
                 scratch_done.set()
 
     # No cell was ever executed, so there is no session for this notebook yet.
-    await client.workspace_execute_command_async(
-        lsp.ExecuteCommandParams(
-            command="marimo.api",
-            arguments=[
-                {
-                    "method": "execute-scratchpad",
-                    "params": {
-                        "notebookUri": uri,
-                        "executable": sys.executable,
-                        "workingDirectory": str(Path.cwd()),
-                        "inner": {"code": "print('from new session')"},
-                    },
-                }
-            ],
-        )
+    await send_command(
+        client,
+        {
+            "kind": "execute-scratchpad",
+            "notebookUri": uri,
+            "executable": sys.executable,
+            "workingDirectory": str(Path.cwd()),
+            "code": "print('from new session')",
+        },
     )
 
     # Must not hang: the session is created and the code runs.

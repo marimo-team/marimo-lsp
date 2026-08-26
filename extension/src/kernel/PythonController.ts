@@ -76,10 +76,7 @@ export const createPythonController = Effect.fn("createPythonController")(
           const validEnv = yield* validator.validate(options.env);
 
           const documentHandle = yield* notebooks.forDocument(rawNotebook);
-          yield* documentHandle.executeCells(
-            request.value,
-            validEnv.executable,
-          );
+          yield* documentHandle.execute(request.value, validEnv.executable);
         }).pipe(
           Effect.withSpan("PythonController.execute", {
             attributes: {
@@ -108,7 +105,7 @@ export const createPythonController = Effect.fn("createPythonController")(
               yield* Effect.logError("Failed to execute command").pipe(
                 Effect.annotateLogs({
                   cause: Cause.fail(error),
-                  command: Redacted.value(error.command).command,
+                  command: Redacted.value(error.command).kind,
                 }),
               );
               const detail = extractPythonError(error.cause);

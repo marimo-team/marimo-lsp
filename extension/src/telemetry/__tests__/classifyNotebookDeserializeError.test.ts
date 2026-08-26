@@ -113,11 +113,8 @@ it("separates client lifecycle failures from internal RPC errors", () => {
 function commandError(cause: unknown) {
   return new MarimoCommandError({
     command: Redacted.make({
-      command: "marimo.api" as const,
-      params: {
-        method: "deserialize" as const,
-        params: { source: "DO_NOT_UPLOAD_COMMAND_SOURCE" },
-      },
+      kind: "deserialize" as const,
+      source: "DO_NOT_UPLOAD_COMMAND_SOURCE",
     }),
     cause,
     mode: "wasm",

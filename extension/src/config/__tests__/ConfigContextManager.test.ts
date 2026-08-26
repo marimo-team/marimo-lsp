@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Deferred, Effect, Layer, Option, Ref, Schema } from "effect";
+import { Deferred, Effect, Layer, Option, Ref } from "effect";
 
 import {
   createTestNotebookDocument,
@@ -14,7 +14,6 @@ import {
 } from "../../lib/__tests__/branded.ts";
 import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
-import * as Api from "../../schemas/Models.gen.ts";
 import { ConfigContextManagerLive } from "../ConfigContextManager.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
@@ -63,13 +62,10 @@ const withTestCtx = Effect.fn(function* () {
     runtime: { on_cell_change: "lazy", auto_reload: "autorun" },
   });
   const runtime = makeTestNotebookRuntime({
-    execute: Effect.fn(function* (request) {
-      if (request.method !== "get-configuration") {
-        return yield* Effect.die(`Unexpected method: ${request.method}`);
+    send: Effect.fn(function* (request) {
+      if (request.kind !== "get-configuration") {
+        return yield* Effect.die(`Unexpected command: ${request.kind}`);
       }
-      yield* Schema.decodeUnknownEffect(Api.GetConfigurationPayload)(
-        request.params,
-      );
       return { config };
     }),
   });
@@ -178,20 +174,17 @@ it.effect("keeps context writes ordered when the active session changes", () =>
       ],
     ]);
     const runtime = makeTestNotebookRuntime({
-      execute: Effect.fn(function* (request) {
-        if (request.method !== "get-configuration") {
-          return yield* Effect.die(`Unexpected method: ${request.method}`);
+      send: Effect.fn(function* (request) {
+        if (request.kind !== "get-configuration") {
+          return yield* Effect.die(`Unexpected command: ${request.kind}`);
         }
-        const params = yield* Schema.decodeUnknownEffect(
-          Api.GetConfigurationPayload,
-        )(request.params);
-        const config = configurations.get(params.notebookUri);
+        const config = configurations.get(notebookId(request.notebookUri));
         if (config === undefined) {
           return yield* Effect.die(
-            `Missing configuration for ${params.notebookUri}`,
+            `Missing configuration for ${request.notebookUri}`,
           );
         }
-        if (params.notebookUri === NOTEBOOK_URI_2) {
+        if (request.notebookUri === NOTEBOOK_URI_2) {
           signalSecondConfigurationLoaded();
         }
         return { config };

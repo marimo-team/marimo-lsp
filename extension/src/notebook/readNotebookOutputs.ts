@@ -15,7 +15,7 @@ export const readNotebookOutputs = (
   const sessionCachePath = conventionalSessionCachePath(notebook);
   return marimo.readNotebookOutputs({
     notebookUri: notebook.id,
-    inner: { sessionCachePath },
+    sessionCachePath,
   });
 };
 

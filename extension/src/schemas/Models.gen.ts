@@ -1,7 +1,7 @@
 // AUTO-GENERATED FILE — DO NOT EDIT.
 //
 // Generated from `src/marimo_lsp/protocol.py`, `src/marimo_lsp/models.py`,
-// and the `marimo.api` registry (`API_METHODS` in `src/marimo_lsp/api.py`)
+// and the command registry (`COMMANDS` in `src/marimo_lsp/api.py`)
 // by `scripts.codegen`.
 // Regenerate with `just codegen`.
 import type { components as MarimoApi } from "@marimo-team/openapi/src/api";
@@ -77,6 +77,118 @@ export const Execute = Schema.Struct({
 export type Execute = typeof Execute.Type;
 
 /**
+ * Update one or more UI element values in an exact kernel.
+ */
+export const UpdateUiElement = Schema.Struct({
+  kind: Schema.Literal("update-ui-element"),
+  notebookUri: NotebookUriFromString,
+  kernelSessionId: KernelSessionIdFromString,
+  objectIds: Schema.Array(Schema.String),
+  values: Schema.Array(Schema.Unknown),
+  request: Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown)).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+  token: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({
+  identifier: "UpdateUiElement",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type UpdateUiElement = typeof UpdateUiElement.Type;
+
+/**
+ * State update sent to one widget model.
+ */
+export const ModelUpdateMessage = Schema.Struct({
+  method: Schema.Literal("update"),
+  state: Schema.Record(Schema.String, Schema.Unknown),
+  bufferPaths: Schema.Array(
+    Schema.Array(Schema.Union([Schema.String, Schema.Int])),
+  ),
+}).annotate({
+  identifier: "ModelUpdateMessage",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ModelUpdateMessage = typeof ModelUpdateMessage.Type;
+
+/**
+ * Custom message sent to one widget model.
+ */
+export const ModelCustomMessage = Schema.Struct({
+  method: Schema.Literal("custom"),
+  content: Schema.Unknown,
+}).annotate({
+  identifier: "ModelCustomMessage",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ModelCustomMessage = typeof ModelCustomMessage.Type;
+
+/**
+ * Base64-encoded bytes on the msgspec JSON wire.
+ *
+ * Matches the compile-time `TypedString<"Base64String">` brand emitted
+ * by `@marimo-team/openapi`. Decode with `Schema.Uint8ArrayFromBase64`
+ * where actual bytes are needed.
+ */
+export const Base64String = Schema.String.pipe(Schema.brand("Base64String"));
+export type Base64String = typeof Base64String.Type;
+
+/**
+ * Update state for one widget model in an exact kernel.
+ */
+export const SetModelValue = Schema.Struct({
+  kind: Schema.Literal("set-model-value"),
+  notebookUri: NotebookUriFromString,
+  kernelSessionId: KernelSessionIdFromString,
+  modelId: Schema.String,
+  message: Schema.Union([ModelUpdateMessage, ModelCustomMessage]),
+  buffers: Schema.Array(Base64String),
+  token: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({
+  identifier: "SetModelValue",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type SetModelValue = typeof SetModelValue.Type;
+
+/**
+ * Invoke a registered function in an exact kernel.
+ */
+export const InvokeFunction = Schema.Struct({
+  kind: Schema.Literal("invoke-function"),
+  notebookUri: NotebookUriFromString,
+  kernelSessionId: KernelSessionIdFromString,
+  functionCallId: Schema.String,
+  namespace: Schema.String,
+  functionName: Schema.String,
+  args: Schema.Record(Schema.String, Schema.Unknown),
+}).annotate({
+  identifier: "InvokeFunction",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type InvokeFunction = typeof InvokeFunction.Type;
+
+/**
+ * Interrupt an exact kernel or cancel a pending scratch execution.
+ */
+export const Interrupt = Schema.Struct({
+  kind: Schema.Literal("interrupt"),
+  notebookUri: NotebookUriFromString,
+  kernelSessionId: Schema.NullOr(KernelSessionIdFromString).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+  runId: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({
+  identifier: "Interrupt",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type Interrupt = typeof Interrupt.Type;
+
+/**
  * Remove one cell from the exact live kernel that owns it.
  */
 export const DeleteCell = Schema.Struct({
@@ -90,35 +202,384 @@ export const DeleteCell = Schema.Struct({
 });
 export type DeleteCell = typeof DeleteCell.Type;
 
-export const Command = Schema.Union([Execute, DeleteCell]).annotate({
-  identifier: "Command",
+/**
+ * List immediate child schemas at a database path.
+ */
+export const ListSqlSchemas = Schema.Struct({
+  kind: Schema.Literal("list-sql-schemas"),
+  notebookUri: NotebookUriFromString,
+  kernelSessionId: KernelSessionIdFromString,
+  requestId: Schema.String,
+  engine: Schema.String,
+  database: Schema.String,
+  schemaPath: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => [])),
+  ),
+}).annotate({
+  identifier: "ListSqlSchemas",
+  parseOptions: { onExcessProperty: "error" },
 });
-export type Command = typeof Command.Type;
+export type ListSqlSchemas = typeof ListSqlSchemas.Type;
 
 /**
- * The notebook's environment is a concrete venv with a known python executable.
+ * List tables in one database schema.
+ */
+export const ListSqlTables = Schema.Struct({
+  kind: Schema.Literal("list-sql-tables"),
+  notebookUri: NotebookUriFromString,
+  kernelSessionId: KernelSessionIdFromString,
+  requestId: Schema.String,
+  engine: Schema.String,
+  database: Schema.String,
+  schema: Schema.String,
+  schemaPath: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => [])),
+  ),
+}).annotate({
+  identifier: "ListSqlTables",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ListSqlTables = typeof ListSqlTables.Type;
+
+/**
+ * Respond to a stdin prompt in an exact kernel.
+ */
+export const SendStdin = Schema.Struct({
+  kind: Schema.Literal("send-stdin"),
+  notebookUri: NotebookUriFromString,
+  kernelSessionId: KernelSessionIdFromString,
+  text: Schema.String,
+}).annotate({
+  identifier: "SendStdin",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type SendStdin = typeof SendStdin.Type;
+
+/**
+ * Close the live session for one notebook.
+ */
+export const CloseSession = Schema.Struct({
+  kind: Schema.Literal("close-session"),
+  notebookUri: NotebookUriFromString,
+}).annotate({
+  identifier: "CloseSession",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type CloseSession = typeof CloseSession.Type;
+
+/**
+ * Restart or restore the live session for one notebook.
+ */
+export const RestartSession = Schema.Struct({
+  kind: Schema.Literal("restart-session"),
+  notebookUri: NotebookUriFromString,
+  executable: Schema.String,
+  workingDirectory: Schema.String,
+  createIfMissing: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.sync(() => false)),
+  ),
+}).annotate({
+  identifier: "RestartSession",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type RestartSession = typeof RestartSession.Type;
+
+/**
+ * Move a live session after its notebook is renamed.
+ */
+export const MoveSession = Schema.Struct({
+  kind: Schema.Literal("move-session"),
+  notebookUri: NotebookUriFromString,
+  newNotebookUri: NotebookUriFromString,
+}).annotate({
+  identifier: "MoveSession",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type MoveSession = typeof MoveSession.Type;
+
+/**
+ * List all live sessions owned by the language server.
+ */
+export const ListSessions = Schema.Struct({
+  kind: Schema.Literal("list-sessions"),
+}).annotate({
+  identifier: "ListSessions",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ListSessions = typeof ListSessions.Type;
+
+/**
+ * Close every live session owned by the language server.
+ */
+export const ShutdownAllSessions = Schema.Struct({
+  kind: Schema.Literal("shutdown-all-sessions"),
+}).annotate({
+  identifier: "ShutdownAllSessions",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ShutdownAllSessions = typeof ShutdownAllSessions.Type;
+
+/**
+ * Execute transient code against a notebook kernel.
+ */
+export const ExecuteScratchpad = Schema.Struct({
+  kind: Schema.Literal("execute-scratchpad"),
+  notebookUri: NotebookUriFromString,
+  executable: Schema.String,
+  workingDirectory: Schema.String,
+  code: Schema.String,
+  runId: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({
+  identifier: "ExecuteScratchpad",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ExecuteScratchpad = typeof ExecuteScratchpad.Type;
+
+/**
+ * A concrete environment identified by its Python executable.
  */
 export const VenvSource = Schema.Struct({
   kind: Schema.Literal("venv"),
   executable: Schema.String,
-}).annotate({ identifier: "VenvSource" });
+}).annotate({
+  identifier: "VenvSource",
+  parseOptions: { onExcessProperty: "error" },
+});
 export type VenvSource = typeof VenvSource.Type;
 
 /**
- * The notebook's environment is a PEP 723 sandbox script.
- *
- * The server resolves the script filename from the notebook URI; `uv`
- * derives the venv from the script's inline metadata.
+ * A PEP 723 environment resolved from the notebook script.
  */
 export const ScriptSource = Schema.Struct({
   kind: Schema.Literal("script"),
-}).annotate({ identifier: "ScriptSource" });
+}).annotate({
+  identifier: "ScriptSource",
+  parseOptions: { onExcessProperty: "error" },
+});
 export type ScriptSource = typeof ScriptSource.Type;
 
-export const PackageSource = Schema.Union([VenvSource, ScriptSource]).annotate({
-  identifier: "PackageSource",
+/**
+ * List packages installed in a notebook environment.
+ */
+export const ListPackages = Schema.Struct({
+  kind: Schema.Literal("list-packages"),
+  notebookUri: NotebookUriFromString,
+  source: Schema.Union([VenvSource, ScriptSource]),
+}).annotate({
+  identifier: "ListPackages",
+  parseOptions: { onExcessProperty: "error" },
 });
-export type PackageSource = typeof PackageSource.Type;
+export type ListPackages = typeof ListPackages.Type;
+
+/**
+ * Read the dependency tree for a notebook environment.
+ */
+export const GetDependencyTree = Schema.Struct({
+  kind: Schema.Literal("get-dependency-tree"),
+  notebookUri: NotebookUriFromString,
+  source: Schema.Union([VenvSource, ScriptSource]),
+}).annotate({
+  identifier: "GetDependencyTree",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type GetDependencyTree = typeof GetDependencyTree.Type;
+
+/**
+ * Persisted marimo configuration for one notebook cell.
+ */
+export const SerializedNotebookCellConfig = Schema.Struct({
+  column: Schema.optional(Schema.NullOr(Schema.Int)),
+  disabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  hide_code: Schema.optional(Schema.NullOr(Schema.Boolean)),
+}).annotate({ identifier: "SerializedNotebookCellConfig" });
+export type SerializedNotebookCellConfig =
+  typeof SerializedNotebookCellConfig.Type;
+
+/**
+ * One code cell in the serialized notebook format.
+ */
+export const SerializedNotebookCell = Schema.Struct({
+  code: Schema.NullOr(Schema.String),
+  code_hash: Schema.NullOr(Schema.String),
+  config: SerializedNotebookCellConfig,
+  id: Schema.NullOr(Schema.String),
+  name: Schema.NullOr(Schema.String),
+}).annotate({ identifier: "SerializedNotebookCell" });
+export type SerializedNotebookCell = typeof SerializedNotebookCell.Type;
+
+/**
+ * Metadata stored with the serialized notebook.
+ */
+export const SerializedNotebookMetadata = Schema.Struct({
+  marimo_version: Schema.optional(Schema.NullOr(Schema.String)),
+}).annotate({ identifier: "SerializedNotebookMetadata" });
+export type SerializedNotebookMetadata = typeof SerializedNotebookMetadata.Type;
+
+/**
+ * Owned projection of marimo's version-one notebook document.
+ */
+export const SerializedNotebookV1 = Schema.Struct({
+  cells: Schema.Array(SerializedNotebookCell),
+  metadata: SerializedNotebookMetadata,
+  version: Schema.Literal("1"),
+}).annotate({ identifier: "SerializedNotebookV1" });
+export type SerializedNotebookV1 = typeof SerializedNotebookV1.Type;
+
+/**
+ * Serialize notebook data to native marimo Python source.
+ */
+export const Serialize = Schema.Struct({
+  kind: Schema.Literal("serialize"),
+  notebook: SerializedNotebookV1,
+  appConfig: Schema.Record(Schema.String, Schema.Unknown).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+  ),
+  header: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({
+  identifier: "Serialize",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type Serialize = typeof Serialize.Type;
+
+/**
+ * Deserialize source into notebook data.
+ */
+export const Deserialize = Schema.Struct({
+  kind: Schema.Literal("deserialize"),
+  source: Schema.String,
+}).annotate({
+  identifier: "Deserialize",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type Deserialize = typeof Deserialize.Type;
+
+/**
+ * Read configuration for one notebook.
+ */
+export const GetConfiguration = Schema.Struct({
+  kind: Schema.Literal("get-configuration"),
+  notebookUri: NotebookUriFromString,
+}).annotate({
+  identifier: "GetConfiguration",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type GetConfiguration = typeof GetConfiguration.Type;
+
+/**
+ * Merge a configuration patch for one notebook.
+ */
+export const UpdateConfiguration = Schema.Struct({
+  kind: Schema.Literal("update-configuration"),
+  notebookUri: NotebookUriFromString,
+  config: Schema.Record(Schema.String, Schema.Unknown),
+}).annotate({
+  identifier: "UpdateConfiguration",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type UpdateConfiguration = typeof UpdateConfiguration.Type;
+
+/**
+ * Set the display theme for live sessions.
+ */
+export const SetDisplayTheme = Schema.Struct({
+  kind: Schema.Literal("set-display-theme"),
+  theme: Schema.Literals(["dark", "light"]),
+}).annotate({
+  identifier: "SetDisplayTheme",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type SetDisplayTheme = typeof SetDisplayTheme.Type;
+
+/**
+ * Read outputs without starting a notebook kernel.
+ */
+export const ReadNotebookOutputs = Schema.Struct({
+  kind: Schema.Literal("read-notebook-outputs"),
+  notebookUri: NotebookUriFromString,
+  sessionCachePath: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({
+  identifier: "ReadNotebookOutputs",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ReadNotebookOutputs = typeof ReadNotebookOutputs.Type;
+
+/**
+ * Export one notebook as HTML.
+ */
+export const ExportHtml = Schema.Struct({
+  kind: Schema.Literal("export-html"),
+  notebookUri: NotebookUriFromString,
+  download: Schema.Boolean,
+  files: Schema.Array(Schema.String),
+  includeCode: Schema.Boolean,
+  assetUrl: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({
+  identifier: "ExportHtml",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ExportHtml = typeof ExportHtml.Type;
+
+/**
+ * Export one notebook as ipynb JSON.
+ */
+export const ExportIpynb = Schema.Struct({
+  kind: Schema.Literal("export-ipynb"),
+  notebookUri: NotebookUriFromString,
+}).annotate({
+  identifier: "ExportIpynb",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ExportIpynb = typeof ExportIpynb.Type;
+
+/**
+ * Export one notebook as Markdown.
+ */
+export const ExportMarkdown = Schema.Struct({
+  kind: Schema.Literal("export-markdown"),
+  notebookUri: NotebookUriFromString,
+}).annotate({
+  identifier: "ExportMarkdown",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ExportMarkdown = typeof ExportMarkdown.Type;
+
+export const Command = Schema.Union([
+  Execute,
+  UpdateUiElement,
+  SetModelValue,
+  InvokeFunction,
+  Interrupt,
+  DeleteCell,
+  ListSqlSchemas,
+  ListSqlTables,
+  SendStdin,
+  CloseSession,
+  RestartSession,
+  MoveSession,
+  ListSessions,
+  ShutdownAllSessions,
+  ExecuteScratchpad,
+  ListPackages,
+  GetDependencyTree,
+  Serialize,
+  Deserialize,
+  GetConfiguration,
+  UpdateConfiguration,
+  SetDisplayTheme,
+  ReadNotebookOutputs,
+  ExportHtml,
+  ExportIpynb,
+  ExportMarkdown,
+]).annotate({ identifier: "Command" });
+export type Command = typeof Command.Type;
 
 /**
  * App options understood by the extension, projected from ``AppConfig``.
@@ -347,16 +808,6 @@ export const NotebookDocument = Schema.Struct({
 export type NotebookDocument = typeof NotebookDocument.Type;
 
 /**
- * A request to deserialize Python source to notebook format.
- *
- * Contains the source code to be parsed.
- */
-export const DeserializeRequest = Schema.Struct({
-  source: Schema.String,
-}).annotate({ identifier: "DeserializeRequest" });
-export type DeserializeRequest = typeof DeserializeRequest.Type;
-
-/**
  * A successfully parsed native marimo notebook.
  */
 export const DeserializeSuccess = Schema.Struct({
@@ -403,96 +854,6 @@ export const ConvertRequest = Schema.Struct({
 export type ConvertRequest = typeof ConvertRequest.Type;
 
 /**
- * A request to interrupt the kernel execution.
- */
-export const InterruptRequest = Schema.Struct({
-  runId: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
-  ),
-  sessionId: Schema.NullOr(KernelSessionIdFromString).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
-  ),
-}).annotate({ identifier: "InterruptRequest" });
-export type InterruptRequest = typeof InterruptRequest.Type;
-
-/**
- * A request to list installed packages in the kernel environment.
- */
-export const ListPackagesRequest = Schema.Struct({}).annotate({
-  identifier: "ListPackagesRequest",
-});
-export type ListPackagesRequest = typeof ListPackagesRequest.Type;
-
-/**
- * A request to get the dependency tree of installed packages.
- */
-export const DependencyTreeRequest = Schema.Struct({}).annotate({
-  identifier: "DependencyTreeRequest",
-});
-export type DependencyTreeRequest = typeof DependencyTreeRequest.Type;
-
-/**
- * A request to get the current configuration.
- */
-export const GetConfigurationRequest = Schema.Struct({}).annotate({
-  identifier: "GetConfigurationRequest",
-});
-export type GetConfigurationRequest = typeof GetConfigurationRequest.Type;
-
-/**
- * A request to close the current session.
- */
-export const CloseSessionRequest = Schema.Struct({}).annotate({
-  identifier: "CloseSessionRequest",
-});
-export type CloseSessionRequest = typeof CloseSessionRequest.Type;
-
-/**
- * A request to export the notebook as ipynb.
- */
-export const ExportAsIpynbRequest = Schema.Struct({}).annotate({
-  identifier: "ExportAsIpynbRequest",
-});
-export type ExportAsIpynbRequest = typeof ExportAsIpynbRequest.Type;
-
-/**
- * Execute arbitrary Python code outside the dependency graph.
- */
-export const ExecuteScratchRequest = Schema.Struct({
-  code: Schema.String,
-  runId: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
-  ),
-}).annotate({ identifier: "ExecuteScratchRequest" });
-export type ExecuteScratchRequest = typeof ExecuteScratchRequest.Type;
-
-/**
- * A request to update the user configuration.
- */
-export const UpdateConfigurationRequest = Schema.Struct({
-  config: Schema.Record(Schema.String, Schema.Unknown),
-}).annotate({ identifier: "UpdateConfigurationRequest" });
-export type UpdateConfigurationRequest = typeof UpdateConfigurationRequest.Type;
-
-/**
- * A request to set the display theme without persisting to disk.
- */
-export const SetDisplayThemeRequest = Schema.Struct({
-  theme: Schema.Literals(["dark", "light"]),
-}).annotate({ identifier: "SetDisplayThemeRequest" });
-export type SetDisplayThemeRequest = typeof SetDisplayThemeRequest.Type;
-
-/**
- * Resolve outputs for an opened notebook without starting a kernel.
- */
-export const ReadNotebookOutputsRequest = Schema.Struct({
-  sessionCachePath: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
-  ),
-}).annotate({ identifier: "ReadNotebookOutputsRequest" });
-export type ReadNotebookOutputsRequest = typeof ReadNotebookOutputsRequest.Type;
-
-/**
  * One cell projected from an authoritative live SessionView.
  */
 export const LiveCellReplay = Schema.Struct({
@@ -518,239 +879,6 @@ export const CellOutputReplay = Schema.Union([
 export type CellOutputReplay = typeof CellOutputReplay.Type;
 
 /**
- * Serializable HTTP request representation.
- *
- * Mimics Starlette/FastAPI Request but is pickle-able and contains only a safe
- * subset of data. Excludes session and auth to prevent exposing sensitive data.
- *
- * Attributes:
- *     url: Serialized URL with path, port, scheme, netloc, query, hostname.
- *     base_url: Serialized base URL.
- *     headers: Request headers (marimo-specific headers excluded).
- *     query_params: Query parameters mapped to lists of values.
- *     path_params: Path parameters from the URL route.
- *     cookies: Request cookies.
- *     meta: User-defined storage for custom data.
- *     user: User info from authentication middleware (e.g., is_authenticated, username).
- */
-export const HTTPRequest = Schema.Struct({
-  url: Schema.Record(Schema.String, Schema.Unknown),
-  base_url: Schema.Record(Schema.String, Schema.Unknown),
-  headers: Schema.Record(Schema.String, Schema.String),
-  query_params: Schema.Record(Schema.String, Schema.Array(Schema.String)),
-  path_params: Schema.Record(Schema.String, Schema.Unknown),
-  cookies: Schema.Record(Schema.String, Schema.String),
-  meta: Schema.Record(Schema.String, Schema.Unknown),
-  user: Schema.Unknown,
-}).annotate({ identifier: "HTTPRequest" });
-export type HTTPRequest = typeof HTTPRequest.Type;
-
-export const ExecuteCellsRequest = Schema.Struct({
-  cellIds: Schema.Array(Schema.String),
-  codes: Schema.Array(Schema.String),
-  request: Schema.NullOr(HTTPRequest).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
-  ),
-}).annotate({ identifier: "ExecuteCellsRequest" });
-export type ExecuteCellsRequest = typeof ExecuteCellsRequest.Type;
-
-export const ExecuteCellsPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: ExecuteCellsRequest,
-  executable: Schema.String,
-  workingDirectory: Schema.String,
-});
-
-export const UpdateUIElementRequest = Schema.Struct({
-  objectIds: Schema.Array(Schema.String),
-  values: Schema.Array(Schema.Unknown),
-  request: Schema.NullOr(HTTPRequest).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
-  ),
-  token: Schema.optional(Schema.String),
-}).annotate({ identifier: "UpdateUIElementRequest" });
-export type UpdateUIElementRequest = typeof UpdateUIElementRequest.Type;
-
-export const UpdateUiElementPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: UpdateUIElementRequest,
-  sessionId: KernelSessionIdFromString,
-});
-
-/**
- * Widget model state update message.
- *
- * Attributes:
- *     state: Model state updates.
- *     buffer_paths: Paths within state dict pointing to binary buffers.
- */
-export const ModelUpdateMessage = Schema.Struct({
-  method: Schema.Literal("update"),
-  state: Schema.Record(Schema.String, Schema.Unknown),
-  bufferPaths: Schema.Array(
-    Schema.Array(Schema.Union([Schema.String, Schema.Int])),
-  ),
-}).annotate({ identifier: "ModelUpdateMessage" });
-export type ModelUpdateMessage = typeof ModelUpdateMessage.Type;
-
-/**
- * Custom widget message.
- *
- * Attributes:
- *     content: Arbitrary content for the custom message.
- */
-export const ModelCustomMessage = Schema.Struct({
-  method: Schema.Literal("custom"),
-  content: Schema.Unknown,
-}).annotate({ identifier: "ModelCustomMessage" });
-export type ModelCustomMessage = typeof ModelCustomMessage.Type;
-
-/**
- * Base64-encoded bytes on the msgspec JSON wire.
- *
- * Matches the compile-time `TypedString<"Base64String">` brand emitted
- * by `@marimo-team/openapi`. Decode with `Schema.Uint8ArrayFromBase64`
- * where actual bytes are needed.
- */
-export const Base64String = Schema.String.pipe(Schema.brand("Base64String"));
-export type Base64String = typeof Base64String.Type;
-
-export const ModelRequest = Schema.Struct({
-  modelId: Schema.String,
-  message: Schema.Union([ModelUpdateMessage, ModelCustomMessage]),
-  buffers: Schema.Array(Base64String),
-  token: Schema.optional(Schema.String),
-}).annotate({ identifier: "ModelRequest" });
-export type ModelRequest = typeof ModelRequest.Type;
-
-export const SetModelValuePayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: ModelRequest,
-  sessionId: KernelSessionIdFromString,
-});
-
-/**
- * Invoke a function from a UI element.
- *
- * Called when a UI element needs to invoke a Python function.
- *
- * Attributes:
- *     function_call_id: Unique identifier for this call.
- *     namespace: Namespace where the function is registered.
- *     function_name: Function to invoke.
- *     args: Keyword arguments for the function.
- */
-export const InvokeFunctionCommand = Schema.Struct({
-  type: Schema.Literal("invoke-function"),
-  functionCallId: Schema.String,
-  namespace: Schema.String,
-  functionName: Schema.String,
-  args: Schema.Record(Schema.String, Schema.Unknown),
-}).annotate({ identifier: "InvokeFunctionCommand" });
-export type InvokeFunctionCommand = typeof InvokeFunctionCommand.Type;
-
-export const InvokeFunctionPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: InvokeFunctionCommand,
-  sessionId: KernelSessionIdFromString,
-});
-
-export const InterruptPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: InterruptRequest,
-});
-
-export const DeleteCellRequest = Schema.Struct({
-  cellId: Schema.String,
-}).annotate({ identifier: "DeleteCellRequest" });
-export type DeleteCellRequest = typeof DeleteCellRequest.Type;
-
-export const DeleteCellPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: DeleteCellRequest,
-  sessionId: KernelSessionIdFromString,
-});
-
-export const ListSQLSchemasRequest = Schema.Struct({
-  requestId: Schema.String,
-  engine: Schema.String,
-  database: Schema.String,
-  schemaPath: Schema.Array(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => [])),
-  ),
-}).annotate({ identifier: "ListSQLSchemasRequest" });
-export type ListSQLSchemasRequest = typeof ListSQLSchemasRequest.Type;
-
-export const ListSqlSchemasPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: ListSQLSchemasRequest,
-  sessionId: KernelSessionIdFromString,
-});
-
-export const ListSQLTablesRequest = Schema.Struct({
-  requestId: Schema.String,
-  engine: Schema.String,
-  database: Schema.String,
-  schema: Schema.String,
-  schemaPath: Schema.Array(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => [])),
-  ),
-}).annotate({ identifier: "ListSQLTablesRequest" });
-export type ListSQLTablesRequest = typeof ListSQLTablesRequest.Type;
-
-export const ListSqlTablesPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: ListSQLTablesRequest,
-  sessionId: KernelSessionIdFromString,
-});
-
-export const StdinRequest = Schema.Struct({
-  text: Schema.String,
-}).annotate({ identifier: "StdinRequest" });
-export type StdinRequest = typeof StdinRequest.Type;
-
-export const SendStdinPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: StdinRequest,
-  sessionId: KernelSessionIdFromString,
-});
-
-export const CloseSessionPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: CloseSessionRequest,
-});
-
-/**
- * A request to restart a live session's kernel.
- */
-export const RestartSessionRequest = Schema.Struct({
-  executable: Schema.String,
-  workingDirectory: Schema.String,
-  createIfMissing: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => false)),
-  ),
-}).annotate({ identifier: "RestartSessionRequest" });
-export type RestartSessionRequest = typeof RestartSessionRequest.Type;
-
-export const RestartSessionPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: RestartSessionRequest,
-});
-
-/**
- * A request to move a live session to a renamed notebook URI.
- */
-export const MoveSessionRequest = Schema.Struct({
-  newNotebookUri: Schema.String,
-}).annotate({ identifier: "MoveSessionRequest" });
-export type MoveSessionRequest = typeof MoveSessionRequest.Type;
-
-export const MoveSessionPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: MoveSessionRequest,
-});
-
-/**
  * User-facing state for one live kernel session.
  */
 export const SessionInfo = Schema.Struct({
@@ -773,17 +901,6 @@ export const ListSessionsResponse = Schema.Struct({
 }).annotate({ identifier: "ListSessionsResponse" });
 export type ListSessionsResponse = typeof ListSessionsResponse.Type;
 
-export const ListSessionsPayload = Schema.Struct({});
-
-export const ShutdownAllSessionsPayload = Schema.Struct({});
-
-export const ExecuteScratchpadPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: ExecuteScratchRequest,
-  executable: Schema.String,
-  workingDirectory: Schema.String,
-});
-
 export const PackageDescription = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
@@ -791,18 +908,12 @@ export const PackageDescription = Schema.Struct({
 export type PackageDescription = typeof PackageDescription.Type;
 
 /**
- * Response for ``get-package-list``.
+ * Response for ``list-packages``.
  */
 export const ListPackagesResponse = Schema.Struct({
   packages: Schema.Array(PackageDescription),
 }).annotate({ identifier: "ListPackagesResponse" });
 export type ListPackagesResponse = typeof ListPackagesResponse.Type;
-
-export const GetPackageListPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: ListPackagesRequest,
-  source: PackageSource,
-});
 
 export const DependencyTag = Schema.Struct({
   kind: Schema.String,
@@ -835,12 +946,6 @@ export const DependencyTreeResponse = Schema.Struct({
 }).annotate({ identifier: "DependencyTreeResponse" });
 export type DependencyTreeResponse = typeof DependencyTreeResponse.Type;
 
-export const GetDependencyTreePayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: DependencyTreeRequest,
-  source: PackageSource,
-});
-
 /**
  * Response for ``serialize``.
  */
@@ -848,20 +953,6 @@ export const SerializeResponse = Schema.Struct({
   source: Schema.String,
 }).annotate({ identifier: "SerializeResponse" });
 export type SerializeResponse = typeof SerializeResponse.Type;
-
-export const SerializePayload = Schema.Struct({
-  notebook: NotebookV1,
-  appConfig: Schema.Record(Schema.String, Schema.Unknown).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => ({}))),
-  ),
-  header: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
-  ),
-});
-
-export const DeserializePayload = Schema.Struct({
-  source: Schema.String,
-});
 
 /**
  * Configuration options for Anthropic.
@@ -1467,16 +1558,6 @@ export const GetConfigurationResponse = Schema.Struct({
 }).annotate({ identifier: "GetConfigurationResponse" });
 export type GetConfigurationResponse = typeof GetConfigurationResponse.Type;
 
-export const GetConfigurationPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: GetConfigurationRequest,
-});
-
-export const UpdateConfigurationPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: UpdateConfigurationRequest,
-});
-
 /**
  * Response for ``set-display-theme``.
  */
@@ -1484,10 +1565,6 @@ export const SetDisplayThemeResponse = Schema.Struct({
   success: Schema.Boolean,
 }).annotate({ identifier: "SetDisplayThemeResponse" });
 export type SetDisplayThemeResponse = typeof SetDisplayThemeResponse.Type;
-
-export const SetDisplayThemePayload = Schema.Struct({
-  theme: Schema.Literals(["dark", "light"]),
-});
 
 /**
  * Cell outputs replayed from live memory or a saved-session sidecar.
@@ -1498,366 +1575,223 @@ export const ReadNotebookOutputsResponse = Schema.Struct({
 export type ReadNotebookOutputsResponse =
   typeof ReadNotebookOutputsResponse.Type;
 
-export const ReadNotebookOutputsPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: ReadNotebookOutputsRequest,
-});
-
-export const ExportAsHTMLRequest = Schema.Struct({
-  download: Schema.Boolean,
-  files: Schema.Array(Schema.String),
-  includeCode: Schema.Boolean,
-  assetUrl: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
-  ),
-}).annotate({ identifier: "ExportAsHTMLRequest" });
-export type ExportAsHTMLRequest = typeof ExportAsHTMLRequest.Type;
-
-export const ExportAsHtmlPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: ExportAsHTMLRequest,
-});
-
-export const ExportAsIpynbPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: ExportAsIpynbRequest,
-});
+type CommandTransport<E, R> = (
+  command: typeof Command.Encoded,
+) => Effect.Effect<unknown, E, R>;
 
 /**
- * A request to export the notebook as Markdown.
+ * Validate the complete outgoing command, send it verbatim, and parse the
+ * response against the command's declared success schema.
  */
-export const ExportAsMarkdownRequest = Schema.Struct({}).annotate({
-  identifier: "ExportAsMarkdownRequest",
-});
-export type ExportAsMarkdownRequest = typeof ExportAsMarkdownRequest.Type;
-
-export const ExportAsMarkdownPayload = Schema.Struct({
-  notebookUri: NotebookIdFromString,
-  inner: ExportAsMarkdownRequest,
-});
-
-/**
- * Every command accepted by the `marimo.api` transport.
- *
- * Generated from the `API_METHODS` registry in `src/marimo_lsp/api.py`,
- * which is also what the server dispatches and validates against.
- */
-export type MarimoApiCall =
-  | {
-      readonly method: "execute-cells";
-      readonly params: typeof ExecuteCellsPayload.Encoded;
-    }
-  | {
-      readonly method: "update-ui-element";
-      readonly params: typeof UpdateUiElementPayload.Encoded;
-    }
-  | {
-      readonly method: "set-model-value";
-      readonly params: typeof SetModelValuePayload.Encoded;
-    }
-  | {
-      readonly method: "invoke-function";
-      readonly params: typeof InvokeFunctionPayload.Encoded;
-    }
-  | {
-      readonly method: "interrupt";
-      readonly params: typeof InterruptPayload.Encoded;
-    }
-  | {
-      readonly method: "delete-cell";
-      readonly params: typeof DeleteCellPayload.Encoded;
-    }
-  | {
-      readonly method: "list-sql-schemas";
-      readonly params: typeof ListSqlSchemasPayload.Encoded;
-    }
-  | {
-      readonly method: "list-sql-tables";
-      readonly params: typeof ListSqlTablesPayload.Encoded;
-    }
-  | {
-      readonly method: "send-stdin";
-      readonly params: typeof SendStdinPayload.Encoded;
-    }
-  | {
-      readonly method: "close-session";
-      readonly params: typeof CloseSessionPayload.Encoded;
-    }
-  | {
-      readonly method: "restart-session";
-      readonly params: typeof RestartSessionPayload.Encoded;
-    }
-  | {
-      readonly method: "move-session";
-      readonly params: typeof MoveSessionPayload.Encoded;
-    }
-  | {
-      readonly method: "list-sessions";
-      readonly params: typeof ListSessionsPayload.Encoded;
-    }
-  | {
-      readonly method: "shutdown-all-sessions";
-      readonly params: typeof ShutdownAllSessionsPayload.Encoded;
-    }
-  | {
-      readonly method: "execute-scratchpad";
-      readonly params: typeof ExecuteScratchpadPayload.Encoded;
-    }
-  | {
-      readonly method: "get-package-list";
-      readonly params: typeof GetPackageListPayload.Encoded;
-    }
-  | {
-      readonly method: "get-dependency-tree";
-      readonly params: typeof GetDependencyTreePayload.Encoded;
-    }
-  | {
-      readonly method: "serialize";
-      readonly params: typeof SerializePayload.Encoded;
-    }
-  | {
-      readonly method: "deserialize";
-      readonly params: typeof DeserializePayload.Encoded;
-    }
-  | {
-      readonly method: "get-configuration";
-      readonly params: typeof GetConfigurationPayload.Encoded;
-    }
-  | {
-      readonly method: "update-configuration";
-      readonly params: typeof UpdateConfigurationPayload.Encoded;
-    }
-  | {
-      readonly method: "set-display-theme";
-      readonly params: typeof SetDisplayThemePayload.Encoded;
-    }
-  | {
-      readonly method: "read-notebook-outputs";
-      readonly params: typeof ReadNotebookOutputsPayload.Encoded;
-    }
-  | {
-      readonly method: "export-as-html";
-      readonly params: typeof ExportAsHtmlPayload.Encoded;
-    }
-  | {
-      readonly method: "export-as-ipynb";
-      readonly params: typeof ExportAsIpynbPayload.Encoded;
-    }
-  | {
-      readonly method: "export-as-markdown";
-      readonly params: typeof ExportAsMarkdownPayload.Encoded;
-    };
-
-type ApiTransport<E, R> = (call: MarimoApiCall) => Effect.Effect<unknown, E, R>;
-
-/**
- * Validate the outgoing params against the payload schema (the wire/Encoded
- * side, so defaulted fields stay omittable), send them verbatim, and parse
- * the response against the method's success schema.
- */
-const dispatch = <Payload extends Schema.Top, Success extends Schema.Top, E, R>(
-  execute: ApiTransport<E, R>,
-  call: MarimoApiCall & { readonly params: Payload["Encoded"] },
-  payload: Payload,
+const dispatch = <Success extends Schema.Top, E, R>(
+  send: CommandTransport<E, R>,
+  command: typeof Command.Encoded,
   success: Success,
 ): Effect.Effect<
   Success["Type"],
   E | Schema.SchemaError,
-  R | Payload["DecodingServices"] | Success["DecodingServices"]
+  R | Success["DecodingServices"]
 > =>
-  Effect.andThen(
-    Schema.decodeEffect(payload)(call.params),
-    Effect.flatMap(execute(call), Schema.decodeUnknownEffect(success)),
+  Effect.flatMap(Schema.decodeEffect(Command)(command), () =>
+    Effect.flatMap(send(command), Schema.decodeUnknownEffect(success)),
   );
 
 /**
- * Typed `marimo.api` client surface: one method per registry entry.
+ * Named extension methods over the private owned command protocol.
  *
- * Each method encodes its payload, dispatches `{ method, params }` over
- * `execute`, and parses the response against the method's success schema —
- * both sides of the wire are earned, not asserted.
+ * Ordinary extension code never constructs or switches over the raw union.
  */
-export const makeApiClient = <E, R>(execute: ApiTransport<E, R>) => ({
-  executeCells: (params: typeof ExecuteCellsPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "execute-cells", params },
-      ExecuteCellsPayload,
-      Schema.Null,
-    ),
-  updateUiElement: (params: typeof UpdateUiElementPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "update-ui-element", params },
-      UpdateUiElementPayload,
-      Schema.Null,
-    ),
-  setModelValue: (params: typeof SetModelValuePayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "set-model-value", params },
-      SetModelValuePayload,
-      Schema.Null,
-    ),
-  invokeFunction: (params: typeof InvokeFunctionPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "invoke-function", params },
-      InvokeFunctionPayload,
-      Schema.Null,
-    ),
-  interrupt: (params: typeof InterruptPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "interrupt", params },
-      InterruptPayload,
-      Schema.Null,
-    ),
-  deleteCell: (params: typeof DeleteCellPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "delete-cell", params },
-      DeleteCellPayload,
-      Schema.Null,
-    ),
-  listSqlSchemas: (params: typeof ListSqlSchemasPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "list-sql-schemas", params },
-      ListSqlSchemasPayload,
-      Schema.Null,
-    ),
-  listSqlTables: (params: typeof ListSqlTablesPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "list-sql-tables", params },
-      ListSqlTablesPayload,
-      Schema.Null,
-    ),
-  sendStdin: (params: typeof SendStdinPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "send-stdin", params },
-      SendStdinPayload,
-      Schema.Null,
-    ),
-  closeSession: (params: typeof CloseSessionPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "close-session", params },
-      CloseSessionPayload,
-      Schema.Null,
-    ),
-  restartSession: (params: typeof RestartSessionPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "restart-session", params },
-      RestartSessionPayload,
-      Schema.Null,
-    ),
-  moveSession: (params: typeof MoveSessionPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "move-session", params },
-      MoveSessionPayload,
-      Schema.Null,
-    ),
-  listSessions: (params: typeof ListSessionsPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "list-sessions", params },
-      ListSessionsPayload,
-      ListSessionsResponse,
-    ),
-  shutdownAllSessions: (params: typeof ShutdownAllSessionsPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "shutdown-all-sessions", params },
-      ShutdownAllSessionsPayload,
-      Schema.Null,
-    ),
-  executeScratchpad: (params: typeof ExecuteScratchpadPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "execute-scratchpad", params },
-      ExecuteScratchpadPayload,
-      Schema.Null,
-    ),
-  getPackageList: (params: typeof GetPackageListPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "get-package-list", params },
-      GetPackageListPayload,
-      ListPackagesResponse,
-    ),
-  getDependencyTree: (params: typeof GetDependencyTreePayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "get-dependency-tree", params },
-      GetDependencyTreePayload,
-      DependencyTreeResponse,
-    ),
-  serialize: (params: typeof SerializePayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "serialize", params },
-      SerializePayload,
-      SerializeResponse,
-    ),
-  deserialize: (params: typeof DeserializePayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "deserialize", params },
-      DeserializePayload,
-      DeserializeResult,
-    ),
-  getConfiguration: (params: typeof GetConfigurationPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "get-configuration", params },
-      GetConfigurationPayload,
-      GetConfigurationResponse,
-    ),
-  updateConfiguration: (params: typeof UpdateConfigurationPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "update-configuration", params },
-      UpdateConfigurationPayload,
-      MarimoConfig,
-    ),
-  setDisplayTheme: (params: typeof SetDisplayThemePayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "set-display-theme", params },
-      SetDisplayThemePayload,
-      SetDisplayThemeResponse,
-    ),
-  readNotebookOutputs: (params: typeof ReadNotebookOutputsPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "read-notebook-outputs", params },
-      ReadNotebookOutputsPayload,
-      ReadNotebookOutputsResponse,
-    ),
-  exportAsHtml: (params: typeof ExportAsHtmlPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "export-as-html", params },
-      ExportAsHtmlPayload,
-      Schema.String,
-    ),
-  exportAsIpynb: (params: typeof ExportAsIpynbPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "export-as-ipynb", params },
-      ExportAsIpynbPayload,
-      Schema.String,
-    ),
-  exportAsMarkdown: (params: typeof ExportAsMarkdownPayload.Encoded) =>
-    dispatch(
-      execute,
-      { method: "export-as-markdown", params },
-      ExportAsMarkdownPayload,
-      Schema.String,
-    ),
+export const makeCommandClient = <E, R>(send: CommandTransport<E, R>) => ({
+  execute: (params: Omit<typeof Execute.Encoded, "kind">) => {
+    const command = {
+      kind: "execute",
+      ...params,
+    } satisfies typeof Execute.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  updateUiElement: (params: Omit<typeof UpdateUiElement.Encoded, "kind">) => {
+    const command = {
+      kind: "update-ui-element",
+      ...params,
+    } satisfies typeof UpdateUiElement.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  setModelValue: (params: Omit<typeof SetModelValue.Encoded, "kind">) => {
+    const command = {
+      kind: "set-model-value",
+      ...params,
+    } satisfies typeof SetModelValue.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  invokeFunction: (params: Omit<typeof InvokeFunction.Encoded, "kind">) => {
+    const command = {
+      kind: "invoke-function",
+      ...params,
+    } satisfies typeof InvokeFunction.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  interrupt: (params: Omit<typeof Interrupt.Encoded, "kind">) => {
+    const command = {
+      kind: "interrupt",
+      ...params,
+    } satisfies typeof Interrupt.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  deleteCell: (params: Omit<typeof DeleteCell.Encoded, "kind">) => {
+    const command = {
+      kind: "delete-cell",
+      ...params,
+    } satisfies typeof DeleteCell.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  listSqlSchemas: (params: Omit<typeof ListSqlSchemas.Encoded, "kind">) => {
+    const command = {
+      kind: "list-sql-schemas",
+      ...params,
+    } satisfies typeof ListSqlSchemas.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  listSqlTables: (params: Omit<typeof ListSqlTables.Encoded, "kind">) => {
+    const command = {
+      kind: "list-sql-tables",
+      ...params,
+    } satisfies typeof ListSqlTables.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  sendStdin: (params: Omit<typeof SendStdin.Encoded, "kind">) => {
+    const command = {
+      kind: "send-stdin",
+      ...params,
+    } satisfies typeof SendStdin.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  closeSession: (params: Omit<typeof CloseSession.Encoded, "kind">) => {
+    const command = {
+      kind: "close-session",
+      ...params,
+    } satisfies typeof CloseSession.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  restartSession: (params: Omit<typeof RestartSession.Encoded, "kind">) => {
+    const command = {
+      kind: "restart-session",
+      ...params,
+    } satisfies typeof RestartSession.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  moveSession: (params: Omit<typeof MoveSession.Encoded, "kind">) => {
+    const command = {
+      kind: "move-session",
+      ...params,
+    } satisfies typeof MoveSession.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  listSessions: (params: Omit<typeof ListSessions.Encoded, "kind">) => {
+    const command = {
+      kind: "list-sessions",
+      ...params,
+    } satisfies typeof ListSessions.Encoded;
+    return dispatch(send, command, ListSessionsResponse);
+  },
+  shutdownAllSessions: (
+    params: Omit<typeof ShutdownAllSessions.Encoded, "kind">,
+  ) => {
+    const command = {
+      kind: "shutdown-all-sessions",
+      ...params,
+    } satisfies typeof ShutdownAllSessions.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  executeScratchpad: (
+    params: Omit<typeof ExecuteScratchpad.Encoded, "kind">,
+  ) => {
+    const command = {
+      kind: "execute-scratchpad",
+      ...params,
+    } satisfies typeof ExecuteScratchpad.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  listPackages: (params: Omit<typeof ListPackages.Encoded, "kind">) => {
+    const command = {
+      kind: "list-packages",
+      ...params,
+    } satisfies typeof ListPackages.Encoded;
+    return dispatch(send, command, ListPackagesResponse);
+  },
+  getDependencyTree: (
+    params: Omit<typeof GetDependencyTree.Encoded, "kind">,
+  ) => {
+    const command = {
+      kind: "get-dependency-tree",
+      ...params,
+    } satisfies typeof GetDependencyTree.Encoded;
+    return dispatch(send, command, DependencyTreeResponse);
+  },
+  serialize: (params: Omit<typeof Serialize.Encoded, "kind">) => {
+    const command = {
+      kind: "serialize",
+      ...params,
+    } satisfies typeof Serialize.Encoded;
+    return dispatch(send, command, SerializeResponse);
+  },
+  deserialize: (params: Omit<typeof Deserialize.Encoded, "kind">) => {
+    const command = {
+      kind: "deserialize",
+      ...params,
+    } satisfies typeof Deserialize.Encoded;
+    return dispatch(send, command, DeserializeResult);
+  },
+  getConfiguration: (params: Omit<typeof GetConfiguration.Encoded, "kind">) => {
+    const command = {
+      kind: "get-configuration",
+      ...params,
+    } satisfies typeof GetConfiguration.Encoded;
+    return dispatch(send, command, GetConfigurationResponse);
+  },
+  updateConfiguration: (
+    params: Omit<typeof UpdateConfiguration.Encoded, "kind">,
+  ) => {
+    const command = {
+      kind: "update-configuration",
+      ...params,
+    } satisfies typeof UpdateConfiguration.Encoded;
+    return dispatch(send, command, MarimoConfig);
+  },
+  setDisplayTheme: (params: Omit<typeof SetDisplayTheme.Encoded, "kind">) => {
+    const command = {
+      kind: "set-display-theme",
+      ...params,
+    } satisfies typeof SetDisplayTheme.Encoded;
+    return dispatch(send, command, SetDisplayThemeResponse);
+  },
+  readNotebookOutputs: (
+    params: Omit<typeof ReadNotebookOutputs.Encoded, "kind">,
+  ) => {
+    const command = {
+      kind: "read-notebook-outputs",
+      ...params,
+    } satisfies typeof ReadNotebookOutputs.Encoded;
+    return dispatch(send, command, ReadNotebookOutputsResponse);
+  },
+  exportHtml: (params: Omit<typeof ExportHtml.Encoded, "kind">) => {
+    const command = {
+      kind: "export-html",
+      ...params,
+    } satisfies typeof ExportHtml.Encoded;
+    return dispatch(send, command, Schema.String);
+  },
+  exportIpynb: (params: Omit<typeof ExportIpynb.Encoded, "kind">) => {
+    const command = {
+      kind: "export-ipynb",
+      ...params,
+    } satisfies typeof ExportIpynb.Encoded;
+    return dispatch(send, command, Schema.String);
+  },
+  exportMarkdown: (params: Omit<typeof ExportMarkdown.Encoded, "kind">) => {
+    const command = {
+      kind: "export-markdown",
+      ...params,
+    } satisfies typeof ExportMarkdown.Encoded;
+    return dispatch(send, command, Schema.String);
+  },
 });

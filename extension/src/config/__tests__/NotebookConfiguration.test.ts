@@ -1,14 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest";
-import {
-  Deferred,
-  Effect,
-  Fiber,
-  Layer,
-  Option,
-  Schema,
-  Scope,
-  Stream,
-} from "effect";
+import { Deferred, Effect, Fiber, Layer, Option, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import {
@@ -25,7 +16,6 @@ import {
 import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
-import * as Api from "../../schemas/Models.gen.ts";
 import type { MarimoConfig } from "../../types.ts";
 import { NotebookConfiguration } from "../NotebookConfiguration.ts";
 
@@ -116,44 +106,36 @@ const withTestCtx = Effect.fn(function* (
   const vscode = yield* TestVsCode.make({ initialDocuments });
 
   const runtime = makeTestNotebookRuntime({
-    execute: Effect.fn(function* (request) {
-      if (request.method === "get-configuration") {
-        const params = yield* Schema.decodeUnknownEffect(
-          Api.GetConfigurationPayload,
-        )(request.params);
-        const config = configStore.get(params.notebookUri);
+    send: Effect.fn(function* (request) {
+      if (request.kind === "get-configuration") {
+        const config = configStore.get(request.notebookUri);
         if (config === undefined) {
           return yield* Effect.die(
-            `Config not found for ${params.notebookUri}`,
+            `Config not found for ${request.notebookUri}`,
           );
         }
         if (options.beforeGetResponse) {
-          yield* options.beforeGetResponse(params.notebookUri);
+          yield* options.beforeGetResponse(request.notebookUri);
         }
         return { config };
       }
 
-      if (request.method === "update-configuration") {
-        const params = yield* Schema.decodeUnknownEffect(
-          Api.UpdateConfigurationPayload,
-        )(request.params);
+      if (request.kind === "update-configuration") {
         if (options.beforeUpdateResponse) {
-          yield* options.beforeUpdateResponse(params.notebookUri);
+          yield* options.beforeUpdateResponse(request.notebookUri);
         }
-        const existing = configStore.get(params.notebookUri);
+        const existing = configStore.get(request.notebookUri);
         if (existing === undefined) {
           return yield* Effect.die(
-            `Config not found for ${params.notebookUri}`,
+            `Config not found for ${request.notebookUri}`,
           );
         }
-        const config = mergeMarimoConfig(existing, params.inner.config);
-        configStore.set(params.notebookUri, config);
+        const config = mergeMarimoConfig(existing, request.config);
+        configStore.set(request.notebookUri, config);
         return config;
       }
 
-      return yield* Effect.die(
-        `Unexpected marimo.api method: ${request.method}`,
-      );
+      return yield* Effect.die(`Unexpected marimo command: ${request.kind}`);
     }),
   });
   const documentSessions = NotebookDocumentSessions.layer.pipe(

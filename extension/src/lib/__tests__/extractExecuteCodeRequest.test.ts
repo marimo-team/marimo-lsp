@@ -52,9 +52,10 @@ describe("extractExecuteCodeRequest", () => {
       const request = extractExecuteCodeRequest([cellA, cellB], LanguageId);
 
       expect(Option.isSome(request)).toBe(true);
-      const { codes, cellIds } = Option.getOrThrow(request);
-      expect(cellIds).toEqual(["cell-a", "cell-b"]);
-      expect(codes).toEqual(["x = 1", "y = x + 1"]);
+      expect(Option.getOrThrow(request).cells).toEqual([
+        { cellId: "cell-a", code: "x = 1" },
+        { cellId: "cell-b", code: "y = x + 1" },
+      ]);
     }).pipe(Effect.provide(Constants.layer)),
   );
 
@@ -75,8 +76,9 @@ describe("extractExecuteCodeRequest", () => {
       );
 
       expect(Option.isSome(request)).toBe(true);
-      const { cellIds } = Option.getOrThrow(request);
-      expect(cellIds).toEqual(["cell-a"]);
+      expect(
+        Option.getOrThrow(request).cells.map((cell) => cell.cellId),
+      ).toEqual(["cell-a"]);
     }).pipe(Effect.provide(Constants.layer)),
   );
 
@@ -106,8 +108,10 @@ describe("extractExecuteCodeRequest", () => {
       );
 
       expect(Option.getOrThrow(request)).toEqual({
-        codes: ["x = 1", 'print("RAN")'],
-        cellIds: ["cell-enabled", "cell-disabled"],
+        cells: [
+          { cellId: "cell-enabled", code: "x = 1" },
+          { cellId: "cell-disabled", code: 'print("RAN")' },
+        ],
       });
     }).pipe(Effect.provide(Constants.layer)),
   );
@@ -128,8 +132,7 @@ describe("extractExecuteCodeRequest", () => {
       const request = extractExecuteCodeRequest([disabled], LanguageId);
 
       expect(Option.getOrThrow(request)).toEqual({
-        codes: ['print("RAN")'],
-        cellIds: ["cell-disabled"],
+        cells: [{ cellId: "cell-disabled", code: 'print("RAN")' }],
       });
     }).pipe(Effect.provide(Constants.layer)),
   );

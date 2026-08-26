@@ -86,8 +86,7 @@ export function classifyNotebookDeserializeError(
 }
 
 function commandMethod(error: MarimoCommandError): string | undefined {
-  const command = Redacted.value(error.command);
-  return command.params.method;
+  return Redacted.value(error.command).kind;
 }
 
 function rpcCode(error: unknown): number | undefined {

@@ -56,17 +56,9 @@ export const TestMarimoClientProcess = Layer.effect(
       },
       restart: Effect.void,
       ...makeMarimoCommands({
-        execute(request) {
-          const command = {
-            command: "marimo.api",
-            params: request,
-          } as const;
+        send(command) {
           return Effect.tryPromise({
-            try: () =>
-              conn.sendRequest("workspace/executeCommand", {
-                command: command.command,
-                arguments: [command.params],
-              }),
+            try: () => conn.sendRequest("marimo/command", command),
             catch: (cause) =>
               new MarimoCommandError({
                 command: Redacted.make(command),
