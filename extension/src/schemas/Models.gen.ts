@@ -1,7 +1,8 @@
 // AUTO-GENERATED FILE — DO NOT EDIT.
 //
-// Generated from `src/marimo_lsp/models.py` and the `marimo.api` registry
-// (`API_METHODS` in `src/marimo_lsp/api.py`) by `scripts.codegen`.
+// Generated from `src/marimo_lsp/protocol.py`, `src/marimo_lsp/models.py`,
+// and the `marimo.api` registry (`API_METHODS` in `src/marimo_lsp/api.py`)
+// by `scripts.codegen`.
 // Regenerate with `just codegen`.
 import type { components as MarimoApi } from "@marimo-team/openapi/src/api";
 import { Effect, Schema } from "effect";
@@ -39,6 +40,60 @@ export const NotebookIdFromString = Schema.String.pipe(
   Schema.brand("NotebookId"),
 );
 export type NotebookId = typeof NotebookIdFromString.Type;
+
+export const NotebookUriFromString = Schema.String.pipe(
+  Schema.brand("NotebookUri"),
+);
+export type NotebookUri = typeof NotebookUriFromString.Type;
+
+export const CellIdFromString = Schema.String.pipe(Schema.brand("CellId"));
+export type CellId = typeof CellIdFromString.Type;
+
+/**
+ * One cell and the exact source to execute for it.
+ */
+export const CellExecution = Schema.Struct({
+  cellId: CellIdFromString,
+  code: Schema.String,
+}).annotate({
+  identifier: "CellExecution",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type CellExecution = typeof CellExecution.Type;
+
+/**
+ * Execute a batch of notebook cells, starting its kernel if necessary.
+ */
+export const Execute = Schema.Struct({
+  kind: Schema.Literal("execute"),
+  notebookUri: NotebookUriFromString,
+  executable: Schema.String,
+  workingDirectory: Schema.String,
+  cells: Schema.Array(CellExecution),
+}).annotate({
+  identifier: "Execute",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type Execute = typeof Execute.Type;
+
+/**
+ * Remove one cell from the exact live kernel that owns it.
+ */
+export const DeleteCell = Schema.Struct({
+  kind: Schema.Literal("delete-cell"),
+  notebookUri: NotebookUriFromString,
+  kernelSessionId: KernelSessionIdFromString,
+  cellId: CellIdFromString,
+}).annotate({
+  identifier: "DeleteCell",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type DeleteCell = typeof DeleteCell.Type;
+
+export const Command = Schema.Union([Execute, DeleteCell]).annotate({
+  identifier: "Command",
+});
+export type Command = typeof Command.Type;
 
 /**
  * The notebook's environment is a concrete venv with a known python executable.
@@ -1593,7 +1648,7 @@ export type MarimoApiCall =
       readonly params: typeof ExportAsMarkdownPayload.Encoded;
     };
 
-type Execute<E, R> = (call: MarimoApiCall) => Effect.Effect<unknown, E, R>;
+type ApiTransport<E, R> = (call: MarimoApiCall) => Effect.Effect<unknown, E, R>;
 
 /**
  * Validate the outgoing params against the payload schema (the wire/Encoded
@@ -1601,7 +1656,7 @@ type Execute<E, R> = (call: MarimoApiCall) => Effect.Effect<unknown, E, R>;
  * the response against the method's success schema.
  */
 const dispatch = <Payload extends Schema.Top, Success extends Schema.Top, E, R>(
-  execute: Execute<E, R>,
+  execute: ApiTransport<E, R>,
   call: MarimoApiCall & { readonly params: Payload["Encoded"] },
   payload: Payload,
   success: Success,
@@ -1622,7 +1677,7 @@ const dispatch = <Payload extends Schema.Top, Success extends Schema.Top, E, R>(
  * `execute`, and parses the response against the method's success schema —
  * both sides of the wire are earned, not asserted.
  */
-export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({
+export const makeApiClient = <E, R>(execute: ApiTransport<E, R>) => ({
   executeCells: (params: typeof ExecuteCellsPayload.Encoded) =>
     dispatch(
       execute,

@@ -20,7 +20,7 @@ import json
 import msgspec
 import msgspec.inspect as mi
 
-from marimo_lsp import models
+from marimo_lsp import models, protocol
 from marimo_lsp.api import API_METHODS, ApiMethod
 from scripts.codegen.output import EXTENSION
 
@@ -30,8 +30,9 @@ LABEL = "Effect schemas"
 HEADER = """\
 // AUTO-GENERATED FILE — DO NOT EDIT.
 //
-// Generated from `src/marimo_lsp/models.py` and the `marimo.api` registry
-// (`API_METHODS` in `src/marimo_lsp/api.py`) by `scripts.codegen`.
+// Generated from `src/marimo_lsp/protocol.py`, `src/marimo_lsp/models.py`,
+// and the `marimo.api` registry (`API_METHODS` in `src/marimo_lsp/api.py`)
+// by `scripts.codegen`.
 // Regenerate with `just codegen`.
 import type { components as MarimoApi } from "@marimo-team/openapi/src/api";
 import { Effect, Schema } from "effect";
@@ -80,6 +81,7 @@ _StructLike = mi.StructType | mi.DataclassType | mi.TypedDictType
 
 # (exported name, type) pairs. The emitter topologically orders dependencies.
 CONCRETE: list[tuple[str, type | object]] = [
+    ("Command", protocol.Command),
     ("PackageSource", models.PackageSource),
     ("OwnedAppConfig", models.OwnedAppConfig),
     ("KernelNotification", models.KernelNotification),
@@ -183,6 +185,19 @@ class Emitter:
         self.alias_by_expr: dict[str, str] = {}
         self.in_flight: set[type] = set()
         self.recursive: set[type] = set()
+        # These two brands predate first-class protocol metadata and remain in
+        # the static header while legacy models migrate to the owned protocol.
+        self.brand_schemas: dict[str, str] = {
+            "KernelSessionId": "KernelSessionIdFromString",
+            "NotebookId": "NotebookIdFromString",
+        }
+
+    @staticmethod
+    def metadata_brand(t: mi.Type) -> object | None:
+        """Return the owned brand attached to a msgspec metadata node."""
+        if not isinstance(t, mi.Metadata) or t.extra_json_schema is None:
+            return None
+        return t.extra_json_schema.get(protocol.BRAND_METADATA_KEY)
 
     # Exhaustive dispatch over msgspec's IR node types is a flat switch by
     # design; splitting it up would hide the one-to-one mapping this encodes.
@@ -221,8 +236,11 @@ class Emitter:
                 args = ", ".join(self.type_expr(i) for i in items)
                 return f"Schema.Tuple([{args}])"
             case mi.Metadata(type=inner):
-                # `typing.Annotated[..., msgspec.Meta(...)]`; constraints are
-                # already folded into the inner node.
+                brand = self.metadata_brand(t)
+                if brand is not None:
+                    return self.brand_ref(brand, inner)
+                # Other `msgspec.Meta` constraints are already folded into the
+                # inner node.
                 return self.type_expr(inner)
             case mi.UnionType(types=types):
                 return self.union_expr(list(types))
@@ -260,6 +278,27 @@ class Emitter:
                 f"export type {name} = typeof {name}.Type;\n"
             )
         return name
+
+    def brand_ref(self, brand: object, inner: mi.Type) -> str:
+        """Emit or reference an owned nominal string schema."""
+        if not isinstance(brand, str) or not brand.isidentifier():
+            msg = f"invalid owned brand name: {brand!r}"
+            raise ValueError(msg)
+        if not isinstance(inner, mi.StrType):
+            msg = f"owned brand {brand!r} must annotate a string"
+            raise TypeError(msg)
+
+        schema_name = self.brand_schemas.get(brand)
+        if schema_name is not None:
+            return schema_name
+
+        schema_name = f"{brand}FromString"
+        self.brand_schemas[brand] = schema_name
+        self.definitions.append(
+            f'export const {schema_name} = Schema.String.pipe(Schema.brand("{brand}"));\n'
+            f"export type {brand} = typeof {schema_name}.Type;\n"
+        )
+        return schema_name
 
     def struct_ref(self, t: _StructLike) -> str:
         """Emit a struct/dataclass/TypedDict definition (once); return its name."""
@@ -352,6 +391,12 @@ class Emitter:
             case mi.TupleType(item_types=items):
                 return f"readonly [{', '.join(self.ts_type(i) for i in items)}]"
             case mi.Metadata(type=inner):
+                brand = self.metadata_brand(t)
+                if brand is not None:
+                    self.brand_ref(brand, inner)
+                    if not isinstance(brand, str):  # guarded by brand_ref
+                        raise AssertionError
+                    return brand
                 return self.ts_type(inner)
             case mi.UnionType(types=types):
                 return " | ".join(self.ts_type(x) for x in types)
@@ -363,6 +408,33 @@ class Emitter:
                 msg = f"no TS type mapping for {type(t).__name__}"
                 raise NotImplementedError(msg)
 
+    def field_type_expr(self, t: _StructLike, field: mi.Field) -> str:
+        """Resolve one field, including temporary legacy type projections."""
+        if self.metadata_brand(field.type) is not None:
+            expr = self.type_expr(field.type)
+        elif t.cls in {models.LiveCellReplay, models.SavedCellReplay} and (
+            field.name == "notification"
+        ):
+            expr = "CellOperationNotification"
+        elif t.cls is models.KernelNotification and field.name == "notification":
+            expr = "MarimoNotification"
+        elif t.cls is models.DocumentAnalysis and field.name == "analysis":
+            expr = "VariablesNotification"
+        elif field.name == "notebook_uri":
+            expr = "NotebookIdFromString"
+        elif field.name == "session_id":
+            nullable = isinstance(field.type, mi.UnionType) and any(
+                isinstance(member, mi.NoneType) for member in field.type.types
+            )
+            expr = (
+                "Schema.NullOr(KernelSessionIdFromString)"
+                if nullable
+                else "KernelSessionIdFromString"
+            )
+        else:
+            expr = self.type_expr(field.type)
+        return expr
+
     def fields_src(self, t: _StructLike, indent: str) -> str:
         lines: list[str] = []
         if isinstance(t, mi.StructType) and t.tag_field is not None:
@@ -372,27 +444,7 @@ class Emitter:
             tag = _ts_string(str(t.tag))
             lines.append(f"{indent}{_prop(t.tag_field)}: Schema.Literal({tag}),")
         for field in t.fields:
-            if t.cls in {models.LiveCellReplay, models.SavedCellReplay} and (
-                field.name == "notification"
-            ):
-                expr = "CellOperationNotification"
-            elif t.cls is models.KernelNotification and field.name == "notification":
-                expr = "MarimoNotification"
-            elif t.cls is models.DocumentAnalysis and field.name == "analysis":
-                expr = "VariablesNotification"
-            elif field.name == "notebook_uri":
-                expr = "NotebookIdFromString"
-            elif field.name == "session_id":
-                nullable = isinstance(field.type, mi.UnionType) and any(
-                    isinstance(member, mi.NoneType) for member in field.type.types
-                )
-                expr = (
-                    "Schema.NullOr(KernelSessionIdFromString)"
-                    if nullable
-                    else "KernelSessionIdFromString"
-                )
-            else:
-                expr = self.type_expr(field.type)
+            expr = self.field_type_expr(t, field)
             prop = _prop(field.encode_name)
             if field.required:
                 rendered = expr if prop == expr else f"{prop}: {expr}"
@@ -470,7 +522,7 @@ class Emitter:
 
 
 _DISPATCH_HELPER = """\
-type Execute<E, R> = (call: MarimoApiCall) => Effect.Effect<unknown, E, R>;
+type ApiTransport<E, R> = (call: MarimoApiCall) => Effect.Effect<unknown, E, R>;
 
 /**
  * Validate the outgoing params against the payload schema (the wire/Encoded
@@ -483,7 +535,7 @@ const dispatch = <
   E,
   R,
 >(
-  execute: Execute<E, R>,
+  execute: ApiTransport<E, R>,
   call: MarimoApiCall & { readonly params: Payload["Encoded"] },
   payload: Payload,
   success: Success,
@@ -542,7 +594,7 @@ def generate() -> str:
         " * `execute`, and parses the response against the method's success schema —\n"
         " * both sides of the wire are earned, not asserted.\n"
         " */\n"
-        "export const makeApiClient = <E, R>(execute: Execute<E, R>) => ({\n"
+        "export const makeApiClient = <E, R>(execute: ApiTransport<E, R>) => ({\n"
         f"{methods}\n"
         "});\n"
     )

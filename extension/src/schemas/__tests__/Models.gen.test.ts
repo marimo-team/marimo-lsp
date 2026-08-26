@@ -3,6 +3,7 @@ import { Effect, Result, Schema } from "effect";
 
 import {
   CellMetadata,
+  Command,
   ExecuteCellsPayload,
   ExecuteScratchRequest,
   GetPackageListPayload,
@@ -77,6 +78,33 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
       executable: "/usr/bin/python3",
     });
     expect(Result.isFailure(missing)).toBe(true);
+  });
+
+  it("decodes the flat owned command protocol", () => {
+    const decoded = Schema.decodeUnknownSync(Command)({
+      kind: "execute",
+      notebookUri: "file:///nb.py",
+      executable: "/usr/bin/python3",
+      workingDirectory: "/workspace",
+      cells: [{ cellId: "cell-1", code: "answer = 42" }],
+    });
+
+    expect(Schema.encodeSync(Command)(decoded)).toEqual({
+      kind: "execute",
+      notebookUri: "file:///nb.py",
+      executable: "/usr/bin/python3",
+      workingDirectory: "/workspace",
+      cells: [{ cellId: "cell-1", code: "answer = 42" }],
+    });
+
+    expect(
+      Result.isFailure(
+        Schema.decodeUnknownResult(Command)({
+          kind: "execute-cells",
+          notebookUri: "file:///nb.py",
+        }),
+      ),
+    ).toBe(true);
   });
 
   it("rejects payloads msgspec would reject", () => {
