@@ -112,8 +112,8 @@
       "source": { "kind": "script" }
     },
     {
-      "kind": "serialize",
-      "notebook": {
+      "kind": "print-notebook",
+      "document": {
         "version": "1",
         "metadata": { "marimo_version": "0.24.0" },
         "cells": [
@@ -128,15 +128,15 @@
               "hide_code": false
             }
           }
-        ]
-      },
-      "appOptions": {
-        "managed": { "autoDownload": ["html"] },
-        "passthrough": { "width": "full" }
-      },
-      "header": null
+        ],
+        "appOptions": {
+          "managed": { "autoDownload": ["html"] },
+          "passthrough": { "width": "full" }
+        },
+        "header": null
+      }
     },
-    { "kind": "deserialize", "source": "import marimo\n" },
+    { "kind": "parse-notebook", "source": "import marimo\n" },
     {
       "kind": "get-configuration",
       "notebookUri": "file:///notebook.py"

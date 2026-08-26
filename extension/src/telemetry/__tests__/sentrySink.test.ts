@@ -8,7 +8,7 @@ import { classifySentryError } from "../sentrySink.ts";
 function commandError(cause: Error): MarimoCommandError {
   return new MarimoCommandError({
     command: Redacted.make({
-      kind: "deserialize",
+      kind: "parse-notebook",
       source: "",
     }),
     cause,
@@ -66,7 +66,7 @@ it("fingerprints command errors by their nested Python failure", () => {
       "error.domain": "notebook.deserialize",
       "error.exception_class": "KernelOpenError",
       "error.kind": "marimo-command.kernel-bridge-exit",
-      "rpc.method": "deserialize",
+      "rpc.method": "parse-notebook",
       "rpc.code": "-32603",
       "lsp.mode": "wasm",
     },
@@ -91,7 +91,7 @@ it("preserves specific transport classifications for command failures", () => {
       "error.domain": "notebook.deserialize",
       "error.exception_class": "Error",
       "error.kind": "transport.client-not-running",
-      "rpc.method": "deserialize",
+      "rpc.method": "parse-notebook",
       "lsp.mode": "wasm",
     },
     fingerprint: [

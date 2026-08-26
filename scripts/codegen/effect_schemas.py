@@ -87,8 +87,8 @@ CONCRETE: list[tuple[str, type | object]] = [
     ("DocumentAnalysis", models.DocumentAnalysis),
     ("CellMetadata", models.CellMetadata),
     ("NotebookDocumentMetadata", models.NotebookDocumentMetadata),
-    ("NotebookDocument", models.NotebookDocument),
-    ("DeserializeResult", models.DeserializeResult),
+    ("NotebookDocument", protocol.NotebookDocument),
+    ("ParseNotebookResult", protocol.ParseNotebookResult),
     ("ConvertRequest", models.ConvertRequest),
     ("CellOutputReplay", models.CellOutputReplay),
 ]

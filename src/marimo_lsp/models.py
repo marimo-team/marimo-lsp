@@ -20,15 +20,10 @@ from marimo._messaging.notification import (  # noqa: TC002
     VariablesNotification,
 )
 from marimo._runtime.packages.package_manager import PackageDescription  # noqa: TC002
-from marimo._schemas.notebook import (
-    NotebookCellConfig,
-    NotebookMetadata,
-    NotebookV1,
-)
 from marimo._server.models.packages import DependencyTreeNode  # noqa: TC002
 from marimo._types.ids import SessionId  # noqa: TC002
 
-from marimo_lsp.protocol import AppOptions
+from marimo_lsp.protocol import AppOptions, NotebookCellConfig, NotebookMetadata
 
 # Sentinel the frontend `@marimo-team/smart-cells` SQL parser writes into
 # `sourceProjections.sql.engine` for the implicit default engine. We must not
@@ -101,10 +96,10 @@ class MarimoCellMetadata(msgspec.Struct, rename="camel", forbid_unknown_fields=T
     """The marimo cell name."""
 
     config: NotebookCellConfig = msgspec.field(
-        default_factory=NotebookCellConfig,
+        default_factory=dict,
         name="options",
     )
-    """The marimo `NotebookCellConfig`.
+    """The owned notebook cell configuration.
 
     Synced on the wire as ``options`` (VS Code's notebook cell config key); we
     expose it as ``config`` to match marimo's downstream vocabulary
@@ -163,42 +158,6 @@ class NotebookDocumentMetadata(
     marimo: MarimoNotebookMetadata
 
 
-class NotebookDocument(msgspec.Struct, rename="camel"):
-    """Strict JSON notebook data plus source-level application metadata."""
-
-    notebook: NotebookV1
-    app_options: AppOptions = msgspec.field(default_factory=AppOptions)
-    header: str | None = None
-
-
-class DeserializeSuccess(
-    msgspec.Struct, tag="success", tag_field="kind", rename="camel"
-):
-    """A successfully parsed native marimo notebook."""
-
-    notebook: NotebookDocument
-
-
-class DeserializeInvalidSyntax(
-    msgspec.Struct, tag="invalid-syntax", tag_field="kind", rename="camel"
-):
-    """Python syntax prevented the source from being inspected."""
-
-    line: int | None = None
-    column: int | None = None
-
-
-class DeserializeConvertible(
-    msgspec.Struct, tag="convertible", tag_field="kind", rename="camel"
-):
-    """Valid Python source that can be converted to a marimo notebook."""
-
-
-type DeserializeResult = (
-    DeserializeSuccess | DeserializeInvalidSyntax | DeserializeConvertible
-)
-
-
 class ConvertRequest(msgspec.Struct, rename="camel"):
     """A request to convert a file source a marimo notebook."""
 
@@ -237,13 +196,6 @@ class DependencyTreeResponse(msgspec.Struct, rename="camel"):
 
     tree: DependencyTreeNode | None = None
     """The environment's dependency tree, or ``None`` when unresolvable."""
-
-
-class SerializeResponse(msgspec.Struct, rename="camel"):
-    """Response for ``serialize``."""
-
-    source: str
-    """The notebook rendered as Python source."""
 
 
 class GetConfigurationResponse(msgspec.Struct, rename="camel"):

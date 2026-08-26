@@ -387,45 +387,34 @@ export const GetDependencyTree = Schema.Struct({
 export type GetDependencyTree = typeof GetDependencyTree.Type;
 
 /**
+ * Opaque-compatible metadata stored with a notebook document.
+ */
+export const NotebookMetadata = Schema.Struct({
+  marimo_version: Schema.optional(Schema.NullOr(Schema.String)),
+}).annotate({ identifier: "NotebookMetadata" });
+export type NotebookMetadata = typeof NotebookMetadata.Type;
+
+/**
  * Persisted marimo configuration for one notebook cell.
  */
-export const SerializedNotebookCellConfig = Schema.Struct({
+export const NotebookCellConfig = Schema.Struct({
   column: Schema.optional(Schema.NullOr(Schema.Int)),
   disabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
   hide_code: Schema.optional(Schema.NullOr(Schema.Boolean)),
-}).annotate({ identifier: "SerializedNotebookCellConfig" });
-export type SerializedNotebookCellConfig =
-  typeof SerializedNotebookCellConfig.Type;
+}).annotate({ identifier: "NotebookCellConfig" });
+export type NotebookCellConfig = typeof NotebookCellConfig.Type;
 
 /**
- * One code cell in the serialized notebook format.
+ * One code cell in an owned notebook document.
  */
-export const SerializedNotebookCell = Schema.Struct({
+export const NotebookCell = Schema.Struct({
   code: Schema.NullOr(Schema.String),
   code_hash: Schema.NullOr(Schema.String),
-  config: SerializedNotebookCellConfig,
+  config: NotebookCellConfig,
   id: Schema.NullOr(Schema.String),
   name: Schema.NullOr(Schema.String),
-}).annotate({ identifier: "SerializedNotebookCell" });
-export type SerializedNotebookCell = typeof SerializedNotebookCell.Type;
-
-/**
- * Metadata stored with the serialized notebook.
- */
-export const SerializedNotebookMetadata = Schema.Struct({
-  marimo_version: Schema.optional(Schema.NullOr(Schema.String)),
-}).annotate({ identifier: "SerializedNotebookMetadata" });
-export type SerializedNotebookMetadata = typeof SerializedNotebookMetadata.Type;
-
-/**
- * Owned projection of marimo's version-one notebook document.
- */
-export const SerializedNotebookV1 = Schema.Struct({
-  cells: Schema.Array(SerializedNotebookCell),
-  metadata: SerializedNotebookMetadata,
-  version: Schema.Literal("1"),
-}).annotate({ identifier: "SerializedNotebookV1" });
-export type SerializedNotebookV1 = typeof SerializedNotebookV1.Type;
+}).annotate({ identifier: "NotebookCell" });
+export type NotebookCell = typeof NotebookCell.Type;
 
 /**
  * Source-level app options managed by the extension.
@@ -457,11 +446,12 @@ export const AppOptions = Schema.Struct({
 export type AppOptions = typeof AppOptions.Type;
 
 /**
- * Serialize notebook data to native marimo Python source.
+ * Owned notebook data plus source-level application metadata.
  */
-export const Serialize = Schema.Struct({
-  kind: Schema.Literal("serialize"),
-  notebook: SerializedNotebookV1,
+export const NotebookDocument = Schema.Struct({
+  version: Schema.Literal("1"),
+  metadata: NotebookMetadata,
+  cells: Schema.Array(NotebookCell),
   appOptions: AppOptions.pipe(
     Schema.withDecodingDefault(Effect.sync(() => ({}))),
   ),
@@ -469,22 +459,34 @@ export const Serialize = Schema.Struct({
     Schema.withDecodingDefault(Effect.sync(() => null)),
   ),
 }).annotate({
-  identifier: "Serialize",
+  identifier: "NotebookDocument",
   parseOptions: { onExcessProperty: "error" },
 });
-export type Serialize = typeof Serialize.Type;
+export type NotebookDocument = typeof NotebookDocument.Type;
 
 /**
- * Deserialize source into notebook data.
+ * Print an owned notebook document as native marimo Python source.
  */
-export const Deserialize = Schema.Struct({
-  kind: Schema.Literal("deserialize"),
-  source: Schema.String,
+export const PrintNotebook = Schema.Struct({
+  kind: Schema.Literal("print-notebook"),
+  document: NotebookDocument,
 }).annotate({
-  identifier: "Deserialize",
+  identifier: "PrintNotebook",
   parseOptions: { onExcessProperty: "error" },
 });
-export type Deserialize = typeof Deserialize.Type;
+export type PrintNotebook = typeof PrintNotebook.Type;
+
+/**
+ * Parse native marimo Python source into an owned notebook document.
+ */
+export const ParseNotebook = Schema.Struct({
+  kind: Schema.Literal("parse-notebook"),
+  source: Schema.String,
+}).annotate({
+  identifier: "ParseNotebook",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ParseNotebook = typeof ParseNotebook.Type;
 
 /**
  * Read configuration for one notebook.
@@ -598,8 +600,8 @@ export const Command = Schema.Union([
   ExecuteScratchpad,
   ListPackages,
   GetDependencyTree,
-  Serialize,
-  Deserialize,
+  PrintNotebook,
+  ParseNotebook,
   GetConfiguration,
   UpdateConfiguration,
   SetDisplayTheme,
@@ -628,16 +630,6 @@ export const DocumentAnalysis = Schema.Struct({
   analysis: VariablesNotification,
 }).annotate({ identifier: "DocumentAnalysis" });
 export type DocumentAnalysis = typeof DocumentAnalysis.Type;
-
-/**
- * Configuration for a notebook cell
- */
-export const NotebookCellConfig = Schema.Struct({
-  column: Schema.optional(Schema.NullOr(Schema.Int)),
-  disabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
-  hide_code: Schema.optional(Schema.NullOr(Schema.Boolean)),
-}).annotate({ identifier: "NotebookCellConfig" });
-export type NotebookCellConfig = typeof NotebookCellConfig.Type;
 
 /**
  * Projection state for displaying a Python markdown cell.
@@ -747,14 +739,6 @@ export const CellMetadata = Schema.Struct({
 export type CellMetadata = typeof CellMetadata.Type;
 
 /**
- * Metadata about the notebook
- */
-export const NotebookMetadata = Schema.Struct({
-  marimo_version: Schema.optional(Schema.NullOr(Schema.String)),
-}).annotate({ identifier: "NotebookMetadata" });
-export type NotebookMetadata = typeof NotebookMetadata.Type;
-
-/**
  * Persisted marimo-owned metadata on an LSP notebook document.
  */
 export const MarimoNotebookMetadata = Schema.Struct({
@@ -785,54 +769,21 @@ export const NotebookDocumentMetadata = Schema.Struct({
 export type NotebookDocumentMetadata = typeof NotebookDocumentMetadata.Type;
 
 /**
- * Code cell specific structure
- */
-export const NotebookCell = Schema.Struct({
-  code: Schema.NullOr(Schema.String),
-  code_hash: Schema.NullOr(Schema.String),
-  config: NotebookCellConfig,
-  id: Schema.NullOr(Schema.String),
-  name: Schema.NullOr(Schema.String),
-}).annotate({ identifier: "NotebookCell" });
-export type NotebookCell = typeof NotebookCell.Type;
-
-/**
- * Main notebook structure
- */
-export const NotebookV1 = Schema.Struct({
-  cells: Schema.Array(NotebookCell),
-  metadata: NotebookMetadata,
-  version: Schema.Literal("1"),
-}).annotate({ identifier: "NotebookV1" });
-export type NotebookV1 = typeof NotebookV1.Type;
-
-/**
- * Strict JSON notebook data plus source-level application metadata.
- */
-export const NotebookDocument = Schema.Struct({
-  notebook: NotebookV1,
-  appOptions: AppOptions.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => ({}))),
-  ),
-  header: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
-  ),
-}).annotate({ identifier: "NotebookDocument" });
-export type NotebookDocument = typeof NotebookDocument.Type;
-
-/**
  * A successfully parsed native marimo notebook.
  */
-export const DeserializeSuccess = Schema.Struct({
+export const ParseNotebookSuccess = Schema.Struct({
   kind: Schema.Literal("success"),
-  notebook: NotebookDocument,
-}).annotate({ identifier: "DeserializeSuccess" });
-export type DeserializeSuccess = typeof DeserializeSuccess.Type;
+  document: NotebookDocument,
+}).annotate({
+  identifier: "ParseNotebookSuccess",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ParseNotebookSuccess = typeof ParseNotebookSuccess.Type;
 
 /**
  * Python syntax prevented the source from being inspected.
  */
-export const DeserializeInvalidSyntax = Schema.Struct({
+export const ParseNotebookInvalidSyntax = Schema.Struct({
   kind: Schema.Literal("invalid-syntax"),
   line: Schema.NullOr(Schema.Int).pipe(
     Schema.withDecodingDefault(Effect.sync(() => null)),
@@ -840,23 +791,29 @@ export const DeserializeInvalidSyntax = Schema.Struct({
   column: Schema.NullOr(Schema.Int).pipe(
     Schema.withDecodingDefault(Effect.sync(() => null)),
   ),
-}).annotate({ identifier: "DeserializeInvalidSyntax" });
-export type DeserializeInvalidSyntax = typeof DeserializeInvalidSyntax.Type;
+}).annotate({
+  identifier: "ParseNotebookInvalidSyntax",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ParseNotebookInvalidSyntax = typeof ParseNotebookInvalidSyntax.Type;
 
 /**
  * Valid Python source that can be converted to a marimo notebook.
  */
-export const DeserializeConvertible = Schema.Struct({
+export const ParseNotebookConvertible = Schema.Struct({
   kind: Schema.Literal("convertible"),
-}).annotate({ identifier: "DeserializeConvertible" });
-export type DeserializeConvertible = typeof DeserializeConvertible.Type;
+}).annotate({
+  identifier: "ParseNotebookConvertible",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ParseNotebookConvertible = typeof ParseNotebookConvertible.Type;
 
-export const DeserializeResult = Schema.Union([
-  DeserializeSuccess,
-  DeserializeInvalidSyntax,
-  DeserializeConvertible,
-]).annotate({ identifier: "DeserializeResult" });
-export type DeserializeResult = typeof DeserializeResult.Type;
+export const ParseNotebookResult = Schema.Union([
+  ParseNotebookSuccess,
+  ParseNotebookInvalidSyntax,
+  ParseNotebookConvertible,
+]).annotate({ identifier: "ParseNotebookResult" });
+export type ParseNotebookResult = typeof ParseNotebookResult.Type;
 
 /**
  * A request to convert a file source a marimo notebook.
@@ -960,12 +917,15 @@ export const DependencyTreeResponse = Schema.Struct({
 export type DependencyTreeResponse = typeof DependencyTreeResponse.Type;
 
 /**
- * Response for ``serialize``.
+ * Native marimo Python source printed from an owned notebook document.
  */
-export const SerializeResponse = Schema.Struct({
+export const PrintNotebookResult = Schema.Struct({
   source: Schema.String,
-}).annotate({ identifier: "SerializeResponse" });
-export type SerializeResponse = typeof SerializeResponse.Type;
+}).annotate({
+  identifier: "PrintNotebookResult",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type PrintNotebookResult = typeof PrintNotebookResult.Type;
 
 /**
  * Configuration options for Anthropic.
@@ -1740,19 +1700,19 @@ export const makeCommandClient = <E, R>(send: CommandTransport<E, R>) => ({
     } satisfies typeof GetDependencyTree.Encoded;
     return dispatch(send, command, DependencyTreeResponse);
   },
-  serialize: (params: Omit<typeof Serialize.Encoded, "kind">) => {
+  printNotebook: (params: Omit<typeof PrintNotebook.Encoded, "kind">) => {
     const command = {
-      kind: "serialize",
+      kind: "print-notebook",
       ...params,
-    } satisfies typeof Serialize.Encoded;
-    return dispatch(send, command, SerializeResponse);
+    } satisfies typeof PrintNotebook.Encoded;
+    return dispatch(send, command, PrintNotebookResult);
   },
-  deserialize: (params: Omit<typeof Deserialize.Encoded, "kind">) => {
+  parseNotebook: (params: Omit<typeof ParseNotebook.Encoded, "kind">) => {
     const command = {
-      kind: "deserialize",
+      kind: "parse-notebook",
       ...params,
-    } satisfies typeof Deserialize.Encoded;
-    return dispatch(send, command, DeserializeResult);
+    } satisfies typeof ParseNotebook.Encoded;
+    return dispatch(send, command, ParseNotebookResult);
   },
   getConfiguration: (params: Omit<typeof GetConfiguration.Encoded, "kind">) => {
     const command = {

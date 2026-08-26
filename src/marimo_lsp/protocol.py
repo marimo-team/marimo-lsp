@@ -54,7 +54,7 @@ class AppOptions(
     passthrough: dict[str, object] = msgspec.field(default_factory=dict)
 
 
-class SerializedNotebookCellConfig(typing.TypedDict, total=False):
+class NotebookCellConfig(typing.TypedDict, total=False):
     """Persisted marimo configuration for one notebook cell."""
 
     column: int | None
@@ -62,28 +62,20 @@ class SerializedNotebookCellConfig(typing.TypedDict, total=False):
     hide_code: bool | None
 
 
-class SerializedNotebookCell(typing.TypedDict):
-    """One code cell in the serialized notebook format."""
+class NotebookCell(typing.TypedDict):
+    """One code cell in an owned notebook document."""
 
     id: str | None
     code: str | None
     code_hash: str | None
     name: str | None
-    config: SerializedNotebookCellConfig
+    config: NotebookCellConfig
 
 
-class SerializedNotebookMetadata(typing.TypedDict, total=False):
-    """Metadata stored with the serialized notebook."""
+class NotebookMetadata(typing.TypedDict, total=False):
+    """Opaque-compatible metadata stored with a notebook document."""
 
     marimo_version: str | None
-
-
-class SerializedNotebookV1(typing.TypedDict):
-    """Owned projection of marimo's version-one notebook document."""
-
-    version: typing.Literal["1"]
-    metadata: SerializedNotebookMetadata
-    cells: list[SerializedNotebookCell]
 
 
 class NotebookDocument(
@@ -91,11 +83,63 @@ class NotebookDocument(
     rename="camel",
     forbid_unknown_fields=True,
 ):
-    """Strict notebook data plus source-level application metadata."""
+    """Owned notebook data plus source-level application metadata."""
 
-    notebook: SerializedNotebookV1
+    version: typing.Literal["1"]
+    metadata: NotebookMetadata
+    cells: list[NotebookCell]
     app_options: AppOptions = msgspec.field(default_factory=AppOptions)
     header: str | None = None
+
+
+class PrintNotebookResult(
+    msgspec.Struct,
+    rename="camel",
+    forbid_unknown_fields=True,
+):
+    """Native marimo Python source printed from an owned notebook document."""
+
+    source: str
+
+
+class ParseNotebookSuccess(
+    msgspec.Struct,
+    tag="success",
+    tag_field="kind",
+    rename="camel",
+    forbid_unknown_fields=True,
+):
+    """A successfully parsed native marimo notebook."""
+
+    document: NotebookDocument
+
+
+class ParseNotebookInvalidSyntax(
+    msgspec.Struct,
+    tag="invalid-syntax",
+    tag_field="kind",
+    rename="camel",
+    forbid_unknown_fields=True,
+):
+    """Python syntax prevented the source from being inspected."""
+
+    line: int | None = None
+    column: int | None = None
+
+
+class ParseNotebookConvertible(
+    msgspec.Struct,
+    tag="convertible",
+    tag_field="kind",
+    rename="camel",
+    forbid_unknown_fields=True,
+):
+    """Valid Python source that can be converted to a marimo notebook."""
+
+
+type ParseNotebookResult = (
+    ParseNotebookSuccess | ParseNotebookInvalidSyntax | ParseNotebookConvertible
+)
 
 
 class CellExecution(msgspec.Struct, rename="camel", forbid_unknown_fields=True):
@@ -405,28 +449,26 @@ class GetDependencyTree(
     source: PackageSource
 
 
-class Serialize(
+class PrintNotebook(
     msgspec.Struct,
-    tag="serialize",
+    tag="print-notebook",
     tag_field="kind",
     rename="camel",
     forbid_unknown_fields=True,
 ):
-    """Serialize notebook data to native marimo Python source."""
+    """Print an owned notebook document as native marimo Python source."""
 
-    notebook: SerializedNotebookV1
-    app_options: AppOptions = msgspec.field(default_factory=AppOptions)
-    header: str | None = None
+    document: NotebookDocument
 
 
-class Deserialize(
+class ParseNotebook(
     msgspec.Struct,
-    tag="deserialize",
+    tag="parse-notebook",
     tag_field="kind",
     rename="camel",
     forbid_unknown_fields=True,
 ):
-    """Deserialize source into notebook data."""
+    """Parse native marimo Python source into an owned notebook document."""
 
     source: str
 
@@ -539,8 +581,8 @@ type Command = (
     | ExecuteScratchpad
     | ListPackages
     | GetDependencyTree
-    | Serialize
-    | Deserialize
+    | PrintNotebook
+    | ParseNotebook
     | GetConfiguration
     | UpdateConfiguration
     | SetDisplayTheme

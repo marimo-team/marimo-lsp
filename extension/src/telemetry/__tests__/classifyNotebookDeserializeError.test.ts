@@ -85,7 +85,7 @@ it("groups internal RPC failures by method, code, and exception class", () => {
     domain: "notebook.deserialize",
     kind: "rpc.internal",
     safeContext: {
-      "rpc.method": "deserialize",
+      "rpc.method": "parse-notebook",
       "rpc.code": -32603,
       "error.exception_class": "ResponseError",
       "lsp.mode": "wasm",
@@ -104,7 +104,7 @@ it("separates client lifecycle failures from internal RPC errors", () => {
 
   expect(result.kind).toBe("transport.client-not-running");
   expect(result.safeContext).toEqual({
-    "rpc.method": "deserialize",
+    "rpc.method": "parse-notebook",
     "error.exception_class": "Error",
     "lsp.mode": "wasm",
   });
@@ -113,7 +113,7 @@ it("separates client lifecycle failures from internal RPC errors", () => {
 function commandError(cause: unknown) {
   return new MarimoCommandError({
     command: Redacted.make({
-      kind: "deserialize" as const,
+      kind: "parse-notebook" as const,
       source: "DO_NOT_UPLOAD_COMMAND_SOURCE",
     }),
     cause,

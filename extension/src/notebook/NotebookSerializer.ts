@@ -80,9 +80,12 @@ export class NotebookSerializer extends Context.Service<NotebookSerializer>()(
         function* (notebook: vscode.NotebookData) {
           yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
 
-          const result = yield* marimo.serialize(
-            yield* notebookDataToNotebookDocument(notebook, constants),
-          );
+          const result = yield* marimo.printNotebook({
+            document: yield* notebookDataToNotebookDocument(
+              notebook,
+              constants,
+            ),
+          });
           return new TextEncoder().encode(result.source);
         },
       );
@@ -91,21 +94,19 @@ export class NotebookSerializer extends Context.Service<NotebookSerializer>()(
         function* (bytes: Uint8Array) {
           yield* Effect.annotateCurrentSpan("bytes", bytes.length);
           const result = yield* marimo
-            .deserialize({
+            .parseNotebook({
               source: new TextDecoder().decode(bytes),
             })
             .pipe(Effect.timeout(DESERIALIZE_TIMEOUT));
           if (result.kind !== "success") {
             return yield* new NotebookSourceError({ failure: result });
           }
-          const {
-            notebook: { notebook: document, appOptions, header },
-          } = result;
+          const { document } = result;
 
           const notebook = {
             metadata: MarimoNotebookDocument.createMetadata({
-              appOptions,
-              header,
+              appOptions: document.appOptions,
+              header: document.header,
               notebookMetadata: document.metadata,
             }),
             cells: document.cells.map((cell) => {
@@ -302,10 +303,7 @@ function notebookDataToNotebookDocument(
   }: {
     LanguageId: Constants["Service"]["LanguageId"];
   },
-): Effect.Effect<
-  Omit<typeof Api.Serialize.Encoded, "kind">,
-  Schema.SchemaError
-> {
+): Effect.Effect<typeof Api.NotebookDocument.Encoded, Schema.SchemaError> {
   const { cells, metadata = {} } = notebook;
   const sqlParser = new SQLParser();
   const markdownParser = new MarkdownParser();
@@ -329,71 +327,69 @@ function notebookDataToNotebookDocument(
     });
 
     return {
-      notebook: {
-        version: "1",
-        metadata: documentMetadata.notebookMetadata ?? {},
-        cells: decodedCells.map(({ cell, cellMetadata, hasOptions }) => {
-          const name = cellMetadata.marimo.name;
-          const config = (fallback: typeof Api.NotebookCellConfig.Type) =>
-            hasOptions ? cellMetadata.marimo.options : fallback;
-          const markdownConfig = {
-            ...cellMetadata.marimo.options,
-            hide_code: cellMetadata.marimo.options.hide_code ?? true,
-          };
+      version: "1",
+      metadata: documentMetadata.notebookMetadata ?? {},
+      cells: decodedCells.map(({ cell, cellMetadata, hasOptions }) => {
+        const name = cellMetadata.marimo.name;
+        const config = (fallback: typeof Api.NotebookCellConfig.Type) =>
+          hasOptions ? cellMetadata.marimo.options : fallback;
+        const markdownConfig = {
+          ...cellMetadata.marimo.options,
+          hide_code: cellMetadata.marimo.options.hide_code ?? true,
+        };
 
-          // oxlint-disable-next-line typescript/no-unsafe-enum-comparison
-          if (cell.kind === NotebookCellKind.Markup) {
-            // Check if this is a markdown cell with metadata
-            if (cell.languageId === LanguageId.Markdown) {
-              const result = markdownParser.transformOut(
-                cell.value,
-                cellMetadata.marimo.sourceProjections.markdown ??
-                  markdownParser.defaultMetadata,
-              );
-              return {
-                id: null,
-                code: result.code,
-                code_hash: null,
-                name,
-                config: markdownConfig,
-              };
-            }
-            // Otherwise use the default wrapInMarkdown
-            return {
-              id: null,
-              code: wrapInMarkdown(cell.value),
-              code_hash: null,
-              name,
-              config: markdownConfig,
-            };
-          }
-
-          // Handle SQL cells - transform back to Python mo.sql() wrapper
-          if (cell.languageId === LanguageId.Sql) {
-            const result = sqlParser.transformOut(
+        // oxlint-disable-next-line typescript/no-unsafe-enum-comparison
+        if (cell.kind === NotebookCellKind.Markup) {
+          // Check if this is a markdown cell with metadata
+          if (cell.languageId === LanguageId.Markdown) {
+            const result = markdownParser.transformOut(
               cell.value,
-              cellMetadata.marimo.sourceProjections.sql ??
-                sqlParser.defaultMetadata,
+              cellMetadata.marimo.sourceProjections.markdown ??
+                markdownParser.defaultMetadata,
             );
             return {
               id: null,
               code: result.code,
               code_hash: null,
               name,
-              config: config({}),
+              config: markdownConfig,
             };
           }
-
-          // Default Python cells
+          // Otherwise use the default wrapInMarkdown
           return {
             id: null,
-            code: cell.value,
+            code: wrapInMarkdown(cell.value),
+            code_hash: null,
+            name,
+            config: markdownConfig,
+          };
+        }
+
+        // Handle SQL cells - transform back to Python mo.sql() wrapper
+        if (cell.languageId === LanguageId.Sql) {
+          const result = sqlParser.transformOut(
+            cell.value,
+            cellMetadata.marimo.sourceProjections.sql ??
+              sqlParser.defaultMetadata,
+          );
+          return {
+            id: null,
+            code: result.code,
             code_hash: null,
             name,
             config: config({}),
           };
-        }),
-      },
+        }
+
+        // Default Python cells
+        return {
+          id: null,
+          code: cell.value,
+          code_hash: null,
+          name,
+          config: config({}),
+        };
+      }),
       appOptions: documentMetadata.appOptions,
       header: documentMetadata.header ?? null,
     };

@@ -193,19 +193,17 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
 
   it("separates managed app options from the passthrough record", () => {
     const decoded = Schema.decodeUnknownSync(NotebookDocument)({
-      notebook: {
-        version: "1",
-        metadata: { marimo_version: "0.23.15" },
-        cells: [
-          {
-            id: "cell-id",
-            code: "x = 1",
-            code_hash: null,
-            name: "cell",
-            config: { hide_code: true },
-          },
-        ],
-      },
+      version: "1",
+      metadata: { marimo_version: "0.23.15" },
+      cells: [
+        {
+          id: "cell-id",
+          code: "x = 1",
+          code_hash: null,
+          name: "cell",
+          config: { hide_code: true },
+        },
+      ],
       appOptions: {
         managed: { autoDownload: ["html", "future-format"] },
         passthrough: { width: "full", future_setting: { answer: 42 } },

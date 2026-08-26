@@ -6,16 +6,20 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+import math
 from typing import TYPE_CHECKING
 
 from marimo._ast.app_config import _AppConfig
+from marimo._ast.parse import Parser
 
 from marimo_lsp import protocol
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-MARIMO_APP_OPTION_NAMES = frozenset(
+# Do not use _AppConfig.from_untrusted_dict to discover these: it treats
+# method names such as `asdict` as writable config attributes.
+MARIMO_APP_CONFIG_FIELDS = frozenset(
     field.name for field in dataclasses.fields(_AppConfig)
 )
 
@@ -57,32 +61,21 @@ def app_options_from_source(
     constants. The private protocol can preserve any JSON-shaped literal, so
     overlay those source values on the options marimo successfully parsed.
     """
-    options = dict(parsed_options)
+    options = {
+        name: value
+        for name, value in parsed_options.items()
+        if _is_json_value(value)
+    }
     options.update(_literal_app_options(source))
     return split_app_options(options)
 
 
-def known_marimo_app_options(options: protocol.AppOptions) -> dict[str, object]:
-    """Project the owned representation into this runtime's known options."""
-    return {
-        name: value
-        for name, value in merge_app_options(options).items()
-        if name in MARIMO_APP_OPTION_NAMES
-    }
-
-
 def _literal_app_options(source: str) -> dict[str, object]:
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        # Marimo can recover an otherwise valid notebook whose cell body has a
-        # syntax error. Its parsed app options remain the best available view.
-        return {}
-    call = next(
-        (
-            node.value
-            for node in tree.body
-            if isinstance(node, ast.Assign)
+    body = Parser(source, filepath="notebook.py").node_stack()
+    call: ast.Call | None = None
+    while (node := next(body)) is not None:
+        if (
+            isinstance(node, ast.Assign)
             and len(node.targets) == 1
             and isinstance(node.targets[0], ast.Name)
             and node.targets[0].id == "app"
@@ -90,9 +83,9 @@ def _literal_app_options(source: str) -> dict[str, object]:
             and isinstance(node.value.func, ast.Attribute)
             and isinstance(node.value.func.value, ast.Name)
             and node.value.func.attr == "App"
-        ),
-        None,
-    )
+        ):
+            call = node.value
+            break
     if call is None:
         return {}
 
@@ -110,8 +103,10 @@ def _literal_app_options(source: str) -> dict[str, object]:
 
 
 def _is_json_value(value: object) -> bool:
-    if value is None or isinstance(value, bool | int | float | str):
+    if value is None or isinstance(value, bool | int | str):
         return True
+    if isinstance(value, float):
+        return math.isfinite(value)
     if isinstance(value, list):
         return all(_is_json_value(item) for item in value)
     if isinstance(value, dict):
