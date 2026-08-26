@@ -62,9 +62,7 @@ def app_options_from_source(
     overlay those source values on the options marimo successfully parsed.
     """
     options = {
-        name: value
-        for name, value in parsed_options.items()
-        if _is_json_value(value)
+        name: value for name, value in parsed_options.items() if _is_json_value(value)
     }
     options.update(_literal_app_options(source))
     return split_app_options(options)
